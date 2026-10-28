@@ -4,7 +4,8 @@ Status: specification — not implemented
 
 This page specifies how trove establishes who is calling. It covers the browser login of humans
 through OpenID Connect, the server-side UI session, the break-glass administrator, and the
-principals trove knows: users, groups, service accounts and the anonymous user. It also covers
+principals trove knows: users, groups, service accounts, the anonymous user and the built-in
+principal `authenticated`. It also covers
 the credentials trove issues itself (personal, service-account and CI tokens per INV-8) and
 how every package client and API caller presents them.
 
@@ -38,13 +39,13 @@ Covers: this page draws on these catalog pages:
 
 | Credential | Held by | Obtained through | Presented as | Lifetime (proposed) |
 |---|---|---|---|---|
-| UI session | user, break-glass administrator | OIDC login (R-AUTH-006), local form (R-AUTH-014) | `trv_session` cookie | idle 1 h, absolute 12 h |
+| UI session | user, break-glass administrator | OIDC login (R-AUTH-006), local form (R-AUTH-014) | `__Host-trv_session` cookie | idle 1 h, absolute 12 h |
 | `trv_pat_…` | user | UI or API (R-AUTH-027), npm web login (R-AUTH-034), device login (R-AUTH-036) | Bearer, Basic password, NuGet API key | default 90 days, maximum 365 days |
 | `trv_sat_…` | service account | administrator API or `trove admin` (R-AUTH-015, R-AUTH-027) | same | default 90 days, maximum 365 days |
 | `trv_cit_…` | CI identity mapping | CI exchange ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)) | same | at most 6 h |
 
 ```text
- browser ──/auth/oidc/{p}/start──► IdP ──code──► /auth/oidc/{p}/callback ──► ui_session ──► trv_session cookie
+ browser ──/auth/oidc/{p}/start──► IdP ──code──► /auth/oidc/{p}/callback ──► ui_session ──► __Host-trv_session cookie
                                                      │ JIT user, group sync
  browser (session) ──POST /api/v1/tokens──────────────────────────────────► api_token (PAT, hash only)
  npm login ──/-/v1/login──► approval page (session) ──► poll doneUrl ──────► api_token (PAT)
@@ -84,8 +85,8 @@ The stage MUST select the credential in this order and MUST evaluate only the fi
    §2.1) or `Basic base64(<any username>:<token>)`
    ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)). The Basic username is recorded for
    diagnostics and is otherwise ignored (INV-8).
-3. **Session cookie** `trv_session`. It is accepted on `/api/v1/…` for every method, with the
-   CSRF rules of R-AUTH-012. On `/files/…` it is accepted for `GET` and `HEAD`, and for `PUT` and
+3. **Session cookie** `__Host-trv_session` (Q-AUTH-2). It is accepted on `/api/v1/…` for every
+   method, with the CSRF rules of R-AUTH-012. On `/files/…` it is accepted for `GET` and `HEAD`, and for `PUT` and
    `DELETE` under the same CSRF rules, because the UI's deploy dialog and item actions use them
    ([api-and-ui.md](api-and-ui.md) R-API-006, R-UI-012). On `/api/<format>/…` it is accepted for
    `GET` and `HEAD` only. Everywhere else it is ignored.
@@ -104,27 +105,43 @@ Normative rules:
   the stage hands a Basic credential whose username is `gitlab-ci-token` to that verifier.
 - Tokens in query parameters (`?access_token=`) MUST NOT be accepted
   ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750) §2.3 discourages them; they leak into logs).
-- The CI exchange endpoint `POST /api/v1/auth/oidc/token` (INV-10) takes a GitLab ID token as
-  request input. That ID token is not a credential for this stage, and the endpoint itself is
-  unauthenticated.
+- **Exchange endpoints.** These routes take a GitLab ID token as request input:
+  - the CI exchange `POST /api/v1/auth/oidc/token` (INV-10);
+  - from P1, the npm trusted-publishing exchange, both at the host root,
+    `POST /-/npm/v1/oidc/token/exchange/package/{name}`, and below every npm registry URL,
+    `POST /api/npm/{repoKey}/-/npm/v1/oidc/token/exchange/package/{name}`
+    ([formats/npm.md](formats/npm.md) R-NPM-022, Q-NPM-1).
+
+  That ID token is not a credential for this stage, and the endpoints themselves are
+  unauthenticated. The npm routes receive it as `Authorization: Bearer <ID token>`, the header npm,
+  pnpm and Yarn send there (R-NPM-022). On `POST` to
+  these exact routes the stage MUST NOT evaluate the `Authorization` header: the request reaches
+  the handler as unauthenticated, and the rule above that rejects every non-token `Bearer` value
+  with 401 does not apply. The handler validates the ID token exactly as the CI exchange does
+  ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-004). The header is still redacted in logs (below).
 - A storage outage during validation MUST answer 503, not 401, so clients do not discard or
   re-prompt for working credentials.
 - The request log and every other log MUST redact the following before writing: the
-  `Authorization` header, the `X-NuGet-ApiKey` header, the `trv_session` and `trv_csrf`
-  cookies, every substring matching the token pattern of R-AUTH-022 in paths and query
-  strings, and the path segment after `/auth/cli/`. npm logout carries the token in the path
+  `Authorization` header, the `X-NuGet-ApiKey` header, the `__Host-trv_session`,
+  `__Host-trv_csrf` and `__Host-trv_oidc_binding` cookies, every substring matching the token
+  pattern of R-AUTH-022 in paths and query strings, and the path segment after `/auth/cli/`. npm logout carries the token in the path
   (R-AUTH-035), and the npm web-login poll URL carries the poll secret there (R-AUTH-034).
 
 Acceptance criteria:
 
 - Run `curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $PAT" https://trove.test/api/v1/auth/whoami`.
-  It prints `200`. With a `trv_session` cookie of another user added to the same request,
+  It prints `200`. With a `__Host-trv_session` cookie of another user added to the same request,
   `whoami` still names the token owner.
 - Use a valid ID token issued by the configured IdP for trove's client as `Bearer`. The
   request gets 401 with `error="invalid_token"`, and no token-table query is executed (asserted
   in an integration test through a query counter).
 - Send an expired PAT on a repository that anonymous may read. The request gets 401, not the
   anonymous response.
+- (P1, with R-NPM-022.) A GitLab ID token whose mapping grants `deploy` on `@acme/ui`, sent as
+  `Bearer` to `POST /-/npm/v1/oidc/token/exchange/package/@acme%2Fui` and to
+  `POST /api/npm/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui`, gets 201 with a
+  `trv_cit_` token on both routes. The same ID token as `Bearer` on `GET /api/npm/npm-all/@acme%2Fui`
+  gets 401 `invalid_token` without a token-table query.
 - Grep the request log after the whole acceptance suite has run. It contains no `trv_pat_`,
   `trv_sat_` or `trv_cit_` substring followed by more than 4 characters.
 
@@ -199,7 +216,11 @@ Acceptance criteria:
 ### R-AUTH-004 · Provider configuration and discovery
 Priority: **MVP** · Covers: AUTHN-007, AUTHN-008
 
-- Login providers are configured in the YAML file (INV-15), not in PostgreSQL; see Q-AUTH-1.
+- Login providers are configured only in the YAML file (INV-15), never in PostgreSQL (decided
+  in Q-AUTH-1). This covers the whole provider entry: connection, client secret reference,
+  claim mapping and gates (R-AUTH-007) and group rules (R-AUTH-008). No API or
+  configuration-as-code document creates or changes a provider; a change takes effect with a
+  rollout of the replicas.
   Any number of providers is allowed. Each needs:
   - `id`: matches `^[a-z0-9][a-z0-9-]{0,31}$` and is part of the redirect URI;
   - `display_name`;
@@ -292,10 +313,12 @@ PKCE is always on and `plain` is never used ([RFC 9700](https://www.rfc-editor.o
 - `state`, `nonce`, `code_challenge`, `code_challenge_method`;
 - the configured `extra_auth_params`.
 
-**Browser binding.** The flow is bound to the browser by the cookie `trv_oidc_binding`, whose
-value is 32 random bytes:
+**Browser binding.** The flow is bound to the browser by the cookie `__Host-trv_oidc_binding`,
+whose value is 32 random bytes:
 
-- attributes `Secure; HttpOnly; SameSite=Lax; Path=/auth/oidc/; Max-Age=600`;
+- attributes `Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`, without `Domain`. The
+  `__Host-` prefix (Q-AUTH-2) requires `Path=/`; it stops a sibling subdomain from planting an
+  attacker's binding value, which would otherwise reopen login CSRF;
 - an existing valid value is reused, so parallel logins in several tabs do not overwrite each
   other.
 
@@ -337,7 +360,8 @@ Acceptance criteria:
 - The Location of `/auth/oidc/corp/start` meets all of the following:
   - it carries `code_challenge_method=S256`, a 43-character `code_challenge`, and `state` and
     `nonce` of 43 characters each;
-  - the response sets `trv_oidc_binding` with `Secure`, `HttpOnly` and `SameSite=Lax`.
+  - the response sets `__Host-trv_oidc_binding` with `Secure`, `HttpOnly`, `SameSite=Lax`,
+    `Path=/` and no `Domain`.
 - Run with two replicas behind a round-robin Service and no affinity. 50 consecutive logins
   against the test IdP all succeed.
 - `return_to=https://evil.test/` and `return_to=//evil.test` both end the login at `/ui/`.
@@ -354,7 +378,7 @@ login with an error page (HTTP 400, or 502 for IdP errors) and the audit event
 1. Delete and return the flow row whose `state_sha256` matches the `state` parameter (`DELETE …
    RETURNING`). This makes the flow single-use. Missing or expired gives `flow_expired`.
 2. The flow's provider MUST equal the path's provider. Otherwise `provider_mismatch`.
-3. The SHA-256 of the `trv_oidc_binding` cookie MUST equal the flow's binding. Otherwise
+3. The SHA-256 of the `__Host-trv_oidc_binding` cookie MUST equal the flow's binding. Otherwise
    `browser_mismatch`.
 4. If the response carries `iss`, it MUST equal the issuer. If discovery advertises
    `authorization_response_iss_parameter_supported: true`, `iss` is mandatory
@@ -424,12 +448,29 @@ Two provider entries with the same issuer resolve to the same user.
 
 | trove attribute | Default claim | Rule |
 |---|---|---|
-| Username | `preferred_username` | The value goes through Unicode NFC, then lower case, then `username_prefix` is prepended. The result must match `^[a-z0-9][a-z0-9._@+-]{0,127}$` and must not be reserved (`anonymous`, `system`, the break-glass username). Otherwise the login fails with `username_invalid`. |
+| Username | `preferred_username` | The value goes through Unicode NFC, then lower case, then `username_prefix` is prepended. The result must match `^[a-z0-9][a-z0-9._@+-]{0,127}$` and must not be reserved (`anonymous`, `authenticated`, `system`, `me`, the break-glass username; see below). Otherwise the login fails with `username_invalid`. |
 | Email | `email` | Stored together with `email_verified`. It is never used for matching. |
 | Display name | `name` | Free text, at most 256 characters. |
 | Groups | `groups` | See R-AUTH-008. |
 
 Claim names may be dotted paths into nested JSON objects, for example `realm_access.roles`.
+
+**Reserved usernames.** `anonymous`, `authenticated`, `system`, `me` and the configured
+break-glass username (`auth.break_glass.username`, R-AUTH-014) are reserved. `anonymous` and
+`authenticated` name the built-in principals (R-AUTH-037); a user of either name could be
+mistaken for them wherever principals are shown by name, for example when an administrator picks
+the principal of a policy entry. `me` is reserved because
+`/api/v1/users/me` is a literal route at the position of `{username}`, so a user of that name
+would be unreachable by name ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7). The rule holds
+for every source of a username:
+
+- an OIDC login, including a rename through `sync_username`, fails with `username_invalid`;
+- `POST /api/v1/users` answers 422 `reserved_name` (R-AUTH-016);
+- SCIM (R-AUTH-039) answers 400 with `scimType: invalidValue`
+  ([RFC 7644](https://www.rfc-editor.org/rfc/rfc7644) §3.12).
+
+The OpenAPI document lists them as `x-trove-reserved-names` of the username schema. A
+break-glass username of `anonymous`, `authenticated`, `system` or `me` makes startup fail.
 
 **First login of an identity.** No (`iss`, `sub`) link exists yet. Exactly one of these applies:
 
@@ -459,7 +500,7 @@ Claim names may be dotted paths into nested JSON objects, for example `realm_acc
 | `require_verified_email` is set and `email_verified` is not `true` | `email_unverified` |
 | `login_requires_groups` is non-empty and none of its values is in the raw group claim | `not_in_allowed_group` |
 
-**Providers with open registration.** A provider entry sets `publicIssuer: true` when anyone can
+**Providers with open registration.** A provider entry sets `public_issuer: true` when anyone can
 obtain an account at the issuer (open sign-up, a public SaaS instance). trove treats the issuers
 `https://gitlab.com` and `https://accounts.google.com` as public whatever the setting says. For a
 public issuer, startup MUST refuse:
@@ -517,9 +558,9 @@ Acceptance criteria:
 - With `jit: false`, an unknown identity gets `not_provisioned`. A user pre-created with a
   pending link for `corp` logs in once and is linked.
 - A provider with issuer `https://gitlab.com`, `jit: true` and no `login_requires_groups` makes
-  startup fail with a message naming the provider. With `loginRequiresGroups: [acme]` and the
-  group rule `matchRegex: "acme/trove-(.+)"` it starts; with the rule
-  `matchRegex: "trove-(.+)"` it fails again.
+  startup fail with a message naming the provider. With `login_requires_groups: [acme]` and the
+  group rule `match_regex: "acme/trove-(.+)"` it starts; with the rule
+  `match_regex: "trove-(.+)"` it fails again.
 
 ### R-AUTH-008 · Group synchronization from claims
 Priority: **MVP** · Covers: IAM-013, IAM-014, IAM-016
@@ -544,7 +585,7 @@ reads the configured group claim:
 
 **Missing target groups.** If a target group does not exist:
 
-- with `createGroups: false`, it is skipped;
+- with `create_groups: false`, it is skipped;
 - otherwise it is created with origin `oidc`.
 
 **Writing the memberships.** In one transaction, trove sets the user's memberships whose
@@ -553,13 +594,25 @@ source is `oidc:<providerId>` to exactly the target set. Memberships with source
 INV-12) and, if anything changed, a `user.groups.synced` event is written with the added and
 removed groups.
 
-**Missing claim.** The behavior follows `on_missing_claim`:
+**Missing claim.** The behavior follows `on_missing_claim` (default `clear`, decided in
+Q-AUTH-4). It applies to all three cases above alike, including the overage marker:
 
 | Value | Behavior |
 |---|---|
-| `clear` (default, proposed) | Remove all `oidc:<providerId>` memberships and continue. Fails closed. See Q-AUTH-4. |
+| `clear` (default) | Remove all `oidc:<providerId>` memberships and continue. Fails closed: an IdP misconfiguration removes rights, it never adds or keeps them. |
 | `keep` | Leave the memberships unchanged. |
 | `deny` | Fail the login with `groups_claim_missing`. |
+
+With `clear` and `keep`, every login with a missing claim writes the warning event
+`user.groups.claim_missing` (R-AUTH-041) with the provider and `details.reason`: `absent`,
+`wrong_type` or `overage`. It also increments
+`trove_auth_group_claim_missing_total{provider,reason}`. trove also records the reason with the
+identity's `last_claims` (R-AUTH-007). The user's profile (R-AUTH-017) and
+`GET /api/v1/users/me` show it as `groupClaimMissing: {"provider", "reason"}` until a later
+login delivers the claim. This makes a broken group mapper or an overage visible to administrators and
+to the affected users themselves, who can still log in with their direct grants. An
+administrator who loses rights this way sees why on the profile and recovers through the
+break-glass account (R-AUTH-014) or by fixing the IdP mapper.
 
 **Administrator rights.** A group becomes an administrator group by a role binding in
 [authorization.md](authorization.md); there is no administrator flag on the group record. If a
@@ -575,7 +628,7 @@ Configuration:
 ```yaml
         group_sync:
           enabled: true                          # default (proposed)
-          on_missing_claim: clear                # default (proposed): clear | keep | deny
+          on_missing_claim: clear                # default (proposed): clear | keep | deny (Q-AUTH-4)
           create_groups: false                   # default (proposed)
           rules:
             - match: trove-platform-admins     # example
@@ -590,8 +643,13 @@ Acceptance criteria:
   member of `team-web` with source `oidc:corp`, and `unrelated` is ignored.
 - At the next login the IdP sends `groups: []`. The `oidc:corp` membership is removed, and a
   manual membership in `team-web` added by an administrator survives.
-- The IdP omits the claim. With the default, all `oidc:corp` memberships are removed and the
-  login succeeds. With `deny`, the login fails with `groups_claim_missing`.
+- The IdP omits the claim. With the default, all `oidc:corp` memberships are removed, the
+  login succeeds, one `user.groups.claim_missing` event with `reason=absent` is written, and
+  `GET /api/v1/users/me` returns `groupClaimMissing` with `reason: "absent"`. The next login
+  that carries the claim clears the field. With `deny`, the login fails with
+  `groups_claim_missing`.
+- The IdP sends `_claim_names: {"groups": "src1"}` instead of the claim. With the default, the
+  login succeeds without `oidc:corp` memberships, and the event carries `reason=overage`.
 
 ### R-AUTH-009 · Multiple providers and the login page
 Priority: **MVP** · Covers: AUTHN-007, AUTHN-037
@@ -648,14 +706,19 @@ break-glass login (R-AUTH-014):
 **Cookie.** The cookie is set as:
 
 ```text
-Set-Cookie: trv_session=<secret>; Secure; HttpOnly; SameSite=Lax; Path=/
+Set-Cookie: __Host-trv_session=<secret>; Secure; HttpOnly; SameSite=Lax; Path=/
 ```
 
 - It has no `Domain`, `Max-Age` or `Expires` attribute, so it lives for the browser session and
   is host-only.
 - `SameSite=Lax` rather than `Strict` is deliberate. The first navigation after the cross-site
   IdP redirect must carry the cookie.
-- The cookie name is fixed by INV-8. See Q-AUTH-2 for the `__Host-` prefix.
+- The `__Host-` prefix (decided in Q-AUTH-2) makes the browser refuse any cookie of this name
+  that lacks `Secure` or `Path=/` or carries a `Domain` attribute (cookie name prefixes in
+  [draft-ietf-httpbis-rfc6265bis](https://datatracker.ietf.org/doc/draft-ietf-httpbis-rfc6265bis/)).
+  A sibling subdomain or a plain-HTTP response therefore cannot plant or shadow it. All three
+  trove cookies carry the prefix: `__Host-trv_session`, `__Host-trv_csrf` (R-AUTH-012) and
+  `__Host-trv_oidc_binding` (R-AUTH-005). This amends the cookie name in INV-8.
 
 **Validation.** Lookup follows the token path of R-AUTH-023: a per-replica cache with
 `NOTIFY` invalidation and the same latency bound. The principal must still be active.
@@ -715,8 +778,10 @@ auth:
 
 Acceptance criteria:
 
-- After login the browser holds `trv_session` with `Secure`, `HttpOnly`, `SameSite=Lax`,
+- After login the browser holds `__Host-trv_session` with `Secure`, `HttpOnly`, `SameSite=Lax`,
   `Path=/` and no `Domain`. The database holds only its SHA-256.
+- A response from a sibling host that sets `trv_session` or `__Host-trv_session` with
+  `Domain=<parent domain>` leaves the browser's cookie for trove unchanged (browser test).
 - Ending a session through the API makes the next request with that cookie fail with 401
   `session_expired` within the latency bound of R-AUTH-023. This holds on every replica.
 - A 21st login of the same user ends the oldest session.
@@ -767,11 +832,11 @@ Priority: **MVP** · Covers: trove-only
 a second cookie:
 
 ```text
-Set-Cookie: trv_csrf=<token>; Secure; SameSite=Strict; Path=/
+Set-Cookie: __Host-trv_csrf=<token>; Secure; SameSite=Strict; Path=/
 ```
 
 The cookie is not `HttpOnly`. The Angular `HttpClient` XSRF support reads it, configured with
-`withXsrfConfiguration({cookieName: 'trv_csrf', headerName: 'X-CSRF-Token'})`
+`withXsrfConfiguration({cookieName: '__Host-trv_csrf', headerName: 'X-CSRF-Token'})`
 ([Angular security guide](https://angular.dev/best-practices/security)).
 
 **Checks on unsafe requests.** A `POST`, `PUT`, `PATCH` or `DELETE` request that is
@@ -807,9 +872,9 @@ Acceptance criteria:
 
 - An HTML form on another origin posting to `/api/v1/tokens` with the victim's cookie gets 403
   `csrf_failed`. A `fetch` from the UI with the header succeeds.
-- `curl -X DELETE -b "trv_session=$S" https://trove.test/api/v1/users/me/sessions` without
-  the header gets 403.
-- `curl -X PUT -b "trv_session=$S" -T x.bin https://trove.test/files/generic-local/x.bin`
+- `curl -X DELETE -b "__Host-trv_session=$S" https://trove.test/api/v1/users/me/sessions`
+  without the header gets 403.
+- `curl -X PUT -b "__Host-trv_session=$S" -T x.bin https://trove.test/files/generic-local/x.bin`
   without the header gets 403 `csrf_failed`. A `PUT` on `/api/npm/npm-local/…` carrying only the
   cookie gets 401.
 
@@ -819,7 +884,9 @@ Priority: **MVP** · Covers: AUTHN-038
 **Logout.** `POST /auth/logout` (cookie plus CSRF) does the following:
 
 - ends the session (reason `logout`) and publishes the invalidation;
-- clears `trv_session` and `trv_csrf` with `Max-Age=0`;
+- clears `__Host-trv_session` and `__Host-trv_csrf` with `Max-Age=0`, `Secure` and `Path=/`
+  and without `Domain`. The browser ignores a `__Host-` Set-Cookie that lacks these attributes,
+  so a bare `Max-Age=0` would leave the cookie in place;
 - answers 200 with `{"redirectTo": "<url>"}`. The UI navigates there.
 
 **Where `redirectTo` points:**
@@ -971,8 +1038,17 @@ Acceptance criteria:
 Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADMAPI-005, ADMAPI-006, ADMAPI-007, ADMAPI-008, ADMAPI-009
 
 **Principal table.** All principal kinds share one table, so
-[authorization.md](authorization.md) can bind policies to `principal.id` uniformly. The
-`ci_mapping` subtype is owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md).
+[authorization.md](authorization.md) can bind policies to `principal.id` uniformly. The kinds
+`anonymous` and `authenticated` each have exactly one built-in row (R-AUTH-037). The
+`ci_mapping` subtype is owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
+
+- Its principal `name` is `<CI issuer name>/<mapping name>`, for example
+  `gitlab-com/acme-release-publish` (Q-CI-10). Mapping names are unique only per CI issuer, but
+  both parts match `^[a-z0-9][a-z0-9._-]{1,63}$` and so contain no `/`, which makes the composite
+  unique under `UNIQUE (kind, name)` and splittable back into its parts.
+- It is never renamed, because both parts are immutable.
+- The row is created and deleted together with the mapping, in the same transaction
+  ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-009).
 
 **User record:**
 
@@ -984,13 +1060,15 @@ Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADM
   [authorization.md](authorization.md).
 - Users are addressed by username in paths. The record also returns the stable `id`.
 
-**The catalog's per-user options map to trove as follows:**
+**The catalog's per-user options (IAM-003) map to trove as follows.** trove has none of the
+three switches; the table fixes the behavior that replaces each:
 
 | Catalog option | trove |
 |---|---|
-| UI access disabled | Covered by service accounts (R-AUTH-020) |
-| Internal password disabled | Not applicable: no internal passwords |
-| Profile updatable | Not needed: profile data comes from the IdP |
+| UI access disabled | No per-user switch. Every human user has UI access. API-only automation uses a service account (R-AUTH-020), which has no login, session or UI access. |
+| Internal password disabled | Not applicable: no user has an internal password, so there is nothing to fall back to. |
+| Profile updatable | No per-user switch. Users cannot edit their profile data in trove: email and display name come from the IdP and are overwritten at every login (R-AUTH-007). An administrator can correct them through `PATCH /api/v1/users/{username}` until the next login. |
+| Password change (the catalog's open point under "profile updatable") | Not applicable: users have no password to change. The only password, the break-glass password, changes only by rotating its Kubernetes Secret (R-AUTH-014). No API changes it. |
 
 **Disable.** `POST /api/v1/users/{username}/disable` does the following:
 
@@ -1015,8 +1093,8 @@ Data model:
 ```sql
 CREATE TABLE principal (
   id          uuid        PRIMARY KEY,                     -- UUIDv7
-  kind        text        NOT NULL CHECK (kind IN ('user', 'group', 'service_account', 'anonymous', 'ci_mapping')),
-  name        text        NOT NULL,
+  kind        text        NOT NULL CHECK (kind IN ('user', 'group', 'service_account', 'anonymous', 'authenticated', 'ci_mapping')),
+  name        text        NOT NULL,                        -- ci_mapping: '<CI issuer name>/<mapping name>'
   status      text        NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
   created_at  timestamptz NOT NULL DEFAULT now(),
   created_by  uuid        REFERENCES principal (id) ON DELETE SET NULL,
@@ -1047,7 +1125,7 @@ API (administrator unless stated; read operations also accept the system scope
 | `GET /api/v1/users?q=&status=&origin=&group=&admin=&limit=&cursor=` | — | Page of users (paging per [api-and-ui.md](api-and-ui.md)) | 200 |
 | `GET /api/v1/users/{username}` | — | User record (below) | 200, 404 |
 | `GET /api/v1/users/me` | — | Own record; any authenticated user | 200, 401 |
-| `POST /api/v1/users` | `{"username", "email", "displayName", "identities": [{"provider": "corp", "subject": null}]}` | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409 |
+| `POST /api/v1/users` | `{"username", "email", "displayName", "identities": [{"provider": "corp", "subject": null}]}` | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409, 422 `reserved_name` (reserved username, R-AUTH-007) |
 | `PATCH /api/v1/users/{username}` | Any of `displayName`, `email` (the IdP overwrites both at the next login), `identities` | User | 200, 400, 404 |
 | `POST /api/v1/users/{username}/disable` | `{"reason": "…", "revokeTokens": true}` | — | 204, 404, 409 (break-glass) |
 | `POST /api/v1/users/{username}/enable` | — | — | 204, 404 |
@@ -1080,7 +1158,8 @@ Acceptance criteria:
   - re-enabling her does not make the old PAT valid again.
 - Deleting `alice` and logging in again creates a user with a different `id`. Policies bound to
   the old principal do not apply.
-- `POST /api/v1/users` with an existing username gets 409.
+- `POST /api/v1/users` with an existing username gets 409. With the username `me` it gets 422
+  `reserved_name`, and an OIDC login whose mapped username is `me` fails with `username_invalid`.
 
 ### R-AUTH-017 · Self-service profile
 Priority: **MVP** · Covers: AUTHN-039, AUTHN-006, AUTHN-040
@@ -1089,7 +1168,8 @@ Priority: **MVP** · Covers: AUTHN-039, AUTHN-006, AUTHN-040
 [api-and-ui.md](api-and-ui.md). It shows:
 
 - the identity from the IdP, read-only;
-- groups with their source;
+- groups with their source, and a notice when the last login carried no usable group claim
+  (`groupClaimMissing`, R-AUTH-008);
 - the effective administrator flag;
 - active sessions, which the user can end (R-AUTH-010);
 - personal tokens, which the user can create, list, rotate and revoke (R-AUTH-027 to
@@ -1106,8 +1186,9 @@ becomes `auth.tokens.pat.allowed_groups`:
 
 Existing PATs of users who leave those groups keep working until they expire or are revoked.
 
-**Other principals.** Service accounts and the anonymous principal have no profile. The
-break-glass account sees its profile without the tokens section.
+**Other principals.** Service accounts and the built-in principals `anonymous` and
+`authenticated` have no profile. The break-glass account sees its profile without the tokens
+section.
 
 Configuration:
 
@@ -1134,7 +1215,8 @@ Priority: **MVP** · Covers: IAM-013, IAM-014, IAM-016, IAM-018, ADMAPI-013, ADM
 - Groups are flat; nesting is not supported.
 
 **Members.** Members are users and service accounts. Member lists write service accounts as
-`sa:<name>`. The anonymous principal cannot be a member.
+`sa:<name>`. The built-in principals `anonymous` and `authenticated` (R-AUTH-037) cannot be
+members.
 
 **Memberships carry a source:**
 
@@ -1200,6 +1282,9 @@ Acceptance criteria:
   rights.
 - A service account added as `sa:ci-bot` to `team-web` gets the group's repository grants with
   its SAT.
+- `PATCH /api/v1/groups/team-web/members` with `{"add": ["authenticated"]}` answers 404 and
+  changes nothing: the name is a reserved username (R-AUTH-007), so it resolves to no user, and
+  the built-in principal is never a member.
 
 ### R-AUTH-019 · Auto-join groups
 Priority: **P1** · Covers: IAM-015
@@ -1214,6 +1299,10 @@ Priority: **P1** · Covers: IAM-015
   auto-join group, answers 409 `auto_join_admin_conflict`. Both pages enforce this.
 - CI tokens never pick up auto-join groups. Their principal is a CI mapping, not a user, so the
   catalog's widening of CI tokens through default groups (TOK-015) cannot occur.
+- The MVP built-in principal `authenticated` (R-AUTH-037, [authorization.md](authorization.md)
+  R-AUTHZ-030) draws the same line: like auto-join groups, it covers users only and never service
+  accounts or CI identities. Until auto-join groups ship, it is how an installation grants `read`
+  to every signed-in user.
 
 Acceptance criteria:
 
@@ -1293,14 +1382,22 @@ Dormancy bounds that window:
   vouched for the account. A user disabled by an administrator stays disabled.
 - `user.dormancy_warning` is emitted `dormancy_warning` before the deadline. Webhooks can carry
   it ([operations-and-observability.md](operations-and-observability.md)), and email is P2.
-- `dormancyPeriod: 0` switches the job off.
+- `dormancy_period: 0` switches the job off. The default is on, with 90 days (decided in
+  Q-AUTH-5). It matches the default PAT lifetime (R-AUTH-026): a user who renews tokens at the
+  default cadence logs in through the UI anyway, because creating a token needs a session.
+- The 401 for a dormant user's token carries `principal_disabled`, and its human-readable text
+  says that one sign-in at `<baseURL>/ui/` re-enables the account: the problem `detail` on
+  `/api/v1/…`, and the `error` and `message` fields on npm endpoints, which npm prints
+  (R-NPM-005 in [formats/npm.md](formats/npm.md)). NuGet clients report only the status code;
+  their users learn the reason from the UI. A user disabled for any other reason gets the same code
+  without that hint.
 
 Configuration:
 
 ```yaml
 auth:
   users:
-    dormancy_period: 2160h   # default (proposed): 90 days; 0 disables; see Q-AUTH-5
+    dormancy_period: 2160h   # default (proposed): 90 days; 0 disables (Q-AUTH-5)
     dormancy_warning: 336h   # default (proposed): 14 days
 ```
 
@@ -1347,6 +1444,17 @@ token    = body + checksum                                         // always 57 
 - Each token has a public `hint`, the prefix plus the first 4 characters of the random part (for
   example `trv_pat_3kQ9`), so users can tell their tokens apart in lists. 24 of 256 bits are
   disclosed; the remaining entropy is ample.
+
+**Reference tokens (TOK-004).** Every trove token is what the catalog calls a reference token:
+an opaque string that is resolved through the database on every uncached request (R-AUTH-023).
+There is no second, self-contained form (TOK-003 is P2). Consequences:
+
+- The create request has no "also issue a reference token" option; the one token it returns is
+  the reference.
+- No payload limit applies. Scope and group memberships live in PostgreSQL, not in the string,
+  so long or many group names never change the token.
+- Every type is exactly 57 characters. This settles the catalog's open point between a
+  64-character and a 128-character form: trove uses neither.
 
 **Attributes.** Every token carries the attributes of TOK-002, adapted:
 
@@ -1475,29 +1583,56 @@ structure, its validation and who may request what.
   "repositories": [
     {
       "repositories": ["npm-local", "npm-team-*"],
-      "include": ["@acme/**"],
-      "exclude": [],
+      "packages": {"include": ["@acme/*"]},
       "actions": ["read", "deploy"]
     }
   ],
-  "system": ["identities:read"]
+  "system": ["identities:read"],
+  "builds": [
+    {
+      "builds": {"include": ["acme/**"], "exclude": []},
+      "actions": ["read"]
+    }
+  ]
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `inherit` | `true` means all repository grants of the owner, evaluated at use time. This is the catalog's user-permissions scope (TOK-008) and gives identity tokens (TOK-005). `repositories` must then be empty. |
+| `inherit` | `true` means all repository grants of the owner and, from P1, all build grants, evaluated at use time. This is the catalog's user-permissions scope (TOK-008) and gives identity tokens (TOK-005). `repositories` and `builds` must then be empty. |
 | `admin` | `true` lets the token exercise system administration if, and only if, the owner holds the administrator role at use time (TOK-009). An administrator's token without `admin: true` acts as a non-administrator, so administrator power is always an explicit choice. |
-| `repositories` | Restricted grants with the same resource selector as a policy grant: repository keys or patterns, include and exclude patterns, actions from `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` (INV-9). Pattern syntax and matching are defined by [authorization.md](authorization.md). |
+| `repositories` | Restricted grants with the same resource selector as a policy grant: repository keys or patterns, package-name and path include/exclude patterns (`packages`, `paths`; [authorization.md](authorization.md) R-AUTHZ-005), actions from `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` (INV-9). Each element is `{"repositories": [...], "packages": {"include": [...], "exclude": [...]}, "paths": {"include": [...], "exclude": [...]}, "actions": [...]}`; `packages` and `paths` are optional. Pattern syntax and matching are defined by [authorization.md](authorization.md). |
 | `system` | Items from the closed list of R-AUTH-025 (P1). |
+| `builds` | P1. Restricted build grants: each element is `{"builds": {"include": [...], "exclude": [...]}, "actions": [...]}`, with build-name globs (syntax of the `packages` dimension) and actions from `read`, `annotate`, `deploy`, `delete`, `manage` ([authorization.md](authorization.md) R-AUTHZ-027). `overwrite` does not apply to build records and answers 400 `invalid_scope`. `inherit: true` also admits build rights from P1; a restricted scope without a `builds` element admits no build action. |
+
+**Resource types.** A scope can name only this closed list of resource types: `repositories`
+(repository content, MVP), `system` (system capabilities, P1) and `builds` (build records, P1),
+the resource types the grant model has ([authorization.md](authorization.md) R-AUTHZ-013,
+Q-AUTHZ-10). `inherit` and `admin` are switches, not resource types. There is no project resource
+type before project roles exist (TOK-011, TOK-013, P2), and no per-repository configuration type:
+repository configuration rights are system capabilities and apply instance-wide.
 
 **Validation and defaults:**
 
-- At most 50 grants, and at most 16 KiB of serialized JSON. Unknown actions or fields answer
-  400 `invalid_scope`.
+- At most 50 grants (elements of `repositories` and `builds` together), and at most 16 KiB of
+  serialized JSON. Unknown actions or fields answer 400 `invalid_scope`. This includes `include`
+  or `exclude` at the top level of a `repositories` element: name and path patterns belong in
+  `packages` and `paths` ([authorization.md](authorization.md) Q-AUTHZ-9).
 - Scopes are immutable after creation. Rotation keeps the scope; changing it means a new token.
-- The default for PATs and SATs is `{"inherit": true}`. CIT scopes are produced by the identity
-  mappings of [gitlab-ci-oidc.md](gitlab-ci-oidc.md) and use the same structure.
+- The default for PATs and SATs is `{"inherit": true}`.
+- A CIT uses the same structure. The identity mappings of [gitlab-ci-oidc.md](gitlab-ci-oidc.md)
+  decide what its owner holds; the stored scope only narrows that, as for every token:
+  - without `scope` in the exchange request, the stored scope is `{"inherit": true}`;
+  - with `scope`, it is `{"inherit": false, "repositories": [...]}`, translated item by item from
+    that OAuth scope string: each item `<action>:<selector>` becomes one grant
+    `{"repositories": [<selector>], "actions": [<action>]}`, and an item without selector stands
+    for `@any` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-007, Q-CI-2). For example,
+    `read:npm-all deploy:npm-internal` is stored as
+    `{"inherit": false, "repositories": [{"repositories": ["npm-all"], "actions": ["read"]},
+    {"repositories": ["npm-internal"], "actions": ["deploy"]}]}`.
+  - The package-bound token of npm trusted publishing (P1, [formats/npm.md](formats/npm.md)
+    R-NPM-022) is the one exception: its scope is a single grant whose `packages.include` pattern
+    is the package name, with the actions `read` and `deploy`.
 
 **Deliberate departure.** The catalog's resource scope (TOK-012) grants rights independently of
 any policy. trove does not allow that. A scope that names actions the owner does not hold
@@ -1512,6 +1647,11 @@ Acceptance criteria:
   `POST /api/v1/repositories`. One created with `{"inherit": true, "admin": true}` succeeds.
 - `alice`'s group loses deploy on `npm-local`. Within the latency bound her `inherit` token can
   no longer publish.
+- Creating a token whose scope element carries `"include": ["@acme/*"]` at the top level answers
+  400 `invalid_scope`. The same pattern as `"packages": {"include": ["@acme/*"]}` is accepted.
+- (P1) `alice` may deploy build records named `acme/**`. Her token with scope
+  `{"repositories": [{"repositories": ["npm-local"], "actions": ["read"]}]}` gets 403 on
+  uploading build record `acme/web/frontend`; her `inherit` token succeeds.
 
 ### R-AUTH-025 · System scope items
 Priority: **P1** · Covers: TOK-014, ADMAPI-041
@@ -1523,7 +1663,11 @@ Priority: **P1** · Covers: TOK-014, ADMAPI-041
 capability ([authorization.md](authorization.md): the administrator role, or a narrower role if
 that page defines one). `admin: true` implies every item.
 
-**Item list (v1):**
+**Item list (v1):** the items are exactly the capability names of the system-capability table in
+[authorization.md](authorization.md) R-AUTHZ-010 (for example `repositories:write-config`,
+`ci:write`, `webhooks:read`); that table is authoritative, and a capability added there is a valid
+scope item without an edit here. The table below explains the read-oriented items most often
+used for monitoring and audit tokens:
 
 | Item | Operations it unlocks |
 |---|---|
@@ -1554,25 +1698,60 @@ Priority: **MVP** · Covers: TOK-017, TOK-018, TOK-019, IAM-038, ADMAPI-042
 | Type | Default TTL | Maximum TTL | Non-expiring |
 |---|---|---|---|
 | PAT | 2160 h (90 days) | 8760 h (365 days) | never |
-| SAT | 2160 h | 8760 h | only if `sat.allowNonExpiring` is true (default false) |
+| SAT | 2160 h | 8760 h | only if `sat.allow_non_expiring` is true (default false), and only by an administrator |
 | CIT | set by [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | 6 h (hard ceiling) | never |
 
-**Requests:**
+**Requests (TOK-017):**
 
-- A request gives `ttlSeconds` or `expiresAt` (RFC 3339), or neither, which applies the default.
-  Giving both answers 400.
+- A request gives `ttlSeconds` or `expiresAt` (RFC 3339), or neither, which applies the default
+  of its creation path (table below). Giving both answers 400 `invalid_ttl`.
+- `ttlSeconds` is an integer. `0` requests a non-expiring token (next paragraph); zero is a valid
+  value, not an invalid one. Every other value must be at least 60. A negative value, a value
+  from 1 to 59, a non-integer, and an `expiresAt` less than 60 s in the future answer 400
+  `invalid_ttl`.
 - A lifetime above the maximum answers 400 `ttl_exceeds_maximum`. trove does not silently
   clamp it.
-- For a SAT, `ttlSeconds: 0` requests a non-expiring token. It is accepted only when allowed,
-  and otherwise answers 400.
 
-**Who the caps bind.** The caps bind administrators as well. This departs from the catalog,
-where administrators are uncapped, so that the security setting means what it says.
+**Non-expiring tokens (TOK-017).** Only a SAT can be non-expiring, and all three conditions must
+hold:
+
+- `sat.allow_non_expiring` is true. Otherwise `ttlSeconds: 0` answers 400
+  `non_expiring_not_allowed`.
+- The caller is an administrator: a session with recent authentication, a token with
+  `admin: true`, or `trove admin token create --ttl 0`. Service-account owners (P1) get 403
+  `non_expiring_restricted`.
+- The request does not run under the derivation rule (R-AUTH-027). A token derived from a
+  non-expiring SAT gets a finite lifetime, at most the SAT maximum.
+
+PATs and CITs are never non-expiring; `ttlSeconds: 0` for them answers 400
+`non_expiring_not_allowed`.
+
+**Default per creation path (TOK-018).** The default applies to every caller, administrators
+included. Every default is a finite duration; there is no "no default forced" setting.
+
+| Creation path | Default lifetime |
+|---|---|
+| `POST /api/v1/tokens`, UI token dialog | `pat.default_ttl` (its runtime value, R-AUTH-040); the UI pre-fills it |
+| `POST /api/v1/service-accounts/{name}/tokens` | `sat.default_ttl` (its runtime value) |
+| Token-authenticated create under the derivation rule (R-AUTH-027) | The path's default, capped at the presenting token's expiry |
+| npm web login (R-AUTH-034), device login (R-AUTH-036) | `cli_login.token_ttl`, capped by the PAT maximum; the approver may shorten it |
+| `trove admin token create` (R-AUTH-015) | 15 min |
+| Rotation (R-AUTH-030) | The original lifetime, capped by the current maximum |
+| CI exchange | Set by [gitlab-ci-oidc.md](gitlab-ci-oidc.md), at most `cit.max_ttl` |
+
+**Who the caps bind (TOK-019).** The maximum binds every creator: users, service-account owners
+(P1), administrators and `trove admin`. There is no separate cap for non-administrators or
+project administrators, and no variant that caps at the default. This departs from the catalog,
+where administrators are uncapped, so that the security setting means what it says. The only
+way past the maximum is the non-expiring SAT above, which is off by default and reserved to
+administrators.
 
 **YAML ceilings and runtime values.** The YAML values are ceilings. Administrators may lower the
 default and the maximum at runtime (R-AUTH-040), but never raise them above the YAML values.
 Lowering the maximum does not shorten existing tokens. `GET /api/v1/tokens?expiresAfter=` finds
-them for revocation.
+them for revocation. Startup MUST fail if any `default_ttl` or `max_ttl` is zero or negative
+(there is no "0 means unlimited"), if a `default_ttl` exceeds its `max_ttl`, or if
+`cit.max_ttl` exceeds 6 h.
 
 Configuration:
 
@@ -1597,6 +1776,13 @@ Acceptance criteria:
 
 - `POST /api/v1/tokens` without a lifetime returns `expiresAt` 90 days ahead.
 - `{"ttlSeconds": 40000000}` gets 400 `ttl_exceeds_maximum`, also for an administrator.
+- `POST /api/v1/tokens` with `{"ttlSeconds": 0}` gets 400 `non_expiring_not_allowed`;
+  `{"ttlSeconds": -5}` and `{"ttlSeconds": 30}` get 400 `invalid_ttl`.
+- With `sat.allow_non_expiring: true`, an administrator creates a SAT with `ttlSeconds: 0`; its
+  `expiresAt` is null. A token derived from that SAT without a lifetime expires after the SAT
+  default.
+- An administrator's `POST /api/v1/tokens` without a lifetime gets the same 90-day expiry as any
+  user's.
 - After the runtime maximum is lowered to 30 days, a new PAT with 60 days is refused and
   existing 90-day PATs are unchanged.
 
@@ -1614,10 +1800,11 @@ Priority: **MVP** · Covers: TOK-025, TOK-006, AUTHN-040, ADMAPI-039, IAM-037
 create call must satisfy all of the following:
 
 - The new token has the presenting token's type and owner.
-- Its expiry is no later than the presenting token's expiry.
-- Its scope is no broader than the presenting token's scope. Each new grant must equal a
-  presenting grant with a subset of its actions, and `inherit`, `admin` and `system` items may
-  only be kept or dropped.
+- Its expiry is no later than the presenting token's expiry, and it is never non-expiring, even
+  when the presenting SAT is (R-AUTH-026).
+- Its scope is no broader than the presenting token's scope. Each new grant (an element of
+  `repositories` or, from P1, `builds`) must equal a presenting grant of the same part with a
+  subset of its actions, and `inherit`, `admin` and `system` items may only be kept or dropped.
 
 This holds for `Bearer` and for Basic with a token as password. A token can never mint a
 credential that outlives or outranks itself. The new token records the presenting token in
@@ -1632,7 +1819,7 @@ token is revoked.
 | A CIT | `ci_token_restricted` |
 | The break-glass account | `break_glass_restricted` |
 | The anonymous principal | `credentials_required` |
-| A PAT for a different user. Administrators cannot either, because there is no impersonation; automation uses service accounts. | `forbidden` |
+| A PAT for a different user: an `owner` field naming anyone but the caller. Administrators cannot either, because there is no impersonation (Q-AUTH-7); automation uses service accounts. No other path creates or rotates a PAT for another user (R-AUTH-030). | `forbidden` |
 
 **Request:**
 
@@ -1666,9 +1853,9 @@ token is revoked.
 
 | Status | Code or cause |
 |---|---|
-| 400 | `invalid_scope`, `ttl_exceeds_maximum`, `description_required` |
+| 400 | `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `non_expiring_not_allowed` (R-AUTH-026), `description_required` |
 | 401 | Not authenticated, or `reauthentication_required` |
-| 403 | The codes above, `derivation_exceeds_parent` (derivation rule violated), and `pat_not_allowed` (R-AUTH-017) |
+| 403 | The codes above, `derivation_exceeds_parent` (derivation rule violated), `non_expiring_restricted` (R-AUTH-026), and `pat_not_allowed` (R-AUTH-017) |
 | 409 | `token_limit_reached` (R-AUTH-026) |
 
 Each success writes `token.created` with ID, type, owner, scope, expiry and `createdVia`, never
@@ -1682,6 +1869,8 @@ Acceptance criteria:
 - `curl -u x:$PAT -X POST … /api/v1/tokens` behaves like the Bearer call, so Basic with a token
   counts as token authentication.
 - A CIT gets 403 `ci_token_restricted`.
+- An administrator's session with recent authentication posts `{"owner": "bob", "description":
+  "x"}` to `POST /api/v1/tokens` and gets 403 `forbidden`; no token row is written.
 
 ### R-AUTH-028 · Listing and inspecting tokens
 Priority: **MVP** · Covers: TOK-026, TOK-027, TOK-028, ADMAPI-043, ADMAPI-044
@@ -1735,14 +1924,16 @@ Priority: **MVP** · Covers: TOK-030, TOK-031, TOK-032, ADMAPI-045, ADMAPI-046
 | Method and path | Effect | Caller | Status codes |
 |---|---|---|---|
 | `DELETE /api/v1/tokens/{id}` | Revoke one token | owner, owner of the service account (P1), administrator, `tokens:revoke` | 204, 404 |
-| `DELETE /api/v1/tokens/current` | Revoke the presenting token | any token | 204 |
+| `DELETE /api/v1/tokens/current` | Revoke the presenting token, reason `owner` | any token: PAT, SAT or CIT | 204 |
 | `DELETE /api/v1/users/me/tokens` | Revoke all own tokens | user | 204 |
 | `DELETE /api/v1/users/{username}/tokens`, `DELETE /api/v1/service-accounts/{name}/tokens` | Revoke all tokens of a principal | administrator | 204, 404 |
 | `POST /api/v1/tokens/revoke` | Revoke by value: `{"token": "trv_…"}` | anyone; no authentication needed | 202; 200 with `{"id", "owner"}` for administrators; 400 if the syntax check fails |
 
-**Revocation by value.** The endpoint is open because possession of a token already allows
-revoking it (`DELETE /api/v1/tokens/current`). Opening it costs nothing and lets anyone who
-finds a leaked token kill it, including a secret-scanning service (Q-AUTH-6). Its rules:
+**Revocation by value.** The endpoint is open to unauthenticated callers (decided in Q-AUTH-6).
+Possession of a live token already allows revoking it (`DELETE /api/v1/tokens/current`). The open
+endpoint extends that to finders who cannot or should not use the token, including a
+secret-scanning service. Through the rotation cascade below, it also lets the holder of a stale,
+already rotated value revoke the live successor; that is deliberate. Its rules:
 
 - The response does not reveal whether the token existed, except to administrators.
 - It is rate-limited per R-AUTH-038.
@@ -1756,10 +1947,19 @@ finds a leaked token kill it, including a secret-scanning service (Q-AUTH-6). It
   `leaked` (revocation by value) additionally follows `rotated_from` forward and revokes the
   rotation successors and their derived tokens, because a thief may have rotated the stolen token
   first.
+- The forward cascade of a by-value revocation also runs when the presented token is already
+  revoked or expired, as long as its row still exists (retention, R-AUTH-023). The presented
+  token's own revocation fields stay unchanged. trove cannot tell a holder's rotation from a
+  thief's, so a leaked predecessor always ends the chain; the legitimate holder creates a new
+  token.
 - Revoking an already revoked or expired token answers 204, so the operation is idempotent.
 - Every revocation writes `token.revoked` with reason and actor.
-- CITs are revoked by administrators, by themselves through `current`, or by deleting their
-  identity mapping ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)).
+- **Self-revocation.** `DELETE /api/v1/tokens/current` revokes the presenting token of every
+  type, CI tokens included, with revocation reason `owner`; `revoked_by` is the token's owner
+  principal. [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-028 asserts this reason for the
+  self-revocation that ends each job's `script` (Q-CI-7).
+- CITs are revoked by administrators, by themselves through `current` (above), or by disabling or
+  deleting their identity mapping or CI issuer ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-017).
 - Creating a token never revokes another one.
 - Token rows are removed only by the retention job (R-AUTH-023), or by deleting the owner.
 
@@ -1770,23 +1970,39 @@ Acceptance criteria:
   `token.revoked` with reason `leaked`.
 - `DELETE /api/v1/tokens/current` with a SAT makes that SAT unusable. The other SATs of the
   account keep working.
+- `DELETE /api/v1/tokens/current` with a CIT answers 204, the CIT gets 401 on its next request,
+  and the audit trail shows `token.revoked` with reason `owner`.
 - A PAT derives a child PAT through `POST /api/v1/tokens`. Revoking the parent by value makes the
   child fail with 401 within the latency bound, and the audit trail shows `token.revoked` with
   reason `parent_revoked` for the child.
+- A SAT is rotated with `overlapSeconds: 0`, so the predecessor is already revoked with reason
+  `rotated`. Posting the predecessor's value to `POST /api/v1/tokens/revoke` answers 202, and the
+  successor fails with 401 within the latency bound.
 
 ### R-AUTH-030 · Token rotation
 Priority: **P1** · Covers: TOK-024
 
 Rotation replaces a token's secret while keeping its description, scope and owner. It is how
-holders renew long-lived credentials without the issuer; refresh tokens are not issued
-(Q-AUTH-3).
+holders renew long-lived credentials without the issuer. trove issues no refresh tokens and has
+no refresh grant (decided in Q-AUTH-3); no endpoint returns a `refresh_token`.
 
-**Endpoints:**
+Rotation is renewal, not a response to a leak. A token that may have leaked is revoked
+(R-AUTH-029) and replaced by a newly created token. Rotation would keep the leaked value valid
+during the overlap, and a revocation by value of the leaked value also ends its successors
+(R-AUTH-029).
 
-| Endpoint | Callers |
-|---|---|
-| `POST /api/v1/tokens/{id}/rotate` | Anyone who may revoke the token (R-AUTH-029); a session needs recent authentication |
-| `POST /api/v1/tokens/current/rotate` | The token itself, only if it was created with `selfRotatable: true` |
+**Endpoints.** Rotation hands out a new secret, so its callers follow the creation rules of
+R-AUTH-027, not the revocation rules of R-AUTH-029:
+
+| Endpoint | Token | Callers |
+|---|---|---|
+| `POST /api/v1/tokens/{id}/rotate` | PAT | Only its owner: through a session with recent authentication (R-AUTH-011), or through another token of the owner under the derivation rule (R-AUTH-027), so the rotated token's scope and new expiry must not exceed the presenting token's (403 `derivation_exceeds_parent`) |
+| `POST /api/v1/tokens/{id}/rotate` | SAT | Administrators (session with recent authentication, or token with `admin: true`), owners of the service account (P1), or a SAT of that account under the derivation rule |
+| `POST /api/v1/tokens/current/rotate` | PAT or SAT | The token itself, only if it was created with `selfRotatable: true`. This is the one case in which a token extends its own lifetime; the holder opted in at creation. |
+
+Nobody else may rotate. Administrators and holders of the system item `tokens:revoke` can revoke
+another user's PAT but not rotate it, because the new secret would act as that user (Q-AUTH-7);
+they get 403 `forbidden`. The break-glass account gets 403 `break_glass_restricted`.
 
 The request body is `{"overlapSeconds": 0}`, with a maximum of 86400.
 
@@ -1813,6 +2029,12 @@ Acceptance criteria:
 - Rotate a SAT with `overlapSeconds: 3600`. Both secrets work, and after one hour only the new
   one does.
 - `POST /api/v1/tokens/current/rotate` with a token created without `selfRotatable` gets 403.
+- An administrator's session with recent authentication gets 403 `forbidden` from
+  `POST /api/v1/tokens/{id of alice's PAT}/rotate`; `DELETE /api/v1/tokens/{same id}` succeeds.
+  A token whose scope is `{"system": ["tokens:revoke"]}` behaves the same way.
+- `alice`'s PAT with scope `{"repositories": [{"repositories": ["npm-local"], "actions":
+  ["read"]}]}` gets 403 `derivation_exceeds_parent` when it rotates her PAT with
+  `{"inherit": true}`.
 
 ### R-AUTH-031 · Last-used tracking
 Priority: **P1** · Covers: TOK-029
@@ -1884,7 +2106,7 @@ Acceptance criteria:
 ## Client authentication
 
 ### R-AUTH-033 · Client authentication matrix
-Priority: **MVP** · Covers: TOK-033, TOK-034, PKG-NPM-005, PKG-NPM-006, PKG-NPM-011, PKG-NUGET-017, PKG-NUGET-018, IAM-036, ADMAPI-055
+Priority: **MVP** · Covers: TOK-033, TOK-034, PKG-NPM-005, PKG-NPM-006, PKG-NPM-011, PKG-NUGET-017, PKG-NUGET-018, IAM-036, ADMAPI-055, FMT-013
 
 Every client presents a trove token (R-AUTH-022). The table lists the supported forms; the
 endpoint routes themselves belong to the format pages.
@@ -1898,18 +2120,43 @@ endpoint routes themselves belong to the format pages.
 | NuGet (dotnet, nuget.exe, Visual Studio) | `packageSourceCredentials` with `Username=<any>` and `ClearTextPassword=<token>` in `nuget.config` ([reference](https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#packagesourcecredentials)) | Basic after a 401 challenge ([authenticated feeds](https://learn.microsoft.com/en-us/nuget/consume-packages/consuming-packages-authenticated-feeds)) | yes |
 | NuGet push, delete, relist | `dotnet nuget push … --api-key <token>` or `nuget setapikey <user>:<token>` | `X-NuGet-ApiKey` ([publish resource](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource)) | yes; rules below |
 | Generic (curl, CI scripts, other formats) | — | Bearer or Basic | yes |
-| Browser UI | — | `trv_session` cookie | `/api/v1` all methods; `/files` `GET` and `HEAD`, and `PUT` and `DELETE` with CSRF (R-AUTH-012); package-protocol endpoints `GET` and `HEAD` only |
+| Browser UI | — | `__Host-trv_session` cookie | `/api/v1` all methods; `/files` `GET` and `HEAD`, and `PUT` and `DELETE` with CSRF (R-AUTH-012); package-protocol endpoints `GET` and `HEAD` only |
 
-**NuGet API-key rule.** The rule applies on the API-key endpoints:
+**NuGet API-key rule (PKG-NUGET-018).** The rule applies on the API-key endpoints:
 
 - The value is examined first. If the value, or its part after the last `:`, is a well-formed
   trove token (prefix, length, checksum), that token is the credential and the
-  `Authorization` header is ignored.
+  `Authorization` header is ignored. Both forms are accepted: a bare token (what
+  `dotnet nuget push --api-key` and a publish that passes a single value send) and
+  `<any user>:<token>` (the `setapikey` convention). This settles the catalog's open point.
+- If that token is invalid (unknown, expired, revoked, or its owner disabled), the request gets
+  401. It does not fall back to the `Authorization` header (R-AUTH-001).
 - Otherwise, for example the placeholder `az` that some setups pass, the header value is ignored
   and the `Authorization` header applies.
+- With `auth.clients.nuget_api_key_header: false`, `X-NuGet-ApiKey` is never examined and only
+  the `Authorization` header applies.
 
 The NuGet clients send the API key and the source credentials independently, so both
-conventions work. The username part of `user:token` is ignored, like the Basic username.
+conventions work. When a request carries both a token API key and Basic credentials, the API
+key decides, even if the two tokens belong to different principals; the audit event names the
+API key's owner. The username part of `user:token` is ignored, like the Basic username.
+
+**Authentication styles across formats (FMT-013).** The authentication stage (R-AUTH-001) is the
+same for every format, so no format parses credentials of its own. Each client style of FMT-013
+maps to it as follows:
+
+| Client style | What reaches trove | trove's rule |
+|---|---|---|
+| Token in the client configuration, per registry URL or per scope (npm, pnpm, Yarn) | Bearer, or Basic from a registry-keyed `_auth`, `username` plus `_password`, or `npmAuthIdent` | Accepted. npm 9 and later read only registry-keyed auth lines, so setup instructions never offer the unkeyed legacy `_auth`. A scope (`@acme:registry=…`) authenticates through the auth line of the registry URL it names. When each client attaches credentials, and the `always-auth` and `npmAlwaysAuth` settings that follow from it, are in R-NPM-004 ([formats/npm.md](formats/npm.md)). |
+| Username and token per package source (NuGet) | Basic after a 401; the API key on push, delete and relist | Accepted, with the API-key rule above. Any non-empty username works, because trove ignores it. |
+| `.netrc`, or credentials inside the repository URL (`https://user:token@host/…`) | Basic. The client turns them into an `Authorization` header; userinfo never appears in the request target ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) §4.2.4) | Accepted on every package-protocol endpoint and on `/files/`. trove never reads credentials from the request path or query (R-AUTH-001). |
+| A client that rejects certain usernames, for example email addresses | Basic | Any username works, because trove ignores it. |
+| A client that cannot authenticate at all, or not for some operations | No credential | Served only as the anonymous principal (R-AUTH-037): both anonymous switches on, plus an anonymous `read` grant on exactly the repositories those clients use. trove has no per-repository switch that bypasses the authentication stage or the global anonymous switches. A format page that needs anonymous access for a client names the anonymous grant it needs. |
+| A client that sends configured credentials only after a 401 (NuGet), on a repository that anonymous may read | No credential, so the request runs as anonymous | `requireAuthentication: true` on the repository (R-REPO-004 in [repositories-and-proxy.md](repositories-and-proxy.md), R-NUGET-012) challenges anyway, so reads are authorized and attributed per principal. |
+
+FMT-013 is MVP for its npm and NuGet rows, which the first two rows and the last row settle. The
+other rows of FMT-013 keep their format's priority and are specified on their format pages
+under the rules of this table.
 
 **`whoami` rendering.** The npm `whoami` endpoint ([formats/npm.md](formats/npm.md)) answers
 `{"username": "<name>"}`:
@@ -1918,7 +2165,7 @@ conventions work. The username part of `user:token` is ignored, like the Basic u
 |---|---|
 | User | Username |
 | Service account | `sa:<name>` |
-| CI token | `ci:<mapping name>` |
+| CI token | `ci:<CI issuer name>/<mapping name>`, the owner principal's reference (R-AUTH-016) |
 | Anonymous | Gets 401 |
 
 **Basic switch.** `auth.clients.basic.enabled` turns off Basic token presentation everywhere
@@ -1952,6 +2199,12 @@ Acceptance criteria:
   `--api-key "$REVOKED_PAT"` gets 401 even though valid credentials are configured.
 - `curl -u ci:$SAT -T file.bin https://trove.test/files/generic-local/a/file.bin` deploys the
   file.
+- With a `.netrc` entry `machine trove.test login any password <PAT>`, `curl --netrc
+  https://trove.test/api/npm/npm-all/lodash` answers 200. `curl "https://any:$PAT@trove.test/files/generic-local/a/file.bin"`
+  downloads the file. A request whose path or query contains the PAT but which has no
+  `Authorization` header gets 401.
+- `dotnet nuget push … --api-key "$PAT"` with valid source credentials of another user stores
+  the package, and the deploy's audit event names the PAT's owner as actor.
 
 ### R-AUTH-034 · npm web login
 Priority: **P1** · Covers: PKG-NPM-008, AUTHN-044
@@ -1965,8 +2218,8 @@ OIDC session.
 
 1. **Start.** `POST /api/npm/{repoKey}/-/v1/login` needs no credential and is rate-limited
    (R-AUTH-038). The repository must exist and have format npm; otherwise 404, which makes npm
-   fall back to legacy login. trove creates a pending `cli_login` row (expiry `cliLogin.ttl`)
-   and answers 200:
+   fall back to legacy login. trove creates a pending `cli_login` row (expiry
+   `auth.cli_login.ttl`) and answers 200:
 
    ```json
    {"loginUrl": "https://trove.example.com/ui/cli-login/<publicId>",
@@ -1985,7 +2238,13 @@ OIDC session.
    - the resulting token's lifetime and scope;
    - a warning to approve only a login the user just started;
    - an additional prominent warning if the browser's address differs from the requesting
-     address.
+     address;
+   - every refused poll (address binding below): its address and time, with the text "trove
+     refused to hand the token to a poll from <address>, outside the network that started this
+     login. If that was your own npm, your network uses several egress addresses: create a token
+     in your profile and enter it at npm's password prompt, or ask an administrator to list the
+     address range. If it was not you, deny this login." The page refreshes the record every 2 s
+     while it is open, so a refusal before or after the decision appears without a reload.
 
    `POST …/approve`, with an optional narrower `scope` or shorter `ttlSeconds`, or `POST …/deny`
    needs CSRF and recent authentication. Each answers 204. A decision is final and is bound to
@@ -2004,15 +2263,50 @@ npm treats any 4xx answer, on the start call or on a poll, as "web login unsuppo
 back to the username and password prompt. There, a user can still type a PAT as password
 (R-AUTH-035). trove documents this behavior; it cannot change it.
 
-**Address binding.** The `doneUrl` is a bearer URL: whoever polls it first after the approval
-receives the PAT, and its path passes through every proxy log between npm and trove. With
-`cliLogin.bindPollAddress: true`, a poll whose client address (R-ARCH-006 in
-[architecture.md](architecture.md)) differs from `requested_addr` MUST get 404 and MUST NOT consume
-the approval. The legitimate client keeps polling from its own address; if its address changed
-in between, npm falls back to legacy login (R-AUTH-035). trove's own logs redact the poll secret
-(R-AUTH-001); logs outside trove are H-20.
+**Address binding (decided in Q-AUTH-8).** The `doneUrl` is a bearer URL: whoever polls it
+first after the approval receives the PAT, and its path passes through every proxy log between
+npm and trove. trove therefore releases the token only to a poll from the network that started
+the login. The client address is the one of R-ARCH-006 in [architecture.md](architecture.md);
+IPv4-mapped IPv6 addresses are unmapped before comparing. A poll *matches* `requested_addr`
+when `auth.cli_login.poll_binding.mode` says so:
 
-**Turning it off.** With `npmWebLogin: false`, step 1 answers 404, so npm uses legacy login.
+| Mode | A poll matches when |
+|---|---|
+| `network` (default) | Its address equals `requested_addr`, or both have the same address family and share the first `ipv4_prefix` bits (IPv4, default 24) or `ipv6_prefix` bits (IPv6, default 56), or both lie in the same entry of `equivalent_ranges` |
+| `exact` | Its address equals `requested_addr`, or both lie in the same entry of `equivalent_ranges` |
+| `off` | Always. The settings response (R-AUTH-040) warns that H-20 is then fully live. |
+
+Rules:
+
+- A poll that does not match MUST get 404 `{"error": "not_found"}`, whatever the row's state,
+  and MUST NOT consume an approval. npm treats that 404 as "web login unsupported" and falls
+  back to legacy login (R-AUTH-035), so a legitimate client whose poll leaves the network gets a
+  password prompt where it can enter a PAT.
+- Each refused poll increments `refused_poll_count` and records `last_refused_addr` and
+  `last_refused_at` on the row. The approval page shows it (step 2), and trove writes
+  `cli_login.poll_refused` (R-AUTH-041), at most once per login and address. The metric
+  `trove_auth_cli_poll_refused_total` counts refusals, so operators see how often their network
+  defeats the binding.
+- `equivalent_ranges` lists CIDR blocks of the operator's egress pools whose addresses are not
+  contiguous within the prefix. Startup MUST fail for an invalid entry, for an IPv4 entry wider
+  than `/16`, and for an IPv6 entry wider than `/32`; switching the binding off takes `mode:
+  off`. Startup MUST also fail for `ipv4_prefix` outside 16 to 32 or `ipv6_prefix` outside 32 to
+  128.
+- The binding is only as good as the client address. Behind an edge proxy (Ingress controller,
+  Gateway, load balancer that terminates TCP), the address is the client's only when
+  `server.trusted_proxies` lists that proxy (R-ARCH-006, R-HA-040). Otherwise every start and
+  every poll carries a proxy address: the binding then admits every poll that passes the same
+  proxy instance, attacker's included, and refuses legitimate polls that pass another instance.
+  The settings response (R-AUTH-040) therefore warns when the mode is not `off` and
+  `server.trusted_proxies` is empty. trove cannot detect the edge proxy itself, so this is a
+  warning, not a startup error.
+- The binding applies to `client_kind = npm` only. The device flow (R-AUTH-036) carries its
+  device code in a POST body, not in a URL, and binds the browser through the typed user code.
+
+trove's own logs redact the poll secret (R-AUTH-001); logs outside trove are H-20.
+
+**Turning it off.** With `auth.cli_login.npm_web_login: false`, step 1 answers 404, so npm uses
+legacy login.
 
 Data model (shared with R-AUTH-036):
 
@@ -2031,6 +2325,10 @@ CREATE TABLE cli_login (
   decided_by         uuid        REFERENCES principal (id) ON DELETE CASCADE,
   token_scope        jsonb,
   token_ttl          interval,
+  token_self_rotatable boolean   NOT NULL DEFAULT false,  -- device flow: requested, approver may clear
+  refused_poll_count integer     NOT NULL DEFAULT 0,  -- address binding, npm only
+  last_refused_addr  inet,
+  last_refused_at    timestamptz,
   created_at         timestamptz NOT NULL DEFAULT now(),
   expires_at         timestamptz NOT NULL
 );
@@ -2044,7 +2342,11 @@ auth:
     ttl: 10m                 # default (proposed)
     npm_web_login: true      # default (proposed)
     token_ttl: 720h          # default (proposed): 30 days; capped by the PAT maximum
-    bind_poll_address: true  # default (proposed)
+    poll_binding:            # Q-AUTH-8
+      mode: network          # default (proposed): network | exact | off
+      ipv4_prefix: 24        # default (proposed)
+      ipv6_prefix: 56        # default (proposed)
+      equivalent_ranges: []  # default (proposed); example: ["198.51.100.0/27", "203.0.113.64/28"]
 ```
 
 Acceptance criteria:
@@ -2053,9 +2355,18 @@ Acceptance criteria:
   in through the test IdP and approving lets the command finish. `~/.npmrc` then contains
   `//trove.test/api/npm/npm-all/:_authToken=trv_pat_`, and `npm whoami` prints the user.
 - Polling the same `doneUrl` after success gives 404. A denied login makes npm stop polling.
-- After the approval, a poll of the `doneUrl` from a second client address gets 404, and the next
-  poll from the starting address receives the token. The request log shows the poll path as
-  `/auth/cli/[REDACTED]`.
+- The login starts from `198.51.100.10`. After the approval, a poll of the `doneUrl` from
+  `203.0.113.7` gets 404, and the next poll from `198.51.100.10` receives the token. The approval
+  page shows the refused address, and one `cli_login.poll_refused` event is written. The request
+  log shows the poll path as `/auth/cli/[REDACTED]`.
+- With the default mode, a login started from `198.51.100.10` and polled from `198.51.100.77`
+  completes. With `mode: exact` the same poll gets 404, and with
+  `equivalent_ranges: ["198.51.100.0/25"]` it completes again.
+- A login started over IPv6 from `2001:db8:0:1::5` completes when polled from `2001:db8:0:2::9`
+  (same `/56`) and gets 404 when polled from `2001:db8:1::9`.
+- `equivalent_ranges: ["10.0.0.0/8"]` makes startup fail with a message naming the entry.
+- With `server.trusted_proxies: []` and the default mode, `GET /api/v1/settings/auth` carries the
+  trusted-proxy warning; with the ingress controller's pod CIDR listed, it does not.
 - Approving from a session older than `recent_auth_window` triggers the silent re-authentication
   first (R-AUTH-011).
 
@@ -2109,7 +2420,7 @@ the terminal they are looking at.
 
 | Method and path | Request | Response |
 |---|---|---|
-| `POST /api/v1/auth/device/authorize` | form fields `client_id=<tool name>` (free text, shown on the approval page), optional `scope` (JSON scope, R-AUTH-024) | 200 `{"device_code", "user_code": "WDJB-MJHT", "verification_uri": "<base>/ui/device", "verification_uri_complete": "<base>/ui/device?code=WDJB-MJHT", "expires_in": 600, "interval": 5}` |
+| `POST /api/v1/auth/device/authorize` | form fields `client_id=<tool name>` (free text, shown on the approval page), optional `scope` (JSON scope, R-AUTH-024), optional `self_rotatable=true` | 200 `{"device_code", "user_code": "WDJB-MJHT", "verification_uri": "<base>/ui/device", "verification_uri_complete": "<base>/ui/device?code=WDJB-MJHT", "expires_in": 600, "interval": 5}` |
 | `POST /api/v1/auth/device/token` | `grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=…` | 200 `{"access_token": "trv_pat_…", "token_type": "Bearer", "expires_in": …}`; 400 `authorization_pending`, `slow_down`, `access_denied` or `expired_token` (§3.5) |
 
 **Codes.** The user code has 8 characters from `BCDFGHJKLMNPQRSTVWXZ` (§6.1) and is compared
@@ -2119,11 +2430,24 @@ the `pollSecret`.
 **Approval.** The approval page requires the typed user code, a session, CSRF protection and
 recent authentication.
 
+**The issued token.** It is a PAT with `createdVia: device-login` and the lifetime
+`auth.cli_login.token_ttl`, unless the approver chose a shorter one (R-AUTH-026). The token
+response never contains a `refresh_token` (Q-AUTH-3). A tool renews its token in one of two
+ways:
+
+- by running the device flow again;
+- by self-rotation (`POST /api/v1/tokens/current/rotate`, R-AUTH-030), if it asked for
+  `self_rotatable=true`. The approval page shows that request, the approver may decline it, and
+  the PAT records the outcome as `selfRotatable`.
+
 Acceptance criteria:
 
 - A test client using a standard RFC 8628 library (for example `golang.org/x/oauth2`
   `DeviceAuth`) obtains a PAT after the approval in the browser. The PAT then works with `curl`.
 - Polling faster than `interval` gets `slow_down`.
+- The token response contains no `refresh_token`. A PAT from a request with
+  `self_rotatable=true` that the approver kept can call `POST /api/v1/tokens/current/rotate`; one
+  whose approver declined it gets 403.
 
 ## Anonymous access and abuse protection
 
@@ -2133,7 +2457,18 @@ Priority: **MVP** · Covers: IAM-005, AUTHN-036, PKG-NUGET-016
 **The anonymous principal.** A built-in principal named `anonymous` (kind `anonymous`) always
 exists. It cannot be deleted, cannot hold tokens or sessions, and cannot be a group member.
 
-**Enabling it.** Anonymous access is off by default. It takes both of these:
+**The `authenticated` principal.** A second built-in principal, named `authenticated` (kind
+`authenticated`), always exists:
+
+- It cannot be deleted or renamed, holds no tokens or sessions, and cannot be a group member.
+- It is part of the principal set of user sessions and personal access tokens only. It is never
+  part of the principal set of service-account tokens, CI tokens or anonymous requests.
+- The anonymous switches below do not affect it.
+
+Its grant rules (`read` only, no roles, no ownership, not grantable by delegated managers or
+project administrators) are in [authorization.md](authorization.md) R-AUTHZ-030.
+
+**Enabling anonymous access.** Anonymous access is off by default. It takes both of these:
 
 - the YAML ceiling `auth.anonymous.allowed` (the operator's decision; default true);
 - the runtime switch `anonymousAccess` (the administrator's decision, R-AUTH-040; default
@@ -2157,16 +2492,19 @@ the grants that policies give that principal ([authorization.md](authorization.m
 - The same 401 is given for a repository key that does not exist, so unauthenticated callers
   cannot probe repository names.
 - Inside a repository that `anonymous` may read, a missing package is 404.
-- A per-repository "require authentication" flag, where
-  [repositories-and-proxy.md](repositories-and-proxy.md) or a format page defines one
-  (PKG-NUGET-016), overrides anonymous access for that repository.
+- The repository field `requireAuthentication` (R-REPO-004 in
+  [repositories-and-proxy.md](repositories-and-proxy.md); PKG-NUGET-016) overrides anonymous
+  access for that repository: anonymous requests get the 401 challenge even where `anonymous`
+  holds `read`. There is no per-repository switch in the other direction; anonymous access
+  always needs both switches above (R-AUTH-033, FMT-013).
 
 **Always unauthenticated.** These endpoints are always reachable without a credential:
 
 - `GET /api/v1/auth/login-options`;
 - `/auth/oidc/…`, `/auth/local/login`, `/auth/cli/…`;
 - the device endpoints and `POST /api/v1/tokens/revoke`;
-- the CI exchange (INV-10);
+- the CI exchange (INV-10) and, from P1, the two npm trusted-publishing exchange routes
+  (R-AUTH-001, [formats/npm.md](formats/npm.md) R-NPM-022);
 - the npm login start;
 - `:8081` operations;
 - whatever [api-and-ui.md](api-and-ui.md) declares public, for example the OpenAPI document.
@@ -2350,7 +2688,9 @@ YAML (INV-15).
 - the effective runtime values;
 - the YAML ceilings they are bound by;
 - read-only status: providers with discovery state, break-glass enabled and locked, session
-  timeouts, the client switches, and the SCIM state.
+  timeouts, the client switches, the command-line login poll binding mode (R-AUTH-034, with a
+  warning when it is `off`, and another when it is not `off` while `server.trusted_proxies` is
+  empty), and the SCIM state.
 
 **Change:** `PATCH /api/v1/settings/auth` (administrator, session with recent authentication or
 token with `admin: true`) accepts:
@@ -2432,10 +2772,48 @@ or authorization codes.
 | `token.created`, `token.rotated`, `token.revoked`, `token.expiring` | R-AUTH-027 to R-AUTH-032 | yes |
 | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning` | R-AUTH-007, R-AUTH-016, R-AUTH-021, R-AUTH-039 | yes; `details.source` is `jit`, `admin`, `scim`, `dormancy` or `admin-cli` |
 | `user.groups.synced` | R-AUTH-008, with added and removed lists | yes, only when something changed |
+| `user.groups.claim_missing` | R-AUTH-008, with provider and reason (`absent`, `wrong_type`, `overage`); severity `warning` | yes, once per affected login |
 | `group.created`, `group.updated`, `group.deleted`, `group.members.changed` | R-AUTH-018, R-AUTH-039 | yes |
 | `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` | R-AUTH-020 | yes |
 | `cli_login.approved`, `cli_login.denied` | R-AUTH-034, R-AUTH-036 | yes |
+| `cli_login.poll_refused` | R-AUTH-034 address binding, with the refused and the requesting address | yes, at most once per login and address |
 | `settings.auth.changed` | R-AUTH-040 | yes |
+
+**Revocation journal (P1).** A database restore to time *t* undoes every access removal made
+after *t* (H-37 in [ha-and-helm.md](ha-and-helm.md)). The events below are therefore flagged
+`journal: revocation` in the event registry
+([operations-and-observability.md](operations-and-observability.md) R-OPS-014). The audit writer
+copies each one into the revocation journal of [ha-and-helm.md](ha-and-helm.md) R-HA-054, and
+`trove admin post-restore` re-applies it (Q-HA-9). An entry carries IDs and states, never a token
+value, hash or other secret.
+
+| Event | The journal entry carries | Replay (R-HA-054) |
+|---|---|---|
+| `token.revoked` | Token ID and revocation reason | Revoke the token with the cascade of R-AUTH-029; reason `leaked` also repeats the forward cascade over rotation successors |
+| `token.rotated` | The predecessor's token ID, its new `expires_at` and `overlapSeconds` (R-AUTH-030) | Set the predecessor's `expires_at` to the earlier of its current and its journaled value; revoke it when the overlap was 0 |
+| `user.disabled`, `user.deleted` | Principal ID and username; for `user.disabled` also `disabled_reason` | Disable the user, with the journaled reason for `user.disabled` and reason `admin` for `user.deleted` |
+| `serviceaccount.disabled`, `serviceaccount.deleted` | Principal ID and name | Disable the service account |
+| `group.deleted` | Principal ID and name | Delete the group |
+| `group.members.changed` | The group, and the removed memberships, each with its member and source (`manual`, `auto`, `scim`) | Remove each removed membership with its source |
+| `user.groups.synced` | The user, and the removed memberships, each with its group and source `oidc:<providerId>` | Remove each removed membership with its source |
+| `settings.auth.changed`, only when the change sets `anonymousAccess` | `anonymousAccess` before and after; the token lifetime fields are not part of the entry | Update rule with the comparator below |
+
+- **Replay never deletes a user or service account.** A replayed deletion disables the principal,
+  which already makes its tokens fail with `principal_disabled` (R-AUTH-016, R-AUTH-020), and
+  keeps a mistaken or forged entry reversible. With reason `admin`, no OIDC login re-enables the
+  user (R-AUTH-021 re-enables only `dormant`); an administrator deletes the user again.
+- **Membership removals are the journaled part.** Every path that removes a membership writes one
+  of the two membership events, including `PATCH /api/v1/users/{username}/groups` (as
+  `group.members.changed`) and SCIM group changes. Added memberships are not part of the entry and
+  are never replayed.
+- **Comparator for the anonymous-access switch.** `narrows(current, after)` is true when
+  `after.anonymousAccess` is `false` (off narrows on) or equals `current.anonymousAccess`, and
+  false when `after` is `true` while `current` is `false`. Replay can therefore switch anonymous
+  access off but never on: an entry that switched it on is skipped under case 2 of R-HA-054,
+  whatever its journaled before-state says.
+- **Not journaled.** The break-glass account's `enabled` state and the YAML ceiling
+  `auth.anonymous.allowed` live in the configuration file, not in PostgreSQL, so a restore does not
+  change them.
 
 **Metrics.** Proposed names, which the operations page may rename:
 
@@ -2446,6 +2824,8 @@ or authorization codes.
 - `trove_auth_cache_invalidations_total`
 - `trove_auth_ratelimited_total{limit}`
 - `trove_auth_lastused_flush_failures_total`
+- `trove_auth_group_claim_missing_total{provider,reason}`
+- `trove_auth_cli_poll_refused_total`
 
 Acceptance criteria:
 
@@ -2557,104 +2937,299 @@ Handed to other pages, not deferred:
   disabled by configuration in normal operation, restricted (no tokens), loud in the audit
   trail, and locked out cluster-wide on guessing (R-AUTH-014, R-AUTH-038). Residual risk: H-17.
 - **Credential-minting needs a recent IdP round trip** (R-AUTH-011), and token-authenticated
-  minting is bounded by the derivation rule (R-AUTH-027). A hijacked session or a narrow leaked
-  token therefore cannot be turned into a broad, long-lived credential.
+  minting is bounded by the derivation rule (R-AUTH-027). Rotation counts as minting: it follows
+  the same rules, and nobody but the owner can rotate a PAT (R-AUTH-030). A hijacked session or a
+  narrow leaked token therefore cannot be turned into a broad, long-lived credential.
 
-## Open questions
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
 
 ### Q-AUTH-1 · Where login provider configuration lives
 
-The question: are login providers YAML-configured (R-AUTH-004), or managed in PostgreSQL through
-the API and UI like the CI identity mappings?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-| Option | Assessment |
-|---|---|
-| (a) YAML only | Secret in a mounted file; no lock-out through a bad API edit; changes need a rollout |
-| (b) PostgreSQL and API | UI-editable; the client secret must be stored encrypted (IAM-045); a wrong edit can lock out every OIDC administrator |
-| (c) YAML defines, API overrides | Two sources of truth |
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Configuration file only | The whole provider entry (connection, secret reference, claim mapping, gates, group rules) lives in the YAML file; the API shows it read-only | Login works before any administrator exists; the client secret never enters the database; every change is validated at startup before it serves anyone and goes through the same review as the rest of the deployment (Helm values, GitOps) | Every change needs a rollout of the replicas; no UI editing; during the rollout, a login started on a new replica can fail on an old one and must be retried |
+| (b) PostgreSQL and API | Providers are created and edited through the API and UI, like the CI identity mappings | UI-editable; no rollout | The client secret must be sealed in the database (R-ARCH-021 key ring); an edit reaches every replica at once, so one wrong edit can lock out every OIDC administrator, and recovery then depends on break-glass |
+| (c) File defines, API overrides | The file holds the entry, the database may override fields | Bootstrap from the file, convenience in the UI | Two sources of truth: the file no longer tells the operator what is in effect |
+| (d) Split by concern | Connection and secret in the file; claim mapping, gates and group rules in the database | Group rules, the part that changes when teams change, become UI-editable without a rollout | The most security-sensitive part (which IdP group becomes administrator) moves to the less reviewed place; one provider is defined in two places |
 
-**Recommendation: (a).** Login is bootstrap-critical, and the secret then never enters the
-database. Revisit if operators ask for UI editing.
+**Choice:** (a) — login providers, including their claim mapping, gates and group rules, are configured only in the YAML file.
+
+**Rationale:** Login is bootstrap-critical. It has to work before any administrator exists, and
+it must not be breakable through the API it protects. (a) is the only option in which a provider
+edit passes review and startup validation before it serves anyone. An entry that fails
+validation keeps the new replica from becoming ready, the rolling update stalls with
+`maxUnavailable: 0`, and the previous replicas keep serving logins (R-HA-020). A valid but wrong
+entry, such as a mistyped client ID, is undone with `helm rollback`, which needs no working
+login. In (b) and (d), a wrong edit reaches every replica within seconds, and undoing it needs the
+API it just broke, so recovery depends on break-glass. Group rules decide
+who becomes administrator (security notes), so they belong in the reviewed, versioned file,
+which rules out (d). The usual argument for (d) is that new teams need new rules, and
+`match_regex` rules with `$1` expansion (R-AUTH-008) already cover new teams without an edit.
+(b) would also need one more sealed secret. (c) leaves the operator unable to tell from the file
+what is in effect. The cost of (a) is a rollout per change, which a Helm upgrade performs without
+downtime (R-HA-020); a login that straddles the rollout is retried once.
+[operations-and-observability.md](operations-and-observability.md) Q-OPS-6 decided the same for
+configuration documents. The development agent would revisit this if operators report frequent
+group-rule changes that `match_regex` cannot express. Then only the group rules would move to the
+database (option d), behind recent authentication.
+
+**Applied in the spec:** R-AUTH-004 states that the whole provider entry is file-only, that no
+API or configuration-as-code document creates or changes a provider, and that a change takes
+effect with a rollout. R-AUTH-007 now names the provider keys in their YAML spelling
+(`public_issuer`, `login_requires_groups`, `match_regex`) in its prose and acceptance criteria.
 
 ### Q-AUTH-2 · Session cookie name
 
-The question: should the session cookie use the `__Host-` prefix (`__Host-trv_session`)
-instead of INV-8's `trv_session`?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-The prefix makes the browser enforce `Secure`, `Path=/` and no `Domain`
-([draft-ietf-httpbis-rfc6265bis](https://datatracker.ietf.org/doc/draft-ietf-httpbis-rfc6265bis/)).
-This blocks a sibling subdomain from planting or shadowing the cookie.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep `trv_session`, `trv_csrf`, `trv_oidc_binding` | The INV-8 names; trove sets `Secure`, `Path=/` and no `Domain` by convention | No change to INV-8 | A sibling subdomain or a plain-HTTP response can still plant or shadow a cookie of the same name (cookie tossing) |
+| (b) `__Host-` for session and CSRF only | `__Host-trv_session` and `__Host-trv_csrf`; the binding cookie keeps `Path=/auth/oidc/` without a prefix | The browser enforces the flags of the two long-lived cookies | The login-CSRF defense of R-AUTH-005 still rests on a cookie a sibling subdomain can plant |
+| (c) `__Host-` for all three | As (b), plus `__Host-trv_oidc_binding`, whose path widens to `/` because the prefix requires it | The browser enforces host-only, `Secure` and `Path=/` for every trove cookie, including the one that stops login CSRF | The binding cookie is sent on every request during its 10 minutes; INV-8 changes |
 
-| Option | Assessment |
-|---|---|
-| (a) Keep `trv_session` | The invariant's name; R-AUTH-010 sets the same flags by convention |
-| (b) Amend INV-8 to `__Host-trv_session` (and `__Host-trv_csrf`) | The browser enforces the flags |
+**Choice:** (c) — all three cookies carry the `__Host-` prefix: `__Host-trv_session`,
+`__Host-trv_csrf` and `__Host-trv_oidc_binding` (`Path=/`).
 
-**Recommendation: (b).** It costs nothing and turns a convention into a browser-enforced
-guarantee. This page keeps (a) until the ADR changes INV-8.
+**Rationale:** The prefix turns a convention into a browser-enforced guarantee
+([draft-ietf-httpbis-rfc6265bis](https://datatracker.ietf.org/doc/draft-ietf-httpbis-rfc6265bis/),
+cookie name prefixes). Without it, a host under the same parent domain can set
+`Domain=<parent>` cookies with a longer path that shadow trove's. (b) protects the session but
+leaves the login-CSRF defense open. The attacker starts a login in their own browser, logs in at
+the IdP, and stops before the callback. They plant their `trv_oidc_binding` value in the victim's
+browser from a sibling host and send the victim the callback URL, and the victim ends up logged in
+as the attacker ([RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) §4.7). Only (c) closes that.
+Widening the binding cookie's path costs a few bytes per request for 10 minutes: the cookie is
+`HttpOnly` and useless without its flow row. Renaming now, before any code exists, costs three strings; renaming
+later would log out every user. The owner's `trv_` naming stays inside each name. The cookies
+already carried `Secure`, so the prefix adds no new requirement on test setups. This changes
+INV-8. The development agent would revisit it only if trove had to share a session across
+subdomains, which the one-origin design (R-ARCH-007) rules out.
+
+**Applied in the spec:** Overview table and diagram, R-AUTH-001 (selection and log redaction,
+which now includes the binding cookie), R-AUTH-005 (binding cookie name and `Path=/`),
+R-AUTH-006 step 3, R-AUTH-010 (cookie line, the prefix rule, a cookie-tossing acceptance test),
+R-AUTH-012 (CSRF cookie and Angular configuration), R-AUTH-013 (clearing needs `Secure` and
+`Path=/`, or the browser keeps the cookie), and R-AUTH-033 (browser row). INV-8 must be amended,
+and the start-up cookie-prefix check of the optional content origin (R-ARCH-029) is now always
+satisfied; see the cross-page consequences.
 
 ### Q-AUTH-3 · Refresh tokens or rotation
 
-The question: should trove implement the OAuth refresh grant of TOK-024, with a refresh-token
-type, or only rotation (R-AUTH-030)?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-| Option | Assessment |
-|---|---|
-| (a) Rotation only | No fourth secret type; no prefix outside INV-8; package clients cannot use refresh anyway |
-| (b) Refresh tokens for device-login clients | Short access tokens with renewal; needs a new prefix and refresh-token reuse detection ([RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) §4.14) |
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rotation only | Holders renew a token through R-AUTH-030 (rotate, optionally self-rotate) or by logging in again; no refresh grant | No fourth secret type and no prefix outside INV-8; serves package managers, which present static tokens anyway | A device-login tool keeps a long-lived PAT instead of a short access token plus a refresh token |
+| (b) Refresh tokens for device-login clients | The device token endpoint also returns a refresh token; tools use the OAuth refresh grant | Short-lived access tokens for tools that can refresh | A new token type and prefix, refresh-token reuse detection ([RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) §4.14.2), and only P1 device-login tools could use it |
 
-**Recommendation: (a).** Package managers present static tokens, and the device-login clients of
-R-AUTH-036 can rotate.
+**Choice:** (a) — trove has no refresh tokens; rotation (R-AUTH-030) and repeated login are the
+renewal paths.
+
+**Rationale:** None of the MVP clients can run a refresh grant. npm, pnpm, Yarn, dotnet and
+nuget.exe present a static token from a configuration file. A refresh token would serve only
+the P1 device-login tools of R-AUTH-036. Those tools rerun the device flow, or self-rotate when
+they asked for it and the approver allowed it. A refresh token is optional in the token response
+([RFC 6749](https://www.rfc-editor.org/rfc/rfc6749) §5.1), so omitting it stays standard. (b)
+would add a fourth secret type with its own reuse detection for no current client. The door
+stays open: a new type gets a new prefix (ADR-019). Rotation is safe as the only renewal path
+only if it cannot mint more than creation could, so R-AUTH-030 now applies the creation rules to
+it (Q-AUTH-7). The development agent would revisit this if a first-party command-line client
+(TOK-035, P2) needs short access tokens with unattended renewal.
+
+**Applied in the spec:** R-AUTH-030 states that no refresh tokens exist and no endpoint returns
+a `refresh_token`. R-AUTH-036 states that the device token response never contains one, names
+the issued token's lifetime, adds the optional `self_rotatable=true` request that the approver
+may decline (stored in `cli_login.token_self_rotatable`), and gains an acceptance criterion for
+both.
 
 ### Q-AUTH-4 · Missing group claim
 
-The question: when the configured group claim is absent or overflowed at login, does sync
-clear, keep or deny (R-AUTH-008)?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-| Option | Assessment |
-|---|---|
-| (a) `clear` | Fails closed; an IdP misconfiguration removes rights, not adds them; a user whose administrator group comes from the claim loses it until fixed (break-glass covers) |
-| (b) `keep` | Stale rights survive IdP-side removals |
-| (c) `deny` | Loudest, but a mapper misconfiguration locks everyone out of the UI |
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `clear` | Remove the provider's synced memberships, continue the login, write a warning event | Fails closed: a broken mapper removes rights, never keeps them; the user can still log in with direct grants and manage tokens | A user whose administrator group comes from the claim loses it until the mapper is fixed |
+| (b) `keep` | Leave the memberships unchanged | Nobody loses rights through an IdP hiccup | Stale rights survive removals at the IdP for as long as the claim stays missing; fails open |
+| (c) `deny` | Fail the login with `groups_claim_missing` | Loudest signal | A mapper misconfiguration locks everyone out of the UI, including the people who must fix it; IdPs that omit the claim for users without groups lock those users out for good |
+| (d) `clear` for an absent claim, `deny` for an overage marker | An absent claim usually means "no groups"; an overage means "has groups, too many to list" | Users with many groups get an explicit error instead of an empty UI | Locks out exactly the users with many groups, often administrators and leads; two behaviors for one setting |
 
-**Recommendation: (a) as default**, with the warning event. The setting stays per provider.
+**Choice:** (a) — `on_missing_claim` defaults to `clear`, with the warning event
+`user.groups.claim_missing` naming the reason; `keep` and `deny` remain per-provider settings.
+
+**Rationale:** Group sync decides rights, and the safe direction for an unknown group set is
+fewer rights. (b) fails open. (c) and (d) turn a mapper error into a lock-out of the very
+people who have to fix it. IdPs also commonly omit an empty group claim instead of sending `[]`,
+which (c) would treat as an error (not verified per IdP in this repo). (a) keeps everyone able to
+log in with their direct grants and makes the cause visible in two places. Administrators see the
+event with `absent`, `wrong_type` or `overage`, and the metric counts it. The affected user sees
+the reason on the profile (`groupClaimMissing`), which matters most when that user is the
+administrator who just lost the administrator group and can no longer read the audit log. That
+gives the explicit signal (d) wants without its lock-out. An administrator who loses rights this
+way recovers through break-glass (R-AUTH-014), which exists for exactly that. The development
+agent would revisit the default if overage turns out to be the normal case for a supported IdP.
+Then resolving that IdP's group overage would be specified, not a change of the default.
+
+**Applied in the spec:** R-AUTH-008 makes `clear` the default and adds the warning event, the
+metric, the `groupClaimMissing` field on the user's own record, and acceptance criteria (absent
+claim, overage marker, field cleared by the next complete login). R-AUTH-017 shows the notice on
+the profile. R-AUTH-041 adds `user.groups.claim_missing` and the metric.
 
 ### Q-AUTH-5 · Dormancy default
 
-The question: should dormant-user deactivation (R-AUTH-021) be on by default (90 days) or off?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-| Option | Assessment |
-|---|---|
-| (a) 90 days | Bounds the offboarding gap without SCIM (H-16); users who only use npm must open the UI once per quarter |
-| (b) Off | No surprise for such users; offboarding without SCIM depends on manual disabling |
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) On, 90 days | Users without an interactive login for 90 days are disabled with reason `dormant`; their next OIDC login re-enables them | Bounds the offboarding gap without SCIM (H-16) to 90 days; self-healing for active people | A user who only uses npm with a long-lived PAT must sign in to the UI once per quarter |
+| (b) Off | No job; offboarding without SCIM relies on administrators disabling users | No surprise 401 for npm-only users | A departed person's PAT lives up to the PAT maximum of 365 days unless someone remembers to disable them |
+| (c) No job; cap the PAT maximum at 90 days instead | Tokens die on their own, and renewing them needs a session | No disable state | Every `.npmrc`, CI variable and NuGet source must be updated every 90 days, which is more churn than one sign-in; shorter caps also hit users who follow the process |
 
-**Recommendation: (a).** trove's identity truth is the IdP. A quarterly silent login is cheap,
-and failing to offboard is the costlier error.
+**Choice:** (a) — dormancy is on by default with 90 days (P1, with R-AUTH-021).
+
+**Rationale:** trove's identity truth is the IdP, and without SCIM a person deactivated there
+keeps working tokens. Failing to offboard is the costlier error. 90 days matches the default
+PAT lifetime (R-AUTH-026), and creating a token needs a session, so users who follow the
+default cadence sign in anyway. Only holders of long-lived PATs who never open the UI hit the
+rule, and one sign-in fixes it. The 401 says so where the client shows it: npm prints the
+`error` text of R-NPM-005, while NuGet clients show only the status, so their users learn it in
+the UI. SCIM users, service accounts and CI tokens are exempt, so automation is never disabled by
+it. (b) leaves the gap of H-16 open for a year per token. (c) moves the cost from one sign-in to
+rewriting every client configuration. Dormancy is P1 like SCIM, so in the MVP the gap is closed
+only by an administrator disabling the user; H-16 says so. The development agent would revisit
+this when SCIM (P1) is in wide use. Dormancy then stays on as a backstop for users that SCIM does
+not manage.
+
+**Applied in the spec:** R-AUTH-021 states the default, its alignment with the PAT default, and
+the hint in the 401 text, per endpoint family (problem `detail` on `/api/v1`, `error` and
+`message` on npm endpoints). The configuration comment no longer calls the matter open. H-16
+states that dormancy is P1.
 
 ### Q-AUTH-6 · Unauthenticated revoke-by-value
 
-The question: should `POST /api/v1/tokens/revoke` accept unauthenticated calls (R-AUTH-029)?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-| Option | Assessment |
-|---|---|
-| (a) Open | Anyone, including a secret-scanning service, can kill a leaked token; possession already implies the ability to revoke |
-| (b) Administrators only | Matches the catalog; leaked tokens live until an administrator acts |
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Open to anyone | `POST /api/v1/tokens/revoke` takes a token value without authentication, rate-limited, and answers 202 whether or not the token existed | Anyone who finds a leaked token, including a secret-scanning service, kills it at once | An unauthenticated endpoint to rate-limit; with the rotation cascade, a stale predecessor value can revoke a live successor |
+| (b) Administrators only | Only administrators revoke by value | Matches the catalog | A leaked token lives until an administrator acts; finders outside the organization cannot help |
+| (c) Any authenticated principal | Any user, service account or CI token may revoke by value | No anonymous endpoint | External finders and scanning services have no account; no security gain, because revoking needs the value anyway |
+| (d) Open, with a time-limited forward cascade | As (a), but the cascade to rotation successors runs only if the presented token was rotated less than a configurable time ago (for example 24 h) | A stale value found years later cannot end a live chain | A thief who rotated the stolen token long before the leak is found keeps the chain alive, which is the case the cascade exists for; one more setting |
 
-**Recommendation: (a).** It adds no capability beyond what token possession grants, and it
-shortens leak exposure. Rate-limiting covers the abuse case.
+**Choice:** (a) — revocation by value is open to unauthenticated callers, rate-limited, without
+an existence oracle, and its forward cascade has no time limit.
+
+**Rationale:** The endpoint adds exactly one capability beyond possession of a live token.
+Because a by-value revocation follows the rotation chain forward (R-AUTH-029), the holder of a
+stale, already rotated value can revoke its live successor. That is deliberate: trove cannot
+tell a holder's rotation from a thief's, and a leaked predecessor must end the chain. The
+cascade must therefore also run for already revoked or expired predecessors, which R-AUTH-029
+states. (d) limits that side effect, but it fails in the case the cascade exists for: a leak
+found late, after the thief has rotated. The legitimate holder of a chain ended this way loses
+nothing they could keep safely, and creates a new token. R-AUTH-030 now says that rotation is
+renewal and never the response to a leak. Apart from that, the endpoint reveals nothing (202 for
+every well-formed value) and needs the secret. Flooding is bounded by the checksum filter and
+the per-address limit (R-AUTH-038). (b) leaves leaked tokens alive for hours or days, and (c)
+excludes exactly the finders who are not users. The development agent would revisit this if the
+endpoint is abused for denial of service against rotated tokens. Then (d) would be the fallback,
+and the endpoint would stay open.
+
+**Applied in the spec:** R-AUTH-029 restates the reason for the open endpoint, makes the forward
+cascade explicit for already revoked or expired predecessors, and adds an acceptance criterion
+for it. R-AUTH-030 states that a leaked token is revoked and replaced, not rotated.
 
 ### Q-AUTH-7 · Administrators issuing tokens for users
 
-The question: should administrators be able to create PATs whose owner is another user, as the
-catalog allows?
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-| Option | Assessment |
-|---|---|
-| (a) No (R-AUTH-027) | Automation uses service accounts; a user's PAT is always created by that user, so audit attribution stays honest |
-| (b) Yes, audited | Convenient for migrations, but it is impersonation |
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No | A PAT is always created by its owner; automation uses service accounts (R-AUTH-020) | Audit attribution stays honest: every action under a PAT was enabled by that person; no impersonation path | A migration that wants per-user tokens needs each user to create one |
+| (b) Yes, audited | Administrators create PATs owned by other users | Convenient for migrations and onboarding | It is impersonation: the token acts with the user's group rights and shows the user as actor, while the user never saw the secret |
+| (c) Prepared by administrators, claimed by the user | An administrator defines description, scope and lifetime; the secret is minted only when the user claims it in their own session with recent authentication | Administrators can hand out a vetted scope during onboarding; only the user ever sees the secret | Saves the user only the choice of scope and lifetime, which the token dialog already offers; a second table and workflow for little gain |
 
-**Recommendation: (a).** A migration path from another system can create service accounts
-instead.
+**Choice:** (a) — no path gives anyone but the owner a secret for a PAT: administrators can neither
+create PATs for other users (R-AUTH-027 answers 403 `forbidden`) nor rotate them (R-AUTH-030).
+
+**Rationale:** A PAT acts with its owner's rights at use time, so an administrator-minted PAT
+lets the administrator act as that person in every audit record. That breaks the attribution
+INV-16 relies on. Rotation returns a fresh secret too, so letting administrators or holders of
+`tokens:revoke` rotate another user's PAT, as the earlier rule "anyone who may revoke may rotate"
+did, was the same impersonation through a side door. A narrow `tokens:revoke` token could even
+have been turned into an administrator's full-power token that way. R-AUTH-030 now applies the
+creation rules to rotation. The migration case does not need (b): tokens from another system
+cannot be imported anyway, because they do not match the `trv_` format. Automation gets service
+accounts with their own grants, and from P1 named owners. Users get their own tokens through the
+UI or npm login. (c) is safe but duplicates the token dialog. The development agent would revisit
+this, and build (c), if onboarding with administrator-chosen scopes becomes a real need.
+
+**Applied in the spec:** R-AUTH-027 names the `owner` field case in its refusal table and adds an
+acceptance criterion for an administrator's attempt. R-AUTH-030 replaces "anyone who may revoke
+the token" with per-type callers: a PAT only by its owner, a SAT by administrators, owners (P1) or
+a SAT of the account, token-authenticated rotation under the derivation rule. It adds 403
+`forbidden` for administrators and `tokens:revoke` holders on another user's PAT, and two
+acceptance criteria.
+
+### Q-AUTH-8 · Address binding of the npm web-login poll
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exact address, on | A poll must come from exactly `requested_addr` | Strongest binding | Every multi-egress network, including address changes within one provider block, loses web login |
+| (b) No binding | The first poll after approval receives the token, from anywhere | Web login works on every network | H-20 fully live: any real-time reader of a proxy or ingress log anywhere can collect the PAT |
+| (c) Exact address plus operator-listed egress ranges | As (a), but addresses in one listed CIDR count as one | Fixes known pools without weakening the default | Every affected operator must find and list their pools before web login works |
+| (d) Network binding plus operator-listed ranges | A poll matches when it comes from the same IPv4 `/24` or IPv6 `/56` as the start, or from the same listed range; `exact` and `off` stay selectable; refused polls are shown on the approval page and audited | Fixes the common multi-egress case out of the box; keeps outside log readers out; refusals become visible to the user and to operators | A log reader inside the same `/24` or `/56` is not stopped; address-family changes and non-contiguous pools still need a range or fall back |
+| (e) Web login off by default | `npm_web_login: false` by default; `npm login` falls back to the legacy prompt, where the user enters a PAT created in the UI (R-AUTH-035) | No poll secret in any URL, so H-20 is not live at all; no binding code in the default path | Every npm user copies a token from the UI into a terminal prompt; the browser hand-off of PKG-NPM-008 is gone by default; a UI token defaults to 90 days instead of the 30 days of `cli_login.token_ttl`; the binding question returns as soon as an operator switches web login on |
+
+**Choice:** (d) — `poll_binding.mode: network` by default (`ipv4_prefix: 24`,
+`ipv6_prefix: 56`, `equivalent_ranges: []`), with refused polls shown on the approval page,
+audited and counted, and a settings warning when the client address cannot be trusted.
+
+**Rationale:** The page previously specified (a) as `bind_poll_address: true`. Behind NAT or
+egress proxies with several egress addresses, the poll was refused, and npm treated that 404 as
+"web login unsupported". It fell back to the legacy prompt, which only works with a PAT copied
+from the UI. The attacker of H-20 reads proxy or ingress logs. If that reader shares the user's
+egress, no binding mode stops them, exact match included; H-20 already says so. A reader outside
+the user's network, for example through a breached log pipeline, would additionally need an
+address in the user's `/24` or `/56` while the 10-minute flow is open. That is possible for a
+neighbour in the same ISP or cloud block, which H-20 records, but not for log readers in general.
+Network binding therefore keeps almost all of the protection of (a). It also accepts the address
+changes that egress proxy farms and NAT pools produce within one allocation, and IPv6 privacy
+addresses within one site. (b) gives up the protection although the remaining cost of keeping it
+is a prefix comparison; weakening a control to save effort is not a trade trove makes. (c) is
+secure but makes web login fail by default exactly where it is most wanted, corporate networks.
+(e) removes the risk by removing the feature. It replaces a residual that needs a log reader
+inside the user's network within ten minutes with a manual copy step for every user and
+longer-lived tokens. It stays one switch away (`npm_web_login: false`) for operators whose access
+logs are widely readable.
+
+Every mode depends on the client address of R-ARCH-006. Behind an edge proxy with
+`server.trusted_proxies` empty, all polls carry the proxy's address, and the binding can no
+longer tell the user's network from anyone else's. trove cannot detect that state, so
+R-AUTH-040 warns about it instead of failing. The refused-poll notice turns a silent fallback
+into an explanation for the user and a warning when someone else polls, and the metric tells
+operators whether they need a range.
+
+Not verified, and this is the gap: how often real egress pools are contiguous within a `/24` or
+`/56`, and how Yarn's `--web-login` reports a refused poll (npm falls back to the prompt, per
+npm-profile). `equivalent_ranges` covers pools that are not contiguous, and the metric will show
+how often that happens. The development agent would revisit the default if the refusal metric
+shows frequent refusals in the field, or if npm adds a binding mechanism to web login that does
+not rely on addresses.
+
+**Applied in the spec:** R-AUTH-034 replaces `bind_poll_address` by `poll_binding` (`mode`,
+`ipv4_prefix`, `ipv6_prefix`, `equivalent_ranges`) with a match table and startup validation. It
+adds the refused-poll notice to the approval page and three columns to `cli_login`, limits the
+binding to npm logins, states the dependency on `server.trusted_proxies`, and rewrites the
+acceptance criteria, including one for the trusted-proxy warning. R-AUTH-040 warns when the mode
+is `off`, and when it is not `off` while `server.trusted_proxies` is empty. R-AUTH-041 adds
+`cli_login.poll_refused` and the metric. H-20 describes the residual risk of network binding and
+of an untrusted client address.
 
 ## What this does not cover
 
@@ -2676,9 +3251,9 @@ Without SCIM (R-AUTH-039), disabling or removing a person at the IdP does not re
 - PATs keep working.
 
 The PATs keep working until one of three things happens: an administrator disables the user,
-dormancy (R-AUTH-021) triggers after 90 days, or the token expires. Back-channel logout is
-deferred. Installations that need offboarding within hours must use SCIM or disable users in
-trove as part of their leaver process.
+dormancy (R-AUTH-021, P1) triggers after 90 days, or the token expires. Until P1, only the first
+and the last apply. Back-channel logout is deferred. Installations that need offboarding within
+hours must use SCIM or disable users in trove as part of their leaver process.
 
 ### H-17 · Break-glass account is single-factor
 
@@ -2708,8 +3283,15 @@ revoke-by-value (R-AUTH-029) limit the damage; they do not prevent use.
 Component: npm web login (R-AUTH-034). Subject: the poll secret in the `doneUrl` path. Dormant
 until R-AUTH-034 (P1) is enabled. npm requires the secret as part of a URL, so it passes through
 every reverse proxy, ingress controller and egress proxy between the client and trove, and their
-access logs are outside the redaction of R-AUTH-001. Address binding (R-AUTH-034) stops a log
-reader who polls from another address. It does not stop one who shares the user's client address:
-a NAT gateway, a shared build host or a terminal server. Such a reader collects the PAT after the
-user approves. What makes it real: access logs that keep request paths for longer than the
-10-minute flow lifetime and are readable by people other than the user.
+access logs are outside the redaction of R-AUTH-001. Address binding (R-AUTH-034, Q-AUTH-8)
+stops a log reader who polls from outside the network that started the login: by default
+outside its IPv4 `/24` or IPv6 `/56`, or outside an operator-listed range. It does not stop one
+inside that network: behind the same NAT gateway, on a shared build host or terminal server, in
+the same egress proxy farm, or a neighbour in the same `/24` or `/56` of an ISP or cloud address
+block. Such a reader collects the PAT after the user approves; the refused-poll notice on the
+approval page does not fire, because the reader's poll matches. With `poll_binding.mode: off` the
+binding stops nobody. Behind an edge proxy with `server.trusted_proxies` empty, it stops nobody
+who polls through the same proxy instance, because every poll then carries the proxy's address
+(R-AUTH-034 rules, R-AUTH-040 warning). What makes it real: access logs that record request
+paths and that people other than the user can read while the 10-minute flow is open, for
+example through log streaming or shared dashboards.

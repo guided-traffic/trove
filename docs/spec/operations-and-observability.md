@@ -42,9 +42,13 @@ Covers: features from [operations-and-monitoring.md](../features/operations-and-
 - **Time.** Records and responses carry RFC 3339 timestamps in UTC with millisecond precision.
   Durations in configuration are Go duration strings (`10s`, `15m`, `24h`). Retention periods are
   whole days, in keys that end in `_days`.
-- **Schedules.** Five-field cron expressions evaluated in UTC, in the syntax of
-  [Kubernetes CronJobs](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#schedule-syntax),
-  plus the macros `@hourly`, `@daily` and `@weekly` (Q-OPS-7).
+- **Schedules.** Five-field cron expressions evaluated in UTC, with the fields, names and macros
+  of [Kubernetes CronJobs](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#schedule-syntax)
+  (`@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`). Every
+  schedule in trove goes through one parser (Q-OPS-7). The normative dialect, its parser tests and
+  the rejected forms are in [storage.md](storage.md) R-STOR-025: among others six-field
+  expressions, `?`, the day-of-week value `7`, `@every`, and `TZ=` or `CRON_TZ=` prefixes, each
+  rejected with an error that names the key.
 - **Cross-replica signals** use PostgreSQL
   [`LISTEN`/`NOTIFY`](https://www.postgresql.org/docs/current/sql-listen.html) (INV-12). The channel
   names on this page are proposals; [architecture.md](architecture.md) may rename them.
@@ -57,7 +61,7 @@ Covers: features from [operations-and-monitoring.md](../features/operations-and-
 | system administrator | Every operation on this page |
 | `system.read` | Read replicas, system information, tasks, jobs, locks, effective configuration, log levels |
 | `audit.read` | Query and export audit events (the auditor role, IAM-006) |
-| `storage.read` | Read the storage summary |
+| `storage.read` | Read the storage summary (`GET /api/v1/storage/summary`) and the damaged-blob list (`GET /api/v1/storage/damaged-blobs`); both read paths are owned by [storage.md](storage.md) (R-STOR-027, R-STOR-028) |
 | `config.read` | Run configuration diff and export |
 | `webhooks.read`, `webhooks.manage` | Webhook subscriptions and delivery log (R-OPS-039) |
 | repository action `manage` (INV-9) | Cache invalidation and reindex of that repository |
@@ -74,28 +78,64 @@ A probe request MUST answer from cached check results. It MUST NOT open a databa
 call object storage itself, so a probe storm cannot load the dependencies. A background loop runs
 every check every `health.check_interval`, each bounded by `health.check_timeout`.
 
-**Liveness** reflects the process only. It returns `200` while the HTTP server answers and the check
-loop has completed a round within the last three intervals; otherwise `503`. It MUST NOT depend on
-PostgreSQL or object storage. Restarting replicas does not repair a dependency outage, and coupling
-liveness to one would restart every replica at the same moment.
+**Liveness** reflects the process only (Q-OPS-1). It returns `200` while the HTTP server answers
+and every watched loop has finished an iteration within its bound; otherwise `503`. It never reads
+a readiness check result and is never coupled to readiness, so no outage of PostgreSQL, object
+storage, the OIDC provider or an upstream can fail it. Restarting replicas does not repair a
+dependency outage, and coupling liveness to one would restart every replica at the same moment.
 
-**Readiness** returns `200` only while every check below passes. A check counts as failed after
-`health.failure_threshold` consecutive failures and as passed again after
+- **Watched loops.** The health check loop, with a bound of three `health.check_interval`s. With a
+  bound of `health.watchdog_timeout` each: the coordination-session loop
+  ([architecture.md](architecture.md) R-ARCH-017), the job claim loop and the reaper (R-ARCH-016,
+  worker role only), the scheduler tick while this replica holds the `scheduler` lease, and the
+  outbox dispatcher while webhooks are enabled (R-OPS-035).
+- **Progress, not success.** A loop records progress at the end of every iteration, including
+  iterations that did no work or failed against a dependency. A loop that keeps retrying an
+  unreachable PostgreSQL is alive. Waiting for a free worker slot is not part of an iteration:
+  the claim loop records progress while every worker is busy, so a long job (a full garbage
+  collection, for example) never fails liveness. Only a loop that has not finished an iteration
+  within its bound, because of a deadlock or a call without a deadline, fails liveness.
+- **Deadlines.** Every call a watched loop makes MUST carry a context deadline shorter than
+  `health.watchdog_timeout`. A blackholed dependency then produces failed iterations, not a stuck
+  loop. A unit test per loop asserts this.
+- **Draining.** A loop that stops on purpose during shutdown leaves the watchdog first.
+- **Evidence before the restart.** When a loop is first reported stuck, the replica writes one
+  `ERROR` record that names the loop and carries a goroutine dump
+  ([`runtime/pprof`](https://pkg.go.dev/runtime/pprof) profile `goroutine`), truncated to 256 KiB.
+  The restart would otherwise erase the only trace of the deadlock.
+- **Restart.** The chart's liveness probe ([ha-and-helm.md](ha-and-helm.md) R-HA-034) restarts the
+  pod once `/healthz` has failed for its threshold.
+
+**Readiness** returns `200` only while every gating check below passes. A check counts as failed
+after `health.failure_threshold` consecutive failures and as passed again after
 `health.success_threshold` consecutive successes.
 
 | Check | Passes when | Why it gates traffic |
 |---|---|---|
-| `startup` | Listeners are bound, workers started, in-process caches initialised | No half-started replica receives traffic |
+| `startup` | Listeners are bound, workers started, in-process caches initialised, audit partitions for the current and the next month present (R-OPS-015) | No half-started replica receives traffic |
 | `schema` | The applied schema version is inside the window this binary supports (expand/contract, INV-3) | A replica never serves against a schema it does not understand |
 | `database` | `SELECT 1` on the connection pool succeeds within the timeout | Nothing works without PostgreSQL (INV-3) |
-| `objectStore` | A `HEAD` request on the bucket (or on a sentinel object under the configured prefix) succeeds within the timeout; skipped when `health.require_object_store` is `false` | INV-12; see Q-OPS-2 |
-| `notify` | The replica's `LISTEN` connection is established | Without it the replica misses cache invalidations, including token revocations (INV-8); on reconnect it drops every in-process cache before it reports ready again |
+| `objectStore` | A `HEAD` request on the bucket (or on a sentinel object under the configured prefix) succeeds within the timeout | Gates only until the replica is ready for the first time, which also requires the object-store startup check of [storage.md](storage.md) R-STOR-035. Afterwards it is reported, not gating, unless `health.require_object_store: true` (Q-OPS-2) |
+| `notify` | The replica's `LISTEN` connection is established and its delivery probe has arrived ([ha-and-helm.md](ha-and-helm.md)) | Without it the replica misses cache invalidations, including token revocations (INV-8); on reconnect it drops every in-process cache before it reports ready again |
 | `configBootstrap` | Startup configuration documents were applied (R-OPS-031); passes trivially when none are configured | An invalid document stalls a rollout instead of breaking the service |
 | `draining` | No termination signal was received | Removes the replica from the Service before it stops |
 
-`health.liveness_unready_grace` couples liveness to readiness. It defaults to `0`, which means the
-two are never coupled. When it is greater than zero, liveness fails once readiness has failed
-without a break for that long (Q-OPS-1).
+**Gating and reported checks** (Q-OPS-2). Every check except `objectStore` gates readiness at all
+times. Once the replica has been ready, a failing `objectStore` check is reported but does not
+gate:
+
+- `/readyz` answers `200` with `"degraded":["objectStore"]`;
+- the replica registry (R-OPS-003) and `trove_health_check_passing{name="objectStore"}` show the
+  failure;
+- blob requests fail one by one with a retryable `503` through the circuit breaker
+  ([storage.md](storage.md) R-STOR-033, R-STOR-036).
+
+A shared object-store outage therefore leaves logins, CI token exchange, metadata, deletes, the UI
+and the API working, instead of removing every replica from the Service. A release with a wrong
+bucket, endpoint or credential still never becomes ready, so it cannot replace working pods. With
+`health.require_object_store: true` the check gates readiness continuously, with the same
+thresholds as every other check (`health.failure_threshold`, `health.success_threshold`); storage
+has no readiness settings of its own ([storage.md](storage.md) R-STOR-036).
 
 **Shutdown.** On `SIGTERM` the replica MUST:
 
@@ -112,9 +152,10 @@ the deadline are released back to the queue.
 
 ```http
 GET /readyz              → 200 {"status":"ready"}
+GET /readyz              → 200 {"status":"ready","degraded":["objectStore"]}
 GET /readyz              → 503 {"status":"unready","failing":["database"]}
 GET /readyz?verbose=1    → 200 | 503
-GET /healthz             → 200 {"status":"alive"} | 503 {"status":"stuck"}
+GET /healthz             → 200 {"status":"alive"} | 503 {"status":"stuck","stuck":["jobs.claim"]}
 ```
 
 ```json
@@ -145,8 +186,8 @@ health:
   check_timeout: 2s               # default (proposed)
   failure_threshold: 2            # default (proposed)
   success_threshold: 1            # default (proposed)
-  require_object_store: true      # default (proposed); INV-12
-  liveness_unready_grace: 0s      # default (proposed); 0 = never couple liveness to readiness
+  require_object_store: false     # default (proposed); true = object storage gates readiness continuously (Q-OPS-2)
+  watchdog_timeout: 2m            # default (proposed); bound for the watched loops of liveness (Q-OPS-1)
   shutdown_drain_delay: 5s        # default (proposed)
 ```
 
@@ -164,6 +205,18 @@ health:
   through another replica. After the replica reconnects, the revoked token is rejected there too.
 - 1,000 parallel requests to `/readyz` cause no additional PostgreSQL sessions
   (`pg_stat_activity` count unchanged).
+- Apply a NetworkPolicy that denies egress from every trove pod to the object store for 3 minutes.
+  `/readyz` keeps answering `200` with `"degraded":["objectStore"]`, no pod leaves the Service's
+  endpoints, `npm view @acme/ui --registry …/npm-local/` succeeds, and downloading its tarball
+  answers `503` with `Retry-After`. A replica started while the policy is in place does not become
+  ready.
+- The same policy against PostgreSQL for 5 minutes leaves every watched loop progressing:
+  `/healthz` stays `200` and no restart count increases.
+- A fault-injection build that blocks the job claim loop makes `/healthz` answer `503` with
+  `"stuck":["jobs.claim"]` within `health.watchdog_timeout`, and the log holds one `ERROR` record
+  with a goroutine dump that names the loop.
+- With `jobs.workers.maintenance: 1`, a job that runs for three times `health.watchdog_timeout`
+  leaves `/healthz` at `200` throughout.
 
 ### R-OPS-002 · Ping, version and identification headers
 Priority: **MVP** · Covers: OPS-001, OPS-005, OPS-006, ADMAPI-070
@@ -210,12 +263,25 @@ server:
   `200`, and the response has an `X-Trove-Replica` header that the anonymous response lacks.
 
 ### R-OPS-003 · Replica registry and service status
-Priority: **P1** · Covers: OPS-008
+Priority: **MVP** · Covers: OPS-008
+
+The table, the heartbeat, the pruning of stale rows and the read-only API below are MVP, because
+the HA mechanisms of [ha-and-helm.md](ha-and-helm.md) build on them (Q-HA-12 there). The UI
+status screen is MVP as well ([api-and-ui.md](api-and-ui.md) R-UI-038, Q-API-8): it renders only
+MVP endpoints and is the only view of the replicas, the scheduled tasks and the key ring.
 
 Every replica MUST register itself in PostgreSQL at startup and refresh its row every
 `system.heartbeat_interval`. A row whose heartbeat is older than `system.heartbeat_stale_after` is
 shown as `lost`. The `replica-registry-prune` task (R-OPS-019) deletes rows that have been stale
 for 24 h. On a clean shutdown the replica deletes its own row.
+
+**Key IDs of the stored-secret key ring.** Each row carries the key IDs of the replica's ring
+(`secrets.encryption_key_files`) and its `secrets.active_key_id`
+([architecture.md](architecture.md) R-ARCH-021), written at registration and refreshed with every
+heartbeat. They are key IDs only: never key material, fingerprints or ciphertext. The key-ring
+status of [api-and-ui.md](api-and-ui.md) R-API-049 reads them from here to decide whether the
+rings of all live replicas are compatible, and the `secrets-reencrypt` task (R-OPS-019) refuses to
+start while they are not.
 
 ```sql
 CREATE TABLE replica (
@@ -227,6 +293,8 @@ CREATE TABLE replica (
   state         text        NOT NULL CHECK (state IN ('starting','ready','unready','draining')),
   checks        jsonb       NOT NULL DEFAULT '{}',-- last readiness check results, sanitised
   leases        jsonb       NOT NULL DEFAULT '[]',-- [{"name":"scheduler","since":"…"}]
+  secret_key_ids       text[] NOT NULL,           -- key IDs of the replica's stored-secret key ring (R-ARCH-021); IDs only
+  active_secret_key_id text   NOT NULL,           -- the replica's secrets.active_key_id; ID only
   started_at    timestamptz NOT NULL,
   heartbeat_at  timestamptz NOT NULL
 );
@@ -254,7 +322,7 @@ API: `GET /api/v1/system/replicas` → `200`. Requires `system.read`.
 }
 ```
 
-The UI shows this list as the service status screen ([api-and-ui.md](api-and-ui.md)). Mixed versions
+The UI shows this list as the service status screen ([api-and-ui.md](api-and-ui.md) R-UI-038). Mixed versions
 during a rolling upgrade are visible here.
 
 ```yaml
@@ -314,6 +382,15 @@ Priority: **MVP** · Covers: OPS-051, OPS-052, ADMAPI-071
 built from it: npm tarball URLs, NuGet service-index resources, the OIDC redirect URI, UI links,
 `Location` headers, webhook `source` (R-OPS-036) and links in mail.
 
+- **An origin, never a path below one.** `server.base_url` MUST be an origin: scheme `http` or
+  `https`, a host and an optional port. Its path is empty or `/`, and it has no query, no fragment
+  and no user information. Every `server.additional_base_urls` entry follows the same rule. A value
+  that breaks it stops startup with an error that names the key and the offending part. trove owns
+  the host it runs on: INV-6's host-root routes (the npm token exchange of
+  [formats/npm.md](formats/npm.md) Q-NPM-1, `/v2/` reserved for OCI), the `__Host-trv_session`
+  cookie with `Path=/` ([identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-2)
+  and `GET /{$}` all assume it. Below a path prefix of a shared host, npm would post GitLab ID
+  tokens to that host's root, and the session cookie would reach every service on it.
 - **Unset.** Allowed for development only. URLs are then derived from the request's `Host` and
   scheme, a warning is logged at startup and every hour, and system information reports
   `baseUrlSource: request`. The Helm chart MUST require the value
@@ -327,6 +404,14 @@ built from it: npm tarball URLs, NuGet service-index resources, the OIDC redirec
   In every other case forwarded headers are ignored for URL generation. The same trust rule
   derives the client address used in logs and audit: the right-most address in `X-Forwarded-For`
   that is not a trusted proxy.
+- **The content host (P1).** With `server.content_base_url` set
+  ([architecture.md](architecture.md) R-ARCH-029), its host is a known host under these rules as
+  well: the per-request override selects it under the same two conditions, with
+  `content_base_url` in place of a list entry. A request resolved to it is a content-host request.
+  R-ARCH-029 decides what is served there, and URLs generated for such a response are built from
+  `content_base_url`. It is never a base URL for UI, API, OIDC, mail or webhook links, so it MUST
+  NOT appear in `server.additional_base_urls`: an entry with the content host's host name stops
+  startup, as R-ARCH-029's origin rules require.
 - **No runtime write operation.** The base URL is configuration (GitOps). It is shown in system
   information, and it cannot be changed through the API.
 - **Cached metadata.** Metadata that embeds URLs MUST be cached in a form that does not depend on
@@ -347,6 +432,13 @@ server:
 - With the ingress controller's pod CIDR trusted and `https://npm.example.com` listed,
   `npm view lodash dist.tarball --registry https://npm.example.com/api/npm/npm-all/` prints a URL on
   `npm.example.com`. An unlisted host falls back to `base_url`.
+- Each of `base_url: https://shared.example.com/trove`, `base_url: https://trove.example.com/?x=1`,
+  `base_url: https://user@trove.example.com` and
+  `additional_base_urls: ["https://npm.example.com/registry"]` stops `trove serve` with a non-zero
+  exit and an error that names the key. `base_url: https://trove.example.com/` and
+  `base_url: https://trove.example.com:8443` start.
+- (P1) With `content_base_url: https://trove-content.example.net`,
+  `additional_base_urls: ["https://trove-content.example.net"]` stops startup.
 
 ## Metrics
 
@@ -367,6 +459,12 @@ the request's `Accept` header asks for `application/openmetrics-text`, it uses t
 - Scraping deliberately does not use trove tokens (TOK-014). Validating one needs PostgreSQL, and
   metrics must stay readable during exactly the database outage they are needed for.
 - Metrics are not offered on the client listener.
+- **On by default.** With the shipped defaults (`metrics.enabled: true`) every family of R-OPS-008
+  is exposed, the database-pool families included; there is no second switch for database metrics.
+  Only the per-query histograms are opt-in (`metrics.db_query_histograms`). With
+  `metrics.enabled: false`, `/metrics` answers `404`.
+- **Plain exposition.** Samples carry no timestamps, and the output contains no comment lines
+  other than those of the format (`# HELP`, `# TYPE`, and in OpenMetrics `# UNIT` and `# EOF`).
 - The default Go runtime and process collectors (`go_*`, `process_*`) are exposed unchanged. These
   are the only families without the `trove_` prefix.
 
@@ -412,7 +510,8 @@ Rules for every metric family, including families that format pages and other sp
   | `class` | `local`, `remote`, `virtual` |
   | `repo` | Repository key; capped, see below |
   | `subscription` | Webhook subscription key; capped, see below |
-  | `operation`, `kind`, `result`, `outcome`, `task`, `cache`, `state`, `direction`, `auth_method`, `query`, `name`, `channel`, `reason`, `mode`, `family`, `label` | Enumerations fixed in code |
+  | `operation`, `kind`, `result`, `outcome`, `task`, `cache`, `state`, `status`, `direction`, `auth_method`, `query`, `name`, `channel`, `reason`, `mode`, `family`, `label` | Enumerations fixed in code |
+  | `key_id` | Key IDs of the stored-secret key ring and key IDs that sealed values still reference ([architecture.md](architecture.md) R-ARCH-021); bounded by configuration |
   | `version`, `revision`, `goversion` | Only on `trove_build_info` |
 
 - **Forbidden labels.** User names, principal or token IDs, IP addresses, request paths, package
@@ -472,6 +571,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_remote_upstream_request_duration_seconds` | histogram | `repo` | Upstream response time including body |
 | `trove_remote_upstream_up` | gauge | `repo` | 1 while the upstream counts as reachable, 0 while it is treated as unreachable ([repositories-and-proxy.md](repositories-and-proxy.md)) |
 | `trove_remote_collapsed_requests_total` | counter | `repo` | Cache misses that waited for an in-flight fetch instead of fetching themselves |
+| `trove_shadow_checks_total` | counter | `repo` (the local repository), `outcome` (`no-exposure`, `clear`, `shadowing-approved`, `refused`, `undetermined-approved`, `unavailable`) | Shadowing checks on first publishes of a name ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048) |
 | `trove_blobstore_operations_total` | counter | `operation` (put, get, head, delete, list, multipart), `outcome` | Object-storage calls |
 | `trove_blobstore_operation_duration_seconds` | histogram | `operation` | Object-storage latency |
 | `trove_blobstore_transferred_bytes_total` | counter | `direction` | Bytes to and from object storage |
@@ -481,9 +581,15 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_repository_files`, `trove_repository_bytes` | gauge | `repo`, `format`, `class` | From the storage summary |
 | `trove_repositories` | gauge | `format`, `class` | Number of repositories |
 | `trove_storage_summary_age_seconds` | gauge | — | Age of the cached storage summary |
-| `trove_gc_runs_total` | counter | `outcome` | Garbage-collection runs ([storage.md](storage.md)) |
+| `trove_storage_blobs_damaged_total` | counter | `status` (`missing`, `corrupt`) | Damaged blobs detected by the scrub or by download verification ([storage.md](storage.md) R-STOR-013, R-STOR-027) |
+| `trove_storage_blobs_damaged` | gauge | `status` (`missing`, `corrupt`) | Current number of damaged blobs, from the latest storage summary (R-OPS-023, [storage.md](storage.md) R-STOR-028); same value on every replica |
+| `trove_gc_runs_total` | counter | `outcome` | Garbage-collection runs of the tasks `gc` and `gc-full` ([storage.md](storage.md) R-STOR-025) |
 | `trove_gc_deleted_blobs_total`, `trove_gc_reclaimed_bytes_total` | counter | — | Garbage-collection effect |
+| `trove_gc_candidates_kept_total` | counter | — | Candidates kept because the reference check found a reference ([storage.md](storage.md) R-STOR-024) |
+| `trove_gc_deleting_rows` | gauge | — | Blob rows in state `deleting` (from PostgreSQL); a value that does not fall back to zero means interrupted deletions are not finishing (R-STOR-024) |
 | `trove_gc_last_success_timestamp_seconds` | gauge | — | End of the last successful run |
+| `trove_secrets_sealed_values` | gauge | `key_id` | Sealed values per key ID over every sealed column (from PostgreSQL; [api-and-ui.md](api-and-ui.md) R-API-049); a non-zero value under a retired key ID means re-encryption has not finished |
+| `trove_secrets_key_rings_compatible` | gauge | — | 1 while every live replica's ring holds every key ID that is active on any live replica or referenced by a sealed value, else 0 (from the replica registry, R-OPS-003; R-API-049) |
 | `trove_db_pool_connections` | gauge | `state` (acquired, idle, constructing) | Connection-pool state |
 | `trove_db_pool_max_connections` | gauge | — | Pool size |
 | `trove_db_pool_acquire_duration_seconds` | histogram | — | Wait for a connection |
@@ -497,6 +603,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_jobs_duration_seconds` | histogram | `kind` | Job execution time |
 | `trove_task_last_success_timestamp_seconds` | gauge | `task` | Last successful run of a scheduled task (R-OPS-019) |
 | `trove_lease_held` | gauge | `name` | 1 on the replica that holds a singleton lease (INV-12) |
+| `trove_health_check_passing` | gauge | `name` (readiness check name) | 1 while the check passes, gating or not (R-OPS-001) |
 | `trove_notify_connected` | gauge | — | 1 while the `LISTEN` connection is up |
 | `trove_notify_received_total` | counter | `channel` | Notifications received |
 | `trove_cache_requests_total` | counter | `cache`, `result` (hit, miss) | In-process caches ([architecture.md](architecture.md)) |
@@ -604,7 +711,7 @@ consumers can rely on every key being present.
 | `response_bytes` | Body bytes sent, `-1` if unknown |
 | `duration_ms` | Processing time, with microsecond fraction |
 | `user_agent` | Client user agent |
-| `principal` | User name, service-account name, `ci:<mapping>` or `anonymous` |
+| `principal` | User name, service-account name, `ci:<CI issuer name>/<mapping name>` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-009) or `anonymous` |
 | `principal_type` | `user`, `service_account`, `ci`, `breakglass`, `anonymous` |
 | `principal_id` | Opaque principal ID, `null` for anonymous callers |
 | `token_id` | ID of the token used (never the token), `null` if none |
@@ -642,7 +749,7 @@ completes or fails. The same conventions as R-OPS-010 apply.
 | Field | Content |
 |---|---|
 | `time`, `trace_id` | Completion time; trace of the request or job that caused the call |
-| `purpose` | `remote` (pull-through fetch), `webhook`, `oidc_discovery`, `jwks`, `mail` |
+| `purpose` | `remote` (pull-through fetch, or the probe of a shadowing check), `webhook`, `oidc_discovery`, `jwks`, `mail` |
 | `repo` | Remote repository key (`remote`), else `null` |
 | `subscription` | Webhook subscription key (`webhook`), else `null` |
 | `method` | HTTP method |
@@ -654,6 +761,11 @@ completes or fails. The same conventions as R-OPS-010 apply.
 | `attempt` | Attempt number for retried calls, else `1` |
 | `on_behalf_of` | Principal whose request caused the call, or `system` for jobs |
 | `collapsed_waiters` | Number of concurrent misses served by this fetch (INV-11) |
+
+[repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047 adds the fields `flight_role`
+and `cache_status` to records with `purpose: remote`. `flight_role` is `leader`, `follower` or
+`waiter` for pull-through fetches, and `probe` for the upstream request of a shadowing check
+(R-REPO-048), which stores nothing.
 
 ```yaml
 log:
@@ -754,15 +866,32 @@ Audit events and webhook event types share one registry in code. Every entry dec
   `webhook`;
 - **audit mode**: `transactional`, `async` or `none` (R-OPS-015);
 - **webhook**: whether subscriptions may select the event (R-OPS-037);
+- **journal** (P1): `revocation` or absent (see "Journal flag" below);
 - **data schema**: a JSON Schema of the event data, published through R-OPS-037.
 
 Names are a public contract: audit exports, SIEM rules and webhook receivers parse them. A name is
 never reused. A rename keeps the old name as an alias, emitted next to the new one for at least one
 minor release, and the release notes MUST list it. Other spec pages add their events to the
-registry under these rules; [storage.md](storage.md), for example, adds `retention_policy.*`.
+registry under these rules; [storage.md](storage.md), for example, adds `retention_policy.*`, and
+[repositories-and-proxy.md](repositories-and-proxy.md) adds the security event
+`repository.remote_package_shadowed` (R-REPO-048), listed in R-OPS-016 because it is MVP.
 
-**Acceptance criteria:** a test fails when a registry entry has no data schema, or when two entries
-share a name.
+**Bounded arrays.** Every array in a data schema declares `maxItems` of at most 1,000, and the
+producer of an event keeps to it. Templated webhooks rely on that bound (R-OPS-041).
+
+**Journal flag** (P1; Q-HA-9 on [ha-and-helm.md](ha-and-helm.md)). An entry declares
+`journal: revocation` when its event removes access or updates an access-bearing object; every
+other entry leaves the attribute out. Only an entry with audit mode `transactional` may declare it,
+because the journal row is written in the transaction of the change (R-OPS-015). Without the
+journal, a database restore revives what such an event removed ([ha-and-helm.md](ha-and-helm.md)
+H-37). R-HA-054 on that page lists the events that MUST carry the flag and replays them after a
+restore. The owning page sets the flag and defines what the entry carries. An event type added
+later joins the journal through the flag alone, without new emission code.
+
+**Acceptance criteria:** a test fails when a registry entry has no data schema, when two entries
+share a name, or when an array in a data schema has no `maxItems` or one above 1,000. From P1 on,
+it also fails when an entry declares `journal` with a value other than `revocation` or with an
+audit mode other than `transactional`, or when an event listed in R-HA-054 lacks the flag.
 
 ### R-OPS-015 · Audit recording
 Priority: **MVP** · Covers: OPS-022, OPS-023
@@ -780,10 +909,15 @@ Audit events are stored in PostgreSQL and copied to the log stream (INV-16).
 - **Log copy.** After the commit, each event is also written as a `log: audit` record with the same
   fields. The database copy is authoritative. A crash between commit and log write can lose the log
   copy, not the record.
-- **Deduplication.** `authz.denied` is deduplicated per principal, action, repository and path
-  within `audit.denial_dedup_window`: the first denial is recorded, and the record's
-  `details.count` is raised for repeats. `auth.token_rejected` is deduplicated per token ID within
+- **Deduplication without updates.** Audit rows are never updated (Q-OPS-4). `authz.denied` is
+  deduplicated per replica, principal, action, repository and path within
+  `audit.denial_dedup_window`. `auth.token_rejected` is deduplicated per replica and token ID within
   `audit.token_rejection_dedup_window`.
+  - The first occurrence is written at once, with `details.count` = 1.
+  - Further occurrences within the window are counted in memory. When the window closes they are
+    written as one summary event, with `details.count` = the number of repeats and
+    `details.repeat_of` = the ID of the first event.
+  - A replica that shuts down writes its open summaries before it exits.
 - **Anonymous denials** are recorded only with `audit.record_anonymous_denials: true`. Otherwise
   they appear only in the request log and the metrics, so anonymous scanning cannot flood the
   table.
@@ -794,6 +928,18 @@ Audit events are stored in PostgreSQL and copied to the log stream (INV-16).
 - **Change details.** For an update, `details.changes` lists the changed fields as
   `{"field": "<path in the API representation>", "from": …, "to": …}`. A secret field appears only
   as `{"field": "…", "change": "set" | "changed" | "cleared"}`.
+- **Revocation journal (P1).** When the audit writer inserts a transactional event whose registry
+  entry declares `journal: revocation` (R-OPS-014), it also inserts a `revocation_outbox` row
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-054) in the same transaction.
+  - The row takes the event's `id`, its `occurred_at` as `at` and its registry name as `event`.
+  - When that insert fails, the change rolls back, exactly as for a failed audit insert. A
+    committed change therefore always has its journal row, and a rolled-back change never has one.
+  - For an update event, the entry carries the object's access-bearing state before and after the
+    change; the owning page defines which fields that state holds. Secrets are redacted as in
+    `details.changes`: a secret field carries its value in neither state, only `set`, `changed` or
+    `cleared`, and the entry holds no token hashes.
+  - Asynchronous events never write a journal row, because R-OPS-014 allows the flag only on
+    transactional events.
 
 ```sql
 CREATE TABLE audit_event (
@@ -827,9 +973,65 @@ CREATE INDEX audit_event_trace_idx      ON audit_event (trace_id) WHERE trace_id
 ```
 
 Partitions use [declarative partitioning](https://www.postgresql.org/docs/current/ddl-partitioning.html).
-The `audit-retention` task (R-OPS-019) keeps the current month and the next three months created
-ahead. The first migration creates the current and the next month, so an insert never finds a
-missing partition.
+
+**Append-only rows and partition maintenance** (Q-OPS-4). trove's runtime role can insert and read
+audit events, but it can neither change nor delete them, and it cannot shorten their retention.
+
+- **Privileges.** The migration revokes `UPDATE`, `DELETE` and `TRUNCATE` on `audit_event` from the
+  runtime grant role of [ha-and-helm.md](ha-and-helm.md) R-HA-014, so the schema's default
+  privileges do not reach this table. The runtime role holds no privilege on the partitions
+  themselves and reaches them only through the parent table.
+- **One maintenance function.** Partitions are created and dropped only by
+  `audit_maintain_partitions()`. The migration creates it as the schema owner, with
+  `SECURITY DEFINER` and a fixed `search_path`
+  ([guidance](https://www.postgresql.org/docs/current/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY)).
+  The runtime role holds only `EXECUTE` on it.
+  - It creates the partitions for the current month and the next three months, and revokes the
+    runtime role's privileges on each new partition.
+  - It drops partitions whose upper bound is older than `audit_policy.retention_days`. `0` keeps
+    every partition.
+  - Concurrent calls from several replicas are serialised by locking the `audit_policy` row
+    (`SELECT … FOR UPDATE`), so no advisory-lock category is needed.
+- **Short locks.** Every transactional write inserts into `audit_event`, so partition DDL must
+  never queue writes behind it ([partition maintenance](https://www.postgresql.org/docs/current/ddl-partitioning.html)).
+  - The function sets `lock_timeout` to 2 s.
+  - It creates each new partition as a standalone table and attaches it with `ATTACH PARTITION`,
+    which takes only a `SHARE UPDATE EXCLUSIVE` lock on the parent; that lock does not conflict
+    with inserts or reads. `CREATE TABLE … PARTITION OF` would take `ACCESS EXCLUSIVE`.
+  - Dropping an expired partition still takes `ACCESS EXCLUSIVE` on the parent. When a lock is
+    not granted within the timeout, for example behind a long audit export, the function catches
+    the `lock_not_available` error (`55P03`) for that partition, skips it, and the next call
+    retries it.
+  - Writes therefore wait at most the timeout, and a skipped call costs nothing, because
+    partitions exist three months ahead.
+- **Retention is owner data.** `audit_policy` is owned by the schema owner and only readable by the
+  runtime role. `trove migrate` writes `audit.retention_days` into it on every run, so a
+  compromised replica cannot shorten retention. A replica whose configured value differs from the
+  stored one logs a warning that names `trove migrate`.
+- **When it runs.** `trove migrate` calls the function after writing `audit_policy`. Every replica
+  calls it at startup, and the `startup` readiness check (R-OPS-001) passes only when partitions
+  for the current and the next month exist. The `audit-retention` task calls it daily
+  (R-OPS-019). An insert therefore never finds a missing partition, even when the scheduler has
+  not run for weeks.
+- **Single-role mode.** There the runtime role owns the schema, so these protections do not apply,
+  and the replica writes `audit_policy` itself at startup (H-39).
+
+```sql
+CREATE TABLE audit_policy (
+  id              smallint    PRIMARY KEY CHECK (id = 1),
+  retention_days  integer     NOT NULL CHECK (retention_days >= 0),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Run by the migration as the schema owner. Schema and role names: R-HA-014 (example values).
+CREATE FUNCTION audit_maintain_partitions() RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = trove, pg_temp
+  AS $$ … $$;
+REVOKE ALL ON FUNCTION audit_maintain_partitions() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON audit_event FROM trove_app;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON audit_policy FROM trove_app;
+```
 
 ```yaml
 audit:
@@ -847,8 +1049,24 @@ audit:
   repository `nuget-local`. The same event appears in `kubectl logs` as `"log":"audit"`.
 - A repository update whose audit insert is forced to fail (fault injection) leaves the repository
   unchanged.
-- Ten pushes with a read-only token within one minute yield one `authz.denied` event with
-  `details.count` = 10.
+- (P1) Revoking a token commits one `revocation_outbox` row whose `id` and `at` equal the `id` and
+  `occurred_at` of its `token.revoked` event. With the outbox insert forced to fail (fault
+  injection), the revocation rolls back: the token still authenticates and no `token.revoked` event
+  exists. Removing `deploy` from a policy entry yields an `authz.policy.updated` row whose entry
+  holds that policy entry's actions before (`deploy`, `read`) and after (`read`).
+- Ten pushes with a read-only token within one minute, all through one replica, yield two
+  `authz.denied` events: the first with `details.count` = 1, then one summary with
+  `details.count` = 9 and `details.repeat_of` naming the first.
+- In two-role mode, `psql -U trove_app_a -c 'DELETE FROM trove.audit_event'` and
+  `psql -U trove_app_a -c "UPDATE trove.audit_event SET outcome = 'success'"` fail with `42501`
+  (insufficient privilege), and so does the same `DELETE` against one partition. So does an
+  `UPDATE` of `trove.audit_policy`.
+- After a replica starts, `pg_inherits` lists partitions of `audit_event` for the current month and
+  the next three months.
+- While a second session holds an open transaction that has read `audit_event` (as a running
+  export does), a call of `audit_maintain_partitions()` that has an expired partition to drop
+  returns within 3 s without dropping it, and repository updates issued meanwhile commit without
+  waiting for it.
 
 ### R-OPS-016 · Audit event catalog
 Priority: **MVP** · Covers: OPS-022, OPS-023
@@ -865,22 +1083,23 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `auth.login_failed` | A | — | Login failed | `reason` (`oidc_error`, `state_mismatch`, `user_disabled`, `breakglass_disabled`, `bad_credentials`) |
 | `auth.logout` | A | — | Session ended by the user | `session_id` |
 | `auth.ci_exchange_denied` | A | — | A CI OIDC exchange was refused (INV-10) | `issuer`, `reason` (`signature`, `audience`, `expired`, `no_mapping`), selected claims (`project_path`, `ref`, `pipeline_id`) |
-| `auth.token_rejected` | A | — | A well-formed trove token (valid checksum) was unknown, revoked or expired | `token_id` if known, `token_type`, `reason`, `count` |
+| `auth.token_rejected` | A | — | A well-formed trove token (valid checksum) was unknown, revoked or expired | `token_id` if known, `token_type`, `reason`, `count`, `repeat_of` (summaries only) |
 | `token.created` | T | — | Any trove token was issued, including CI exchanges | `token_type`, `scope`, `expires_at`, `ci_mapping`, `ci_claims` |
 | `token.revoked` | T | — | A token was revoked | `token_type`, `revoked_by` |
 | `session.revoked` | T | — | An administrator ended another user's session | `session_id` |
 | `user.created` | T | — | A user was created (just in time from ID-token claims, or by an administrator) | `source` (`jit`, `api`) |
 | `user.updated` | T | — | Profile or group membership changed, including changes from claims at login | `changes` |
 | `user.disabled`, `user.enabled`, `user.deleted` | T | — | User state change | — |
-| `group.created`, `group.updated`, `group.deleted` | T | — | Group change, including claim-to-group mappings | `changes` |
+| `group.created`, `group.updated`, `group.deleted` | T | — | Group record change ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-018). Claim-to-group rules are part of the login provider in the configuration file and change with a rollout, not through an event (Q-OPS-6) | `changes` |
 | `service_account.created`, `service_account.updated`, `service_account.deleted` | T | — | Service-account change | `changes` |
 | `admin_role.granted`, `admin_role.revoked` | T | — | System administration role or delegated system permission changed | `permission` |
 | `permission_policy.created`, `permission_policy.updated`, `permission_policy.deleted` | T | — | Permission policy change (INV-9) | `changes` |
-| `authz.denied` | A | — | An authenticated principal was refused an action | `operation`, `required_action`, `count` |
+| `authz.denied` | A | — | An authenticated principal was refused an action | `operation`, `required_action`, `count`, `repeat_of` (summaries only) |
 | `oidc_provider.created`, `oidc_provider.updated`, `oidc_provider.deleted` | T | — | Trusted issuer change | `changes` |
 | `identity_mapping.created`, `identity_mapping.updated`, `identity_mapping.deleted` | T | — | CI identity mapping change | `changes` |
 | `repository.created`, `repository.updated`, `repository.deleted` | T | — | Repository configuration change | `changes` |
 | `repository.cache_invalidated` | T | — | R-OPS-021 | `path`, `scope`, `count` |
+| `repository.remote_package_shadowed` | T | — | Security event: a caller holding `manage` (or `content:bypass`) gave a local repository its first version of a name that a remote member of a containing virtual repository serves ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048); written in the commit transaction. The local repository is the `repository` column | `package`, `exposure` (the pairs `{virtual, remote}`) |
 | `package.published` | T | yes | A package version was accepted (npm publish, NuGet push) | `package`, `version`, `files` |
 | `package.deleted` | T | yes | A package version was deleted or unpublished | `package`, `version` |
 | `package.metadata_changed` | T | yes | Deprecate, undeprecate, unlist, relist, dist-tag set or removed | `package`, `version`, `change` |
@@ -927,7 +1146,7 @@ API (requires `audit.read`; a system administrator holds it implicitly):
   "action": "package.published",
   "category": "content",
   "outcome": "success",
-  "actor": {"type": "ci", "id": "5f0e…", "name": "ci:acme-publish", "tokenId": "c41d…", "authMethod": "bearer"},
+  "actor": {"type": "ci", "id": "5f0e…", "name": "ci:gitlab-internal/acme-publish", "tokenId": "c41d…", "authMethod": "bearer"},
   "source": {"ip": "10.12.4.7", "userAgent": "npm/11.6.0 node/v24.11.0 linux x64 workspaces/false"},
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
   "replica": "trove-6f9c7d8b5-x2v4q",
@@ -940,9 +1159,10 @@ API (requires `audit.read`; a system administrator holds it implicitly):
 - **Exports are audited.** Every export writes `audit.exported`.
 - **Push to a SIEM** goes through the `log: audit` stream and the platform's log shipping. The
   export endpoint covers pulls and backfills.
-- **Retention.** The `audit-retention` task drops whole partitions whose newest possible timestamp
-  is older than `audit.retention_days`. `0` keeps events for ever. Values below 90 log a warning at
-  startup.
+- **Retention.** The `audit-retention` task calls `audit_maintain_partitions()` (R-OPS-015), which
+  drops whole partitions whose newest possible timestamp is older than the stored
+  `audit.retention_days`. `0` keeps events for ever. Values below 90 log a warning at startup. A
+  changed value takes effect after the next `trove migrate`, which the chart runs on every upgrade.
 - **Restore.** Audit events live in PostgreSQL, so a database restore also restores them
   ([ha-and-helm.md](ha-and-helm.md)).
 - **UI.** The UI offers an audit view backed by this API ([api-and-ui.md](api-and-ui.md)).
@@ -1048,47 +1268,72 @@ tracing:
 ## Maintenance and administrative operations
 
 ### R-OPS-019 · Scheduled maintenance tasks and job visibility
-Priority: **P1** · Covers: OPS-065, ART-051
+Priority: **MVP** · Covers: OPS-065, ART-051
 
-**Tasks and leases.** A *task* is a named, recurring maintenance job. A singleton scheduler
-enqueues due tasks into the job queue. The scheduler runs on the replica that holds the
+**Why MVP** (Q-OPS-9). The queue and the scheduler are MVP ([architecture.md](architecture.md)
+R-ARCH-016), and MVP operations return job references that must be pollable from the first
+release: garbage collection (R-OPS-020) and every long-running API operation
+([api-and-ui.md](api-and-ui.md) R-API-015). A task exists from the release that ships its owning
+requirement: the MVP registers `gc`, `gc-full`, `audit-retention`, `replica-registry-prune`,
+`secrets-reencrypt` and the MVP tasks of other pages; P1 requirements add theirs when they ship.
+
+**Tasks and leases.** A *task* is a named maintenance job, recurring or manual-only. A singleton
+scheduler enqueues due tasks into the job queue. The scheduler runs on the replica that holds the
 `scheduler` advisory-lock lease (INV-12), and any worker executes the job
 ([architecture.md](architecture.md) owns the queue).
+
+**Manual-only tasks.** A task registered as manual-only has no schedule: it has no
+`maintenance.tasks.<name>` entry, the scheduler never enqueues it, and it runs only through
+`POST /api/v1/system/tasks/{name}/run`. A `maintenance.tasks.<name>` entry for such a task stops
+startup with an error that names the key (R-OPS-028). `secrets-reencrypt` is the first one. A
+manual-only task may declare a precondition that the trigger checks before it enqueues the job; a
+failed precondition answers `409` with a problem that names it, and nothing is enqueued.
 
 **Exactly-once enqueue.** Each due run carries the key `(task, scheduled_for)`. A unique constraint
 on that key means a lease hand-over can never enqueue the same run twice.
 
 **Missed runs** after a full outage are not caught up. Only the latest missed slot runs, once.
 
-**Mutual exclusion.** A task does not start while another run of the same task is queued or
-running. A manual trigger in that state returns the existing job with `409`.
+**Mutual exclusion.** A task does not start while another run of the same task, or of a task that
+shares its exclusion key, is queued or running. [storage.md](storage.md)'s `gc` and `gc-full`
+share the exclusive dedup key `gc` (Q-STOR-10, R-STOR-025), through the `exclusive` enqueue mode
+of R-ARCH-016, so at most one collection run is queued or running, whichever task started it. A
+manual trigger in that state returns the existing job with `409`. A scheduled slot refused by the
+shared key is offered again on the next scheduler tick, so it is postponed, never lost
+(R-STOR-025).
 
 | Task | Semantics owned by | Default schedule |
 |---|---|---|
-| `gc` | [storage.md](storage.md) (R-OPS-020 is the trigger) | set by storage.md; example `0 */4 * * *` |
+| `gc` | [storage.md](storage.md) R-STOR-024 and R-STOR-025: incremental collection (R-OPS-020 is the trigger); dedup key `gc` | `*/30 * * * *` (proposed, storage.md) |
+| `gc-full` | [storage.md](storage.md) R-STOR-025: full sweep (R-OPS-020 is the trigger); shares the dedup key `gc` | `0 2 * * 0` (proposed, storage.md) |
+| `orphan-sweep` | [storage.md](storage.md) R-STOR-026 | `0 5 * * 6` (proposed, storage.md) |
+| `scrub` | [storage.md](storage.md) R-STOR-027 | `0 4 * * *` (proposed, storage.md) |
 | `storage-summary` | R-OPS-023 | `17 * * * *` (proposed) |
-| `audit-retention` | R-OPS-017; also creates partitions ahead | `30 3 * * *` (proposed) |
+| `audit-retention` | R-OPS-015 and R-OPS-017: calls `audit_maintain_partitions()`, which creates partitions ahead and drops expired ones | `30 3 * * *` (proposed) |
 | `webhook-retention` | R-OPS-044 and the outbox of R-OPS-035 | `*/15 * * * *` (proposed) |
 | `support-bundle-expiry` | R-OPS-027 | `0 4 * * *` (proposed) |
 | `replica-registry-prune` | R-OPS-003 | `*/10 * * * *` (proposed) |
-| `remote-cache-cleanup` | [storage.md](storage.md), [repositories-and-proxy.md](repositories-and-proxy.md) (RET-036, RMT-021) | set by those pages |
+| `remote-cache-cleanup` | [storage.md](storage.md) R-STOR-045; the per-repository expiry setting belongs to [repositories-and-proxy.md](repositories-and-proxy.md) (RET-036, RMT-021) | `0 3 * * *` (proposed, storage.md) |
 | `token-cleanup`, `session-cleanup` | [identity-and-authentication.md](identity-and-authentication.md) | set by that page |
+| `secrets-reencrypt` | [architecture.md](architecture.md) R-ARCH-021: re-seals every stored secret with the active key; its job kind has the same name ([api-and-ui.md](api-and-ui.md) R-API-049) | manual only; precondition: the key rings of all live replicas are compatible (R-OPS-003), else `409` `key_ring_incompatible` |
 
 Retention policies ([storage.md](storage.md)) carry their own schedules and appear in the job list,
 not in the task list.
 
 **Schedules are configuration.** They live in `maintenance.tasks.<name>`, not in the database. The
-API shows them and can trigger a run, but it cannot edit them.
+API shows them and can trigger a run, but it cannot edit them. A task's default schedule applies
+when its key is absent; the owning page of a task sets that default, and the table above repeats
+it.
 
 API:
 
 | Method and path | Request | Response | Permission |
 |---|---|---|---|
-| `GET /api/v1/system/tasks` | — | `200` per task: `name`, `schedule`, `enabled`, `nextRunAt`, `running`, `lastRun{jobId,startedAt,finishedAt,outcome,replica}` | `system.read` |
-| `POST /api/v1/system/tasks/{name}/run` | optional task parameters, e.g. `{"dryRun":true}` | `202 {"job":{…}}`; `409 {"job":{…}}` if already queued or running; `404` unknown task; `503` in read-only mode for mutating tasks (R-OPS-024) | system administrator |
-| `GET /api/v1/system/jobs` | `kind`, `state` (`queued`, `running`, `succeeded`, `failed`, `cancelled`), `limit`, `cursor` | `200` jobs with `id`, `kind`, `state`, `replica`, `enqueuedAt`, `startedAt`, `finishedAt`, `attempt`, `progress`, `error`, `triggeredBy` | `system.read` |
-| `GET /api/v1/system/jobs/{id}` | — | `200` one job, including its result summary | `system.read` |
-| `POST /api/v1/system/jobs/{id}/cancel` | — | `202`; the job stops at its next checkpoint; `409` if finished | system administrator |
+| `GET /api/v1/system/tasks` | — | `200` per task: `name`, `schedule`, `enabled`, `nextRunAt`, `running`, `lastRun{jobId,startedAt,finishedAt,outcome,replica}`; `schedule` and `nextRunAt` are `null` for a manual-only task | `system.read` |
+| `POST /api/v1/system/tasks/{name}/run` | optional task parameters, e.g. `{"dryRun":true}` | `202 {"job":{…}}` with `Location` of the job ([api-and-ui.md](api-and-ui.md) R-API-015); `409 {"job":{…}}` if a run of the task, or of a task sharing its dedup key, is already queued or running; `409` problem when the task's precondition fails (`key_ring_incompatible` for `secrets-reencrypt`); `404` unknown task; `503` in read-only mode for mutating tasks (R-OPS-024) | system administrator |
+| `GET /api/v1/system/jobs` | `kind`, `state` (the job states of R-ARCH-016: `queued`, `running`, `succeeded`, `failed`, `cancelling`, `cancelled`), `limit`, `cursor` | `200` jobs with `id`, `kind`, `state`, `replica`, `enqueuedAt`, `startedAt`, `finishedAt`, `attempt`, `progress`, `error`, `triggeredBy` | `system.read`; any other caller sees only the jobs it started (R-API-015) |
+| `GET /api/v1/system/jobs/{id}` | — | `200` one job, including its result summary | `system.read`, or the caller started the job (R-API-015) |
+| `POST /api/v1/system/jobs/{id}/cancel` | — | `202`; the job turns `cancelling` and stops at its next checkpoint; `409` if finished | system administrator, or the caller started the job (R-API-015) |
 
 A job reference returned by any trigger on this page has this shape:
 
@@ -1099,17 +1344,28 @@ A job reference returned by any trigger on this page has this shape:
 ```yaml
 maintenance:
   tasks:
+    gc: {enabled: true, schedule: "*/30 * * * *"}                  # default (proposed); owned by storage.md R-STOR-025
+    gc-full: {enabled: true, schedule: "0 2 * * 0"}                # default (proposed); owned by storage.md R-STOR-025
+    orphan-sweep: {enabled: true, schedule: "0 5 * * 6"}           # default (proposed); owned by storage.md R-STOR-026 (P1)
+    scrub: {enabled: true, schedule: "0 4 * * *"}                  # default (proposed); owned by storage.md R-STOR-027 (P1)
+    remote-cache-cleanup: {enabled: true, schedule: "0 3 * * *"}   # default (proposed); owned by storage.md R-STOR-045 (P1)
     storage-summary: {enabled: true, schedule: "17 * * * *"}       # default (proposed)
     audit-retention: {enabled: true, schedule: "30 3 * * *"}       # default (proposed)
     webhook-retention: {enabled: true, schedule: "*/15 * * * *"}   # default (proposed)
     support-bundle-expiry: {enabled: true, schedule: "0 4 * * *"}  # default (proposed)
     replica-registry-prune: {enabled: true, schedule: "*/10 * * * *"}  # default (proposed)
+    # secrets-reencrypt is manual-only: no entry; one here stops startup
 ```
 
 **Acceptance criteria:**
 
 - With three replicas, each scheduled run of `storage-summary` appears exactly once in the job list
   over 24 h.
+- `GET /api/v1/system/tasks` lists `secrets-reencrypt` with `"schedule": null` and
+  `"nextRunAt": null`. Setting `maintenance.tasks.secrets-reencrypt` stops startup with an error
+  that names the key. While `trove_secrets_key_rings_compatible` is `0`,
+  `POST …/tasks/secrets-reencrypt/run` answers `409` with code `key_ring_incompatible` and no job is
+  enqueued.
 - Deleting the pod that holds the `scheduler` lease moves `trove_lease_held{name="scheduler"}`
   to another replica within one lease period, with no duplicate runs.
 - `POST …/tasks/storage-summary/run` twice in a row returns `202`, then `409` with the same job ID.
@@ -1117,22 +1373,34 @@ maintenance:
 ### R-OPS-020 · Garbage-collection trigger
 Priority: **MVP** · Covers: API-113
 
-Garbage collection itself is specified in [storage.md](storage.md). This page specifies how it is
-started and observed.
+Garbage collection itself is specified in [storage.md](storage.md) (R-STOR-024, R-STOR-025). This
+page specifies how it is started and observed.
 
-- `POST /api/v1/system/tasks/gc/run` (R-OPS-019) starts a run. Its body is
-  `{"dryRun": false}` (default). A dry run reports what it would delete and deletes nothing.
-- The job result contains at least: blobs examined, blobs deleted (or, in a dry run, blobs that
-  would be deleted), bytes reclaimed, blobs skipped for the grace period, and errors. These figures
-  feed the `trove_gc_*` families (R-OPS-008).
+- **Two tasks.** `POST /api/v1/system/tasks/gc/run` (R-OPS-019) starts an incremental run.
+  `POST /api/v1/system/tasks/gc-full/run` starts the full sweep, which also finds unreferenced
+  blobs that never reached the collection queue. Both take the body `{"dryRun": false}` (default).
+  A dry run reports what it would delete and changes nothing, the trash purge included.
+- **One run at a time.** Both tasks share the exclusive dedup key `gc`, so a trigger of either
+  while a run of either is queued or running answers `409` with that job.
+- **Result.** The job result carries the fields of [storage.md](storage.md) R-STOR-025:
+  `dryRun`, `trashPurged`, `candidates`, `kept`, `deleted`, `bytesReclaimed` and `errors`. In a
+  dry run, `deleted` and `bytesReclaimed` count what a real run would delete. These figures feed
+  the `trove_gc_*` families (R-OPS-008).
+- **Observation and stop.** Runs are listed through `GET /api/v1/system/jobs?kind=gc` and
+  `?kind=gc-full` and stopped through `POST /api/v1/system/jobs/{id}/cancel`, after the current
+  batch.
 - Starting a run writes `system.task_triggered`.
 - Permission: system administrator.
 
-**Acceptance criteria:** delete a package version, wait for the grace period
-([storage.md](storage.md)), then run `POST …/tasks/gc/run` with `{"dryRun":true}`. The job result
-lists its blob as deletable, and the object still exists in the bucket
-(`aws s3api head-object --bucket … --key <prefix>/sha256/…` succeeds). A real run then removes it,
-and `trove_gc_deleted_blobs_total` grows.
+**Acceptance criteria:**
+
+- With the trash can disabled (P1, [storage.md](storage.md) R-STOR-022), delete a package version,
+  wait for the grace period ([storage.md](storage.md)), then run `POST …/tasks/gc/run` with
+  `{"dryRun":true}`. The job result shows `"dryRun": true` and counts the blob in `deleted`, and
+  the object still exists in the bucket (`aws s3api head-object --bucket … --key <prefix>/sha256/…`
+  succeeds). A real run then removes it, and `trove_gc_deleted_blobs_total` grows.
+- `POST …/tasks/gc-full/run` while a `gc` run is queued or running answers `409` with the `gc`
+  job's ID.
 
 ### R-OPS-021 · Remote cache invalidation
 Priority: **P1** · Covers: API-028
@@ -1198,16 +1466,22 @@ flat-container version lists.
 Priority: **P1** · Covers: API-031, API-032, STOR-039
 
 The `storage-summary` task computes aggregates from PostgreSQL and stores the result. Readers
-always get the cached result, never a live computation.
+always get the cached result, never a live computation. This requirement owns the task, its
+schedule, the snapshot table and the envelope (`computedAt`, `durationMs`).
+[storage.md](storage.md) R-STOR-028 owns the figures and the read path (Q-STOR-10), and the task
+is started like every other task, through R-OPS-019 (Q-OPS-9, [api-and-ui.md](api-and-ui.md)
+R-API-020: one path per function).
 
 - **Source of the counts.** The aggregates come from the metadata schema of
-  [storage.md](storage.md). storage.md MAY maintain incremental counters, which the task then reads
-  instead of scanning.
+  [storage.md](storage.md): the task reads the folded counters of R-STOR-003 and the partial
+  indexes on `blobs` instead of scanning items (R-STOR-028).
 - **Response format.** Numbers are plain integers and ratios. They are not formatted strings,
   unlike the catalog's behaviour.
-- **What is counted.** The figures cover what PostgreSQL references. The bucket's billed usage
-  differs: it also holds objects inside the garbage-collection grace period, orphans, and versions
-  kept by bucket versioning. S3-compatible stores have no capacity, so the summary reports none.
+- **What is counted.** The figures cover what PostgreSQL references. `blobs` already includes
+  content referenced only from the trash can and content awaiting collection. The bucket's billed
+  usage still differs: it also holds objects of rows in state `deleting`, orphans, and versions
+  kept by bucket versioning. S3-compatible stores report no capacity, so `quota` shows only the
+  capacity an administrator configured (R-STOR-029), never a measured one.
 
 ```sql
 CREATE TABLE storage_summary (
@@ -1220,25 +1494,37 @@ CREATE TABLE storage_summary (
 
 | Method and path | Response | Permission |
 |---|---|---|
-| `GET /api/v1/system/storage/summary` | `200` (below); `404` before the first computation | `storage.read` |
-| `POST /api/v1/system/storage/summary/refresh` | `202 {"job":{…}}`, or `409` with the running job | system administrator |
+| `GET /api/v1/storage/summary` | `200` the latest snapshot (below; the figures and their definitions are owned by [storage.md](storage.md) R-STOR-028); `404` before the first computation; reads never compute | `storage.read` |
+| `POST /api/v1/system/tasks/storage-summary/run` | `202 {"job":{…}}`, or `409` with the running job (R-OPS-019). There is no second refresh path | system administrator |
 
 ```json
 {
-  "computedAt": "2026-10-28T11:17:04.002Z",
-  "durationMs": 5321,
-  "blobs": {"count": 182344, "bytes": 912345678901},
-  "logical": {"files": 240112, "bytes": 1203456789012},
-  "deduplicationRatio": 0.758,
+  "computedAt": "2026-10-28T09:17:00.412Z",
+  "durationMs": 412,
+  "blobs": { "count": 412093, "bytes": 1893341184512 },
+  "logical": { "files": 1203381, "folders": 98112, "bytes": 4120938391040 },
+  "deduplicationRatio": 0.4594,
+  "trash": { "items": 3210, "bytes": 9123012345 },
+  "pendingCollection": { "blobs": 812, "bytes": 1029381233 },
+  "damaged": { "missing": 0, "corrupt": 0 },
+  "quota": { "enabled": true, "capacityBytes": 5497558138880, "usedRatio": 0.3444, "warnPercent": 80, "limitPercent": 95 },
   "repositories": [
-    {"key": "npm-remote", "format": "npm", "class": "remote", "files": 120034, "bytes": 493210000000, "packages": 8123, "versions": 45012, "shareOfLogicalBytes": 0.4098}
+    { "key": "npm-local", "class": "local", "format": "npm", "files": 52011, "folders": 8812, "bytes": 81233920123, "packages": 812, "versions": 9120, "shareOfLogicalBytes": 0.0197 }
   ]
 }
 ```
 
-**Acceptance criteria:** after publishing a 1 MiB package to `npm-local` and refreshing, the
-`npm-local` entry's `bytes` grows by the tarball size. `trove_storage_summary_age_seconds` drops
-below 60, and a token without `storage.read` gets `403`.
+*(example values)* `computedAt` and `durationMs` are this requirement's envelope. Every other
+member is defined in R-STOR-028: `deduplicationRatio` is `blobs.bytes / logical.bytes`,
+`quota.usedRatio` is `blobs.bytes / capacityBytes` (`null` without a configured capacity), and
+`shareOfLogicalBytes` is a repository's share of `logical.bytes` as a ratio from 0 to 1. The
+`damaged` counts also feed the gauge `trove_storage_blobs_damaged{status}` (R-OPS-008).
+
+**Acceptance criteria:** after publishing a 1 MiB package to `npm-local` and running
+`POST /api/v1/system/tasks/storage-summary/run`, the `npm-local` entry's `bytes` in
+`GET /api/v1/storage/summary` grows by the tarball size. `trove_storage_summary_age_seconds`
+drops below 60, and a token without `storage.read` gets `403`. The OpenAPI document contains
+neither `/api/v1/system/storage/summary` nor a `…/summary/refresh` path.
 
 ### R-OPS-024 · Read-only maintenance mode
 Priority: **P1** · Covers: trove-only
@@ -1282,8 +1568,8 @@ In `read_only` mode:
 - **Pull-through caching** continues while `cacheFill: true`. With `cacheFill: false`, remote
   repositories serve only what they already cache, as in global offline mode
   ([repositories-and-proxy.md](repositories-and-proxy.md), RMT-031).
-- **Background work.** The scheduler does not enqueue mutating tasks (`gc`, retention, reindex,
-  `remote-cache-cleanup`). Runs already in progress finish.
+- **Background work.** The scheduler does not enqueue mutating tasks (`gc`, `gc-full`,
+  `orphan-sweep`, retention, reindex, `remote-cache-cleanup`). Runs already in progress finish.
 - **Readiness** is unaffected.
 - **UI.** The UI shows the mode as a banner (R-OPS-025).
 
@@ -1516,7 +1802,7 @@ sections it owns, in the requirements above and below.
 
 | Section | Owner |
 |---|---|
-| `server` | [architecture.md](architecture.md) (listeners, timeouts, shutdown); this page (`base_url`, `trusted_proxies`, `additional_base_urls`, `replica_header`) |
+| `server` | [architecture.md](architecture.md) (listeners, timeouts, shutdown, the content origin `content_base_url` and `content_url_ttl` of R-ARCH-029); this page (`base_url`, `trusted_proxies`, `additional_base_urls`, `replica_header`) |
 | `database`, `migrate`, `backup`, `runtime` | [ha-and-helm.md](ha-and-helm.md) |
 | `storage`, `retention` | [storage.md](storage.md) |
 | `auth` | [identity-and-authentication.md](identity-and-authentication.md) |
@@ -1546,8 +1832,8 @@ health:
   check_timeout: 2s                                # default (proposed)
   failure_threshold: 2                             # default (proposed)
   success_threshold: 1                             # default (proposed)
-  require_object_store: true                       # default (proposed)
-  liveness_unready_grace: 0s                       # default (proposed)
+  require_object_store: false                      # default (proposed)
+  watchdog_timeout: 2m                             # default (proposed)
   shutdown_drain_delay: 5s                         # default (proposed)
 log:
   format: json                                     # default (proposed)
@@ -1626,13 +1912,13 @@ metadata:
   name: platform-baseline          # document identity; owns every object it declares
   prune: true                      # delete owned objects that are no longer declared
 spec:
-  oidcProviders:                   # trusted issuers for CI exchange (gitlab-ci-oidc.md)
+  ciIssuers:                       # trusted issuers for the CI exchange (gitlab-ci-oidc.md); not login providers
     - name: gitlab
       issuer: https://gitlab.example.com
       audiences: ["https://trove.example.com"]
-  groups:
+  groups:                          # group records only; claim-to-group rules live in the configuration file
     - name: developers
-      claimValues: ["acme/developers"]   # group-claim mapping (identity-and-authentication.md)
+      description: All developers
   serviceAccounts:
     - name: renovate
       description: Dependency update bot
@@ -1662,9 +1948,9 @@ spec:
       principals: {groups: [developers]}
       resources: [{repositories: ["npm-*", "nuget-*"]}]
       actions: [read]
-  identityMappings:
+  ciMappings:
     - name: acme-publish
-      provider: gitlab
+      issuer: gitlab               # the CI issuer the mapping belongs to (path parameter of its API)
       match: {namespace_path: acme, ref_protected: "true"}
       grants:
         - repositories: [npm-local]
@@ -1682,11 +1968,20 @@ page:
 | `repositories` | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | `permissionPolicies` | [authorization.md](authorization.md) |
 | `groups`, `serviceAccounts` | [identity-and-authentication.md](identity-and-authentication.md) |
-| `oidcProviders`, `identityMappings` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
+| `ciIssuers`, `ciMappings` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
 | `retentionPolicies` | [storage.md](storage.md) |
 | `webhooks` | R-OPS-038 |
 
 So the document needs no second schema: the OpenAPI document generates its JSON Schema.
+
+**Login providers are not a document kind** (Q-OPS-6). The browser-login OIDC clients (INV-7) live
+in the configuration file ([identity-and-authentication.md](identity-and-authentication.md)
+R-AUTH-004), so login works before any document is applied and a broken apply cannot lock
+administrators out. That covers the whole provider entry, including its claim mapping and its
+claim-to-group rules (R-AUTH-008): a document declares group records, never which claim values
+lead into them. A document that contains a `loginProviders` key, or a group with a claim-mapping
+field, is rejected with `422`. The CI issuers of `spec.ciIssuers` are a different thing: they are
+trusted for the CI token exchange only (INV-10) and never log anyone in.
 
 **An object is the complete desired state of that object.** Omitted fields take their defaults and
 are not merged with the stored values. This makes the result independent of history, and it is
@@ -1699,8 +1994,11 @@ convention: an object is deleted by removing it from a document that has `prune:
 - **Conflicts.** A document that declares an object owned by another document, or an existing
   unmanaged object with the same key, has a conflict (R-OPS-030), unless the apply request sets
   `adopt: true`.
-- **Locking.** With `config_as_code.lock_managed_objects: true`, the API and UI reject changes to
-  a managed object's configuration with `409` and name the owning document (Q-OPS-8).
+- **Locking.** With `config_as_code.lock_managed_objects: true` (the default), the API and UI
+  reject changes to a managed object's configuration with `409` and name the owning document
+  (Q-OPS-8). The way to change a locked object, including in an emergency, is to apply a corrected
+  document through the API or the CLI (R-OPS-030); the CLI's database mode works when no
+  administrator can log in. `adopt: true` moves an object to another document.
 - **Content is unaffected.** Publishing into a managed repository is not a configuration change and
   is not affected.
 
@@ -1740,7 +2038,9 @@ anyone with database read access guess short secrets offline.
 **Acceptance criteria:** the document above validates against the JSON Schema generated from the
 OpenAPI document. A document with `secretRef: {file: ../db-password}` or
 `secretRef: {env: TROVE_DATABASE_PASSWORD}` is rejected with `422`, and the error names the
-field.
+field. So is a document with a `spec.loginProviders` key, or with `claimValues` on a group.
+With the default lock, `PUT /api/v1/repositories/npm-local` with the current `If-Match` on a
+repository owned by `platform-baseline` answers `409`, and the problem names the document.
 
 ### R-OPS-030 · Diff and apply
 Priority: **P1** · Covers: OPS-043, OPS-045, ADMAPI-073
@@ -1780,8 +2080,8 @@ returns `412` instead of applying an unreviewed plan.
 
 - Apply runs under the advisory lock `config` in one PostgreSQL transaction. Every change commits,
   or none does.
-- Creates and updates run in dependency order: `oidcProviders`, `groups`, `serviceAccounts`, local
-  and remote `repositories`, virtual `repositories`, `identityMappings`, `permissionPolicies`,
+- Creates and updates run in dependency order: `ciIssuers`, `groups`, `serviceAccounts`, local
+  and remote `repositories`, virtual `repositories`, `ciMappings`, `permissionPolicies`,
   `webhooks`, `retentionPolicies`. Deletes run in reverse order.
 - Other replicas learn of the changes through the normal `NOTIFY` invalidation.
 
@@ -1809,7 +2109,9 @@ the per-object events of R-OPS-016.
 - `curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/yaml' --data-binary @baseline.yaml https://trove.example.com/api/v1/config/diff | jq .summary`
   shows the expected counts. Applying with the returned `planHash` succeeds, and a second diff
   shows only `unchanged`.
-- Changing one repository through the UI between diff and apply makes the apply return `412`.
+- Diff and apply with `adopt=true`. Changing, through the UI, a repository that the document
+  adopts (it is not managed yet, so it is not locked, Q-OPS-8) between diff and apply makes the
+  apply return `412`.
 - Applying a document with an empty `spec` and `prune: true` returns `409` and changes nothing.
 - A fault injected in the middle of an apply leaves the database without any of its changes.
 
@@ -1920,18 +2222,24 @@ Raw file downloads (`/files/<repoKey>/<path>`, INV-6) and the UI's file viewer t
 gets `application/octet-stream`.
 
 **Response headers.** Package content is uploaded by users and served from the same origin as the
-UI, so every raw download MUST carry:
+UI, so every raw download MUST carry, whatever its content type:
 
 - `X-Content-Type-Options: nosniff`;
 - `Content-Security-Policy: sandbox; default-src 'none'`;
-- for active types (`text/html`, `application/xhtml+xml`, `image/svg+xml`, `text/xml`,
-  `application/xml`, `text/javascript`, `application/javascript`, `application/pdf`),
-  `Content-Disposition: attachment`.
+- `Cross-Origin-Resource-Policy: same-site`;
+- `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded file name>`, on every
+  `/files/` response, not only for types a browser would render ([storage.md](storage.md)
+  R-STOR-012).
 
-An override cannot remove these headers.
+These are the content headers of [architecture.md](architecture.md) R-ARCH-007. They are required
+from the MVP by R-ARCH-007 and R-STOR-012, whatever this requirement's priority. The core sets them
+through a response wrapper that no handler can weaken, and an override in this table cannot remove
+them. With the separate content origin of R-ARCH-029 (P1), responses on the content host carry
+`Cross-Origin-Resource-Policy: cross-origin` instead of `same-site` and add
+`Referrer-Policy: no-referrer`; R-ARCH-029 owns that difference.
 
 Package-protocol endpoints set the content types their clients expect (format pages), not this
-table.
+table. They carry the content headers of R-ARCH-007 as well.
 
 ```yaml
 content_types:
@@ -1941,8 +2249,12 @@ content_types:
 **Acceptance criteria:**
 
 - `curl -sI …/files/generic-local/docs/index.html` shows `Content-Disposition: attachment`,
-  `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`.
-- `curl -sI …/files/npm-local/@acme/ui/-/ui-2.4.0.tgz` shows `Content-Type: application/gzip`.
+  `Content-Security-Policy: sandbox; default-src 'none'`, `X-Content-Type-Options: nosniff` and
+  `Cross-Origin-Resource-Policy: same-site`.
+- `curl -sI …/files/npm-local/@acme/ui/-/ui-2.4.0.tgz` shows `Content-Type: application/gzip` and
+  `Content-Disposition: attachment; filename*=UTF-8''ui-2.4.0.tgz`.
+- With `content_types.overrides: {".txt": "text/plain"}`, `curl -sI …/files/generic-local/notes.txt`
+  still shows `Content-Disposition: attachment` and the sandbox CSP.
 
 ## Webhooks
 
@@ -1968,7 +2280,9 @@ plus the propagation delay (≤ 2 s). Earlier events are not delivered.
 
 **Dispatch.**
 
-- Committing an outbox row sends `NOTIFY trove_events`, and any worker dispatches.
+- Committing an outbox row sends `NOTIFY trove_events`, and any worker dispatches. The channel is
+  hot-path ([architecture.md](architecture.md) R-ARCH-018): the notification leaves through the
+  coalescer after commit, because publish and cache-fill transactions write outbox rows.
 - The dispatcher claims undispatched rows with `FOR UPDATE SKIP LOCKED` in batches of up to 100.
 - For each event it evaluates every enabled subscription (filter and owner permission, R-OPS-038
   and R-OPS-039).
@@ -2034,7 +2348,7 @@ SDK.
     "actor": {
       "type": "ci",
       "id": "5f0e…",
-      "name": "ci:acme-publish",
+      "name": "ci:gitlab-internal/acme-publish",
       "tokenAuthenticated": true,
       "authMethod": "bearer",
       "ci": {"issuer": "https://gitlab.example.com", "project_path": "acme/ui", "ref": "main", "pipeline_id": "184467", "job_id": "9921034"}
@@ -2043,9 +2357,14 @@ SDK.
 }
 ```
 
+- **One envelope for every domain.** Every event type of every domain is delivered in this
+  envelope, with `source` set. This includes the domains that later features add (curation,
+  scanning, lifecycle and so on). No domain is delivered as a bare data object, and no domain
+  omits `source`.
 - **Standard attributes.**
   - `source` is `server.base_url`.
-  - `type` is `trove.` followed by the registry name (Q-OPS-5).
+  - `type` is `trove.` followed by the registry name. The prefix is fixed from the first release
+    that ships webhooks (Q-OPS-5).
   - `subject` is `<repository>/<path or package@version>`.
 - **Extension attributes** (lower-case, as CloudEvents requires):
   - `trovesubscription`: the matching subscription;
@@ -2084,8 +2403,13 @@ selects them.
 
 - **Move and copy match the source.** Moved and copied files are matched against the source
   repository and path.
-- **Deleting a folder** emits one `artifact.deleted` per file. One npm publish emits one
-  `package.published` and one `artifact.deployed`.
+- **Location fields.** `source` and `target` are objects that hold the bare repository key and the
+  path inside that repository, for example
+  `{"repository": "npm-local", "path": "@acme/ui/-/ui-2.4.0.tgz"}`. They are never one joined
+  string.
+- **Folders.** Deleting, moving or copying a folder emits one event per file it contains. There is
+  no folder-level event. One npm publish emits one `package.published` and one
+  `artifact.deployed`.
 - **Discovery.** `GET /api/v1/webhooks/event-types` (requires `webhooks.read`) lists the domains, the
   types available in this installation, the filter shape per domain, and a schema link per type.
   `GET /api/v1/webhooks/event-types/{type}/schema` returns the JSON Schema of `data` and is public,
@@ -2142,6 +2466,12 @@ handler.
 ```
 
 - **Key.** Matches `^[a-z][a-z0-9_-]{1,99}$`, is unique, and is fixed after creation.
+- **Reserved keys.** `test`, `deliveries` and `event-types` are reserved names of the collection
+  ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7), because `/api/v1/webhooks/test`,
+  `/api/v1/webhooks/deliveries` and `/api/v1/webhooks/event-types` sit in the `{key}` position. A
+  create with one of them, through the API or a configuration document (R-OPS-029), is rejected
+  with `422` `reserved_name`. The key schema in the OpenAPI document lists them as
+  `x-trove-reserved-names`, so R-API-004's CI check covers any literal sibling added later.
 - **`enabled`** MUST be present on create, because subscriptions have no implicit default.
 - **Filter.**
   - Repository selection is the union of `repositories` and the `anyLocal` / `anyRemote`
@@ -2165,9 +2495,9 @@ API (permissions per R-OPS-039; secret handling per R-OPS-040 and R-OPS-041):
 |---|---|
 | `GET /api/v1/webhooks` | `200` subscriptions the caller may read, without secret values |
 | `POST /api/v1/webhooks` | `201` stored subscription (with a generated signing secret, once); `400`/`422` invalid; `409` key exists |
-| `GET /api/v1/webhooks/{key}` | `200`; `404` |
-| `PUT /api/v1/webhooks/{key}` | Full replacement of everything except `key` and `owner`; `200`; `404`; `412` on an `If-Match` revision mismatch |
-| `DELETE /api/v1/webhooks/{key}` | `204`; pending deliveries are abandoned |
+| `GET /api/v1/webhooks/{key}` | `200` with `ETag: "<revision>"`; `404` |
+| `PUT /api/v1/webhooks/{key}` | Full replacement of everything except `key` and `owner`; `If-Match` required ([api-and-ui.md](api-and-ui.md) R-API-012, Q-API-2; `If-Match: *` for a deliberate blind write); `200` with the new `ETag`; `404`; `412` `precondition_failed` on a revision mismatch; `428` `precondition_required` without `If-Match` |
+| `DELETE /api/v1/webhooks/{key}` | `204`; pending deliveries are abandoned; `If-Match` optional |
 | `POST /api/v1/webhooks/{key}/reactivate` | `200`; system administrator |
 
 ```sql
@@ -2198,6 +2528,12 @@ secrets given as `secretRef`.
   after it.
 - `exclude: ["@acme/internal-*"]` suppresses `@acme/internal-tools`.
 - A `POST` without `enabled` returns `422`.
+- A `POST /api/v1/webhooks` with key `deliveries`, `test` or `event-types` returns `422` with code
+  `reserved_name`.
+- A `PUT /api/v1/webhooks/gitlab-trigger-npm` without `If-Match` returns `428` and changes
+  nothing; with the `ETag` of a preceding `GET` it returns `200`, and a second `PUT` with the same
+  tag returns `412`. Single-secret writes (`PUT …/secrets/{name}`, R-OPS-041) need no `If-Match`:
+  they are write-only slots, exempt under R-API-012.
 
 ### R-OPS-039 · Webhook authorization
 Priority: **P1** · Covers: EVT-030, ADMAPI-027
@@ -2301,28 +2637,62 @@ The **templated handler** shapes method, headers and body for a receiver's own A
 }
 ```
 
-**Template language.** Go [`text/template`](https://pkg.go.dev/text/template), executed with
-`missingkey=error`.
+**Template language** (Q-OPS-11). Go [`text/template`](https://pkg.go.dev/text/template),
+executed with `missingkey=error`, restricted so that one render does a bounded amount of work.
 
 - **Root fields.**
   - `.event`: the whole envelope (R-OPS-036);
   - `.data`: shortcut to `.event.data`;
   - `.actor`: shortcut to `.event.data.actor`;
   - `.secrets.<name>`: the handler secrets.
-- **Functions.** The `text/template` built-ins, plus:
+- **Template data.** The envelope is passed as decoded JSON, with numbers as
+  [`json.Number`](https://pkg.go.dev/encoding/json#Number). Sizes therefore print exactly
+  (`1073741824`, not `1.073741824e+09`), and no data value is an integer that a `range` could
+  count up to. Every field that the type's data schema declares is present, `null` where it does
+  not apply, so `missingkey=error` fires only for names outside the schema.
+- **Allowed actions.**
+  - text and `{{ pipeline }}` output, comments;
+  - `if`, `else`, `else if`, `with`;
+  - variables (`{{ $f := index .data.files 0 }}`);
+  - `range` over a field path of the data, for example `{{ range .data.files }}`, with `break` and
+    `continue`.
+- **Rejected when the template is stored (`422`).**
+  - `define`, `template` and `block`, so templates cannot recurse;
+  - a `range` inside another `range`;
+  - more than 16 `range` actions in one template;
+  - a `range` whose pipeline is not a field path rooted at `.` or `$`, which refuses literals
+    (`{{ range 1000000000 }}`), function results and user variables;
+  - the `call` function.
+- **Functions.** The `text/template` built-ins except `call` (`and`, `or`, `not`, `eq`, `ne`, `lt`,
+  `le`, `gt`, `ge`, `len`, `index`, `slice`, `print`, `printf`, `println`, `urlquery`, `html`,
+  `js`), plus the functions below.
+  - **Number-aware comparisons.** `eq`, `ne`, `lt`, `le`, `gt` and `ge` are replaced (the
+    template's function map overrides built-ins) by versions that compare two numbers numerically,
+    whether each is a `json.Number` from the data or a numeric literal. The built-ins would compare
+    two `json.Number` values as strings (`9` greater than `10`) and refuse a number against a
+    literal. Comparing a number with a string is a render error.
   - `json`: encodes any value as JSON, including correct string escaping;
   - `yaml`;
   - `base64`;
-  - `default`.
+  - `default`: `{{ .data.package | default "none" }}` returns the fallback for a `null` or empty
+    value.
 
-  Template authors use `json` for values placed in JSON bodies. An unescaped scalar inside a JSON
-  string is the author's error, and the test delivery shows it.
-- **Forbidden actions.** `define`, `template` and `block` are rejected when the template is stored
-  (`422`), so templates cannot recurse.
+  No function reads files, the environment, the clock or the network. Template authors use `json`
+  for values placed in JSON bodies. An unescaped scalar inside a JSON string is the author's error,
+  and the test delivery shows it.
+- **Bounded work.** Arrays in event data hold at most 1,000 items (R-OPS-014), loops cannot nest,
+  and a template holds at most 16 of them, so one render runs at most 16,000 loop iterations. One
+  `printf` produces at most about 10 MB, because Go's `fmt` refuses larger widths. Rendering stops
+  with a render error at the first write past the body limit below.
+- **Missing values.** A name outside the schema is a render error. Validation on save finds it
+  against the sample event. At delivery it fails the attempt without a retry (R-OPS-042). A field
+  that is `null` renders as `<no value>` when printed directly, which is `text/template`'s own
+  output; templates print such fields through `default` or `json`.
 - **Limits.**
   - template source ≤ 64 KiB;
   - rendered body ≤ 1 MiB;
-  - header values are rendered with the same data.
+  - header values are templates too: they are rendered with the same data, under the same
+    restrictions, and their `range` actions count toward the 16.
   - The target URL is not templated. A URL that is itself a secret (incoming-webhook URLs of chat
     tools) is given as `"urlSecret": "<name>"` instead of `url`.
 - **Methods.** `POST` (default), `PUT`, `PATCH`, `GET`, `DELETE`.
@@ -2371,6 +2741,18 @@ CREATE TABLE webhook_secret (
   starts a workflow that declares `on: repository_dispatch`.
 - **Chat incoming webhook.** With `urlSecret`, a Slack-compatible incoming-webhook URL receives
   `{"text": {{ printf "%s published %s" .actor.name .event.subject | json }}}`.
+
+**Further acceptance criteria:**
+
+- Storing a template with `{{ range 1000000000 }}{{ end }}`, with a `range` nested in another, or
+  with `{{ define "x" }}` is refused with `422`, and the error names the construct.
+- `{{ range .data.files }}{{ .path }} {{ .size }};{{ end }}` renders
+  `@acme/ui/-/ui-2.4.0.tgz 48213;` for the `package.published` event shown in R-OPS-036.
+- A template that references `.data.pakage` is refused on save, because the sample event has no
+  such field.
+- For a file of size `9` and a literal `10`, `{{ if lt (index .data.files 0).size 10 }}small{{ end }}`
+  renders `small`, and `{{ if gt .data.package.name 1 }}{{ end }}` fails with a render error.
+- A template with 17 `range` actions is refused with `422`.
 
 ### R-OPS-042 · Delivery, retries and outbound protection
 Priority: **P1** · Covers: EVT-001, EVT-028, EVT-029
@@ -2676,8 +3058,10 @@ MVP and P1 features of the catalog pages above that this page does not specify:
   continuation of trace context (R-OPS-018). A too-wide `trusted_proxies` lets clients forge their
   audit address.
 - **Audit integrity.** Every state change and its audit record are atomic (R-OPS-015). Access
-  events can be dropped under overload, which the dropped counter makes visible. The records are
-  not tamper-evident (H-39).
+  events can be dropped under overload, which the dropped counter makes visible. In two-role mode
+  the runtime role can only insert and read audit rows, and retention is owner data, so a
+  compromised replica cannot erase its traces. The records are still not tamper-evident against
+  the schema owner or a superuser (H-39).
 - **Configuration documents can name secrets only inside an allow-list.** Files under
   `secrets_dir`, variables prefixed `TROVE_CAC_`. Without that limit, an administrator's document
   could copy the database password into a remote repository's credentials and send it to any host.
@@ -2689,135 +3073,224 @@ MVP and P1 features of the catalog pages above that this page does not specify:
   - they mask secrets in the delivery log (R-OPS-044).
 
   Event data such as package names is publisher-controlled. Templates must use `json` or
-  `urlquery` to keep it from breaking the receiver's syntax (R-OPS-041).
-- **Raw downloads** are served with `nosniff`, a sandboxing CSP and `attachment` for active
-  types, so uploaded HTML or SVG never runs in the UI's origin (R-OPS-034).
+  `urlquery` to keep it from breaking the receiver's syntax (R-OPS-041). Templates cannot recurse,
+  nest loops or count to a number of their choosing, so a stored template cannot tie up a worker
+  (Q-OPS-11).
+- **Raw downloads** are served with `nosniff`, a sandboxing CSP,
+  `Cross-Origin-Resource-Policy: same-site` and `Content-Disposition: attachment` on every
+  response, set by the core so no handler or content-type override can drop them. Uploaded HTML
+  or SVG therefore never runs in the UI's origin (R-OPS-034, R-ARCH-007).
 - **Support bundles** are administrator-only and audited. Their manifest is meant to be reviewed
   before sharing. They exclude identity data, tokens, audit events and package content
   (R-OPS-027).
 
-## Open questions
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
 
 ### Q-OPS-1 · Couple liveness to prolonged unreadiness?
 
-The catalog couples them by default (OPS-004).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- **(a)** Never couple. Liveness reflects only the process.
-- **(b)** Couple after a grace period for every check.
-- **(c)** Couple only for internal checks (`notify`, `startup`), never for dependency checks.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Never couple; liveness checks only that the HTTP server answers and the check loop runs | The previous default, without any coupling knob | Simple; no dependency outage can restart a replica | A deadlocked worker, scheduler or `LISTEN` loop leaves a replica alive but useless until a human notices |
+| (b) Couple after a grace period for every check | Liveness fails once readiness has failed for a set time; the catalog's default (OPS-004), and the previous draft's opt-in knob `health.liveness_unready_grace` | Self-heals a replica that stays unready | A shared outage of PostgreSQL restarts every replica together; contradicts R-HA-008's MUST; restarts discard caches and add connection load at the worst moment |
+| (c) Couple only for internal checks (`startup`, `notify`) after a grace period | A per-check coupling policy | Restarts a replica whose `LISTEN` session never recovers | `notify` also fails for shared causes (connection exhaustion, a transaction-mode pooler), so it still restarts all replicas together; per-check policy for little gain |
+| (d) Never couple to check results; liveness is a watchdog over trove's own loops | Each long-running loop records progress per iteration, failed iterations included; `/healthz` fails only when a loop has not finished an iteration within its bound, and the chart's liveness probe restarts the pod | Detects deadlocks and hung calls, the faults a restart actually repairs; a dependency outage only produces failed iterations, never a restart; the restart goes through Kubernetes, so the pod drains and the probe thresholds of R-HA-034 apply | Every call in a watched loop needs a deadline, which a test per loop has to enforce |
+| (e) Same watchdog, but the process exits itself | A stalled loop makes trove write a goroutine dump and call `os.Exit`; Kubernetes restarts the container | No dependence on probe settings; the evidence is written at the moment of the stall | An exit drops every in-flight request and upload at once, where a failed liveness probe still sends `SIGTERM` and lets the replica drain; operators can neither tune nor disable it through the chart's probe settings |
 
-**Recommendation: (a) as the default, with `health.liveness_unready_grace` as an opt-in (b).** A
-dependency outage affects every replica at once, and restarting them all adds load at the worst
-moment. Option (c) needs per-check policy for little gain, because the `notify` check already
-recovers by reconnecting.
+**Choice:** (d) — liveness never reads readiness or any check result, and fails only when one of trove's own loops stops making progress; (e)'s goroutine dump is adopted, its self-exit is not.
+
+**Rationale:** The deciding question is what a restart repairs. It repairs process-local faults (a deadlock, a goroutine blocked on a call without a deadline), and it never repairs a shared dependency. (b) and (c) infer a local fault from dependency symptoms, so during a shared outage they restart every replica at once, which R-HA-008 forbids. The previous opt-in knob put that failure one setting away, so it is removed rather than kept as an option. (a) is safe but blind to the stuck-loop case. (d) measures progress directly: a loop that keeps retrying an unreachable PostgreSQL is progressing, and the deadline rule turns a blackholed network into failed iterations rather than a hang. (e) detects the same faults but restarts without draining. Its one real advantage, evidence of the deadlock, is taken over: the watchdog logs a goroutine dump when it first reports a loop stuck. One trap of a watchdog is excluded explicitly: the claim loop counts as progressing while all workers are busy, otherwise one long garbage-collection job on the single maintenance worker would restart the replica. The extra cost is one timestamp per loop and the deadline test. The development agent would revisit this if production shows replicas stuck unready while every loop progresses; that symptom would get a targeted rule, not a generic coupling.
+
+**Applied in the spec:** R-OPS-001: liveness rewritten as a watchdog over named loops, with the progress rule (busy workers count as progress), the deadline rule, the draining exemption, a goroutine dump in the log when a loop is first reported stuck, and a `stuck` list in the `503` body. `health.liveness_unready_grace` removed and `health.watchdog_timeout: 2m` added. Acceptance criteria: a 5-minute PostgreSQL block causes no restart; a blocked claim loop fails liveness and logs the dump; a job running for three watchdog periods on a single worker leaves liveness at `200`. The example file in R-OPS-028 follows.
 
 ### Q-OPS-2 · Should object-storage reachability gate readiness?
 
-INV-12 says yes. But if S3 is unreachable, every replica turns unready at once. The Service then
-has no endpoints, even though logins, token exchange, metadata of local repositories and cached
-metadata could still be served.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- **(a)** Keep the invariant: S3 failure makes replicas unready.
-- **(b)** Gate only on PostgreSQL. On S3 failure, blob reads and writes answer `503` per request,
-  and a `degraded` flag is shown.
-- **(c)** Make it configurable with (a) as the default.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep INV-12 as written | An object-store failure makes replicas unready, softened by a failure threshold | Literal invariant; a replica that loses its own path to S3 leaves the Service | One bucket is shared, so an outage removes every replica. Logins, CI token exchange, metadata, deletes, the UI and the API go down with the blob traffic, including the screens operators diagnose with |
+| (b) Never gate on object storage | Readiness reflects the process and PostgreSQL only | Everything that needs no blob keeps working | A release with a wrong bucket, endpoint, credential or CA becomes ready and replaces working pods |
+| (c) Configurable, gating by default | The previous draft | Operators can choose | The default is (a)'s full outage |
+| (d) Gate the first readiness only, then report; continuous gating as opt-in | A replica becomes ready only after its object-store checks passed once (R-STOR-035 startup check). Afterwards a failing check is reported as `degraded`, and blob requests fail one by one through the circuit breaker. `health.require_object_store: true` restores continuous gating | A misconfigured release stalls its rollout instead of breaking the service. A shared outage degrades instead of taking everything down. Operators whose replicas reach S3 over separate network paths can opt into gating | One more boolean to test. A replica that loses only its own S3 path keeps receiving traffic and answers blob requests with a retryable `503` until the single-replica alert is handled. A pod replaced during a shared outage (eviction, crash) cannot become ready until the store returns, so a long outage can shrink capacity |
+| (e) Relative gating | A replica turns unready only when its check fails while other replicas pass, compared through the replica registry | Precise in both cases | Cross-replica coordination for a rare case that the circuit breaker and the single-replica alert already cover; flaps while replicas briefly disagree |
 
-**Recommendation: (c), implemented as `health.require_object_store`, with (b) put to the owner as a
-change to INV-12.** Partial service is better for CI pipelines that mostly resolve metadata, and
-INV-12 stays intact until the owner decides.
+**Choice:** (d) — object storage gates only the first readiness of a replica, is reported and degrades blob requests afterwards, and gates continuously only when the operator opts in.
+
+**Rationale:** Readiness exists to route traffic from a broken replica to healthy ones. With one shared bucket there is no healthy replica to route to, so continuous gating turns a partial outage into a total one. The first-readiness gate keeps the one thing gating does well: it stops a misconfigured release before it replaces working pods. (b) gives that up, (c) keeps (a)'s total outage as the default, and (e) buys precision with coordination that the existing alerts make unnecessary. A request that hits a degraded replica gets a retryable `503`, and a retry is likely to land on another replica. The price is paid only during a long shared outage: pods replaced meanwhile stay unready (R-STOR-035's startup check keeps retrying and never exits on a transient outage), but the running replicas are not touched, and the PodDisruptionBudget keeps voluntary evictions of ready pods within its budget. Under (a) the same outage removes every replica at once, so for a shared outage (d) is never worse than (a). This matches the rule recorded in [ha-and-helm.md](ha-and-helm.md) R-HA-008 (Q-HA-1) and [storage.md](storage.md) R-STOR-036 (Q-STOR-1). It changes INV-12, which ties readiness to object-storage reachability. The development agent would revisit (e) if replicas losing only their own S3 path turn out to be frequent in production.
+
+**Applied in the spec:** R-OPS-001: the `objectStore` row states first-readiness gating. A new "Gating and reported checks" paragraph adds the `degraded` response and the opt-in. `health.require_object_store` now defaults to `false`. An acceptance criterion with a 3-minute object-store block was added. R-OPS-008: new gauge `trove_health_check_passing{name}`. R-OPS-028: the example file follows. INV-12 in [README.md](README.md) needs the edit listed as a cross-page consequence.
 
 ### Q-OPS-3 · Anonymous access to the version endpoint
 
-The catalog answers anonymously (OPS-005).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- **(a)** Anonymous by default.
-- **(b)** Authenticated by default, with `system.public_version` as an opt-in.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Anonymous by default | The catalog's behavior (OPS-005) | Tooling can read the version without credentials | Version, revision and Go version tell an attacker which known vulnerabilities apply. No npm or NuGet client calls the endpoint |
+| (b) Authenticated by default, `system.public_version: true` as opt-in | Any valid credential reads it; operators may open it | Secure default; operators who want a public status page can open it; `ping` stays anonymous for reachability checks | Anonymous monitoring needs a token or the opt-in |
+| (c) Anonymous with reduced content | Only the API level and the format list, without version, revision or Go version | Capability discovery without credentials | A second response shape to maintain for a consumer that does not exist; it can be added later without breaking anything |
 
-**Recommendation: (b).** npm and NuGet clients never call it, and an exact version helps an
-attacker pick known vulnerabilities. Ping stays anonymous for reachability checks.
+**Choice:** (b) — the version endpoint needs a credential unless the operator sets `system.public_version: true`.
+
+**Rationale:** No supported client needs anonymous version data, and `ping` already answers reachability anonymously. Exposing the exact build to unauthenticated callers only helps someone matching the installation against vulnerability lists. (c) solves a problem nobody has yet. The development agent would revisit this if a client or integration needs anonymous capability discovery; it would then add (c)'s reduced shape rather than open the full version.
+
+**Applied in the spec:** No change; R-OPS-002 already follows this option.
 
 ### Q-OPS-4 · Tamper evidence for audit records
 
-- **(a)** Rely on shipping the `log: audit` stream to an external append-only store.
-- **(b)** Hash-chain the audit rows in PostgreSQL, and verify them in the export.
-- **(c)** Both.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-**Recommendation: (a) for P1, (b) as a P2 hardening.** trove's own database role must be able to
-drop partitions for retention, so it can also delete rows. Only an external copy protects against
-someone holding that role, and a hash chain without an external anchor detects only partial edits.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) External shipping only | trove's runtime role keeps full rights on audit rows. Integrity comes from shipping the `log: audit` stream to an append-only store | No extra mechanism | A SQL injection or a compromised replica can rewrite or delete history. Under two-role mode the runtime role cannot even drop partitions, so retention as drafted would not work there |
+| (b) Hash-chain every row in PostgreSQL and verify on export | Each row stores the hash of its predecessor | Detects edits in the middle of the chain | Serialises every transactional write on one chain head. The role that writes the chain can recompute it, so without an external anchor it proves nothing against that role |
+| (c) Append-only for the runtime role, plus external shipping | The runtime role may only `INSERT` and `SELECT`. Partitions are created and dropped by an owner function (`SECURITY DEFINER`) that applies a retention the owner stores. Shipping covers the owner and superusers | Stops a compromised replica from erasing its traces. Fixes partition maintenance under two-role mode. Costs a few lines of migration SQL and no write contention | No protection in single-role mode or against the owner. Deduplicated denials can no longer be counted up in place |
+| (d) (c) plus sealed checkpoints | A job hashes each new batch of rows, chains it to the previous seal and writes the seal to the log stream as an external anchor; the export verifies | Makes edits by the owner detectable, given the shipped seals | A sealing job, a verification path and seal storage, for a threat that log shipping already covers when it is in place |
+
+**Choice:** (c) — audit rows are append-only for trove's runtime role, and partitions and retention are handled by an owner-held function.
+
+**Rationale:** The realistic attacker is a compromised replica or a SQL injection, both acting as the runtime role. (c) is the cheapest option that stops that attacker from rewriting history. It also repairs a real defect: under the two-role setup of [ha-and-helm.md](ha-and-helm.md) R-HA-014, the runtime role has no DDL rights, so the drafted retention task could neither create nor drop partitions. After two months every transactional write would have failed for want of a partition. (b) costs write throughput and still trusts the writer. (d) adds a verification system whose value depends on the same external log shipping that (c) already relies on. Deduplication now writes a first event and one summary event, so no row is ever updated. Moving partition DDL into a function that every replica calls creates one hazard of its own, which the spec closes: `CREATE TABLE … PARTITION OF` and `DROP TABLE` take `ACCESS EXCLUSIVE` on the parent, so a call that waits for a long audit export to finish would make every transactional write queue up behind it. The function therefore attaches new partitions (`SHARE UPDATE EXCLUSIVE`, which inserts do not wait for), runs under a 2-second `lock_timeout`, and leaves a drop it cannot lock to the next call. The development agent would revisit (d) when an installation needs verifiable completeness of the database copy itself, for example for an external audit.
+
+**Applied in the spec:** R-OPS-015: new section "Append-only rows and partition maintenance" with privileges, `audit_maintain_partitions()` (serialised by a row lock on `audit_policy`, short locks through `ATTACH PARTITION` and `lock_timeout`), the owner-written `audit_policy`, calls from `trove migrate`, at startup and daily, and single-role behavior. Deduplication rewritten without updates (`repeat_of`). New acceptance criteria for `42501` on update and delete, for the partitions present after startup, for the denial summary, and for a maintenance call that does not block writes behind an open export. R-OPS-016: `repeat_of` added to `authz.denied` and `auth.token_rejected`. R-OPS-017: retention runs through the function and changes take effect with `trove migrate`. R-OPS-001: the `startup` check requires partitions for the current and the next month. R-OPS-019: `audit-retention` row. Security notes and H-39 narrowed to the owner, superusers and single-role mode.
 
 ### Q-OPS-5 · CloudEvents `type` prefix
 
-CloudEvents recommends a reverse-DNS prefix. The prefix becomes a public contract at the first
-release.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- **(a)** `trove.` as specified.
-- **(b)** The reverse DNS of a project domain, once the project owns one.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `trove.` | `trove.package.published` | Short, readable, identical on every installation, already specified | Deviates from the CloudEvents recommendation that `type` SHOULD carry a reverse-DNS prefix ([spec, `type`](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md#type)) |
+| (b) Reverse DNS of a domain the project registers | For example `org.<project-domain>.trove.` | Follows the recommendation | No such domain exists today. A later change of domain breaks every receiver's filters |
+| (c) Reverse DNS of the code-hosting namespace | For example `io.github.<org>.trove.` | Follows the recommendation with a name that exists today | Ties a permanent public contract to a hosting account and its name, which the project may rename or leave; long and noisy in filters |
+| (d) Per-installation prefix from the base URL host | For example `com.example.trove.` | Unique per producer | Receivers become installation-specific, and one receiver cannot serve two installations with the same filter |
 
-**Recommendation: (a)**, unless the owner names a domain before the first release that ships
-webhooks.
+**Choice:** (a) — `type` is `trove.` followed by the registry name, frozen from the first release that ships webhooks.
+
+**Rationale:** Receivers match `type` literally, so it must be short, stable and the same on every installation. (c) and (d) fail stability or uniformity, and (b) depends on a domain that does not exist. The reverse-DNS recommendation is a SHOULD that exists to name who defines the event's semantics. The registry names already do that within trove, and `source` (the base URL) identifies the producing installation. The development agent would revisit this only if the project registers a domain before the first release that ships webhooks (P1); afterwards the prefix is frozen.
+
+**Applied in the spec:** R-OPS-036: the `type` bullet states that the prefix is fixed from the first release that ships webhooks.
 
 ### Q-OPS-6 · The human-login OIDC client in configuration documents
 
-The browser-login OIDC client (INV-7) could live in two places.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- **(a)** The configuration file only: available before any administrator exists, client secret
-  from a file.
-- **(b)** Also a `spec.loginProviders` kind in configuration documents.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Configuration file only | Login providers are keys of `trove.yaml`, the client secret comes from a file | Login works before any administrator or document exists. A bad document apply cannot lock everyone out. The client secret never enters the database | Changing a provider needs a rollout |
+| (b) Also a `spec.loginProviders` kind in configuration documents | Login providers held in PostgreSQL, declared like repositories | One GitOps path for all configuration | A broken apply can remove the only working login. The client secret must be stored encrypted. Two places would define the same thing |
+| (c) Connection and secret in the file, claim-to-group rules in documents | Documents declare which claim values lead into which group (`claimValues` on a group); the file keeps issuer, client and secret | The part that changes when teams change is applied without a rollout, and documents in Git are reviewed too | One provider is defined in two places. An apply that drops the administrator group's rule locks every OIDC administrator out, and documents can also be applied through the API without a Git review. Contradicts Q-AUTH-1, which keeps group rules in the file |
 
-**Recommendation: (a)**, and [identity-and-authentication.md](identity-and-authentication.md)
-decides. A login provider that only a database apply can create cannot recover a lost login, and
-the file path already serves GitOps.
+**Choice:** (a) — login providers, including their claim mapping and claim-to-group rules, stay in the configuration file, and configuration documents declare neither.
+
+**Rationale:** Login is bootstrap-critical. A provider that only a database apply can create cannot be used to recover from a bad apply. The file already serves GitOps through the Helm values and keeps the client secret out of the database. (c) is the strongest alternative, because a Git-reviewed document is not the unreviewed UI edit that [identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-1 argues against. It still fails on the lock-out case, since one apply can strip the rule that makes someone an administrator, and on the API apply path that bypasses review. New teams need no rule change anyway: `match_regex` rules with `$1` expansion (R-AUTH-008) cover them. Choosing (a) also follows the decision of [identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-1 (a) and R-AUTH-004, which exclude configuration documents from changing a provider. The page's own example contradicted this by giving a group `claimValues`; the example now declares the group record only, and the CI issuer kind is renamed from `oidcProviders` to `ciIssuers` so that no reader takes it for a login provider. The development agent would revisit this if Q-AUTH-1 moves group rules into PostgreSQL; a document kind for them would then follow.
+
+**Applied in the spec:** R-OPS-029: new paragraph "Login providers are not a document kind", covering claim mapping and claim-to-group rules, with a `422` for a `loginProviders` key or a claim-mapping field on a group; the example document declares `groups` without `claimValues`; the CI kinds are renamed `ciIssuers` and `ciMappings` (with `issuer` instead of `provider`) in the example, the owner table and R-OPS-030's apply order; a new acceptance criterion for the `422`. R-OPS-016: the `group.*` row no longer claims to record claim-to-group mappings.
 
 ### Q-OPS-7 · One cron syntax for the whole system
 
-- **(a)** Five-field Kubernetes CronJob syntax with macros, in UTC.
-- **(b)** Six-field syntax with a seconds field, as in the catalog (OPS-044).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-**Recommendation: (a)**, used identically by [storage.md](storage.md) for retention policies.
-Operators already know it from Kubernetes, and no trove task needs second precision. Two syntaxes
-in one product would be a certain source of errors.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Five-field Kubernetes CronJob syntax with its macros, in UTC, other dialects' forms rejected | `30 3 * * *`, `@daily`; `?`, `7` and six-field forms fail loudly | Operators know it from Kubernetes. No trove task needs second precision. UTC has no daylight-saving gaps or repeats. A pasted expression from a dialect that counts Sunday as 1 fails instead of running on the wrong day | Maintenance windows in local time have to be converted to UTC by hand |
+| (b) Six-field syntax with seconds | The catalog's syntax (OPS-044) | Matches the reference behavior | No task needs seconds. Six fields read differently from every Kubernetes schedule in the same chart, a certain source of off-by-one-field errors |
+| (c) Five-field syntax plus an optional IANA time zone per schedule | Like the `timeZone` field of Kubernetes CronJobs | Local maintenance windows | Jobs at 02:30 local time are skipped or doubled on daylight-saving change days; more test surface for a need nobody has stated |
+| (d) Accept five and six fields, dialect chosen by field count | Kubernetes syntax for five fields, the catalog's dialect for six | Expressions from either world paste unchanged | The dialects number weekdays differently (1 is Monday in one and Sunday in the other), so a pasted expression silently runs on the wrong day; two parsers to test |
+
+**Choice:** (a) — every schedule in trove is a five-field expression with the Kubernetes CronJob fields and macros, evaluated in UTC, through the one parser that [storage.md](storage.md) R-STOR-025 specifies.
+
+**Rationale:** One syntax across the product and its chart removes a class of configuration errors, and UTC removes daylight-saving edge cases from the scheduler's exactly-once guarantee (R-ARCH-016). Kubernetes itself rejects `TZ=` and `CRON_TZ=` inside a schedule ([CronJob docs](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#unsupported-timezone-specification)), so trove rejects them too. Kubernetes accepts `?` as `*`, but trove rejects it, together with `7` and six-field forms, so that an expression from a dialect that counts Sunday as 1 fails loudly (the same decision as Q-STOR-4 in storage.md). That is also why (d)'s convenience is rejected: it turns exactly this case into a cleanup on the wrong day. The development agent would revisit this if operators ask for local-time windows; an optional time-zone field (c) can be added later without breaking existing schedules.
+
+**Applied in the spec:** Conventions: the "Schedules" bullet lists the Kubernetes macro set, names the main rejected forms and points to the normative dialect in [storage.md](storage.md) R-STOR-025, which every schedule in trove uses.
 
 ### Q-OPS-8 · Locking objects managed by configuration documents
 
-- **(a)** Locked against API and UI changes by default (`lock_managed_objects: true`).
-- **(b)** Unlocked, with drift reported by the next diff.
-- **(c)** A per-document setting.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-**Recommendation: (a), with the global switch.** Silent drift that the next apply reverts is worse
-than a clear `409` naming the document. Per-document control (c) can come later if teams mix both
-styles.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Locked by default, one global switch | API and UI answer `409` naming the owning document (`lock_managed_objects: true`) | No silent drift that the next apply reverts. One rule to explain | Teams that mix UI edits and documents must turn the switch off globally |
+| (b) Unlocked; drift shows up in the next diff | Anyone with rights edits managed objects | No friction for UI users | An emergency UI fix is silently reverted by the next pipeline run, possibly re-opening the incident |
+| (c) Per-document setting | Each document declares whether its objects are locked | Fine-grained | A second place to look for why an edit fails; no team has asked for mixed styles |
+| (d) Global default with per-document override | (a) plus an override in `metadata` | Covers mixed setups | Same cost as (c), for the same unstated need |
+| (e) Locked, with an audited administrator override per edit | A `force` flag lets an administrator change a managed object anyway; the object is marked drifted until the next apply | A UI fix in an emergency without touching the document | The next apply reverts the fix exactly as in (b), unless apply also refuses drifted objects, which then blocks the pipeline until someone edits the document: more states for the same end result as editing the document first |
+
+**Choice:** (a) — managed objects are locked against API and UI changes by default, controlled by one global switch.
+
+**Rationale:** A clear `409` that names the document tells the operator where the source of truth is, and beats a fix that silently disappears at the next apply. The emergency path stays open and leads through that source: correct the document and apply it through the API, or through the CLI's database mode when nobody can log in. (e) looks like a softer lock but only moves (b)'s revert problem one step later. A per-document override, (c) or (d), can be added later without changing the default. The development agent would revisit this when an installation needs both styles side by side.
+
+**Applied in the spec:** R-OPS-029: the "Locking" bullet states the default and the emergency path (corrected document through API or CLI, `adopt` to move ownership); a new acceptance criterion checks the `409` that names the document. R-OPS-030: the `412` acceptance criterion now changes an adopted, not yet managed repository, because a managed one is locked.
 
 ### Q-OPS-9 · Ownership of the job API
 
-R-OPS-019 specifies `/api/v1/system/jobs`, but the job model belongs to
-[architecture.md](architecture.md).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- **(a)** This page keeps the read and cancel API, and architecture.md the model.
-- **(b)** Move both to architecture.md.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) This page keeps the job read and cancel API; [architecture.md](architecture.md) keeps the model | The API sits next to the task list and the triggers that return job references | Job visibility is an operator concern; the API is a thin view over the model; [api-and-ui.md](api-and-ui.md) R-API-015 already links here | Model and API live on two pages |
+| (b) Move model and API to architecture.md | One page for jobs | One place | Puts operator-facing endpoints on a page about internals; R-OPS-019's tasks would still live here |
+| (c) Move the API to api-and-ui.md next to R-API-015 | API conventions and job API in one place | Close to the long-running-operation rules | Splits the task list from the job list, which share one model and one screen |
 
-**Recommendation: (a)**, confirmed in the consistency review. Job visibility is an operator
-concern, and the API is a thin view over the model.
+**Choice:** (a) — the job API stays in R-OPS-019, the model in R-ARCH-016, and R-OPS-019 is raised to MVP.
+
+**Rationale:** The split already matches how the pages link to each other. Reviewing it exposed a priority conflict: R-OPS-019 was P1, but MVP requirements return job references whose `href` points at its API (R-OPS-020's garbage-collection trigger and every long-running operation of R-API-015). An MVP client would get links to an endpoint that does not exist. The queue and the scheduler are MVP anyway, so the API on top of them is a small addition. Keeping the API here also means applying [api-and-ui.md](api-and-ui.md) Q-API-9 and [storage.md](storage.md) Q-STOR-10 on this page: every singleton task starts only through the task trigger, and the owning page keeps the read path of its results. R-OPS-023 still had its own `…/storage/summary/refresh` path and a `/api/v1/system/storage/summary` read path, both of which R-API-020's acceptance criterion forbids. The development agent would revisit this if the job API grows domain-specific views; those would go to their owning pages, as R-API-015 already allows.
+
+**Applied in the spec:** R-OPS-019: priority P1 → MVP, with a "Why MVP" paragraph and the rule that a task exists from the release that ships its owner. The job read and cancel permissions now include the job's creator, as R-API-015 requires. The trigger's `202` carries `Location` (R-API-015); the state filter lists R-ARCH-016's states including `cancelling`; mutual exclusion covers tasks that share an exclusion key (`gc` and `gc-full`). R-OPS-023: the read path is `GET /api/v1/storage/summary` (owned by R-STOR-028), the refresh path is removed in favour of `POST /api/v1/system/tasks/storage-summary/run`, and an acceptance criterion checks that neither old path is in the OpenAPI document.
 
 ### Q-OPS-10 · Default cap for the `repo` metric label
 
-- **(a)** 500 per family and replica, as specified.
-- **(b)** 100.
-- **(c)** No label by default; only repositories that match `repository_label_include`.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-**Recommendation: (a).** Most installations stay below it, so dashboards work without
-configuration. The overflow counter shows when an installation outgrows it, and the include list
-then makes the labelling deterministic.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 500 repositories per family and replica | Keys beyond the cap fold into `repo="_other"`; the overflow counter shows it | Most installations stay below the cap, so dashboards work without configuration; within the 25,000-series budget of R-OPS-007 | Large installations need `repository_label_include` to choose which keys keep a label |
+| (b) 100 | A tighter cap | Smaller scrapes | Medium installations fold real repositories into `_other` out of the box |
+| (c) No `repo` label by default; only repositories that match `repository_label_include` | Opt-in per repository | Smallest series count | Every installation has to configure something before per-repository dashboards show anything |
+
+**Choice:** (a) — a cap of 500 distinct repository keys per family and replica, with `_other` and the overflow counter beyond it.
+
+**Rationale:** The cap keeps scrape size bounded while working without configuration for the common case. The overflow counter makes outgrowing it visible, and the include list then makes the labelling deterministic. (b) folds real repositories of medium installations into `_other` before anyone has asked for a smaller scrape. (c) makes every installation configure something before per-repository dashboards show anything. An estimate from the families of R-OPS-008, not a measurement: a local repository costs up to about 24 `repo` series (operation and outcome combinations, bytes, inventory), and a remote one about 50, because the upstream duration histogram alone adds 17 (14 buckets, `+Inf`, `_sum`, `_count`). A mix of 400 local and 100 remote keys keeps the `repo`-labelled series near 15,000, which leaves room for the other families inside R-OPS-007's 25,000 budget. 500 remote keys alone would reach about 25,000 `repo`-labelled series; such an installation sets `repository_label_include` or lowers the cap. The development agent would revisit this if the reference load test of R-OPS-007 exceeds the series budget with the default.
+
+**Applied in the spec:** No change; R-OPS-007 already sets `metrics.label_limits.repository: 500` with `_other`, the overflow counter and `repository_label_include`.
+
+### Q-OPS-11 · Template language: conditionals, loops and functions
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Minimal subset | Field substitution and pipelines into a fixed function set (`json`, `yaml`, `urlquery`, `base64`, `default`, `printf`); no `if`, no `range` | Trivially bounded; can be extended later without breaking templates | No conditional text (for example on `overwritten` or `trovetest`) and no per-file lines in human-readable messages; the validator still has to walk the parse tree to reject the rest |
+| (b) Restricted `text/template` | `if`, `else`, `with`, variables and non-nested `range` over event fields (at most 16 per template); the built-ins except `call`, with number-aware comparisons, plus `json`, `yaml`, `base64`, `default`. Rejected on save: `define`, `template`, `block`, nested `range`, `range` over literals, function results or variables. Data is passed as JSON with `json.Number` numbers | Covers conditional text and file lists. No new dependency (the YAML encoder is the configuration loader's). Work per render is bounded by schema-capped arrays and the loop count. Numbers print exactly | A parse-tree validator, the `json.Number` decoding and six replacement comparison functions to implement and test |
+| (c) `text/template` with a large third-party function library | String, date, crypto and collection helpers | Rich templates | Larger contract and attack surface: such libraries include functions that read the process environment, which would expose trove's own secrets; unbounded loops stay possible |
+| (d) A different language (CEL expressions inside a JSON skeleton, or Jsonnet) | Cost-limited evaluation | Built-in evaluation limits | Unfamiliar to receiver authors; awkward for form-encoded and plain-text bodies; departs from the template model the subscription API exposes |
+
+**Choice:** (b) — templates use `text/template` with conditionals, at most 16 non-nested `range` actions over event data and a fixed function set with number-aware comparisons, and everything that could recurse or count without bound is rejected when the template is stored.
+
+**Rationale:** This settles the catalog's open point on templated handlers (EVT-026): which functions, conditionals and loops are supported, and what a missing path does. Go 1.27's `text/template` can range over integers, so an unrestricted template such as `{{ range 1000000000 }}{{ range 1000000000 }}{{ end }}{{ end }}` spins without writing anything. The body limit never triggers for a loop that writes nothing, and a goroutine cannot be stopped from outside. Passing the data as JSON with `json.Number` removes integers from the data: a `range` over a number fails. The save-time check removes literal, computed and nested loops, and the cap of 16 loops, with arrays capped at 1,000 items by R-OPS-014, bounds one render to 16,000 iterations; without that cap the 64 KiB source could hold about 2,000 sequential loops. `json.Number` has one side effect that the first draft missed: the built-in comparisons treat it as a string, so `gt` of two sizes compares them as text (`9` greater than `10`) and a comparison with a numeric literal fails. Replacing the six comparison functions through the template's function map fixes that without giving up exact printing. Verified with a Go 1.27.3 test program in this review: `range` over a literal integer iterates, `range` over a `json.Number` or a string fails, two `json.Number` values compare as text under the built-in `gt`, a number against an integer literal fails with "incompatible types", the function map overrides a built-in, a `null` field prints `<no value>`, and `fmt` refuses widths above about 10^7. (a) would need almost the same validator while giving up useful conditionals. (c) adds functions that can leak secrets. (d) changes the user-facing model for limits that (b) already provides. Fields that the schema declares are always present (as `null`), so `missingkey=error` catches only real typos, and save-time validation against the sample event catches those first. The development agent would revisit this if later event types (for example build events with long module lists) need nested loops; a per-render iteration budget would then replace the nesting rule.
+
+**Applied in the spec:** R-OPS-041: "Template language" rewritten with template data (`json.Number`, schema fields always present), allowed actions, constructs rejected on save (including more than 16 `range` actions), the function list without `call` and with number-aware comparisons, bounded work, `null` printing as `<no value>`, and header templates under the same restrictions. Five acceptance criteria added. R-OPS-014: every array in a data schema declares `maxItems` ≤ 1,000, checked by the registry test. Security notes: the webhook bullet states that templates cannot tie up a worker.
 
 ## What this does not cover
 
 ### H-39 · Audit records are not tamper-evident
 
-Audit events in PostgreSQL can be altered or deleted by anyone holding trove's database role or a
-superuser role. The role needs `DROP` on partitions for retention. Integrity rests on shipping the
-`log: audit` stream to a store outside trove's control, for example object storage with object
-lock or a SIEM. Neither trove nor the chart enforces that (Q-OPS-4). The gap is live from the
-first release for any installation that does not ship logs externally.
+In two-role mode, trove's runtime role can only insert and read audit events, and it cannot shorten
+their retention (R-OPS-015). Nothing makes the records tamper-evident, though:
+
+- the schema owner and any superuser can alter or delete rows;
+- in single-role mode, trove's own role is the schema owner, so a compromised replica can too;
+- the runtime role can insert forged events in either mode.
+
+Integrity against those holders rests on shipping the `log: audit` stream to a store outside
+trove's control, for example object storage with object lock or a SIEM. Neither trove nor the
+chart enforces that (Q-OPS-4). The gap is live from the first release for every installation that
+does not ship logs externally. For single-role installations it also covers a compromised replica.
+It becomes real for anyone who obtains the owner credential of the migration Job, a superuser
+login, or, in single-role mode, the runtime credential.
 
 ### H-40 · Outbound address checks are weaker through an outbound proxy
 

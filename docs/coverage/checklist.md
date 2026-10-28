@@ -13,8 +13,8 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 in its `Covers:` line. *open*: no requirement does. For entries with priority *Out of scope*,
 open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 656 specified, 1,583 open. 483 spec requirements:
-434 cover catalog features, 49 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 658 specified, 1,581 open. 491 spec requirements:
+437 cover catalog features, 54 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -38,13 +38,13 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 60 | 19 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 40 | 60 |
-| [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 25 | 57 |
+| [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 |
-| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 7 of 8 | 8 | 6 |
+| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 |
 | [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 0 | 52 |
@@ -894,7 +894,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-013 | Internal service registry and health-gated routing | Later | open | – |
 | HA-014 | Availability-zone affinity for internal routing | P2 | open | – |
 | HA-015 | Components deployed as separately scaled workloads | P1 | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-002](../spec/ha-and-helm.md) |
-| HA-016 | Cluster encryption key | MVP | specified | [R-ARCH-021](../spec/architecture.md), [R-HA-027](../spec/ha-and-helm.md) |
+| HA-016 | Cluster encryption key | MVP | specified | [R-API-049](../spec/api-and-ui.md), [R-ARCH-021](../spec/architecture.md), [R-HA-027](../spec/ha-and-helm.md) |
 | HA-017 | Service trust key provisioning and rotation | Out of scope | open | – |
 | HA-018 | Internal TLS with a built-in certificate authority | P2 | open | – |
 | HA-019 | Trust store for outbound TLS connections | MVP | specified | [R-ARCH-022](../spec/architecture.md), [R-HA-043](../spec/ha-and-helm.md) |
@@ -918,7 +918,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-037 | First-start bootstrap | MVP | specified | [R-HA-030](../spec/ha-and-helm.md), [R-OPS-031](../spec/operations-and-observability.md) |
 | HA-038 | Kubernetes Service exposure | MVP | specified | [R-HA-028](../spec/ha-and-helm.md), [R-HA-037](../spec/ha-and-helm.md) |
 | HA-039 | Ingress exposure | MVP | specified | [R-HA-037](../spec/ha-and-helm.md) |
-| HA-040 | Gateway API exposure | P1 | specified | [R-HA-038](../spec/ha-and-helm.md) |
+| HA-040 | Gateway API exposure | P1 | specified | [R-HA-038](../spec/ha-and-helm.md), [R-HA-053](../spec/ha-and-helm.md) |
 | HA-041 | Bundled edge reverse proxy | P2 | open | – |
 | HA-042 | TLS termination topology in Kubernetes | MVP | specified | [R-HA-037](../spec/ha-and-helm.md) |
 | HA-043 | Horizontal pod autoscaling | MVP | specified | [R-HA-032](../spec/ha-and-helm.md) |
@@ -1075,10 +1075,10 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 
 ## Events and extensibility (EVT)
 
-Catalog page: [events-and-extensibility.md](../features/events-and-extensibility.md) · specified by priority: MVP 1 of 1 · P1 23 of 24 · P2 1 of 12 · Later 0 of 43 · Out of scope 0 of 2
+Catalog page: [events-and-extensibility.md](../features/events-and-extensibility.md) · specified by priority: MVP 1 of 1 · P1 24 of 24 · P2 1 of 12 · Later 0 of 43 · Out of scope 0 of 2
 
 <details>
-<summary>82 features: 25 specified, 57 open</summary>
+<summary>82 features: 26 specified, 56 open</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1115,7 +1115,7 @@ Catalog page: [events-and-extensibility.md](../features/events-and-extensibility
 | EVT-031 | Test delivery | P1 | specified | [R-OPS-043](../spec/operations-and-observability.md) |
 | EVT-032 | Delivery log | P1 | specified | [R-OPS-044](../spec/operations-and-observability.md) |
 | EVT-033 | Delivery log storage and streaming | P1 | specified | [R-OPS-044](../spec/operations-and-observability.md) |
-| EVT-034 | Webhook management UI | P1 | open | – |
+| EVT-034 | Webhook management UI | P1 | specified | [R-UI-039](../spec/api-and-ui.md) |
 | EVT-035 | Recipes: triggering CI pipelines | P1 | specified | [R-OPS-041](../spec/operations-and-observability.md) |
 | EVT-036 | Recipes: chat and incident tools | P2 | open | – |
 | EVT-037 | Interactive chat application | Out of scope | open | – |
@@ -1738,7 +1738,7 @@ Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · 
 
 ## Package formats: matrix and cross-format behavior (FMT)
 
-Catalog page: [formats/README.md](../features/formats/README.md) · specified by priority: MVP 7 of 8 · P1 1 of 3 · P2 0 of 1 · Later 0 of 1 · Out of scope 0 of 1
+Catalog page: [formats/README.md](../features/formats/README.md) · specified by priority: MVP 8 of 8 · P1 1 of 3 · P2 0 of 1 · Later 0 of 1 · Out of scope 0 of 1
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1754,7 +1754,7 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 | FMT-010 | Default layout per format and layout mapping | P1 | open | – |
 | FMT-011 | Automatic metadata calculation | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-ARCH-012](../spec/architecture.md), [R-ARCH-016](../spec/architecture.md), [R-NPM-010](../spec/formats/npm.md), [R-NUGET-005](../spec/formats/nuget.md) |
 | FMT-012 | Manual metadata recalculation | P1 | specified | [R-ARCH-016](../spec/architecture.md), [R-NPM-035](../spec/formats/npm.md), [R-NUGET-025](../spec/formats/nuget.md) |
-| FMT-013 | Client authentication styles and anonymous fallbacks | MVP | open | – |
+| FMT-013 | Client authentication styles and anonymous fallbacks | MVP | specified | [R-AUTH-033](../spec/identity-and-authentication.md) |
 | FMT-014 | Package settings screen | P1 | open | – |
 
 ## npm package format (PKG-NPM)
@@ -2952,7 +2952,7 @@ Catalog page: [beyond-baseline.md](../features/beyond-baseline.md) · specified 
 | BEYOND-026 | Checksum database for hosted Go modules | Later | open | – |
 | BEYOND-034 | Notary Project signature verification for OCI artifacts | P2 | open | – |
 | BEYOND-027 | Minimum release age for remote repositories | P1 | open | – |
-| BEYOND-028 | Namespace claims against dependency confusion | P1 | specified | [R-REPO-023](../spec/repositories-and-proxy.md) |
+| BEYOND-028 | Namespace claims against dependency confusion | P1 | specified | [R-REPO-023](../spec/repositories-and-proxy.md), [R-REPO-048](../spec/repositories-and-proxy.md) |
 | BEYOND-029 | Cache pre-warming from lockfiles and SBOMs | P2 | open | – |
 | BEYOND-030 | Per-tenant quotas and rate limits | P2 | specified | [R-API-016](../spec/api-and-ui.md) |
 | BEYOND-031 | Provider presets for further CI systems | P1 | open | – |
@@ -2967,7 +2967,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>49 requirements</summary>
+<summary>54 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2991,18 +2991,23 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-ARCH-003 | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-004 | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-029 | Optional separate content origin | P1 | [architecture.md](../spec/architecture.md) |
 | R-ARCH-023 | Error model | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-027 | Performance targets | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-028 | Resource limits for untrusted package content | MVP | [architecture.md](../spec/architecture.md) |
+| R-AUTHZ-030 | The `authenticated` principal | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-018 | Package ownership | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-019 | Package ownership API | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-020 | Shared ownership domains | P1 | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-028 | Compiled grant index and invalidation across replicas | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-029 | Audit of authorization decisions | MVP | [authorization.md](../spec/authorization.md) |
+| R-AUTHZ-031 | Revocation journal entries and the narrowing comparator | P1 | [authorization.md](../spec/authorization.md) |
 | R-NPM-026 | Versions removed upstream | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-044 | npm audit events and metrics | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NUGET-027 | Acceptance test suite | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-028 | Audit events and metrics for NuGet | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
+| R-HA-054 | Revocation journal in object storage | P1 | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-055 | Optional content host at the edge | P1 | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-051 | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-052 | Failure-injection test suite | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-AUTH-012 | CSRF protection for cookie-authenticated requests | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |

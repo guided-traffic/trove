@@ -21,7 +21,7 @@ health probes and metrics on the operations listener belong to
 Covers: the operation catalogs [api-content-operations.md](../features/api-content-operations.md)
 and [api-admin-operations.md](../features/api-admin-operations.md), and the screen inventory
 [ui-inventory.md](../features/ui-inventory.md). Single entries are drawn from
-[events-and-extensibility.md](../features/events-and-extensibility.md) (EVT-070, EVT-072),
+[events-and-extensibility.md](../features/events-and-extensibility.md) (EVT-034, EVT-070, EVT-072),
 [artifacts.md](../features/artifacts.md) (ART-027, ART-028, ART-031, ART-040, ART-041, ART-048,
 ART-049), [identity-and-access.md](../features/identity-and-access.md) (IAM-030, IAM-031,
 IAM-032), [authentication-providers.md](../features/authentication-providers.md) (AUTHN-037 to
@@ -29,12 +29,13 @@ AUTHN-040), [access-tokens.md](../features/access-tokens.md) (TOK-026),
 [oidc-ci-integration.md](../features/oidc-ci-integration.md) (CIOIDC-024),
 [operations-and-monitoring.md](../features/operations-and-monitoring.md) (OPS-008, OPS-023),
 [search-and-query.md](../features/search-and-query.md) (SRCH-048, SRCH-058),
-[repositories.md](../features/repositories.md) (REPO-007, REPO-008) and
+[repositories.md](../features/repositories.md) (REPO-007, REPO-008),
+[ha-and-deployment.md](../features/ha-and-deployment.md) (HA-016) and
 [beyond-baseline.md](../features/beyond-baseline.md) (BEYOND-030).
 
 ## Reading this page
 
-- Part A (R-API-001 to R-API-019): conventions. Part B (R-API-020 to R-API-048): endpoint surface.
+- Part A (R-API-001 to R-API-019): conventions. Part B (R-API-020 to R-API-049): endpoint surface.
   Part C (R-UI-001 to R-UI-047): UI.
 - Path notation: `{key}` is one path segment. Every path is relative to the public base URL
   (R-OPS-005 in [operations-and-observability.md](operations-and-observability.md)).
@@ -100,8 +101,8 @@ One [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.1.html) document, `api/open
 file path `/files/…` (R-API-025). Package-manager protocol endpoints are not in it; they follow
 their ecosystem's specification. The document is served at `/api/v1/openapi.json` (INV-6) and
 `/api/v1/openapi.yaml` without authentication; it holds no instance data except
-`servers[0].url`, which is the public base URL. INV-17's "public `/api/v1` API" means exactly the
-operations in this document (Q-API-4).
+`servers[0].url`, which is the public base URL. The "public, documented endpoints" of INV-17 are
+exactly the operations in this document plus the browser sign-in flow under `/auth/` (Q-API-4).
 
 Every operation MUST declare:
 
@@ -114,12 +115,44 @@ Every operation MUST declare:
 | `x-trove-system-scope` | The token system scope item that admits the caller instead of a role, where one exists (R-AUTH-025) |
 | `x-trove-recent-auth` | `true` for operations that require recent authentication through a session (R-API-007) |
 | `x-trove-idempotency-key` | `optional` on creating POSTs (R-API-014) |
+| `x-trove-if-match` | `required` on PUT and PATCH of a resource that carries a revision ETag (R-API-012) |
 | Responses | Success schema with an example; every possible 4xx and 5xx as a reference to the shared problem schema (R-API-009) |
 | Pagination | List operations reference the shared cursor parameters and envelope (R-API-010) |
 
-Schemas use JSON Schema 2020-12, the default dialect of OpenAPI 3.1. How code is derived from the
-document is decided here (Q-API-1; R-ARCH-003 pins whatever generator is chosen); the
-recommendation is spec-first. CI MUST:
+Schemas use JSON Schema 2020-12, the default dialect of OpenAPI 3.1. Code is derived from the
+document spec-first (Q-API-1):
+
+- **Go.** [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) (v2.8 or later, the first
+  line with OpenAPI 3.1 support; pinned through the `tool` directive of R-ARCH-003) generates the
+  request and response types (`models`) and the `net/http` server interface (`std-http-server`)
+  into `internal/api/v1/gen/`. Handlers implement that interface, so an operation without a handler
+  does not compile. The strict-server variant is not used: handlers set `ETag`, `Location`, `Link`
+  and `Retry-After` themselves and stream exports and job answers. Operations tagged `files`
+  (`/files/…`) are excluded from generation; their handler is the raw-file path of R-ARCH-011, and
+  the route-parity check (item 5 below) covers it.
+- **TypeScript.** [openapi-typescript](https://openapi-ts.dev/) (7.x, pinned in the lockfile)
+  generates types into `web/src/app/api/generated/`. Thin hand-written clients per resource family
+  in `web/src/app/api/` build `HttpClient` calls and `httpResource()` request descriptors with them
+  (R-UI-046). No generated Angular service layer is used.
+- **Authorization declarations.** At start-up the server reads `x-trove-permission`,
+  `x-trove-system-scope`, `x-trove-recent-auth` and `x-trove-if-match` from the embedded document
+  into a table keyed by route pattern. The shared step of R-API-008 looks up the matched pattern
+  (`http.Request.Pattern`) there. A registered `/api/v1/` route without an entry stops start-up, so
+  no operation can run without a declared permission.
+- **3.1 constructs.** A fixture document `api/testdata/constructs.yaml` contains every JSON Schema
+  construct the contract uses (`type` arrays with `null`, `oneOf` with `discriminator`, `const`,
+  `additionalProperties: false`). CI generates Go and TypeScript code from it, decodes and
+  re-encodes its examples through the Go types, and type-checks them as constants of the
+  TypeScript types. A construct the Go generator mishandles is written in an
+  equivalent form that it handles (for example `enum: [x]` for `const: x`); Go types are never
+  written by hand.
+- **Format enums.** The document carries the enum of format IDs and one generated format enum per
+  repository class, listing the formats whose `Descriptor().Classes` contain that class
+  ([architecture.md](architecture.md) R-ARCH-008, R-ARCH-010). Both come from the format registry,
+  never from a hand-maintained list, and the unit test of R-ARCH-010 fails on any difference
+  between them and the registry.
+
+CI MUST:
 
 1. lint the document;
 2. compare it with the document of the latest release and fail on a breaking change in v1
@@ -140,6 +173,11 @@ Acceptance criteria:
 - The route-parity check of item 5 fails when a handler is registered without a document entry.
 - A script over the document asserts that every operation has `operationId`, a permission or
   scope declaration, and at least one problem response.
+- Starting the server with a test build that registers an `/api/v1/` route missing from the
+  embedded document fails start-up and names the route.
+- CI generates code from `api/testdata/constructs.yaml`; every example in it survives a decode and
+  re-encode through the generated Go types unchanged and compiles as a constant of the generated
+  TypeScript type.
 
 ### R-API-003 · JSON representation rules
 Priority: **MVP** · Covers: API-001
@@ -188,9 +226,19 @@ Priority: **MVP** · Covers: API-001, ADMAPI-002
 | DELETE on an item | Remove | 204, or 202 with a job (R-API-015) |
 | POST `{collection-or-item}/{verb}` | A non-CRUD action with a kebab-case verb (`/reindex`, `/restorations`, `/test`, `/keys/refresh`) | 200 with a result, or 202 with a job |
 
-- The custom-method form `POST /api/v1/repositories:batchCreate` used by
-  [repositories-and-proxy.md](repositories-and-proxy.md) deviates from the sub-path form above;
-  Q-API-7 decides which one v1 uses.
+- Actions on a whole collection use the same sub-path form (`POST /api/v1/repositories/batch-create`,
+  `POST /api/v1/trash-can/purge`); colon methods (`repositories:batchCreate`) are not used (Q-API-7).
+- **Reserved names.** A literal segment at the position where a collection's key or name sits
+  (`/users/me`, `/webhooks/test`, `/webhooks/deliveries`, `/repositories/batch-create`) is a
+  reserved name of that collection. Where the literal and the `{key}` route share a method, the
+  router prefers the literal and a resource with that name is unreachable (`GET /webhooks/deliveries`);
+  where they do not, one URL would still name two things, and the next route added with a shared
+  method would silently shadow the resource. The owning page rejects it on create (422 `reserved_name`), and names
+  that come from an identity provider follow that page's reserved-username rule. The key or name
+  schema in the OpenAPI document lists the reserved names as `x-trove-reserved-names`; a CI check
+  derives every literal sibling of a `{key}` segment from the document and fails when one is
+  missing from that list. Collections addressed by server-generated identifiers (tokens, jobs) need
+  no reservation.
 - A path or `path` parameter is percent-decoded once. Empty segments, `.` and `..`, NUL, control
   characters and invalid UTF-8 answer 400 `invalid_path` (the format conformance kit of R-ARCH-010
   applies the same rules to protocol paths).
@@ -201,6 +249,7 @@ Acceptance criteria:
 
 - A create answers 201 whose `Location` header equals the URL on which a subsequent GET succeeds.
 - `GET /api/v1/repositories/npm-local/items?path=a/../b` answers 400 `invalid_path`.
+- `POST /api/v1/repositories` with key `batch-create` answers 422 `reserved_name`.
 
 ### R-API-005 · Caller authentication on the management API
 Priority: **MVP** · Covers: API-001, ADMAPI-001
@@ -209,7 +258,7 @@ Priority: **MVP** · Covers: API-001, ADMAPI-001
 |---|---|---|
 | trove token (`trv_pat_`, `trv_sat_`, `trv_cit_`, INV-8) | `Authorization: Bearer <token>` | Scripts, CI jobs, tooling |
 | The same token as Basic password | `Authorization: Basic` with any username | Tools that only speak Basic, `curl -u` on `/files` |
-| UI session | `trv_session` cookie (INV-8) plus CSRF protection (R-API-006) | The Angular UI |
+| UI session | `__Host-trv_session` cookie (INV-8, Q-AUTH-2) plus CSRF protection (R-API-006) | The Angular UI |
 | None | — | Anonymous caller, where anonymous access is enabled (R-AUTH-040) and a policy grants it |
 
 - When an `Authorization` header is present, the session cookie is ignored for that request.
@@ -235,7 +284,7 @@ Acceptance criteria:
 ### R-API-006 · CSRF protection on the management API
 Priority: **MVP** · Covers: trove-only
 
-The mechanism (per-session token in the `trv_csrf` cookie, `X-CSRF-Token` header, origin and
+The mechanism (per-session token in the `__Host-trv_csrf` cookie, `X-CSRF-Token` header, origin and
 fetch-metadata checks, failure code `csrf_failed`) is R-AUTH-012 in
 [identity-and-authentication.md](identity-and-authentication.md). This page fixes where it
 applies and how the UI uses it:
@@ -246,7 +295,7 @@ applies and how the UI uses it:
   credential.
 - No GET under `/api/v1/` changes state; sign-out is a POST.
 - The UI configures Angular's XSRF support with
-  `withXsrfConfiguration({cookieName: 'trv_csrf', headerName: 'X-CSRF-Token'})`
+  `withXsrfConfiguration({cookieName: '__Host-trv_csrf', headerName: 'X-CSRF-Token'})`
   ([Angular API](https://angular.dev/api/common/http/withXsrfConfiguration)) and calls the API with
   relative URLs, which is the case in which Angular attaches the header to unsafe requests.
 
@@ -271,6 +320,7 @@ operations that require it when called with a session; the OpenAPI document mark
 | Operation family | Operations |
 |---|---|
 | Tokens | Creating and rotating personal and service-account tokens (R-API-032) |
+| Command-line login | Approving or denying an `npm login` or a device-code login (P1; R-AUTH-034, R-AUTH-036) |
 | Permissions | Creating, replacing and deleting permission policies; binding and unbinding system roles (R-API-033) |
 | CI identity | Creating, replacing and deleting CI issuers, identity mappings and delegations (R-API-035) |
 | Settings | Changing authentication settings (R-API-037) |
@@ -324,7 +374,11 @@ Every 4xx and 5xx answer under `/api/v1/`, `/auth/` and `/files/` is
 `application/problem+json` as defined by [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457).
 The Go error model behind it is R-ARCH-023 in [architecture.md](architecture.md).
 Package-manager protocol endpoints keep their ecosystem's error formats (format pages); SCIM keeps
-SCIM errors (R-API-046).
+SCIM errors (R-API-046). The OAuth token endpoints answer OAuth error responses
+([RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2), `application/json`) instead:
+the CI exchange `POST /api/v1/auth/oidc/token` (R-API-035, with `reason` and `requestId`) and the
+device token endpoint `POST /api/v1/auth/device/token` (P1, R-AUTH-036 in
+[identity-and-authentication.md](identity-and-authentication.md)).
 
 | Member | Content |
 |---|---|
@@ -381,6 +435,7 @@ R-UI-045); API text stays English.
 | 415 | `unsupported_media_type` | Wrong `Content-Type` |
 | 422 | `validation_failed` | Semantically invalid input; `errors[]` lists the fields |
 | 422 | `idempotency_key_reused` | R-API-014 |
+| 422 | `reserved_name` | A create uses a name reserved by a route (R-API-004) |
 | 428 | `precondition_required` | `If-Match` required (R-API-012) |
 | 429 | `rate_limited` | R-API-016; `Retry-After` set |
 | 500 | `internal` | Unexpected failure (R-ARCH-023) |
@@ -406,9 +461,12 @@ Priority: **MVP** · Covers: ADMAPI-003
 
 Every list endpoint is paginated by keyset (cursor) pagination; SCIM is the only exception.
 
-- Parameters: `limit` (default 50, maximum 500) and `cursor`.
-- Response envelope, plus `Link: <…>; rel="next"` ([RFC 8288](https://www.rfc-editor.org/rfc/rfc8288))
-  when more items exist:
+- Parameters: `limit` (default 50, maximum 500) and `cursor`, with these names on every list
+  endpoint of every page; there are no per-page variants such as `pageSize` and `pageToken`
+  (Q-API-6).
+- Response envelope, the same on every list endpoint (`items` and `nextCursor`, never a
+  resource-named array), plus `Link: <…>; rel="next"`
+  ([RFC 8288](https://www.rfc-editor.org/rfc/rfc8288)) when more items exist:
 
 ```json
 {"items": [], "nextCursor": "djEuZXlKcklqb2libkJ0TFdGc2JDSjk"}
@@ -476,10 +534,18 @@ Priority: **MVP** · Covers: trove-only
 - PUT, PATCH and DELETE accept `If-Match` ([RFC 9110 §13.1.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.1)).
   A mismatch answers 412 `precondition_failed` with the extension `currentEtag`. `If-Match: *`
   passes when the resource exists.
-- `If-Match` is optional by default. An owning page MAY make it mandatory for its resource (428
-  without it; [authorization.md](authorization.md) does so for permission-policy PUT), and the
-  operator switch `api.require_if_match` makes it mandatory everywhere (Q-API-2). The UI always
-  sends it.
+- `If-Match` is REQUIRED on every PUT and PATCH of a resource that carries a revision ETag
+  (Q-API-2); without it the answer is 428 `precondition_required`
+  ([RFC 6585 §3](https://www.rfc-editor.org/rfc/rfc6585#section-3)) whose `detail` names the
+  header. A client that deliberately overwrites whatever is stored sends `If-Match: *`, so a blind
+  write is always an explicit choice. The OpenAPI document marks these operations with
+  `x-trove-if-match: required` (R-API-002). There is no switch to turn the rule off.
+- Exempt, because they cannot lose another writer's change or carry no revision: DELETE (honors
+  `If-Match` when sent), membership and assignment edits that send a delta or bind one pair
+  (`{"add": [...], "remove": [...]}`, role bindings, project administrators and repository
+  assignments), write-only secret slots, item properties, and file content on `/files`.
+- The UI sends the ETag it loaded on every write and never sends `If-Match: *` on its own
+  (R-UI-042).
 - GET supports `If-None-Match` and answers 304.
 - File content on `/files` uses the SHA-256 ETag of [storage.md](storage.md); `If-None-Match: *` on PUT makes a
   deploy create-only (412 when the path exists), so CI can publish without the risk of replacing a
@@ -488,24 +554,22 @@ Priority: **MVP** · Covers: trove-only
 Data model (convention for every configuration table; the tables belong to their pages):
 
 ```sql
--- update pattern; zero rows while the key exists means 412
+-- update pattern; zero rows while the key exists means 412; $2 is NULL only for If-Match: *
 UPDATE <table>
    SET ..., revision = revision + 1, updated_at = now(), updated_by = $actor
  WHERE <key column> = $1 AND ($2::bigint IS NULL OR revision = $2)
 RETURNING revision;
 ```
 
-Configuration:
-
-```yaml
-api:
-  require_if_match: false   # default (proposed); see Q-API-2
-```
-
 Acceptance criteria:
 
 - Two clients GET the same repository (`ETag: "4"`) and PATCH it with `If-Match: "4"`; one
   answers 200 with `ETag: "5"`, the other 412 with `currentEtag` `"5"`.
+- The same PATCH without `If-Match` answers 428 `precondition_required` and changes nothing; with
+  `If-Match: *` it answers 200.
+- A script over the OpenAPI document asserts that every PUT and PATCH whose resource's GET declares
+  an `ETag` response header carries `x-trove-if-match: required`, unless it is in the exempt list
+  above.
 - `curl -X PUT -T app.tgz -H 'If-None-Match: *' -u "ci:$TROVE_TOKEN" "$TROVE_URL/files/generic-local/app/1.0/app.tgz"`
   answers 201 the first time and 412 the second time.
 
@@ -530,7 +594,8 @@ Acceptance criteria:
 
 - `curl -X PATCH -H 'Content-Type: application/merge-patch+json' -H 'If-Match: "3"' -d '{"description": null}' "$TROVE_URL/api/v1/repositories/npm-remote"`
   answers 200 with `"description": null` and `ETag: "4"`.
-- `{"class": "local"}` sent to a remote repository answers 422 with pointer `/class`.
+- `{"class": "local"}` sent with a matching `If-Match` to a remote repository answers 422 with
+  pointer `/class`.
 
 ### R-API-014 · Idempotency keys for creates
 Priority: **MVP** · Covers: trove-only
@@ -641,8 +706,12 @@ An exhausted bucket answers 429 `rate_limited` with `Retry-After` (seconds) and 
 `RateLimit-Policy` and `RateLimit` fields of
 [draft-ietf-httpapi-ratelimit-headers](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)
 (draft-11 at the time of writing; the syntax follows the draft until it is published). Buckets are
-kept in memory per replica, like those of the identity and CI pages (Q-API-3, H-43).
-Administrators are not exempt by default. Rejections are counted in
+kept in memory per replica, like those of the identity and CI pages, by design (Q-API-3): these
+classes protect the resources of the replica that serves the request, so the effective
+cluster-wide budget is the configured value times the number of replicas (H-43). The one
+guessable credential, the break-glass password, is counted cluster-wide in PostgreSQL by R-AUTH-038
+in [identity-and-authentication.md](identity-and-authentication.md). Administrators are not exempt
+by default. Rejections are counted in
 `trove_api_rate_limited_total{class}`.
 
 Configuration:
@@ -751,13 +820,14 @@ Priority: **MVP** · Covers: trove-only
 | `/api/v1/packages…` | Packages across repositories | R-API-029 | this page; package metadata in [storage.md](storage.md) and format pages |
 | `/api/v1/users`, `/api/v1/groups`, `/api/v1/service-accounts`, `/api/v1/tokens` | Identities and tokens | R-API-031, R-API-032 | [identity-and-authentication.md](identity-and-authentication.md) |
 | `/api/v1/permission-policies`, `/api/v1/roles`, `/api/v1/role-bindings`, `/api/v1/authz/…` | Authorization | R-API-033, R-API-034 | [authorization.md](authorization.md) |
+| `/api/v1/auth/cli-logins/…`, `/api/v1/auth/device/…` | Command-line login approval and device flow (P1; screens in R-UI-004) | R-AUTH-034, R-AUTH-036 | [identity-and-authentication.md](identity-and-authentication.md) |
 | `/api/v1/ci/…`, `/api/v1/auth/oidc/token` | CI identity | R-API-035 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
 | `/api/v1/settings/…`, `/api/v1/system/banner`, `/api/v1/system/maintenance`, `/api/v1/system/proxy-offline` | Settings | R-API-037 | the page per setting |
-| `/api/v1/system/…` | Version, information, jobs, tasks, diagnostics | R-API-038, R-API-045 | [operations-and-observability.md](operations-and-observability.md), [architecture.md](architecture.md) |
+| `/api/v1/system/…` | Version, information, jobs, tasks, diagnostics, stored-secret key ring | R-API-038, R-API-045, R-API-049 | [operations-and-observability.md](operations-and-observability.md), [architecture.md](architecture.md) |
 | `/api/v1/audit/…` | Audit events | R-API-039 | [operations-and-observability.md](operations-and-observability.md) |
-| `/api/v1/maintenance/…`, `/api/v1/storage/summary` | Garbage collection, storage summary | R-API-040 | [storage.md](storage.md) |
+| `/api/v1/storage/…` (summary, damaged-blobs; storage tasks run through `/api/v1/system/tasks/…`) | Garbage collection, orphan sweep, scrub, storage summary, damaged blobs | R-API-040 | [storage.md](storage.md) |
 | `/api/v1/webhooks…` | Webhooks (P1) | R-API-041 | [operations-and-observability.md](operations-and-observability.md) |
-| `/api/v1/builds…` | Build information (P1) | R-API-042 | open, Q-API-5 |
+| `/api/v1/builds…` | Build information (P1) | R-API-042 | the page `builds.md` (prefix `R-BLD`), written before P1 build work starts (Q-API-5) |
 | `/api/v1/retention/…` | Retention and cleanup (P1) | R-API-043 | [storage.md](storage.md) |
 | `/api/v1/config/…` | Configuration as code (P1) | R-API-044 | [operations-and-observability.md](operations-and-observability.md) |
 | `/api/v1/scim/v2/…` | SCIM (P1) | R-API-046 | [identity-and-authentication.md](identity-and-authentication.md) |
@@ -768,20 +838,27 @@ Routes are registered on the HTTP stack of R-ARCH-005 with method-qualified patt
 login flow under `/auth/` is not part of `/api/v1/`; the exchange endpoint
 `/api/v1/auth/oidc/token` is fixed by INV-10.
 
-The owning pages diverge on a few paths for the same function. Until review settles them, this
-page lists the semantic owner's path and names the alternative: garbage collection
-(`/api/v1/maintenance/gc-runs` in [storage.md](storage.md) against
-`/api/v1/system/tasks/gc/run` of R-OPS-020 in
-[operations-and-observability.md](operations-and-observability.md)), and the storage summary
-(`/api/v1/storage/summary` in [storage.md](storage.md) against `/api/v1/system/storage/summary` of
-R-OPS-023).
+**One path per function for maintenance work** (Q-API-9). Every singleton maintenance task of
+R-OPS-019 in [operations-and-observability.md](operations-and-observability.md) is started only
+through `POST /api/v1/system/tasks/{name}/run` and stopped only through
+`POST /api/v1/system/jobs/{id}/cancel`, and its runs are listed by
+`GET /api/v1/system/jobs?kind=<task>`. The page that owns a task's semantics defines its
+parameters and job result, MAY add a read-only domain view of its runs that references the job,
+and owns the read paths of its results (`GET /api/v1/storage/summary` and
+`GET /api/v1/storage/damaged-blobs` in [storage.md](storage.md)). No page adds a second start,
+stop or refresh path for a task. Per-resource actions (`/repositories/{key}/reindex`,
+`/storage/damaged-blobs/{sha256}/recheck`) and the runs of retention policies, which have their own
+run model with queueing and per-policy runs ([storage.md](storage.md) R-STOR-041), are not
+singleton tasks and keep their resource paths.
 
 Acceptance criteria:
 
 - The route-parity check of R-API-002 passes.
 - A request to every prefix in the table without credentials answers 401 or the documented
   anonymous result, never 500.
-- After review, each function in this table has exactly one path in the OpenAPI document.
+- Each function in this table has exactly one path in the OpenAPI document: the document contains
+  no `/api/v1/maintenance/…` start or stop path, no `POST /api/v1/storage/summary/refresh` and no
+  `/api/v1/system/storage/summary`, and `POST /api/v1/system/tasks/gc/run` starts a run.
 
 ### R-API-021 · Current caller and UI preferences
 Priority: **MVP** · Covers: trove-only
@@ -835,7 +912,7 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/formats` | Format descriptors with classes, clients and settings schema (R-ARCH-008, R-ARCH-010) | authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients and settings schema (R-ARCH-008, R-ARCH-010) | authenticated; anonymous where anonymous access is on |
 | GET | `/api/v1/repositories` | List; filters `class`, `format`, `q`, `state`, `project`; `view` | readable repositories; configuration fields only with `repositories:read-config` or `manage` |
 | POST | `/api/v1/repositories` | Create | `admin` or `repository-admin` role; project administrators per R-AUTHZ-026 |
 | GET | `/api/v1/repositories/{key}` | Read; full configuration for `manage` and `repositories:read-config` | `read` |
@@ -864,17 +941,19 @@ Owned by [repositories-and-proxy.md](repositories-and-proxy.md):
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| POST | `/api/v1/repositories:batchCreate` | Create several repositories, all or nothing | as create |
-| POST | `/api/v1/repositories:batchUpdate` | Merge-patch several repositories with per-entry `ifMatch`, all or nothing | as update |
-| POST | `/api/v1/repositories:batchGet` | Read several configurations | as read, per key |
-| POST | `/api/v1/repositories:batchDelete` | Delete several repositories, best effort; 202 with per-key job references | as delete |
-| POST | `/api/v1/repositories:quickSetup` | Create local, remote and virtual repositories per format from a prefix (R-UI-023) | as create |
+| POST | `/api/v1/repositories/batch-create` | Create several repositories, all or nothing | as create |
+| POST | `/api/v1/repositories/batch-update` | Merge-patch several repositories with per-entry `ifMatch` (required per entry, R-API-012), all or nothing | as update |
+| POST | `/api/v1/repositories/batch-get` | Read several configurations | as read, per key |
+| POST | `/api/v1/repositories/batch-delete` | Delete several repositories, best effort; 202 with per-key job references | as delete |
+| POST | `/api/v1/repositories/quick-setup` | Create local, remote and virtual repositories per format from a prefix (R-UI-023) | as create |
 
-The path syntax is subject to Q-API-7. All of them accept `Idempotency-Key` (R-API-014).
+The sub-path verbs follow R-API-004 (Q-API-7); `batch-create`, `batch-update`, `batch-get`,
+`batch-delete` and `quick-setup` are therefore reserved repository keys. All of them accept
+`Idempotency-Key` (R-API-014).
 
 Acceptance criteria:
 
-- A `batchCreate` whose third document is invalid answers 422 with a pointer into that document
+- A `batch-create` whose third document is invalid answers 422 with a pointer into that document
   and creates nothing.
 
 ### R-API-024 · Repository maintenance actions
@@ -940,8 +1019,9 @@ Owned by [storage.md](storage.md):
 | PATCH | `/api/v1/repositories/{repoKey}/properties?path=&recursive=` | Merge patch of properties | `annotate` |
 | DELETE | `/api/v1/repositories/{repoKey}/properties?path=&keys=&recursive=` | Remove properties | `annotate` |
 
-The comma-separated `keys` parameter of [storage.md](storage.md) deviates from the repeated
-parameter rule of R-API-011; review aligns one of them.
+`keys` follows the repeated-parameter rule of R-API-011 (`keys=qa.status&keys=build.number`), like
+every other multi-value parameter, so one parser and the generated clients' array form (OpenAPI
+`style: form`, `explode: true`) serve every endpoint; a comma-separated list is not accepted.
 
 Acceptance criteria:
 
@@ -1058,6 +1138,7 @@ CREATE TABLE package_readme_cache (
   version_id       uuid PRIMARY KEY,           -- references the version table of storage.md
   source_sha256    bytea       NOT NULL,
   renderer_version integer     NOT NULL,       -- bumped when renderer or sanitizer policy changes
+  image_policy_sha256 bytea    NOT NULL,       -- hash of ui.readme.external_image_origins (R-UI-008)
   html             text        NOT NULL,
   truncated        boolean     NOT NULL,
   rendered_at      timestamptz NOT NULL DEFAULT now()
@@ -1159,12 +1240,12 @@ grammar, lifetimes, revocation):
 | POST | `/api/v1/tokens` | Create a personal token for the caller | user with session (recent authentication) or a PAT under the derivation rule |
 | POST | `/api/v1/service-accounts/{name}/tokens` | Create a service-account token | `admin`; owners from P1; recent authentication for sessions |
 | GET | `/api/v1/tokens` | List own tokens; all with `tokens:read` | `self`, `tokens:read` |
-| GET | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Read one token | owner, `tokens:read` |
-| DELETE | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Revoke | owner, `tokens:revoke`, `admin` |
+| GET | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Read one token | `{id}`: owner, `tokens:read`; `current`: the presenting token itself, CI tokens included ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013) |
+| DELETE | `/api/v1/tokens/{id}`, `/api/v1/tokens/current` | Revoke | `{id}`: owner, owners of the service account (P1), `tokens:revoke`, `admin`; `current`: the presenting token itself, of every type, CI tokens (`trv_cit_`) included (R-AUTH-029; [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013) |
 | DELETE | `/api/v1/users/me/tokens` | Revoke all own tokens | `self` |
 | DELETE | `/api/v1/service-accounts/{name}/tokens` | Revoke all tokens of a service account | `admin` |
 | POST | `/api/v1/tokens/revoke` | Revoke by value | anyone, no authentication |
-| POST | `/api/v1/tokens/{id}/rotate`, `/api/v1/tokens/current/rotate` | Rotate | as revoke; recent authentication for sessions |
+| POST | `/api/v1/tokens/{id}/rotate`, `/api/v1/tokens/current/rotate` | Rotate (P1, R-AUTH-030); CI tokens cannot be rotated | PAT: its owner only, through a session with recent authentication or a token of the owner under the derivation rule; SAT: `admin`, owners of the service account from P1, or a SAT of the account under the derivation rule; `current/rotate`: the token itself, only if `selfRotatable`. `tokens:revoke` alone never rotates (R-AUTH-030) |
 
 API conventions that apply: the secret appears only in the create and rotate answers, which are
 `no-store`, uncompressed (R-API-017) and never stored for idempotency replay (R-API-014).
@@ -1176,6 +1257,11 @@ Acceptance criteria:
   [identity-and-authentication.md](identity-and-authentication.md)); `GET /api/v1/tokens/{id}`
   never contains it.
 - `POST /api/v1/tokens/revoke` without credentials and with a valid token value revokes it.
+- `DELETE /api/v1/tokens/current` with a `trv_cit_` token answers 204, and the same token then gets
+  401.
+- A token whose scope is `{"system": ["tokens:revoke"]}` gets 403 `forbidden` from
+  `POST /api/v1/tokens/{id of another user's PAT}/rotate` and 204 from `DELETE` of the same ID
+  (P1, with rotation).
 
 ### R-API-033 · Permission policies and system roles
 Priority: **MVP** · Covers: ADMAPI-020, ADMAPI-021, ADMAPI-022, ADMAPI-023, ADMAPI-024, IAM-031
@@ -1241,13 +1327,22 @@ Owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
 | POST | `/api/v1/auth/oidc/token` | Exchange a CI ID token for a `trv_cit_` token (INV-10) | anonymous; the ID token is the proof |
 
 API conventions that apply: the evaluation endpoint takes claims, never a token, and the UI decodes
-pasted tokens in the browser (R-UI-036); the exchange answers carry `Cache-Control: no-store` and
-use the OAuth field names of RFC 8693 alongside problem details, as the owning page defines.
+pasted tokens in the browser (R-UI-036). The exchange speaks OAuth to OAuth clients: its answers
+carry `Cache-Control: no-store` and the field names of RFC 8693, and its errors are OAuth error
+responses ([RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2),
+`Content-Type: application/json`, `Cache-Control: no-store`) with `error` and
+`error_description` plus trove's members `reason` (left out under
+`ci.exchange.expose_reason: false`) and `requestId`, not problem details (R-API-009). A rejected
+subject token answers 400 `invalid_request` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-008,
+Q-CI-8).
 
 Acceptance criteria:
 
 - In a GitLab CI job using the snippet of `GET …/snippets/gitlab-ci?mapping=team-a-protected&format=npm`,
   the exchange succeeds and `npm publish` of `@team-a/ui` succeeds.
+- An exchange with an expired ID token answers 400 with `Content-Type: application/json`,
+  `Cache-Control: no-store`, `error` `invalid_request`, `reason` `token_expired` and a `requestId`
+  equal to the `X-Request-Id` header, and no `type` or `title` member.
 - `POST …/evaluate` with a claim set that matches no mapping answers 200 with no matched mapping and
   the failing condition per candidate.
 
@@ -1334,22 +1429,25 @@ Acceptance criteria:
 ### R-API-040 · Garbage collection and storage summary
 Priority: **MVP** · Covers: API-002, API-113, API-031, API-032
 
-Owned by [storage.md](storage.md):
+Semantics owned by [storage.md](storage.md); starting and stopping use the task and job endpoints
+of R-OPS-019 (one path per function, Q-API-9 and R-API-020):
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| POST | `/api/v1/maintenance/gc-runs` | Start a run (`mode` incremental or full, `dryRun`); 409 while one runs | `admin` |
-| GET | `/api/v1/maintenance/gc-runs`, `/api/v1/maintenance/gc-runs/{id}` | Runs with counts and reclaimed bytes | `admin` |
-| POST | `/api/v1/maintenance/gc-runs/{id}/stop` | Stop after the current batch | `admin` |
-| GET | `/api/v1/storage/summary` | Blob and repository usage (P1) | `admin` or the storage read scope |
-| POST | `/api/v1/storage/summary/refresh` | Recompute; 202 (P1) | `admin` |
-
-The divergent paths of other pages for the same functions are listed in R-API-020.
+| POST | `/api/v1/system/tasks/gc/run`, `/api/v1/system/tasks/gc-full/run` | Start an incremental or a full collection run (`dryRun`); 202 with the job; 409 with the active job while any collection run is queued or running | `admin` |
+| GET | `/api/v1/system/jobs?kind=gc`, `?kind=gc-full`, `/api/v1/system/jobs/{id}` | Runs; each job's result carries the counts and reclaimed bytes defined by [storage.md](storage.md) | `system.read` |
+| POST | `/api/v1/system/jobs/{id}/cancel` | Stop a run after the current batch | `admin` |
+| GET | `/api/v1/storage/summary` | Blob and repository usage (P1, R-STOR-028) | `storage.read` or `admin` |
+| POST | `/api/v1/system/tasks/storage-summary/run` | Recompute; 202 with the job (P1) | `admin` |
+| POST | `/api/v1/system/tasks/orphan-sweep/run`, `/api/v1/system/tasks/scrub/run` | Start an orphan sweep or an integrity scrub (P1, R-STOR-026, R-STOR-027) | `admin` |
+| GET | `/api/v1/storage/damaged-blobs` | Damaged blobs found by the scrub, with their referencing items (P1, R-STOR-027) | `storage.read` or `admin` |
+| POST | `/api/v1/storage/damaged-blobs/{sha256}/recheck` | Re-run both checks for one blob; a per-resource action, not a task (P1, R-STOR-027) | `admin` |
 
 Acceptance criteria:
 
-- `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"mode":"full","dryRun":true}' "$TROVE_URL/api/v1/maintenance/gc-runs"`
-  answers 202; a second start while it runs answers 409.
+- `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"dryRun":true}' "$TROVE_URL/api/v1/system/tasks/gc-full/run"`
+  answers 202; `POST …/system/tasks/gc/run` while it runs answers 409 with the same job; after the
+  job ends, `GET /api/v1/system/jobs?kind=gc-full` lists it with its result counts.
 
 ### R-API-041 · Webhooks
 Priority: **P1** · Covers: API-148, API-149, API-150, API-151, API-152, API-153, API-154, API-155, ADMAPI-027
@@ -1379,9 +1477,12 @@ Acceptance criteria:
 ### R-API-042 · Build information
 Priority: **P1** · Covers: API-107, API-156, API-157, API-158, API-159, API-160, API-162, API-163, API-165
 
-No spec page owns build information yet (Q-API-5). This page reserves its surface so that the
-owner can fill in record schema and permissions without moving paths. `PUT
-/api/v1/builds/{buildName}/retention` is already used by [storage.md](storage.md).
+Build information gets its own spec page, `builds.md` with prefix `R-BLD`, written before P1
+build work starts (Q-API-5); it owns the record schema, the mapping of CI job names to
+`{buildName}`, promotion and retention of runs, and uses the build permissions of R-AUTHZ-027 in
+[authorization.md](authorization.md). Until it exists, this page reserves the surface so that the
+paths do not move, and the MVP implements none of it. `GET`, `PUT` and `DELETE` of
+`/api/v1/builds/{buildName}/retention` are already specified by [storage.md](storage.md) R-STOR-043.
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
@@ -1392,7 +1493,7 @@ owner can fill in record schema and permissions without moving paths. `PUT
 | DELETE | `/api/v1/builds/{buildName}/runs/{number}` | Delete; `deleteArtifacts=true` also deletes linked artifacts (202) | delete on the build |
 | POST | `/api/v1/builds/{buildName}/runs/{number}/promote` | Set status, optionally copy or move artifacts and dependencies to a target repository, set properties; `dryRun` | deploy on the build, plus the permissions of copy and move |
 | GET | `/api/v1/builds/{buildName}/runs/{number}/artifacts` | Artifacts with download URLs; optional `pattern` (repeat) | read on the build |
-| GET, PUT | `/api/v1/builds/{buildName}/retention` | Retention of runs | delete on the build ([storage.md](storage.md)) |
+| GET, PUT, DELETE | `/api/v1/builds/{buildName}/retention` | Retention of runs ([storage.md](storage.md) R-STOR-043): `GET` reads the stored parameters (404 when none); `PUT` stores them and applies them at once through a `build-retention` job, answering 202 with the job, or with `"wait": true` waiting up to `retention.build_retention_wait` and then answering 200 with the job result if it finished, otherwise 202; `DELETE` removes the parameters (204) and no run | `GET`: read on the build; `PUT`, `DELETE`: delete on the build |
 
 Acceptance criteria:
 
@@ -1488,6 +1589,69 @@ Acceptance criteria:
 - `curl -s -H "Authorization: Bearer $TROVE_TOKEN" "$TROVE_URL/api/v1/repositories/npm-local/packages/%40team-a%2Fui/owners"`
   answers 200 for a reader of `npm-local`.
 
+### R-API-049 · Stored-secret key-ring status
+Priority: **MVP** · Covers: HA-016
+
+The key ring that seals stored secrets is configured through mounted files (R-ARCH-021 in
+[architecture.md](architecture.md)) and rotated in steps (R-HA-027 in
+[ha-and-helm.md](ha-and-helm.md)). This requirement makes its state readable through the API, so
+the UI, monitoring and an operator can check and finish a rotation without a shell in a pod, which
+would expose the key files themselves (Q-API-8). `trove admin secrets status` and this endpoint
+share one implementation in `internal/secrets`; this page owns the payload.
+
+| Method | Path | Purpose | Permission |
+|---|---|---|---|
+| GET | `/api/v1/system/encryption` | Key IDs, sealed-value counts per key ID, canary state, the key IDs every live replica holds, last re-encryption | `system.read` |
+| POST | `/api/v1/system/tasks/secrets-reencrypt/run` | Start the re-encryption of R-ARCH-021 as the manual task `secrets-reencrypt` (no schedule; its job kind has the same name) through the task trigger of R-OPS-019 (Q-API-9); 202 with the job; 409 with the running job; 409 `key_ring_incompatible` while `ringsCompatible` is false | `admin` |
+
+```json
+{
+  "activeKeyId": "2026-10",
+  "keys": [
+    {"id": "2026-10", "active": true, "sealedValues": 14, "canary": "ok"},
+    {"id": "2026-04", "active": false, "sealedValues": 3, "canary": "ok"}
+  ],
+  "replicas": [
+    {"name": "trove-6f9c7d8b5-x2v4q", "activeKeyId": "2026-10", "keyIds": ["2026-04", "2026-10"]},
+    {"name": "trove-6f9c7d8b5-q8n2m", "activeKeyId": "2026-10", "keyIds": ["2026-04", "2026-10"]}
+  ],
+  "ringsCompatible": true,
+  "lastReencryption": {"jobId": "01933b2a-7c41-7d1e-9a52-3f0e4b8c2d11", "state": "succeeded", "finishedAt": "2026-10-28T12:40:02.118Z"}
+}
+```
+
+- `activeKeyId` and `keys[].canary` are the answering replica's view; `canary` is `ok`, `failed`
+  or `absent` (no canary row for that key ID yet). `keys` lists the union of the answering
+  replica's ring and every key ID that sealed values reference. `sealedValues` counts sealed values
+  per key ID over every sealed column registered with `internal/secrets`, the same registry the
+  re-encryption job walks.
+- `replicas` comes from the replica registry (R-OPS-003 in
+  [operations-and-observability.md](operations-and-observability.md)): each replica publishes the
+  key IDs of its ring and its active key ID with its heartbeat. Lost replicas are left out.
+- `ringsCompatible` is true when every live replica's ring holds every key ID that is active on
+  any live replica or referenced by a sealed value. False is the state in which a value sealed by
+  one replica cannot be opened by another, for example when step 2 of R-HA-027 rolls out before
+  step 1 reached every replica.
+- The answer contains key IDs only: never key material, key fingerprints, ciphertext or plaintext.
+- The re-encryption task refuses to start while `ringsCompatible` is false, because it would seal
+  values that some replica cannot open. It needs no recent authentication: it changes no grant and
+  reveals nothing. The request is audited like every write (R-API-019).
+- The check is as fresh as the registry: a replica that started within the last heartbeat interval
+  may not be listed yet. The start-up canary of R-ARCH-021 stays the hard guard; this endpoint and
+  the task's refusal catch the mixed-ring state of a running cluster, which the canary cannot see.
+- Monitoring reads the same state as metrics on the operations listener:
+  `trove_secrets_sealed_values{key_id}` and `trove_secrets_key_rings_compatible` (0 or 1), defined
+  by [operations-and-observability.md](operations-and-observability.md).
+
+Acceptance criteria:
+
+- With replica A running on the old ring and replica B started afterwards with a new key active
+  that A's ring lacks, `GET /api/v1/system/encryption` shows `ringsCompatible: false`, and
+  `POST /api/v1/system/tasks/secrets-reencrypt/run` answers 409 `key_ring_incompatible`.
+- After the rotation steps of R-HA-027 and a successful re-encryption run, `keys` reports
+  `sealedValues: 0` for the old key ID, the same count that `trove admin secrets status` prints.
+- No answer of the endpoint contains the base64 content of any key file.
+
 ## Part C — UI
 
 ### R-UI-001 · Technology baseline and delivery
@@ -1508,14 +1672,48 @@ Priority: **MVP** · Covers: UI-058
   - `index.html` gets a per-response CSP nonce as the `ngCspNonce` attribute of the root element,
     which Angular applies to the styles it inserts.
 - Headers for UI documents:
-  `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'nonce-<n>'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types angular angular#bundler`,
+  `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'nonce-<n>'; img-src 'self' data:<image origins>; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types angular angular#bundler`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
-  `Cross-Origin-Opener-Policy: same-origin`. Without the `angular#unsafe-bypass` policy, every
-  `bypassSecurityTrust*` call fails at runtime
-  ([Angular security guide](https://angular.dev/best-practices/security)). Sign-in navigates to
+  `Cross-Origin-Opener-Policy: same-origin`. `<image origins>` is empty by default. It holds the
+  exact origins of `ui.readme.external_image_origins` (R-UI-008, Q-UI-6) and, when
+  `server.content_base_url` is set (P1, R-ARCH-029 in [architecture.md](architecture.md)), that
+  content origin, because README images that the renderer generates for package files are
+  redirected there. Each origin is preceded by a space; no wildcard is ever emitted.
+  `connect-src` stays `'self'` with or without a content origin, because the UI never reads package
+  content with `fetch` or XHR (below). Without the `angular#unsafe-bypass` policy, a value marked
+  trusted through `bypassSecurityTrust*` cannot reach a sink that Trusted Types guard
+  ([Angular security guide](https://angular.dev/best-practices/security)), and without
+  `angular#components` the CDK cannot insert SVG markup. Sign-in navigates to
   `/auth/…` and the identity provider by top-level navigation, which `form-action` does not govern.
-- The UI requests nothing from any origin other than trove's own (fonts and icons self-hosted, no
-  analytics, no CDN), so it works in air-gapped installations.
+- The UI's own code and assets come from nothing but trove's origin (fonts and icons self-hosted,
+  no analytics, no CDN), so it works in air-gapped installations; the only foreign requests are
+  README images from origins an operator listed (R-UI-008). From P1, with `server.content_base_url`
+  set, package content opened or shown in the browser loads from trove's content origin
+  (R-ARCH-029); that origin is trove's own, not a foreign one.
+- Links to package content (R-ARCH-007, R-ARCH-029 in [architecture.md](architecture.md)):
+  - The UI never assembles a `/files/` or `/api/<format>/` URL from strings. Downloads, "Copy
+    download URL" and file links use the `downloadUrl` of the item or the version file
+    (R-API-025, R-API-029); README images are the URLs the server's renderer generated through
+    `LinkBuilder` (R-UI-008); registry and feed URLs come from the client setup answer
+    (R-API-030). Moving content to a content origin (P1) therefore changes no UI code.
+  - The UI never reads package content with `fetch` or XHR. Package content reaches the browser
+    only as a navigation or an `img` load, so the content origin needs no CORS and `connect-src`
+    stays `'self'`.
+  - The upload of the deploy dialog (R-UI-012, P1) is not a content link but the API operation
+    `PUT /files/{repoKey}/{path}` of R-API-025. It always targets the UI's own origin, because the
+    content origin serves only `GET` and `HEAD` (R-ARCH-029), and it is built in one place, the
+    `files` client in `web/src/app/api/`, like every other API call.
+- Component library (Q-UI-1): Angular Material and the Angular CDK in the release line of the
+  Angular major in use (22.x, pinned once in the lockfile with the rest of Angular), plus
+  `@angular/aria` for the widgets Material lacks (the tree of R-UI-010 and the listboxes of the
+  member editor, R-UI-022). No other component
+  suite is added. Material is themed through its design tokens (`mat.theme`,
+  [Angular Material theming](https://material.angular.dev/guide/theming)) mapped to trove's CSS
+  custom properties for both themes. Icons come from a self-hosted icon font used through
+  ligatures (`font-src 'self'`); SVG icon registration through `MatIconRegistry` is not used,
+  because it takes URLs only as `SafeResourceUrl` values from a security bypass (banned by
+  R-UI-046) and inserts the SVG through the Trusted Types policy `angular#components`, which this
+  CSP does not list.
 - Supported browsers (UI-058): the last two major versions of Chrome, Edge, Firefox and Safari on
   the desktop, and the current Firefox ESR. The list is published in the user documentation; other
   browsers are unsupported.
@@ -1528,8 +1726,14 @@ Priority: **MVP** · Covers: UI-058
 Acceptance criteria:
 
 - `curl -sI "$TROVE_URL/ui/en/"` shows the CSP with a nonce that differs between two requests.
-- A Playwright test records every request of a full journey and finds none to a foreign origin and
-  no `securitypolicyviolation` event.
+- A Playwright test records every request of a full journey (with no image origins and no content
+  origin configured) and finds none to a foreign origin and no `securitypolicyviolation` event.
+- The same journey shows no `fetch` or XHR request to a `/files/` or `/api/<format>/` path other than
+  the upload of R-UI-012.
+- With `server.content_base_url: https://trove-content.example.net` (# example, P1), the CSP's
+  `img-src` names `https://trove-content.example.net`, and a README with an image from its own
+  package renders that image without a `securitypolicyviolation` event.
+- `grep -rn "bypassSecurityTrust\|addSvgIcon" web/src` finds nothing.
 - The production build fails when the initial bundle exceeds the budget.
 
 ### R-UI-002 · Application shell
@@ -1541,6 +1745,12 @@ Priority: **MVP** · Covers: UI-001, UI-004
 - Navigation with two areas: **Packages and files** (packages, browser, search, trash, builds) and
   **Administration** (shown when `/api/v1/authz/me` reports any administrative capability). The
   sections are the routes of R-UI-003.
+- Layout and density (Q-UI-2): the navigation is a left side bar below the header, permanently
+  visible at viewport widths of 1024 CSS px and more, and a drawer opened from a menu button in the
+  header below that width. Tables, lists and form fields use compact density (Angular Material
+  density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
+  (R-UI-044). Screen layouts that switch between one and two columns use CSS container queries on
+  the content area, so collapsing the side bar never breaks them.
 - User menu: profile and tokens, client setup, quick repository setup (P1; only when repositories
   may be created), language, theme, keyboard shortcuts on or off, sign out.
 - The banner of `GET /api/v1/system/banner` above the content, and a notice when maintenance mode
@@ -1555,6 +1765,8 @@ Acceptance criteria:
 - A user without administrative capabilities sees no Administration area; an administrator does.
 - With the keyboard only, the first Tab focuses the skip link, and Enter moves focus to the main
   heading.
+- At 1280 CSS px the side bar is visible without interaction; at 800 CSS px it is hidden and the
+  header's menu button opens it as a drawer that traps focus until closed.
 
 ### R-UI-003 · Route map and deep links
 Priority: **MVP** · Covers: UI-002
@@ -1563,7 +1775,7 @@ Every screen and every object has a bookmarkable URL under `/ui/{locale}`. Filte
 selected tab and selected version live in query parameters.
 
 <details>
-<summary>Route table (25)</summary>
+<summary>Route table (27)</summary>
 
 | Route | Screen | Requirement |
 |---|---|---|
@@ -1590,7 +1802,9 @@ selected tab and selected version live in query parameters.
 | `/admin/system`, `/admin/system/jobs` | System status, jobs | R-UI-038 |
 | `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
 | `/admin/projects…` | Projects (P1) | R-UI-041 |
-| `/login` (`?local=1`), `/signed-out` | Sign-in, signed out | R-UI-004 |
+| `/login` (`?local=1`), `/logged-out` | Sign-in, signed out | R-UI-004 |
+| `/cli-login/{publicId}` | Command-line login approval of `npm login` (P1; R-AUTH-034) | R-UI-004 |
+| `/device` (`?code=`) | Device-code login approval for other command-line tools (P1; R-AUTH-036) | R-UI-004 |
 | anything else | Not found, with a search field | — |
 
 </details>
@@ -1625,14 +1839,47 @@ The flow and its security properties are owned by
 - A 401 during use (expired or revoked session) opens a dialog "Your session has ended" with "Sign
   in again"; editors with unsaved changes first offer "Copy draft as JSON".
 - Sign-out: `POST /auth/logout` with the CSRF header, then navigation to the returned
-  `redirectTo`, or to `/signed-out`.
+  `redirectTo`, or to `/logged-out`.
+- `/logged-out` is where the post-logout redirect URI `<baseURL>/ui/logged-out` lands. R-AUTH-003
+  and R-AUTH-013 register that URI at the identity provider, and the locale redirect of R-UI-001
+  takes it to `/ui/{locale}/logged-out`. Because the URI is registered at the IdP, the route name
+  is a contract: it does not follow the UI wording, whose visible text stays "Signed out". The
+  page needs no session. A 401 from `whoami` on this route does not navigate to `/login`, and the
+  page never sends the browser to an identity provider on its own; otherwise auto-redirect would
+  sign the user straight back in while the IdP session is still alive. The page offers "Sign in
+  again", which opens `/login`.
 - Sign-out in one tab signs out every other tab of the same browser (`BroadcastChannel`).
+- Command-line login approval (P1). The flows, the `cli_login` record and the texts are owned by
+  R-AUTH-034 and R-AUTH-036 in [identity-and-authentication.md](identity-and-authentication.md).
+  Both screens need a session; without one the UI starts the sign-in with `return_to` set to the
+  screen. Approve and deny send the CSRF header and need recent authentication (R-API-007).
+  - `/cli-login/{publicId}` is the `loginUrl` that `npm login` opens. It renders
+    `GET /api/v1/auth/cli-logins/{publicId}`: the client kind and registry URL; the requesting
+    address, user agent and request time; the resulting token's lifetime and scope; the warning to
+    approve only a login the user just started; a prominent warning when the browser's address
+    differs from the requesting address; and every refused poll with its address, its time and
+    the text of R-AUTH-034. While the screen is open it refreshes the record every 2 seconds, so a
+    refusal before or after the decision appears without a reload; leaving the screen stops the
+    refresh. "Approve" (with an optional narrower scope or shorter lifetime) and "Deny" are final.
+  - `/device` is the `verification_uri` of the device flow; `verification_uri_complete` adds
+    `?code=`. The screen takes the user code as R-AUTH-036 requires, then shows the same record
+    plus the tool's `client_id`. When the tool asked for `self_rotatable=true`, the screen shows
+    that request, explains that the token could then renew itself, and lets the approver decline
+    it; the issued PAT records the outcome as `selfRotatable`.
 
 Acceptance criteria:
 
 - With one provider and auto-redirect, opening `/ui/en/packages` unauthenticated lands at the
   identity provider and, after login, back on `/ui/en/packages`.
-- Signing out in tab A shows `/signed-out` in tab B within two seconds.
+- Signing out in tab A shows `/logged-out` in tab B within two seconds.
+- With one provider, auto-redirect on, anonymous access off and `rp_initiated_logout` false,
+  signing out lands on `/ui/{locale}/logged-out` and stays there. The browser sends no request to
+  the identity provider until the user selects "Sign in again".
+- (P1) With `/ui/en/cli-login/{publicId}` open, a poll of the login's `doneUrl` from outside the
+  starting network appears on the screen as a refused poll with its address within 4 seconds,
+  without a reload.
+- (P1) On `/ui/en/device`, approving a request with `self_rotatable=true` and declining the
+  self-rotation issues a PAT whose `POST /api/v1/tokens/current/rotate` answers 403.
 
 ### R-UI-005 · Permission-driven rendering
 Priority: **MVP** · Covers: UI-005
@@ -1689,7 +1936,10 @@ Priority: **MVP** · Covers: UI-009, ART-049
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
   link with an external-link marker); Files (files of the version with size, SHA-256 copy button,
   download); Repositories (each with "show in browser"); Owners (R-API-048, P1); Builds (P1).
-- Install panel (R-UI-009) beside the tabs, below them on narrow screens.
+- Layout (Q-UI-3): the header spans the full width. When the content area is at least 960 CSS px
+  wide, two columns follow: the tabs on the left, the install panel (R-UI-009) on the right, which
+  stays in view while the README scrolls (`position: sticky`). Narrower, one column: header,
+  install panel, then the tabs, so the install command never sits below a long README.
 - Opening the page records it in "recently viewed".
 - Links taken from package metadata (npm `homepage`, `repository.url`, `bugs.url`; NuGet
   `projectUrl`, `licenseUrl`, the `repository` URL) MUST be rendered as links only when their
@@ -1704,6 +1954,8 @@ Acceptance criteria:
 - The Files tab's SHA-256 equals `shasum -a 256` of the downloaded tarball.
 - A package whose `homepage` is `javascript:alert(1)` shows the value as text, and no `a` element
   carries it.
+- At a viewport of 390 CSS px the install command is visible without scrolling past the README; at
+  1440 CSS px it stays visible after scrolling to the end of a long README.
 
 ### R-UI-008 · Sanitized README rendering
 Priority: **MVP** · Covers: UI-009
@@ -1719,7 +1971,7 @@ client.
 |---|---|
 | Elements | `h1`–`h6`, `p`, `br`, `hr`, `blockquote`, `ul`, `ol`, `li`, `dl`, `dt`, `dd`, `pre`, `code`, `kbd`, `samp`, `em`, `strong`, `del`, `ins`, `sup`, `sub`, `a`, `img`, `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`, `details`, `summary`, and disabled task-list checkboxes |
 | `href` on `a` | Schemes `http`, `https`, `mailto`, and in-page `#` fragments; relative links that cannot be resolved are reduced to their text; links get `rel="nofollow noopener noreferrer"` and no `target` |
-| `img` | `src` per the image policy (Q-UI-6; default: external images blocked and replaced by a link "External image: <alt>"); `data:` sources dropped; sources that resolve to trove's own origin, relative or absolute, dropped as well, except image URLs the renderer itself generates for files embedded in the package, so a README cannot make the viewer's browser send authenticated requests to package or file endpoints ([authorization.md](authorization.md) R-AUTHZ-008); `alt`, `width`, `height` |
+| `img` | `src` per the image policy (Q-UI-6): an `https` image whose origin is listed in `ui.readme.external_image_origins` is kept (the UI document's `Referrer-Policy: same-origin` of R-UI-001 keeps the page URL, which names the package, from reaching that host); every other external image is replaced by a link "External image: <alt>"; `data:` sources dropped; sources that resolve to trove's own origin, relative or absolute, dropped as well, except image URLs the renderer itself generates for files embedded in the package, so a README cannot make the viewer's browser send authenticated requests to package or file endpoints ([authorization.md](authorization.md) R-AUTHZ-008). The renderer builds those URLs only through `LinkBuilder` ([architecture.md](architecture.md) R-ARCH-007), never from strings, so from P1 a content origin (R-ARCH-029) receives them without a renderer change; `alt`, `width`, `height` |
 | `id`, `name` | Kept only when prefixed `user-content-` (prevents DOM clobbering) |
 | `class` | Only `language-*` on `code` |
 | Table attributes | `align` with `left`, `center`, `right`; `colspan`, `rowspan` |
@@ -1734,16 +1986,26 @@ client.
 - The client binds the HTML with `[innerHTML]`, so Angular's sanitizer runs a second time; the
   Trusted Types CSP of R-UI-001 is the third layer.
 - In-page links to `#user-content-…` scroll within the README; code blocks scroll horizontally.
-- Library candidates (pinned once in `go.mod`): [goldmark](https://github.com/yuin/goldmark) for
-  Markdown and [bluemonday](https://github.com/microcosm-cc/bluemonday) for sanitizing.
+- Libraries (pinned once in `go.mod`): [goldmark](https://github.com/yuin/goldmark) for Markdown
+  and [bluemonday](https://github.com/microcosm-cc/bluemonday) for sanitizing.
+- External image origins (Q-UI-6) are exact `https` origins (scheme, host, optional port; no
+  path, no wildcard), validated at start-up; an invalid entry stops start-up. The same list feeds
+  the sanitizer and the CSP `img-src` of R-UI-001, so the two can never disagree. Because the
+  rendered HTML depends on the list, the README cache of R-API-029 stores the list's hash and
+  re-renders when it changes.
+- Package images (P1, R-ARCH-029): with `server.content_base_url` set, a browser's request for an
+  image the renderer generated is redirected to the content origin, which the CSP `img-src` of
+  R-UI-001 then lists. The list of external image origins above is unaffected; the content origin
+  is never entered there.
 
 Configuration:
 
 ```yaml
 ui:
   readme:
-    max_source_bytes: 524288     # default (proposed), 512 KiB
-    external_images: block      # default (proposed); allow | block, see Q-UI-6
+    max_source_bytes: 524288          # default (proposed), 512 KiB
+    external_image_origins: []        # default (proposed): every external image becomes a link
+    # external_image_origins: ["https://img.shields.io", "https://gitlab.example.com"]   # example
 ```
 
 Acceptance criteria:
@@ -1752,8 +2014,10 @@ Acceptance criteria:
   with script, `<form>`, `<base>`, `<style>`, `id="__proto__"`) rendered by the server contains none
   of them in executable form; a Playwright test displays each fixture and observes no dialog, no
   request to a foreign origin and no CSP violation.
-- A README with a badge image from an external host shows "External image: build status" as a link
-  while `externalImages` is `block`.
+- A README with a badge image from `https://img.shields.io` shows "External image: build status" as
+  a link while `external_image_origins` is empty; with that origin listed, the image loads, the
+  UI's CSP names exactly that origin in `img-src`, and an image from an unlisted host in the same
+  README is still a link.
 - A README containing `![x](/api/npm/npm-remote/left-pad)` or
   `<img src="https://trove.example.com/files/generic-local/x.png">` renders without an `img`
   element for either source, and viewing it causes no request to those paths.
@@ -1796,7 +2060,7 @@ Priority: **MVP** · Covers: UI-011, ART-040, ART-041
   API (the item's JSON and the equivalent `curl` command, INV-17).
 - The tree follows the WAI-ARIA tree pattern (roles `tree` and `treeitem`, `aria-expanded`,
   `aria-level`, `aria-setsize` and `aria-posinset` with lazy loading, arrow keys, Home and End,
-  type-ahead), built on the component library of Q-UI-1.
+  type-ahead), built on the tree pattern of `@angular/aria` (R-UI-001, Q-UI-1).
 
 Configuration:
 
@@ -1849,8 +2113,11 @@ Priority: **P1** · Covers: UI-013
   button, so dragging is never required), overwrite (only with `overwrite`).
 - The size limit `ui.deploy.max_upload_bytes` is checked before the upload starts; larger files are
   pointed to native clients or `curl`.
-- Uploads use `PUT /files/…`. Because the fetch backend reports no upload progress, uploads go
-  through an XHR-based `HttpClient` instance (`withXhr()`) to show progress.
+- Uploads use `PUT /files/…` on the UI's own origin, built by the `files` client of
+  `web/src/app/api/` (R-UI-001), never by the dialog. Because the fetch backend reports no upload
+  progress, uploads go through an XHR-based `HttpClient` instance (`withXhr()`) to show progress.
+  This is the only XHR use for `/files/`, and it writes; the UI never reads package content with
+  `fetch` or XHR (R-UI-001).
 - Files up to 256 MiB are hashed in the browser (Web Crypto SHA-256) and sent with `Repr-Digest`;
   larger files rely on the server's own digest.
 - Several files upload one after another with per-file status; "Cancel" aborts the current one.
@@ -1942,6 +2209,8 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
        (INV-8) locally and never sends it to the server.
   5. tabs Configure, Install, Publish with the snippets; each snippet shows its target file name
      and has a copy button; whole configuration files (`.npmrc`, `nuget.config`) can be downloaded.
+     For npm, the Publish tab also holds the GitLab CI snippet in its two labelled variants
+     (R-UI-017).
 - Anonymous viewers of anonymously readable repositories skip the credentials step and get snippets
   without authentication lines.
 - The browser replaces `{{token}}` in the component only; the composed text is never stored in a
@@ -2003,12 +2272,30 @@ npmAuthToken: "${TROVE_TOKEN}"
 | Yarn Berry | `yarn add <package>` | `npmPublishRegistry: "…/api/npm/npm-local/"` in `.yarnrc.yml`, then `yarn npm publish` |
 | Yarn classic | `yarn add <package>` | `yarn publish --registry …/api/npm/npm-local/` |
 
+GitLab CI publishing. The Publish tab shows the GitLab CI snippet of
+[formats/npm.md](formats/npm.md) R-NPM-041 in two variants, each labelled with the client versions
+it serves, so the user picks by the client in the job image:
+
+| Variant | Label | ID token | Priority |
+|---|---|---|---|
+| Native exchange | "npm 11.5.1 and later, pnpm 11 and 12, Yarn 4" | `NPM_ID_TOKEN` with `aud: "npm:<host>"` (here `npm:trove.example.com`); the client exchanges it itself (R-NPM-022) | P1, with R-NPM-022 |
+| Generic exchange | "npm 10, pnpm 10 on npm 10, Yarn 1" | `TROVE_ID_TOKEN` with `aud` set to the base URL; a pipeline step exchanges it at `POST /api/v1/auth/oidc/token` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-007), and the job revokes the token as its last step | MVP |
+
+The dialog offers both variants for every installation and never chooses between them by the base
+URL's path: `server.base_url` is an origin without a path (R-OPS-005 in
+[operations-and-observability.md](operations-and-observability.md)), so trove owns the host root
+that npm's native exchange posts to ([formats/npm.md](formats/npm.md) Q-NPM-1). Until R-NPM-022
+ships, the native variant is not shown.
+
 Acceptance criteria (CI end-to-end, `node:24` container, real token in `TROVE_TOKEN`):
 
 - With the project `.npmrc`, `npm view <package> version` and `npm install <package>` succeed;
   `npm publish` of a fixture to `npm-local` succeeds.
 - With `.yarnrc.yml`, `yarn add <package>` (Yarn Berry) succeeds; `pnpm add <package>` succeeds with
   the `.npmrc`.
+- The generic-exchange variant, pasted into a GitLab CI job on a `node:22` image whose ID token a
+  CI identity mapping accepts, publishes a fixture to `npm-local` and ends with the CI token
+  revoked. From P1, the native variant does the same on `node:lts`.
 
 ### R-UI-018 · NuGet client instructions
 Priority: **MVP** · Covers: UI-025
@@ -2095,8 +2382,20 @@ Priority: **MVP** · Covers: UI-031
 
 - Steps: class, format (cards from `GET /api/v1/formats`), basic settings, class-specific settings,
   review.
-- Settings forms render from the format's settings JSON Schema (R-ARCH-004, R-ARCH-008); a format
-  adds a panel only for interactions a schema cannot express.
+- The format step offers only the formats whose `classes` in `GET /api/v1/formats` contain the
+  class chosen in the first step. Those `classes` are generated from each format's
+  `Descriptor().Classes` (R-ARCH-008, R-ARCH-010 in [architecture.md](architecture.md)); the UI
+  holds no list of formats per class of its own (FMT-001). A create that names another class still
+  fails on the server with 422.
+- Settings forms render from the format's settings JSON Schema (R-ARCH-004, R-ARCH-008) into the
+  format member of the repository document that is named after the format (`npm`, `nuget`;
+  [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004), never into a generic
+  `formatSettings` member. A format adds a panel only for interactions a schema cannot express.
+- NuGet local repositories: the settings view, in the wizard's review and on the edit form, shows
+  the effective `nuget.deleteMode`, `unlist` (the default) or `delete`, with one sentence on what
+  `dotnet nuget delete` and `nuget delete` do in this repository: unlist the version, or delete it
+  for good with a tombstone ([formats/nuget.md](formats/nuget.md) R-NUGET-007). Deletes through
+  the UI and the management API are hard deletes whatever the mode (R-NUGET-007).
 - Key: live check of the INV-5 pattern and of availability (a `GET` of the key answering 404).
 - Remote: upstream presets per format (`https://registry.npmjs.org/`,
   `https://api.nuget.org/v3/index.json`), write-only credentials, metadata and negative cache
@@ -2115,13 +2414,19 @@ Acceptance criteria:
 - Creating `npm-remote` with the npm preset and "Test connection" succeeds; double-clicking "Create"
   creates one repository.
 - Saving an edit after another administrator saved first opens the conflict dialog.
+- With a test build that registers a format whose `Classes` lack `Virtual`, choosing the class
+  `virtual` does not offer that format, and choosing `local` does.
+- The edit form of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
+  `PATCH /api/v1/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
+  it shows "delete".
 
 ### R-UI-022 · Virtual repository member editor
 Priority: **MVP** · Covers: UI-032
 
 - Two lists: available (same format, excluding the repository itself and anything that would create
   a cycle) and selected (ordered). Buttons Add, Remove, Move up, Move down, Move to top work with
-  keyboard and single pointer (WCAG 2.5.7); drag and drop is an optional extra.
+  keyboard and single pointer (WCAG 2.5.7); drag and drop is an optional extra. Both lists are
+  listboxes of `@angular/aria` (R-UI-001, Q-UI-1).
 - An "Effective resolution order" view flattens nested virtual repositories per
   [repositories-and-proxy.md](repositories-and-proxy.md); `GET …/resolution?path=` explains a sample
   path.
@@ -2137,7 +2442,7 @@ Acceptance criteria:
 Priority: **P1** · Covers: UI-033, REPO-008
 
 Administrators pick formats and a prefix; the preview shows the keys that
-`POST /api/v1/repositories:quickSetup` ([repositories-and-proxy.md](repositories-and-proxy.md))
+`POST /api/v1/repositories/quick-setup` ([repositories-and-proxy.md](repositories-and-proxy.md))
 will create (local, remote with the public upstream preset, virtual over both), then creates them in
 one request and offers client setup for the virtual repository.
 
@@ -2200,7 +2505,13 @@ Priority: **MVP** · Covers: UI-039, UI-040
 
 - List: name, description, principal summary ("3 groups, 1 CI mapping"), resources summary, actions;
   filters by principal (picker), repository and project.
-- Editor sections on one page with an in-page table of contents, following the policy model of
+- Layout (Q-UI-4): one page for create and edit, no step-by-step wizard. The sections run down the
+  left with an in-page table of contents; the preview panel is a sticky right column while the
+  content area is at least 960 CSS px wide and a collapsible region above the save bar when it is
+  narrower. The explainer (R-UI-028, P1) is its own screen, reached from the editor through "Test
+  this policy" (saved policies only, once the explainer ships), which opens it in a new tab with the policy's first principal and
+  repository filled in, so the draft in the editor stays untouched.
+- Editor sections, following the policy model of
   [authorization.md](authorization.md): general (name on create only, description); principals
   (users, groups, service accounts, CI identity mappings, anonymous where allowed) through
   searchable pickers; resources with a live "covers 4 repositories" preview; include and exclude
@@ -2245,11 +2556,28 @@ Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
 
 - Profile (`GET /api/v1/users/me`): identity (read-only, from the identity provider), groups with
   source, system roles, preferences (language, theme, keyboard shortcuts; R-API-021).
+- Missing group claim (R-AUTH-008 in [identity-and-authentication.md](identity-and-authentication.md)):
+  while the record carries `groupClaimMissing` (`{"provider", "reason"}`), a notice next to the
+  groups names the provider and the reason (`absent`, `wrong_type` or `overage`). It says that the
+  last login through that provider carried no usable group claim, so the groups synchronized from
+  it may be missing (the default `clear` removes them) and the identity provider's group mapping
+  needs an administrator. The notice is `role="status"` text, not a dialog, and disappears after a
+  login that delivers the claim.
+- What the profile does not have (settles UI-053's open point on password changes): no unlock step,
+  because the session already proves the login (R-AUTH-017 in
+  [identity-and-authentication.md](identity-and-authentication.md)); no password section, because
+  users have no password in trove (INV-7) and the break-glass password is changed by replacing its
+  Kubernetes Secret (R-AUTH-014); no editable email or display name, because both come from the
+  identity provider at every login (R-AUTH-016 maps the catalog's "profile updatable" option to
+  this). Nobody changes a password through trove. An administrator's correction of email or
+  display name through `PATCH /api/v1/users/{username}` (R-API-031) lasts until the user's next
+  login. SSH keys and linked accounts are P2 on the identity page and not shown.
 - Personal tokens: list with description, scope summary, created, expires and last used; tokens
   expiring within 7 days are marked. Create dialog: description (required), expiry (presets and a
   custom date, bounded by R-AUTH-040), scope (all own permissions, or restricted to repositories and
   actions; grammar of R-AUTH-024). Recent authentication applies. The result is shown once with a
-  copy button and the notice that it cannot be shown again. Revoke and rotate with confirmation.
+  copy button and the notice that it cannot be shown again. Revoke and rotate with confirmation;
+  rotate is P1 and, like creation, needs recent authentication (R-AUTH-030).
 - Sessions (`/api/v1/users/me/sessions`): list with created, last seen, address, user agent and
   "this session"; end one, or end all others.
 
@@ -2258,6 +2586,10 @@ Acceptance criteria:
 - A created token works in `curl -H "Authorization: Bearer …" "$TROVE_URL/api/v1/auth/whoami"`;
   reopening the profile never shows it again; revoking it makes the same call answer 401.
 - Ending all other sessions signs out a second browser.
+- The profile page contains no password field, no unlock control and no editable email or display
+  name; after the identity provider changes the user's email, the next login shows the new value.
+- After a login whose ID token and userinfo carry no group claim, the profile shows the notice with
+  the provider and `absent`; after a later login that carries the claim, the notice is gone.
 
 ### R-UI-030 · Token administration
 Priority: **MVP** · Covers: UI-041, TOK-026
@@ -2281,14 +2613,25 @@ Priority: **MVP** · Covers: UI-043
 `/admin/settings/auth` renders `GET /api/v1/settings/auth`: anonymous access (with a link to what
 the anonymous principal can read), token default and maximum lifetimes per token type, expiry
 notices, and the read-only status block (providers and discovery state, break-glass state, session
-timeouts, client switches including Basic, SCIM state). YAML-pinned and ceiling-bounded values show
-their source. Hiding unauthorized resources (`authz.hide_existence`) is shown read-only. Save sends
-`PATCH` with `If-Match`; recent authentication applies.
+timeouts, client switches including Basic, the command-line login poll binding mode, SCIM state).
+YAML-pinned and ceiling-bounded values show their source. Hiding unauthorized resources
+(`authz.hide_existence`) is shown read-only. Save sends `PATCH` with `If-Match`; recent
+authentication applies.
+
+The status block shows the two poll-binding warnings that the answer carries (R-AUTH-034,
+R-AUTH-040 in [identity-and-authentication.md](identity-and-authentication.md)) as warnings next to
+the mode, each with icon and text:
+
+- mode `off`: any poll of an approved `npm login` receives the token, wherever it comes from;
+- mode not `off` while `server.trusted_proxies` is empty: behind an edge proxy every poll carries
+  the proxy's address, so the binding cannot tell the user's network from anyone else's.
 
 Acceptance criteria:
 
 - Turning anonymous access on lets an unauthenticated `npm view` read a package that a policy grants
   to the anonymous principal.
+- With the default poll binding and an empty `server.trusted_proxies`, the screen shows the
+  trusted-proxy warning; with `poll_binding.mode: off`, it shows the `off` warning.
 
 ### R-UI-032 · Sign-in protection and anonymous access
 Priority: **P1** · Covers: UI-038, UI-042
@@ -2396,29 +2739,79 @@ Acceptance criteria:
 ### R-UI-038 · System status
 Priority: **MVP** · Covers: OPS-008
 
+The screen is MVP because every endpoint it renders from is MVP (the replica registry API of
+R-OPS-003, R-OPS-004, the task and job API of R-OPS-019, R-API-049), so it adds no backend work,
+and it is the only UI view of the replicas, the scheduled tasks and the key ring.
+
 - Cards from `GET /api/v1/system/info` and `/system/replicas`: version and revision; base URL and
   source; maintenance mode; database (server version, schema version against the supported ones);
   replicas (id, version, roles, heartbeat age, status) with a mixed-version warning; scheduled tasks
   (`/system/tasks`: next run, last outcome) with "Run now"; recent jobs (`/system/jobs`) with
   cancel.
+- Readiness checks per replica, from the `checks` of `/system/replicas` (R-OPS-001, R-OPS-003; Q-OPS-2
+  in [operations-and-observability.md](operations-and-observability.md)), in two kinds that the
+  screen never merges:
+  - **failing**: a gating check fails and the replica is `unready`; shown as an error with the
+    check names;
+  - **degraded**: the replica is `ready` while a reported check fails, today only `objectStore`
+    after the first readiness unless `health.require_object_store` is set. This is the state that
+    `/readyz` answers as `200` with `"degraded":["objectStore"]` and that the gauge
+    `trove_health_check_passing{name="objectStore"}` shows as `0`. It is shown as a warning that
+    names the check and says what it means: blob requests on that replica fail with a retryable
+    `503`, everything else keeps working.
+
+  Both use icon plus text, never colour alone (R-UI-044). The page header summarises the service as
+  "all ready", "degraded" or "replicas unready".
+- Jobs (`/admin/system/jobs`): the list of `GET /api/v1/system/jobs` with filters for `kind` and
+  `state`. The state filter offers every job state of R-ARCH-016: `queued`, `running`,
+  `succeeded`, `failed`, `cancelling`, `cancelled`. A cancelled job shows `cancelling` until it
+  stops at its next checkpoint (R-OPS-019), and "Cancel" is offered only for `queued` and
+  `running` jobs.
+- A "Stored-secret keys" card from `GET /api/v1/system/encryption` (R-API-049): active key ID,
+  sealed values per key ID, canary state, the key IDs each replica holds, and whether the rings are
+  compatible (icon plus text). A key ID that is no longer active but still seals values is marked
+  "re-encryption pending" with "Re-encrypt now" for administrators (the task trigger of
+  R-API-049), disabled with its reason while the rings are incompatible. The card names the next
+  rotation step of R-HA-027 that the state allows, for example "No values left under 2026-04: its
+  key file can be removed."
 - Automatic refresh every 15 seconds with a visible pause control (WCAG 2.2.2).
 
 Acceptance criteria:
 
 - Stopping one of two replicas changes its status on the screen within 40 seconds without a reload.
+- After a rotation to a new key, the card shows the old key ID as "re-encryption pending"; after
+  "Re-encrypt now" finishes, it shows zero values under the old key ID and the removal hint.
+- Blocking object storage after both replicas became ready shows both as degraded with
+  `objectStore` within 40 seconds, and neither as unready (default `health.require_object_store`).
+- Cancelling a running `gc-full` job lists it under the state filter `cancelling` until it stops,
+  then under `cancelled`.
 
 ### R-UI-039 · Webhooks
-Priority: **P1** · Covers: UI-046, UI-047
+Priority: **P1** · Covers: UI-046, UI-047, EVT-034
 
-List; editor (key, URL, event types from `/api/v1/webhooks/event-types`, repository selectors,
-write-only secrets with "Replace" and signing-secret rotation, custom headers, enabled); "Test" with
-the receiver's status, latency and body excerpt; status (`/{key}/status`); deliveries with request
-and response details and "Redeliver". Semantics:
+List; editor (key, URL, handler kind standard or templated, for templated handlers the method,
+the body template and header templates of R-OPS-041 and named write-only secrets, otherwise the
+signing secret with rotation; event types from `/api/v1/webhooks/event-types`, repository
+selectors, outbound proxy, custom headers, enabled); "Test" with the receiver's status, latency
+and body excerpt; status (`/{key}/status`); deliveries with request and response details and
+"Redeliver". Project-scoped subscriptions and a project column come with EVT-022 (P2). Semantics:
 [operations-and-observability.md](operations-and-observability.md).
+
+Template validation (R-OPS-041, Q-OPS-11 there): a template is checked when the subscription is
+saved or tested unsaved, and a refusal answers `422`. The editor shows each error at the template
+field it belongs to (`errors[].pointer`, R-API-009) and in the error summary, with the server's
+text, which names the rejected construct: `define`, `template` or `block`; a `range` inside
+another `range`; a `range` over a literal, a function result or a variable; more than 16 `range`
+actions in one template, header templates included; the `call` function; a reference to an
+unknown secret; a template that fails to render against the sample event of a subscribed type.
+The editor does not check templates itself, so its rules never drift from the server's.
 
 Acceptance criteria:
 
 - "Test" against a receiver that answers 500 shows the status and body excerpt.
+- Saving a template with 17 `range` actions keeps the editor open and shows, at the template
+  field, the error naming the 16-range cap; a template with `{{ define "x" }}` shows an error
+  naming `define`.
 
 ### R-UI-040 · Builds
 Priority: **P1** · Covers: UI-028, UI-029
@@ -2427,7 +2820,8 @@ Builds list, runs list, run details (number, start, duration, CI link, status; t
 artifacts, dependencies, version control, environment with values masked by the server, raw JSON),
 and promotion with dry run (R-API-042).
 
-Acceptance criteria: defined with the owning page of Q-API-5.
+Acceptance criteria: defined on `builds.md` (Q-API-5), which is written before P1 build work
+starts.
 
 ### R-UI-041 · Projects
 Priority: **P1** · Covers: UI-003, UI-050, UI-051
@@ -2538,9 +2932,10 @@ Priority: **MVP** · Covers: trove-only
 - English (source and default) and German ship with the MVP. Every UI text is translatable; no
   sentence is concatenated from fragments; counts use ICU plural and select messages ("1 Version",
   "3 Versionen").
-- Mechanism per Q-UI-5; recommended: Angular's compile-time i18n (`@angular/localize`,
+- Mechanism (Q-UI-5): Angular's compile-time i18n (`@angular/localize`,
   [Angular i18n](https://angular.dev/guide/i18n)) with one build per locale, served at `/ui/en/` and
-  `/ui/de/` (R-UI-001).
+  `/ui/de/` (R-UI-001). No runtime translation library is used; switching the language reloads the
+  route under the other locale.
 - Locale choice: the user's preference (R-API-021), then `Accept-Language`, then
   `ui.default_locale`. Switching the language in the user menu stores the preference and reloads the
   same route under the other locale.
@@ -2583,7 +2978,8 @@ thin hand-written clients in `src/app/api/`):
   filters), using request descriptors built by the clients in `src/app/api/`. Mutations call those
   clients from a feature service and then reload the affected resources. There is no global cache of
   server data.
-- The clients use `HttpClient` with the generated types (Q-API-1), so the interceptors (CSRF,
+- The clients use `HttpClient` with the types openapi-typescript generates (R-API-002, Q-API-1),
+  so the interceptors (CSRF,
   problem mapping, request ID) apply to every call, and no component calls `/api/v1` directly.
 - URL state (filters, sort, tab, version) lives in query parameters and reaches components as signal
   inputs through the router's component input binding; changing a filter navigates with
@@ -2612,7 +3008,7 @@ Priority: **MVP** · Covers: trove-only
 | Unit | Vitest through Angular's unit-test builder | Pure logic: token substitution, JWT decoding, token checksum validation, pattern preview, problem mapping, stores | Every pull request |
 | Component | Vitest browser mode with `TestBed`; API answers from the OpenAPI examples | Screens and widgets including keyboard behavior | Every pull request |
 | Contract | TypeScript compile against the generated types; mock answers validated against the document | Drift between UI and API | Every pull request |
-| End-to-end | Playwright against the real binary with PostgreSQL, an S3-compatible store (MinIO), a test OIDC provider and a test CI token issuer | Journeys: sign-in, client setup followed by real `npm` and `dotnet` commands, repository wizard, policy edit, claim tester, token create and revoke, audit entry | Smoke on every pull request; full nightly |
+| End-to-end | Playwright against the real binary with PostgreSQL, an S3-compatible store (SeaweedFS, as in [ha-and-helm.md](ha-and-helm.md) R-HA-051), a test OIDC provider and a test CI token issuer | Journeys: sign-in, client setup followed by real `npm` and `dotnet` commands, repository wizard, policy edit, claim tester, token create and revoke, audit entry | Smoke on every pull request; full nightly |
 | Accessibility | axe-core in Playwright, plus the manual pass of R-UI-044 | Every route × theme × locale | Every pull request; manual per release |
 | Internationalization | Build with missing-translation error | Both locales | Every pull request |
 | Security | README XSS corpus; any `securitypolicyviolation` event fails an end-to-end test | Renderer, CSP | Every pull request |
@@ -2835,9 +3231,22 @@ whose owning page defers them. None has a requirement here.
   a session requires recent interactive authentication (R-API-007), so a hijacked session cannot
   quietly produce long-lived credentials.
 - **README rendering** has three layers: server-side sanitizing with a strict allowlist, Angular's
-  sanitizer, and a CSP with Trusted Types and no inline scripts (R-UI-008, R-UI-001). External images
-  are blocked by default (Q-UI-6), which keeps viewer addresses and internal package names from
-  reaching third parties.
+  sanitizer, and a CSP with Trusted Types and no inline scripts (R-UI-008, R-UI-001). External
+  images are blocked unless an operator lists their exact origin, which then also appears in the
+  CSP (Q-UI-6); this keeps viewer addresses and internal package names away from hosts nobody
+  chose.
+- **Package content in the browser.** The UI builds no content URL from strings and never reads
+  package content with `fetch` or XHR (R-UI-001); content reaches the browser only by navigation or
+  `img`, under the content headers that the core sets (R-ARCH-007). From P1, an optional content
+  origin (R-ARCH-029) keeps the session cookie away from that content, and the UI's CSP names that
+  origin in `img-src` only, never in `connect-src`.
+- **Lost updates of grants.** PUT and PATCH of revisioned resources require `If-Match`, with
+  `If-Match: *` as the explicit blind write (R-API-012), so a stale editor or script cannot
+  silently revert a permission policy, a CI identity mapping or the member order of a virtual
+  repository.
+- **Key-ring status without pod access.** Rotation of the stored-secret key ring can be checked and
+  finished through the API (R-API-049), which reports key IDs and counts only; operators need no
+  shell in a pod, where the key files are readable.
 - **Token secrets** appear once, in answers that are `no-store`, uncompressed and never stored for
   idempotency replay (R-API-014, R-API-017, R-API-032), and never leave component state in the
   browser (R-UI-043). Client setup defaults to environment-variable references and generates
@@ -2853,15 +3262,275 @@ whose owning page defers them. None has a requirement here.
 - **Dependency confusion.** The NuGet snippet clears other package sources (R-UI-018); the scoped npm
   variant routes a scope to trove (R-UI-017).
 
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
+
+### Q-API-1 · OpenAPI generation approach
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Spec-first; generated Go server interface and TypeScript types | `api/openapi.yaml` is written by hand. [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) generates Go models and the `net/http` server interface; [openapi-typescript](https://openapi-ts.dev/) generates TypeScript types; thin hand-written Angular clients use them | The contract can be reviewed before code exists; drift between document and server, and between document and UI, is a compile error; a missing handler does not compile; routing stays on `ServeMux` (R-ARCH-005) and the UI on `httpResource()` (R-UI-046) | oapi-codegen calls its 3.1 support "initial" (v2.8.0, [release notes](https://github.com/oapi-codegen/oapi-codegen/releases)), so a construct may need an equivalent spelling |
+| (b) Spec-first; generated Angular client | As (a) on the Go side; the Angular side is a generated `HttpClient` service layer (for example [ng-openapi-gen](https://github.com/cyclosproject/ng-openapi-gen)) | Less hand-written client code | The generator's output decides how every service looks and is built around observables, while R-UI-046 reads server state through `httpResource()` and signals; one more generator to move in step with every Angular major |
+| (c) Code-first | Go types and handler registrations produce the document (for example [Huma](https://huma.rocks/)) | No hand-written YAML; the document cannot lag behind the code | Inverts INV-6's "source of truth": the contract changes as a side effect of code changes; handlers depend on a framework instead of `net/http` |
+| (d) Spec-first; types only | Generated Go and TypeScript types; routes and parameter binding written by hand, guarded by the route-parity check of R-API-002 | No dependence on a generator's server code | Parameter parsing and route registration by hand for every operation of Part B; a forgotten handler shows up in CI, not at compile time |
+
+**Choice:** (a) — the hand-written OpenAPI 3.1 document generates Go models and the `net/http` server interface through oapi-codegen and TypeScript types through openapi-typescript, and thin hand-written Angular clients use them.
+
+**Rationale:** For one developer building the whole surface of Part B, compile errors are the cheapest guard against drift, and (a) produces them on both sides while keeping two choices already made elsewhere: `net/http.ServeMux` on the server and signals with `httpResource()` in the UI. (b) would put a generated, observable-based service layer between the UI and those primitives; (c) gives up the reviewable contract INV-6 asks for; (d) costs hand-written parsing for every operation and gains nothing over (a) as long as the generator handles the constructs. The young 3.1 support is contained without hand-written types: a fixture document with every construct the contract uses is generated in CI, and a construct the generator mishandles is written in an equivalent form (`enum: [x]` for `const: x`). Permission enforcement does not depend on the generator at all: the authorization step reads the declarations from the embedded document by matched route pattern, and a route without one stops start-up. The strict-server variant is left out because handlers set `ETag`, `Location`, `Link` and `Retry-After` themselves and stream answers. The development agent revisits this if the fixture shows a construct with no equivalent form, or if the generator's 3.1 line stops moving; the fallback is (d), with the document and the TypeScript side unchanged.
+
+**Applied in the spec:** R-API-002 now specifies the generation pipeline (oapi-codegen `models` and `std-http-server` into `internal/api/v1/gen/`, `/files` operations excluded; openapi-typescript into `web/src/app/api/generated/`), the start-up table of authorization declarations keyed by `http.Request.Pattern` that fails closed, the 3.1 construct fixture, and two new acceptance criteria. R-UI-046 names openapi-typescript. The layout changes (`internal/api/v1/gen/`, `web/src/app/api/generated/`, the generator pins) are applied in [architecture.md](architecture.md) R-ARCH-003 and R-ARCH-004 (Q-ARCH-1 there).
+
+### Q-API-2 · Is If-Match mandatory on writes?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Optional unless the owning page requires it | Optional by default; an owning page may require it (permission policies do); the switch `api.require_if_match` makes it mandatory everywhere | Scripts can overwrite without thinking about it | Each owning page has to recognize which of its fields are dangerous to lose; two behaviors to test |
+| (b) Required on PUT and PATCH of revisioned resources; `If-Match: *` as the deliberate blind write | One rule for every resource with a revision ETag; 428 without the header; DELETE and delta-style edits exempt | No lost update wherever a full document or a whole array is written; a blind write stays possible but is explicit; the rule is derived from the document, with no switch | Every script that writes configuration sends one more header; curl examples get longer |
+| (c) Required only on grant-defining resources | Mandatory for permission policies, CI issuers and identity mappings, and authentication settings; optional elsewhere | Friction only where a reverted change re-opens access | The list is a judgement call that misses cases: a stale write of a virtual repository's `members` (arrays are replaced whole, R-API-013) can put a remote member ahead of the local one again, a dependency-confusion path |
+
+**Choice:** (b) — `If-Match` is required on every PUT and PATCH of a resource that carries a revision ETag, `If-Match: *` is the explicit blind write, and DELETE and delta-style edits are exempt.
+
+**Rationale:** In trove a lost update is a security problem more often than it looks: besides permission policies, the member order of a virtual repository and the conditions of a CI identity mapping decide which package a client receives and who may publish. (a) and (c) depend on someone recognizing each such field; (b) makes the safe behavior the default for all of them, and the UI already sends the header everywhere. The argument against a mandatory header, scripts that overwrite on purpose, is answered by `If-Match: *` ([RFC 9110 §13.1.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.1)), which keeps blind writes possible and makes them visible in the request. DELETE is exempt because a deletion means to remove whatever version exists; delta edits (`add`/`remove` lists, role bindings, assignments) are exempt because they cannot overwrite another writer's change. A script over the document checks the rule, and dropping the switch leaves one behavior to test. The development agent revisits this if a client tool that matters to the owner cannot send request headers.
+
+**Applied in the spec:** R-API-012 states the rule, the exempt list and the 428 answer ([RFC 6585](https://www.rfc-editor.org/rfc/rfc6585#section-3)), and gains two acceptance criteria; the configuration key `api.require_if_match` is removed. R-API-002 adds the operation marker `x-trove-if-match`. R-API-013's acceptance criterion and R-API-023's `batch-update` send the precondition. The security notes gain "Lost updates of grants". Pages that own revisioned resources get the 428 answer as a cross-page edit.
+
+### Q-API-3 · Cluster-wide rate limiting
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per replica, in memory, for every class | Token buckets in each replica's memory, as R-API-016 and the identity and CI pages specify | No database work per request; the limit protects exactly what it is for, the replica serving the request; budget and capacity grow together when replicas are added | The cluster-wide budget is the configured value times the replica count (H-43) |
+| (b) Shared PostgreSQL counters for unauthenticated classes, per replica for the rest | Login starts, revoke-by-value, the CI exchange and anonymous requests counted in PostgreSQL | A cluster-wide ceiling for callers without credentials | A database write on every unauthenticated request, so a flood lands on the database the HA design depends on; no gain against credential guessing (see rationale) |
+| (c) Shared counters for every class | Every API request updates a counter row | One exact cluster-wide limit | A write per request on the hottest path and row contention on the counter of a busy token; the limiter becomes a denial-of-service lever |
+| (d) Per replica, sized as cluster limit ÷ live replica count | Each replica divides the configured budget by the replica count of the registry | Approximates a cluster-wide limit without per-request writes | Uneven load balancing and long-lived connections make one replica refuse what the cluster could serve; the limit shifts with every scale event |
+
+**Choice:** (a) — every general rate-limit class stays per replica and in memory, permanently, and H-43 records the consequence.
+
+**Rationale:** The general classes protect replica resources (CPU, connections, memory), and a per-replica bucket is the right unit for that. The case for shared counters would be credential guessing, and it does not apply: guessing a 256-bit random token is infeasible at any request rate (the checksum only filters random input before the database is asked), and the one guessable credential, the break-glass password, is already counted cluster-wide in PostgreSQL by R-AUTH-038. (b) and (c) add a write on the request path of the only stateful dependency besides object storage, so the limiter itself would turn a flood into database load; (d) trades a predictable limit for one that moves with every scale event and penalizes clients pinned to one replica. The development agent revisits this when a requirement needs a true cluster-wide quota, such as a per-tenant budget or an upstream registry's rate limit that all replicas must share together; that quota then gets shared counters on its owning page, not the general classes.
+
+**Applied in the spec:** R-API-016 states that the buckets are per replica by design and names the cluster-wide break-glass counter. H-43 is rewritten with component, subject, live status and what makes it real, and records that shared counters were rejected. No configuration change.
+
+### Q-API-4 · INV-17's wording and byte transfers on `/files`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Amend INV-17's wording | INV-17 says: the UI uses only public, documented endpoints (the operations of the OpenAPI document, `/api/v1/…` and `/files/…`, plus the browser sign-in flow under `/auth/…`) and no private UI endpoint | States the purpose, every UI action is scriptable, instead of a path prefix; matches what R-API-002 documents | Touches an invariant |
+| (b) Mirror byte transfer under `/api/v1/` | `…/items/content?path=` duplicates `/files` | INV-17's text stays | A second code path for the largest transfers (ranges, digests, streaming) with nothing gained; two URLs for the same bytes |
+| (c) Keep INV-17's text and define its reading on this page | R-API-002 says what "public `/api/v1` API" means | No invariant edit | Someone who reads INV-17 alone concludes that the UI's use of `/files` and `/auth` violates it; invariant and page disagree in their words |
+
+**Choice:** (a) — INV-17 is amended to "public, documented endpoints: the operations of the OpenAPI document (`/api/v1/…`, `/files/…`) and the browser sign-in flow under `/auth/…`; no private UI endpoints".
+
+**Rationale:** INV-17 exists so that everything the UI does can be scripted; `/files` is described in the same OpenAPI document and is as scriptable as `/api/v1`, and the UI cannot sign in without the browser flow under `/auth/`, which R-AUTH-005 and R-AUTH-013 own. (b) builds a second byte path for the heaviest traffic only to satisfy a wording; (c) leaves an invariant that its own pages contradict, which is how invariants stop being read. The development agent revisits this only if the UI ever needs an endpoint the document does not describe, which this wording forbids.
+
+**Applied in the spec:** R-API-002 refers to the amended INV-17. The invariant text itself is a cross-page edit to [README.md](README.md) (INV-17), with the matching sentence in ADR-028.
+
+### Q-API-5 · Owning page for build information
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A new page `builds.md` with prefix `R-BLD` | Owns the record schema, the mapping of CI job names (which contain `/`) to `{buildName}`, promotion and run retention; uses the build permissions of R-AUTHZ-027 | One owner for one model; [authorization.md](authorization.md) (Q-AUTHZ-8) and [storage.md](storage.md) (Q-STOR-3) reach the same answer | One more page to write before P1 build work |
+| (b) Fold it into [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | GitLab CI is the main producer of build records | Close to the producer | Mixes CI authentication with a resource model that changes for other reasons; other CI systems upload builds too |
+| (c) Fold it into [operations-and-observability.md](operations-and-observability.md) | Treat build records as operational data | No new page | Build records have permissions, promotion and retention of their own; operations would own an unrelated model |
+| (d) Fold it into [storage.md](storage.md) | Storage already specifies build retention (RET-023, RET-037) | Retention mechanics sit next to the records | Storage would own two models; promotion and permissions are not storage concerns |
+
+**Choice:** (a) — build information gets its own page `builds.md` (`R-BLD`), written before P1 build work starts; until then R-API-042 reserves the paths.
+
+**Rationale:** Build records are a model with their own lifecycle: upload, promotion with copy or move, permissions and retention. Each of (b) to (d) would make a page the owner of two models that change for different reasons, and the three pages that raised the gap all concluded the same. Build information is P1, so the MVP prototype needs none of it; reserving the paths now keeps them from being taken by something else. The development agent revisits this if build information moves to P2, in which case the page waits with it.
+
+**Applied in the spec:** R-API-020 names `builds.md` as owner; R-API-042 states the page's scope, that the MVP implements none of it, and that the paths are reserved; R-UI-040 points its acceptance criteria to that page. Adding the page to the page table is a cross-page edit to [README.md](README.md).
+
+### Q-API-6 · Pagination parameter names
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `limit` and `cursor` everywhere | Every list endpoint uses R-API-010's names and its envelope (`items`, `nextCursor`) | Already used by every page except [repositories-and-proxy.md](repositories-and-proxy.md) and by the job API; one page changes | None beyond that one page's edit |
+| (b) `pageSize` and `pageToken` everywhere | Every list endpoint follows the repository list | Familiar from some public API style guides | Every other page, R-API-010, the job API and the UI's list handling change |
+
+**Choice:** (a) — `limit` and `cursor`, with the `items` and `nextCursor` envelope, on every list endpoint.
+
+**Rationale:** Uniform names let the UI and generated clients page through every list with one helper; (a) gets there by changing one page, (b) by changing all others. The development agent would revisit this only if a client ecosystem trove must serve required other names, and none does: package-manager protocols keep their own paging outside `/api/v1/`.
+
+**Applied in the spec:** R-API-010 states that the names and the envelope are the same on every list endpoint, with no per-page variants. The repository list's `pageSize`, `pageToken` and `nextPageToken` are a cross-page edit to [repositories-and-proxy.md](repositories-and-proxy.md).
+
+### Q-API-7 · Syntax of custom methods
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sub-path verbs everywhere, with reserved names | `POST /api/v1/repositories/batch-create`, `/quick-setup`; any literal segment in a key position is a reserved name of that collection | One form for every action on every page; plain `ServeMux` patterns; the reserved-name rule also fixes literals that already shadow keys elsewhere | Five repository keys become reserved |
+| (b) Colon methods for collection actions | `POST /api/v1/repositories:batchCreate`; sub-paths for item actions | Collection actions never share a segment with keys | Two syntaxes for one concept; the shadowing on other collections remains; legal in a path segment ([RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#section-3.3)) but unusual in route tables and curl commands |
+| (c) A batch resource | `POST /api/v1/repository-batches` with an `operation` field | No verbs in paths | Operations with different semantics (all-or-nothing 200 for create and update, best-effort 202 for delete) behind one operation and one discriminated `oneOf` body; quick setup does not fit |
+| (d) Collection actions behind a segment the key grammar excludes | `POST /api/v1/repositories/-/batch-create`; repository keys start with `[a-z0-9]` (INV-5), so `-` can never be a key | No repository key is reserved | An unusual URL shape found nowhere else in `/api/v1/`; it does not help the literals that already sit in key positions (`/users/me`, `/webhooks/deliveries`), so the reserved-name rule is needed anyway |
+
+**Choice:** (a) — every action, on an item or on a collection, is a kebab-case sub-path verb, and literal segments in a key position are reserved names.
+
+**Rationale:** The decisive point is that the collision (b) and (d) avoid for repositories exists anyway on other collections: `GET /api/v1/webhooks/deliveries` makes a webhook keyed `deliveries` unreachable, and `/api/v1/users/me` a user named `me`, because the router prefers the literal. A reserved-name rule is therefore needed whatever this question decides; once it exists, the only advantage of (b) and (d) is that five repository names stay free, and the price is a second URL shape. (c) merges operations whose answers differ in status and atomicity. Declaring the reserved names in the OpenAPI document and deriving the literal siblings in CI turns a silent shadowing bug into a failing check. The development agent revisits this if an import from another system must keep a repository key that collides with a reserved verb; (d) is then the fallback for repositories alone.
+
+**Applied in the spec:** R-API-004 now uses the sub-path form for collection actions and adds the reserved-name rule (422 `reserved_name`, `x-trove-reserved-names`, a CI check, an acceptance criterion); R-API-009 lists `reserved_name`; R-API-023 and R-UI-023 use `/batch-create`, `/batch-update`, `/batch-get`, `/batch-delete` and `/quick-setup`. The cross-page edits are the repository paths and reserved keys in [repositories-and-proxy.md](repositories-and-proxy.md), and the reserved names `me` for users, `test`, `deliveries` and `event-types` for webhooks, and `disable-all` for retention policies on their owning pages.
+
+### Q-API-8 · Stored-secret key-ring status through the API
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+An earlier revision of this page listed `GET /api/v1/system/encryption`; it was dropped because R-ARCH-021 offers key-ring status only through `trove admin secrets status`. This question decides whether the UI and monitoring get that status through the API.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Command line only | `trove admin secrets status`, as R-ARCH-021 specifies | Nothing new to build | Checking a rotation needs a shell in a pod, where the key files themselves are readable; no UI view; nothing alerts when two replicas' rings disagree |
+| (b) Read-only status endpoint, metrics and a UI card; re-encryption through the task trigger | `GET /api/v1/system/encryption` with key IDs, counts, canary state and every replica's key IDs; `trove_secrets_*` metrics; the `secrets-reencrypt` task started through `POST /api/v1/system/tasks/{name}/run` and refused while the rings are incompatible | A rotation can be checked and finished without pod access; monitoring can alert on incompatible rings and on values left under a retired key; the API refuses the one step that would break decryption | One endpoint, two metrics and one card to build; replicas publish their key IDs |
+| (c) Metrics only | Gauges per key ID on the operations listener | Monitoring without a new API | No UI view; no guarded way to start re-encryption; operators still need a pod shell to finish a rotation |
+| (d) Key management through the API | Upload a new key and set the active key through the API | Rotation without touching Kubernetes | Key material travels through the API and must rest somewhere: in PostgreSQL it sits next to the values it protects, in a Secret written by trove it needs write access to Secrets; both break the separation ADR-032 relies on |
+| (e) Endpoint and guarded task in the MVP, metrics and UI card in P1 | (b) split by priority | The smallest MVP that still removes the pod shell and guards re-encryption | The metrics and the card read the payload the endpoint already computes, so the split saves little; without the gauge nothing alerts on a mixed-ring cluster, the state in which upstream credentials stop decrypting on some replicas |
+
+**Choice:** (b) — a read-only key-ring status endpoint with metrics and a card on the system status screen, and re-encryption started through the task trigger, which refuses to run while the replicas' rings are incompatible.
+
+**Rationale:** Today an operator follows the four rotation steps of R-HA-027 and checks two of them with `trove admin secrets status`, which in Kubernetes means `kubectl exec` into a pod, a right that also reads the key files. (b) exposes exactly the state a rotation needs (key IDs, counts, which replica holds which key) and nothing secret. It also covers a case the command cannot see: a running replica whose ring lacks a key that another replica has since made active cannot open the values sealed with it. The command sees only its own pod; the endpoint sees every replica through the registry, and the re-encryption task refuses to start in that state. (c) gives alerts but no guarded action; (d) moves key material into the system it protects; (e) saves only two gauges and one card, because both render the payload the endpoint already computes. The whole of (b) is MVP because the key ring and its rotation are MVP (R-ARCH-021, R-HA-027), the per-key counting already exists for `trove admin secrets status`, and the system status screen that shows the card is MVP (R-UI-038). The development agent revisits this when a key source backed by an external key management service arrives (ADR-032 names it as a later option), whose status would extend this payload.
+
+**Applied in the spec:** New requirement R-API-049 (MVP, payload, rules, acceptance criteria), which starts re-encryption as the manual task `secrets-reencrypt` whose job kind carries the same name; R-API-020 lists it; R-UI-038 gains the "Stored-secret keys" card with "Re-encrypt now" and states why the screen is MVP; the security notes gain "Key-ring status without pod access"; the page's Covers list adds HA-016. Cross-page edits: the endpoint, the shared implementation and the job kind renamed from `secrets_reencrypt` to `secrets-reencrypt` in [architecture.md](architecture.md) R-ARCH-016 and R-ARCH-021; the replica registry columns, the manual task `secrets-reencrypt` and the two metrics in [operations-and-observability.md](operations-and-observability.md); the status check in the rotation steps of [ha-and-helm.md](ha-and-helm.md) R-HA-027; the MVP status of the UI status screen in R-OPS-003 and in [ha-and-helm.md](ha-and-helm.md) R-HA-003 and Q-HA-12, which still call it P1; the HA-016 row of the coverage checklist.
+
+### Q-API-9 · One path for starting, stopping and reading maintenance work
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The owning pages specified two paths for the same functions: [storage.md](storage.md) starts and stops garbage collection through `/api/v1/maintenance/gc-runs` and refreshes the storage summary at `/api/v1/storage/summary/refresh`, while [operations-and-observability.md](operations-and-observability.md) starts both through `/api/v1/system/tasks/{name}/run` and reads the summary at `/api/v1/system/storage/summary`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Domain paths only | storage.md's start, stop and refresh paths; the task trigger refuses these tasks | Each owning page shapes its own API | The system status screen and scripts need a special case per task; two ways to stop work (domain stop and job cancel) |
+| (b) Generic paths only | Start through `/system/tasks/{name}/run`, stop through `/system/jobs/{id}/cancel`, results only in job results and under `/system/` | One mechanism, no domain views | Loses the domain view (counts and reclaimed bytes per run, history with filters) that a generic job result serves poorly |
+| (c) Generic start and stop, domain read views | Start and stop through the task and job endpoints of R-OPS-019; the owning page keeps read-only views of runs and results under its own prefix | One way to start and stop every task, so "Run now" on the status screen works for all of them; domain data stays with its owner; matches R-API-015's "domain view that references the job" | Two pages change paths |
+
+**Choice:** (c) — every singleton maintenance task starts only through `POST /api/v1/system/tasks/{name}/run` and stops only through job cancel, and owning pages keep read-only domain views.
+
+**Rationale:** Start and stop are the same operation for every task, with the same mutual exclusion and the same 409 when a run is active (R-OPS-019); one implementation serves every task and the system status screen needs no special case. What differs per task is the result, and that belongs to the owning page, which is what R-API-015 already allows. (a) duplicates the trigger per task; (b) pushes domain data into generic job results. The task trigger already takes task parameters (`{"dryRun": true}`), and storage.md models incremental and full collection as two tasks with one schedule each, so nothing is lost; [storage.md](storage.md) reached the same answer in Q-STOR-10. The rule covers singleton tasks only: retention policies run per policy with their own queue, run states and reports (R-STOR-041), which the generic task list does not model, so their run and stop paths stay on [storage.md](storage.md). The development agent revisits this if a task needs a start contract the generic trigger cannot express.
+
+**Applied in the spec:** R-API-020 replaces the "until review settles them" paragraph with the rule, its scope (singleton tasks; per-resource actions and retention runs keep their paths) and an acceptance criterion; R-API-040 starts garbage collection (tasks `gc` and `gc-full`, as [storage.md](storage.md) now defines them), the orphan sweep, the scrub and the storage-summary refresh through the task trigger, stops runs through job cancel, lists runs through `GET /api/v1/system/jobs?kind=…`, and keeps `GET /api/v1/storage/summary` and `GET /api/v1/storage/damaged-blobs` as the read paths; R-API-049 starts re-encryption the same way. Cross-page edits to [storage.md](storage.md), [operations-and-observability.md](operations-and-observability.md) and the GC acceptance criterion of [ha-and-helm.md](ha-and-helm.md) R-HA-002.
+
+### Q-UI-1 · Component library
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Angular Material, the CDK and `@angular/aria` | Material for standard widgets, the CDK for overlays and drag and drop, `@angular/aria` for widgets Material lacks | Released with every Angular major, so it moves with INV-1's pin; accessible tables, dialogs, menus and form fields from day one; theming through design tokens | Needs token work so trove does not look like a stock Material app; SVG icons through `MatIconRegistry` need a `bypassSecurityTrust*` value and insert markup through the CDK's own Trusted Types policy `angular#components`, which the CSP of R-UI-001 does not list, so icons come from a font |
+| (b) A third-party suite (for example PrimeNG) | One large component set, including tree tables | More widgets out of the box | Release cadence decoupled from Angular majors, so an Angular upgrade waits for the vendor; another large dependency whose CSP and Trusted Types behavior must be verified |
+| (c) Own components on the CDK and `@angular/aria` only | Every widget built in the project | Full control over look and markup | Weeks of widget work (tables, dialogs, date pickers, form fields) before the first screen, and each widget is an accessibility risk to test |
+
+**Choice:** (a) — Angular Material and the CDK in the release line of the Angular major, plus `@angular/aria` for the file tree and the member editor's lists, themed through design tokens and with font icons.
+
+**Rationale:** The first prototype has to work largely after one development pass, so the widget layer must be ready, accessible and upgradeable with Angular itself. (a) is the only option that is all three: it ships in lockstep with Angular (one version of every dependency), it has been built against Angular's own accessibility patterns, and `@angular/aria` fills the gaps the file browser and the member editor need. (b) adds a vendor whose majors trail Angular's; (c) spends the prototype on widgets. The one conflict with the strict CSP of R-UI-001 is SVG icon registration: `MatIconRegistry` takes URLs only as `SafeResourceUrl` values from a security bypass, which R-UI-046's lint rule bans, and inserts the SVG through the Trusted Types policy `angular#components` (verified in `@angular/cdk` 22.2.5), which the CSP's `trusted-types` list does not name. A self-hosted icon font used through ligatures needs neither, and widening the CSP for icons would weaken the README defense for a cosmetic gain. The development agent revisits this if the owner rejects the look at the walkthrough and token theming cannot fix it; the fallback is (c) for the affected widgets on the same CDK base.
+
+**Applied in the spec:** R-UI-001 gains the component-library bullet (Material and CDK in the Angular release line, `@angular/aria` tree and listbox, token theming, icon font, no SVG icon registration with the reason) and an acceptance criterion; R-UI-010 builds the tree and R-UI-022 the member lists on `@angular/aria`.
+
+### Q-UI-2 · Visual direction of the shell (example screenshot requested)
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Left side bar that collapses into a drawer, compact density, layouts by viewport breakpoints | Side bar pinned from 1024 CSS px, a drawer below; two-column screens switch on media queries over the viewport width | Suits administrators scanning long lists; keeps the many sections reachable (R-UI-003 has 27 routes); media queries are the familiar tool | A screen's breakpoint has to subtract the side bar's width, which depends on whether it is pinned, so every two-column screen carries the shell's layout logic |
+| (b) Top navigation, comfortable spacing | Areas as tabs in the header, default density | Calm look for occasional users | Two areas with many sections do not fit a top bar; long lists need more scrolling |
+| (c) Left side bar that collapses into a drawer, compact density, layouts by container query | As (a), but two-column screens switch on the width of the content area | (a)'s strengths, usable down to 320 CSS px (WCAG 1.4.10), and no screen knows the shell's state | Container queries need current browsers, which R-UI-001 already requires |
+| (d) Navigation rail | A narrow rail of icons with short labels that expands into the side bar on wide screens | More content width between 1024 and 1440 CSS px | A rail holds a handful of destinations, not two areas with 25 routes; a second navigation design to build and test, and icon-led navigation for an audience that scans by name |
+
+**Choice:** (c) — a left side bar pinned from 1024 CSS px and a drawer below, compact density (Material density `-2`) everywhere, and one- or two-column layouts switched by container queries on the content area.
+
+**Rationale:** Most screens are lists and editors used by administrators and developers who come back daily, which favors density and a visible navigation over a spacious top bar. Pinning the side bar only where there is room keeps the reflow requirement without a second navigation design, which (d) would need. Container queries ([MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment/Container_queries)) are supported by every browser version R-UI-001 supports and make each screen's layout depend on the space it actually has, so collapsing or pinning the side bar never breaks a screen; under (a) every two-column screen would have to know the side bar's state. Density `-2` keeps targets above the 24 CSS px of WCAG 2.5.8. The owner's example screenshot is no longer a precondition: the walkthrough takes its place, and a screenshot brought there adjusts tokens and spacing, not this structure. The development agent revisits this if the walkthrough shows that developers, not administrators, dominate use and want more spacing; density is one token.
+
+**Applied in the spec:** R-UI-002 gains the layout and density bullet and an acceptance criterion for both widths.
+
+### Q-UI-3 · Layout of the package details page (example screenshot requested)
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Install panel on top of the main column, key facts in a right column | The install panel sits between the header and the tabs at every width; on wide content areas a right column lists versions, repositories, licenses and downloads | One placement of the install command at every width; the facts stay beside the README | The install command scrolls away while a long README is read, and the right column repeats facts the header already shows |
+| (b) One column at every width | Key facts and install command at the top, tabs below | One layout to build and test | On wide screens the install command scrolls away while the README is read; wasted width |
+| (c) Two columns from 960 CSS px of content width, one column below with the install panel above the tabs | Sticky install panel beside the tabs on wide content areas; on narrow ones the install command comes before the README | The most frequent action stays visible at every width | Two layouts to test |
+
+**Choice:** (c) — two columns with a sticky install panel when the content area is at least 960 CSS px wide, otherwise one column with the install panel directly below the header.
+
+**Rationale:** Copying the install command is the most frequent action on this page (R-UI-009), and the README is its longest content. (c) keeps the command in view next to a long README on wide screens and puts it before the README on narrow ones; (a) shows it first but loses it after the first scroll, and (b) wastes the width a wide screen offers. The previous text placed it below the tabs on narrow screens, where it would sit under the whole README. The switch uses the container query of Q-UI-2, so the side bar's state does not matter. The owner's example screenshot is no longer a precondition; the walkthrough takes its place. The development agent revisits this if the walkthrough shows that the facts in the header deserve the right column more than the install panel.
+
+**Applied in the spec:** R-UI-007's install-panel bullet is replaced by the layout rule (install panel above the tabs on narrow content areas), with a new acceptance criterion at 390 and 1440 CSS px.
+
+### Q-UI-4 · Layout of the policy editor and the explainer (example screenshot requested)
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One page with sections and a sticky preview; explainer as its own screen | Create and edit on one page; the explainer at `/admin/permissions/explain`, linked from the editor | Policies are edited more often than created, and one page shows the whole grant at once; the explainer serves every entry point (users, groups, no-access state, claim tester) the same way | A long page for large policies, mitigated by the in-page table of contents |
+| (b) Wizard for policies, explainer as a side panel in the editor | Steps for principals, resources, actions; an explain panel beside them | Guides first-time creators | Changing one action means stepping through every step; the explainer evaluates stored policies (R-API-034), so a panel next to an unsaved draft would explain a state the user does not see |
+| (c) Wizard for create, one page for edit | Two editors for one document | Guidance on create, overview on edit | Two UIs for the same document to build, test and keep in step |
+
+**Choice:** (a) — one page with sections, an in-page table of contents and a sticky preview fed by validation, and the explainer as its own screen opened from the editor in a new tab.
+
+**Rationale:** A permission policy is reviewed far more often than written, and the dangerous mistakes (a wrong pattern, an extra action) are visible only when principals, resources and actions are seen together; a wizard hides two of the three at every step. The live preview of `validate-policy` gives the guidance a wizard would, on the draft itself. The explainer stays a separate screen because it answers questions about stored policies; opening it in a new tab keeps the editor's draft intact. The owner's example screenshot is no longer a precondition; the walkthrough takes its place. The development agent revisits this if the walkthrough shows that first-time policy creation is the common case.
+
+**Applied in the spec:** R-UI-027 gains the layout bullet (one page for create and edit, sticky preview or collapsible region, "Test this policy" opening the explainer in a new tab for saved policies once the P1 explainer ships).
+
+### Q-UI-5 · Internationalization mechanism
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `@angular/localize`, compile time, one build per locale | Builds under `/ui/en/` and `/ui/de/`; switching the language reloads | Angular's own mechanism, no extra dependency to keep in step with majors; a missing German text fails the build; ICU messages built in; no runtime cost | A locale prefix in UI URLs; a reload on language change; one more UI build in the binary per locale |
+| (b) A runtime translation library (for example Transloco) | One build; translations loaded as JSON; switch without reload | Instant language switch; one build in the binary | A dependency outside Angular's release line; keys are strings, so a typo compiles, and missing keys are found only by a separate extraction tool in CI, not by the compiler; lookups at runtime |
+| (c) `@angular/localize` with translations loaded at run time | One build; `loadTranslations()` before bootstrap | One build with Angular's message format | The build-time check of missing translations has to be rebuilt as a separate step; locale data registered by hand; still reloads on switch |
+
+**Choice:** (a) — Angular's compile-time i18n with one build per locale under `/ui/{locale}/`.
+
+**Rationale:** The decisive property is that a missing translation is a build failure, not a bug a German user finds; with two locales from the MVP on and an autonomous developer adding screens, that check is worth more than switching without a reload, which users do rarely. (a) also adds no dependency (INV-1's one-version rule stays easy) and costs nothing at run time; the serving rules for `/ui/{locale}/` already exist in R-ARCH-004 and R-UI-001. (c) keeps Angular's format but gives up the compiler's check; (b) gives up both and needs an extra CI tool to approximate the check. The development agent revisits this if the number of locales grows to where per-locale builds noticeably slow the release build or bloat the binary.
+
+**Applied in the spec:** R-UI-045 states the mechanism as decided (no runtime translation library; switching reloads the route under the other locale).
+
+### Q-UI-6 · External images in READMEs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Block always | Every external image becomes a link with its alt text | No third-party request ever; the simplest CSP | Badges and diagrams from an internal GitLab or badge server never show, even where the operator trusts that host |
+| (b) Allow every `https` image | `img-src https:` in the CSP | READMEs look as on public registries | Every viewer's address reaches any host a package author names, including tracking pixels in public packages served through remote repositories |
+| (c) Proxy images through trove | trove fetches and serves the image with size and type limits | Viewer addresses stay inside | trove fetches URLs chosen by README authors from inside the network: a server-side request forgery surface controlled by package authors |
+| (d) Block by default; operator allowlist of exact origins mirrored into the CSP | `ui.readme.external_image_origins` lists trusted origins; the sanitizer keeps images from them and the CSP allows exactly them | Air-gapped and cautious installations lose nothing; others enable exactly the hosts they trust; the browser enforces the same list | One configuration key; badges of public packages from unlisted hosts still show as links |
+
+**Choice:** (d) — external images are blocked by default, and an operator can list exact `https` origins whose images are shown; the same list drives the sanitizer and the CSP `img-src`.
+
+**Rationale:** The useful case for README images in a company registry is internal: badges and diagrams from the company's own GitLab or badge service. (d) serves that case without (b)'s leak of viewer addresses and package names to every host a package author picks, and without (c)'s request-forgery surface. Feeding the sanitizer and the CSP from one list means a sanitizer bug cannot load an image from an unlisted host, and the cross-origin request carries no page URL because UI documents use `Referrer-Policy: same-origin`. The previous recommendation, allowing every `https` image as an operator option, is dropped as too coarse. The development agent revisits this if operators ask for path-level restrictions, which CSP source expressions could express.
+
+**Applied in the spec:** R-UI-008: the `img` rule, the origin-validation and cache bullet, the configuration key `ui.readme.external_image_origins` replacing `external_images`, and the acceptance criterion; R-UI-001: `img-src` takes the listed origins and the foreign-request rule names the exception; R-API-029: the README cache stores the hash of the list; the security notes describe the rule.
+
 ## What this does not cover
 
 ### H-43 · General API rate limits are per replica
 
-The `read`, `write` and `anonymous` buckets of R-API-016 live in each replica's memory. Behind a load
-balancer the effective limit is the configured limit times the number of replicas, and a client that
-spreads requests across replicas gets more than one replica's budget. The same applies to the
-identity and CI limits on their pages. A cluster-wide limiter needs shared counters in PostgreSQL
-(INV-3 rules out Redis), weighed in Q-API-3.
+Component: the rate limiter of the management API (R-API-016). Subject: every caller of `/api/v1/`
+and `/files/`. Live from the MVP, by design (Q-API-3). The `read`, `write` and `anonymous` buckets
+live in each replica's memory. Behind a load balancer the effective limit is the configured limit
+times the number of replicas, and a client that spreads requests across replicas gets more than one
+replica's budget. The same applies to the identity and CI limits on their pages. What makes it
+real: an anonymous or token-holding client that wants more throughput than one replica's budget,
+for example to scrape package metadata. It does not weaken credential guessing: tokens are 256-bit
+random values, and the break-glass lockout counts failures cluster-wide in PostgreSQL (R-AUTH-038).
+A cluster-wide limiter would need shared counters in PostgreSQL (INV-3 rules out Redis), which
+Q-API-3 rejected.
 
 ### H-44 · Credentials displayed in the browser are outside trove's control
 
@@ -2877,179 +3546,3 @@ With hiding on, a missing and an unreadable repository, item or package give the
 (R-API-008), but the server takes different code paths, and the response time can tell them apart.
 Equalizing response times is not specified; an attacker able to measure many requests can still learn
 whether a key or path exists.
-
-## Open questions
-
-### Q-API-1 · OpenAPI generation approach
-
-INV-6 makes the OpenAPI 3.1 document the source of truth; R-ARCH-003 leaves the choice of
-generators to this page and pins whatever is chosen; R-ARCH-004 keeps generated TypeScript types in
-`src/app/api/` next to thin hand-written clients per resource family.
-
-- **A. Spec-first, generated Go server interfaces, generated TypeScript types.** `api/openapi.yaml`
-  is written by hand. Go request and response types and server interfaces for `net/http` are
-  generated (for example [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen), whose v2.8
-  release notes announce OpenAPI 3.1 support; the extent was not verified against trove's
-  document). TypeScript types are generated (for example
-  [openapi-typescript](https://github.com/openapi-ts/openapi-typescript)); thin clients per resource
-  family call `HttpClient` with them.
-- **B. Spec-first, generated Angular client.** As A, but the Angular side is a generated
-  `HttpClient`-based client (for example [ng-openapi-gen](https://github.com/cyclosproject/ng-openapi-gen),
-  whose README states OpenAPI 3.1 support since 1.0; not verified here).
-- **C. Code-first.** Go types and handler registrations generate the document (for example
-  [Huma](https://huma.rocks/), which emits OpenAPI 3.1).
-
-Recommendation: **A**, confirmed by a spike that generates from the first real `api/openapi.yaml`
-and checks the 3.1 constructs trove uses (`type` arrays with `null`, `const`, `oneOf` with
-discriminator); if the Go generator mishandles them, the fallback is hand-written Go types validated
-by the response check of R-API-002 item 4. Spec-first lets the contract be reviewed as a contract
-before code exists, and generated types on both sides turn drift into a compile error. A matches the
-workspace layout of R-ARCH-004 and keeps interceptors and `httpResource()` request descriptors under
-trove's control; B adds a generator whose output style decides how every service looks. C inverts
-INV-6's "source of truth" and ties the API shape to a framework.
-
-### Q-API-2 · Is If-Match mandatory on writes?
-
-- **A. Optional by default, mandatory where an owner says so** (R-API-012): authorization requires it
-  for policy PUT; the UI always sends it; `api.require_if_match` makes it mandatory everywhere.
-- **B. Mandatory for every PUT, PATCH and DELETE** of configuration resources.
-
-Recommendation: **A.** Scripts and configuration-as-code tools often do blind updates on purpose, and
-configuration apply has its own plan hash. Where a lost update is dangerous (permission policies), the
-owner makes the header mandatory; the UI is safe either way.
-
-### Q-API-3 · Cluster-wide rate limiting
-
-- **A. Per replica, in memory** (R-API-016 and the identity and CI pages): no database load; the
-  effective limit scales with the replica count (H-43).
-- **B. Shared counters in PostgreSQL for the unauthenticated classes** (login, token revocation, CI
-  exchange), per replica for the rest.
-- **C. Shared counters for every class.**
-
-Recommendation: **A for the MVP, B in P1.** The `read` and `write` classes protect replica resources,
-which per-replica buckets do correctly. The unauthenticated classes guard against guessing and abuse,
-where the limit should hold cluster-wide, and their volume is small enough that a counter update per
-request is cheap. C adds a database write to every API request.
-
-### Q-API-4 · INV-17's wording and byte transfers on `/files`
-
-INV-17 says the UI uses only the public `/api/v1` API; R-ARCH-004 repeats it. The UI also downloads
-and (P1) uploads bytes through `/files/…` (R-API-025), which INV-6 defines as the raw file path.
-R-API-002 describes `/files` in the same OpenAPI document, so "public `/api/v1` API" reads as "the API
-the OpenAPI document describes".
-
-- **A. Amend INV-17's wording** to "only public, documented endpoints (the OpenAPI document, including
-  `/files`), never private UI endpoints".
-- **B. Mirror byte transfer under `/api/v1/`** (`…/items/content?path=`), duplicating `/files`.
-
-Recommendation: **A.** INV-17's purpose is that every UI action is scriptable, and `/files` is as
-public and scriptable as `/api/v1`; a mirrored byte path adds a second code path for the largest
-transfers without any gain.
-
-### Q-API-5 · Owning page for build information
-
-Build information is P1 in the catalog and R-API-042 reserves its endpoints, but no spec page owns
-the record schema, build permissions or the mapping of CI job names (which contain `/`) to
-`{buildName}`. [formats/npm.md](formats/npm.md) notes the same gap.
-
-- **A. A new spec page `builds.md`** with prefix `R-BLD`.
-- **B. Add it to [gitlab-ci-oidc.md](gitlab-ci-oidc.md)**, since GitLab CI is the main producer.
-- **C. Add it to [operations-and-observability.md](operations-and-observability.md).**
-
-Recommendation: **A.** Build information is a resource model with its own permissions, retention and
-promotion, not part of CI authentication or of operations; putting it into either page would mix
-concerns that change for different reasons.
-
-### Q-API-6 · Pagination parameter names
-
-[repositories-and-proxy.md](repositories-and-proxy.md) lists repositories with `pageSize` and
-`pageToken`; every other page uses `limit` and `cursor` (R-API-010).
-
-- **A. `limit` and `cursor` everywhere.**
-- **B. `pageSize` and `pageToken` everywhere.**
-
-Recommendation: **A**, because it is already used by every other page and by the job API of
-R-ARCH-020, so only one page changes.
-
-### Q-API-7 · Syntax of custom methods
-
-[repositories-and-proxy.md](repositories-and-proxy.md) uses colon custom methods
-(`POST /api/v1/repositories:batchCreate`, `:quickSetup`); every other page uses sub-path verbs
-(`/reindex`, `/keys/refresh`, `/restorations`, `/stop`), as R-API-004 specifies.
-
-- **A. Sub-path verbs** (`POST /api/v1/repositories/batch-create`, `/quick-setup`).
-- **B. Colon methods** for collection-level actions, sub-paths for item-level actions.
-
-Recommendation: **A.** One form for all actions is easier to route, document and remember; colons in
-paths are legal but are percent-encoded by some clients and proxies, and Go's `ServeMux` treats them
-as literal segment text, so `repositories:batchCreate` and a repository named `batchcreate` sit in
-the same segment space.
-
-### Q-UI-1 · Component library
-
-- **A. Angular Material with the CDK and `@angular/aria`.**
-- **B. A third-party suite** (for example PrimeNG).
-- **C. Own components on the CDK and `@angular/aria` only.**
-
-Recommendation: **A.** It is released in lockstep with Angular majors (one version of every
-dependency, upgraded together), ships accessible tables, dialogs, menus and form controls, and
-`@angular/aria` (generally available since v22) covers widgets Material lacks, such as the file tree
-and the reorderable list. B adds a vendor whose release cadence is decoupled from Angular; C costs
-months of widget work before the first screen.
-
-### Q-UI-2 · Visual direction of the shell (example screenshot requested)
-
-The density and layout of the shell (navigation placement, table density, header content) shape every
-screen.
-
-- **A. Left navigation, compact tables**, suited to administrators scanning long lists.
-- **B. Top navigation, comfortable spacing**, suited to occasional users.
-
-Recommendation: **A** until decided, because most screens are lists. The owner is asked for an example
-screenshot of an application whose shell and table density should serve as the model.
-
-### Q-UI-3 · Layout of the package details page (example screenshot requested)
-
-- **A. Two columns:** tabs (README, metadata, files, repositories) on the left, install panel and key
-  facts on the right.
-- **B. One column:** key facts and install command at the top, tabs below.
-
-Recommendation: **A** on wide screens with B as the narrow-screen fallback, because the install
-command is the most frequent action and stays visible while reading the README. The owner is asked for
-an example screenshot of a package page whose layout should serve as the model.
-
-### Q-UI-4 · Layout of the policy editor and the explainer (example screenshot requested)
-
-- **A. Single page with sections and a sticky preview panel** (R-UI-027), explainer as its own screen.
-- **B. Step-by-step wizard** for policies, explainer embedded as a side panel in the editor.
-
-Recommendation: **A**, because policies are edited more often than created and a single page shows the
-whole grant at once; the explainer stays reachable from the editor. The owner is asked for an example
-screenshot of a permission editor and of an explanation view whose presentation should serve as the
-model.
-
-### Q-UI-5 · Internationalization mechanism
-
-- **A. `@angular/localize`, compile-time:** one build per locale under `/ui/en/` and `/ui/de/`;
-  switching the language reloads.
-- **B. A runtime translation library:** one build, language switch without reload, translations loaded
-  as JSON.
-
-Recommendation: **A.** It is Angular's own mechanism (no additional dependency to keep in step with
-Angular majors), translations are checked at build time (a missing German text fails the build), ICU
-messages are built in, and there is no runtime cost. The price is a locale prefix in UI URLs, a reload
-on language change and roughly one additional UI bundle in the binary. R-ARCH-004 already lays out
-the workspace and the serving code for localized builds under `/ui/{locale}/`, so B would change
-that requirement as well.
-
-### Q-UI-6 · External images in READMEs
-
-- **A. Block** (default of R-UI-008): replaced by a link with the alt text.
-- **B. Allow `https` images** directly, with `img-src` widened in the CSP.
-- **C. Proxy** images through trove with size and type limits.
-
-Recommendation: **A by default, B as an operator option** (`ui.readme.external_images: allow`). Loading
-external images reveals viewers' addresses and the names of internal packages to third parties and
-widens the CSP; many installations are air-gapped, where images would not load anyway. C makes trove
-fetch URLs chosen by a README author from inside the network, a server-side request forgery surface
-controlled by package authors rather than administrators.

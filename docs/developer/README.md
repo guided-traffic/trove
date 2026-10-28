@@ -16,8 +16,10 @@ documents today. The code layout, test tiers and build commands below are the pl
   first. They are listed in [spec/README.md](../spec/README.md#owner-constraints) and are not up for
   redesign.
 - **Invariants `INV-1` to `INV-17` bind every spec page.** A page may refine an invariant but must
-  not contradict it. If an invariant looks wrong, keep it and raise an open question
-  `Q-<AREA>-n` on the page. Every invariant becomes a record in [decisions.md](../decisions.md).
+  not contradict it. If an invariant looks wrong, raise a question `Q-<AREA>-n` in the page's
+  `## Decisions` section and decide it there; a choice that changes an invariant edits it in
+  [spec/README.md](../spec/README.md#design-invariants). Every invariant is a record in
+  [decisions.md](../decisions.md).
 - **IDs are permanent.** No ID is ever renumbered or reused. A new entry takes the next free number
   in its prefix.
 - **Tools read the headings.** A `### <ID> · <Title>` heading followed directly by a `Priority:` line
@@ -43,7 +45,7 @@ spec:
 | Build, test and lint matrix | [spec/architecture.md](../spec/architecture.md) R-ARCH-003, R-ARCH-004; no task runner chosen yet |
 | Local development profile | [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-051 |
 | Adding a package format | [spec/architecture.md](../spec/architecture.md) R-ARCH-008 to R-ARCH-010 |
-| CI and release: images, chart, signatures | [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-047; publishing location still open (Q-HA-11) |
+| CI and release: images, chart, signatures | [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-047; published to ghcr.io/guided-traffic (image `trove`, chart `charts/trove`), Q-HA-11 |
 
 ## ID schemes
 
@@ -55,7 +57,7 @@ spec:
 | Priority | Every catalog entry and requirement | `MVP`, `P1`, `P2`, `Later`, `Out of scope`; rubric in [features/README.md](../features/README.md#priority-rubric) |
 | `INV-n` | [spec/README.md](../spec/README.md#design-invariants) | Design invariants |
 | `R-<AREA>-nnn` | [docs/spec/](../spec/README.md), one prefix per page (page table there) | `### R-<AREA>-nnn · <Title>`, then `Priority: **<P>** · Covers: <catalog IDs>` or `Covers: trove-only` |
-| `Q-<AREA>-n` | `## Open questions` of each spec page | Each with options and a recommendation |
+| `Q-<AREA>-n` | `## Decisions` of each spec page | Status line, options table, the development agent's choice, rationale with a revisit condition, and what the choice changed; format in [spec/README.md](../spec/README.md#requirement-format) |
 | `H-n` | `## What this does not cover` of the page whose mechanism has the gap: a spec page today, a security perspective page once the mechanism is implemented | Unique across all spec and security pages; see [security/README.md](../security/README.md) |
 
 Next free number for a prefix (examples for `RMT`, `R-REPO` and `H`):
@@ -93,8 +95,9 @@ grep -rhoE '^### H-[0-9]+ · ' docs/spec docs/security | sed -E 's/^### H-([0-9]
    configuration and acceptance criteria that a test can check. Mark each configuration value
    `# default (proposed)` or `# example`.
 4. Check the requirement against the invariants and the owning pages named in it. A conflict
-   becomes an open question `Q-<AREA>-n` under `## Open questions`, with options and a
-   recommendation.
+   becomes a question `Q-<AREA>-n` under `## Decisions`, decided in the block format of
+   [spec/README.md](../spec/README.md#requirement-format) and listed in
+   [decisions.md](../decisions.md#decisions-by-the-development-agent).
 5. A security gap the requirement leaves open goes under `## What this does not cover` as
    `### H-<n> · <title>`. Take the next free number across all spec and security pages. Name the component, the
    subject it affects, whether it is live or dormant (and which requirement makes it live), and
@@ -189,8 +192,8 @@ trove/
 │   └── archtest/                # fails on forbidden imports between layers
 ├── web/                         # Angular workspace; exact versions, .nvmrc
 ├── deploy/helm/trove/         # Helm chart
-├── deploy/dev/                  # kind, CloudNativePG, MinIO, values-dev.yaml
-├── test/integration/            # real PostgreSQL and MinIO in containers
+├── deploy/dev/                  # kind, CloudNativePG, SeaweedFS (S3), values-dev.yaml
+├── test/integration/            # real PostgreSQL and SeaweedFS (S3) in containers
 ├── test/e2e/                    # kind + Helm + real clients (npm, pnpm, yarn, dotnet)
 └── perf/                        # load scripts, reference lockfiles
 ```
@@ -205,7 +208,7 @@ The responsibility of each Go package and the import layering are in
 | Unit | next to the code | Package logic; the token format test vector | R-AUTH-022 |
 | Architecture | `internal/archtest` | Forbidden imports between layers | R-ARCH-002 |
 | Format conformance | `internal/formats/formattest` | Routing, path rejection, classification, rewrite and merge determinism, limits, content headers, client snippet templates | R-ARCH-010 |
-| Integration | `test/integration` | Real PostgreSQL and MinIO in containers | R-ARCH-003 |
+| Integration | `test/integration` | Real PostgreSQL and SeaweedFS (S3) in containers on every change; MinIO and AWS S3 nightly | R-ARCH-003, R-HA-051 |
 | End to end | `test/e2e` | kind, the real chart, and npm, pnpm, Yarn and `dotnet` against local, remote and virtual repositories | R-ARCH-010, R-NPM-045, R-NUGET-027 |
 | Failure injection | local profile in CI | Every failure mode of R-HA-007 under real client load | R-HA-052 |
 | UI | `web/` | Unit, component, contract, end-to-end, accessibility, internationalization and security tiers | R-UI-047 |

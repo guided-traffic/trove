@@ -2,17 +2,17 @@
 
 Status: specification — not implemented
 
-This page specifies trove's repository model and the management API around it: the
-configuration document of a repository, keys and addresses, validation, create, read, update,
-list and delete. It specifies how virtual repositories resolve requests, including protection
-against dependency confusion through pin rules and namespace claims. And it specifies the
-pull-through proxy of remote repositories end to end: settings and defaults, cache state in
-PostgreSQL, collapsing of concurrent misses within and across replicas, metadata freshness,
+This page specifies trove's repository model and the management API around it: the configuration
+document of a repository, keys and addresses, validation, create, read, update, list and delete. It
+specifies how virtual repositories resolve requests, including protection against dependency
+confusion through pin rules, namespace claims and a shadowing check on first publishes. And it
+specifies the pull-through proxy of remote repositories end to end: settings and defaults, cache
+state in PostgreSQL, collapsing of concurrent misses within and across replicas, metadata freshness,
 negative caching, upstream failure handling and offline modes, upstream authentication and stored
-secrets, client certificates, outbound HTTP proxies and CA bundles, egress address rules,
-redirects, size limits, integrity verification, metadata URL rewriting, cache invalidation and the
-settings that drive cache cleanup. Bytes, items and the operations on stored items (delete, copy,
-move, properties, trash can) are specified in [storage.md](storage.md); who may do what in
+secrets, client certificates, outbound HTTP proxies and CA bundles, egress address rules, redirects,
+size limits, integrity verification, metadata URL rewriting, cache invalidation and the settings
+that drive cache cleanup. Bytes, items and the operations on stored items (delete, copy, move,
+properties, trash can) are specified in [storage.md](storage.md); who may do what in
 [authorization.md](authorization.md); format-specific metadata in [formats/npm.md](formats/npm.md)
 and [formats/nuget.md](formats/nuget.md).
 
@@ -41,8 +41,10 @@ entry ART-050 of [artifacts.md](../features/artifacts.md), the repository operat
 |---|---|
 | Canonical path | The repository-relative path a format plug-in assigns to a request or stored file: `/`-separated, no leading slash, no empty, `.` or `..` segment, percent-decoded exactly once. npm example: document `@acme/util`, tarball `@acme/util/-/util-1.4.0.tgz`. |
 | Request kind | `artifact` (immutable binary), `metadata` (expiring document), `search`, `write` or `other`, assigned by the format plug-in (R-REPO-003). |
-| Package name | The format's package identifier, normalized by the format plug-in (npm: as published, scoped names as `@scope/name`; NuGet: lower-cased with invariant-culture rules). |
-| Name pattern | An exact package name, or a prefix ending in `*` (`@acme/*`, `acme-*`, `Acme.*`), compared after normalization. The syntax of NuGet's [package source mapping](https://learn.microsoft.com/en-us/nuget/consume-packages/package-source-mapping). Where several patterns match, the most specific one wins: an exact name beats any prefix, a longer prefix beats a shorter one. |
+| Package name | The format's package identifier, normalized by the format plug-in (npm: as published, scoped names as `@scope/name`; NuGet: the ASCII-lowercased ID for IDs entering local repositories (ASCII only); for cached upstream packages with legacy non-ASCII IDs, the ID segment of the client's request path ([formats/nuget.md](formats/nuget.md) R-NUGET-003)). |
+| Routing name | A name the format plug-in derives for an artifact that belongs to no package, so that patterns, claims and pin rules can protect it (NuGet symbol files: the first segment of the symbol key without its last extension, lowercased). It is not a package name for anything else, authorization included (R-REPO-003). |
+| Name pattern | A name glob of [R-AUTHZ-005](authorization.md), evaluated by the same matcher against the package name (or routing name) with the format's comparison rule there (npm case-sensitive, NuGet case-insensitive): `*` any run of characters except `/`, `**` any run including `/`, `?` one character except `/`, `\` makes the next character literal. An exact name and a prefix ending in `*` (`@acme/*`, `acme-*`, `Acme.*`), the syntax of NuGet's [package source mapping](https://learn.microsoft.com/en-us/nuget/consume-packages/package-source-mapping), are a subset of it and mean the same here, in permissions and in retention. Because `*` does not cross `/`, a bare `*` on npm matches every unscoped name and no scoped one; `@*/*` matches every scoped name and `**` every name. NuGet IDs contain no `/`, so `*` and `**` both match every ID. |
+| Most specific wins | The routing precedence among claim and pin-rule patterns that match the same name (R-REPO-023); include and exclude lists need none (R-REPO-005). An exact name beats any pattern with a wildcard; a longer literal part beats a shorter one; with equal literal parts, a trailing `*` beats a trailing `**`. Claim and pin-rule patterns are therefore limited to the forms for which this order is total: an exact name, or a literal (possibly empty) followed by one trailing `*` or `**` (R-REPO-023). |
 | Effective member list | A virtual repository's members after nested virtual repositories are expanded and duplicates removed (R-REPO-018). |
 | Cache entry | What a remote repository stored for one canonical path and variant: an artifact, which is also an item of the repository ([storage.md](storage.md)), or a metadata document. |
 | Fresh, expired, stale | A metadata entry is fresh until its expiry, expired afterwards; an expired entry served because the upstream was not or could not be asked is stale. Artifacts never expire. |
@@ -83,6 +85,7 @@ ALTER TABLE repositories
   ADD COLUMN lifecycle        text NOT NULL DEFAULT 'active'
                               CHECK (lifecycle IN ('active', 'deleting')),
   ADD COLUMN config_version   bigint NOT NULL DEFAULT 1,     -- ETag, R-REPO-011
+  ADD COLUMN claims_version   bigint NOT NULL DEFAULT 1,     -- ETag of the claims, R-REPO-023
   ADD COLUMN created_by       uuid,                          -- principal id
   ADD COLUMN updated_by       uuid,
   ADD COLUMN project_id       uuid REFERENCES project (id),  -- assignment: R-AUTHZ-026
@@ -112,6 +115,10 @@ Priority: **MVP** · Covers: REPO-004, REPO-005
 - No suffix is reserved. The cache view of a remote repository is addressed with `~cache`
   (R-REPO-032); `~` cannot occur in a key, so the cache address never collides with a key and remote
   keys keep the full 64 characters.
+- Reserved names: `batch-create`, `batch-update`, `batch-get`, `batch-delete` and `quick-setup`
+  are literal sub-paths of `/api/v1/repositories` (R-REPO-014, R-REPO-015) and MUST be rejected
+  as keys with 422 `reserved_name` ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7). The
+  OpenAPI key schema lists them as `x-trove-reserved-names`.
 - Repositories created by project administrators carry the project key as prefix
   (`<projectKey>-…`, [R-AUTHZ-026](authorization.md)).
 - A key stays taken while its repository is being deleted and becomes free when the deletion job
@@ -132,6 +139,7 @@ Acceptance criteria:
 
 - Creating repositories with the keys `Npm`, `a`, `-x`, `a..b`, `x.` and `npm~cache` each returns
   422 `invalid_key`; `npm-local` and `a1` are accepted.
+- Creating a repository with the key `batch-create` or `quick-setup` returns 422 `reserved_name`.
 - With remote `npm-remote` in place, `GET /api/npm/npm-remote~cache/lodash` reaches the cache view,
   and creating a repository named `npm-remote-cache` succeeds.
 
@@ -139,15 +147,25 @@ Acceptance criteria:
 Priority: **MVP** · Covers: REPO-006
 
 - Each format plug-in ([architecture.md](architecture.md)) MUST register: name; supported classes;
-  layout name (R-REPO-006); protocol base path; default upstream URL; default metadata and
-  not-found cache periods; the subject of include and exclude patterns (`name` or `path`,
-  R-REPO-005); whether it supports priority members (R-REPO-022), pin rules and namespace claims
-  (R-REPO-023), and repository caps (R-REPO-007); its package-name normalization.
+  layout name (R-REPO-006); protocol base path; default upstream URL and the `extraHosts` entries
+  it proposes for that upstream (R-REPO-024); default metadata and not-found cache periods; the
+  subject of include and exclude patterns (`name` or `path`, R-REPO-005); whether it supports
+  priority members (R-REPO-022), pin rules and namespace claims (R-REPO-023), and repository caps
+  (R-REPO-007); its package-name normalization; and, for formats with package names, the
+  canonical path of a package's package document, the document whose existence upstream stands for
+  the package's existence (npm: the package document `n`; NuGet: the version list
+  `{lower_id}/index.json`). R-REPO-029 and R-REPO-048 use that path.
 - The MVP formats are `npm` and `nuget`, each with all three classes (INV-14).
 - For every package-protocol and `/files/` request the plug-in MUST produce a request descriptor:
   canonical path; request kind; normalized package name and version where the request concerns a
-  package; a variant for content-negotiated metadata (npm's abbreviated document, for example);
-  for artifacts, the expected digests when the format's metadata announces them (R-REPO-041).
+  package, or a routing name the format derives for an artifact that belongs to no package (NuGet
+  symbol files: the first segment of the symbol key without its last extension, lowercased;
+  [formats/nuget.md](formats/nuget.md) R-NUGET-015, Q-NUGET-7); a variant for content-negotiated
+  metadata (npm's abbreviated document, for example); for artifacts, the expected digests when the
+  format's metadata announces them (R-REPO-041).
+- Patterns, claims and pin rules see the routing name; authorization does not. No other rule
+  treats a routing name as a package name: it creates no package rows and is not subject to gone
+  packages (R-REPO-029) or the shadowing check (R-REPO-048).
 - A path the plug-in cannot classify MUST be treated as `metadata`. Misclassifying a binary as
   metadata costs a refetch after the metadata period; misclassifying metadata as immutable freezes
   package lists for good.
@@ -195,7 +213,7 @@ read (R-REPO-010) and the object body of configuration as code
 |---|---|---|---|
 | `key`, `class`, `format` | R-REPO-001, R-REPO-002 | — (required) | this page |
 | `description` | Public description, shown to everyone who can read the repository | `""` (≤ 2000 characters) | this page |
-| `adminNotes` | Notes shown only to holders of `repositories:read` | `""` (≤ 8000 characters) | this page |
+| `adminNotes` | Notes shown only to holders of `repositories:read-config` | `""` (≤ 8000 characters) | this page |
 | `includePatterns`, `excludePatterns` | R-REPO-005 | `[]` (everything), `[]` | this page |
 | `disabled` | Takes no part in resolution, download or deploy | `false` | this page |
 | `requireAuthentication` | Anonymous requests are challenged even where anonymous read is granted | `false` | this page |
@@ -211,6 +229,14 @@ read (R-REPO-010) and the object body of configuration as code
 
 - A class section that does not match the class (for example `virtual` on a local repository)
   answers 422 `not_applicable`.
+- Pin rules, namespace claims, extra hosts and upstream credentials are generic members of this
+  page (`virtual.pinning`, the claims API, `remote.extraHosts`, `remote.authMode`,
+  `remote.username`, `remote.password`) for every format (Q-REPO-5). A format section MUST NOT
+  define members for these mechanisms. A format page adds semantics (npm: which account name the
+  public registry expects with `basic`), proposes defaults through the format catalog (NuGet:
+  `*.nuget.org` as an extra host without credentials) and MAY narrow the generic rules, for
+  example forbid `sendCredentials: true`; it never widens them. Format settings live under a
+  member named after the format (`npm`, `nuget`), never under a generic name.
 - `disabled: true` MUST make every package-protocol and `/files/` request to the repository answer
   404 `repository_disabled`, MUST remove it from virtual resolution (R-REPO-019) and MUST leave the
   management API working. The repository list shows it as inactive (R-REPO-012).
@@ -226,7 +252,7 @@ Acceptance criteria:
 - With anonymous read granted and `requireAuthentication: true` on `npm-local`, an unauthenticated
   `curl -i https://trove.example.com/api/npm/npm-local/@acme%2futil` returns 401 with a `Basic`
   challenge.
-- `GET /api/v1/repositories/npm-local` by a caller without `repositories:read` contains no
+- `GET /api/v1/repositories/npm-local` by a caller without `repositories:read-config` contains no
   `adminNotes`.
 
 ### R-REPO-005 · Include and exclude patterns
@@ -236,13 +262,24 @@ Priority: **MVP** · Covers: REPO-011, RMT-034
   admits everything) and no exclude pattern.
 - The subject of the patterns is declared by the format (R-REPO-003):
   - `name` (npm, NuGet): patterns are name patterns (see Terms) matched against the normalized
-    package name of the request. Requests that concern no package (service index, search, ping)
-    are admitted. One pattern therefore covers a package's documents and files alike, which avoids
-    the trap of path patterns that admit the tarball but not the document.
-  - `path` (generic and path-based formats, when they arrive): Ant-style patterns
-    ([Apache Ant](https://ant.apache.org/manual/dirtasks.html#patterns)) matched against the
-    canonical path: `?` one character except `/`, `*` within one segment, `**` any number of
-    segments.
+    package name of the request. A routing name the format derives for a package-less artifact
+    (R-REPO-003; NuGet symbol files) counts as the package name here. Only requests whose
+    descriptor carries neither a package name nor a routing name (service index, search, ping)
+    are admitted as package-less. One pattern therefore covers a package's documents and files
+    alike, which avoids the trap of path patterns that admit the tarball but not the document.
+  - Name patterns are matched by the matcher of [R-AUTHZ-005](authorization.md), the same code
+    that evaluates permission and retention patterns ([storage.md](storage.md) Q-STOR-9), so a
+    pattern copied between them selects the same names. On npm, `*` does not cross `/`: a bare
+    `*` covers unscoped names only, `@*/*` covers every scoped name and `**` every name. A list
+    that contains `*` on an npm repository but neither `**` nor `@*/*` returns the warning
+    `pattern_unscoped_only` (R-REPO-008), because `excludePatterns: ["*"]` would otherwise look
+    like "exclude everything" while scoped names, usually the internal ones, still reach the
+    upstream. Include and exclude lists have no precedence among their patterns; most specific
+    wins applies only to claims and pin rules (R-REPO-023).
+  - `path` (generic and path-based formats, when they arrive): the path patterns of
+    [R-AUTHZ-005](authorization.md), evaluated by the same matcher against the canonical path
+    (Ant-style, [Apache Ant](https://ant.apache.org/manual/dirtasks.html#patterns)): `?` one
+    character except `/`, `*` within one segment, `**` any number of segments, `\` escapes.
 - Patterns MUST apply to: resolution of downloads; virtual membership (a member is consulted only
   for admitted requests); upstream fetching (a remote repository never asks its upstream for
   anything it does not admit, also when addressed directly); deploys to a local repository
@@ -262,6 +299,11 @@ Acceptance criteria:
   records no request.
 - Local `npm-local` with `includePatterns: ["@acme/*"]`: `npm publish` of `left-pad` fails with 403
   `not_admitted`; publishing `@acme/left-pad` succeeds.
+- Saving `excludePatterns: ["*"]` on `npm-remote` returns the warning `pattern_unscoped_only`;
+  afterwards `npm view lodash` through it fails with `E404` and the stub records no request, while
+  `npm view @partner/sdk` reaches the stub. With `["**"]` both fail and the stub records no request.
+- A unit test runs the R-AUTHZ-005 matcher's test table through the routing code path and gets the
+  same results.
 
 ### R-REPO-006 · Layouts (minimal)
 Priority: **MVP** · Covers: REPO-012, REPO-046, REPO-047
@@ -294,9 +336,19 @@ plug-in's version-group hook decides what a group is.
 | Member (`local.caps.…`) | Meaning | Default (proposed) | Constraint |
 |---|---|---|---|
 | `maxVariantsPerGroup` | Distinct snapshot or pre-release variants kept per version group (format-defined) | `0` (no cap) | `0` or ≥ 2 |
-| `maxTagsPerImage` | Distinct tags kept per image (container formats) | `0` (no cap) | ≥ 0 |
-| `keptTagRevisions` | Earlier revisions kept when a tag is overwritten (container formats) | `0` | ≥ 0 |
+| `maxTagsPerImage` | Distinct tag names kept per image (container formats) | `0` (no cap) | ≥ 0 |
+| `keptTagRevisions` | Earlier revisions kept per tag name when a tag is overwritten (container formats) | `0` | ≥ 0 |
 
+- All three caps are counts, never ages (RET-035): distinct variants per version group, distinct
+  tag names per image, kept revisions per tag name. Federated repositories are not part of the
+  MVP (INV-5); when they arrive, their caps use the same count semantics, not an age in days.
+- When a cap is exceeded, the oldest entries beyond it are removed ([R-STOR-044](storage.md)).
+  "Oldest" is the earliest creation of the entry's current version: a variant's deploy time, and
+  for a tag the time the tag name last received a push, so a re-pushed tag counts as new and a tag
+  that keeps receiving pushes is never the oldest. No tag name is exempt, `latest` included.
+- Removals by caps go to the trash can when it is enabled ([R-STOR-022](storage.md)), for
+  snapshots and tags alike, and are audited like any delete. When a tag is removed, its kept
+  revisions go with it.
 - A cap the format does not support answers 422 `not_applicable`.
 - A variant cap of 1 is refused with 422 `out_of_range`: an in-flight multi-file deploy would remove
   its own siblings.
@@ -308,6 +360,9 @@ Acceptance criteria:
 - `PATCH` with `{"local":{"caps":{"maxVariantsPerGroup":1}}}` returns 422 `out_of_range`; with `5`
   it is stored and read back.
 - On an npm repository, `maxTagsPerImage: 3` returns 422 `not_applicable`.
+- With the container format and `maxTagsPerImage: 3` on `docker-local`, pushing `latest`, `t1`,
+  `t2`, re-pushing `latest`, then pushing `t3` removes `t1`, not `latest`, and `t1` is in the trash
+  can ([R-STOR-044](storage.md)).
 
 ## Repository management API
 
@@ -316,7 +371,8 @@ change writes an audit event (INV-16; actor, action, repository, outcome; secret
 in the same transaction as the change and signals the other replicas with
 `NOTIFY trove_repo_config` carrying the repository id; replicas MUST apply a change within 2
 seconds of commit (INV-12). Capability and action names are those of
-[authorization.md](authorization.md): `repositories:read` and `repositories:write` (roles `admin`,
+[authorization.md](authorization.md) (R-AUTHZ-010): `repositories:read-config` (roles `admin`,
+`security-admin`, `auditor`, `repository-admin`), `repositories:write-config` (roles `admin`,
 `repository-admin`), `settings:read` and `settings:write`, repository actions `read`, `deploy`,
 `delete`, `manage`.
 
@@ -331,10 +387,11 @@ leaves the operator believing it is in effect.
 | Rule | Code |
 |---|---|
 | Key syntax (R-REPO-002), project prefix for project administrators | `invalid_key` |
+| Key is a reserved name (R-REPO-002) | `reserved_name` |
 | Key taken, also by a repository being deleted | `repository_exists` (409) |
 | Class or format unknown, or the format does not support the class | `unsupported_class`, `unknown_format` |
 | Class, format or key changed on update | `immutable_field` |
-| Pattern syntax or limits (R-REPO-005) | `invalid_pattern` |
+| Pattern syntax or limits (R-REPO-005); claim or pin-rule pattern outside the forms R-REPO-023 admits | `invalid_pattern` |
 | Member missing, being deleted, of another format, duplicated, or the virtual repository itself | `invalid_member` |
 | Nesting cycle or depth over the limit (R-REPO-018) | `virtual_cycle`, `virtual_too_deep` |
 | Deploy target not a local repository in the effective member list (R-REPO-021) | `invalid_deploy_target` |
@@ -347,8 +404,8 @@ leaves the operator believing it is in effect.
 | Member not applicable to class or format | `not_applicable` |
 
 Warnings do not block a save; they are returned in a `warnings` list, for example
-`dependency_confusion_unprotected` (R-REPO-023), `claim_overlaps` (R-REPO-023) or
-`plain_http_upstream` (R-REPO-024).
+`dependency_confusion_unprotected` (R-REPO-023), `claim_overlaps` (R-REPO-023),
+`pattern_unscoped_only` (R-REPO-005) or `plain_http_upstream` (R-REPO-024).
 
 Acceptance criteria:
 
@@ -366,7 +423,7 @@ Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
 | Request | `POST /api/v1/repositories`, body: the configuration document; omitted settings take their defaults, format defaults included |
 | Success | 201, `Location: /api/v1/repositories/<key>`, `ETag: "<config_version>"`, body: the stored document as R-REPO-010 returns it, plus `warnings` |
 | Errors | 400 `invalid_document`; 401; 403; 409 `repository_exists`; 422 (R-REPO-008) |
-| Permission | `repositories:write`; or project administrator of a project with `manageRepositories`, for keys `<projectKey>-…`, which are assigned to that project ([R-AUTHZ-026](authorization.md)) |
+| Permission | `repositories:write-config`; or project administrator of a project with `manageRepositories`, for keys `<projectKey>-…`, which are assigned to that project ([R-AUTHZ-026](authorization.md)) |
 
 - Create is never an upsert. Configuration, relational rows, sealed secrets and the audit event are
   written in one transaction.
@@ -395,7 +452,7 @@ Acceptance criteria:
   of the `Location` shows `metadataTtlSeconds: 7200` and `notFoundTtlSeconds: 1800` from the npm
   format defaults.
 - Repeating the call returns 409 `repository_exists`.
-- The same call with a token lacking `repositories:write` returns 403 and creates nothing.
+- The same call with a token lacking `repositories:write-config` returns 403 and creates nothing.
 
 ### R-REPO-010 · Read a repository configuration
 Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
@@ -405,7 +462,7 @@ Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
 | Request | `GET /api/v1/repositories/{key}` |
 | Success | 200, `ETag: "<config_version>"`, body: the full document or the consumer view |
 | Errors | 401; 404 per [R-AUTHZ-016](authorization.md) |
-| Permission | `repositories:read` (or project administrator of the repository's project): full document; any repository action on the repository: consumer view |
+| Permission | `repositories:read-config` (or project administrator of the repository's project): full document; any repository action on the repository: consumer view |
 
 - The document contains only members that apply to the repository's class and format; the
   catalog's format-filtered read is therefore the only read.
@@ -418,7 +475,7 @@ Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
 
 Acceptance criteria:
 
-- With `repositories:read`, `GET /api/v1/repositories/nuget-remote` returns `remote.url` and
+- With `repositories:read-config`, `GET /api/v1/repositories/nuget-remote` returns `remote.url` and
   `"password": {"secretRef": {"file": "nuget-upstream-token"}}`; for an inline secret it returns
   `{"set": true}` and never the value.
 - A user holding only `read` on `nuget-remote` receives the consumer view without a `remote`
@@ -429,16 +486,24 @@ Priority: **MVP** · Covers: REPO-054, RMT-002, API-054
 
 | | |
 |---|---|
-| Request | `PATCH /api/v1/repositories/{key}` with `Content-Type: application/merge-patch+json` ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)); or `PUT /api/v1/repositories/{key}` with a complete document (omitted settings revert to defaults). Optional `If-Match: "<config_version>"`. |
+| Request | `PATCH /api/v1/repositories/{key}` with `Content-Type: application/merge-patch+json` ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)); or `PUT /api/v1/repositories/{key}` with a complete document (omitted settings revert to defaults). `If-Match: "<config_version>"` required (428 without it; `If-Match: *` for a deliberate blind write). |
 | Success | 200, new `ETag`, body: the stored document plus `warnings` |
-| Errors | 400; 401; 403; 404; 409 managed by configuration as code ([R-OPS-029](operations-and-observability.md)); 412 `version_mismatch`; 422 (R-REPO-008) |
+| Errors | 400; 401; 403; 404; 409 managed by configuration as code ([R-OPS-029](operations-and-observability.md)); 412 `precondition_failed` with `currentEtag` ([api-and-ui.md](api-and-ui.md) R-API-009); 422 (R-REPO-008); 428 `precondition_required` |
 | Permission | as create (R-REPO-009); the authorization members (`cacheFillAction`, `packageOwnership`, `ownershipDomain`, `hideExistence`) per [R-AUTHZ-012](authorization.md) |
 
 - Merge-patch semantics: arrays (members, patterns, headers, pin rules) are replaced as a whole;
   `null` removes an optional setting; an omitted secret field stays unchanged; a secret field set to
   `null` clears it.
-- With `If-Match`, a stale version MUST be refused with 412. The UI MUST always send `If-Match`, so
-  two administrators editing the same repository cannot overwrite each other unnoticed.
+- `If-Match` is required on `PATCH` and `PUT` ([api-and-ui.md](api-and-ui.md) R-API-012,
+  Q-API-2). Without it the update MUST be refused with 428 `precondition_required` and nothing
+  changes; a stale version MUST be refused with 412 `precondition_failed`; `If-Match: *` passes
+  for a repository that exists and is the explicit blind write. The arrays above are replaced as a
+  whole, so a stale write of a virtual repository's `members` could put a remote member ahead of
+  the local one again, a dependency-confusion path (R-REPO-023). The UI sends the `ETag` it loaded
+  and never `If-Match: *` ([api-and-ui.md](api-and-ui.md) R-UI-042), so two administrators editing
+  the same repository cannot overwrite each other unnoticed.
+- Requests, examples and acceptance criteria on this page that `PATCH` or `PUT` a repository send
+  the `If-Match` the caller read, unless they say otherwise.
 - A change of `remote.url`, `extraHosts`, `authMode`, `username`, `password`, `clientCertificate`
   or `headers` MUST invalidate all metadata and negative entries of the repository (scope `all`,
   path empty, R-REPO-045): what the old upstream said is no evidence about the new one. Cached
@@ -449,7 +514,11 @@ Acceptance criteria:
 
 - `PATCH` with `{"remote":{"cache":{"metadataTtlSeconds":600}}}` changes only that setting; the
   next `GET` shows it and a new `ETag`.
-- Two `PATCH` calls with the same `If-Match` value: the first returns 200, the second 412.
+- Two `PATCH` calls with the same `If-Match` value: the first returns 200, the second 412 with
+  `currentEtag` set to the first call's new `ETag`.
+- `curl -X PATCH -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/merge-patch+json' -d '{"description":"npm proxy"}' https://trove.example.com/api/v1/repositories/npm-remote`
+  without `If-Match` returns 428 `precondition_required` and the next `GET` shows the old
+  `ETag`; the same call with `-H 'If-Match: *'` returns 200.
 - After a change of `remote.url`, the next `npm view lodash` through the repository causes an
   upstream request although the cached document was fresh.
 
@@ -458,10 +527,10 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
 
 | | |
 |---|---|
-| Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&pageSize=&pageToken=` |
-| Success | 200, `{"repositories": [...], "nextPageToken": "…"}` (paging per [api-and-ui.md](api-and-ui.md)) |
+| Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` |
+| Success | 200, `{"items": [...], "nextCursor": "…"}` (paging per [api-and-ui.md](api-and-ui.md) R-API-010, Q-API-6) |
 | Errors | 400 invalid filter; 401 |
-| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` ([R-AUTHZ-016](authorization.md)); `view=full` requires `repositories:read` |
+| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` ([R-AUTHZ-016](authorization.md)); `view=full` requires `repositories:read-config` |
 
 - Filters: `class` and `format` take comma-separated lists; `q` matches key and description
   case-insensitively; `project` filters by project key; `state=inactive` returns disabled
@@ -469,7 +538,7 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
   (R-REPO-029).
 - `view=summary` (default) returns per repository: key, class, format, description, client address,
   `disabled`, `lastActivityAt`, project, and for remote repositories the availability (`online`,
-  `offline`, `assumed-offline`). Holders of `repositories:read` also get the upstream URL.
+  `offline`, `assumed-offline`). Holders of `repositories:read-config` also get the upstream URL.
 - `view=full` returns complete documents (the catalog's "all configurations").
 - Class and format values are spelled as in configuration documents (lower case).
 - `lastActivityAt` is the latest upload to or download from the repository. Replicas MUST aggregate
@@ -482,7 +551,7 @@ Acceptance criteria:
   'https://trove.example.com/api/v1/repositories?class=remote&format=npm'` returns only npm remote
   repositories, each with an availability state.
 - An anonymous caller, with anonymous read granted on `npm-all` only, sees exactly `npm-all`.
-- `view=full` without `repositories:read` returns 403.
+- `view=full` without `repositories:read-config` returns 403.
 
 ### R-REPO-013 · Delete a repository
 Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
@@ -496,8 +565,8 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
 
 - The first transaction MUST set `lifecycle = 'deleting'`. From then on the repository is not
   resolvable, not addressable by clients, absent from virtual resolution and listed only to holders
-  of `repositories:read`. With `detach=true`, the same transaction removes it from every member
-  list, pin rule and deploy-target reference.
+  of `repositories:read-config`. With `detach=true`, the same transaction removes it from every
+  member list, pin rule and deploy-target reference.
 - A background job ([architecture.md](architecture.md)) removes items permanently, bypassing the
   trash can ([storage.md](storage.md), R-STOR-018), and removes cache entries, negative entries, URL
   mappings, claims and invalidations in batches. It is resumable after a replica restart. The
@@ -517,14 +586,21 @@ Priority: **P1** · Covers: REPO-059, REPO-061, REPO-062, REPO-064, API-053, API
 
 | Request | Semantics | Success | Permission |
 |---|---|---|---|
-| `POST /api/v1/repositories:batchCreate` `{"repositories": [doc, …]}` | All or nothing, one transaction; members may reference repositories created in the same batch | 201 with the stored documents | as create |
-| `POST /api/v1/repositories:batchUpdate` `{"updates": [{"key", "ifMatch", "patch"}, …]}` | All or nothing, one transaction, merge patch per entry | 200 with the stored documents | as update |
-| `POST /api/v1/repositories:batchGet` `{"keys": [...]}` | R-REPO-010 per key | 200 `{"repositories": {"<key>": doc}, "missing": [...]}` | as read, per key |
-| `POST /api/v1/repositories:batchDelete` `{"keys": [...], "detach": false}` | Best effort per key, in request order | 202 with one result per key (job reference or error) | as delete |
+| `POST /api/v1/repositories/batch-create` `{"repositories": [doc, …]}` | All or nothing, one transaction; members may reference repositories created in the same batch | 201 with the stored documents | as create |
+| `POST /api/v1/repositories/batch-update` `{"updates": [{"key", "ifMatch", "patch"}, …]}` | All or nothing, one transaction, merge patch per entry; `ifMatch` required per entry | 200 with the stored documents | as update |
+| `POST /api/v1/repositories/batch-get` `{"keys": [...]}` | R-REPO-010 per key | 200 `{"repositories": {"<key>": doc}, "missing": [...]}` | as read, per key |
+| `POST /api/v1/repositories/batch-delete` `{"keys": [...], "detach": false}` | Best effort per key, in request order | 202 with one result per key (job reference or error) | as delete |
 
+- The actions are sub-path verbs ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7); their names
+  are reserved repository keys (R-REPO-002). All of them accept `Idempotency-Key`
+  ([api-and-ui.md](api-and-ui.md) R-API-014).
+- Every `batch-update` entry MUST carry `ifMatch` ([api-and-ui.md](api-and-ui.md) R-API-012): the
+  `config_version` the caller read, or `*` to overwrite whatever is stored, so a blind write is an
+  explicit choice. An entry without it fails the batch with 428 `precondition_required` naming its
+  index; a stale value fails it with 412.
 - The batch size is limited by `repositories.batch_limit`; larger batches answer 400
-  `batch_too_large`. A failing create or update entry answers 422 (or 404, 412) naming the index of
-  every failing entry.
+  `batch_too_large`. A failing create or update entry answers 422 (or 404, 412, 428) naming the
+  index of every failing entry.
 - A key the caller may not see is reported under `missing`, like a key that does not exist.
 
 Configuration:
@@ -536,16 +612,18 @@ repositories:
 
 Acceptance criteria:
 
-- A `batchCreate` of `npm-local`, `npm-remote` and a virtual `npm-all` over both succeeds in one
+- A `batch-create` of `npm-local`, `npm-remote` and a virtual `npm-all` over both succeeds in one
   call; the same call with an invalid third entry creates nothing.
-- A `batchGet` of 101 keys returns 400 `batch_too_large`.
+- A `batch-get` of 101 keys returns 400 `batch_too_large`.
+- A `batch-update` of two entries, the second without `ifMatch`, returns 428 naming index 1 and
+  changes nothing; with `"ifMatch": "*"` on the second entry it succeeds.
 
 ### R-REPO-015 · Quick setup of a repository set
 Priority: **P1** · Covers: REPO-008
 
 | | |
 |---|---|
-| Request | `POST /api/v1/repositories:quickSetup` `{"prefix": "billing", "formats": ["npm", "nuget"]}` |
+| Request | `POST /api/v1/repositories/quick-setup` `{"prefix": "billing", "formats": ["npm", "nuget"]}` |
 | Success | 201 with the created documents |
 | Errors | 409 when any generated key exists (nothing created); 422 invalid prefix or format |
 | Permission | as create (a project administrator's prefix must start with the project key) |
@@ -570,19 +648,31 @@ Priority: **P1** · Covers: REPO-009
 |---|---|
 | Request | `POST /api/v1/repositories/{key}/reindex` |
 | Success | 202 with a job reference |
-| Errors | 404; 405 for formats or classes without derived metadata; 409 `reindex_running` naming the running job |
-| Permission | `repositories:write`, or `manage` on the repository |
+| Errors | 404; 405 for formats or classes without derived metadata; 409 `reindex_running` naming the queued or running job |
+| Permission | `repositories:write-config`, or `manage` on the repository |
 
-- The format plug-in rebuilds the repository's derived metadata (npm package documents, NuGet
-  registrations and version lists) from its items. On a virtual repository the operation drops its
+- The format plug-in rebuilds the repository's derived metadata from its items. npm and NuGet
+  metadata (npm package documents, NuGet registrations and version lists) is rendered per request
+  from package rows ([architecture.md](architecture.md) R-ARCH-012), so there are no stored
+  documents to rebuild: for them a reindex rebuilds the package and version rows from the
+  repository's items, incrementing `rev_seq` on every package row it changes, and the next request
+  renders from the rebuilt rows. A format with a job-built repository-wide index (the exception
+  of R-ARCH-012) also rebuilds that index. On a virtual repository the operation drops its
   merged-metadata cache (R-REPO-020).
-- At most one reindex per repository runs at a time (advisory-lock lease, INV-12). Clients are
-  served the previous metadata until the rebuilt metadata commits.
+- A reindex is an `exclusive` job of [architecture.md](architecture.md) R-ARCH-016 with the key
+  `index:<repository id>`: while one is queued or running, a new request answers 409
+  `reindex_running` naming it. Automatic rebuilds of job-built indexes (R-ARCH-012) are `coalesce`
+  jobs on the same key, so a manual reindex and an automatic rebuild of one repository never run
+  at the same time. Neither takes an advisory-lock lease: leases carry registered numbers only
+  (R-ARCH-017). Clients are served the previous metadata until the rebuilt metadata commits.
 
 Acceptance criteria:
 
-- After the derived metadata rows of `npm-local` are deleted in a test database, `npm view
-  @acme/util` fails; after a reindex job completes, it succeeds with all versions.
+- After the package and version rows of `@acme/util` in `npm-local` are deleted in a test
+  database, `npm view @acme/util` fails; after a reindex job completes, it succeeds with all
+  versions.
+- A second `POST …/repositories/npm-local/reindex` while the first job is queued or running
+  returns 409 `reindex_running` naming that job.
 
 ## Virtual repositories
 
@@ -647,8 +737,9 @@ Priority: **P1** · Covers: REPO-034
   virtual repositories it was reached through.
 - Nesting depth is limited by `repositories.max_virtual_depth`; deeper compositions answer 422
   `virtual_too_deep`. A cycle MUST be refused at save time with 422 `virtual_cycle`. Membership
-  changes MUST be serialized with a transaction-scoped advisory lock (`pg_advisory_xact_lock`) on
-  one fixed key, so two concurrent updates cannot form a cycle that neither transaction sees.
+  changes MUST be serialized with the transaction-scoped advisory lock `pg_advisory_xact_lock(4, 1)`
+  (category `config`, object type 1 = virtual membership; [architecture.md](architecture.md)
+  R-ARCH-017), so two concurrent updates cannot form a cycle that neither transaction sees.
 - A nested virtual repository keeps its rules for its subtree: a request reaches a member only if
   every virtual repository on the member's chain admits it (R-REPO-005) and the caller passes each
   one's gate ([R-AUTHZ-009](authorization.md)); each virtual repository's pin rules restrict its own
@@ -705,10 +796,10 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
 - **Resolution explanation.** `GET /api/v1/repositories/{key}/resolution?path=<client path>`
   evaluates steps 1 to 6 for the calling principal without transferring content and without
   contacting upstreams, and returns per member the decision and its reason (`disabled`,
-  `not-admitted`, `pinned-out`, `claimed-elsewhere`, `refused-claimed`, `no-read`, `no-cache-fill`,
+  `not_admitted`, `pinned-out`, `claimed-elsewhere`, `refused-claimed`, `no-read`, `no-cache-fill`,
   `hit`, `miss`, `negative`, `offline`, `circuit-open`). Members the caller cannot read appear only
-  as a count (`"unreadableMembers": 2`) unless the caller holds `repositories:read`. Permission: the
-  gate of step 1.
+  as a count (`"unreadableMembers": 2`) unless the caller holds `repositories:read-config`.
+  Permission: the gate of step 1.
 
 ```json
 {
@@ -749,10 +840,21 @@ Priority: **MVP** · Covers: REPO-037
   share an entry ([R-AUTHZ-009](authorization.md) rule 4); callers who see the same members do.
 - A merged entry expires at the earlier of `mergedMetadataTtlSeconds` after merging and the earliest
   expiry of the contributing remote entries, so staleness does not add up across the two layers.
-- A change of a member's metadata (publish, delete, restore, remote refresh with new content, claim
-  change) MUST drop the affected merged entries on all replicas (`NOTIFY trove_metadata_changed`
-  with repository id and package-name hash). A version published to a local member is visible
-  through the virtual repository at once, whatever the period.
+- **Local members: `rev_seq` check.** Every merged entry MUST record the `rev_seq` of every
+  eligible local member, recorded as 0 when the member does not hold the package, and every request
+  that finds the entry MUST compare them with the current values in one `RevSeqs` query; any
+  difference makes the entry a miss ([architecture.md](architecture.md) R-ARCH-015, Q-ARCH-9). The
+  check sits in the core's merged-metadata cache, not in a format's merge, and is a MUST for every
+  format. A version published to, deleted from or restored into a local member is therefore
+  visible through the virtual repository on every replica as soon as its commit has returned,
+  whatever the period and whether or not a notification has arrived. The 0 for an absent package
+  covers the first local publish of a name that so far came only from a remote member.
+- **Early eviction.** A change of a member's metadata (publish, delete, restore, remote refresh
+  with new content, claim change) also sends `trove_metadata_changed` with repository id and
+  package-name hash, which drops the affected merged entries on all replicas. It is a hot-path
+  channel: the notification leaves through the post-commit coalescer of R-ARCH-018 (Q-ARCH-8),
+  never as a `NOTIFY` inside the writing transaction. It only evicts early; visibility of local
+  changes never depends on it.
 - A remote member that fails transiently and has no stored copy is left out of the merge; the result
   MUST NOT be cached, and the response carries `Cache-Status: trove; detail=partial`
   (R-REPO-047). Pin rules and claims keep internal names independent of remote members, so a partial
@@ -768,7 +870,12 @@ proxy:
 Acceptance criteria:
 
 - After `npm publish` of `@acme/util@1.5.0` to `npm-local`, `npm view @acme/util versions
-  --registry …/api/npm/npm-all/` on the other replica lists `1.5.0` immediately.
+  --registry …/api/npm/npm-all/` on the other replica lists `1.5.0` immediately, also with the
+  notification coalescer disabled in a test build.
+- With the coalescer disabled and `local.autoClaim: false` on `npm-local` (so no new claim changes
+  the member set), the merged document of `lodash`, served so far only by `npm-remote`, is cached
+  on replica B; a `manage` holder publishes `lodash@99.0.0` to `npm-local` on replica A
+  (R-REPO-048); the next `npm view lodash versions` through `npm-all` on B lists `99.0.0`.
 - User A (read on both members) and user B (read on `npm-local` only) request the same document in
   turn; B's response contains no version that exists only upstream.
 
@@ -805,14 +912,30 @@ Priority: **P1** · Covers: REPO-018, RMT-037
   permissions, for the reason given in R-REPO-023.
 - Pin rules and claims are evaluated first and are not overridden by priority. They are the
   recommended control; priority members exist for configurations that rely on them.
-- Support is a format capability (R-REPO-003); npm and NuGet support it, which settles the catalog's
-  open question for NuGet.
+- Support is a format capability (`priorityMembers` in the format catalog, R-REPO-003) and holds for
+  every protocol the format serves. npm and NuGet (v3) support it.
+- A protocol added to a supporting format later (NuGet v2, P2) MUST apply priority members exactly
+  as the format's existing protocols do; a repository never honours priority on one of its
+  protocols and ignores it on another.
+- Formats not in trove yet (the catalog's exclusion lists name Chef, Debian, CocoaPods, Cargo and
+  others) do not support priority members until their format page declares the capability. A
+  container format page MUST define how priority interacts with tag resolution before it declares
+  the capability.
+- `priorityMember: true` on a virtual repository, or on a repository whose format lacks the
+  capability, answers 422 `not_applicable`.
 
 Acceptance criteria:
 
-- `npm-local` is a priority member holding `util@1.0.0`, the stub upstream holds `util@9.9.9`:
-  `npm view util versions --registry …/api/npm/npm-all/` lists only `1.0.0`; after the local
-  package is deleted, it lists the upstream versions.
+- `npm-local` (`local.autoClaim: false`, no claims) is a priority member holding `util@1.0.0`,
+  published by a `manage` holder (R-REPO-048); the stub upstream holds `util@9.9.9`: `npm view
+  util versions --registry …/api/npm/npm-all/` lists only `1.0.0`; after the local package is
+  deleted, it lists the upstream versions. (With the default `autoClaim: true`, the claim of
+  R-REPO-023 keeps answering 404 after the deletion.)
+- `nuget-all` = [`nuget-org`, `nuget-partner`]; `nuget-partner` (remote, priority member) serves
+  `Partner.Sdk` `2.0.0`, the stub behind `nuget-org` serves `Partner.Sdk` `9.0.0`: the version list
+  `GET …/api/nuget/nuget-all/v3/flatcontainer/partner.sdk/index.json` contains only `2.0.0`.
+- `PATCH /api/v1/repositories/npm-all` with `{"priorityMember": true}` returns 422
+  `not_applicable`.
 
 ### R-REPO-023 · Dependency-confusion protection: pin rules and namespace claims
 Priority: **MVP** · Covers: BEYOND-028
@@ -822,6 +945,10 @@ lets a public package with an internal package's name, usually with a higher ver
 resolution. Tier order alone protects only names that currently exist internally; a name that is
 not published yet, was deleted or is misspelt falls through to the remote members. trove closes
 this on the server with two mechanisms, both using name patterns (see Terms; most specific wins).
+Claim and pin-rule patterns are matched by the R-AUTHZ-005 matcher like every name pattern, but
+are limited to an exact name or a literal (possibly empty) followed by one trailing `*` or `**`,
+the forms for which most specific wins is a total order; any other pattern answers 422
+`invalid_pattern`. A bare `*` therefore claims or pins every unscoped npm name and no scoped one.
 
 **Namespace claims (local repositories).** A local repository holds a list of claimed name
 patterns.
@@ -830,16 +957,24 @@ patterns.
   deploy of a package name that no claim of that repository covers creates an exact claim with
   scope `members` in the same transaction. Claims are not removed when packages are deleted: the
   deleted case is exactly when protection matters.
+- An auto claim MUST NOT take a name from another repository. When a claim of another repository
+  that is in effect in a virtual repository containing the deploying repository (directly or
+  through nesting) covers the name, the deploy proceeds without creating the auto claim, and its
+  audit event records `autoClaim: skipped`. In those virtual repositories the name keeps resolving
+  from the claiming repository. Otherwise the exact auto claim, being the most specific match,
+  would let any `deploy` holder of one team's repository take over a name that another team
+  claims in a shared virtual repository. Taking a name over on purpose is a manual claim, which
+  needs `manage` and is reported as `claim_overlaps`.
 - Claims for names that do not exist yet are created explicitly; this reserves a scope or prefix
   before its first publish.
 - **Claim scope.** Every claim has a scope. `members` (the default, and the only scope an auto
   claim gets) is in effect only in virtual repositories that contain the claiming repository,
   directly or through nesting. `global` is in effect in every virtual repository of the format and
   is the only scope that remote refusal honours. Creating or widening a `global` claim MUST require
-  `repositories:write`; `manage` on the repository suffices for `members` claims. Without this
-  split, one deploy of `react` into any local repository, even a personal sandbox that no virtual
-  repository contains, would make `react` unresolvable in every virtual repository and, through
-  remote refusal, in every remote repository of the format.
+  `repositories:write-config`; `manage` on the repository suffices for `members` claims. Without
+  this split, one deploy of `react` into any local repository, even a personal sandbox that no
+  virtual repository contains, would make `react` unresolvable in every virtual repository and,
+  through remote refusal, in every remote repository of the format.
 - **In a virtual repository**, for a package name n without an applicable pin rule: if a claim in
   effect in V covers n (a `global` claim of any local repository of the format, or a `members`
   claim of a member of V), only the local members of V whose claims are the most specific match for
@@ -852,7 +987,8 @@ patterns.
 - Overlapping claims of different repositories are allowed and reported as the warning
   `claim_overlaps`; under most-specific matching, a team that claims `@acme/billing-*` takes those
   names from a broader `@acme/*` claim. Who may publish a name is decided by package ownership
-  ([R-AUTHZ-018](authorization.md)); claims decide where a name resolves from.
+  ([R-AUTHZ-018](authorization.md)); claims decide where a name resolves from; whether a first
+  publish may shadow a package that a remote member serves is decided by R-REPO-048.
 
 **Pin rules (virtual repositories).** `virtual.pinning.rules` is a list of
 `{"packages": [name patterns], "members": [member keys]}`.
@@ -870,8 +1006,9 @@ internal member would fall through to the public package of the same name and re
 confused dependency; such a caller receives 404 instead (H-7 names the remaining disclosure).
 
 - Each replica keeps all claims and pin rules of all repositories in memory (a prefix trie per
-  format), loaded at start and reloaded on `NOTIFY trove_claims`; a lookup costs no database
-  query.
+  format, keyed by each pattern's literal part; candidates on the path are confirmed by the
+  R-AUTHZ-005 matcher, so `*` stops at `/`), loaded at start and reloaded on `NOTIFY trove_claims`;
+  a lookup costs no database query.
 - On create or update of a virtual repository that has local and remote members, no pin rule, and
   local members without `autoClaim` and without claims, the response carries the warning
   `dependency_confusion_unprotected`.
@@ -910,9 +1047,16 @@ API:
 
 | Method and path | Body / response | Permission |
 |---|---|---|
-| `GET /api/v1/repositories/{key}/claims` | 200 `{"claims": [{"pattern": "@acme/*", "source": "manual", "scope": "global", "createdAt": …}]}` | `read` on the repository |
-| `PUT /api/v1/repositories/{key}/claims` | `{"claims": [{"pattern": "@acme/*", "scope": "global"}]}`; `scope` defaults to `members`; replaces the manual claims; auto claims stay unless listed under `"removeAuto"` | `manage` on the repository for `members` claims; `repositories:write` when the request adds or keeps a `global` claim |
-| `PATCH /api/v1/repositories/{key}` | `{"virtual": {"pinning": {"rules": [...]}}}` (R-REPO-011) | as update |
+| `GET /api/v1/repositories/{key}/claims` | 200 `{"claims": [{"pattern": "@acme/*", "source": "manual", "scope": "global", "createdAt": …}]}`, `ETag: "<claims_version>"` | `read` on the repository |
+| `PUT /api/v1/repositories/{key}/claims` | `{"claims": [{"pattern": "@acme/*", "scope": "global"}]}`; `scope` defaults to `members`; replaces the manual claims; auto claims stay unless listed under `"removeAuto"`; `If-Match: "<claims_version>"` required → 200 with the new `ETag`; 412 `precondition_failed` when stale; 428 `precondition_required` without it | `manage` on the repository for `members` claims; `repositories:write-config` when the request adds or keeps a `global` claim |
+| `PATCH /api/v1/repositories/{key}` | `{"virtual": {"pinning": {"rules": [...]}}}` with `If-Match: "<config_version>"` (R-REPO-011) | as update |
+
+- The claims of a repository are one revisioned resource: `claims_version` increases with every
+  change of its claims, manual or automatic (R-REPO-048), in the transaction that makes it. A `PUT`
+  replaces the manual claim set as a whole, so a stale one could drop a `global` claim another
+  administrator just added and reopen a dependency-confusion path; it therefore requires `If-Match`
+  ([api-and-ui.md](api-and-ui.md) R-API-012, Q-API-2), with `If-Match: *` as the deliberate blind
+  write. A 412 after an automatic claim was added means: read again, then write.
 
 Configuration:
 
@@ -931,7 +1075,8 @@ Acceptance criteria (counting stub upstream behind `npm-remote` and `nuget-remot
   versions --registry …/api/npm/npm-all/` lists only local versions; `npm view @acme/brand-new`
   fails with `E404`; `npm view @acme/brand-new --registry …/api/npm/npm-remote/` fails with `E404`
   as well; the stub records no request for either name.
-- `autoClaim: true` and `left-pad@1.0.0` published to `npm-local`; the stub holds `left-pad@2.0.0`.
+- `autoClaim: true` and `left-pad@1.0.0` published to `npm-local` by a holder of `manage` on it
+  (R-REPO-048); the stub holds `left-pad@2.0.0`.
   `npm install left-pad --registry …/api/npm/npm-all/` installs `1.0.0`. After the local package is
   deleted, the install fails with `E404` instead of installing `2.0.0`. A user with `read` on
   `npm-all` but not on `npm-local` gets `E404`, not `2.0.0`.
@@ -941,10 +1086,128 @@ Acceptance criteria (counting stub upstream behind `npm-remote` and `nuget-remot
   `react@99.0.0`. The claim reads back with scope `members`; `npm view react versions --registry
   …/api/npm/npm-all/` still lists the upstream versions, and `npm-remote` addressed directly still
   serves `react`.
-- A principal holding `manage` on `npm-local` but not `repositories:write` gets 403 on
-  `PUT …/claims` with a `global` claim, and 200 with the same pattern as a `members` claim.
+- A principal holding `manage` on `npm-local` but not `repositories:write-config` gets 403 on
+  `PUT …/claims` with a `global` claim, and 200 with the same pattern as a `members` claim (both
+  with the current `If-Match`).
+- `PUT …/repositories/npm-local/claims` without `If-Match` answers 428 and changes no claim. After
+  a publish to `npm-local` with `autoClaim: true` adds an automatic claim, a `PUT` with the `ETag`
+  read before the publish answers 412 with the new tag as `currentEtag`.
 - A pin rule `{"packages": ["@partner/*"], "members": ["npm-partner-remote"]}` in `npm-all` resolves
   `@partner/sdk` from that remote even though `npm-local` claims `@partner/*`.
+- `npm-team-a` (manual claim `@acme/*`, scope `members`) and `npm-team-b` are both members of
+  `npm-all`. A holder of `deploy` on `npm-team-b` publishes `@acme/util@9.9.9` there: the publish
+  succeeds, `GET …/repositories/npm-team-b/claims` lists no claim for `@acme/util`, and `npm view
+  @acme/util versions --registry …/api/npm/npm-all/` lists only the versions in `npm-team-a`.
+
+### R-REPO-048 · Shadowing check on the first publish of a name
+Priority: **MVP** · Covers: BEYOND-028
+
+Local members form the first resolution tier, and the first publish of a name creates a claim
+(R-REPO-023). A publish of a name that a remote member already serves therefore replaces the public
+package for every client of the virtual repositories that contain the local repository, and hides
+the versions that exist only upstream (H-10). Such a publish MUST be the deliberate decision of a
+`manage` holder, never the side effect of a `deploy` grant (Q-REPO-6).
+
+**When the check runs.** On every write that would give a local repository L, whose format
+supports claims (`pinsAndClaims`, R-REPO-003), a version of the normalized package name n: a
+deploy addressed to L directly or through a virtual repository's deploy target (R-REPO-021), and,
+from P1, a copy, move or trash-can restore into L ([storage.md](storage.md) R-STOR-019,
+R-STOR-023). It runs when both hold:
+
+- L holds no version of n, and
+- no claim of L, manual or automatic, of either scope, covers n.
+
+Item operations report a refusal per item (`shadows_remote_package`, `shadow_check_unavailable`)
+and leave that item unchanged. Without them, a `deploy` holder could publish a name into a
+repository that no virtual repository contains, where nothing is exposed, and copy it into L
+afterwards.
+
+Later versions of a name L already holds or claims are never checked, so a public package that
+someone registers after an internal name's first publish cannot block the internal team's
+releases. With `autoClaim: true` the check therefore runs once per name and repository.
+
+**Exposure set.** The pairs (V, R) where V is an active virtual repository whose effective member
+list contains L (R-REPO-018) and R is a remote member of V that R-REPO-019 steps 2 and 3, evaluated
+for n on stored configuration only, would keep together with L: L and R are enabled and admitted by
+their own patterns and by those of every virtual repository on their chains; if a pin rule of V
+selects n, it names both L and R; and no claim in effect in V covers n (where one does, remote
+members are not consulted for n, so nothing remote is shadowed). An empty exposure set (L is in no
+virtual repository, or no remote member would be consulted for n) lets the publish proceed without
+any upstream request.
+
+**Whether R serves n.** Decided without regard to the caller and without the cache-fill check
+(R-AUTHZ-008), on the canonical path of n's package document, which the format registers
+(R-REPO-003; npm: the package document `n`; NuGet: the version list `{lower_id}/index.json`,
+R-NUGET-015):
+
+1. A stored metadata entry for that path (any variant), fresh or expired and not marked upstream
+   gone (R-REPO-029): served.
+2. A stored entry marked upstream gone, or a valid negative entry (R-REPO-028): not served.
+3. R offline (R-REPO-030, R-REPO-031) and nothing stored: not served; no upstream request.
+4. R's circuit open (R-REPO-029) and nothing stored: undetermined; no upstream request.
+5. Otherwise a probe: one `GET` of that path through R's fetch client, with its egress rules, TLS
+   verification, credentials, redirect rules, size limits and fetch slots (R-REPO-033 to
+   R-REPO-040), bounded by R's timeouts. 2xx: served. 404 or 410: not served. Timeout, 401, 403,
+   429, 5xx and every other failure: undetermined. Probe outcomes count toward R's circuit like any
+   other upstream request. The probe stores nothing, neither an entry nor a negative entry: under
+   `cacheFillAction: deploy` a stored document would advertise versions on behalf of a publisher
+   who need not hold that action.
+
+The probes of one publish run concurrently. They run after the format has read the declared
+identity and fine-grained authorization has passed (R-ARCH-014 steps 4 and 5), because the outcome
+depends on whether the caller holds `manage`, and before the commit (step 6); for item operations,
+before the operation's transaction. No database transaction is held open during a probe.
+
+**Outcome.**
+
+| Result over the exposure set | Caller holds `manage` on the coordinate in L, or `content:bypass` | Otherwise |
+|---|---|---|
+| Empty, or no R serves n | proceed | proceed |
+| At least one R serves n | proceed; security audit event `repository.remote_package_shadowed` (package, L, the pairs (V, R), actor) in the commit transaction | 403 `shadows_remote_package`; nothing stored, no claim created |
+| None serves n, at least one undetermined | proceed; the publish's audit event records `shadowCheck: undetermined` | 503 `shadow_check_unavailable` with `Retry-After` (the remaining circuit-open time, else 30 s); nothing stored |
+
+- The check comes in addition to `deploy` and package ownership ([R-AUTHZ-018](authorization.md));
+  it never grants anything. A refusal is audited as a denial with reason `deny.shadowing`.
+- An unreachable upstream fails closed: it must not be a way around the check. Only first publishes
+  of names outside L's claims are affected while a remote member's upstream is down.
+- **Approval in advance.** A manual claim of L that covers n satisfies the check, because the check
+  runs only when no claim of L covers n. A `members` claim needs `manage` on L (R-REPO-023), so it
+  is the same decision taken ahead of time. This is the path for CI: a `manage` holder claims
+  `lodash` (or `@acme/*`) on `npm-patches`, after which a release job holding only `deploy`
+  publishes there.
+- The error body names the package and the virtual repositories in which the publish would shadow a
+  remote package, limited to those the caller holds `read` on. It never names remote members.
+- The check reads L's committed versions and claims before the commit transaction and needs no
+  lock. A concurrent first publish of the same name can at worst make the check run once more than
+  needed; an uncommitted publish never causes it to be skipped.
+- Membership and other configuration changes do not re-run the check for names a local member
+  already holds (H-10).
+
+Acceptance criteria (`npm-all` = [`npm-local`, `npm-remote`], `nuget-all` = [`nuget-local`,
+`nuget-remote`], counting stub upstreams; `ci-bot` holds `deploy` but not `manage` on the local
+repositories, `lead` holds both; `packageOwnership: off` on the local repositories, so ownership
+plays no part):
+
+- The stub serves `lodash`. `ci-bot` runs `npm publish` of `lodash@4.17.22` through `npm-all`: it
+  fails with `E403` and a message naming `shadows_remote_package`; `npm-local` holds no `lodash`
+  and no claim for it; `npm view lodash version --registry …/api/npm/npm-all/` still shows the
+  upstream version.
+- `lead` publishes the same tarball: it succeeds, and a `repository.remote_package_shadowed` event
+  names `npm-local`, `npm-all` and `npm-remote`. `ci-bot` then publishes `lodash@4.17.23`, which
+  succeeds, and the stub records no request for `lodash` during that publish.
+- `lead` sets the manual claim `left-pad` (scope `members`) on `npm-local`; `ci-bot` then publishes
+  `left-pad@9.0.0` successfully although the stub serves `left-pad`.
+- `ci-bot` publishes `acme-brand-new@1.0.0`, which the stub does not know: it succeeds after exactly
+  one stub request for the name, and no negative entry exists afterwards.
+- `npm-sandbox` (member of no virtual repository): `ci-bot` publishes `react@99.0.0`; it succeeds
+  and the stub records no request.
+- The circuit of `npm-remote` is open and nothing is stored for `brand-new-2`: `ci-bot`'s publish
+  of it answers 503 `shadow_check_unavailable` with `Retry-After`; `lead`'s succeeds.
+- `dotnet nuget push Newtonsoft.Json.99.0.0.nupkg --source …/api/nuget/nuget-all/v3/index.json
+  --api-key "$CI_BOT_TOKEN"` fails with 403 while the stub serves `newtonsoft.json`.
+- P1, with copy: `ci-bot` publishes `lodash@4.17.22` to `npm-sandbox` (succeeds, nothing exposed)
+  and then copies it to `npm-local` with `POST /api/v1/content/copy`: the item is reported with
+  `shadows_remote_package`, and `npm-local` holds no `lodash`.
 
 ## Remote repositories (pull-through proxy)
 
@@ -975,7 +1238,7 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
 | `sourceAddress` | Local IP address for upstream connections | `null` (kernel choice) | an address of the pod | RMT-015 | here |
 | `cacheFillAction` | `read` or `deploy` | `read` | | IAM-023 | [R-AUTHZ-008](authorization.md) |
 | `cache.storeArtifacts` | `false` = pass-through | `true` | | RMT-017 | R-REPO-044 |
-| `cache.metadataTtlSeconds` | Metadata period | format default (npm and NuGet: `7200`) | 0–2592000 | RMT-018 | R-REPO-027 |
+| `cache.metadataTtlSeconds` | Metadata period | format default (npm: `7200`, NuGet: `300`) | 0–2592000 | RMT-018 | R-REPO-027 |
 | `cache.metadataRefreshTimeoutSeconds` | Wait for a refresh before serving stale | `60` | 1–600 | RMT-019 | R-REPO-027 |
 | `cache.notFoundTtlSeconds` | Negative-cache period | format default (npm and NuGet: `1800`) | 0–86400 | RMT-020 | R-REPO-028 |
 | `cache.maxStaleSeconds` | Upper bound for serving stale metadata, `0` = unbounded | `0` | 0–31536000 | — | R-REPO-029 |
@@ -1012,8 +1275,8 @@ API, besides R-REPO-009 to R-REPO-013:
 
 | Method and path | Purpose | Response | Permission |
 |---|---|---|---|
-| `POST /api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | 200 with the result below | `repositories:write` |
-| `POST /api/v1/upstream-tests` | Probe an unsaved `remote` section (body: `format` and `remote`); secret values in the body are used once and not stored | 200 with the result below | `repositories:write` |
+| `POST /api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | 200 with the result below | `repositories:write-config` |
+| `POST /api/v1/upstream-tests` | Probe an unsaved `remote` section (body: `format` and `remote`); secret values in the body are used once and not stored | 200 with the result below | `repositories:write-config` |
 
 ```json
 {
@@ -1048,8 +1311,10 @@ execute these steps in order:
 2. d not admitted by R's patterns, or d's package name refused because of a claim (R-REPO-023) →
    404, no upstream request.
 3. c lacks `read` on R for d → 401, 403 or 404 per [R-AUTHZ-016](authorization.md).
-4. Look up the cache entry (R, path, variant). An artifact entry, or a metadata entry that is fresh
-   and not invalidated (R-REPO-045), is served: `Cache-Status: trove; hit; ttl=<seconds>`.
+4. Look up the cache entry (R, path, variant). An entry marked upstream gone, and every entry of a
+   package that is gone from R, counts as absent here and in every later step (R-REPO-029; gone
+   packages below). An artifact entry, or a metadata entry that is fresh and not invalidated
+   (R-REPO-045), is served: `Cache-Status: trove; hit; ttl=<seconds>`.
 5. Request through the cache view, or with `Cache-Control: only-if-cached` → R-REPO-032.
 6. R offline, global offline (R-REPO-031), or read-only maintenance mode with `cacheFill: false`
    ([R-OPS-024](operations-and-observability.md)) → serve an existing entry as stale, otherwise 404
@@ -1065,6 +1330,16 @@ execute these steps in order:
     classification of the outcome (R-REPO-029), verification (R-REPO-041, R-REPO-042), storage and
     response.
 
+- **Gone packages** (R-REPO-029). A request whose descriptor names a package that is gone from R,
+  other than the request for that package's package document, MUST answer 404 after step 3,
+  without serving a stored entry and without an upstream request for its path. One exception keeps
+  the mark self-healing for clients that request artifacts without documents: when the package
+  document has no valid negative entry (it expired or was invalidated, R-REPO-045), the request
+  first refreshes the package document under these steps (one flight, R-REPO-026) and waits for
+  it; a 2xx clears the mark and the request continues at step 4, any other outcome answers 404.
+  The cache view never refreshes and answers 404. The package document request itself follows the
+  steps; its stored entry counts as absent, so its negative entry answers (step 8) or the upstream
+  is asked.
 - `HEAD` is answered from the cache when an entry exists; otherwise the upstream is asked with `HEAD`
   under steps 1 to 10, and nothing is stored.
 - `Range` requests are served from a stored artifact ([storage.md](storage.md)). For an uncached
@@ -1103,14 +1378,17 @@ CREATE TABLE remote_cache_entries (
   fetched_at             timestamptz NOT NULL,   -- last 200 from the upstream
   validated_at           timestamptz NOT NULL,   -- last 200 or 304
   expires_at             timestamptz,            -- NULL for artifacts
-  upstream_gone_at       timestamptz,            -- upstream answered 404/410 (R-REPO-029)
+  upstream_gone_at       timestamptz,            -- metadata: upstream answered 404/410 (R-REPO-029)
   last_used_at           timestamptz NOT NULL,   -- metadata use, written in batches (R-REPO-046)
   PRIMARY KEY (repo_id, path, variant),
   CHECK ((kind = 'artifact') = (item_id IS NOT NULL)),
-  CHECK ((kind = 'artifact') = (expires_at IS NULL))
+  CHECK ((kind = 'artifact') = (expires_at IS NULL)),
+  CHECK (kind = 'metadata' OR upstream_gone_at IS NULL)
 );
 CREATE INDEX remote_cache_entries_unused ON remote_cache_entries (repo_id, last_used_at)
   WHERE kind = 'metadata';
+CREATE INDEX remote_cache_entries_gone ON remote_cache_entries (repo_id)
+  WHERE upstream_gone_at IS NOT NULL;                 -- loads the gone packages (R-REPO-029)
 ```
 
 Acceptance criteria:
@@ -1123,7 +1401,7 @@ Acceptance criteria:
   request.
 - `curl -I …/files/npm-remote/express/-/express-4.21.2.tgz` for an uncached tarball returns the
   upstream's headers and leaves no cache entry.
-- With MinIO stopped, an uncached tarball is still installed through `npm-remote` and no cache entry
+- With the S3 store stopped, an uncached tarball is still installed through `npm-remote` and no cache entry
   is written.
 - A unit test of the upstream URL builder turns the canonical segment `%2e%2e` into `%252e%252e`
   and `a b` into `a%20b`; no input produces an upstream path that decodes to a `..` segment.
@@ -1142,24 +1420,36 @@ cluster, not one per request (INV-11). The protocol:
 2. **In-process.** Requests on one replica join one flight
    ([singleflight](https://pkg.go.dev/golang.org/x/sync/singleflight)). The leader runs steps 3 to 6;
    followers wait for its result and then read the stored entry, or receive its error.
-3. **Cross-replica lock.** The leader takes a connection from a dedicated lock pool and calls
-   `pg_try_advisory_lock(2, <lock id>)`, a session-level lock
+3. **Cross-replica lock.** The proxy takes the fetch lock only through `cluster.FlightLock`
+   ([architecture.md](architecture.md) R-ARCH-017) and never calls the advisory-lock functions
+   itself. In the MVP, `FlightLock` acquires by taking a connection from a dedicated lock pool and
+   calling `pg_try_advisory_lock(2, <lock id>)`, a session-level lock
    ([PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)).
-   If acquired, it re-reads the entry (another replica may have just finished) and serves it if now
-   valid; otherwise it fetches.
-4. **Waiting.** If the lock is held elsewhere, the leader waits for `NOTIFY trove_proxy_fetch`
-   carrying the lock id ([NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html), received
-   through the replica's one listener connection) and retries `pg_try_advisory_lock` every
-   `proxy.lock_poll_interval_ms` in case a notification was lost. Holding the lock, it re-reads the
-   entry: present → serve; absent (the holder failed) → fetch itself. Waiting is bounded by
-   `proxy.fetch_wait_timeout_seconds`, and for expired metadata additionally by the refresh timeout,
-   after which the stale entry is served (R-REPO-027).
-5. **Commit.** The blob is committed through [storage.md](storage.md); the entry upsert and
-   `NOTIFY trove_proxy_fetch, '<lock id>'` run in one short transaction, so the notification is
-   delivered only after commit. Then `pg_advisory_unlock` releases the lock and the connection
-   returns to the pool. No database transaction is held open while bytes are transferred.
-6. **Crash safety.** If the holder dies, PostgreSQL ends its session and releases the lock; waiters
-   acquire it at their next poll and fetch.
+   If acquired, the leader re-reads the entry (another replica may have just finished) and serves
+   it if now valid; otherwise it fetches.
+4. **Waiting.** If the lock is held elsewhere, the leader waits through `FlightLock` for a
+   `trove_proxy_fetch` notification carrying the lock id
+   ([NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html), received through the
+   replica's coordination session, R-ARCH-017) and retries the acquire every
+   `proxy.lock_poll_interval_ms`. Polling stays mandatory: a notification can be lost, for example
+   when the holder's replica crashes between its commit and the coalescer's flush (R-ARCH-018).
+   Holding the lock, the leader re-reads the entry: present → serve; absent (the holder failed) →
+   fetch itself. Waiting is bounded by `proxy.fetch_wait_timeout_seconds`, and for expired metadata
+   additionally by the refresh timeout, after which the stale entry is served (R-REPO-027).
+5. **Commit.** The blob is committed through [storage.md](storage.md); the entry upsert runs in
+   one short transaction that issues no `NOTIFY`. `trove_proxy_fetch` is a hot-path channel: the
+   fill-complete notification carrying the lock id is attached to that transaction and handed to
+   the post-commit coalescer of [architecture.md](architecture.md) R-ARCH-018 once it has
+   committed (at most one `NOTIFY` per channel per 50 ms per replica, lock ids batched in the
+   payload; Q-ARCH-8). Delivery after commit is unchanged, so a woken waiter always finds the
+   committed entry. Then `FlightLock` releases the lock and the connection returns to the pool. No
+   database transaction is held open while bytes are transferred.
+6. **Crash safety.** The lock is released when the holder's connection closes: at once when the
+   holder's process dies or its pod is deleted, because the socket closes and PostgreSQL ends the
+   session; on node loss, where no close reaches the server, once the server's TCP keepalive
+   declares the connection dead ([ha-and-helm.md](ha-and-helm.md) R-HA-013, about 2 minutes with
+   the recommended `tcp_keepalives_*` settings). Waiters acquire the lock at their next poll and
+   fetch; until then they are bounded by step 4's timeouts.
 
 - The lock is an optimization, not a correctness condition: blob commits are idempotent by content
   address, and the entry upsert keeps the newer `fetched_at` for metadata and refuses a different
@@ -1191,6 +1481,16 @@ Acceptance criteria (two replicas, counting stub upstream that delays every resp
   completes every waiting request; no entry for a partial body exists at any time.
 - With `proxy.lock_pool_size: 0`, all requests still succeed and the stub records at most one `GET` per
   replica.
+- With the notification coalescer disabled in a test build, the 100 concurrent requests above still
+  cause exactly one stub `GET`, and the waiters complete within the stub's delay plus one poll
+  interval.
+- The leader's node is cut off from the network mid-transfer, without closing its connections:
+  `pg_locks` no longer shows the fetch lock after at most `tcp_keepalives_idle +
+  tcp_keepalives_interval × tcp_keepalives_count` (120 s with R-HA-013's recommended values), and
+  a later request for the artifact is fetched and served by the other replica.
+- A test over `internal/proxy` fails on any direct `pg_advisory*` or `pg_try_advisory*` call; the
+  proxy reaches the fetch lock only through `cluster.FlightLock` (the `NOTIFY` rule has its own
+  test in R-ARCH-018).
 
 ### R-REPO-027 · Metadata freshness and refresh timeout
 Priority: **MVP** · Covers: RMT-018, RMT-019
@@ -1201,15 +1501,21 @@ Priority: **MVP** · Covers: RMT-018, RMT-019
 - Revalidation MUST be conditional when the entry has validators: `If-None-Match` with the stored
   ETag, else `If-Modified-Since` ([RFC 9110, section 13](https://www.rfc-editor.org/rfc/rfc9110#section-13)).
   A 304 updates `validated_at` and `expires_at` without a body transfer. Because revalidation is a
-  header exchange, collapsed across replicas, a period of `0` is allowed instead of the catalog's
-  30-second minimum (Q-REPO-2).
+  header exchange, collapsed across replicas (R-REPO-026) and bounded by the fetch limits
+  (R-REPO-040), a period of `0` MUST be accepted; there is no minimum, unlike the catalog's 30
+  seconds (Q-REPO-2).
+- An entry validated after a request arrived counts as fresh for that request, whatever the
+  period. Collapsed followers and cross-replica waiters that re-read the entry (R-REPO-026 steps 2
+  to 4) are therefore served by the flight they waited for; without this rule a period of `0` would
+  make every waiter fetch again after the holder released the lock.
 - If a refresh has not completed within `metadataRefreshTimeoutSeconds`, the stale entry MUST be
   served (`Cache-Status: trove; fwd=stale; detail=served-stale`); the refresh continues in the
   background, bounded by the read timeout, and updates the entry when it completes. This is the
   stale-if-error behavior of [RFC 5861](https://www.rfc-editor.org/rfc/rfc5861) applied to slow
   upstreams.
-- Format defaults: npm and NuGet 7200 seconds; a format page may set another default in the format
-  catalog (the NuGet page weighs 300 seconds for version lists).
+- Format defaults: npm 7200 s; NuGet 300 s for the service index, version lists, registrations
+  and vulnerability data ([formats/nuget.md](formats/nuget.md) Q-NUGET-2). The not-found default
+  stays 1800 s for both formats (R-REPO-028).
 
 Acceptance criteria (`metadataTtlSeconds: 60`):
 
@@ -1218,6 +1524,9 @@ Acceptance criteria (`metadataTtlSeconds: 60`):
   fwd-status=304`.
 - The stub delays the document by 90 s: the client receives the stale document after about 60 s;
   once the stub has answered, the next request is a fresh hit with the new content.
+- With `metadataTtlSeconds: 0`, a `PATCH` is accepted; each of five sequential `npm view lodash`
+  causes one conditional upstream request, and 20 concurrent ones, 10 per replica on two replicas,
+  while the stub delays its answer by 1 s, cause one.
 
 ### R-REPO-028 · Negative cache
 Priority: **MVP** · Covers: RMT-020
@@ -1278,12 +1587,29 @@ Outcome classification:
   returned.
 - One immediate retry after 250 ms MUST be made for a connection failure that occurred before any
   request byte was sent; no other automatic retry happens inside a client request.
-- **Upstream gone.** When the upstream answers 404 or 410 for a document that is stored, the entry is
-  marked `upstream_gone_at` instead of being deleted, a negative entry is written and the audit
-  event `proxy.upstream_gone` is emitted. By default the document then answers 404 and cached
-  artifacts stay served. Formats that track removal per version decide more precisely: npm hides
-  removed versions and their tarballs unless `serveRemovedVersions` is on
-  ([formats/npm.md](formats/npm.md), R-NPM-027). Q-REPO-3 weighs the generic default.
+- **Upstream gone** (Q-REPO-3). When the upstream answers 404 or 410 for a metadata document that
+  is stored, the entry MUST be marked `upstream_gone_at` instead of being deleted, a negative entry
+  is written and the audit event `proxy.upstream_gone` is emitted on the first such answer. The
+  document then answers 404 on the remote address, on its cache view and as a contribution to
+  virtual merges. A later 2xx for the document clears the mark.
+- **Gone packages.** When the marked document is the package document of package n (the path the
+  format registers, R-REPO-003), n is gone from R: every request to R whose descriptor names n
+  MUST answer 404, cached artifacts included, on R's address, on its cache view and as a member of
+  every virtual repository (cache tier and upstream tier alike), and R asks its upstream for
+  nothing of n but the package document (R-REPO-025, gone packages). Cached items are not deleted:
+  they stay listed in the management item API and the cache entry list (R-REPO-032), where an
+  operator can delete them or copy them into a local repository, which is how a build keeps a
+  package the upstream withdrew legitimately. A 2xx for the package document clears the mark and
+  serves everything again.
+- Each replica MUST hold the gone packages of every remote repository in memory (they are few),
+  loaded at start from the marked package-document entries and reloaded for one repository on a
+  `trove_upstream_state` notification carrying that repository's id, sent after the marking or
+  clearing commit ([architecture.md](architecture.md) R-ARCH-018); a reconnecting listener reloads
+  all of them. Serving a cached artifact therefore costs no extra query.
+- A format that tracks removal per version replaces both rules with its own: npm hides removed
+  versions and their tarballs, and gone packages, unless `npm.serveRemovedVersions` is on
+  ([formats/npm.md](formats/npm.md), R-NPM-026). Formats that do not track versions leave a
+  version withdrawn from a package that still exists reachable by exact path (H-5).
 - **Circuit.** Each remote repository has a row in `remote_upstream_state`. A counted failure
   increments `consecutive_failures` atomically (`UPDATE … RETURNING`); at `failureThreshold`,
   `open_until` is set to now plus `circuitOpenSeconds` and `NOTIFY trove_upstream_state` informs
@@ -1318,6 +1644,14 @@ Acceptance criteria (`failureThreshold: 5`, `circuitOpenSeconds: 300`):
   normally.
 - The stub answers 401: the client receives 502 `upstream_auth_failed`, the circuit stays closed,
   nothing is negatively cached.
+- `nuget-remote` has `Acme.Gone` `1.0.0` cached; after its period, the stub answers 404 for the
+  version list: `GET …/v3/flatcontainer/acme.gone/index.json` and `GET
+  …/v3/flatcontainer/acme.gone/1.0.0/acme.gone.1.0.0.nupkg` return 404 through `nuget-remote`,
+  through `nuget-remote~cache` and through `nuget-all` on both replicas within 2 s; the stub records
+  no request for the `.nupkg`; a `proxy.upstream_gone` event exists; and the `.nupkg` item is
+  still listed by the management item API.
+- The stub then serves `Acme.Gone` again. After the negative period, a request for the `.nupkg`
+  alone causes one stub request for the version list, clears the mark and is served.
 
 ### R-REPO-030 · Offline mode per repository
 Priority: **MVP** · Covers: RMT-030
@@ -1340,14 +1674,21 @@ Priority: **P1** · Covers: RMT-031
 - A system-wide switch MUST put every remote repository into the behavior of R-REPO-030, whatever its
   own mode. It is effective when either the configuration key `proxy.global_offline` is true or the
   runtime switch is on; the configuration key cannot be overridden through the API.
-- The runtime switch is a database-backed setting, propagated with `NOTIFY` and effective on all
-  replicas within 2 s. It is the kill switch for an incident such as a compromised upstream, which is
-  why it does not wait for a configuration rollout.
+- The runtime switch is a database-backed setting with a revision ([api-and-ui.md](api-and-ui.md)
+  R-API-012), propagated with `NOTIFY` and effective on all replicas within 2 s. It is the kill
+  switch for an incident such as a compromised upstream, which is why it does not wait for a
+  configuration rollout.
+- `GET` returns `ETag: "<revision>"`, and `PUT` requires `If-Match` (R-API-012, Q-API-2): 428
+  `precondition_required` without it, 412 `precondition_failed` when stale. The guard matters most
+  when the switch is turned off: an administrator working from a view loaded before a second
+  incident cannot end the new one unnoticed. To turn the switch on in an incident without a
+  preceding `GET`, a script sends `If-Match: *`, the explicit blind write; the UI never does
+  (R-UI-042).
 
 | Method and path | Body | Response | Permission |
 |---|---|---|---|
-| `GET /api/v1/system/proxy-offline` | — | `{"enabled": false, "fromConfiguration": false, "reason": "", "changedAt": …, "changedBy": …}` | `settings:read` |
-| `PUT /api/v1/system/proxy-offline` | `{"enabled": true, "reason": "upstream incident 2026-10-28"}` | 200; audit `proxy.global_offline_changed` | `settings:write` |
+| `GET /api/v1/system/proxy-offline` | — | `{"enabled": false, "fromConfiguration": false, "reason": "", "changedAt": …, "changedBy": …}`, `ETag: "<revision>"` | `settings:read` |
+| `PUT /api/v1/system/proxy-offline` | `{"enabled": true, "reason": "upstream incident 2026-10-28"}`, `If-Match` required | 200 with the new `ETag`; 409 `offline_by_configuration`; 412 `precondition_failed`; 428 `precondition_required`; audit `proxy.global_offline_changed` | `settings:write` |
 
 Configuration:
 
@@ -1358,17 +1699,21 @@ proxy:
 
 Acceptance criteria:
 
-- `PUT …/proxy-offline` with `enabled: true`: within 2 s no replica sends upstream requests, cached
-  installs still succeed, and `GET` reports `enabled: true` with the reason.
-- With `proxy.global_offline: true` in the configuration, a `PUT` with `enabled: false` returns 409
-  `offline_by_configuration`.
+- `curl -X PUT -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -H 'If-Match: *' -d '{"enabled":true,"reason":"upstream incident 2026-10-28"}' https://trove.example.com/api/v1/system/proxy-offline`:
+  within 2 s no replica sends upstream requests, cached installs still succeed, and `GET` reports
+  `enabled: true` with the reason and a new `ETag`.
+- A `PUT` with `enabled: false` and the `ETag` read before that change answers 412 and the switch
+  stays on; the same `PUT` without `If-Match` answers 428.
+- With `proxy.global_offline: true` in the configuration, a `PUT` with `enabled: false` and the
+  current `If-Match` returns 409 `offline_by_configuration`.
 
 ### R-REPO-032 · Cache view and cached content
 Priority: **MVP** · Covers: RMT-003
 
 - `<key>~cache` addresses the cache view of remote repository `<key>` on the protocol and raw-file
   paths (R-REPO-002). It MUST serve stored entries only, never contact the upstream, ignore expiry
-  and negative entries, and answer 404 for anything not stored. It needs `read` on the remote
+  and negative entries, and answer 404 for anything not stored, for documents marked upstream
+  gone and for every entry of a gone package (R-REPO-029). It needs `read` on the remote
   repository and is the address for clients that must not trigger upstream checks.
 - A request to the remote address with `Cache-Control: only-if-cached` MUST be answered from storage
   or with 504, as [RFC 9111, section 5.2.1.7](https://www.rfc-editor.org/rfc/rfc9111#section-5.2.1.7)
@@ -1376,10 +1721,12 @@ Priority: **MVP** · Covers: RMT-003
 - Cached artifacts are items: they are listed, carry their upstream URL, can be deleted (permanently,
   no trash can), annotated and copied to a local repository through the item operations of
   [storage.md](storage.md) (R-STOR-018 to R-STOR-020), for example to keep a package that
-  disappeared upstream.
-- Metadata entries are listed for diagnosis by `GET /api/v1/repositories/{key}/cache/entries?pathPrefix=&kind=&pageToken=`
-  (path, kind, fetched, validated, expires, upstream gone, last used, upstream URL); permission
-  `repositories:read` or `manage` on the repository.
+  disappeared upstream. Items of a gone package (R-REPO-029) stay listed and copyable; only
+  serving them to clients stops.
+- Metadata entries are listed for diagnosis by `GET /api/v1/repositories/{key}/cache/entries?pathPrefix=&kind=&limit=&cursor=`
+  (path, kind, fetched, validated, expires, upstream gone, last used, upstream URL), in the
+  `items` and `nextCursor` envelope of [api-and-ui.md](api-and-ui.md) R-API-010; permission
+  `repositories:read-config` or `manage` on the repository.
 
 Acceptance criteria:
 
@@ -1399,8 +1746,9 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
   belong to the format plug-in; format-specific rules (which username the public npm registry
   expects) are on the format pages.
 - Credentials go only to the upstream origin and to `extraHosts` entries with `sendCredentials:
-  true`; redirects follow R-REPO-039. A format page MAY forbid more (npm sends them only to the
-  upstream URL's own host).
+  true`; redirects follow R-REPO-039. A format page MAY forbid more; neither MVP format does
+  ([formats/npm.md](formats/npm.md) R-NPM-023 restates this rule, and the NuGet format proposes
+  its `*.nuget.org` extra host with `sendCredentials: false`).
 - **Secret fields** (`password`, sensitive header values, client-certificate private keys, outbound
   proxy passwords) take one of:
   - `{"value": "…"}`: accepted through the API only, never in startup files
@@ -1412,13 +1760,14 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
 - Secret values MUST never be returned by any API, log line, audit event or error message. Reads show
   `{"set": true}` for sealed values and the reference itself for references. Clients that re-submit a
   document they read therefore cannot blank or leak a secret.
-- **Sealing** (requirements on the stored-secret mechanism of IAM-045, specified in
-  [architecture.md](architecture.md) R-ARCH-021, with the chart side in [ha-and-helm.md](ha-and-helm.md)
-  R-HA-027; Q-REPO-1):
-  AES-256-GCM with a fresh 96-bit random nonce per value; associated data binding the ciphertext to
-  table, row and field, so a sealed value copied into another row does not decrypt; a key identifier
-  in the sealed form, so keys can be rotated by re-sealing with a new active key while old keys
-  still decrypt.
+- **Sealing** (Q-REPO-1). Inline values MUST be sealed with the one stored-secret mechanism of
+  [architecture.md](architecture.md) R-ARCH-021 (IAM-045; the chart side is
+  [ha-and-helm.md](ha-and-helm.md) R-HA-027). This page defines no key, format or rotation of its
+  own. It relies on these properties of R-ARCH-021 and its tests check them for repository
+  secrets: AES-256-GCM with a fresh 96-bit random nonce per value; associated data binding the
+  ciphertext to table, primary key (here `repo_id` and `field`) and column, so a sealed value
+  copied into another row or field does not decrypt; a key identifier in the sealed form, so keys
+  rotate by re-sealing (the `secrets-reencrypt` task) while old keys still decrypt.
 - A secret that cannot be unsealed or resolved makes fetches of that repository fail with 502
   `upstream_secret_unavailable` and is reported at startup; other repositories are unaffected.
 - URLs in logs and audit events are written without user info and with query values redacted.
@@ -1443,6 +1792,8 @@ Acceptance criteria:
   succeeds; the stub records `Authorization: Basic …` on every request to its origin; the read shows
   `"password": {"set": true}`.
 - A `pg_dump` of the database contains no plaintext of the configured token.
+- Copying the `sealed` value of `npm-partner`'s `/remote/password` row into the row of another
+  repository makes that repository's fetches fail with 502 `upstream_secret_unavailable`.
 - `{"secretRef": {"env": "TROVE_DATABASE_PASSWORD"}}` is refused with 422 `invalid_secret`.
 - With `authMode: bearer`, the stub records `Authorization: Bearer <token>` and no Basic header.
 
@@ -1817,8 +2168,8 @@ Priority: **MVP** · Covers: trove-only
   package. A document of package A can therefore neither create nor replace the mapping of an
   artifact of package B.
 - A recorded URL on a host that is neither the upstream origin nor in `extraHosts` MUST be refused
-  with 502 `foreign_host_denied` without a request. (npm's `tarballHosts` setting is the npm-specific
-  form of `extraHosts`; Q-REPO-5.)
+  with 502 `foreign_host_denied` without a request. `remote.extraHosts` is the only host list;
+  formats have none of their own and may only narrow it (Q-REPO-5).
 - The ETag of a rewritten document is derived from the stored document's digest and the serving
   address, so client conditional requests work.
 
@@ -1970,6 +2321,7 @@ Priority: **MVP** · Covers: trove-only
 | `trove_remote_egress_denied_total` | counter | `repo` |
 | `trove_virtual_resolutions_total` | counter | `repo`, `source` (`local`, `cache`, `upstream`, `none`) |
 | `trove_client_certificate_expiry_timestamp_seconds` | gauge | `name` |
+| `trove_shadow_checks_total` | counter | `repo` (the local repository), `outcome` (`no-exposure`, `clear`, `shadowing-approved`, `refused`, `undetermined-approved`, `unavailable`; R-REPO-048) |
 
 - Every upstream request writes one record of the `upstream` log
   ([R-OPS-011](operations-and-observability.md)); this page adds the fields `flight_role`
@@ -1978,7 +2330,8 @@ Priority: **MVP** · Covers: trove-only
   `repository.cache_invalidated`, `repository.claims_changed`, `proxy.global_offline_changed`,
   `proxy.client_certificate_changed`, `proxy.outbound_proxy_changed`. Security events:
   `proxy.integrity_mismatch`, `proxy.upstream_digest_changed`, `proxy.tls_untrusted`,
-  `proxy.egress_denied`, `proxy.upstream_gone`.
+  `proxy.egress_denied`, `proxy.upstream_gone`, `repository.remote_package_shadowed` (R-REPO-048).
+  Shadowing-check probes write `upstream` log records with `flight_role: probe`.
 
 Acceptance criteria:
 
@@ -2077,8 +2430,21 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
   repositories addressed directly as well for `global` claims. R-AUTHZ-009 of
   [authorization.md](authorization.md) relies on it for virtual repositories that a caller can
   read only in part. Auto claims stay within the virtual repositories that contain the claiming
-  repository, so one publish into a sandbox cannot take a public name away from everyone
-  (H-9, H-10).
+  repository, so one publish into a sandbox cannot take a public name away from everyone (H-9).
+- **Shadowing a public package is a `manage` decision.** The first publish of a name that a remote
+  member of a containing virtual repository serves needs `manage` or a prior manual claim, and fails
+  closed when the upstream cannot be asked; a broad `deploy` grant or a leaked CI token can no
+  longer replace a public package for every consumer (R-REPO-048, H-10). The check also covers
+  copy, move and restore into a local repository, and an auto claim never takes a name from
+  another repository's claim (R-REPO-023).
+- **Upstream takedowns reach the cache.** A package whose package document the upstream removed is
+  no longer served from the cache, artifacts included, also to lockfile clients that request
+  artifacts by exact path (R-REPO-029). Version-level removals depend on the format (H-5).
+- **One pattern matcher.** Routing, permission and retention patterns are evaluated by the same
+  R-AUTHZ-005 code, so a pattern copied between them cannot silently select something else
+  (R-REPO-005). On npm a bare `*` does not cover scoped names; a save that relies on it returns
+  `pattern_unscoped_only`, because `excludePatterns: ["*"]` would otherwise still send scoped
+  internal names upstream.
 - **Upstream paths are re-encoded.** The once-decoded canonical path is percent-encoded again
   before it reaches an upstream, and documents map only their own package's paths (R-REPO-025,
   R-REPO-043).
@@ -2101,64 +2467,227 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
 - **Kill switch:** the global offline switch stops all upstream traffic within seconds (R-REPO-031).
 - **Explanations do not leak member keys** to callers who cannot read those members (R-REPO-019).
 
-## Open questions
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
 
 ### Q-REPO-1 · Who specifies the stored-secret mechanism (IAM-045)?
 
-- (a) This page, beyond the requirements already in R-REPO-033.
-- (b) [architecture.md](architecture.md) specifies the key, its rotation and the sealing format;
-  repository secrets, webhook secrets and every other stored secret use it.
-- (c) References only (`secretRef`), no sealed values in PostgreSQL.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (b), with R-REPO-033's sealing rules as input. Operations already assumes the key
-lives in architecture.md, webhooks need the same mechanism, and one key means one rotation and one
-backup procedure. (c) would make credentials entered in the UI impossible without file access on
-every replica.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) This page | R-REPO-033 specifies key handling, the sealed format and rotation for repository secrets | Everything about upstream credentials in one place | Client-certificate keys, outbound-proxy passwords and webhook secrets (R-OPS-042) need the same mechanism; a second specification means a second key, a second rotation procedure and a second backup item |
+| (b) [architecture.md](architecture.md) for every stored secret | R-ARCH-021 owns the key ring, the sealed format `v1:<key id>:…`, rotation and the start-up canary; this page states what repository secrets rely on and uses it | One key ring, one rotation job, one backup item; R-ARCH-021 and the chart side (R-HA-027) already specify it | Every replica holds the key (H-8) |
+| (c) References only | Secret fields accept only `secretRef`; nothing is sealed in PostgreSQL | No key to manage | Credentials cannot be entered through the API or UI at all; every new upstream token needs a Secret change and a file on every replica |
+| (d) trove writes Kubernetes Secrets | Values entered through the API are written by trove into Kubernetes Secrets and read back at use time | No key ring of trove's own; the cluster's encryption at rest applies | trove needs RBAC to create and read Secrets in its namespace, so a compromised replica reads every Secret there, the database password included; the Kubernetes API becomes a stateful dependency, which INV-3 rules out |
+| (e) External key management service | Values are sealed and opened by an external service (a cloud KMS or a secrets engine's transit API); trove holds no key | The key never sits on a replica, which closes H-8 | Every unseal becomes a call to a further stateful dependency beside PostgreSQL and S3, which INV-3 rules out for the baseline; an outage of that service stops every authenticated upstream fetch; many installations have no such service |
+
+**Choice:** (b) — R-ARCH-021 is the one stored-secret mechanism for every stored secret, and
+R-REPO-033 only uses it.
+
+**Rationale:** (b) is the only option that keeps one key, one rotation and one backup procedure
+while still allowing credentials to be typed into the API and UI. (a) would duplicate a
+security-critical primitive, and two implementations of sealing drift apart. (c) gives up entering
+credentials through the API, and with it through the UI, which uses only the API (INV-17). (d)
+widens trove's privilege footprint to reading Secrets, which is worse than H-8. (e) is the only
+option that removes H-8, but it makes a further service a hard dependency of every authenticated
+fetch, and it does not need a mechanism of its own: a key ring whose keys an external service
+unwraps fits into R-ARCH-021 as an additional key source. The development agent would revisit this
+if an installation must keep the key off the replicas; (e) would then arrive as that key source,
+not as a second mechanism.
+
+**Applied in the spec:** R-REPO-033: the "Sealing" bullet says that inline values MUST be sealed
+with R-ARCH-021 and that this page defines no key, format or rotation of its own. It lists the
+properties this page relies on as checks (checked against R-ARCH-021: AES-256-GCM, 96-bit random
+nonce, associated data of table, primary key and column, key identifier in the sealed form,
+`secrets-reencrypt`), among them the binding to `repo_id` and `field`. A new acceptance criterion:
+a sealed value copied into another repository's row fails with 502 `upstream_secret_unavailable`.
 
 ### Q-REPO-2 · Lower bound of the metadata period
 
-- (a) Allow `0` (revalidate every request), as written in R-REPO-027.
-- (b) A minimum of 30 s as in the catalog, accepting smaller values in imported configurations.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (a). Conditional revalidation is a header exchange, collapsed across replicas and
-bounded by the per-repository concurrency limit; a minimum protects the upstream from nothing those
-mechanisms do not already prevent, and it denies teams that need new upstream versions at once.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Allow `0` | `metadataTtlSeconds: 0` revalidates on every request | Teams that need a just-published upstream version get it at once; revalidation is a conditional header exchange | More upstream round trips and request latency for repositories set to `0` |
+| (b) Minimum 30 s | Values below 30 are refused, as in the catalog | Familiar bound; caps request volume per document | Up to 30 s of forced staleness; protects the upstream from nothing that collapsing and the fetch limits do not already prevent |
+| (c) `0` only with validators | `0` applies when the upstream sends `ETag` or `Last-Modified`; otherwise a 30 s floor | Prevents repeated full transfers from upstreams without validators | The same setting behaves differently per upstream; one more branch to build and test, for a rare case in which the operator asked for fresh data anyway |
+
+**Choice:** (a) — `0` is accepted and means "revalidate on every request"; there is no minimum.
+
+**Rationale:** Revalidation is conditional, so a 304 costs headers only. Concurrent requests
+collapse into one flight per cluster (R-REPO-026), and the per-repository and per-replica fetch
+limits (R-REPO-040) plus the circuit (R-REPO-029) bound the load. Both default upstreams send
+validators (checked on 2026-10-28: the npm registry's package documents and nuget.org's version
+lists answer with `ETag` and `Last-Modified`), so (c) would add a branch for upstreams nobody uses
+by default. A floor therefore protects nothing and only takes freshness away from the operator. The
+development agent would revisit this if upstreams answer 429 to trove because of repositories set
+to `0`; a floor or a save-time warning would then be added.
+
+**Applied in the spec:** R-REPO-027 says that a period of `0` MUST be accepted, with the reasons
+(R-REPO-026, R-REPO-040). It now also says that an entry validated after a request arrived is fresh
+for that request; without that rule, every cross-replica waiter of R-REPO-026 would fetch again
+under `0`, so the collapse that justifies this option would not hold. Its acceptance criterion
+covers five sequential requests (five conditional upstream requests) and 20 concurrent ones on two
+replicas (one). R-REPO-024 and R-REPO-027 now list the NuGet format default of 300 s that
+[formats/nuget.md](formats/nuget.md) decided (Q-NUGET-2), where they had still said 7200 s. The
+catalog deviation row stays.
 
 ### Q-REPO-3 · Generic default when the upstream removes a cached document
 
-- (a) Mark it `upstream_gone`, answer 404 for the document, keep serving cached artifacts; formats
-  with version tracking hide removed versions (as written in R-REPO-029; npm does, R-NPM-026).
-- (b) Also refuse cached artifacts of that package in every format.
-- (c) Keep serving the stale document.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (a). Removals are often takedowns of malicious packages, so (c) would keep
-advertising them. (b) cannot be applied without knowing which artifacts belong to which version,
-which only the format knows; formats that know it (npm) already go further. Builds that need a
-removed package keep it on purpose by copying it into a local repository.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Mark gone, hide the document, keep artifacts | The document is marked `upstream_gone` and answers 404 (also on the cache view and in merges); cached artifacts stay served by exact path | Builds pinned to a legitimately removed package keep working; least to build | Lockfile clients request artifacts by exact path (`npm ci`, R-NPM-025), so the cache keeps handing out what the upstream took down to every project that already pinned it; [formats/npm.md](formats/npm.md) rejected the same behavior for npm for that reason (Q-NPM-2) |
+| (b) Mark the package gone, hide its document and every artifact | A 404 or 410 for a package's package document (R-REPO-003) marks the package gone: its documents and artifacts, cached or not, answer 404 on the remote, its cache view and in virtual repositories; items stay stored and copyable; formats that track versions replace the rule | A takedown reaches lockfile clients too; needs only what the generic layer has (the descriptor's package name and the registered package-document path); the same stance as npm's decided default | A build that needs a legitimately removed package breaks until someone copies it into a local repository; a spurious upstream 404 hides cached artifacts until the negative entry expires or is invalidated |
+| (c) Keep serving the stale document | The upstream 404 is treated like an outage | Maximum availability | Keeps advertising and serving packages after their takedown |
+| (d) Debounce | The mark is set only after a second 404 at least one negative period later; the stale document is served until then | Survives a transient upstream 404 | Delays every takedown by `notFoundTtlSeconds` (30 min by default), while a transient 404 already heals when its negative entry expires and can be cleared at once by an invalidation (R-REPO-045) |
+| (e) (b) with a per-remote availability switch | As (b), plus a generic `remote.cache.serveUpstreamRemoved` that keeps serving | Availability-first remotes can opt out, as npm remotes can with `serveRemovedVersions` | A second switch with overlapping meaning next to npm's own, or a rename on the npm page; copying the package into a local repository already covers the legitimate case, per package instead of per remote |
+
+**Choice:** (b) — a 404 or 410 for a package's package document marks the package gone, and the
+remote stops serving its documents and artifacts, cached ones included, until the upstream serves
+it again; formats that track removal per version replace the rule.
+
+**Rationale:** The upstream is the authority on its own content, and a removal is mostly a
+takedown: nuget.org does not let owners delete packages and deletes them itself only for
+potentially harmful content or infringement
+([deleting packages](https://learn.microsoft.com/en-us/nuget/nuget-org/policies/deleting-packages)).
+The decisive client fact is that lockfile clients fetch artifacts by exact path. (a) therefore
+keeps the payload flowing to every project that pinned it, which is why the npm page decided
+against that behavior (Q-NPM-2). A generic default weaker than the one format that decided would
+come back with every later format whose clients fetch by path. The earlier argument against (b),
+that only the format knows which artifacts belong to a package, does not hold: every request
+descriptor carries the normalized package name (R-REPO-003), and the format registers the
+package-document path, which R-REPO-048 needs anyway. The availability cost is bounded: the mark
+heals by itself after the negative period or at once through an invalidation, and a build that
+needs a legitimately removed package keeps it by copying it into a local repository, which also
+records that decision. (c) and (d) keep serving takedowns. (e) adds a second switch for a case that
+copying covers. The development agent would revisit this if spurious upstream 404s cause outages
+in practice, or if operators of formats other than npm ask for a per-remote opt-out; that would
+then be one generic switch with npm's folded into it.
+
+**Applied in the spec:** This review changed the choice from (a) to (b). R-REPO-003: formats
+register the package-document path. R-REPO-025: step 4 treats entries of gone packages as absent,
+and a new "Gone packages" bullet answers 404 after step 3 without an upstream request; when the
+package document's negative entry is no longer valid, an artifact request first refreshes the
+document, so the mark heals for clients that never request documents. The data model allows the
+mark only on metadata entries and adds a partial index for loading. R-REPO-029: "Upstream gone" is
+split into the document rule and a "Gone packages" rule; replicas hold the gone packages in memory,
+reloaded through `trove_upstream_state`; npm's replacement is restated. The NuGet acceptance
+criterion now expects 404 for the cached `.nupkg` on every address and a self-healing request for
+the `.nupkg` alone. R-REPO-032: the cache view answers 404 for gone packages, and their items stay
+listed and copyable. Security notes: new bullet. H-5: narrowed to versions withdrawn from a package
+that still exists, and renamed accordingly.
 
 ### Q-REPO-4 · Scope of remote refusal for claimed names
 
-- (a) System-wide: every remote repository of the format refuses claimed names, also when addressed
-  directly (as written, `proxy.claims.remote_refusal: true`).
-- (b) Only inside virtual repositories that contain a claiming member.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (a). Clients that point at a remote repository directly (a forgotten `.npmrc`, a CI
-image with a hard-coded source) are exactly where an internal name leaks to the public registry. The
-switch exists for installations that proxy a partner registry owning a name trove also claims;
-pin rules cover that case without turning the switch off. (a) applies to `global` claims only
-(R-REPO-023): system-wide refusal is an administrative decision, never the side effect of a publish.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) System-wide, `global` claims only | Every remote repository of the format refuses `global`-claimed names, also when addressed directly; `proxy.claims.remote_refusal: true`; pin rules route a claimed name to a named remote | Closes the direct-access path where internal names leak to public registries; only `repositories:write-config` can create the effect | A remote addressed directly cannot serve a globally claimed name at all |
+| (b) Inside containing virtual repositories only | Refusal applies only where a claiming member is next to the remote | No effect outside the virtual repositories that hold the name | A forgotten `.npmrc` or a hard-coded CI source pointing at the remote still sends the internal name upstream and installs the public package |
+| (c) System-wide with a per-remote exemption | As (a), plus `remote.honourGlobalClaims: false`, settable with `repositories:write-config`, which exempts one remote | A partner remote addressed directly can serve a claimed scope | One setting on a public-registry remote reopens the leak for every client that addresses it; the partner case already works through a pin rule in a virtual repository; one more security setting to audit per remote |
+
+**Choice:** (a) — every remote repository of the format refuses `global`-claimed names, also when
+addressed directly, unless a pin rule of the requesting virtual repository names that remote.
+
+**Rationale:** Clients that point straight at a remote repository are where dependency confusion
+happens in practice. The request itself discloses the internal name upstream, and the answer is the
+attacker's package. (b) leaves exactly that path open. (c) closes it by default but lets a single
+setting reopen it for every client of a remote, while the legitimate case it serves, a partner
+registry that owns a claimed scope, already works through a pin rule. Because refusal follows only
+`global` claims, which need `repositories:write-config` (R-REPO-023), a publish can never cause it
+as a side effect. The development agent would revisit this if installations need a directly
+addressed remote to serve a globally claimed name; (c) would then be added, and the system switch
+would not be turned off.
+
+**Applied in the spec:** No change; the requirement text already follows this option (R-REPO-023,
+"Remote refusal"; R-REPO-025 step 2; the `proxy.claims.remote_refusal` default).
 
 ### Q-REPO-5 · Generic or format-level placement of pins, extra hosts and upstream authentication
 
-- (a) Generic members on this page (`virtual.pinning`, `remote.extraHosts`, `remote.authMode`,
-  `remote.password`), with format pages adding only format semantics.
-- (b) Format-level members as written on the npm page (`npm.pinned`, `npm.remote.tarballHosts`,
-  `npm.upstreamAuth` with `secret://` references).
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (a). The mechanisms are the same for every format (BEYOND-028 names claims as a
-cross-format mechanism, and NuGet expects the generic one), configuration-as-code documents stay
-uniform, and one `secretRef` form ([R-OPS-029](operations-and-observability.md)) avoids a second
-reference syntax. The npm page's member names are to be aligned in review.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Generic members | `virtual.pinning`, the claims API, `remote.extraHosts`, `remote.authMode`, `remote.username`, `remote.password` on this page for every format; format pages add semantics, propose defaults and may narrow | One validator, one `secretRef` syntax (R-OPS-029), uniform configuration-as-code documents; claims are cross-format (BEYOND-028) | A format with an unusual host model has to fit `extraHosts` or handle it in its protocol handshake |
+| (b) Format-level members | `npm.pinned`, `npm.remote.tarballHosts`, `npm.upstreamAuth` with `secret://` references, and the same again per format | Each format page is self-contained | One mechanism implemented and validated once per format; a second reference syntax; a pattern copied between formats lands in a different member |
+| (c) Split | Pins and credentials generic; extra hosts format-level, because the format knows which hosts its upstream needs | Host knowledge stays with the format | The egress-relevant settings of one remote sit in two sections, so a security review has to read both; formats already contribute host defaults through the format catalog |
+
+**Choice:** (a) — pins, claims, extra hosts and upstream credentials are generic members on this
+page. Format pages add semantics, may narrow these members and propose defaults, but never define
+their own members for them.
+
+**Rationale:** The mechanisms are identical across formats. Implementing them once means one code
+path to secure and one place to audit, and configuration as code stays uniform. Formats keep their
+knowledge through the format catalog, whose registration now includes the extra hosts a format
+proposes for its default upstream (NuGet: `*.nuget.org` without credentials, R-NUGET-014), and
+through semantics on their own pages (npm: which account name the public registry expects with
+`basic`, R-NPM-023). The development agent would revisit this when a format needs a host or
+credential model that `extraHosts` and `authMode` cannot express. A token realm of a container
+registry is the expected case, and it belongs in the plug-in's handshake (R-REPO-033).
+
+**Applied in the spec:** R-REPO-004: new bullet; the mechanisms are generic members, format
+sections MUST NOT define their own, and format settings live under a member named after the format.
+This review corrected its example and the one in R-REPO-033: both claimed that npm sends
+credentials only to the upstream URL's own host, but [formats/npm.md](formats/npm.md) R-NPM-023
+sends them to the upstream origin and to `extraHosts` with `sendCredentials: true`; the bullets now
+name the real format contributions. R-REPO-003: the format registration includes the proposed
+`extraHosts`. R-REPO-043: "`remote.extraHosts` is the only host list". The format pages are aligned
+through the cross-page consequences.
+
+### Q-REPO-6 · Local publish of a name that a remote member already serves (H-10)
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse | The first publish of a name that a remote member of a containing virtual repository serves is refused for everyone; shadowing on purpose needs a manual claim created beforehand | Strongest default | Two steps even for an administrator; a patched fork of a public package, a legitimate case, always needs a separate claim first |
+| (b) Require `manage` | Such a first publish needs `manage` on the coordinate (or `content:bypass`), or a manual claim of the local repository that covers the name, which needs `manage` itself; otherwise 403 `shadows_remote_package`; unreachable upstreams fail closed | A `deploy` grant alone, a broad grant or a leaked CI token, can no longer replace a public package; the deliberate case stays one step for a `manage` holder and is audited; CI is approved in advance through a claim | One upstream probe per new name and exposed remote member, which also tells that upstream the name; first publishes of new names answer 503 while such an upstream is unreachable |
+| (c) Warn only | The publish succeeds; a security audit event, a metric and a response warning are emitted | No friction, no upstream dependency at publish time | Detects the attack after every consumer has resolved the replaced package |
+| (d) Package-name patterns on deploy grants (state before this decision) | Only narrow `deploy` grants limit which names a principal can publish | Nothing to build | Safety depends on every grant being narrow; broad grants are common, and nothing tells the administrator that a grant is too broad |
+| (e) As (b), decided from stored state only | "Serves" is decided only from the remote's stored entries; no probe | No upstream request and no 503 at publish time | A name nobody has resolved through the remote yet, or whose entries the cache cleanup removed (R-REPO-046), passes unchecked, so a `deploy` holder can still take a public name before its first consumer adopts it |
+
+**Choice:** (b) — the first publish of a name that a remote member of a containing virtual
+repository serves requires `manage` (or a prior manual claim), is audited, and fails closed when the
+upstream cannot be asked (R-REPO-048).
+
+**Rationale:** The harm in H-10 is that a `deploy` grant, the right that CI jobs and broad team
+grants hold, silently becomes the power to replace a public package for every consumer. (b) turns
+that into an explicit `manage` decision without blocking the legitimate case of patched forks. (a)
+buys no protection that (b) lacks, since a `manage` holder can create the claim in the step before,
+and it adds that step to every fork. (c) only reports damage that has already happened, and (d) is
+the state that left H-10 live. (e) avoids the probe but leaves open exactly the names that matter
+next: public packages a team is about to adopt. The check runs only on the first version of a name
+outside the repository's claims. Squatting a public name after an internal first publish therefore
+cannot block internal releases, and pre-claiming an internal prefix (`@acme/*`, `Acme.*`) removes
+the check, and with it the probe, for that prefix. Probes store nothing and ignore the caller's
+cache-fill right, so a frozen mirror stays frozen. A check that only publish ran could be bypassed:
+publish into a repository that no virtual repository contains, then copy into the shared one; and
+an auto claim, being an exact name, would take a name from another team's prefix claim. Both are
+closed in the requirement text. The development agent would revisit this if collisions between
+internal unscoped names and public names make the check fire often, or if probe latency becomes a
+problem for publishing pipelines; a per-repository opt-out for repositories that hold forks by
+design would then be weighed.
+
+**Applied in the spec:** New requirement R-REPO-048 (MVP, covers BEYOND-028). It defines when the
+check runs, the exposure set, the stored-state-first serve decision with a non-storing probe, the
+outcome table (403 `shadows_remote_package`, 503 `shadow_check_unavailable`), approval in advance
+through a manual claim, the error body and the acceptance criteria. This review extended it to the
+P1 item operations that give a local repository its first version of a name (copy, move, trash-can
+restore; refusals reported per item, with an acceptance criterion), and corrected the probe timing
+to after R-ARCH-014 steps 4 and 5 and before step 6, because the outcome depends on the caller's
+`manage`. R-REPO-003: formats register the package-document path the probe uses. R-REPO-023: an
+auto claim is not created when another repository's claim in effect in a containing virtual
+repository covers the name (new bullet and acceptance criterion); R-REPO-022 and R-REPO-023
+acceptance criteria that publish a name the stub already serves now publish as a `manage` holder.
+R-REPO-047: metric `trove_shadow_checks_total`, security event
+`repository.remote_package_shadowed`, and probe log records. Security notes: new bullet. H-10:
+rewritten to the remaining gap, with configuration changes and the disclosure of new names to
+upstreams added in this review.
 
 ## What this does not cover
 
@@ -2170,19 +2699,28 @@ vetting of new packages and no minimum-age rule (the catalog's scanning area is 
 rules stop name confusion, not malicious public packages. `cacheFillAction: deploy` narrows who can
 bring new packages in.
 
-### H-5 · Upstream removals reach cached artifacts only where the format tracks versions
+### H-5 · Version removals reach cached artifacts only where the format tracks versions
 
-When a registry removes a package, R-REPO-029 stops serving the cached document. Cached artifacts
-stay and are served to clients that request them by exact path, which is what lockfiles do, unless
-the format tracks removal per version (npm does, R-NPM-026; NuGet does not yet). An operator has to
-find and delete such items by hand.
+Component: upstream-gone handling of remote repositories (R-REPO-029). Subject: cached artifacts of
+a version that the upstream withdrew while the package itself stays, in formats that do not track
+removal per version; in the MVP that is NuGet. Live with the MVP. When a whole package disappears
+upstream, R-REPO-029 stops serving its document and its cached artifacts. When only one version
+disappears from a package document that still exists, the generic layer cannot tell which artifacts
+the refreshed document no longer covers: clients that resolve through the document stop seeing the
+version, but a request by exact path, through the remote, its cache view or a virtual repository,
+still receives the cached artifact. npm tracks versions (R-NPM-026) and is not affected. What makes
+it real: an upstream that deletes single versions (nuget.org deletes packages only for potentially
+harmful content or infringement,
+[deleting packages](https://learn.microsoft.com/en-us/nuget/nuget-org/policies/deleting-packages)),
+and a client or script that downloads by exact path. An operator has to find and delete such items
+by hand. Copies that clients downloaded earlier are never recalled.
 
 ### H-6 · Remote repositories reach private networks
 
 The egress rules permit private ranges by default, because internal registries are common. A holder
-of `repositories:write` can point a remote repository or the upstream test at an internal HTTP
-service and read its responses through the cache. With an outbound proxy, trove checks the target
-name's resolution, but the proxy connects on its own. The mitigations are the egress
+of `repositories:write-config` can point a remote repository or the upstream test at an internal
+HTTP service and read its responses through the cache. With an outbound proxy, trove checks the
+target name's resolution, but the proxy connects on its own. The mitigations are the egress
 `NetworkPolicy` and narrowed `deny_cidrs`; there is no per-repository egress scope.
 
 ### H-7 · Claimed names are observable
@@ -2212,14 +2750,38 @@ whose local members have no claims at all.
 
 ### H-10 · Deploy on a local member shadows public packages for every consumer
 
-Component: virtual resolution (R-REPO-019, tier order) together with auto claims (R-REPO-023).
-Subject: any principal holding `deploy` without a package-name pattern on a local member of a widely
-used virtual repository. Live with the MVP. Local members form the first resolution tier, and the
-first publish of a name claims it for the members of every virtual repository that contains the
-repository. Publishing `lodash@4.17.22` there therefore replaces the public `lodash` for every
-client of those virtual repositories, and the claim also hides the versions that exist only
-upstream. Package ownership (R-AUTHZ-018) does not stop this, because the name has no owner in that
-repository. What makes it real: broad `deploy` grants (`**`, or no `packages.include`) on a local
-repository that a shared virtual repository contains. Name patterns on deploy grants and `global`
-claims for internal prefixes are the mitigations. No rule refuses a local publish of a name that a
-remote member already serves.
+Component: virtual resolution (R-REPO-019, tier order), auto claims (R-REPO-023) and the shadowing
+check (R-REPO-048). Subject: clients of virtual repositories that contain a local repository next
+to remote members. Local members form the first resolution tier, and the first publish of a name
+claims it, so a local `lodash@4.17.22` replaces the public `lodash` for every client of those
+virtual repositories and hides the versions that exist only upstream.
+
+Narrowed in the MVP by R-REPO-048 (Q-REPO-6). The first publish of a name that a remote member
+serves needs `manage` or a prior manual claim, and the check fails closed while the upstream cannot
+be asked. A `deploy` grant alone, however broad, and a leaked CI token can no longer do it. What
+remains, live with the MVP:
+
+- **Deliberate shadowing.** A `manage` holder, or a `deploy` holder inside a manual claim, still
+  replaces the public package for every client. This is by design, since patched forks are
+  legitimate. It is audited (`repository.remote_package_shadowed`), not prevented.
+- **Configuration changes are not checked.** The check runs at publish time only. A local
+  repository that collected names while no containing virtual repository had remote members, a
+  sandbox for example, shadows without any decision once it is added to a virtual repository with
+  remote members. The same happens when a remote member is added next to it, re-enabled, or its
+  patterns are widened, and when a local repository whose auto claims are exact names joins a
+  virtual repository in which another repository claims a prefix covering them (R-REPO-023 skips
+  the auto claim only for claims in effect at publish time). These changes need
+  `repositories:write-config`. What makes it real: adding sandbox or team repositories, or new
+  remotes, to a shared virtual repository.
+- **Offline remotes count as not serving.** A remote in offline mode (R-REPO-030, R-REPO-031) that
+  holds no stored document of a name does not count. A name published while it is offline shadows
+  that remote's package once it is back online.
+- **Existence oracle.** The 403 `shadows_remote_package` tells a `deploy` holder that some remote
+  member of a containing virtual repository serves a name, also when it cannot read that remote (a
+  private partner registry, for example). Names leak; contents and remote keys do not, as in H-7.
+- **Probes disclose new names upstream.** A first publish of a name outside every claim in effect
+  sends one request for that name to the upstream of each exposed remote member, public
+  registries included. The name of an internal package that was never resolved through trove
+  before thereby reaches the upstream operator once. Claiming the internal prefix beforehand
+  (`@acme/*`, `Acme.*`) removes the probe: with a claim of the publishing repository the check does
+  not run, and with a claim in effect in the virtual repository nothing there is exposed.

@@ -5,22 +5,30 @@ Status: decision log for the specification. Nothing described here is implemente
 This page records trove's design decisions, one entry per decision: what forced it, what was
 decided, what follows from it, which alternatives were weighed and where the specification states
 it in full. The normative text lives on the [specification pages](spec/README.md); an entry here
-summarizes and links, it never overrides a spec page. Open questions stay on the page that raised
-them and are only indexed here, in [Open decisions](#open-decisions).
+summarizes and links, it never overrides a spec page. Questions stay on the page that raised them,
+with their options, the choice and the rationale, and are only listed here, in
+[Decisions by the development agent](#decisions-by-the-development-agent).
+
+Every question on the spec pages has been decided by the development agent: for each one it
+worked out the options, selected one of them and recorded the reasoning on the question's page.
+The owner reviews these choices at the walkthrough of the first prototype and objects to whatever
+he dislikes. Until then every entry outside the owner constraints carries the status *Decided by
+the development agent — owner review at the walkthrough*, and development proceeds on it.
 
 **Status values.**
 
 | Status | Meaning |
 |---|---|
-| Accepted (owner constraint) | Fixed by the project owner ([owner constraints](spec/README.md#owner-constraints)). Not reopened by the spec pages; a page that finds one costly raises an open question. |
-| Proposed | The design the spec pages build on. Becomes *Accepted* when the owner confirms it. |
+| Accepted (owner constraint) | Fixed by the project owner ([owner constraints](spec/README.md#owner-constraints)). Not reopened by the spec pages or decided by the development agent; a page that finds one costly raises a question for the owner. |
+| Decided by the development agent — owner review at the walkthrough | The design the spec pages build on: the invariants and every option the development agent selected from the options a question's page documents. Becomes *Accepted* when the owner confirms it at the walkthrough; an objection there leads to a new entry that supersedes it. |
 | Accepted | Confirmed by the owner. |
 | Superseded by ADR-*n* | Replaced; the entry stays for the record. |
 
 **Rules for this log.** Numbers are assigned in order and never reused or renumbered. A changed
-decision gets a new entry that supersedes the old one, and the old entry's status changes. When an
-open question is decided on its spec page, the decision either becomes a new entry or updates the
-entry listed next to it in [Open decisions](#open-decisions). Alternatives marked as considered here
+decision gets a new entry that supersedes the old one, and the old entry's status changes. When a
+question is decided on its spec page, the decision either becomes a new entry or updates the entry
+listed next to it in [Decisions by the development agent](#decisions-by-the-development-agent),
+and a question raised later is added there. Alternatives marked as considered here
 are the ones the spec pages weighed, plus the obvious designs a reviewer would ask about; the
 reasoning for each rejection is one line, the spec page holds the rest.
 
@@ -40,83 +48,86 @@ reasoning for each rejection is one line, the spec page holds the rest.
 | [ADR-009](#adr-009--pull-through-proxy-for-external-package-sources) | Pull-through proxy for external package sources | Accepted (owner constraint) |
 | [ADR-010](#adr-010--every-catalog-format-npm-and-nuget-first) | Every catalog format, npm and NuGet first | Accepted (owner constraint) |
 | [ADR-011](#adr-011--trove-is-a-self-contained-white-label-product) | trove is a self-contained, white-label product | Accepted (owner constraint) |
-| [ADR-012](#adr-012--one-toolchain-one-image-inv-1) | One toolchain, one image (INV-1) | Proposed |
-| [ADR-013](#adr-013--one-binary-identical-stateless-replicas-inv-2) | One binary, identical stateless replicas (INV-2) | Proposed |
-| [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) | PostgreSQL is the only stateful dependency besides object storage (INV-3) | Proposed |
-| [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) | Content-addressed blob store on S3 (INV-4) | Proposed |
-| [ADR-016](#adr-016--repository-model-local-remote-virtual-inv-5) | Repository model: local, remote, virtual (INV-5) | Proposed |
-| [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6) | URL layout on two listeners (INV-6) | Proposed |
-| [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7) | Humans authenticate only through an external OIDC provider (INV-7) | Proposed |
-| [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) | trove issues opaque, prefixed tokens (INV-8) | Proposed |
-| [ADR-020](#adr-020--deny-by-default-allow-only-permission-policies-inv-9) | Deny by default, allow-only permission policies (INV-9) | Proposed |
-| [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) | GitLab CI identity through ID-token exchange (INV-10) | Proposed |
-| [ADR-022](#adr-022--pull-through-proxy-semantics-inv-11) | Pull-through proxy semantics (INV-11) | Proposed |
-| [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) | High availability through PostgreSQL coordination (INV-12) | Proposed |
-| [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) | The Helm chart is the supported deployment (INV-13) | Proposed |
-| [ADR-025](#adr-025--npm-and-nuget-v3-are-the-mvp-formats-inv-14) | npm and NuGet v3 are the MVP formats (INV-14) | Proposed |
-| [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) | One configuration file plus database-held configuration (INV-15) | Proposed |
-| [ADR-027](#adr-027--structured-logs-prometheus-metrics-otlp-traces-audit-in-postgresql-inv-16) | Structured logs, Prometheus metrics, OTLP traces, audit in PostgreSQL (INV-16) | Proposed |
-| [ADR-028](#adr-028--the-ui-uses-only-the-public-api-inv-17) | The UI uses only the public API (INV-17) | Proposed |
-| [ADR-029](#adr-029--formats-are-compiled-in-plug-ins-behind-a-narrow-host-interface) | Formats are compiled-in plug-ins behind a narrow host interface | Proposed |
-| [ADR-030](#adr-030--one-origin-for-ui-api-and-package-content) | One origin for UI, API and package content | Proposed |
-| [ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early) | Caches validate themselves; notifications only evict early | Proposed |
-| [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) | Stored secrets are sealed under a key ring the operator supplies | Proposed |
-| [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) | Versioning promises per surface and a schema compatibility gate | Proposed |
-| [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work) | One PostgreSQL job table for maintenance, API operations and internal work | Proposed |
-| [ADR-035](#adr-035--virtual-resolution-in-three-tiers-decided-per-member) | Virtual resolution in three tiers, decided per member | Proposed |
-| [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) | Dependency-confusion protection through namespace claims and pin rules | Proposed |
-| [ADR-037](#adr-037--one-name-pattern-syntax-most-specific-wins-applied-to-every-protocol-request) | One name-pattern syntax, most specific wins, applied to every protocol request | Proposed |
-| [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) | Upstream failures: classified outcomes, a shared circuit, bounded stale serving | Proposed |
-| [ADR-039](#adr-039--egress-address-checks-after-dns-resolution-for-every-remote-connection) | Egress address checks after DNS resolution for every remote connection | Proposed |
-| [ADR-040](#adr-040--strict-repository-configuration-documents-and-asynchronous-deletion) | Strict repository configuration documents and asynchronous deletion | Proposed |
-| [ADR-041](#adr-041--the-database-row-decides-whether-a-blob-exists) | The database row decides whether a blob exists | Proposed |
-| [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) | Race-free garbage collection with a grace period | Proposed |
-| [ADR-043](#adr-043--object-store-outage-no-local-queue-and-201-means-durable) | Object-store outage: no local queue, and 201 means durable | Proposed |
-| [ADR-044](#adr-044--a-trash-can-that-also-covers-overwrites-p1) | A trash can that also covers overwrites (P1) | Proposed |
-| [ADR-045](#adr-045--presigned-download-redirects-as-a-per-repository-opt-in-p2) | Presigned download redirects as a per-repository opt-in (P2) | Proposed |
-| [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) | Server-side UI sessions behind an opaque cookie | Proposed |
-| [ADR-047](#adr-047--a-break-glass-administrator-outside-the-database) | A break-glass administrator outside the database | Proposed |
-| [ADR-048](#adr-048--tokens-hashed-with-sha-256-a-positive-only-cache-bounded-revocation-latency) | Tokens hashed with SHA-256, a positive-only cache, bounded revocation latency | Proposed |
-| [ADR-049](#adr-049--command-line-login-through-the-browser-session-p1) | Command-line login through the browser session (P1) | Proposed |
-| [ADR-050](#adr-050--anonymous-access-is-off-by-default-and-needs-two-switches) | Anonymous access is off by default and needs two switches | Proposed |
-| [ADR-051](#adr-051--actions-are-explicit-and-a-token-scope-only-narrows) | Actions are explicit, and a token scope only narrows | Proposed |
-| [ADR-052](#adr-052--changing-what-clients-install-needs-deploy-not-annotate) | Changing what clients install needs `deploy`, not `annotate` | Proposed |
-| [ADR-053](#adr-053--virtual-repositories-endpoint-gate-plus-member-rights) | Virtual repositories: endpoint gate plus member rights | Proposed |
-| [ADR-054](#adr-054--cache-fills-are-guarded-by-a-configurable-action-read-by-default) | Cache fills are guarded by a configurable action, `read` by default | Proposed |
-| [ADR-055](#adr-055--refused-reads-answer-404-refused-writes-403) | Refused reads answer 404, refused writes 403 | Proposed |
-| [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) | Package ownership is decided by the first publish | Proposed |
-| [ADR-057](#adr-057--a-compiled-grant-index-per-replica-consistent-through-an-epoch-failing-closed) | A compiled grant index per replica, consistent through an epoch, failing closed | Proposed |
-| [ADR-058](#adr-058--projects-for-delegated-administration-reduced-in-p1) | Projects for delegated administration, reduced, in P1 | Proposed |
-| [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) | CI tokens through a standard token-exchange endpoint | Proposed |
-| [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) | Ordered identity mappings: first match per tier, union across tiers | Proposed |
-| [ADR-061](#adr-061--a-small-claim-template-language-with-escaping) | A small claim-template language with escaping | Proposed |
-| [ADR-062](#adr-062--fork-pipelines-are-denied-by-default) | Fork pipelines are denied by default | Proposed |
-| [ADR-063](#adr-063--a-ci-tokens-lifetime-is-bounded-by-its-job) | A CI token's lifetime is bounded by its job | Proposed |
-| [ADR-064](#adr-064--subject-token-reuse-is-recorded-single-use-is-opt-in) | Subject-token reuse is recorded; single use is opt-in | Proposed |
-| [ADR-065](#adr-065--further-ci-issuers-through-the-same-mechanism-p1) | Further CI issuers through the same mechanism (P1) | Proposed |
-| [ADR-066](#adr-066--npm-package-documents-are-rendered-from-rows-not-stored) | npm package documents are rendered from rows, not stored | Proposed |
-| [ADR-067](#adr-067--npm-versions-are-immutable-guarded-by-tombstones) | npm versions are immutable, guarded by tombstones | Proposed |
-| [ADR-068](#adr-068--npm-remotes-fetch-only-the-full-document) | npm remotes fetch only the full document | Proposed |
-| [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) | Versions removed upstream are hidden by default | Proposed |
-| [ADR-070](#adr-070--merged-npm-documents-take-each-version-from-the-member-that-would-serve-it) | Merged npm documents take each version from the member that would serve it | Proposed |
-| [ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1) | npm trusted publishing through package-bound CI tokens (P1) | Proposed |
-| [ADR-072](#adr-072--real-client-acceptance-matrices-gate-each-format) | Real-client acceptance matrices gate each format | Proposed |
-| [ADR-073](#adr-073--nuget-v3-only-every-resource-below-the-feed-root) | NuGet v3 only, every resource below the feed root | Proposed |
-| [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) | NuGet package IDs: ASCII on push, case-insensitive, first casing displayed | Proposed |
-| [ADR-075](#adr-075--strict-archive-and-manifest-parsing-the-declared-id-is-what-gets-authorized) | Strict archive and manifest parsing; the declared ID is what gets authorized | Proposed |
-| [ADR-076](#adr-076--symbol-packages-only-as-snupkg-matching-an-existing-package) | Symbol packages only as `.snupkg` matching an existing package | Proposed |
-| [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) | Singleton work under advisory-lock leases with fencing | Proposed |
-| [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) | Restores keep metadata and blobs consistent by ordering, not by coordination | Proposed |
-| [ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets) | The chart validates before it renders and never creates secrets | Proposed |
-| [ADR-080](#adr-080--audit-records-commit-with-the-change-they-record) | Audit records commit with the change they record | Proposed |
-| [ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1) | Configuration as code: documents own their objects; plan before apply (P1) | Proposed |
-| [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) | Events through a transactional outbox, as CloudEvents, signed per Standard Webhooks (P1) | Proposed |
-| [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) | The OpenAPI 3.1 document is the API contract | Proposed |
-| [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) | Uniform API conventions: problem details, cursors, merge patch, ETags, idempotency keys | Proposed |
-| [ADR-085](#adr-085--long-running-work-answers-202-with-a-job) | Long-running work answers 202 with a job | Proposed |
-| [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) | UI baseline: Angular 22 defaults, a strict CSP, nothing from foreign origins | Proposed |
-| [ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer) | READMEs rendered on the server through an allowlist sanitizer | Proposed |
-| [ADR-088](#adr-088--english-and-german-in-the-mvp) | English and German in the MVP | Proposed |
+| [ADR-012](#adr-012--one-toolchain-one-image-inv-1) | One toolchain, one image (INV-1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-013](#adr-013--one-binary-identical-stateless-replicas-inv-2) | One binary, identical stateless replicas (INV-2) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) | PostgreSQL is the only stateful dependency besides object storage (INV-3) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) | Content-addressed blob store on S3 (INV-4) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-016](#adr-016--repository-model-local-remote-virtual-inv-5) | Repository model: local, remote, virtual (INV-5) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6) | URL layout on two listeners (INV-6) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7) | Humans authenticate only through an external OIDC provider (INV-7) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) | trove issues opaque, prefixed tokens (INV-8) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-020](#adr-020--deny-by-default-allow-only-permission-policies-inv-9) | Deny by default, allow-only permission policies (INV-9) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) | GitLab CI identity through ID-token exchange (INV-10) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-022](#adr-022--pull-through-proxy-semantics-inv-11) | Pull-through proxy semantics (INV-11) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) | High availability through PostgreSQL coordination (INV-12) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) | The Helm chart is the supported deployment (INV-13) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-025](#adr-025--npm-and-nuget-v3-are-the-mvp-formats-inv-14) | npm and NuGet v3 are the MVP formats (INV-14) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) | One configuration file plus database-held configuration (INV-15) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-027](#adr-027--structured-logs-prometheus-metrics-otlp-traces-audit-in-postgresql-inv-16) | Structured logs, Prometheus metrics, OTLP traces, audit in PostgreSQL (INV-16) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-028](#adr-028--the-ui-uses-only-the-public-api-inv-17) | The UI uses only the public API (INV-17) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-029](#adr-029--formats-are-compiled-in-plug-ins-behind-a-narrow-host-interface) | Formats are compiled-in plug-ins behind a narrow host interface | Decided by the development agent — owner review at the walkthrough |
+| [ADR-030](#adr-030--one-origin-for-ui-api-and-package-content) | One origin for UI, API and package content | Decided by the development agent — owner review at the walkthrough |
+| [ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early) | Caches validate themselves; notifications only evict early | Decided by the development agent — owner review at the walkthrough |
+| [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) | Stored secrets are sealed under a key ring the operator supplies | Decided by the development agent — owner review at the walkthrough |
+| [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) | Versioning promises per surface and a schema compatibility gate | Decided by the development agent — owner review at the walkthrough |
+| [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work) | One PostgreSQL job table for maintenance, API operations and internal work | Decided by the development agent — owner review at the walkthrough |
+| [ADR-035](#adr-035--virtual-resolution-in-three-tiers-decided-per-member) | Virtual resolution in three tiers, decided per member | Decided by the development agent — owner review at the walkthrough |
+| [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) | Dependency-confusion protection through namespace claims and pin rules | Decided by the development agent — owner review at the walkthrough |
+| [ADR-037](#adr-037--one-name-pattern-syntax-most-specific-wins-applied-to-every-protocol-request) | One name-pattern syntax, most specific wins, applied to every protocol request | Decided by the development agent — owner review at the walkthrough |
+| [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) | Upstream failures: classified outcomes, a shared circuit, bounded stale serving | Decided by the development agent — owner review at the walkthrough |
+| [ADR-039](#adr-039--egress-address-checks-after-dns-resolution-for-every-remote-connection) | Egress address checks after DNS resolution for every remote connection | Decided by the development agent — owner review at the walkthrough |
+| [ADR-040](#adr-040--strict-repository-configuration-documents-and-asynchronous-deletion) | Strict repository configuration documents and asynchronous deletion | Decided by the development agent — owner review at the walkthrough |
+| [ADR-041](#adr-041--the-database-row-decides-whether-a-blob-exists) | The database row decides whether a blob exists | Decided by the development agent — owner review at the walkthrough |
+| [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) | Race-free garbage collection with a grace period | Decided by the development agent — owner review at the walkthrough |
+| [ADR-043](#adr-043--object-store-outage-no-local-queue-and-201-means-durable) | Object-store outage: no local queue, and 201 means durable | Decided by the development agent — owner review at the walkthrough |
+| [ADR-044](#adr-044--a-trash-can-that-also-covers-overwrites-p1) | A trash can that also covers overwrites (P1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-045](#adr-045--presigned-download-redirects-as-a-per-repository-opt-in-p2) | Presigned download redirects as a per-repository opt-in (P2) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) | Server-side UI sessions behind an opaque cookie | Decided by the development agent — owner review at the walkthrough |
+| [ADR-047](#adr-047--a-break-glass-administrator-outside-the-database) | A break-glass administrator outside the database | Decided by the development agent — owner review at the walkthrough |
+| [ADR-048](#adr-048--tokens-hashed-with-sha-256-a-positive-only-cache-bounded-revocation-latency) | Tokens hashed with SHA-256, a positive-only cache, bounded revocation latency | Decided by the development agent — owner review at the walkthrough |
+| [ADR-049](#adr-049--command-line-login-through-the-browser-session-p1) | Command-line login through the browser session (P1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-050](#adr-050--anonymous-access-is-off-by-default-and-needs-two-switches) | Anonymous access is off by default and needs two switches | Decided by the development agent — owner review at the walkthrough |
+| [ADR-051](#adr-051--actions-are-explicit-and-a-token-scope-only-narrows) | Actions are explicit, and a token scope only narrows | Decided by the development agent — owner review at the walkthrough |
+| [ADR-052](#adr-052--changing-what-clients-install-needs-deploy-not-annotate) | Changing what clients install needs `deploy`, not `annotate` | Decided by the development agent — owner review at the walkthrough |
+| [ADR-053](#adr-053--virtual-repositories-endpoint-gate-plus-member-rights) | Virtual repositories: endpoint gate plus member rights | Decided by the development agent — owner review at the walkthrough |
+| [ADR-054](#adr-054--cache-fills-are-guarded-by-a-configurable-action-read-by-default) | Cache fills are guarded by a configurable action, `read` by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-055](#adr-055--refused-reads-answer-404-refused-writes-403) | Refused reads answer 404, refused writes 403 | Decided by the development agent — owner review at the walkthrough |
+| [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) | Package ownership is decided by the first publish | Decided by the development agent — owner review at the walkthrough |
+| [ADR-057](#adr-057--a-compiled-grant-index-per-replica-consistent-through-an-epoch-failing-closed) | A compiled grant index per replica, consistent through an epoch, failing closed | Decided by the development agent — owner review at the walkthrough |
+| [ADR-058](#adr-058--projects-for-delegated-administration-reduced-in-p1) | Projects for delegated administration, reduced, in P1 | Decided by the development agent — owner review at the walkthrough |
+| [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) | CI tokens through a standard token-exchange endpoint | Decided by the development agent — owner review at the walkthrough |
+| [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) | Ordered identity mappings: first match per tier, union across tiers | Decided by the development agent — owner review at the walkthrough |
+| [ADR-061](#adr-061--a-small-claim-template-language-with-escaping) | A small claim-template language with escaping | Decided by the development agent — owner review at the walkthrough |
+| [ADR-062](#adr-062--fork-pipelines-are-denied-by-default) | Fork pipelines are denied by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-063](#adr-063--a-ci-tokens-lifetime-is-bounded-by-its-job) | A CI token's lifetime is bounded by its job | Decided by the development agent — owner review at the walkthrough |
+| [ADR-064](#adr-064--subject-token-reuse-is-recorded-single-use-depends-on-the-issuer-kind) | Subject-token reuse is recorded; single use depends on the issuer kind | Decided by the development agent — owner review at the walkthrough |
+| [ADR-065](#adr-065--further-ci-issuers-through-the-same-mechanism-p1) | Further CI issuers through the same mechanism (P1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-066](#adr-066--npm-package-documents-are-rendered-from-rows-not-stored) | npm package documents are rendered from rows, not stored | Decided by the development agent — owner review at the walkthrough |
+| [ADR-067](#adr-067--npm-and-nuget-versions-are-immutable-guarded-by-tombstones) | npm and NuGet versions are immutable, guarded by tombstones | Decided by the development agent — owner review at the walkthrough |
+| [ADR-068](#adr-068--npm-remotes-fetch-only-the-full-document) | npm remotes fetch only the full document | Decided by the development agent — owner review at the walkthrough |
+| [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) | Versions removed upstream are hidden by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-070](#adr-070--merged-npm-documents-take-each-version-from-the-member-that-would-serve-it) | Merged npm documents take each version from the member that would serve it | Decided by the development agent — owner review at the walkthrough |
+| [ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1) | npm trusted publishing through package-bound CI tokens (P1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-072](#adr-072--real-client-acceptance-matrices-gate-each-format) | Real-client acceptance matrices gate each format | Decided by the development agent — owner review at the walkthrough |
+| [ADR-073](#adr-073--nuget-v3-only-every-resource-below-the-feed-root) | NuGet v3 only, every resource below the feed root | Decided by the development agent — owner review at the walkthrough |
+| [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) | NuGet package IDs: ASCII on push, case-insensitive, first casing displayed | Decided by the development agent — owner review at the walkthrough |
+| [ADR-075](#adr-075--strict-archive-and-manifest-parsing-the-declared-id-is-what-gets-authorized) | Strict archive and manifest parsing; the declared ID is what gets authorized | Decided by the development agent — owner review at the walkthrough |
+| [ADR-076](#adr-076--symbol-packages-only-as-snupkg-matching-an-existing-package) | Symbol packages only as `.snupkg` matching an existing package | Decided by the development agent — owner review at the walkthrough |
+| [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) | Singleton work under advisory-lock leases with fencing | Decided by the development agent — owner review at the walkthrough |
+| [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) | Restores keep metadata and blobs consistent by ordering, not by coordination | Decided by the development agent — owner review at the walkthrough |
+| [ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets) | The chart validates before it renders and never creates secrets | Decided by the development agent — owner review at the walkthrough |
+| [ADR-080](#adr-080--audit-records-commit-with-the-change-they-record) | Audit records commit with the change they record | Decided by the development agent — owner review at the walkthrough |
+| [ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1) | Configuration as code: documents own their objects; plan before apply (P1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) | Events through a transactional outbox, as CloudEvents, signed per Standard Webhooks (P1) | Decided by the development agent — owner review at the walkthrough |
+| [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) | The OpenAPI 3.1 document is the API contract | Decided by the development agent — owner review at the walkthrough |
+| [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) | Uniform API conventions: problem details, cursors, merge patch, ETags, idempotency keys | Decided by the development agent — owner review at the walkthrough |
+| [ADR-085](#adr-085--long-running-work-answers-202-with-a-job) | Long-running work answers 202 with a job | Decided by the development agent — owner review at the walkthrough |
+| [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) | UI baseline: Angular 22 defaults, a strict CSP, nothing from foreign origins | Decided by the development agent — owner review at the walkthrough |
+| [ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer) | READMEs rendered on the server through an allowlist sanitizer | Decided by the development agent — owner review at the walkthrough |
+| [ADR-088](#adr-088--english-and-german-in-the-mvp) | English and German in the MVP | Decided by the development agent — owner review at the walkthrough |
+| [ADR-089](#adr-089--derived-metadata-is-rendered-per-request-and-a-publish-never-waits-for-an-index) | Derived metadata is rendered per request, and a publish never waits for an index | Decided by the development agent — owner review at the walkthrough |
+| [ADR-090](#adr-090--a-nuget-protocol-delete-unlists-by-default) | A NuGet protocol delete unlists by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-091](#adr-091--forwarded-search-and-audit-requests-withhold-protected-names) | Forwarded search and audit requests withhold protected names | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -132,7 +143,7 @@ reasoning for each rejection is one line, the spec page holds the rest.
 on 2026-10-28: the local `go version` and the go.dev download list both showed go1.27.3 as the
 current stable release.
 
-**Consequences.** Libraries come from the Go ecosystem; the open choices are
+**Consequences.** Libraries come from the Go ecosystem; the choices are decided in
 [Q-ARCH-1](spec/architecture.md#q-arch-1--http-router) to [Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation). The binary is statically linked without cgo ([R-ARCH-001](spec/architecture.md#r-arch-001--one-binary-identical-replicas-process-roles)).
 The toolchain version is pinned in one place that local builds and CI both read; no build file
 exists yet, so this is a rule for the first one.
@@ -153,7 +164,7 @@ exists yet, so this is a rule for the first one.
 
 **Consequences.** The UI follows Angular 22's defaults: standalone components, zoneless change
 detection, signals ([R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery), [R-UI-046](spec/api-and-ui.md#r-ui-046--state-management-with-signals)). UI dependencies should release in step with
-Angular majors, which drives [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) and [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism). A new Angular major is planned work that
+Angular majors, which decided [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) (Angular Material, the CDK and `@angular/aria`) and [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism) (`@angular/localize`). A new Angular major is planned work that
 upgrades the framework and its companion packages together.
 
 **Alternatives considered.** None; set by the owner.
@@ -170,8 +181,8 @@ upgrades the framework and its companion packages together.
 **Decision.** All metadata is stored in PostgreSQL.
 
 **Consequences.** [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) (INV-3) goes further and makes PostgreSQL the only stateful
-dependency besides object storage, including cross-replica coordination ([ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12)). Open:
-the supported version floor ([Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor)), connection poolers ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers)), the driver
+dependency besides object storage, including cross-replica coordination ([ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12)). Decided:
+PostgreSQL 16 is the version floor ([Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor)), transaction-mode connection poolers are not supported ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers)), and the driver is pgx's native API
 ([Q-ARCH-2](spec/architecture.md#q-arch-2--postgresql-driver-and-query-layer)).
 
 **Alternatives considered.** None; set by the owner.
@@ -187,8 +198,9 @@ the supported version floor ([Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-ver
 **Decision.** Binaries are stored in S3-compatible object storage.
 
 **Consequences.** [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) (INV-4) lays the store out by content address. Every supported store
-must pass a conformance check ([R-STOR-035](spec/storage.md#r-stor-035--object-store-consistency-assumptions-and-conformance-check)). Open: the client library ([Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library)) and the
-store used by the local development profile ([Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)).
+must pass a conformance check ([R-STOR-035](spec/storage.md#r-stor-035--object-store-consistency-assumptions-and-conformance-check)). Decided: the client library is aws-sdk-go-v2 `service/s3`
+with a trove-owned multipart upload ([Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library)), and the local development profile and per-change CI
+run SeaweedFS, with MinIO and AWS S3 nightly ([Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -204,8 +216,9 @@ packages; an outage stops builds.
 **Decision.** trove runs highly available: losing one replica does not interrupt service.
 
 **Consequences.** Replicas are identical and stateless ([ADR-013](#adr-013--one-binary-identical-stateless-replicas-inv-2)) and coordinate only through
-PostgreSQL ([ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12)). How readiness reacts to an object-storage outage is open on three pages
-([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness), [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure)).
+PostgreSQL ([ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12)). Three pages decided the same readiness rule for an object-storage outage:
+object storage gates only a replica's first readiness, so running replicas stay ready during a
+shared outage ([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness), [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure)).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -220,8 +233,8 @@ PostgreSQL ([ADR-023](#adr-023--high-availability-through-postgresql-coordinatio
 **Decision.** trove is deployed to Kubernetes with a Helm chart.
 
 **Consequences.** [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) (INV-13) makes the chart the supported deployment and fixes what it
-renders. Open: Gateway API priority ([Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api)) and where images and chart are published
-([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart)).
+renders. Decided: the HTTPRoute is MVP and a chart-created Gateway P1 ([Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api)), and images and
+chart are published to `ghcr.io/guided-traffic` ([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart)).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -292,7 +305,7 @@ only ones in the MVP.
 
 **Consequences.** [ADR-025](#adr-025--npm-and-nuget-v3-are-the-mvp-formats-inv-14) (INV-14) fixes the MVP clients. The format plug-in contract
 ([ADR-029](#adr-029--formats-are-compiled-in-plug-ins-behind-a-narrow-host-interface)) keeps later formats from touching the core. Later formats already constrain today's
-URL layout ([Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci) for OCI).
+URL layout: `/v2/` on the client listener is reserved for OCI ([Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci)).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -311,9 +324,10 @@ links to no such product's documentation, and reuses none of its endpoint paths,
 field or property names, configuration file names, default ports or edition names. Third-party
 standards and ecosystems are named and linked, with their native client commands: npm, NuGet,
 OCI, Docker, Maven, PyPI, GitLab, GitHub Actions, Kubernetes, Helm, S3, PostgreSQL, the OIDC and
-OAuth RFCs. Where a design question needs a visual reference, the owner is asked for an example
-screenshot ([Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested), [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested), [Q-UI-4](spec/api-and-ui.md#q-ui-4--layout-of-the-policy-editor-and-the-explainer-example-screenshot-requested)); the outcome is described in trove's own terms and
-the screenshot's origin is not recorded.
+OAuth RFCs. The design questions that asked the owner for an example screenshot
+([Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested), [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested), [Q-UI-4](spec/api-and-ui.md#q-ui-4--layout-of-the-policy-editor-and-the-explainer-example-screenshot-requested)) were decided without one; the owner's walkthrough takes its place.
+A screenshot the owner brings there adjusts design tokens and spacing, is described in trove's own
+terms, and its origin is not recorded.
 
 **Consequences.** The [feature catalog](features/README.md) uses its own IDs and generic names,
 and protocol behavior is specified from the ecosystems' own specifications and client sources,
@@ -331,11 +345,24 @@ spec/README.md, which should add it in its next change; [Q-UI-2](spec/api-and-ui
 
 The invariants of [spec/README.md](spec/README.md#design-invariants) are the baseline every spec
 page builds on. A page may refine an invariant but must not contradict it; where a page finds one
-wrong, it keeps it and raises an open question, which is listed with the entry.
+wrong, it keeps it and raises a question, which is listed with the entry. Where the decision on
+such a question changes the invariant, the entry records the new rule and the question that
+changed it; the edit to spec/README.md is that question's cross-page consequence. INV-6, INV-8,
+INV-12 and INV-17 changed; INV-4, INV-10 and INV-15 had only their wording aligned with decisions
+that refine them:
+- **INV-4** wording: SHA-512 for every blob ([Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand); [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4)).
+- **INV-6:** the npm exchange prefix and the `/v2/` reservation at the host root, and trove owns
+  its host root ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6), [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci); [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6)). [Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6) confirmed the layout
+  and the ports unchanged.
+- **INV-8:** the `__Host-` cookie names ([Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name); [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8)).
+- **INV-10** wording: the `CI_JOB_TOKEN` fallback is P2 ([Q-CI-5](spec/gitlab-ci-oidc.md#q-ci-5--build-the-ci_job_token-fallback-at-all); [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10)).
+- **INV-12:** the readiness rule ([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness), [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure); [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12)).
+- **INV-15** wording: login providers are file configuration only ([Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives); [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15)).
+- **INV-17:** public, documented endpoints instead of only `/api/v1` ([Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files); [ADR-028](#adr-028--the-ui-uses-only-the-public-api-inv-17)).
 
 ### ADR-012 · One toolchain, one image (INV-1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** UI, management API and package protocols could ship as separate deliverables with
 separate versions.
@@ -356,7 +383,7 @@ the UI from a CDN: breaks air-gapped installations, which [R-UI-001](spec/api-an
 
 ### ADR-013 · One binary, identical stateless replicas (INV-2)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** High availability ([ADR-005](#adr-005--high-availability)) needs replicas that can be added, removed and
 replaced without coordination steps.
@@ -369,7 +396,8 @@ primary. The roles `api` and `worker` can be split by the chart; the default is 
 sessions, jobs, locks, cache-fill state) lives in PostgreSQL or object storage; in-process state is
 limited to rebuildable caches and the running request's spool file. Work that must run once runs as
 a job or under a lease ([ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work), [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing)). The role split is P1 ([R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-and-worker-deployments)). The replica
-registry's MVP scope is open ([Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp)).
+registry's table, heartbeat, pruning of stale rows and read-only API are MVP, and so is the UI's
+system status screen that shows them ([Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp), option (c); [R-UI-038](spec/api-and-ui.md#r-ui-038--system-status)).
 
 **Alternatives considered.** A primary node with failover: an election to get right and a single
 point of failure while it runs. A separate worker binary: two artifacts for one release. Peer
@@ -381,7 +409,7 @@ design avoids entirely ([R-HA-001](spec/ha-and-helm.md#r-ha-001--active-active-r
 
 ### ADR-014 · PostgreSQL is the only stateful dependency besides object storage (INV-3)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Configuration, metadata, identities, audit, jobs and coordination all need durable,
 shared state. Each additional stateful system needs its own HA, backup and upgrade story.
@@ -394,8 +422,14 @@ expand/contract, so N and N-1 run side by side during a rolling upgrade.
 
 **Consequences.** PostgreSQL's availability is trove's availability for nearly every request.
 Coordination traffic lands on the database and is engineered to stay small ([ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early),
-[Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits)). A connection budget per replica is part of sizing ([R-HA-016](spec/ha-and-helm.md#r-ha-016--connection-budget-and-pool-sizing)). Open: driver and
-query layer ([Q-ARCH-2](spec/architecture.md#q-arch-2--postgresql-driver-and-query-layer)), migration runner ([Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner)), version floor ([Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor)).
+[Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits)). A connection budget per replica is part of sizing ([R-HA-016](spec/ha-and-helm.md#r-ha-016--connection-budget-and-pool-sizing)). Decided:
+- **Query layer** ([Q-ARCH-2](spec/architecture.md#q-arch-2--postgresql-driver-and-query-layer), option (d)). A hybrid on pgx's native API: sqlc for every
+  static query, and one confined builder, `listq`, for the dynamic list and search queries, with
+  bound values and allowlisted identifiers.
+- **No `database/sql`.** Neither `database/sql` nor `pgx/v5/stdlib` is imported anywhere, which an
+  architecture test enforces ([R-ARCH-019](spec/architecture.md#r-arch-019--database-access-connection-naming-and-budget)).
+- **Migration runner.** A trove-owned runner on native pgx ([Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner), [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate)).
+- **Version floor.** PostgreSQL 16 ([Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor)).
 
 **Alternatives considered.** Redis for caches, locks and queues: a second stateful system to make
 highly available and back up. A coordination service such as etcd: the same cost for a narrow
@@ -406,7 +440,7 @@ use. An embedded database per replica: no shared state, so no HA.
 
 ### ADR-015 · Content-addressed blob store on S3 (INV-4)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** The same binary is often reachable through several repositories and paths (local
 copies, promotions, cached upstream content). Storing it per path multiplies storage and makes copy
@@ -414,15 +448,16 @@ and move expensive.
 
 **Decision.** Binaries are content-addressed by SHA-256 under
 `<prefix>/sha256/<h0h1>/<h2h3>/<64 hex>` and stored once. An upload is spooled to local temporary
-storage while SHA-256, SHA-1, MD5 and, where a format needs it, SHA-512 are computed, then written
-to its address unless the blob already exists. PostgreSQL holds every reference; garbage
+storage while SHA-256, SHA-1, MD5 and SHA-512 are computed in one pass, then written to its
+address unless the blob already exists. PostgreSQL holds every reference; garbage
 collection deletes unreferenced blobs after a grace period. No binary content in PostgreSQL.
 
 **Consequences.** Deduplication across repositories; copy and move are metadata operations.
 Garbage collection becomes a correctness-critical component ([ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period)). storage.md refines the
 invariant: the database row, not the object store, decides whether a blob exists ([ADR-041](#adr-041--the-database-row-decides-whether-a-blob-exists)).
 Each replica needs spool disk, which trove does not encrypt ([H-2](spec/architecture.md#h-2--the-upload-spool-is-not-encrypted-by-trove)). Upload timing reveals
-whether content is already stored ([H-13](spec/storage.md#h-13--deduplication-reveals-the-existence-of-known-content-through-upload-timing)). Open: SHA-512 for every blob ([Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand)).
+whether content is already stored ([H-13](spec/storage.md#h-13--deduplication-reveals-the-existence-of-known-content-through-upload-timing)). Decided: SHA-512 is computed and stored for every blob,
+because both MVP formats need it ([Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand), option (a)), which refined INV-4's earlier "where a format needs it".
 
 **Alternatives considered.** Object keys that mirror repository paths: browsable, but no
 deduplication and copy or move become object copies. Small blobs in PostgreSQL: two storage paths
@@ -430,11 +465,11 @@ and a much larger database backup. A shared filesystem: excluded by the owner co
 INV-3.
 
 **Spec:** [INV-4](spec/README.md#design-invariants), [R-STOR-001](spec/storage.md#r-stor-001--content-addressed-object-key-layout), [R-STOR-002](spec/storage.md#r-stor-002--digest-set-per-blob-and-per-file),
-[R-STOR-004](spec/storage.md#r-stor-004--upload-pipeline-admission-spool-and-single-pass-hashing), [R-STOR-005](spec/storage.md#r-stor-005--blob-commit-protocol-and-deduplication).
+[R-STOR-004](spec/storage.md#r-stor-004--upload-pipeline-admission-spool-and-single-pass-hashing), [R-STOR-005](spec/storage.md#r-stor-005--blob-commit-protocol-and-deduplication); decided: [Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand), [Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library).
 
 ### ADR-016 · Repository model: local, remote, virtual (INV-5)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Teams need hosted repositories, proxies of public registries, and one URL that combines
 both.
@@ -458,7 +493,7 @@ policies.
 
 ### ADR-017 · URL layout on two listeners (INV-6)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Many protocols, the management API, raw file access, the browser login and the UI
 share one host; operational endpoints must not be reachable through the public edge.
@@ -466,25 +501,41 @@ share one host; operational endpoints must not be reachable through the public e
 **Decision.** Client listener on port 8080: `/api/v1/…` (management API, with the OpenAPI 3.1
 document at `/api/v1/openapi.json` as the source of truth), `/api/<format>/<repoKey>/…` (package
 protocols), `/files/<repoKey>/<path>` (raw file access), `/auth/…` (browser login), `/ui/…`
-(Angular UI). Operations listener on port 8081: `/healthz`, `/readyz`, `/metrics`.
+(Angular UI). Operations listener on port 8081: `/healthz`, `/readyz`, `/metrics`. Host-root routes
+exist only where a client fixes the path, and none carries a repository key:
+`/-/npm/v1/oidc/token/exchange/package/…` for npm's trusted-publishing exchange
+([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6)), and `/v2/`, reserved from the MVP on for the OCI distribution API and answering
+`404` until the OCI format exists ([Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci)). Both amend INV-6. The layout and the ports were
+reviewed and confirmed unchanged ([Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6), option (a)).
 
 **Consequences.** Every protocol is namespaced per format and repository, so formats cannot
-collide. Protocols that resolve paths against the host root do not fit: npm trusted publishing and
-attestations ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6)) and the OCI distribution API's `/v2/` ([Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci)); both questions
-propose amending this invariant. With metrics authentication off by default, the operations
+collide. npm's host-root exchange prefix is part of INV-6 ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6)), OCI `/v2/` per [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci);
+trove owns its host root (`server.base_url` is an origin, [R-OPS-005](spec/operations-and-observability.md#r-ops-005--external-base-url-and-forwarded-hosts)). A route-table test rejects any
+other client-listener pattern under `/v2/`, because ServeMux's conflict check does not catch a more
+specific pattern ([R-HA-041](spec/ha-and-helm.md#r-ha-041--container-registry-routing-at-the-edge)). Protocols and the management API share the `/api/` prefix, so
+format IDs matching `^v[0-9]+$` are refused at registration, and ServeMux panics on a conflicting
+registration, so a collision cannot ship. With metrics authentication off by default, the operations
 listener relies on the chart's NetworkPolicy ([H-41](spec/operations-and-observability.md#h-41--the-operations-listener-relies-on-the-networkpolicy)).
 
 **Alternatives considered.** One host name per repository: the host root becomes the registry
 root, at the cost of DNS, TLS and Ingress objects per repository. One format at the host root:
 limits an installation to one format per host. Metrics on the client listener: exposes operational
-data through the edge.
+data through the edge. From [Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6): formats at the top level (`/<format>/<repoKey>/`), where
+format IDs compete with every host-root route a client fixes; a format-free prefix
+(`/r/<repoKey>/`), which hides the format from edge rules; another operations port, where every
+candidate is some tool's default. Resemblance to other tools is functional, and every candidate
+layout matches some tool; the fallback, should the owner object at the walkthrough, is formats at
+the top level, before any client is configured. From [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci): a subdomain per repository, a
+separate OCI port, or a dedicated registry host, each adding DNS names, certificates or ports for
+every installation.
 
 **Spec:** [INV-6](spec/README.md#design-invariants), [R-ARCH-005](spec/architecture.md#r-arch-005--http-listeners-routing-and-middleware-chain), [R-API-001](spec/api-and-ui.md#r-api-001--base-path-versions-and-compatibility),
-[R-NPM-001](spec/formats/npm.md#r-npm-001--registry-endpoint-routing-and-repository-classes), [R-NUGET-001](spec/formats/nuget.md#r-nuget-001--nuget-repositories-and-endpoint-layout).
+[R-NPM-001](spec/formats/npm.md#r-npm-001--registry-endpoint-routing-and-repository-classes), [R-NUGET-001](spec/formats/nuget.md#r-nuget-001--nuget-repositories-and-endpoint-layout), [R-HA-041](spec/ha-and-helm.md#r-ha-041--container-registry-routing-at-the-edge), [R-OPS-005](spec/operations-and-observability.md#r-ops-005--external-base-url-and-forwarded-hosts); decided:
+[Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6), [Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6), [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci).
 
 ### ADR-018 · Humans authenticate only through an external OIDC provider (INV-7)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Organizations already run an identity provider with MFA, joiner and leaver processes
 and group management. A second password store duplicates all of that.
@@ -497,21 +548,31 @@ exists for bootstrap and recovery ([ADR-047](#adr-047--a-break-glass-administrat
 
 **Consequences.** An identity-provider outage blocks new UI logins; existing tokens and the
 break-glass account keep working. Offboarding depends on the provider; without SCIM (P1,
-[R-AUTH-039](spec/identity-and-authentication.md#r-auth-039--scim-20-provisioning)) a removed user keeps tokens until dormancy or manual disabling ([H-16](spec/identity-and-authentication.md#h-16--idp-side-deactivation-without-scim),
-[Q-AUTH-5](spec/identity-and-authentication.md#q-auth-5--dormancy-default)). The strength of the provider's authentication is not checked ([H-18](spec/identity-and-authentication.md#h-18--authentication-strength-at-the-idp-is-not-checked)). Open: the
-behavior when the group claim is missing ([Q-AUTH-4](spec/identity-and-authentication.md#q-auth-4--missing-group-claim)) and where provider configuration lives
-([Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives)).
+[R-AUTH-039](spec/identity-and-authentication.md#r-auth-039--scim-20-provisioning)) a removed user keeps tokens until dormancy or manual disabling ([H-16](spec/identity-and-authentication.md#h-16--idp-side-deactivation-without-scim)).
+The strength of the provider's authentication is not checked ([H-18](spec/identity-and-authentication.md#h-18--authentication-strength-at-the-idp-is-not-checked)). Decided:
+- **Missing group claim** ([Q-AUTH-4](spec/identity-and-authentication.md#q-auth-4--missing-group-claim), option (a)). A login without the group claim clears the
+  provider's synced groups and continues. It writes the warning event `user.groups.claim_missing`
+  and shows a `groupClaimMissing` notice on the user's profile. `keep` and `deny` remain
+  per-provider settings. Fewer rights is the safe direction for an unknown group set, and denying
+  the login would lock out the people who have to fix the mapper.
+- **Provider configuration** ([Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives), option (a)). Login providers, with their claim mapping,
+  gates and group rules, are file-only. No API call or configuration document creates or changes
+  one ([ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15)).
+- **Dormancy** ([Q-AUTH-5](spec/identity-and-authentication.md#q-auth-5--dormancy-default), option (a)). On by default with 90 days, P1 together with SCIM. Users
+  without an interactive login for that long are disabled, and their next OIDC login re-enables
+  them. SCIM users, service accounts and CI tokens are exempt.
 
 **Alternatives considered.** Local users with passwords: password storage, reset and MFA to build
 and secure. LDAP bind: user passwords pass through trove. Protocols other than OIDC were not
 specified; the named identity providers all speak OIDC.
 
 **Spec:** [INV-7](spec/README.md#design-invariants), [R-AUTH-004](spec/identity-and-authentication.md#r-auth-004--provider-configuration-and-discovery), [R-AUTH-006](spec/identity-and-authentication.md#r-auth-006--callback-handling-and-id-token-validation),
-[R-AUTH-007](spec/identity-and-authentication.md#r-auth-007--claim-mapping-and-just-in-time-provisioning), [R-AUTH-008](spec/identity-and-authentication.md#r-auth-008--group-synchronization-from-claims), [R-AUTH-014](spec/identity-and-authentication.md#r-auth-014--break-glass-administrator).
+[R-AUTH-007](spec/identity-and-authentication.md#r-auth-007--claim-mapping-and-just-in-time-provisioning), [R-AUTH-008](spec/identity-and-authentication.md#r-auth-008--group-synchronization-from-claims), [R-AUTH-014](spec/identity-and-authentication.md#r-auth-014--break-glass-administrator), [R-AUTH-021](spec/identity-and-authentication.md#r-auth-021--dormant-user-deactivation); decided:
+[Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives), [Q-AUTH-4](spec/identity-and-authentication.md#q-auth-4--missing-group-claim), [Q-AUTH-5](spec/identity-and-authentication.md#q-auth-5--dormancy-default).
 
 ### ADR-019 · trove issues opaque, prefixed tokens (INV-8)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Package managers present static credentials and cannot run an OAuth refresh. Identity
 provider access tokens are short-lived, audience-bound to other services and not revocable by
@@ -522,14 +583,21 @@ token on package endpoints. Every token is an opaque random string with a type p
 (`trv_pat_` personal, `trv_sat_` service account, `trv_cit_` CI), followed by 32 random bytes in
 base62 and a 6-character base62 CRC32 checksum, so secret scanners can recognize and pre-validate a
 leaked token offline. Tokens are stored as SHA-256 hashes, revocable immediately, and carry an
-expiry and a scope. UI sessions are separate: a server-side row referenced by the `trv_session`
-cookie. Clients present a token as Bearer, as the HTTP Basic password, or as `X-NuGet-ApiKey`.
+expiry and a scope. UI sessions are separate: a server-side row referenced by the
+`__Host-trv_session` cookie. Clients present a token as Bearer, as the HTTP Basic password, or as
+`X-NuGet-ApiKey`.
 
 **Consequences.** Every package client needs a token from trove: created in the UI, through
 command-line login ([ADR-049](#adr-049--command-line-login-through-the-browser-session-p1)) or through the CI exchange ([ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10)). Tokens are bearer
 credentials ([H-19](spec/identity-and-authentication.md#h-19--tokens-are-bearer-credentials)). A prefix never changes meaning; new types get new prefixes ([R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy)).
-Open: the `__Host-` cookie prefix ([Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name)), refresh tokens ([Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation)), administrators
-issuing tokens for users ([Q-AUTH-7](spec/identity-and-authentication.md#q-auth-7--administrators-issuing-tokens-for-users)).
+Decided:
+- **Cookie prefix** ([Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name), option (c)). All three cookies carry the `__Host-` prefix, which
+  amends INV-8's cookie name.
+- **No refresh tokens** ([Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation), option (a)). Rotation and repeated login are the renewal
+  paths, and no endpoint returns a `refresh_token`.
+- **Only the owner gets a PAT's secret** ([Q-AUTH-7](spec/identity-and-authentication.md#q-auth-7--administrators-issuing-tokens-for-users), option (a)). Administrators can neither create
+  nor rotate another user's PAT, because either would let them act as that person in every audit
+  record. Automation uses service accounts.
 
 **Alternatives considered.** Accepting identity-provider access tokens on package endpoints:
 clients cannot refresh them, and revocation depends on the provider. Self-contained signed tokens:
@@ -537,16 +605,18 @@ immediate revocation still needs a lookup per request, so the signature adds siz
 the lookup.
 
 **Prefix.** The owner chose `trv_` on 2026-10-28, when the project was renamed to trove (also
-for the cookies: `trv_session`, `trv_csrf`, `trv_oidc_binding`). Alternatives were `trove_`
+for the cookies: `__Host-trv_session`, `__Host-trv_csrf` and `__Host-trv_oidc_binding`, where the
+browser-defined `__Host-` prefix precedes the owner's naming). Alternatives were `trove_`
 (self-explanatory in a leak report, longer) and keeping the pre-rename `apkg_` (no longer
 explains itself). With `trv_` a token is 57 characters long.
 
 **Spec:** [INV-8](spec/README.md#design-invariants), [R-AUTH-001](spec/identity-and-authentication.md#r-auth-001--credential-sources-and-precedence), [R-AUTH-022](spec/identity-and-authentication.md#r-auth-022--token-types-and-format),
-[R-AUTH-023](spec/identity-and-authentication.md#r-auth-023--token-storage-validation-and-caching), [R-AUTH-024](spec/identity-and-authentication.md#r-auth-024--token-scopes), [R-AUTH-033](spec/identity-and-authentication.md#r-auth-033--client-authentication-matrix).
+[R-AUTH-023](spec/identity-and-authentication.md#r-auth-023--token-storage-validation-and-caching), [R-AUTH-024](spec/identity-and-authentication.md#r-auth-024--token-scopes), [R-AUTH-027](spec/identity-and-authentication.md#r-auth-027--token-creation), [R-AUTH-030](spec/identity-and-authentication.md#r-auth-030--token-rotation),
+[R-AUTH-033](spec/identity-and-authentication.md#r-auth-033--client-authentication-matrix); decided: [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name), [Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation), [Q-AUTH-7](spec/identity-and-authentication.md#q-auth-7--administrators-issuing-tokens-for-users).
 
 ### ADR-020 · Deny by default, allow-only permission policies (INV-9)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Permissions must express "this group reads everything in `npm-all`" as well as "this CI
 project writes only `@acme/billing-*`", and administrators must be able to predict and audit the
@@ -561,8 +631,13 @@ System administration is a separate role, not a repository action. Every decisio
 
 **Consequences.** Without deny rules there is no rule order to get wrong; restricting means
 narrowing an allow. Actions do not imply each other ([ADR-051](#adr-051--actions-are-explicit-and-a-token-scope-only-narrows)). A decision explainer is part of
-the API ([R-AUTHZ-024](spec/authorization.md#r-authz-024--effective-permissions-and-decision-explanation)). Open: a built-in principal for all authenticated users
-([Q-AUTHZ-3](spec/authorization.md#q-authz-3--built-in-principal-for-all-authenticated-users)).
+the API ([R-AUTHZ-024](spec/authorization.md#r-authz-024--effective-permissions-and-decision-explanation)). Decided ([Q-AUTHZ-3](spec/authorization.md#q-authz-3--built-in-principal-for-all-authenticated-users), option (d), MVP): a built-in principal
+`authenticated` covers every user, through a UI session or a personal access token, and never a
+service account or a CI token ([R-AUTHZ-030](spec/authorization.md#r-authz-030--the-authenticated-principal)). Its entries may hold only `read`. It takes no roles and no
+ownership, and delegated managers and project administrators cannot grant to it. A deny-by-default
+installation thereby works on day one without an all-employees group claim. Every right of a
+non-human credential still traces back to a grant that names it, its groups or its CI mapping.
+Like `anonymous`, it refines INV-9 as an implicit group.
 
 **Alternatives considered.** Allow and deny rules with precedence: more expressive, but the outcome
 depends on evaluation order and is hard to review. Fixed per-repository roles (reader, writer,
@@ -570,11 +645,11 @@ admin): cannot narrow by package name, which CI grants need. A general policy la
 but not something repository administrators can review in a form.
 
 **Spec:** [INV-9](spec/README.md#design-invariants), [R-AUTHZ-001](spec/authorization.md#r-authz-001--deny-by-default-allow-only-grants), [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions),
-[R-AUTHZ-013](spec/authorization.md#r-authz-013--token-scope-as-a-ceiling), [R-AUTHZ-015](spec/authorization.md#r-authz-015--evaluation-algorithm).
+[R-AUTHZ-013](spec/authorization.md#r-authz-013--token-scope-as-a-ceiling), [R-AUTHZ-015](spec/authorization.md#r-authz-015--evaluation-algorithm), [R-AUTHZ-030](spec/authorization.md#r-authz-030--the-authenticated-principal); decided: [Q-AUTHZ-3](spec/authorization.md#q-authz-3--built-in-principal-for-all-authenticated-users).
 
 ### ADR-021 · GitLab CI identity through ID-token exchange (INV-10)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** [ADR-008](#adr-008--gitlab-ci-jobs-obtain-permissions-through-oidc) requires CI permissions without stored secrets. GitLab offers two job
 credentials: an OIDC ID token that third parties verify offline, and the job token, which only
@@ -586,12 +661,17 @@ trove verifies the signature against the configured issuer's JWKS and checks `is
 `nbf`, `iat`. Identity mappings match claims (`project_path`, `namespace_path`, `ref`, `ref_type`,
 `ref_protected`, `environment`, `pipeline_source`, `user_login`, …) and grant permissions,
 optionally templated from claims. Verifying a raw `CI_JOB_TOKEN` against the GitLab API is an
-optional fallback, off by default.
+optional fallback, off by default and P2.
 
 **Consequences.** No CI secret is stored anywhere. trove trusts the GitLab instance's signing key
-([H-24](spec/gitlab-ci-oidc.md#h-24--trust-in-the-gitlab-instance-and-its-signing-key)). A CI token can outlive its job by its remaining lifetime ([H-26](spec/gitlab-ci-oidc.md#h-26--ci-tokens-outlive-the-job), [ADR-063](#adr-063--a-ci-tokens-lifetime-is-bounded-by-its-job)). Open:
-whether to build the job-token fallback at all ([Q-CI-5](spec/gitlab-ci-oidc.md#q-ci-5--build-the-ci_job_token-fallback-at-all)) and how to treat tokens with several
-audiences ([Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences)).
+([H-24](spec/gitlab-ci-oidc.md#h-24--trust-in-the-gitlab-instance-and-its-signing-key)). A CI token can outlive its job by its remaining lifetime ([H-26](spec/gitlab-ci-oidc.md#h-26--ci-tokens-outlive-the-job), [ADR-063](#adr-063--a-ci-tokens-lifetime-is-bounded-by-its-job)). Decided:
+- **Job-token fallback** ([Q-CI-5](spec/gitlab-ci-oidc.md#q-ci-5--build-the-ci_job_token-fallback-at-all), option (b)). It stays specified, is P2 and is built only on a
+  concrete need. Until then the job-token subject type answers `unsupported_subject_token_type`,
+  and enabling the mode is refused, so no configuration suggests a mode that does not exist.
+- **Several audiences** ([Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences), option (c)). A token with several audiences is accepted only if
+  every one of them is an allowed audience of the CI issuer (`exclusive_audience`, default
+  `true`). A recipient other than trove could replay such a token. Two host names of one trove
+  installation are harmless.
 
 **Alternatives considered.** Long-lived service-account tokens in CI variables: the leak-prone
 practice this replaces. The job token as the primary path: a GitLab API call per exchange, a GitLab
@@ -600,11 +680,12 @@ safe for writes. Accepting the ID token directly on package endpoints: contradic
 every package client can present it.
 
 **Spec:** [INV-10](spec/README.md#design-invariants), [gitlab-ci-oidc.md](spec/gitlab-ci-oidc.md),
-[R-CI-004](spec/gitlab-ci-oidc.md#r-ci-004--subject-token-validation), [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint), [R-CI-009](spec/gitlab-ci-oidc.md#r-ci-009--identity-mapping-model-and-evaluation-order), [R-CI-022](spec/gitlab-ci-oidc.md#r-ci-022--ci_job_token-fallback).
+[R-CI-001](spec/gitlab-ci-oidc.md#r-ci-001--ci-issuer-configuration), [R-CI-004](spec/gitlab-ci-oidc.md#r-ci-004--subject-token-validation), [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint), [R-CI-009](spec/gitlab-ci-oidc.md#r-ci-009--identity-mapping-model-and-evaluation-order), [R-CI-022](spec/gitlab-ci-oidc.md#r-ci-022--ci_job_token-fallback); decided:
+[Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences), [Q-CI-5](spec/gitlab-ci-oidc.md#q-ci-5--build-the-ci_job_token-fallback-at-all).
 
 ### ADR-022 · Pull-through proxy semantics (INV-11)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** CI runs install the same public packages thousands of times, often many at once on a
 cold cache, and must keep working when the upstream is slow or down.
@@ -617,8 +698,13 @@ upstream metadata are rewritten to point at trove.
 
 **Consequences.** The upstream sees one request per object, whatever the number of replicas and
 concurrent clients. Clients never learn upstream URLs. The cross-replica lock holds a connection for
-the whole transfer, harmless for npm and NuGet but not for large container layers ([Q-ARCH-6](spec/architecture.md#q-arch-6--cross-replica-collapse-holds-a-connection-for-the-whole-upstream-transfer));
-the lock key form is open ([Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills)). Failure handling is [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving).
+the whole transfer, harmless for npm and NuGet but not for large container layers. Decided
+([Q-ARCH-6](spec/architecture.md#q-arch-6--cross-replica-collapse-holds-a-connection-for-the-whole-upstream-transfer), option (a)): the session advisory lock stays, on a bounded lock pool with a bypass when the
+pool stays exhausted, and only behind the seam `cluster.FlightLock`. The proxy never calls the lock
+functions itself, so a lease row with a heartbeat can replace the lock inside `internal/cluster`
+once OCI or Docker remotes make the held connection costly. The lock key is the two-key form
+`(2, <32-bit hash of the flight key>)` in category `fetch` ([Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills), [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing)). Failure
+handling is [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving).
 
 **Alternatives considered.** Collapsing only within a replica: N replicas mean up to N upstream
 fetches per cold object. Redirecting clients to the upstream: no cache, no availability gain, and
@@ -626,38 +712,70 @@ the upstream sees every internal client. Mirroring whole registries ahead of tim
 packages nobody uses and freshness lag for those they do.
 
 **Spec:** [INV-11](spec/README.md#design-invariants), [R-REPO-024](spec/repositories-and-proxy.md#r-repo-024--remote-repository-settings), [R-REPO-025](spec/repositories-and-proxy.md#r-repo-025--remote-request-path),
-[R-REPO-026](spec/repositories-and-proxy.md#r-repo-026--collapsing-concurrent-misses-single-flight-and-advisory-lock), [R-REPO-043](spec/repositories-and-proxy.md#r-repo-043--metadata-url-rewriting).
+[R-REPO-026](spec/repositories-and-proxy.md#r-repo-026--collapsing-concurrent-misses-single-flight-and-advisory-lock), [R-REPO-043](spec/repositories-and-proxy.md#r-repo-043--metadata-url-rewriting), [R-ARCH-017](spec/architecture.md#r-arch-017--coordination-session-leases-and-advisory-lock-categories); decided: [Q-ARCH-6](spec/architecture.md#q-arch-6--cross-replica-collapse-holds-a-connection-for-the-whole-upstream-transfer),
+[Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills).
 
 ### ADR-023 · High availability through PostgreSQL coordination (INV-12)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Replicas must invalidate each other's caches, share a job queue and run singleton
 work exactly once, without a coordination system of their own.
 
-**Decision.** At least two replicas behind a Kubernetes Service and Ingress, with a
-PodDisruptionBudget and readiness tied to database and object-storage reachability. Replicas
-coordinate only through PostgreSQL: `LISTEN/NOTIFY` for cache invalidation, `FOR UPDATE SKIP
-LOCKED` for the job queue, advisory-lock leases for singleton schedulers. PostgreSQL HA and S3
-durability come from the platform; the chart does not bundle a production database.
+**Decision.** At least two replicas behind a Kubernetes Service and an Ingress or Gateway route,
+with a PodDisruptionBudget and readiness tied to PostgreSQL and process health. Object storage
+gates only a replica's first readiness: a replica becomes ready only after its object-store
+startup check has passed. Afterwards S3 failures degrade blob requests one by one through the
+circuit breaker and are reported (`degraded`) and alerted on, while running replicas stay ready.
+Continuous gating on object storage is the opt-in `health.require_object_store: true`. Replicas
+coordinate only through PostgreSQL: `LISTEN/NOTIFY` for cache invalidation,
+`FOR UPDATE SKIP LOCKED` for the job queue, advisory-lock leases for singleton schedulers.
+PostgreSQL HA and S3 durability come from the platform; the chart does not bundle a production
+database.
 
 **Consequences.** Replicas never open connections to each other: no peer discovery, no
 replica-to-replica network rule ([R-HA-001](spec/ha-and-helm.md#r-ha-001--active-active-replicas-without-a-primary-node)). Session-level locks and `LISTEN` rule out
-transaction-mode connection poolers ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers)). The readiness clause is contested: storage.md,
-operations-and-observability.md and ha-and-helm.md each show that a shared S3 outage turns every
-replica unready at once and recommend revising it ([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness), [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure)).
+transaction-mode connection poolers ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers)). The readiness rule revises INV-12, which tied readiness to
+object-storage reachability. storage.md, operations-and-observability.md and ha-and-helm.md decided
+the same rule, option (d) on each page ([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness), [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure)). The edit
+to INV-12 in [spec/README.md](spec/README.md#design-invariants) is their cross-page consequence. What follows from the rule:
+- A shared S3 outage leaves the UI, the API, logins, the CI token exchange, metadata, deletes and
+  deduplicated uploads working. Blob requests answer a retryable `503` through the circuit breaker,
+  and two alerts tell a shared outage from a single replica's problem.
+- A release with a wrong bucket, endpoint, credential or CA never becomes ready, so the rollout
+  stalls with `maxUnavailable: 0` instead of replacing working pods.
+- A replica that loses only its own S3 path stays in the Service until its alert is handled.
+- Pods restarted, rescheduled or added during a long shared outage stay unready until the store
+  returns, so capacity can shrink meanwhile.
+- Liveness never reads readiness or any dependency, so an outage never restarts replicas. It is a
+  watchdog over trove's own loops and fails only when a loop stops making progress, which a restart
+  repairs ([Q-OPS-1](spec/operations-and-observability.md#q-ops-1--couple-liveness-to-prolonged-unreadiness), option (d)).
 
 **Alternatives considered.** Consensus or gossip between replicas: peer networking and split-brain
 handling. A separate lock or queue service: another stateful dependency against [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3).
 Kubernetes Lease objects for leader election: write access to the Kubernetes API, and no fencing of
-the database writes the leader makes ([ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing)).
+the database writes the leader makes ([ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing)). For the readiness rule, the options of [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness):
+- (a) INV-12 as first written, with continuous gating. One bucket is shared, so an outage removes
+  every replica, including the screens operators diagnose with.
+- (b) Never gating on object storage. A misconfigured release becomes ready and replaces working
+  pods.
+- (c) Configurable, with gating as the default. This keeps (a)'s total outage as the default.
+- (d) First-readiness gating with continuous gating as an opt-in: chosen.
+- (e) Relative gating against the other replicas. Cross-replica coordination for a rare case that
+  the circuit breaker and the single-replica alert already cover, and it flaps while replicas
+  briefly disagree.
+
+[Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) also weighed letting a replica skip the gate when a live replica had verified the same S3
+settings fingerprint. It was rejected because a revoked role or key behind unchanged settings
+passes, which is the misconfiguration the gate exists for.
 
 **Spec:** [INV-12](spec/README.md#design-invariants), [R-HA-001](spec/ha-and-helm.md#r-ha-001--active-active-replicas-without-a-primary-node), [R-HA-004](spec/ha-and-helm.md#r-ha-004--cross-replica-invalidation-over-listennotify), [R-HA-005](spec/ha-and-helm.md#r-ha-005--leader-less-scheduling-and-job-leases),
-[R-HA-006](spec/ha-and-helm.md#r-ha-006--singleton-work-under-advisory-lock-leases-with-fencing), [R-HA-008](spec/ha-and-helm.md#r-ha-008--readiness-and-liveness-under-dependency-failure).
+[R-HA-006](spec/ha-and-helm.md#r-ha-006--singleton-work-under-advisory-lock-leases-with-fencing), [R-HA-008](spec/ha-and-helm.md#r-ha-008--readiness-and-liveness-under-dependency-failure), [R-OPS-001](spec/operations-and-observability.md#r-ops-001--liveness-and-readiness-probes), [R-STOR-035](spec/storage.md#r-stor-035--object-store-consistency-assumptions-and-conformance-check),
+[R-STOR-036](spec/storage.md#r-stor-036--behavior-during-an-object-store-outage); decided: [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness), [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure), [Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers).
 
 ### ADR-024 · The Helm chart is the supported deployment (INV-13)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** [ADR-006](#adr-006--deployment-through-a-helm-chart) fixes Helm; the chart's scope and its handling of secrets decide how safe
 an installation is by default.
@@ -668,8 +786,15 @@ ServiceMonitor and NetworkPolicy. Secrets come from existing Kubernetes Secrets;
 workload identity (IRSA and similar) or static keys.
 
 **Consequences.** The chart never creates secrets and refuses to render invalid combinations
-([ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets)). Open: Gateway API priority ([Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api)), the egress NetworkPolicy default
-([Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy)), and the publishing location ([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart)).
+([ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets)). Decided:
+- **Gateway API** ([Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api), option (b)). An HTTPRoute attached to an existing Gateway is MVP
+  ([R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure)). A Gateway rendered by the chart is P1 ([R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway)).
+- **Egress NetworkPolicy** ([Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), option (a)). Off by default. `NOTES.txt` warns while it is off
+  and points to an example values file rendered in CI ([R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies)).
+- **Publishing location** ([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), option (a)). Images and the chart are published to
+  `ghcr.io/guided-traffic/trove` and `oci://ghcr.io/guided-traffic/charts/trove`, and signed by the
+  GitHub Actions release workflow with its own OIDC identity, without a stored registry credential
+  ([R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-signatures)).
 
 **Alternatives considered.** A Kubernetes operator with custom resources: automated upgrades, but a
 controller with cluster-wide permissions to install and secure. Plain manifests or Kustomize: no
@@ -677,11 +802,12 @@ validated parameters. Chart-generated secrets: regenerated wherever Helm's `look
 ([Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key)).
 
 **Spec:** [INV-13](spec/README.md#design-invariants), [R-HA-028](spec/ha-and-helm.md#r-ha-028--chart-scope-rendered-resources-and-naming), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring),
-[R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference).
+[R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure), [R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies), [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-signatures), [R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway); decided:
+[Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api), [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart).
 
 ### ADR-025 · npm and NuGet v3 are the MVP formats (INV-14)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** [ADR-010](#adr-010--every-catalog-format-npm-and-nuget-first) puts npm and NuGet first; each ecosystem has several clients with
 different protocol coverage.
@@ -700,20 +826,23 @@ speak v3 today. npm alone first: the owner named both.
 
 ### ADR-026 · One configuration file plus database-held configuration (INV-15)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Some settings are needed before the database is reachable or must survive a broken
 database; others are changed daily by administrators.
 
 **Decision.** One YAML file (`/etc/trove/trove.yaml`), every key overridable by an environment
 variable `TROVE_<SECTION>_<KEY>`; secrets are referenced from files or environment variables,
-never written inline into a ConfigMap. Repositories, permissions and OIDC mappings live in
-PostgreSQL and are managed through the API and UI. A declarative bootstrap file (configuration as
-code) is P1 ([ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1)).
+never written inline into a ConfigMap. Repositories, permissions and CI identity mappings live in
+PostgreSQL and are managed through the API and UI. Login providers, including their claim mapping
+and group rules, are file configuration only. A declarative bootstrap file (configuration as code)
+is P1 ([ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1)).
 
 **Consequences.** Bootstrap-critical settings (database, object store, base URL, keys) change by
 rollout; everything else changes at runtime and is audited. [R-ARCH-020](spec/architecture.md#r-arch-020--configuration-schema-in-code-and-the-filedatabase-split) states which side each
-setting belongs to. Open: whether login providers stay in the file ([Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives), [Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents)).
+setting belongs to. Login providers, decided: file only ([Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) (a), [Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents) (a)). Login is
+bootstrap-critical and must not be breakable through the API or a document apply it protects.
+A provider change takes effect with a rollout that validates it before it serves anyone.
 
 **Alternatives considered.** Everything in the file: every repository change needs a rollout.
 Everything in the database: no way to start or recover an installation whose database settings are
@@ -725,7 +854,7 @@ permissions.
 
 ### ADR-027 · Structured logs, Prometheus metrics, OTLP traces, audit in PostgreSQL (INV-16)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Operators need standard telemetry; security teams need an audit trail they can query
 without an external log system.
@@ -734,38 +863,67 @@ without an external log system.
 optional OpenTelemetry traces over OTLP. Audit events (actor, action, repository, path, outcome,
 source) are stored in PostgreSQL and emitted to the log stream.
 
-**Consequences.** Audit can be queried and exported through the API and UI ([ADR-080](#adr-080--audit-records-commit-with-the-change-they-record)). The
-database copy is not tamper-evident ([H-39](spec/operations-and-observability.md#h-39--audit-records-are-not-tamper-evident), [Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records)). Metric labels need cardinality caps
-([R-OPS-007](spec/operations-and-observability.md#r-ops-007--metric-naming-labels-and-cardinality), [Q-OPS-10](spec/operations-and-observability.md#q-ops-10--default-cap-for-the-repo-metric-label)).
+**Consequences.** Audit can be queried and exported through the API and UI ([ADR-080](#adr-080--audit-records-commit-with-the-change-they-record)). Decided
+([Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records), option (c)): audit rows are append-only for trove's runtime role, which may only `INSERT`
+and `SELECT` them, so a compromised replica or a SQL injection cannot rewrite or erase history.
+The details:
+- **Partitions.** An owner-held `SECURITY DEFINER` function, `audit_maintain_partitions()`,
+  creates and drops the partitions. It attaches new partitions with `ATTACH PARTITION`, which
+  inserts do not wait for, and runs under a 2-second `lock_timeout`. A drop it cannot lock is left
+  to the next call, so a long audit export never queues transactional writes behind it.
+- **Retention.** The retention is owner-written data in `audit_policy`, applied by that
+  function.
+- **Deduplication.** Deduplicated denials write a first event and one summary event, so no row is
+  ever updated.
+
+The owner, superusers and single-role installations are outside this protection; shipping the
+`log: audit` stream to an append-only store covers them ([H-39](spec/operations-and-observability.md#h-39--audit-records-are-not-tamper-evident)). Metric labels need
+cardinality caps: by default 500 distinct repository keys per metric family and replica, with
+`repo="_other"` and an overflow counter beyond it ([R-OPS-007](spec/operations-and-observability.md#r-ops-007--metric-naming-labels-and-cardinality), [Q-OPS-10](spec/operations-and-observability.md#q-ops-10--default-cap-for-the-repo-metric-label), option (a)).
 
 **Alternatives considered.** Audit only in the log stream: no query API without an external log
-store. A separate audit store: another stateful dependency.
+store. A separate audit store: another stateful dependency. For tamper evidence
+([Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records)):
+- External shipping alone, with full rights for the runtime role. A compromised replica erases its
+  traces, and in two-role mode the runtime role could not even maintain partitions.
+- A hash chain over every row. It serializes every transactional write on one chain head and,
+  without an external anchor, proves nothing against the role that writes it.
+- Sealed checkpoints on top of the chosen option. A sealing job and a verification path for a
+  threat that log shipping already covers.
 
 **Spec:** [INV-16](spec/README.md#design-invariants), [R-OPS-006](spec/operations-and-observability.md#r-ops-006--metrics-endpoint), [R-OPS-009](spec/operations-and-observability.md#r-ops-009--log-stream-and-record-format),
-[R-OPS-015](spec/operations-and-observability.md#r-ops-015--audit-recording), [R-OPS-018](spec/operations-and-observability.md#r-ops-018--trace-context-and-opentelemetry-export).
+[R-OPS-015](spec/operations-and-observability.md#r-ops-015--audit-recording), [R-OPS-017](spec/operations-and-observability.md#r-ops-017--audit-query-export-and-retention), [R-OPS-018](spec/operations-and-observability.md#r-ops-018--trace-context-and-opentelemetry-export); decided: [Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records),
+[Q-OPS-10](spec/operations-and-observability.md#q-ops-10--default-cap-for-the-repo-metric-label).
 
 ### ADR-028 · The UI uses only the public API (INV-17)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Whatever the UI can do, administrators want to script.
 
-**Decision.** The Angular UI uses only the public `/api/v1` API, so every UI action is scriptable.
+**Decision.** The Angular UI uses only public, documented endpoints: the operations of the
+OpenAPI document (`/api/v1/…`, `/files/…`) and the browser sign-in flow under `/auth/…`; no
+private UI endpoints. Every UI action is therefore scriptable.
 
-**Consequences.** No private UI endpoints; a UI feature needs its documented API first. The UI also
-moves bytes through `/files/…`, which the OpenAPI document describes; [Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files) proposes amending
-the wording to "public, documented endpoints".
+**Consequences.** A UI feature needs its documented API first. The wording amends INV-17, which
+named only the `/api/v1` API although the UI moves bytes through `/files/…`, which the OpenAPI
+document describes, and cannot sign in without the flow under `/auth/…`
+([Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files), option (a)). The edit to INV-17 in [spec/README.md](spec/README.md#design-invariants) is that question's
+cross-page consequence.
 
 **Alternatives considered.** A backend-for-frontend with UI-only endpoints: faster UI iteration,
-but actions that cannot be automated and a second surface to secure.
+but actions that cannot be automated and a second surface to secure. Mirroring byte transfer under
+`/api/v1/`: a second code path for the largest transfers only to satisfy a wording. Keeping
+INV-17's text and defining its reading on the API page: an invariant that its own pages contradict
+in their words.
 
-**Spec:** [INV-17](spec/README.md#design-invariants), [R-API-002](spec/api-and-ui.md#r-api-002--openapi-31-document-as-the-contract), [R-UI-005](spec/api-and-ui.md#r-ui-005--permission-driven-rendering).
+**Spec:** [INV-17](spec/README.md#design-invariants), [R-API-002](spec/api-and-ui.md#r-api-002--openapi-31-document-as-the-contract), [R-UI-005](spec/api-and-ui.md#r-ui-005--permission-driven-rendering); decided: [Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files).
 
 ## Architecture
 
 ### ADR-029 · Formats are compiled-in plug-ins behind a narrow host interface
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Every catalog format is planned ([ADR-010](#adr-010--every-catalog-format-npm-and-nuget-first)). Formats differ in routes, path grammar,
 metadata documents and merge rules, while authentication, authorization, storage, caching and audit
@@ -784,42 +942,74 @@ uncompressed, 100:1 per entry, 1 MiB per manifest entry, 30 s).
 **Consequences.** Security-relevant behavior is written once, in the core. A new format is a code
 change and a release; the contract version is internal and checked at compile time. Format parsers
 run in-process with the replica's credentials: the limits bound resources, not the reach of a logic
-flaw ([H-1](spec/architecture.md#h-1--format-code-runs-in-process-without-isolation)).
+flaw ([H-1](spec/architecture.md#h-1--format-code-runs-in-process-without-isolation)). Routing, decided ([Q-ARCH-1](spec/architecture.md#q-arch-1--http-router), option (a)): `net/http.ServeMux` serves every
+route, and each format matches its own escaped path behind its literal prefix, because no pattern
+router resolves npm's `@scope%2fname` or NuGet's lower-cased paths. The `/api/v1/` operations are
+registered on the same ServeMux through the generated `std-http-server` interface
+([ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract)). No router dependency; a conflicting registration panics at start-up.
 
 **Alternatives considered.** Out-of-process plug-ins over RPC: isolation, but a deployable per format
 and a hop on every request, against [ADR-013](#adr-013--one-binary-identical-stateless-replicas-inv-2). WebAssembly or scripted plug-ins: isolation and
 runtime loading, at the cost of streaming large bodies across a sandbox boundary. Generic path
-storage with thin adapters: cannot express npm or NuGet metadata merging.
+storage with thin adapters: cannot express npm or NuGet metadata merging. A third-party router or a
+web framework: a dependency on the hottest path that still leaves the formats to parse their own
+paths.
 
-**Spec:** [R-ARCH-008](spec/architecture.md#r-arch-008--format-plug-in-contract), [R-ARCH-009](spec/architecture.md#r-arch-009--core-services-offered-to-formats), [R-ARCH-010](spec/architecture.md#r-arch-010--format-registry-and-conformance-kit), [R-ARCH-028](spec/architecture.md#r-arch-028--resource-limits-for-untrusted-package-content); open: [Q-ARCH-1](spec/architecture.md#q-arch-1--http-router).
+**Spec:** [R-ARCH-008](spec/architecture.md#r-arch-008--format-plug-in-contract), [R-ARCH-009](spec/architecture.md#r-arch-009--core-services-offered-to-formats), [R-ARCH-010](spec/architecture.md#r-arch-010--format-registry-and-conformance-kit), [R-ARCH-028](spec/architecture.md#r-arch-028--resource-limits-for-untrusted-package-content); decided: [Q-ARCH-1](spec/architecture.md#q-arch-1--http-router).
 
 ### ADR-030 · One origin for UI, API and package content
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Package content is attacker-controlled and can be HTML, SVG or XML. Served from the
 UI's origin, it could run script with the viewer's session.
 
-**Decision.** UI, management API and package endpoints share one host name and listener. Every
-response whose body is package content or package metadata carries
-`X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox; default-src 'none'`, and
-files are served with `Content-Disposition: attachment`. The UI never embeds package-provided HTML;
-it renders READMEs only through its own sanitizer ([ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer)). The conformance kit fails a format
-whose content routes lack the headers. A separate content origin is not supported in the MVP.
+**Decision.** In the MVP, UI, management API and package endpoints share one host name and
+listener. Every response whose body is package content or package metadata carries the content
+headers:
+- `X-Content-Type-Options: nosniff`;
+- `Content-Security-Policy: sandbox; default-src 'none'`;
+- `Cross-Origin-Resource-Policy: same-site`;
+- for files, `Content-Disposition: attachment`.
 
-**Consequences.** One host name, one certificate, no cross-origin configuration. The protection is
-header-based: a route that omits the headers, a proxy that strips them, or a browser that ignores
-CSP `sandbox` reopens the risk ([H-3](spec/architecture.md#h-3--ui-and-package-content-share-one-origin)).
+The core sets them, not the handler. The format dispatcher and the `/files/` handler wrap the
+response writer before the handler runs, so a handler can change `Content-Type` but cannot remove or
+weaken the headers. Every content link handed to a browser comes from one place, `LinkBuilder` or
+an API `downloadUrl` field. The UI never embeds package-provided HTML; it renders READMEs only
+through its own sanitizer ([ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer)). The conformance kit fails a format whose content routes lack the
+headers, and a handler that removes them.
 
-**Alternatives considered.** A separate content origin without the session cookie: stronger
-isolation, at the cost of a second host name with its own DNS, certificate and edge route; it stays
-the upgrade path if H-3 becomes pressing.
+An optional separate content origin is P1 ([R-ARCH-029](spec/architecture.md#r-arch-029--optional-separate-content-origin), [Q-ARCH-10](spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render), option (d)). It is off by
+default:
+- `server.content_base_url` must name a host name other than the UI's; a different port on the same
+  host is refused, because browsers do not isolate cookies by port.
+- Browser requests for content are handed off there with `303` and session-bound, signed,
+  short-lived URLs. Package clients stay on the UI host.
+- Every trove cookie carries the `__Host-` prefix, so a content host on the UI's registrable domain
+  can neither receive nor plant them. Such a content host is accepted with a start-up warning,
+  since it is still same-site with the UI.
 
-**Spec:** [R-ARCH-007](spec/architecture.md#r-arch-007--one-origin-for-ui-and-package-content), [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery), [R-UI-008](spec/api-and-ui.md#r-ui-008--sanitized-readme-rendering).
+**Consequences.** In the MVP and wherever the content origin stays off: one host name, one
+certificate, no cross-origin configuration. The protection is header-based. A route that forgets
+the headers can no longer occur. A proxy that strips them, or a browser that ignores both
+`attachment` and CSP `sandbox`, reopens the risk ([H-3](spec/architecture.md#h-3--ui-and-package-content-share-one-origin)). None of the headers affects npm, pnpm,
+Yarn, dotnet or nuget.exe. The link seam lets R-ARCH-029 move content links to the second origin
+without touching formats or the UI. Inline browsing of files (P2) builds on that origin.
+
+**Alternatives considered.** One origin forever: H-3 would stay, and inline viewing could never be
+offered safely. A mandatory content origin from the prototype on: every installation, evaluation
+included, would need a second DNS name, certificate and edge route for a residual the headers
+already cover. An optional content origin already in the prototype: effort and a second test matrix
+for a switch that is off by default. The content origin moves into the MVP if the prototype has to
+render package files inline, a target edge rewrites response headers, or a header bypass is reported
+in a supported browser.
+
+**Spec:** [R-ARCH-007](spec/architecture.md#r-arch-007--one-origin-for-ui-and-package-content), [R-ARCH-029](spec/architecture.md#r-arch-029--optional-separate-content-origin), [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery), [R-UI-008](spec/api-and-ui.md#r-ui-008--sanitized-readme-rendering); decided:
+[Q-ARCH-10](spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render), [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name).
 
 ### ADR-031 · Caches validate themselves; notifications only evict early
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Every replica caches configuration, grants, tokens and merged metadata.
 `LISTEN/NOTIFY` delivery is lost while a connection is down, and PostgreSQL serializes the commits
@@ -827,26 +1017,44 @@ of notifying transactions on one lock.
 
 **Decision.** Every cache is registered with a size bound and a mandatory safety TTL. Keys that make
 an entry self-validating (a source digest, a `rev_seq`, an epoch) are preferred; notifications then
-only evict early. Administrative changes notify inside the writing transaction. Hot-path changes
-(publish, delete, cache fill, metadata refresh) go through a per-replica post-commit coalescer. A
-replica that loses its `LISTEN` session flushes every registered cache. Merged metadata checks the
-`rev_seq` of local members on each hit, so a publish is visible through a virtual repository on
-every replica at once.
+only evict early. A replica that loses its `LISTEN` session flushes every registered cache.
+
+Notifications by channel class ([Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits), option (a)):
+- Every `NOTIFY` channel is registered with a class, administrative or hot-path. `Host.Notify` and
+  `cluster.Notify` attach a notification to the request's transaction, and the class decides when
+  it leaves. Only `internal/cluster` issues `NOTIFY`.
+- Administrative changes, revocations included, notify inside the writing transaction.
+- Hot-path changes leave after commit through a per-replica coalescer, at most one `NOTIFY` per
+  channel per 50 ms with batched payloads. These are publish, delete, cache fill, metadata
+  refresh, and job wake-ups enqueued by such transactions. The coalescer's own commits run with
+  `synchronous_commit = off`.
+
+Merged metadata ([Q-ARCH-9](spec/architecture.md#q-arch-9--freshness-of-merged-metadata-for-local-members), option (a)): the core's merged-metadata cache checks the `rev_seq` of
+every eligible local member on each hit, mandatory for every format. The counter lives on the
+generic `packages` row, and a member that does not hold the package counts as `0`, so a first local
+publish of a name a remote member serves is visible at once. A publish is thus visible through a
+virtual repository on every replica at once, notification or not.
 
 **Consequences.** A missed notification costs freshness for at most the safety TTL, never more.
-Each merged-metadata hit costs one indexed query. The coalescer caps notifying commits per replica
-whatever the load.
+Each merged-metadata hit costs one indexed query. The coalescer caps notifying commits at 20 per
+second per channel and replica, whatever the load. A crash between commit and flush loses those
+notifications, which self-validating keys and waiter polling already cover. Because the class is
+registered with the channel, a format cannot put a hot-path `NOTIFY` into its transaction by
+mistake, and later formats cannot forget the merged-metadata check.
 
 **Alternatives considered.** NOTIFY inside every writing transaction: couples upload throughput to
-a server-wide lock. Notifications as the only invalidation: stale data after any dropped
+a server-wide lock, held across the WAL flush and the synchronous-standby round trip. No `NOTIFY`
+for fills: adds up to one poll interval to every collapsed request. Notifications as the only
+invalidation, including `NOTIFY`-only eviction of merged metadata: a publish-then-install CI step
+that reaches another replica first gets the old document, and stale data follows any dropped
 connection. No in-process caches: database round trips for grants and tokens on every request.
 
-**Spec:** [R-ARCH-012](spec/architecture.md#r-arch-012--read-your-writes-package-metadata-for-local-repositories), [R-ARCH-015](spec/architecture.md#r-arch-015--request-path-virtual-resolution), [R-ARCH-018](spec/architecture.md#r-arch-018--in-process-caches-and-listennotify-plumbing), [R-REPO-020](spec/repositories-and-proxy.md#r-repo-020--merged-metadata-and-its-cache); open: [Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits),
-[Q-ARCH-9](spec/architecture.md#q-arch-9--freshness-of-merged-metadata-for-local-members).
+**Spec:** [R-ARCH-009](spec/architecture.md#r-arch-009--core-services-offered-to-formats), [R-ARCH-012](spec/architecture.md#r-arch-012--read-your-writes-package-metadata-for-local-repositories), [R-ARCH-015](spec/architecture.md#r-arch-015--request-path-virtual-resolution), [R-ARCH-018](spec/architecture.md#r-arch-018--in-process-caches-and-listennotify-plumbing), [R-REPO-020](spec/repositories-and-proxy.md#r-repo-020--merged-metadata-and-its-cache); decided:
+[Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits), [Q-ARCH-9](spec/architecture.md#q-arch-9--freshness-of-merged-metadata-for-local-members).
 
 ### ADR-032 · Stored secrets are sealed under a key ring the operator supplies
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Upstream credentials, client-certificate keys and webhook secrets entered through the
 API must be stored so that a database dump alone does not reveal them.
@@ -861,47 +1069,87 @@ to render without the key Secret.
 **Consequences.** Every replica and the migration Job mount the same key Secret, and the operator
 keeps a copy outside the cluster; without it, sealed values in a restored database are lost. Every
 replica holds the key ([H-8](spec/repositories-and-proxy.md#h-8--the-stored-secret-key-sits-on-every-replica)). Configuration-as-code diffs compare secrets by HMAC fingerprints,
-which change once after a rotation.
+which change once after a rotation. Decided:
+- **One mechanism** ([Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045), option (b)). architecture.md specifies it for every stored secret,
+  and repository secrets only use it.
+- **The operator creates the first key** ([Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), option (b)). The chart fails without it and prints the
+  command that creates one.
+- **Key-ring status without pod access** ([Q-API-8](spec/api-and-ui.md#q-api-8--stored-secret-key-ring-status-through-the-api), option (b), [R-API-049](spec/api-and-ui.md#r-api-049--stored-secret-key-ring-status), MVP).
+  `GET /api/v1/system/encryption` reports key IDs, sealed-value counts per key ID, the canary state
+  and the key IDs every live replica holds, and never key material. The metrics
+  `trove_secrets_sealed_values` and `trove_secrets_key_rings_compatible` and a card on the system
+  status screen read the same state. Re-encryption runs as the manual task `secrets-reencrypt`,
+  started through the task trigger. That trigger refuses with `409 key_ring_incompatible` while
+  some live replica's ring lacks a key another replica uses, because values sealed then could not
+  be opened everywhere.
 
 **Alternatives considered.** References to external secret stores only: no sealed values in the
 database, but credentials typed into the UI would need file access on every replica ([Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045)).
-A chart-generated key kept with Helm's `lookup`: silently regenerated under `helm template` and
+A separate mechanism for repository secrets: a second key, rotation and backup item that drift
+apart. trove writing Kubernetes Secrets: read access to every Secret in the namespace. A
+chart-generated key kept with Helm's `lookup`: silently regenerated under `helm template` and
 GitOps tools ([Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key)). Envelope encryption through a cloud KMS: a dependency not every
-installation has; it fits later as an additional key source.
+installation has; it fits later as an additional key source. Key management through the API: key
+material would travel through the API and rest next to the values it protects ([Q-API-8](spec/api-and-ui.md#q-api-8--stored-secret-key-ring-status-through-the-api)).
 
-**Spec:** [R-ARCH-021](spec/architecture.md#r-arch-021--encryption-of-stored-secrets-and-the-stored-secret-key), [R-REPO-033](spec/repositories-and-proxy.md#r-repo-033--upstream-authentication-and-stored-secrets), [R-HA-027](spec/ha-and-helm.md#r-ha-027--encryption-keys-for-sealed-secrets-in-a-replicated-deployment), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation); open: [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045),
-[Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key).
+**Spec:** [R-ARCH-021](spec/architecture.md#r-arch-021--encryption-of-stored-secrets-and-the-stored-secret-key), [R-REPO-033](spec/repositories-and-proxy.md#r-repo-033--upstream-authentication-and-stored-secrets), [R-HA-027](spec/ha-and-helm.md#r-ha-027--encryption-keys-for-sealed-secrets-in-a-replicated-deployment), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-API-049](spec/api-and-ui.md#r-api-049--stored-secret-key-ring-status); decided:
+[Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045), [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), [Q-API-8](spec/api-and-ui.md#q-api-8--stored-secret-key-ring-status-through-the-api).
 
 ### ADR-033 · Versioning promises per surface and a schema compatibility gate
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Rolling upgrades run N and N-1 against one schema ([ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3)). Clients, scripts,
 dashboards and configuration depend on surfaces that change at different speeds.
 
 **Decision.** Releases follow SemVer. Any later minor of the same major installs directly;
 zero-downtime rolling upgrades work from the previous minor and between patches, and `helm rollback`
-to N-1 works. Each migration declares its phase, `expand` or `contract`; contract steps ship at the
-earliest one minor after the release that stopped using the old objects and declare the oldest
-release they allow. A single-row `schema_compat` table records the schema version and that release,
-and `trove migrate` runs behind this gate under the `migration` advisory lock. Per surface:
-`/api/v1` changes are additive only (checked in CI against the last release with an OpenAPI
-breaking-change checker); a renamed configuration key or metric keeps its old name for at least two
-minors; a token prefix never changes meaning.
+to N-1 works. Per surface: `/api/v1` changes are additive only (checked in CI against the last
+release with an OpenAPI breaking-change checker); a renamed configuration key or metric keeps its
+old name for at least two minors; a token prefix never changes meaning.
 
-**Consequences.** Removing schema objects takes two releases. Upgrades that skip a minor need steps
-or downtime ([Q-HA-5](spec/ha-and-helm.md#q-ha-5--zero-downtime-upgrades-that-skip-minor-releases)). The schema itself is not a public interface.
+Schema migrations:
+- **Steps.** Each migration file declares its phase, `expand` or `contract`, in a
+  `-- trove:phase` header. A contract step ships at the earliest one minor after the release that
+  stopped using the old objects, and declares through `-- trove:requires-app` the oldest release
+  allowed to serve once it is applied.
+- **State.** R-HA-018's tables record it. `schema_migration` holds one row per applied step:
+  class, shipping release, `last_used_by`, whether it ran in a transaction, checksum and duration.
+  The single-row `schema_state` holds the applied schema number and `compat_floor`, the oldest
+  trove version allowed to serve. A binary of version V serves only if `applied` is at least its
+  `requiredSchema` and `compat_floor` is at most V.
+- **Runner** ([Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner), option (d)). `trove migrate` is a trove-owned runner on native pgx in
+  `internal/meta/postgres`, with no migration library and no `database/sql`. Under
+  `pg_advisory_lock(3, 0)`, category `migration`, it verifies the checksum of every applied step
+  and runs the contract guard against the replica registry. It then applies each pending embedded
+  file as one argument-less `Exec` together with its `schema_migration` row in one transaction, so
+  a crash leaves neither, and updates `schema_state` last.
+- **No override.** The guard has no override flag. The downtime path is to scale the replicas to
+  zero, so that the registry shows none.
+
+**Consequences.** Removing schema objects takes two releases. Zero-downtime rolling upgrades work
+between adjacent minors only; an upgrade that skips a minor goes stepwise or with a short downtime,
+and the contract guard enforces this ([Q-HA-5](spec/ha-and-helm.md#q-ha-5--zero-downtime-upgrades-that-skip-minor-releases), option (a)). The schema itself is not a public
+interface. The apply loop is trove's own code. Tests on every change cover it: every migration
+against each supported PostgreSQL major, the N-1 compatibility test, and the crash and
+edited-file criteria of R-ARCH-026.
 
 **Alternatives considered.** Migrations with downtime: simpler code, no zero-downtime upgrades.
 Keeping dropped objects for two minors: allows skips, doubles the life of dual-write code. A
-migration tool's own failure state: needs a manual force before the next deploy ([Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner)).
+migration library ([Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner)):
+- goose was the earlier choice and was revised. Its version write carries only a version number,
+  so R-HA-018's rows would need a custom store about as large as the runner itself, and it brings
+  `database/sql` into the binary.
+- golang-migrate leaves a dirty state that needs a manual force before the next deploy, and takes
+  a lock of its own.
+- tern takes a fixed single-`bigint` advisory lock that R-ARCH-017 forbids.
 
-**Spec:** [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy), [R-ARCH-026](spec/architecture.md#r-arch-026--schema-migrations-and-the-compatibility-gate), [R-HA-018](spec/ha-and-helm.md#r-ha-018--expandcontract-schema-migrations), [R-HA-020](spec/ha-and-helm.md#r-ha-020--rolling-upgrade-and-mixed-version-operation), [R-HA-021](spec/ha-and-helm.md#r-ha-021--upgrade-policy-and-preparation); open:
+**Spec:** [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy), [R-ARCH-026](spec/architecture.md#r-arch-026--schema-migrations-and-the-compatibility-gate), [R-HA-018](spec/ha-and-helm.md#r-ha-018--expandcontract-schema-migrations), [R-HA-019](spec/ha-and-helm.md#r-ha-019--migration-job), [R-HA-020](spec/ha-and-helm.md#r-ha-020--rolling-upgrade-and-mixed-version-operation), [R-HA-021](spec/ha-and-helm.md#r-ha-021--upgrade-policy-and-preparation); decided:
 [Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner), [Q-HA-5](spec/ha-and-helm.md#q-ha-5--zero-downtime-upgrades-that-skip-minor-releases).
 
 ### ADR-034 · One PostgreSQL job table for maintenance, API operations and internal work
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Garbage collection, retention runs, reindexing, repository deletion, webhook delivery
 and data migrations must run once, survive restarts and be visible through the API.
@@ -914,19 +1162,75 @@ operations answer 202 with the job ([ADR-085](#adr-085--long-running-work-answer
 
 **Consequences.** One migration path; no library manages tables of its own. Queue throughput is
 bounded by PostgreSQL, which suits maintenance volumes; webhook delivery (P1) is the case to measure
-([Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation)).
+([Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation), decided: the trove-owned queue). The job read and cancel API is MVP and stays with the
+task list on operations-and-observability.md, while architecture.md keeps the model ([Q-OPS-9](spec/operations-and-observability.md#q-ops-9--ownership-of-the-job-api)).
+Every singleton maintenance task starts only through `POST /api/v1/system/tasks/{name}/run` and
+stops only through job cancel; the owning page keeps read-only views of its results. Storage jobs
+are such tasks (`gc`, `gc-full`, `orphan-sweep`, `scrub`, `storage-summary`,
+`remote-cache-cleanup`), with no run API or run table of their own ([Q-API-9](spec/api-and-ui.md#q-api-9--one-path-for-starting-stopping-and-reading-maintenance-work), [Q-STOR-10](spec/storage.md#q-stor-10--storage-maintenance-jobs-and-the-storage-summary-one-task-framework-one-path)).
+Retention policies keep their per-policy run paths and use the same queue.
 
 **Alternatives considered.** An external queue library on PostgreSQL: pre-1.0, with its own tables
 and migrations, and a schema that would not hold the operation and task-slot columns. A message
-broker: another stateful dependency.
+broker: another stateful dependency. Domain start and stop paths per task, or start and stop paths
+on both the domain and the task API: two ways to stop work, a special case per task on the system
+status screen, and two paths per function.
 
-**Spec:** [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-API-015](spec/api-and-ui.md#r-api-015--long-running-work-as-jobs), [R-OPS-019](spec/operations-and-observability.md#r-ops-019--scheduled-maintenance-tasks-and-job-visibility); open: [Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation), [Q-OPS-9](spec/operations-and-observability.md#q-ops-9--ownership-of-the-job-api).
+**Spec:** [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-API-015](spec/api-and-ui.md#r-api-015--long-running-work-as-jobs), [R-API-020](spec/api-and-ui.md#r-api-020--resource-map-and-routing), [R-OPS-019](spec/operations-and-observability.md#r-ops-019--scheduled-maintenance-tasks-and-job-visibility), [R-STOR-025](spec/storage.md#r-stor-025--garbage-collection-schedule-full-sweep-and-manual-run); decided:
+[Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation), [Q-OPS-9](spec/operations-and-observability.md#q-ops-9--ownership-of-the-job-api), [Q-API-9](spec/api-and-ui.md#q-api-9--one-path-for-starting-stopping-and-reading-maintenance-work), [Q-STOR-10](spec/storage.md#q-stor-10--storage-maintenance-jobs-and-the-storage-summary-one-task-framework-one-path).
+
+### ADR-089 · Derived metadata is rendered per request, and a publish never waits for an index
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Clients read metadata derived from stored packages. In the MVP formats it is
+per-package: the npm package document, NuGet registrations and version lists. Later formats add
+repository-wide indexes such as a Helm `index.yaml`, a Debian `Packages` file or a Conda
+`repodata.json`. If an index is rebuilt in the background after a deploy, a CI step that publishes
+and then installs can miss the new version. If the publish waits for the rebuild, publishing
+depends on background capacity.
+
+**Decision.** Three rules ([Q-ARCH-12](spec/architecture.md#q-arch-12--repository-wide-indexes-rendered-per-request-or-built-by-jobs-and-does-a-publish-wait), option (d)):
+1. **Per request by default.** Every derived index is rendered from committed rows at request time
+   and cached under a revision. Per-package metadata uses the package's `rev_seq`. A
+   repository-wide index uses a per-repository revision. The commit increments it only for formats
+   whose `Descriptor().RepositoryIndex` is set, so npm and NuGet publishes never contend on a
+   repository row.
+2. **Jobs only by exception.** A format may build an index by a job only when its page shows one of
+   two things: rendering per request misses the P-4 bound at the format's reference repository
+   size, or the index must be signed or stored in several compressed variants. The job is a
+   `coalesce` job keyed `index:<repository id>`. The previous index is served until the new one
+   commits in one transaction, and the format page states a delay bound that a load test measures.
+3. **No publish waits.** A publish answers when its own commit is durable, never after an index
+   rebuild.
+
+Every change that reaches package rows increments `rev_seq`: publish or upload, delete, trash
+restore, copy, move, import, retention removal and remote cache fill. Clients never upload derived
+metadata.
+
+**Consequences.** Read-your-writes holds across an active-active cluster without coordination
+wherever rendering is affordable, and staleness is bounded and tested where it is not. Publish
+latency and success never depend on the job queue. A manual reindex (`exclusive`, `409` while one
+runs) and the automatic rebuild share the key `index:<repository id>`, so they never run at the
+same time. Every job-built index has to justify its exception on its format page. One virtual
+metadata period, `mergedMetadataTtlSeconds`, applies to every format.
+
+**Alternatives considered.** Every index rendered per request, always: signed indexes and
+compressed variants of a large `Packages` file would be re-signed and recompressed on the request
+path after every change. Repository-wide indexes always built by job, with the publish returning
+at once: a publish-then-install step misses the new version even where rendering per request would
+have been cheap. Jobs, with the publish waiting for the rebuild: publish latency and success are
+bound to worker capacity, and a stuck queue makes publishes time out while clients retry and
+duplicate work.
+
+**Spec:** [R-ARCH-008](spec/architecture.md#r-arch-008--format-plug-in-contract), [R-ARCH-012](spec/architecture.md#r-arch-012--read-your-writes-package-metadata-for-local-repositories), [R-ARCH-015](spec/architecture.md#r-arch-015--request-path-virtual-resolution), [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-ARCH-027](spec/architecture.md#r-arch-027--performance-targets),
+[R-REPO-016](spec/repositories-and-proxy.md#r-repo-016--recalculate-a-repositorys-index); decided: [Q-ARCH-12](spec/architecture.md#q-arch-12--repository-wide-indexes-rendered-per-request-or-built-by-jobs-and-does-a-publish-wait).
 
 ## Repositories and pull-through proxy
 
 ### ADR-035 · Virtual resolution in three tiers, decided per member
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A virtual repository combines local and remote members. The resolution order decides
 whether an internal or a public package is installed, and whether upstreams are contacted at all.
@@ -953,7 +1257,7 @@ by other members.
 
 ### ADR-036 · Dependency-confusion protection through namespace claims and pin rules
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Tier order protects only names that currently exist internally. A name that is not yet
 published, was deleted or is misspelt falls through to public upstreams, where anyone can register
@@ -964,49 +1268,115 @@ formats that support claims), the first deploy of an unclaimed name creates an e
 scope `members`; claims survive deletion. `members` claims act only in virtual repositories that
 contain the claiming repository; `global` claims act in every virtual repository of the format and
 need `repositories:write`. A claimed name resolves only from the most specifically claiming local
-members, and remote members are not asked. With remote refusal on, every remote repository of the
-format refuses `global`-claimed names, also when addressed directly. Pin rules on a virtual
-repository bind name patterns to members.
+members, and remote members are not asked. With remote refusal on
+(`proxy.claims.remote_refusal: true`), every remote repository of the format refuses
+`global`-claimed names, also when addressed directly, unless a pin rule of the requesting virtual repository names that remote ([Q-REPO-4](spec/repositories-and-proxy.md#q-repo-4--scope-of-remote-refusal-for-claimed-names),
+option (a)). Pin rules on a virtual repository bind name patterns to members. Pins, claims, extra
+hosts and upstream credentials are generic repository members. Format pages add semantics, narrow
+them and propose defaults, but define no members of their own ([Q-REPO-5](spec/repositories-and-proxy.md#q-repo-5--generic-or-format-level-placement-of-pins-extra-hosts-and-upstream-authentication), option (a)).
+
+The first version of a name that a remote member of a containing virtual repository serves needs
+`manage` on the coordinate or a prior manual claim of the local repository; otherwise it is
+refused with `403 shadows_remote_package` ([R-REPO-048](spec/repositories-and-proxy.md#r-repo-048--shadowing-check-on-the-first-publish-of-a-name), [Q-REPO-6](spec/repositories-and-proxy.md#q-repo-6--local-publish-of-a-name-that-a-remote-member-already-serves-h-10), option (b)). The rules:
+- **When it runs.** On a publish, and from P1 also on a copy, move or trash-can restore that gives
+  a local repository its first version of a name. It does not run for names inside the
+  repository's own claims.
+- **Fail closed.** Whether a remote serves the name is decided from stored state first, then by a
+  probe that stores nothing. While the upstream cannot be asked, the check fails closed with
+  `503 shadow_check_unavailable`.
+- **Audit.** A permitted shadowing is audited as `repository.remote_package_shadowed`.
+- **Auto claims.** An auto claim never takes a name from another repository's claim that is in
+  effect in a containing virtual repository.
 
 **Consequences.** The protection sits on the server and does not depend on each project's client
 configuration. Claimed names are observable ([H-7](spec/repositories-and-proxy.md#h-7--claimed-names-are-observable)); member-scoped claims do not protect other
-virtual repositories ([H-9](spec/repositories-and-proxy.md#h-9--member-scoped-claims-do-not-protect-other-virtual-repositories)); a deploy to a local member shadows a public package for every
-consumer ([H-10](spec/repositories-and-proxy.md#h-10--deploy-on-a-local-member-shadows-public-packages-for-every-consumer)). Who may publish a name is a separate mechanism ([ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish)).
+virtual repositories ([H-9](spec/repositories-and-proxy.md#h-9--member-scoped-claims-do-not-protect-other-virtual-repositories)). [H-10](spec/repositories-and-proxy.md#h-10--deploy-on-a-local-member-shadows-public-packages-for-every-consumer), a deploy to a local member that shadows a public package for
+every consumer, is narrowed by R-REPO-048:
+- **Deploy alone no longer suffices.** A first version of a name that shadows a remote package
+  needs `manage` or a prior manual claim, also when it arrives through copy, move or restore (P1).
+  A `deploy` grant alone, however broad, and a leaked CI token can no longer replace a public
+  package.
+- **The check fails closed** while the upstream cannot be asked.
+- **Claims stay with their owner.** An auto claim never takes a name from another repository's
+  claim.
+
+What H-10 still records:
+- deliberate shadowing by a `manage` holder;
+- configuration changes that make existing names shadow without a decision;
+- remotes in offline mode;
+- the `403` as an existence oracle;
+- probes that disclose a new name to the upstream once. Pre-claiming an internal prefix removes
+  the probe.
+
+Who may publish a name is a separate mechanism ([ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish)).
 
 **Alternatives considered.** Client-side scoping only (npm scopes, NuGet package source mapping):
 depends on every project getting its configuration right. Tier order alone: misses unpublished
 names. `global` claims from any deploy: one deploy into a sandbox repository would block a public
-name everywhere.
+name everywhere. Refusal only inside containing virtual repositories: a client pointed straight at
+a remote still sends the internal name upstream. A per-remote exemption from refusal: one setting
+reopens the leak for every client of that remote. Format-level members for pins, hosts and
+credentials: one mechanism implemented and validated per format. For shadowing ([Q-REPO-6](spec/repositories-and-proxy.md#q-repo-6--local-publish-of-a-name-that-a-remote-member-already-serves-h-10)):
+- Refusing the first publish for everyone adds a claim step to every legitimate fork.
+- Warning only reports the damage after consumers resolved the replaced package.
+- Narrow `deploy` grants alone were the state that left H-10 live.
+- Deciding from stored state only leaves exactly the names a team is about to adopt unchecked.
 
-**Spec:** [R-REPO-022](spec/repositories-and-proxy.md#r-repo-022--priority-members), [R-REPO-023](spec/repositories-and-proxy.md#r-repo-023--dependency-confusion-protection-pin-rules-and-namespace-claims), [R-NPM-033](spec/formats/npm.md#r-npm-033--pin-rules-and-reserved-namespaces-for-npm); open: [Q-REPO-4](spec/repositories-and-proxy.md#q-repo-4--scope-of-remote-refusal-for-claimed-names), [Q-REPO-5](spec/repositories-and-proxy.md#q-repo-5--generic-or-format-level-placement-of-pins-extra-hosts-and-upstream-authentication).
+**Spec:** [R-REPO-004](spec/repositories-and-proxy.md#r-repo-004--configuration-document-and-common-settings), [R-REPO-022](spec/repositories-and-proxy.md#r-repo-022--priority-members), [R-REPO-023](spec/repositories-and-proxy.md#r-repo-023--dependency-confusion-protection-pin-rules-and-namespace-claims), [R-REPO-048](spec/repositories-and-proxy.md#r-repo-048--shadowing-check-on-the-first-publish-of-a-name), [R-NPM-033](spec/formats/npm.md#r-npm-033--pin-rules-and-global-namespace-claims-for-npm); decided:
+[Q-REPO-4](spec/repositories-and-proxy.md#q-repo-4--scope-of-remote-refusal-for-claimed-names), [Q-REPO-5](spec/repositories-and-proxy.md#q-repo-5--generic-or-format-level-placement-of-pins-extra-hosts-and-upstream-authentication), [Q-REPO-6](spec/repositories-and-proxy.md#q-repo-6--local-publish-of-a-name-that-a-remote-member-already-serves-h-10).
 
 ### ADR-037 · One name-pattern syntax, most specific wins, applied to every protocol request
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Include and exclude patterns, claims, pin rules, permission policies and retention
 scopes all select packages. Different syntaxes would let a pattern copied from one into another
 silently match something else.
 
-**Decision.** A name pattern is an exact name or a prefix ending in `*`, compared after the format's
-normalization: the syntax of NuGet's package source mapping. Where several match, an exact name
-beats any prefix and a longer prefix beats a shorter one. npm and NuGet repositories use name
-patterns rather than path patterns, so one pattern covers documents and files. Repository patterns
-apply to every package-protocol request, administrators included.
+**Decision.** A name pattern is a name glob of R-AUTHZ-005, compared with the format's rule (npm
+case-sensitive, NuGet case-insensitive):
+- `*` is any run of characters except `/`, `**` any run including `/`, `?` one character except
+  `/`, and `\` makes the next character literal.
+- An exact name and a prefix ending in `*`, the syntax of NuGet's package source mapping, are a
+  subset with the same meaning.
 
-**Consequences.** Routing safety does not depend on who runs the build. Documents that name no
-package, such as NuGet's upstream service index, need an exemption ([Q-NUGET-7](spec/formats/nuget.md#q-nuget-7--patterns-and-repository-level-upstream-documents)). Retention and
-permissions should share the matcher ([Q-STOR-9](spec/storage.md#q-stor-9--one-pattern-syntax-across-retention-and-permissions)).
+One parser and one matcher, those of R-AUTHZ-004 and R-AUTHZ-005, evaluate routing patterns,
+claims, pin rules, permission policies and retention scopes. Include and exclude lists have no
+precedence among their patterns. Where several claims or pin rules match, the most specific wins:
+an exact name beats any prefix, and a longer prefix beats a shorter one. npm and NuGet repositories
+use name patterns rather than path patterns, so one pattern covers documents and files. Repository
+patterns apply to every package-protocol request, administrators included.
+
+**Consequences.** Routing safety does not depend on who runs the build. A pattern copied between a
+repository, a permission policy and a cleanup policy selects the same names. Retention reuses the
+R-AUTHZ-004 repository selectors and the R-AUTHZ-005 patterns through the same code
+([Q-STOR-9](spec/storage.md#q-stor-9--one-pattern-syntax-across-retention-and-permissions), option (a)). The binding differs on purpose:
+- Include key selectors are bound by repository ID, as in authorization, so a repository deleted
+  and created again under the same key is not cleaned by an old policy without anyone noticing.
+- Exclude key selectors are matched by key, so a re-created excluded repository keeps its
+  protection.
+
+On npm, `*` stops at `/`, so a list with `*` but neither `**` nor `@*/*` draws the warning
+`pattern_unscoped_only`. Requests that name no package, such as NuGet's upstream service index,
+vulnerability documents, search and autocomplete, are admitted as repository-level. A symbol
+request is routed by the file name in its symbol key without the last extension, so the patterns,
+claims and pin rules that protect `Acme.*` packages also protect `Acme.*` assemblies
+([Q-NUGET-7](spec/formats/nuget.md#q-nuget-7--patterns-and-repository-level-upstream-documents), option (a)). Assembly names that no protecting pattern covers still reach an upstream
+symbol server.
 
 **Alternatives considered.** Path globs for every format: two patterns per npm package, one for the
-document and one for tarballs. A syntax per subsystem: silent mismatches. Patterns that skip
-administrators: an administrator's build could leak internal names upstream.
+document and one for tarballs. A syntax per subsystem: silent mismatches, and for a deletion
+feature a silent mismatch deletes. Prefix-only patterns everywhere: cannot express version
+selections that cleanup needs, such as `*-SNAPSHOT`. Patterns that skip administrators: an
+administrator's build could leak internal names upstream. Separate symbol include and exclude lists
+per remote: a second list to keep in step, which claims and pin rules never reach.
 
-**Spec:** [R-REPO-005](spec/repositories-and-proxy.md#r-repo-005--include-and-exclude-patterns), [R-AUTHZ-005](spec/authorization.md#r-authz-005--package-name-and-path-patterns), [R-STOR-038](spec/storage.md#r-stor-038--package-cleanup-policy-scope-and-conditions); open: [Q-STOR-9](spec/storage.md#q-stor-9--one-pattern-syntax-across-retention-and-permissions), [Q-NUGET-7](spec/formats/nuget.md#q-nuget-7--patterns-and-repository-level-upstream-documents).
+**Spec:** [R-REPO-005](spec/repositories-and-proxy.md#r-repo-005--include-and-exclude-patterns), [R-AUTHZ-004](spec/authorization.md#r-authz-004--repository-selectors), [R-AUTHZ-005](spec/authorization.md#r-authz-005--package-name-and-path-patterns), [R-STOR-038](spec/storage.md#r-stor-038--package-cleanup-policy-scope-and-conditions), [R-NUGET-015](spec/formats/nuget.md#r-nuget-015--remote-repository-proxying-caching-and-url-rewriting); decided:
+[Q-STOR-9](spec/storage.md#q-stor-9--one-pattern-syntax-across-retention-and-permissions), [Q-NUGET-7](spec/formats/nuget.md#q-nuget-7--patterns-and-repository-level-upstream-documents).
 
 ### ADR-038 · Upstream failures: classified outcomes, a shared circuit, bounded stale serving
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Upstream outages and rate limits must not break builds that only need cached content,
 and every replica retrying on its own would multiply the load on a struggling upstream.
@@ -1018,24 +1388,49 @@ egress refusals and integrity failures do not count. Metadata falls back to the 
 by `cache.maxStaleSeconds` when set; artifacts answer 502, 503 or 504 with a specific code. The
 circuit opens on a consecutive-failure threshold and is probed, shared across replicas. Only a
 connection failure before any byte was sent is retried, once. A metadata period of `0` is allowed,
-because revalidation is conditional and collapsed. A document the upstream removes is marked
-`upstream_gone` and answers 404; cached artifacts stay served by default.
+because revalidation is conditional and collapsed ([Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period), option (a)). A format may register its own
+default period; NuGet registers 300 s for its metadata documents and keeps the generic 1800 s for
+not-found entries ([Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes), option (b)).
+
+Upstream removals ([Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document), option (b)):
+- A removed document is marked gone and answers 404.
+- A removed package document marks the package gone. Its documents and its cached artifacts then
+  answer 404, on the remote, its cache view and in virtual repositories, until the upstream serves
+  it again. The mark heals by itself after the negative period, or at once through an
+  invalidation.
+- Items stay stored and copyable into a local repository, which is how a build keeps a package that
+  was removed legitimately.
+- Formats that track removal per version replace the rule (npm, [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default)).
 
 **Consequences.** Offline detection is deterministic and cluster-wide; builds continue on cached
-metadata during outages. Upstream removals reach cached artifacts only where the format tracks
-versions ([H-5](spec/repositories-and-proxy.md#h-5--upstream-removals-reach-cached-artifacts-only-where-the-format-tracks-versions), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default)).
+metadata during outages. Whole-package removals reach cached artifacts in every format; version
+removals only where the format tracks versions ([H-5](spec/repositories-and-proxy.md#h-5--version-removals-reach-cached-artifacts-only-where-the-format-tracks-versions), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default)). A spurious upstream 404 hides
+cached artifacts of that package until its negative entry expires or is invalidated. A new upstream
+version of a NuGet package resolves through trove within five minutes, at the cost of more
+conditional revalidations, mostly answered with 304.
 
 **Alternatives considered.** A count of background retries before a repository counts as offline:
 not deterministic across replicas. Freshness from the upstream's `Cache-Control`: behavior would
 depend on each upstream. A 30-second minimum period: protects the upstream from nothing that
-collapsing does not already prevent ([Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period)).
+collapsing does not already prevent ([Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period)). For removals ([Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document)):
+- Keeping cached artifacts served after a removal was rejected: lockfile clients fetch artifacts by
+  exact path, so the cache would keep handing out a takedown to every project that pinned it, as in
+  [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default).
+- Serving the stale document keeps advertising taken-down packages.
+- Debouncing the mark delays every takedown by the negative period.
+- A per-remote switch to keep serving duplicates what copying into a local repository already
+  covers.
 
-**Spec:** [R-REPO-027](spec/repositories-and-proxy.md#r-repo-027--metadata-freshness-and-refresh-timeout), [R-REPO-028](spec/repositories-and-proxy.md#r-repo-028--negative-cache), [R-REPO-029](spec/repositories-and-proxy.md#r-repo-029--upstream-failure-handling-and-the-assumed-offline-circuit), [R-REPO-030](spec/repositories-and-proxy.md#r-repo-030--offline-mode-per-repository), [R-REPO-031](spec/repositories-and-proxy.md#r-repo-031--global-offline-switch); open:
-[Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period), [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document), [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes).
+For NuGet's period ([Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes)): the generic 7200 s leaves a new upstream version unresolvable for
+up to two hours, the window in which update bots open merge requests. Catalog-driven invalidation
+works only for upstreams that offer a catalog.
+
+**Spec:** [R-REPO-027](spec/repositories-and-proxy.md#r-repo-027--metadata-freshness-and-refresh-timeout), [R-REPO-028](spec/repositories-and-proxy.md#r-repo-028--negative-cache), [R-REPO-029](spec/repositories-and-proxy.md#r-repo-029--upstream-failure-handling-and-the-assumed-offline-circuit), [R-REPO-030](spec/repositories-and-proxy.md#r-repo-030--offline-mode-per-repository), [R-REPO-031](spec/repositories-and-proxy.md#r-repo-031--global-offline-switch), [R-REPO-025](spec/repositories-and-proxy.md#r-repo-025--remote-request-path),
+[R-NUGET-015](spec/formats/nuget.md#r-nuget-015--remote-repository-proxying-caching-and-url-rewriting); decided: [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period), [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document), [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes) (NuGet 300 s).
 
 ### ADR-039 · Egress address checks after DNS resolution for every remote connection
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Remote URLs, redirect targets and URLs taken from upstream metadata could make a
 remote repository reach internal addresses, including cloud metadata endpoints.
@@ -1050,18 +1445,20 @@ and proxy credentials are sent to the proxy only.
 
 **Consequences.** A DNS answer that changes between check and use cannot pass. Through an outbound
 proxy the proxy connects on its own, so the check is weaker there ([H-6](spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks), [H-40](spec/operations-and-observability.md#h-40--outbound-address-checks-are-weaker-through-an-outbound-proxy)). The chart's
-egress NetworkPolicy is an opt-in second layer ([Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy)).
+egress NetworkPolicy is an opt-in second layer, off by default because every narrower default
+breaks a common platform feature (link-local DNS caches, cloud workload identity) or in-cluster
+dependencies on some CNIs; `NOTES.txt` warns while it is off ([Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), option (a)).
 
 **Alternatives considered.** Checking the host name before resolution: bypassed by DNS rebinding.
 Denying private ranges by default: breaks the common internal-registry case. NetworkPolicy alone:
 not available on every cluster, and unaware of per-repository intent.
 
-**Spec:** [R-REPO-037](spec/repositories-and-proxy.md#r-repo-037--outbound-http-proxies), [R-REPO-038](spec/repositories-and-proxy.md#r-repo-038--egress-address-rules-for-remote-repositories), [R-REPO-039](spec/repositories-and-proxy.md#r-repo-039--upstream-redirects), [R-ARCH-022](spec/architecture.md#r-arch-022--outbound-http-client-factory), [R-OPS-042](spec/operations-and-observability.md#r-ops-042--delivery-retries-and-outbound-protection); open:
+**Spec:** [R-REPO-037](spec/repositories-and-proxy.md#r-repo-037--outbound-http-proxies), [R-REPO-038](spec/repositories-and-proxy.md#r-repo-038--egress-address-rules-for-remote-repositories), [R-REPO-039](spec/repositories-and-proxy.md#r-repo-039--upstream-redirects), [R-ARCH-022](spec/architecture.md#r-arch-022--outbound-http-client-factory), [R-OPS-042](spec/operations-and-observability.md#r-ops-042--delivery-retries-and-outbound-protection); decided:
 [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy).
 
 ### ADR-040 · Strict repository configuration documents and asynchronous deletion
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Repository configuration is edited through the API, the UI and configuration
 documents. A silently ignored typo or a half-finished delete is hard to diagnose.
@@ -1080,11 +1477,53 @@ an HTTP request for large repositories.
 
 **Spec:** [R-REPO-001](spec/repositories-and-proxy.md#r-repo-001--repository-classes-format-and-immutable-identity), [R-REPO-008](spec/repositories-and-proxy.md#r-repo-008--configuration-validation), [R-REPO-009](spec/repositories-and-proxy.md#r-repo-009--create-a-repository), [R-REPO-010](spec/repositories-and-proxy.md#r-repo-010--read-a-repository-configuration), [R-REPO-013](spec/repositories-and-proxy.md#r-repo-013--delete-a-repository).
 
+### ADR-091 · Forwarded search and audit requests withhold protected names
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Remote repositories forward two kinds of request that carry names instead of fetching
+a package: NuGet search and autocomplete queries, and npm's bulk audit requests. Forwarding them
+tells the upstream operator what internal developers type or depend on. Not forwarding them breaks
+discovery and security audits, and pushes developers to add the public registry as a second source,
+the setup that reopens dependency confusion.
+
+**Decision.** Both forward by default and withhold what trove can recognize as internal:
+- **NuGet search** ([Q-NUGET-4](spec/formats/nuget.md#q-nuget-4--forwarding-search-to-the-upstream), option (c)). A remote forwards search and autocomplete queries
+  (`nuget.forwardSearch: true`, switchable per remote). A query is answered from the cache alone
+  when one of its terms names an ID that an exclude pattern, a claim or a pin rule keeps away from
+  that remote. The rule applies per virtual repository too and reuses the claim lookup resolution
+  already has.
+- **npm audit** ([Q-NPM-3](spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default), option (c)). A remote forwards audit requests, but only names it already
+  holds a document for, minus names that local repositories, claims or pin rules mark internal.
+  Withheld names are reported in the `npm-notice` header, which npm prints, and a request whose
+  names are all withheld is answered with `{}`. Withdrawn packages stay forwardable, because
+  malware advisories are what an audit should find.
+
+The tests differ because the requests differ. An audit body is a list of exact names, which can be
+checked against what the remote has fetched, so no name leaves that the upstream has not already
+seen from this installation. Search terms are free text, so only terms that name a protected ID can
+be recognized.
+
+**Consequences.** Discovery and audits work out of the box, and names marked as internal stay
+inside. Free-text search terms outside protected namespaces, a project code name for example, still
+leave the network; `forwardSearch: false` remains for installations that need more. An audit of a
+lockfile resolved elsewhere is partial until its packages have passed through trove, and npm shows
+that. The counters `trove_nuget_search_withheld_total` and `trove_npm_audit_names_withheld_total`
+show how often names are withheld ([H-34](spec/formats/npm.md#h-34--audit-forwarding-discloses-the-dependency-set)).
+
+**Alternatives considered.** Forwarding every query or every name except recognized internal ones:
+discloses exactly the names an administrator marked as internal, or any internal name that nothing
+marks. Cache-only search or disabled audit by default: `npm audit` fails on every run and search
+finds no public package that nobody restored, so developers bypass trove.
+
+**Spec:** [R-NUGET-014](spec/formats/nuget.md#r-nuget-014--remote-repository-upstream-and-resource-discovery), [R-NUGET-016](spec/formats/nuget.md#r-nuget-016--search-and-autocomplete-through-a-remote-repository), [R-NUGET-018](spec/formats/nuget.md#r-nuget-018--virtual-repository-merged-search-and-autocomplete), [R-NPM-038](spec/formats/npm.md#r-npm-038--security-audit-endpoints); decided:
+[Q-NPM-3](spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default), [Q-NUGET-4](spec/formats/nuget.md#q-nuget-4--forwarding-search-to-the-upstream).
+
 ## Storage
 
 ### ADR-041 · The database row decides whether a blob exists
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** INV-4 writes an object only if it does not exist yet. An S3 `HEAD` as the existence
 check races with garbage collection, and a lock held across a multi-gigabyte transfer would block
@@ -1107,7 +1546,7 @@ transfer: serializes concurrent uploads of the same popular content.
 
 ### ADR-042 · Race-free garbage collection with a grace period
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Deduplicated blobs are shared; deleting one while an upload or copy adds a reference
 would corrupt a package.
@@ -1116,8 +1555,13 @@ would corrupt a package.
 full sweep, both older than `storage.gc.grace_period` (24 h proposed). Per blob, in one READ COMMITTED
 transaction: `FOR UPDATE` on the row (which waits for uploads holding `FOR SHARE`), a reference check
 in a separate statement, then the state `deleting`; after commit the object is deleted, and the row
-is removed once a settle period has passed. Every step is idempotent. Runs are singleton jobs under
-a lease, scheduled with five-field cron in UTC.
+is removed once a settle period has passed. Every step is idempotent. Runs are the tasks `gc`
+(incremental) and `gc-full` (full sweep) of the shared task framework ([ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work)), which share one
+exclusive key so they never overlap. Each has its own schedule in five-field cron with the
+Kubernetes macros, evaluated in UTC. Other dialects' forms (`?`, `7`, six fields, time-zone
+prefixes) are rejected with `422 invalid_schedule`, so an expression from a dialect that counts
+Sunday as 1 fails loudly instead of running on the wrong day ([Q-STOR-4](spec/storage.md#q-stor-4--cron-dialect-shared-by-all-schedules), [Q-OPS-7](spec/operations-and-observability.md#q-ops-7--one-cron-syntax-for-the-whole-system), option (a)
+on both pages).
 
 **Consequences.** Collection never removes an object a committed reference uses, and no upload
 commits against a blob being deleted. The grace period also lets content that is deleted and
@@ -1126,13 +1570,17 @@ consistent ([ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-o
 
 **Alternatives considered.** A reference counter column: drifts under crashes and concurrency.
 Mark-and-sweep over the bucket listing alone: expensive on large buckets and racing with uploads.
-No collection: unbounded growth.
+No collection: unbounded growth. For schedules: the six-field dialect with seconds and `?`, whose
+weekday numbering conflicts with every crontab; accepting both dialects by field count, which runs
+a pasted expression on the wrong day; a time zone per schedule, which can be added later as a
+separate field.
 
-**Spec:** [R-STOR-024](spec/storage.md#r-stor-024--race-free-garbage-collection), [R-STOR-025](spec/storage.md#r-stor-025--garbage-collection-schedule-full-sweep-and-manual-run); open: [Q-STOR-4](spec/storage.md#q-stor-4--cron-dialect-shared-by-all-schedules).
+**Spec:** [R-STOR-024](spec/storage.md#r-stor-024--race-free-garbage-collection), [R-STOR-025](spec/storage.md#r-stor-025--garbage-collection-schedule-full-sweep-and-manual-run); decided: [Q-STOR-4](spec/storage.md#q-stor-4--cron-dialect-shared-by-all-schedules), [Q-OPS-7](spec/operations-and-observability.md#q-ops-7--one-cron-syntax-for-the-whole-system),
+[Q-STOR-10](spec/storage.md#q-stor-10--storage-maintenance-jobs-and-the-storage-summary-one-task-framework-one-path).
 
 ### ADR-043 · Object-store outage: no local queue, and 201 means durable
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** S3 can become unreachable while PostgreSQL is fine. Queueing uploads locally would
 keep accepting writes, but a replica loss would then lose acknowledged packages.
@@ -1141,20 +1589,32 @@ keep accepting writes, but a replica loss would then lose acknowledged packages.
 nothing; a 201 always means the content is durable in S3. Everything that touches only PostgreSQL
 keeps working: deduplicated uploads, deploy by checksum, copy, move, delete, properties, trash
 operations, `HEAD`, listings, UI and API. Downloads of stored content answer 503. Collection jobs
-back off. Readiness follows INV-12 with hysteresis (fail after 60 s, recover after 10 s, proposed).
+back off.
 
-**Consequences.** No acknowledged write is ever lost to a replica failure. Under the current INV-12
-wording a shared outage still removes every replica from the Service; storage.md recommends
-changing that ([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12)).
+Readiness follows the revised INV-12 ([ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12), [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12), option (d)):
+- **First readiness.** Object storage gates only a replica's first readiness, through the start-up
+  check. That check keeps retrying transient errors, so a replica started during an outage waits
+  not ready instead of crash-looping, and becomes ready as soon as the store returns.
+- **Running replicas** stay ready. `/readyz` reports `degraded`, and the circuit breaker fails blob
+  operations per request.
+- **Opt-in.** `health.require_object_store: true` gates continuously with the thresholds of the
+  operations page.
+
+The storage page's own hysteresis keys are removed.
+
+**Consequences.** No acknowledged write is ever lost to a replica failure. A shared outage no
+longer removes every replica from the Service, so the operations above stay available during it.
+A rollout with a broken S3 configuration stalls instead of replacing working replicas.
 
 **Alternatives considered.** Asynchronous upload to S3 from local disk (deferred catalog entry
-STOR-016): would change what 201 means.
+STOR-016): would change what 201 means. Keeping INV-12's continuous gating: a shared outage becomes
+a total one, although everything above could still be served.
 
-**Spec:** [R-STOR-033](spec/storage.md#r-stor-033--connection-pool-timeouts-retries-and-circuit-breaker), [R-STOR-036](spec/storage.md#r-stor-036--behavior-during-an-object-store-outage); open: [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12).
+**Spec:** [R-STOR-033](spec/storage.md#r-stor-033--connection-pool-timeouts-retries-and-circuit-breaker), [R-STOR-035](spec/storage.md#r-stor-035--object-store-consistency-assumptions-and-conformance-check), [R-STOR-036](spec/storage.md#r-stor-036--behavior-during-an-object-store-outage); decided: [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12).
 
 ### ADR-044 · A trash can that also covers overwrites (P1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Deletes and overwrites in local repositories are the classic accident, for example a CI
 job republishing a release path.
@@ -1165,16 +1625,20 @@ user-deployed files, retention policies unless they bypass it, and repository ca
 metadata is replaced without trash. Restore and permanent removal are explicit operations.
 
 **Consequences.** Storage is freed only after the retention period; repositories that overwrite
-routinely accumulate trash volume. npm tombstones survive the trash and its purge ([ADR-067](#adr-067--npm-versions-are-immutable-guarded-by-tombstones)).
+routinely accumulate trash volume. npm and NuGet tombstones survive the trash and its purge
+([ADR-067](#adr-067--npm-and-nuget-versions-are-immutable-guarded-by-tombstones)). For the MVP formats the overwrite case is rare, because their versions are
+immutable; it matters mainly for raw and generic paths. Decided: an overwrite of a user-deployed
+file in a local repository sends the previous item to the trash can ([Q-STOR-5](spec/storage.md#q-stor-5--does-overwriting-a-file-send-the-previous-content-to-the-trash-can), option (a)).
 
 **Alternatives considered.** Trash for deletes only: leaves `overwrite` as the one destructive
-action without a safety net ([Q-STOR-5](spec/storage.md#q-stor-5--does-overwriting-a-file-send-the-previous-content-to-the-trash-can)).
+action without a safety net ([Q-STOR-5](spec/storage.md#q-stor-5--does-overwriting-a-file-send-the-previous-content-to-the-trash-can)). A per-repository switch to opt out: a setting whose
+only use is to turn protection off; it can be added later without changing the default.
 
-**Spec:** [R-STOR-022](spec/storage.md#r-stor-022--trash-can), [R-STOR-023](spec/storage.md#r-stor-023--restore-and-permanent-removal-from-the-trash-can); open: [Q-STOR-5](spec/storage.md#q-stor-5--does-overwriting-a-file-send-the-previous-content-to-the-trash-can).
+**Spec:** [R-STOR-022](spec/storage.md#r-stor-022--trash-can), [R-STOR-023](spec/storage.md#r-stor-023--restore-and-permanent-removal-from-the-trash-can); decided: [Q-STOR-5](spec/storage.md#q-stor-5--does-overwriting-a-file-send-the-previous-content-to-the-trash-can).
 
 ### ADR-045 · Presigned download redirects as a per-repository opt-in (P2)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Streaming large downloads through the replicas costs bandwidth and CPU that the object
 store could serve directly.
@@ -1198,30 +1662,39 @@ redirecting: exposes the object store to every client network.
 
 ### ADR-046 · Server-side UI sessions behind an opaque cookie
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** The UI needs a login state that can be ended immediately, on every replica.
 
 **Decision.** A session is created only after a successful OIDC callback or break-glass login, and
 any session cookie presented at that moment is replaced. The session secret is 32 random bytes;
-PostgreSQL stores only its SHA-256. The cookie is `Secure; HttpOnly; SameSite=Lax; Path=/`, without
-`Domain`, `Max-Age` or `Expires`. `Lax` is needed because the first navigation after the identity
-provider's redirect must carry the cookie. Unsafe cookie-authenticated requests need a CSRF token
-from a second cookie, sent back as a header. Proposed timeouts: idle 1 h, absolute 12 h.
+PostgreSQL stores only its SHA-256. The cookie is `__Host-trv_session` with
+`Secure; HttpOnly; SameSite=Lax; Path=/`, without `Domain`, `Max-Age` or `Expires`. `Lax` is needed
+because the first navigation after the identity provider's redirect must carry the cookie. Unsafe
+cookie-authenticated requests need a CSRF token from a second cookie, `__Host-trv_csrf`, sent back
+as a header. The login flow's binding cookie is `__Host-trv_oidc_binding`. Default timeouts
+(marked proposed in R-AUTH-011): idle 1 h, absolute 12 h.
 
 **Consequences.** Logout and revocation take effect on every replica within the token-cache bound
-([ADR-048](#adr-048--tokens-hashed-with-sha-256-a-positive-only-cache-bounded-revocation-latency)). The cookie flags are a convention until the `__Host-` prefix makes the browser
-enforce them ([Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name)).
+([ADR-048](#adr-048--tokens-hashed-with-sha-256-a-positive-only-cache-bounded-revocation-latency)). The `__Host-` prefix makes the browser enforce the flags on all three cookies: host-only,
+`Secure` and `Path=/`, so a sibling subdomain or a plain-HTTP response can neither plant nor shadow
+them, which also closes login CSRF through a planted binding cookie. The binding cookie uses
+`Path=/` and is therefore sent on every request during its 10 minutes; it is `HttpOnly` and useless
+without its flow row. Clearing a cookie needs `Secure` and `Path=/` as well, or the browser keeps
+it.
 
 **Alternatives considered.** Stateless signed session cookies: no immediate logout without a
 server-side deny-list. `SameSite=Strict`: the cookie would be missing right after the login
-redirect.
+redirect. Unprefixed cookie names: the flags stay a convention, open to cookie tossing. The prefix
+for the session and CSRF cookies only: the login-CSRF defense would still rest on a cookie a sibling
+subdomain can plant ([Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name)).
 
-**Spec:** [R-AUTH-010](spec/identity-and-authentication.md#r-auth-010--server-side-ui-sessions), [R-AUTH-011](spec/identity-and-authentication.md#r-auth-011--session-timeouts-and-recent-authentication), [R-AUTH-012](spec/identity-and-authentication.md#r-auth-012--csrf-protection-for-cookie-authenticated-requests), [R-AUTH-013](spec/identity-and-authentication.md#r-auth-013--logout-and-rp-initiated-logout); open: [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name).
+**Spec:** [R-AUTH-005](spec/identity-and-authentication.md#r-auth-005--authorization-request-with-pkce-state-and-nonce), [R-AUTH-010](spec/identity-and-authentication.md#r-auth-010--server-side-ui-sessions), [R-AUTH-011](spec/identity-and-authentication.md#r-auth-011--session-timeouts-and-recent-authentication), [R-AUTH-012](spec/identity-and-authentication.md#r-auth-012--csrf-protection-for-cookie-authenticated-requests), [R-AUTH-013](spec/identity-and-authentication.md#r-auth-013--logout-and-rp-initiated-logout); decided:
+[Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name).
 
 ### ADR-047 · A break-glass administrator outside the database
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** If the identity provider is down or misconfigured, someone must still be able to log in
 and repair trove, without depending on the state being repaired.
@@ -1243,7 +1716,7 @@ state it recovers.
 
 ### ADR-048 · Tokens hashed with SHA-256, a positive-only cache, bounded revocation latency
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Package clients present a token on every request, and a revoked token must stop working
 everywhere quickly.
@@ -1254,20 +1727,29 @@ then a per-replica cache of positive results, then the database. The cache is in
 `LISTEN/NOTIFY` on every revocation, rotation, principal change and membership change; when the
 listener drops, the cache is emptied and bypassed. A revoked token is rejected on every replica
 within 2 s while notifications flow and never later than the cache TTL (15 s). Revocation by value
-is open to anyone, because possession already allows revocation (proposed, [Q-AUTH-6](spec/identity-and-authentication.md#q-auth-6--unauthenticated-revoke-by-value)).
+is open to anyone, because possession already allows revocation. It is rate-limited and answers
+202 for every well-formed value, so it reveals nothing (decided, [Q-AUTH-6](spec/identity-and-authentication.md#q-auth-6--unauthenticated-revoke-by-value), option (a)). A
+by-value revocation follows the rotation chain forward, even when the presented token is already
+revoked or expired, so a leaked predecessor ends the chain. Rotation is renewal, never a leak
+response: a leaked token is revoked and replaced.
 
 **Consequences.** One indexed lookup per uncached request. Secret scanners can revoke leaked tokens
-directly.
+directly. The holder of a stale, already rotated value can end its live successor. That is
+deliberate: trove cannot tell a holder's rotation from a thief's, and the legitimate holder loses
+nothing they could keep safely and creates a new token.
 
 **Alternatives considered.** A slow password hash: costs CPU on every uncached request and protects
 nothing at this entropy. Caching negative results: would keep rejecting a token after a transient
-error.
+error. Revocation by value for administrators or authenticated principals only: leaked tokens live
+until someone with an account acts, and external finders are excluded. A time-limited cascade that
+follows the chain only for recently rotated tokens was considered and rejected: it fails in the case
+the cascade exists for, a leak found after the thief has rotated.
 
-**Spec:** [R-AUTH-023](spec/identity-and-authentication.md#r-auth-023--token-storage-validation-and-caching), [R-AUTH-029](spec/identity-and-authentication.md#r-auth-029--token-revocation), [R-AUTH-030](spec/identity-and-authentication.md#r-auth-030--token-rotation); open: [Q-AUTH-6](spec/identity-and-authentication.md#q-auth-6--unauthenticated-revoke-by-value).
+**Spec:** [R-AUTH-023](spec/identity-and-authentication.md#r-auth-023--token-storage-validation-and-caching), [R-AUTH-029](spec/identity-and-authentication.md#r-auth-029--token-revocation), [R-AUTH-030](spec/identity-and-authentication.md#r-auth-030--token-rotation); decided: [Q-AUTH-6](spec/identity-and-authentication.md#q-auth-6--unauthenticated-revoke-by-value).
 
 ### ADR-049 · Command-line login through the browser session (P1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Users should get a token into npm or another tool without copying it from the UI, and
 without trove ever handling their identity-provider password.
@@ -1278,19 +1760,40 @@ Other tools use the OAuth 2.0 Device Authorization Grant (RFC 8628) with a user 
 browser to the terminal. npm's legacy login accepts only an existing token as password and never
 mints one.
 
+The npm poll is bound to the network it started from (decided, [Q-AUTH-8](spec/identity-and-authentication.md#q-auth-8--address-binding-of-the-npm-web-login-poll), option (d)):
+- **Default mode `network`.** A poll matches when it comes from the starting address, from the same
+  IPv4 `/24` or IPv6 `/56`, or from the same operator range (`poll_binding.equivalent_ranges`).
+  The modes `exact` and `off` stay selectable.
+- **Refused polls** appear on the approval page, are audited (`cli_login.poll_refused`) and
+  counted.
+- **Trusted proxies.** The binding depends on the client address, and with it on
+  `server.trusted_proxies`. Behind an edge proxy with that list empty, every poll carries the
+  proxy's address. trove cannot detect that state, so the settings warn when the list is empty,
+  and also when the mode is `off`.
+
 **Consequences.** No password prompt in any client; every token is created by an authenticated
 browser session. Consent phishing of the browser step ([H-15](spec/identity-and-authentication.md#h-15--consent-phishing-of-command-line-browser-login)) and login secrets in URLs outside
-trove ([H-20](spec/identity-and-authentication.md#h-20--command-line-login-secrets-in-urls-outside-trove)) remain.
+trove ([H-20](spec/identity-and-authentication.md#h-20--command-line-login-secrets-in-urls-outside-trove)) remain. With network binding, H-20 is limited to a reader of proxy or ingress logs
+inside the user's `/24` or `/56` within the 10-minute flow, which no binding mode stops when that
+reader shares the user's egress. Multi-egress corporate networks keep web login working, where an
+exact-address binding made npm fall back to the legacy prompt.
 
 **Alternatives considered.** Username and identity-provider password in the client: trove would
 handle passwords, against [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7). Copying tokens from the UI only: works, but pushes users to
-long-lived tokens in dotfiles.
+long-lived tokens in dotfiles. For the poll binding ([Q-AUTH-8](spec/identity-and-authentication.md#q-auth-8--address-binding-of-the-npm-web-login-poll)):
+- An exact address breaks web login on every multi-egress network.
+- No binding lets any real-time reader of a log anywhere collect the token.
+- Exact addresses plus operator ranges fail by default on corporate networks.
+- Web login off by default was considered: it removes H-20 by removing the feature, and makes
+  every npm user copy a longer-lived token from the UI. It stays available as
+  `npm_web_login: false` for operators whose access logs are widely readable.
 
-**Spec:** [R-AUTH-034](spec/identity-and-authentication.md#r-auth-034--npm-web-login), [R-AUTH-035](spec/identity-and-authentication.md#r-auth-035--npm-legacy-login-and-logout), [R-AUTH-036](spec/identity-and-authentication.md#r-auth-036--browser-login-handoff-for-other-command-line-tools), [R-NPM-020](spec/formats/npm.md#r-npm-020--web-login), [R-NPM-021](spec/formats/npm.md#r-npm-021--legacy-login-and-logout).
+**Spec:** [R-AUTH-034](spec/identity-and-authentication.md#r-auth-034--npm-web-login), [R-AUTH-035](spec/identity-and-authentication.md#r-auth-035--npm-legacy-login-and-logout), [R-AUTH-036](spec/identity-and-authentication.md#r-auth-036--browser-login-handoff-for-other-command-line-tools), [R-AUTH-040](spec/identity-and-authentication.md#r-auth-040--runtime-authentication-settings), [R-NPM-020](spec/formats/npm.md#r-npm-020--web-login), [R-NPM-021](spec/formats/npm.md#r-npm-021--legacy-login-and-logout);
+decided: [Q-AUTH-8](spec/identity-and-authentication.md#q-auth-8--address-binding-of-the-npm-web-login-poll).
 
 ### ADR-050 · Anonymous access is off by default and needs two switches
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Some installations serve public packages without credentials; most must not.
 
@@ -1312,7 +1815,7 @@ the operator meant to keep closed. Anonymous access as an ordinary group: no har
 
 ### ADR-051 · Actions are explicit, and a token scope only narrows
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Implied actions ("deploy implies read") make policies shorter but their effect harder to
 read. Tokens should be able to carry less than their owner holds, never more.
@@ -1322,16 +1825,30 @@ written. A token scope is a ceiling: an action is allowed only if the subject's 
 the scope admits it. Repository configuration is not a repository action; it needs a system role or
 project administration.
 
+A scope names exactly the resource types the grant model has: a closed set of typed parts,
+`repositories` (MVP), `system` (P1) and `builds` (P1), validated by a fixed schema
+([Q-AUTHZ-10](spec/authorization.md#q-authz-10--resource-types-a-token-scope-can-name), option (b)). Each element of the `repositories` part is a policy resource set:
+`repositories`, `packages` and `paths` with `include` and `exclude`, plus `actions`
+([Q-AUTHZ-9](spec/authorization.md#q-authz-9--shape-of-the-repository-part-of-a-token-scope), option (a)). A top-level `include` or `exclude` is refused with `400 invalid_scope`.
+
 **Consequences.** What a policy grants is exactly what it lists. A scoped token loses rights when its
-owner loses them, because grants are evaluated at use time.
+owner loses them, because grants are evaluated at use time. One matcher and one validator serve
+policies, scopes and CI inline grants, so a pattern means the same wherever it appears. A
+restricted scope without `builds` admits no build action, and project parts wait for project roles
+(P2).
 
-**Alternatives considered.** Hierarchical actions: shorter policies, less obvious results.
+**Alternatives considered.** Hierarchical actions: shorter policies, less obvious results. One
+`include`/`exclude` pair interpreted per format: ambiguous for a scope that spans formats. A
+path-only string grammar: reintroduces the trap of a pattern that admits a tarball but not its
+metadata. An open typed grammar with per-repository configuration types: no grant model stands
+behind them, so such items would yield nothing or would have to grant on their own.
 
-**Spec:** [R-AUTHZ-001](spec/authorization.md#r-authz-001--deny-by-default-allow-only-grants), [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions), [R-AUTHZ-013](spec/authorization.md#r-authz-013--token-scope-as-a-ceiling); open: [Q-AUTHZ-9](spec/authorization.md#q-authz-9--shape-of-the-repository-part-of-a-token-scope).
+**Spec:** [R-AUTHZ-001](spec/authorization.md#r-authz-001--deny-by-default-allow-only-grants), [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions), [R-AUTHZ-013](spec/authorization.md#r-authz-013--token-scope-as-a-ceiling); decided: [Q-AUTHZ-9](spec/authorization.md#q-authz-9--shape-of-the-repository-part-of-a-token-scope),
+[Q-AUTHZ-10](spec/authorization.md#q-authz-10--resource-types-a-token-scope-can-name).
 
 ### ADR-052 · Changing what clients install needs `deploy`, not `annotate`
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Moving an npm dist-tag, deprecating a version or relisting a NuGet version changes what
 `npm install` or NuGet's version selection picks.
@@ -1339,7 +1856,7 @@ owner loses them, because grants are evaluated at use time.
 **Decision.** `deploy` covers creating new content and changing metadata that steers resolution:
 npm dist-tags and deprecation, NuGet relist. `annotate` covers descriptive metadata that does not
 change resolution, such as item properties. `overwrite` replaces existing bytes and is needed
-together with `deploy`; formats may refuse overwrites entirely ([ADR-067](#adr-067--npm-versions-are-immutable-guarded-by-tombstones)).
+together with `deploy`; formats may refuse overwrites entirely ([ADR-067](#adr-067--npm-and-nuget-versions-are-immutable-guarded-by-tombstones)).
 
 **Consequences.** A principal given `annotate` for property tooling cannot redirect installs.
 Ownership narrows both further ([ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish)).
@@ -1347,12 +1864,12 @@ Ownership narrows both further ([ADR-056](#adr-056--package-ownership-is-decided
 **Alternatives considered.** `annotate` for dist-tags and deprecation: the earlier npm mapping,
 decided against ([Q-NPM-9](spec/formats/npm.md#q-npm-9--annotate-or-deploy-for-dist-tags-and-deprecation)).
 
-**Spec:** [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions), [R-AUTHZ-007](spec/authorization.md#r-authz-007--action-map-for-npm-and-nuget-operations), [R-NPM-016](spec/formats/npm.md#r-npm-016--dist-tags-and-the-latest-rule), [R-NPM-018](spec/formats/npm.md#r-npm-018--deprecate-and-undeprecate); resolved:
+**Spec:** [R-AUTHZ-006](spec/authorization.md#r-authz-006--repository-actions), [R-AUTHZ-007](spec/authorization.md#r-authz-007--action-map-for-npm-and-nuget-operations), [R-NPM-016](spec/formats/npm.md#r-npm-016--dist-tags-and-the-latest-rule), [R-NPM-018](spec/formats/npm.md#r-npm-018--deprecate-and-undeprecate); decided:
 [Q-NPM-9](spec/formats/npm.md#q-npm-9--annotate-or-deploy-for-dist-tags-and-deprecation).
 
 ### ADR-053 · Virtual repositories: endpoint gate plus member rights
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** If `read` on a virtual repository granted read on its members, adding a private
 repository to it would silently expose that repository.
@@ -1366,33 +1883,42 @@ extra selector in policies. Membership changes cannot widen anyone's access.
 
 **Alternatives considered.** Implied gate (anyone who reads one member may use the virtual
 repository): one grant fewer. `read` on the virtual repository sufficient for members: simplest, and
-exposes members silently. Both are weighed in [Q-AUTHZ-1](spec/authorization.md#q-authz-1--endpoint-gate-on-virtual-repositories).
+exposes members silently. Both are weighed in [Q-AUTHZ-1](spec/authorization.md#q-authz-1--endpoint-gate-on-virtual-repositories), which chose the explicit gate.
 
-**Spec:** [R-AUTHZ-009](spec/authorization.md#r-authz-009--virtual-repositories), [R-REPO-019](spec/repositories-and-proxy.md#r-repo-019--virtual-resolution-algorithm); open: [Q-AUTHZ-1](spec/authorization.md#q-authz-1--endpoint-gate-on-virtual-repositories).
+**Spec:** [R-AUTHZ-009](spec/authorization.md#r-authz-009--virtual-repositories), [R-REPO-019](spec/repositories-and-proxy.md#r-repo-019--virtual-resolution-algorithm); decided: [Q-AUTHZ-1](spec/authorization.md#q-authz-1--endpoint-gate-on-virtual-repositories).
 
 ### ADR-054 · Cache fills are guarded by a configurable action, `read` by default
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Fetching an uncached package through a remote repository changes what the cache holds.
 Some installations want a pull-through proxy anyone can use; others want a frozen mirror only a few
 may extend.
 
-**Decision.** Each remote repository names its cache-fill action. Proposed default `read`, so any
+**Decision.** Each remote repository names its cache-fill action. The default is `read`, so any
 reader populates the cache; `deploy` turns the repository into a frozen mirror. Refreshing expired
 metadata counts as populating, because a refreshed document advertises versions the caller could not
 fetch otherwise. A caller who may read but not populate gets 403 `populate_not_permitted`.
 
 **Consequences.** The common case behaves like a plain proxy, without inconsistent 404s between
-users. [repositories-and-proxy.md](spec/repositories-and-proxy.md) and [formats/npm.md](spec/formats/npm.md) follow the `read` default; [Q-AUTHZ-4](spec/authorization.md#q-authz-4--default-populate-action-of-remote-repositories) keeps the alternative open.
+users. [repositories-and-proxy.md](spec/repositories-and-proxy.md) and [formats/npm.md](spec/formats/npm.md) follow the `read` default, which [Q-AUTHZ-4](spec/authorization.md#q-authz-4--default-populate-action-of-remote-repositories) decided
+(option (a)). Anonymous populating needs two explicit administrator decisions, the runtime switch
+and a policy that grants `anonymous` read on the remote. The policy API names the consequence when
+such a grant is saved, with the warning `anonymous_populates_remote`. A request authenticated by
+the session cookie never passes the populate check and gets what the cache holds, so a link or a
+README image cannot make an administrator's browser bring an attacker-chosen package into a frozen
+mirror. Package clients authenticate with tokens and are not affected.
 
-**Alternatives considered.** `deploy` as default: frozen-mirror semantics for every installation.
+**Alternatives considered.** `deploy` as default: frozen-mirror semantics for every installation,
+and the most common support case of such proxies, a package that installs for one developer and
+not for a colleague. Populating only for authenticated callers unless a repository opts in:
+inconsistent 404s exactly for the anonymous mirror case that anonymous read is granted for.
 
-**Spec:** [R-AUTHZ-008](spec/authorization.md#r-authz-008--remote-repositories-who-may-populate-the-cache), [R-REPO-024](spec/repositories-and-proxy.md#r-repo-024--remote-repository-settings); open: [Q-AUTHZ-4](spec/authorization.md#q-authz-4--default-populate-action-of-remote-repositories).
+**Spec:** [R-AUTHZ-008](spec/authorization.md#r-authz-008--remote-repositories-who-may-populate-the-cache), [R-REPO-024](spec/repositories-and-proxy.md#r-repo-024--remote-repository-settings); decided: [Q-AUTHZ-4](spec/authorization.md#q-authz-4--default-populate-action-of-remote-repositories).
 
 ### ADR-055 · Refused reads answer 404, refused writes 403
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A 403 on a read confirms that a private package exists.
 
@@ -1413,31 +1939,49 @@ writes too: hides the reason from a caller who is entitled to know it lacks `dep
 
 ### ADR-056 · Package ownership is decided by the first publish
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** "A CI job may write the packages it produces" ([ADR-008](#adr-008--gitlab-ci-jobs-obtain-permissions-through-oidc)) must hold even when several
 principals hold `deploy` on overlapping name patterns.
 
 **Decision.** Local repositories of formats with package names carry `packageOwnership: enforce` or
-`off`; the proposed default for new npm and NuGet repositories is `enforce`. The first publish claims
-the name for the owner its grant designates: a user, a group, a service account, a CI identity
-mapping, or a CI project. Later changes are reserved to owners and holders of `manage`. Ownership is
-recorded per repository in the MVP; shared ownership domains follow in P1. CI grants with
-`ownership: bind_project` always check ownership.
+`off`. New npm and NuGet repositories get `enforce` when the create request does not set the field
+(decided, [Q-AUTHZ-2](spec/authorization.md#q-authz-2--ownership-enforcement-default-for-new-npm-and-nuget-local-repositories), option (a)). The first publish claims the name for the owner its grant
+designates: a user, a group, a service account, a CI identity mapping, or a CI project. Later
+changes are reserved to owners and holders of `manage`. Ownership is recorded per repository in the
+MVP; shared ownership domains follow in P1.
+
+CI grants (decided, [Q-AUTHZ-6](spec/authorization.md#q-authz-6--default-ownership-of-ci-inline-grants-that-write) option (b), [Q-CI-6](spec/gitlab-ci-oidc.md#q-ci-6--how-a-ci-project-acquires-package-ownership) option (d)):
+- **Default `bind_project`.** A writing inline grant (`deploy`, `overwrite` or `delete`) that omits
+  `ownership` is saved as `bind_project`, so the first publishing project owns the name. The
+  default is applied and stored at save time, so reads and explanations show it. Any other inline
+  grant is saved as `none`.
+- **Sharing is explicit.** An explicit `none` on a writing grant shares names across the mapping's
+  projects and is saved with the warning `shared_ownership`.
+- **Existing names are not claimed by CI.** A CI publish never claims a name that already has
+  versions but no owner; a `manage` holder adds the project as owner first.
 
 **Consequences.** One project cannot publish versions of another project's package even when the
-name slugs collide. Name prefixes cannot be reserved by ownership alone ([H-21](spec/authorization.md#h-21--no-reservation-of-name-prefixes)); claims
-([ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules)) decide resolution, ownership decides publishing.
+name slugs collide. A person or service account holding `deploy` on an overlapping pattern cannot
+publish the next version of a CI project's package. A group-wide mapping does not silently make all
+its projects co-owners. A grant to a single user makes that user the personal owner, and imported
+names need one owner assignment before anyone without `manage` publishes them. Name prefixes cannot
+be reserved by ownership alone ([H-21](spec/authorization.md#h-21--no-reservation-of-name-prefixes)); claims ([ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules)) decide resolution, ownership decides
+publishing.
 
 **Alternatives considered.** No ownership, only non-overlapping patterns: collisions go unnoticed.
-Administrator pre-registration only: administration for every new package.
+Administrator pre-registration only: administration for every new package. `off` by default: only
+`bind_project` grants are checked, so the owner constraint holds only against other CI jobs. A
+record-only mode: a third mode that refuses nothing until someone switches. `none` as the CI
+default: every project of a group-wide mapping co-owns everything any of them publishes. No CI
+default at all: friction on every mapping although the safe value is obvious.
 
-**Spec:** [R-AUTHZ-018](spec/authorization.md#r-authz-018--package-ownership), [R-AUTHZ-019](spec/authorization.md#r-authz-019--package-ownership-api), [R-AUTHZ-020](spec/authorization.md#r-authz-020--shared-ownership-domains), [R-CI-015](spec/gitlab-ci-oidc.md#r-ci-015--package-ownership-binding); open:
-[Q-AUTHZ-2](spec/authorization.md#q-authz-2--ownership-enforcement-default-for-new-npm-and-nuget-local-repositories), [Q-AUTHZ-6](spec/authorization.md#q-authz-6--default-ownership-of-ci-inline-grants-that-write), [Q-CI-6](spec/gitlab-ci-oidc.md#q-ci-6--how-a-ci-project-acquires-package-ownership).
+**Spec:** [R-AUTHZ-014](spec/authorization.md#r-authz-014--ci-tokens-in-evaluation), [R-AUTHZ-018](spec/authorization.md#r-authz-018--package-ownership), [R-AUTHZ-019](spec/authorization.md#r-authz-019--package-ownership-api), [R-AUTHZ-020](spec/authorization.md#r-authz-020--shared-ownership-domains), [R-CI-013](spec/gitlab-ci-oidc.md#r-ci-013--grant-specification),
+[R-CI-015](spec/gitlab-ci-oidc.md#r-ci-015--package-ownership-binding); decided: [Q-AUTHZ-2](spec/authorization.md#q-authz-2--ownership-enforcement-default-for-new-npm-and-nuget-local-repositories), [Q-AUTHZ-6](spec/authorization.md#q-authz-6--default-ownership-of-ci-inline-grants-that-write), [Q-CI-6](spec/gitlab-ci-oidc.md#q-ci-6--how-a-ci-project-acquires-package-ownership).
 
 ### ADR-057 · A compiled grant index per replica, consistent through an epoch, failing closed
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Authorization runs on every request and must not query policy tables each time, yet a
 removed grant must stop working everywhere.
@@ -1460,7 +2004,7 @@ Caching without an epoch: no bound on staleness.
 
 ### ADR-058 · Projects for delegated administration, reduced, in P1
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Larger installations want teams to administer their own repositories and policies
 without system administrator rights.
@@ -1475,13 +2019,13 @@ projects in P1 ([Q-AUTHZ-7](spec/authorization.md#q-authz-7--ci-delegations-and-
 **Alternatives considered.** Full projects with roles and environments in P1: a large model before
 there is usage to shape it. No delegation: every change goes through system administrators.
 
-**Spec:** [R-AUTHZ-025](spec/authorization.md#r-authz-025--delegated-policy-management), [R-AUTHZ-026](spec/authorization.md#r-authz-026--projects-for-delegated-administration), [R-API-047](spec/api-and-ui.md#r-api-047--projects); open: [Q-AUTHZ-7](spec/authorization.md#q-authz-7--ci-delegations-and-p1-projects).
+**Spec:** [R-AUTHZ-025](spec/authorization.md#r-authz-025--delegated-policy-management), [R-AUTHZ-026](spec/authorization.md#r-authz-026--projects-for-delegated-administration), [R-API-047](spec/api-and-ui.md#r-api-047--projects); decided: [Q-AUTHZ-7](spec/authorization.md#q-authz-7--ci-delegations-and-p1-projects).
 
 ## GitLab CI OIDC
 
 ### ADR-059 · CI tokens through a standard token-exchange endpoint
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A job needs to turn its GitLab ID token into a trove token with standard tooling.
 
@@ -1489,20 +2033,31 @@ there is usage to shape it. No delegation: every change goes through system admi
 token is the subject token, the response carries `access_token` (a `trv_cit_` token),
 `expires_in` and `scope`. The issuance (`jti` record, token hash, issuance record, audit event) is
 one transaction. Rejected subject tokens answer 400 `invalid_request` with a machine-readable
-`reason`. An optional `scope` parameter narrows the result.
+`reason` and `requestId`, in the OAuth error body of RFC 6749, not as problem details
+([Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens), option (a)). An optional `scope` parameter narrows the result. It is an RFC 6749
+scope string whose items, `<action>` or `<action>:<selector>` with any repository selector of
+R-AUTHZ-004, are a notation for the repository part of the R-AUTH-024 token scope. Each item
+becomes one repository grant of that structure, which is what the token stores, and the response's
+`scope` uses the same notation ([Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter), option (c)).
 
 **Consequences.** Standard OAuth libraries work against the endpoint. The same code serves the npm
-trusted-publishing entry point ([ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1)).
+trusted-publishing entry point ([ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1)). One scope model and one selector syntax serve every
+token, so `read:@any-local:npm` means the same as in a policy. A pipeline can give its install step,
+which runs third-party install scripts, a token without `deploy`. Package and path narrowing is not
+available in the request; the mapping's grants carry it.
 
 **Alternatives considered.** A custom endpoint and response shape: every client hand-written. 401
 for rejected subject tokens: not what RFC 8693 clients expect
-([Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens)).
+([Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens)). For the scope parameter ([Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter)):
+- An own string grammar: a second, weaker scope model next to R-AUTH-024.
+- The JSON scope in the request: not a valid OAuth scope, so standard clients cannot send it.
+- No `scope` parameter: every step of a job would hold the job's full grants.
 
-**Spec:** [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint), [R-CI-008](spec/gitlab-ci-oidc.md#r-ci-008--exchange-errors-and-diagnostics), [R-CI-021](spec/gitlab-ci-oidc.md#r-ci-021--exchange-endpoint-hardening); open: [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter), [Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens).
+**Spec:** [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint), [R-CI-008](spec/gitlab-ci-oidc.md#r-ci-008--exchange-errors-and-diagnostics), [R-CI-021](spec/gitlab-ci-oidc.md#r-ci-021--exchange-endpoint-hardening); decided: [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter), [Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens).
 
 ### ADR-060 · Ordered identity mappings: first match per tier, union across tiers
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Mappings turn verified claims into grants. Administrators need one predictable answer
 per job, and narrow rules ("merge request pipelines get less than release pipelines") without
@@ -1513,20 +2068,28 @@ optional maximum TTL and options. Within a tier, mappings are evaluated in ascen
 first true condition is the tier's match; the token's grants are the union of the tier matches. The
 MVP has one tier (administrator mappings); P1 adds one per delegation. No match fails the exchange.
 A grant that fails to render fails the exchange; evaluation never falls through to the next
-mapping.
+mapping ([Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings), option (a)). Each mapping is a principal named `<CI issuer name>/<mapping name>`,
+for example `gitlab-com/acme-release-publish`, referenced as `ci:<issuer>/<mapping>` in policies
+([Q-CI-10](spec/gitlab-ci-oidc.md#q-ci-10--principal-name-of-an-identity-mapping), option (a)). Both parts are immutable, so the principal is never renamed, and deleting
+the mapping deletes its principal.
 
 **Consequences.** Every exchange is explained by at most one mapping per tier. Delegated mappings
-cannot shadow system mappings or the reverse.
+cannot shadow system mappings or the reverse. A misordered rule gives fewer grants, never more. A
+grant every pipeline needs is repeated in each mapping a job can match first. Principal names stay
+unique per kind without a global namespace for mapping names, and audit events stay readable.
 
 **Alternatives considered.** Union of all matching mappings: simpler to explain, but narrowing needs
 negations. Strict first match across all mappings: delegations fight over priority numbers
-([Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings)).
+([Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings)). First match with an opt-in fall-through: order-dependent unions return. For the
+principal name ([Q-CI-10](spec/gitlab-ci-oidc.md#q-ci-10--principal-name-of-an-identity-mapping)): mapping names unique across all issuers, which forces coordination
+between GitLab instances, or the mapping's UUID, which leaves opaque IDs in audit and support work.
 
-**Spec:** [R-CI-009](spec/gitlab-ci-oidc.md#r-ci-009--identity-mapping-model-and-evaluation-order), [R-CI-010](spec/gitlab-ci-oidc.md#r-ci-010--claim-conditions-matchers-and-combinators), [R-CI-011](spec/gitlab-ci-oidc.md#r-ci-011--protected-refs-environments-and-pipeline-sources), [R-CI-023](spec/gitlab-ci-oidc.md#r-ci-023--delegated-mapping-management); open: [Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings).
+**Spec:** [R-CI-009](spec/gitlab-ci-oidc.md#r-ci-009--identity-mapping-model-and-evaluation-order), [R-CI-010](spec/gitlab-ci-oidc.md#r-ci-010--claim-conditions-matchers-and-combinators), [R-CI-011](spec/gitlab-ci-oidc.md#r-ci-011--protected-refs-environments-and-pipeline-sources), [R-CI-023](spec/gitlab-ci-oidc.md#r-ci-023--delegated-mapping-management); decided: [Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings),
+[Q-CI-10](spec/gitlab-ci-oidc.md#q-ci-10--principal-name-of-an-identity-mapping).
 
 ### ADR-061 · A small claim-template language with escaping
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** One mapping should serve many projects, for example "each project may publish
 `@<its namespace>/*`", without letting a crafted claim value widen the grant.
@@ -1547,28 +2110,37 @@ rules. No templating: one mapping per project.
 
 ### ADR-062 · Fork pipelines are denied by default
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A merge request pipeline from a fork can run in the parent project, with the fork's CI
 configuration and the parent's runners. Its code can exfiltrate anything the token can read.
 
 **Decision.** Before mapping evaluation, a subject token is cross-project when two of `project_id`,
-`job_project_id` and `source_project_id` are present and differ. With the issuer's default `deny`,
-such an exchange fails unless a matched mapping opts into `read_only`, which caps the grants to
-`read`.
+`job_project_id` and `source_project_id` are present and differ. Such a token is denied by default,
+and each matched mapping decides for itself ([Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines), option (d)):
+- **Opt-in per mapping.** Only a matched mapping that opts into `read_only` contributes, with its
+  own grants capped to `read`.
+- **Others contribute nothing.** A mapping without the opt-in contributes nothing and is not
+  recorded as one of the token's mappings, so policies naming it cannot reach the token.
+- **No issuer-wide switch.** If no matched mapping contributes, the exchange fails.
 
 **Consequences.** Fork contributions cannot reach private packages through CI unless a group opts in
-deliberately. GitLab requires a parent-project member to start such a pipeline, but that member may
-not review the fork's CI configuration.
+deliberately, on the very mapping whose grants it exposes. An opt-in never reaches another mapping
+or one created later, delegated mappings (P1) included. GitLab requires a parent-project member to
+start such a pipeline, but that member may not review the fork's CI configuration. A group that
+wants the opt-in on many mappings sets it on each.
 
 **Alternatives considered.** `read_only` by default: private packages readable by fork code
-([Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines)).
+([Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines)). An issuer-wide switch, the earlier draft: it silently extends to every mapping
+created later, and one opted-in mapping released the capped grants of every matched mapping.
+Always deny, without any opt-in: removes a deliberate choice for groups whose packages are not
+confidential.
 
-**Spec:** [R-CI-012](spec/gitlab-ci-oidc.md#r-ci-012--fork-and-merge-request-pipelines); open: [Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines).
+**Spec:** [R-CI-001](spec/gitlab-ci-oidc.md#r-ci-001--ci-issuer-configuration), [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint), [R-CI-012](spec/gitlab-ci-oidc.md#r-ci-012--fork-and-merge-request-pipelines); decided: [Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines).
 
 ### ADR-063 · A CI token's lifetime is bounded by its job
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A CI token should not outlive the job that obtained it by more than necessary.
 
@@ -1577,37 +2149,62 @@ the issuer's maxima, the installation's CI maximum (1 h proposed) and the remain
 ID token, whose expiry GitLab sets to the job timeout. One ceiling (6 h) governs every CI token, and
 trove refuses to start with a larger configured value. Long jobs exchange again.
 
-**Consequences.** A finished job's token stays valid for its remaining lifetime ([H-26](spec/gitlab-ci-oidc.md#h-26--ci-tokens-outlive-the-job));
-revocation on job end is not specified ([Q-CI-7](spec/gitlab-ci-oidc.md#q-ci-7--revoke-ci-tokens-when-the-gitlab-job-ends)).
+The TTL bound is the guarantee. In addition, jobs revoke their own token through
+`DELETE /api/v1/tokens/current` as the last command of `script`; the reference pipeline and the
+generated snippets include that step ([Q-CI-7](spec/gitlab-ci-oidc.md#q-ci-7--revoke-ci-tokens-when-the-gitlab-job-ends), option (c)).
 
-**Alternatives considered.** Revoking through GitLab job webhooks: needs a webhook secret per project
-or group and an inbound endpoint, for a window of minutes.
+**Consequences.** Jobs revoke their own token at the end of `script`, so a successful job, the
+common case, ends with no live token, using an endpoint the MVP has anyway. The TTL bounds failed,
+cancelled and timed-out jobs, whose last line does not run; their token stays valid for its
+remaining lifetime ([H-26](spec/gitlab-ci-oidc.md#h-26--ci-tokens-outlive-the-job)). The revocation belongs in `script`, because a variable exported
+there is not visible in `after_script`, which runs in a separate shell.
 
-**Spec:** [R-CI-016](spec/gitlab-ci-oidc.md#r-ci-016--ci-token-lifetime), [R-CI-017](spec/gitlab-ci-oidc.md#r-ci-017--ci-token-identity-presentation-and-revocation), [R-AUTH-026](spec/identity-and-authentication.md#r-auth-026--token-lifetime-policy); open: [Q-CI-7](spec/gitlab-ci-oidc.md#q-ci-7--revoke-ci-tokens-when-the-gitlab-job-ends).
+**Alternatives considered.** The TTL bound alone: every token outlives its job by up to its
+remaining lifetime. Revoking through GitLab job webhooks: needs a webhook secret per project or
+group and an inbound endpoint, for a window of minutes. A job-scoped revocation with the ID token
+from `after_script`: covers failed and cancelled jobs, but needs a new unauthenticated mutating
+endpoint and still misses timeouts. It becomes a P1 requirement if audit shows tokens of failed or
+cancelled jobs in use after their job ended.
 
-### ADR-064 · Subject-token reuse is recorded; single use is opt-in
+**Spec:** [R-CI-013](spec/gitlab-ci-oidc.md#r-ci-013--grant-specification), [R-CI-016](spec/gitlab-ci-oidc.md#r-ci-016--ci-token-lifetime), [R-CI-017](spec/gitlab-ci-oidc.md#r-ci-017--ci-token-identity-presentation-and-revocation), [R-AUTH-026](spec/identity-and-authentication.md#r-auth-026--token-lifetime-policy); decided: [Q-CI-7](spec/gitlab-ci-oidc.md#q-ci-7--revoke-ci-tokens-when-the-gitlab-job-ends).
 
-**Status:** Proposed
+### ADR-064 · Subject-token reuse is recorded; single use depends on the issuer kind
 
-**Context.** Jobs legitimately exchange their ID token several times (per tool step, after network
-errors, after the first CI token expired). Replays of a stolen ID token should still be visible.
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** A GitLab job receives its ID tokens once, as variables, and legitimately exchanges the
+same token several times (per tool step, after network errors, after the first CI token expired).
+Other CI systems hand out a fresh ID token on demand. Replays of a stolen ID token should be visible
+everywhere and blocked where no legitimate client needs a repeated exchange.
 
 **Decision.** Every exchanged subject token is recorded by issuer and `jti` with an exchange count,
-in the exchange transaction. Single use is off by default for GitLab and GitHub issuers; beyond a
-threshold, repeated exchanges create audit events. With single use on, a second exchange fails and
-tokens without `jti` are rejected. Records are deleted after the subject token's expiry.
+in the exchange transaction. The single-use default follows how a job obtains its subject token
+([Q-CI-4](spec/gitlab-ci-oidc.md#q-ci-4--single-exchange-per-jti-by-default), option (d)), and each CI issuer can override it:
+- **GitLab issuers record and count.** Single use is off, and beyond a threshold repeated exchanges
+  create audit events.
+- **GitHub and generic issuers default to single use.** A second exchange of the same `jti` fails,
+  and tokens without `jti` are rejected. A GitHub step requests a fresh ID token whenever it needs
+  one. For a generic issuer whose audience is shared, single use is the only replay control left.
 
-**Consequences.** Replays are counted and audited rather than blocked, relying on audience binding
-and short ID-token lifetimes. Issuers whose audience is shared should turn single use on
-([Q-CI-4](spec/gitlab-ci-oidc.md#q-ci-4--single-exchange-per-jti-by-default)).
+Records are deleted after the subject token's expiry.
 
-**Alternatives considered.** Single use for every issuer: breaks jobs that exchange more than once.
+**Consequences.** On GitLab, replays are counted and audited rather than blocked, relying on the
+exclusive audience ([ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10)) and short ID-token lifetimes; a long GitLab job renews its CI token by
+exchanging the same ID token again. A GitHub workflow that reuses one ID token across exchanges
+fails. Not verified, and recorded on the question's page: that every token request in one GitHub
+job yields a new `jti`.
 
-**Spec:** [R-CI-018](spec/gitlab-ci-oidc.md#r-ci-018--replay-protection), [R-CI-020](spec/gitlab-ci-oidc.md#r-ci-020--issuance-records-audit-and-metrics); open: [Q-CI-4](spec/gitlab-ci-oidc.md#q-ci-4--single-exchange-per-jti-by-default).
+**Alternatives considered.** Single use for every issuer: breaks GitLab jobs that exchange more than
+once. Off for every kind: for shared-audience issuers, every other relying party could replay the
+token and only an audit event would record it. Off for GitLab and GitHub, on only for generic, the
+earlier choice: leaves GitHub without single use although nothing there needs repeated exchanges.
+
+**Spec:** [R-CI-001](spec/gitlab-ci-oidc.md#r-ci-001--ci-issuer-configuration), [R-CI-016](spec/gitlab-ci-oidc.md#r-ci-016--ci-token-lifetime), [R-CI-018](spec/gitlab-ci-oidc.md#r-ci-018--replay-protection), [R-CI-020](spec/gitlab-ci-oidc.md#r-ci-020--issuance-records-audit-and-metrics), [R-CI-025](spec/gitlab-ci-oidc.md#r-ci-025--github-actions-as-a-ci-issuer); decided:
+[Q-CI-4](spec/gitlab-ci-oidc.md#q-ci-4--single-exchange-per-jti-by-default).
 
 ### ADR-065 · Further CI issuers through the same mechanism (P1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** GitHub Actions and other CI systems issue OIDC ID tokens too.
 
@@ -1626,7 +2223,7 @@ group hierarchies cannot be pinned by immutable ID ([H-27](spec/gitlab-ci-oidc.m
 
 ### ADR-066 · npm package documents are rendered from rows, not stored
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** An npm package document aggregates every version of a package. Storing it as a blob
 means rewriting a growing document on every publish, tag change or deprecation.
@@ -1644,28 +2241,54 @@ between concurrent changes to one package.
 
 **Spec:** [R-NPM-006](spec/formats/npm.md#r-npm-006--storage-model), [R-NPM-009](spec/formats/npm.md#r-npm-009--document-revisions-and-read-for-write), [R-NPM-010](spec/formats/npm.md#r-npm-010--full-package-document), [R-NPM-013](spec/formats/npm.md#r-npm-013--conditional-requests-and-cache-headers).
 
-### ADR-067 · npm versions are immutable, guarded by tombstones
+### ADR-067 · npm and NuGet versions are immutable, guarded by tombstones
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
-**Context.** Lockfiles pin `integrity` per version. A version republished with other bytes breaks
-installs or, worse, installs different code.
+**Context.** npm lockfiles pin `integrity` per version. NuGet clients cache by ID and version in
+the global packages folder, and lock files record content hashes. A version republished with other
+bytes breaks installs or, worse, installs different code. NuGet's implementation guidance forbids
+modifying packages for the same reason.
 
 **Decision.** A name and version once published to a local repository is never accepted again with
-other bytes: not by a second publish, not after unpublish, not by a raw upload, not for a principal
-holding `overwrite`. Unpublish writes a tombstone with the version's integrity, which survives the
-trash can and its purge. Restoring the original bytes from the trash removes the tombstone.
+other bytes in that repository. That holds for a second publish or push, after an unpublish, hard
+delete, raw delete, cleanup or move out, for a raw upload, for a copy or move into the repository
+(P1, refused per item), and for a principal holding `overwrite`. The guard is a tombstone:
+- **What writes one.** Every removal of a version from a local repository writes a tombstone with
+  the version's digest: unpublish on npm; hard delete, raw delete and cleanup deletion on NuGet; a
+  move out of the repository on both, written in the move transaction (P1). Clients of the source
+  repository may have cached the version, so a rebuilt version under the same number there would
+  diverge exactly as after a delete. A copy writes none, because the version stays.
+- **What survives.** The tombstone survives the trash can and its permanent removal.
+- **No purge.** No API, UI or `trove admin` operation removes a tombstone, and a republish of
+  identical bytes is refused like any other ([Q-NPM-8](spec/formats/npm.md#q-npm-8--purging-tombstones), option (a); [Q-NUGET-6](spec/formats/nuget.md#q-nuget-6--overwriting-an-existing-version), option (c)).
+- **What removes one.** Only restoring the original bytes from the trash can, which is not a reuse,
+  and deleting the whole repository.
 
-**Consequences.** `overwrite` has no effect on npm repositories. A fix ships as a new patch version.
-No purge operation is planned ([Q-NPM-8](spec/formats/npm.md#q-npm-8--purging-tombstones)).
+On NuGet a repeated push answers 409 `nuget_version_exists` and a push of a tombstoned version 409
+`nuget_version_deleted`. A NuGet protocol `DELETE` unlists by default, so a tombstone results only
+from a hard delete ([ADR-090](#adr-090--a-nuget-protocol-delete-unlists-by-default)).
 
-**Alternatives considered.** Allowing reuse after unpublish: reopens the lockfile-integrity hazard.
+**Consequences.** `overwrite` has no effect on npm or NuGet repositories (R-AUTHZ-006 lets formats
+refuse regardless). A fix ships as a new version; development feeds use pre-release counters. A
+version deleted by mistake cannot be pushed again once the trash can was purged (in the MVP, which
+has no trash can, at once). A rerun of an old release pipeline cannot silently re-release a version
+someone withdrew on purpose. Tombstone rows accumulate with every cleanup deletion, one small row
+per version.
 
-**Spec:** [R-NPM-008](spec/formats/npm.md#r-npm-008--version-immutability-and-tombstones), [R-NPM-017](spec/formats/npm.md#r-npm-017--unpublish); open: [Q-NPM-8](spec/formats/npm.md#q-npm-8--purging-tombstones).
+**Alternatives considered.** Allowing reuse after unpublish or hard delete: reopens the
+lockfile-integrity hazard in two steps for anyone with `deploy` and `delete`. An administrator purge:
+makes the guarantee depend on a role. Accepting a republish of identical bytes: integrity holds,
+but a withdrawal no longer sticks against automation that republishes. An opt-in overwrite for
+scratch feeds: replaced packages diverge between machines. A system-administrator-only, audited
+purge for both formats at once is the addition if an import must reuse deleted version numbers.
+
+**Spec:** [R-NPM-008](spec/formats/npm.md#r-npm-008--version-immutability-and-tombstones), [R-NPM-017](spec/formats/npm.md#r-npm-017--unpublish), [R-NUGET-006](spec/formats/nuget.md#r-nuget-006--push-through-the-package-publish-resource), [R-NUGET-007](spec/formats/nuget.md#r-nuget-007--unlist-relist-and-delete), [R-STOR-019](spec/storage.md#r-stor-019--copy-and-move); decided:
+[Q-NPM-8](spec/formats/npm.md#q-npm-8--purging-tombstones), [Q-NUGET-6](spec/formats/nuget.md#q-nuget-6--overwriting-an-existing-version).
 
 ### ADR-068 · npm remotes fetch only the full document
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** npm clients request either the abbreviated or the full package document. Release-age
 and trust checks need fields (`time`, `_npmUser`) that only the full form carries.
@@ -1677,36 +2300,49 @@ otherwise the previous entry stays and the request answers 502. Facts needed for
 recorded per version, so tarball requests never parse a large document.
 
 **Consequences.** One stored representation, one view of which versions exist. Cold-cache bandwidth
-is higher for large documents, reduced by gzip and conditional requests.
+is higher for large documents, reduced by gzip and conditional requests: measured on 2026-10-28
+with gzip, about 2.4 MB full against 2.0 MB abbreviated for the largest documents checked.
 
-**Alternatives considered.** Fetching both forms separately: two refresh cycles that can disagree
-([Q-NPM-5](spec/formats/npm.md#q-npm-5--upstream-representation-for-remote-repositories)).
+**Alternatives considered.** Fetching both forms separately: two refresh cycles that can disagree,
+and the upstream's abbreviated form carries no `time` and no `_npmUser`, so release-age and trust
+checks need the full one anyway ([Q-NPM-5](spec/formats/npm.md#q-npm-5--upstream-representation-for-remote-repositories)).
 
-**Spec:** [R-NPM-024](spec/formats/npm.md#r-npm-024--package-document-fetch-and-validation), [R-NPM-025](spec/formats/npm.md#r-npm-025--tarball-urls-and-tarball-fetching); open: [Q-NPM-5](spec/formats/npm.md#q-npm-5--upstream-representation-for-remote-repositories).
+**Spec:** [R-NPM-024](spec/formats/npm.md#r-npm-024--package-document-fetch-and-validation), [R-NPM-025](spec/formats/npm.md#r-npm-025--tarball-urls-and-tarball-fetching); decided: [Q-NPM-5](spec/formats/npm.md#q-npm-5--upstream-representation-for-remote-repositories).
 
 ### ADR-069 · Versions removed upstream are hidden by default
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Most upstream removals are takedowns of malicious packages. A cache that keeps serving
 them becomes a distribution point.
 
 **Decision.** When the upstream document no longer lists a version, an npm remote hides that version
-and its tarball unless `serveRemovedVersions` is enabled. A whole document removed upstream answers
-404 (generic rule of [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving)).
+and its tarball, also for lockfile requests by exact tarball URL, unless `serveRemovedVersions` is
+enabled ([Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed), option (a)). A version the upstream lists again is shown again. A whole package
+removed upstream answers 404 for its documents and its cached tarballs (generic rule of
+[ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document)).
+
+Stale-copy rule: an upstream document whose `time.modified` is older than the stored one never
+replaces the stored document and never marks versions removed. A lagging CDN edge serves such
+copies. The stored `time.modified` is capped at its receive time, so one future-dated document
+cannot freeze the cache and with it every later takedown. The rule is skipped when a document has
+no `time.modified`.
 
 **Consequences.** Builds pinned to a legitimately unpublished version break visibly; the fix is the
 per-repository switch or publishing the version to a local repository. Earlier downloads are not
-recalled ([H-33](spec/formats/npm.md#h-33--takedown-delay-and-earlier-downloads)).
+recalled ([H-33](spec/formats/npm.md#h-33--takedown-delay-and-earlier-downloads)). The stale-copy rule keeps a lagging upstream from producing false removals; the
+metric `trove_npm_stale_upstream_documents_total` counts such copies.
 
 **Alternatives considered.** Serving everything once cached: maximum availability, also for malware
-([Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed)).
+([Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed)). Hiding removed versions from documents while still serving cached tarballs:
+`npm ci` fetches tarballs by URL without reading documents, so every project that already pinned a
+malicious version keeps installing it.
 
-**Spec:** [R-NPM-026](spec/formats/npm.md#r-npm-026--versions-removed-upstream), [R-REPO-029](spec/repositories-and-proxy.md#r-repo-029--upstream-failure-handling-and-the-assumed-offline-circuit); open: [Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed), [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document).
+**Spec:** [R-NPM-024](spec/formats/npm.md#r-npm-024--package-document-fetch-and-validation), [R-NPM-026](spec/formats/npm.md#r-npm-026--versions-removed-upstream), [R-REPO-029](spec/repositories-and-proxy.md#r-repo-029--upstream-failure-handling-and-the-assumed-offline-circuit); decided: [Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed), [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document).
 
 ### ADR-070 · Merged npm documents take each version from the member that would serve it
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A virtual repository's package document combines members; a version's metadata and its
 tarball must not come from different places.
@@ -1726,53 +2362,87 @@ integrity with another member's tarball.
 
 ### ADR-071 · npm trusted publishing through package-bound CI tokens (P1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
-**Context.** Recent npm clients, run in GitLab CI with an ID token, exchange it for a publish token at
-a fixed path below the registry's host root before `npm publish`.
+**Context.** Recent npm, pnpm and Yarn clients, run in CI with an ID token, exchange it for a
+publish token before `npm publish`. The clients fix the path, and they disagree (verified on
+2026-10-28 in the published packages): npm posts to the host root of the registry URL
+(`/-/npm/v1/oidc/token/exchange/package/…`), while Yarn 4 and current pnpm post the same exchange
+below the registry URL. pnpm uses the ID token only when its audience is `npm:<registry host>`.
 
-**Decision.** trove serves that exchange at the host root as a second entry point into the CI
-exchange of [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint), with the same validation and mappings. The issued CI token is bound to one
-package: its scope carries a single grant on that exact name with `read` and `deploy`, and the name
-is escaped like a claim value, so it cannot widen to a scope. Without `deploy` on the name in any
-npm local repository, no token is issued.
+**Decision.** trove serves that exchange at every entry point the clients use, through one handler
+that is a second entry point into the CI exchange of [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint), with the same validation and
+mappings ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6), option (d)):
+- **npm** posts to the host-root prefix `/-/npm/v1/oidc/token/exchange/package/`.
+- **Yarn and pnpm** post below every npm registry URL.
 
-**Consequences.** `npm publish` stays a one-liner in GitLab. The host-root route needs an amendment
-to INV-6 and trove on its own host name ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6)). Trusted publishing widens the set of
-credentials that can publish ([H-31](spec/formats/npm.md#h-31--trusted-publishing-widens-the-set-of-credentials-that-can-publish)).
+trove owns its host root: `server.base_url` is an origin without a path, and a base URL with a path
+is refused at start-up. The issued CI token is bound to one package: its scope carries a single
+grant on that exact name with `read` and `deploy`, and the name is escaped like a claim value, so it
+cannot widen to a scope. Without `deploy` on the name in any npm local repository, no token is
+issued.
+
+**Consequences.** The host-root route is part of INV-6, the same exchange is served below every
+registry URL for Yarn and pnpm, the issuer audience default includes `npm:<host>`, and clients
+without a native exchange use the generic exchange. `npm publish` stays a one-liner in GitLab for
+npm, pnpm and Yarn alike. Attestations are served later below the registry URL through a rewritten
+`dist.attestations.url`, which keeps the repository known for permissions and upstream selection;
+no host-root prefix is reserved for them. Trusted publishing widens the set of credentials that can
+publish ([H-31](spec/formats/npm.md#h-31--trusted-publishing-widens-the-set-of-credentials-that-can-publish)).
 
 **Alternatives considered.** No host-root route, exchanging through the generic endpoint in the job:
-works, but turns a native client feature into pipeline boilerplate. One host per repository: DNS,
-TLS and Ingress objects per repository.
+works everywhere, but turns a native client feature of all three clients into pipeline
+boilerplate. Two host-root prefixes, for the exchange and for attestations, and nothing below the
+registry URL: Yarn and pnpm would post the ID token to an unimplemented route and publish without
+credentials, and a host-root attestation route would have to guess the repository. A path-prefix
+fallback: builds for a deployment mode that INV-6, the `__Host-` session cookie and the OCI `/v2/`
+reservation rule out. One host per repository: DNS, TLS and Ingress objects per repository.
 
-**Spec:** [R-NPM-022](spec/formats/npm.md#r-npm-022--trusted-publishing-through-ci-oidc-exchange), [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint); open: [Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6).
+**Spec:** [R-NPM-001](spec/formats/npm.md#r-npm-001--registry-endpoint-routing-and-repository-classes), [R-NPM-022](spec/formats/npm.md#r-npm-022--trusted-publishing-through-ci-oidc-exchange), [R-CI-007](spec/gitlab-ci-oidc.md#r-ci-007--token-exchange-endpoint), [R-OPS-005](spec/operations-and-observability.md#r-ops-005--external-base-url-and-forwarded-hosts); decided:
+[Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6).
 
 ### ADR-072 · Real-client acceptance matrices gate each format
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Registry protocols are defined as much by client behavior as by documents. A format is
 only done when the clients users run work against it.
 
 **Decision.** A format is accepted when its page's acceptance criteria pass end to end with real
 clients against two replicas behind the chart's Service and Ingress, with PostgreSQL and an
-S3-compatible store. npm gates on npm 11, pnpm 10, Yarn 4 and Yarn 1.22 against a deterministic stub
-upstream, plus a nightly read-only run against the public registry. NuGet gates on the .NET 10 SDK
-on Linux, nuget.exe on Windows, nightly runs against nuget.org, and manual Visual Studio checks per
-release. Every client version is pinned once in the harness, read by local runs and CI alike.
+S3-compatible store. npm's gate rows follow the rule of R-NPM-045 ([Q-NPM-4](spec/formats/npm.md#q-npm-4--current-client-majors-in-the-acceptance-gate), option (c)):
+- **npm:** every major bundled with a Node.js line in active or maintenance LTS, plus the major
+  npm's `latest` points to.
+- **pnpm:** every major whose newest release is at most 6 months old.
+- **Yarn Berry:** `latest`, plus the previous major while its newest release is at most 6 months
+  old.
+- **Yarn Classic:** 1.22, always.
 
-**Consequences.** Regressions in client compatibility block a release. Adding the current npm and
-pnpm majors is open ([Q-NPM-4](spec/formats/npm.md#q-npm-4--current-client-majors-in-the-acceptance-gate)).
+On 2026-10-28 the rule resolves to npm 10, 11 and 12, pnpm 10, 11 and 12, Yarn 4 and Yarn 1.22.
+They run against a deterministic stub upstream, plus a nightly read-only run against the public
+registry. NuGet gates on the .NET 10 SDK on Linux, nuget.exe on Windows, nightly runs against
+nuget.org, and manual Visual Studio checks per release. Every client version is pinned once in the
+harness, read by local runs and CI alike. A scheduled job raises the pins within each major and
+re-evaluates the rule at every release. A major that leaves the rule stays as a non-blocking row
+for one more release.
 
-**Alternatives considered.** Protocol-level tests only: miss client quirks that real users hit.
+**Consequences.** Regressions in client compatibility block a release. The gate tracks what users
+run, such as npm 10 in every Node.js 22 image until that line ends, without a spec change per
+release. Eight npm rows cost CI minutes, not development effort. Scenarios a row's client cannot
+run are marked not applicable per row.
 
-**Spec:** [R-NPM-045](spec/formats/npm.md#r-npm-045--client-acceptance-matrix), [R-NUGET-027](spec/formats/nuget.md#r-nuget-027--acceptance-test-suite); open: [Q-NPM-4](spec/formats/npm.md#q-npm-4--current-client-majors-in-the-acceptance-gate).
+**Alternatives considered.** Protocol-level tests only: miss client quirks that real users hit. A
+fixed list of client majors: wrong in one direction as soon as it is written. Gating only on older
+majors with the newest ones non-blocking: a regression for the clients new installations use would
+not block a release.
+
+**Spec:** [R-NPM-045](spec/formats/npm.md#r-npm-045--client-acceptance-matrix), [R-NUGET-027](spec/formats/nuget.md#r-nuget-027--acceptance-test-suite); decided: [Q-NPM-4](spec/formats/npm.md#q-npm-4--current-client-majors-in-the-acceptance-gate).
 
 ## NuGet
 
 ### ADR-073 · NuGet v3 only, every resource below the feed root
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** NuGet 6.7 and later pre-authenticate only URLs in or below the directory of an
 authenticated URL. Resources outside it cost a 401 round trip each.
@@ -1791,28 +2461,44 @@ addressed repository; virtual and remote repositories never expose member or ups
 
 ### ADR-074 · NuGet package IDs: ASCII on push, case-insensitive, first casing displayed
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** The lowercased ID appears in every URL, in duplicate detection and in permission
 matching. Go's and .NET's Unicode case tables differ in corner cases.
 
-**Decision.** Pushed IDs are restricted to ASCII (NuGet's ID rule limited to ASCII, at most 100
-characters); upstream IDs pass through as given. The canonical name is the ASCII-lowercased ID. The
-display name is the casing of the first stored version; each version keeps its own casing in its
-catalog entry. Versions are kept in three forms: original, full normalized and the lowercased URL
-form without build metadata.
+**Decision.** IDs that enter a local repository are restricted to ASCII per nuget.org's restricted
+set, at most 100 characters, with `_` allowed anywhere as NU5052 reads it ([Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids), option (a)).
+The canonical name of such an ID is the ASCII-lowercased ID. Upstream IDs follow NuGet's general
+Unicode rule and are keyed by the client's lowercased request path:
+- **No lowercasing of non-ASCII IDs.** trove never lowercases a non-ASCII ID itself. It compares the
+  declared ID with the client's path by Unicode simple case folding.
+- **Fail closed.** A mismatch fails with 502.
+- **No copy into local repositories.** A cached legacy ID cannot be copied into a local repository.
 
-**Consequences.** An ID cannot lowercase differently on client and server. Non-ASCII internal IDs
-are not supported for now ([Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids)).
+The display name is the casing of the version that created the package and does not change on
+later pushes; any casing is accepted, and each version keeps its own casing in its catalog entry
+([Q-NUGET-5](spec/formats/nuget.md#q-nuget-5--id-casing-on-later-pushes), option (a)). Versions are kept in three forms: original, full normalized and the
+lowercased URL form without build metadata.
 
-**Alternatives considered.** NuGet's full Unicode ID rule with lowercasing that matches .NET
-exactly: possible later with a dedicated conformance test.
+**Consequences.** An ID cannot lowercase differently on client and server. A case-table difference
+can make a legacy upstream package unrestorable but cannot make one ID reach another package's row
+or grant. Two clients that lowercase a legacy ID differently can at worst create two cache rows for
+one upstream package, whose bytes are stored once. Legacy public IDs stay restorable. Non-ASCII
+internal IDs are not supported, which matches what nuget.org has refused on push since 2026-07-15.
+A deliberate casing correction shows in new versions' catalog entries but not in the display name.
 
-**Spec:** [R-NUGET-003](spec/formats/nuget.md#r-nuget-003--package-ids-versions-and-normalization), [R-NUGET-004](spec/formats/nuget.md#r-nuget-004--semver-200-classification-and-visibility); open: [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids), [Q-NUGET-5](spec/formats/nuget.md#q-nuget-5--id-casing-on-later-pushes).
+**Alternatives considered.** NuGet's full Unicode ID rule on push, with lowercasing that matches
+.NET exactly: would rebuild inside trove the hazard the ecosystem is retiring. ASCII everywhere: the
+legacy IDs nuget.org still serves would become unrestorable through trove. Refusing other casing
+on later pushes: blocks a legitimate correction for no protocol reason. The highest version's
+casing as display name: a single mis-cased release renames the package in every search result.
+
+**Spec:** [R-NUGET-003](spec/formats/nuget.md#r-nuget-003--package-ids-versions-and-normalization), [R-NUGET-004](spec/formats/nuget.md#r-nuget-004--semver-200-classification-and-visibility), [R-NUGET-015](spec/formats/nuget.md#r-nuget-015--remote-repository-proxying-caching-and-url-rewriting); decided: [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids),
+[Q-NUGET-5](spec/formats/nuget.md#q-nuget-5--id-casing-on-later-pushes).
 
 ### ADR-075 · Strict archive and manifest parsing; the declared ID is what gets authorized
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A `.nupkg` is a ZIP with an XML manifest. Two readers that resolve duplicate entries or
 alternative spellings differently could let the identity trove authorizes differ from the one a
@@ -1835,7 +2521,7 @@ authorization bypasses.
 
 ### ADR-076 · Symbol packages only as `.snupkg` matching an existing package
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Debug symbols must match the binaries of an immutable package version.
 
@@ -1852,11 +2538,39 @@ clients that have long moved on.
 
 **Spec:** [R-NUGET-020](spec/formats/nuget.md#r-nuget-020--symbol-package-push), [R-NUGET-021](spec/formats/nuget.md#r-nuget-021--symbol-server-for-local-repositories), [R-NUGET-022](spec/formats/nuget.md#r-nuget-022--symbol-proxy-and-symbol-resolution-through-virtual-repositories).
 
+### ADR-090 · A NuGet protocol delete unlists by default
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** `dotnet nuget delete` and `nuget delete` send the protocol `DELETE`, which the public
+gallery treats as unlisting. A hard delete breaks every consumer pinned to the version or
+restoring from a lock file, and in the MVP no trash can (P1) catches it.
+
+**Decision.** The protocol `DELETE` unlists, unless the repository sets
+`nuget.deleteMode: delete`, which turns it into a hard delete for that repository
+([Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete), option (a)). Management, UI and raw deletes are always hard deletes. A hard delete
+writes a tombstone, so the version number stays reserved ([ADR-067](#adr-067--npm-and-nuget-versions-are-immutable-guarded-by-tombstones)). Unlisting an unlisted
+version answers 204. The UI shows which mode applies. The setting lives in the format member
+`nuget` of the repository document, as repositories-and-proxy.md places format settings.
+
+**Consequences.** Consumers that already resolved a version keep restoring it, and unlisting is
+reversible by a relist, which needs `deploy` ([ADR-052](#adr-052--changing-what-clients-install-needs-deploy-not-annotate)). With the tombstone, offering hard delete
+through the protocol cannot turn into an overwrite in two steps. One client command has two
+behaviors, depending on the repository. Storage is freed only by a hard delete or by a retention
+policy; purging unlisted versions after a period is a retention policy, not a delete mode.
+
+**Alternatives considered.** Hard delete by default: a routine cleanup command breaks every
+consumer of that version, and in the MVP the removal is final. The protocol always unlisting, with
+no setting: scripted cleanup with the NuGet client becomes impossible, for no security gain, since
+both paths check the same `delete` permission and ownership.
+
+**Spec:** [R-NUGET-006](spec/formats/nuget.md#r-nuget-006--push-through-the-package-publish-resource), [R-NUGET-007](spec/formats/nuget.md#r-nuget-007--unlist-relist-and-delete), [R-STOR-022](spec/storage.md#r-stor-022--trash-can); decided: [Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete).
+
 ## High availability and Helm
 
 ### ADR-077 · Singleton work under advisory-lock leases with fencing
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Garbage collection, retention runs, reindexing and similar work must not run twice at
 once, and a replica that lost its lease must not keep writing.
@@ -1866,21 +2580,33 @@ lease pool. Every state change the singleton makes runs on that same session: if
 the lock is gone and the writes fail with it. Actions outside PostgreSQL (S3 deletes) happen only
 after the database change that authorizes them has committed on that session. The worker checks the
 session periodically, cancels on loss, and the next scheduled run starts fresh from a persisted
-cursor. Each replica keeps one coordination session for `LISTEN` and named leases; every advisory
-lock uses the two-key form with a registered category, so lock diagnostics can name every lock.
+cursor. Each replica keeps one coordination session for `LISTEN` and named leases. Every advisory
+lock uses the two-key form with a registered category, so lock diagnostics and `pg_locks` can name
+every lock ([Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills), option (a)):
+- the fetch lock of cache fills is `(2, <first 4 bytes of the SHA-256 of the flight key>)`;
+- the migration lock is `(3, 0)`;
+- the single-`bigint` forms are forbidden everywhere, which a test enforces. That also excludes
+  migration libraries with a fixed single-`bigint` lock.
 
 **Consequences.** A partitioned replica cannot commit work it no longer owns. All singleton jobs
-must be restartable. Transaction-mode poolers are excluded ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers)).
+must be restartable. A hash collision in the 32-bit fetch key only makes two unrelated fetches wait
+for each other; correctness never depends on that lock. For 1,000 concurrent fills the chance is
+about 1 in 8,600. Transaction-mode and statement-mode poolers are not supported; direct connections
+and session-mode poolers are ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers), option (a)). The `notify` readiness check waits for a
+delivery probe, so a replica behind a misconfigured pooler stays not ready instead of serving stale
+caches. Splitting the main pool onto a pooler with a direct host for session work stays a P2 item.
 
 **Alternatives considered.** Table-based leases with heartbeats: no held connection, but no immediate
-release on session end, which fencing builds on. Kubernetes leader election: no fencing of database
-writes.
+release on session end, which fencing builds on; through any pooler, `LISTEN` would still need a
+direct session. Kubernetes leader election: no fencing of database writes. A single 64-bit hash per
+lock: collisions practically impossible, but anonymous in `pg_locks` and a second key space next to
+the categories.
 
-**Spec:** [R-ARCH-017](spec/architecture.md#r-arch-017--coordination-session-leases-and-advisory-lock-categories), [R-HA-005](spec/ha-and-helm.md#r-ha-005--leader-less-scheduling-and-job-leases), [R-HA-006](spec/ha-and-helm.md#r-ha-006--singleton-work-under-advisory-lock-leases-with-fencing); open: [Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills), [Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers).
+**Spec:** [R-ARCH-017](spec/architecture.md#r-arch-017--coordination-session-leases-and-advisory-lock-categories), [R-HA-004](spec/ha-and-helm.md#r-ha-004--cross-replica-invalidation-over-listennotify), [R-HA-005](spec/ha-and-helm.md#r-ha-005--leader-less-scheduling-and-job-leases), [R-HA-006](spec/ha-and-helm.md#r-ha-006--singleton-work-under-advisory-lock-leases-with-fencing); decided: [Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills), [Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers).
 
 ### ADR-078 · Restores keep metadata and blobs consistent by ordering, not by coordination
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** PostgreSQL and the bucket are backed up by different mechanisms. A point-in-time restore
 of the database must never reference a blob whose object is gone.
@@ -1894,17 +2620,34 @@ cluster. The runtime S3 credential must not be able to delete object versions or
 lifecycle or bucket policy.
 
 **Consequences.** A compromised replica can create delete markers but cannot destroy history.
-Restoring the database revives revoked credentials and removed grants ([H-37](spec/ha-and-helm.md#h-37--a-database-restore-revives-revoked-credentials-and-removed-grants)); a write-once
-revocation journal is proposed for P1 ([Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37)).
+Restoring the database revives revoked credentials and removed grants ([H-37](spec/ha-and-helm.md#h-37--a-database-restore-revives-revoked-credentials-and-removed-grants)). Decided:
+[R-HA-054](spec/ha-and-helm.md#r-ha-054--revocation-journal-in-object-storage) (P1, [Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37) option (b)), a write-once revocation journal in object storage that
+`post-restore` replays:
+- **Filled by the audit writer.** The audit writer fills the journal's outbox, in the transaction of
+  the change, for registry-flagged events (`journal: revocation`). An event type added later is
+  covered by its flag, not by new emission code on each page.
+- **Replay never grants.** A narrowing is applied only when the result grants nothing beyond the
+  object's current state; otherwise the object is suspended. The worst a writer with the runtime
+  S3 credential can do is revoke access.
+- **CI mappings.** Under first match, disabling a mapping can let its jobs fall through to a
+  broader one. A replayed disable therefore also suspends every later enabled mapping of the same
+  tier ([Q-CI-11](spec/gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match), option (b)).
+
+Until P1 the mitigation is the manual replay from the audit log stream. Afterwards, removals not
+yet shipped when the old database stopped (normally less than one shipping interval) stay live.
 
 **Alternatives considered.** Coordinated snapshots of database and bucket: not offered by the
-platforms the chart targets. An application-level export: deferred.
+platforms the chart targets. An application-level export: deferred. Revoking every token on
+restore: breaks every pipeline and service account and does not cover permission removals. Replay
+from an export of the audit log stream: depends on the operator's log pipeline being complete, and
+anyone who can write to it can inject events.
 
-**Spec:** [R-HA-023](spec/ha-and-helm.md#r-ha-023--backup-of-postgresql-object-storage-and-keys), [R-HA-024](spec/ha-and-helm.md#r-ha-024--restore-consistency-between-metadata-and-blobs), [R-HA-025](spec/ha-and-helm.md#r-ha-025--restore-procedure), [R-STOR-024](spec/storage.md#r-stor-024--race-free-garbage-collection); open: [Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37).
+**Spec:** [R-HA-023](spec/ha-and-helm.md#r-ha-023--backup-of-postgresql-object-storage-and-keys), [R-HA-024](spec/ha-and-helm.md#r-ha-024--restore-consistency-between-metadata-and-blobs), [R-HA-025](spec/ha-and-helm.md#r-ha-025--restore-procedure), [R-HA-054](spec/ha-and-helm.md#r-ha-054--revocation-journal-in-object-storage), [R-STOR-024](spec/storage.md#r-stor-024--race-free-garbage-collection); decided:
+[Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37).
 
 ### ADR-079 · The chart validates before it renders and never creates secrets
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** A misconfigured installation should fail at `helm install`, not at first traffic, and
 generated secrets disappear under `helm template` and GitOps tools.
@@ -1916,18 +2659,22 @@ spool budget, or when the termination grace period is shorter than the drain del
 comes from an existing Kubernetes Secret named in the values.
 
 **Consequences.** First installs need the operator to create Secrets up front, documented with
-commands. No secret is ever rotated by an upgrade by accident.
+commands. That includes the encryption key, which the operator creates by hand or through secret
+tooling; the rendering error prints the one-line command that creates it ([Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), option (b)).
+No secret is ever rotated by an upgrade by accident.
 
 **Alternatives considered.** Validation at start-up only: the error surfaces in a crash loop instead
-of the install command.
+of the install command. A chart-generated key kept with Helm's `lookup`, or an opt-in hook Job that
+creates it: silent, irreversible loss of every stored credential when the key is regenerated, and
+for the hook Job a Secret-write permission the release otherwise never needs.
 
-**Spec:** [R-HA-027](spec/ha-and-helm.md#r-ha-027--encryption-keys-for-sealed-secrets-in-a-replicated-deployment), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring); open: [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key).
+**Spec:** [R-HA-027](spec/ha-and-helm.md#r-ha-027--encryption-keys-for-sealed-secrets-in-a-replicated-deployment), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring); decided: [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key).
 
 ## Operations and observability
 
 ### ADR-080 · Audit records commit with the change they record
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** An audit trail that can miss changes is not an audit trail; one that blocks requests
 under a flood of denials is an outage.
@@ -1936,23 +2683,42 @@ under a flood of denials is an outage.
 writes) are inserted in the same transaction as the change; if the insert fails, the change rolls
 back. Access events (logins, denials, rejected tokens, failed exchanges) go through a bounded
 in-process buffer written in batches; when it is full, the event still goes to the log stream and a
-drop counter increases. Denials and rejected tokens are deduplicated per window; anonymous denials and
-successful downloads are recorded only when enabled. After commit, each event is also written to the
-log stream; the database copy is authoritative.
+drop counter increases. Denials and rejected tokens are deduplicated per window by writing a first
+event and one summary event that refers to it (`repeat_of`), so no audit row is ever updated.
+Refused reads are audited by default and allowed reads only with `authz.audit.reads: all`
+([Q-AUTHZ-5](spec/authorization.md#q-authz-5--default-audit-level-for-reads), option (b)); anonymous denials are recorded only when enabled. After commit, each
+event is also written to the log stream; the database copy is authoritative.
+
+Audit rows are append-only for trove's runtime role, which may only `INSERT` and `SELECT` them
+([Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records), option (c)):
+- **Partitions.** An owner-held `SECURITY DEFINER` function, `audit_maintain_partitions()`, creates
+  and drops the partitions, serialized by a row lock on `audit_policy`. New partitions are attached
+  with `ATTACH PARTITION`, which inserts do not wait for. The function runs under a 2-second
+  `lock_timeout` and leaves a drop it cannot lock to the next call.
+- **Retention** is owner-written data in `audit_policy`. A change takes effect with `trove migrate`.
+- **Calls.** `trove migrate`, every replica at start-up and a daily task call the function. The
+  `startup` check requires partitions for the current and the next month.
 
 **Consequences.** No change exists without its record. Allowed downloads are not attributable by
-default ([H-23](spec/authorization.md#h-23--allowed-downloads-are-not-attributable-by-default), [Q-AUTHZ-5](spec/authorization.md#q-authz-5--default-audit-level-for-reads)). Records in PostgreSQL are not tamper-evident ([H-39](spec/operations-and-observability.md#h-39--audit-records-are-not-tamper-evident),
-[Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records)).
+default ([H-23](spec/authorization.md#h-23--allowed-downloads-are-not-attributable-by-default)); one setting makes them so, at the cost of an audit write per download. A compromised
+replica or a SQL injection, acting as the runtime role, cannot rewrite or erase history, and a long
+audit export never makes transactional writes queue behind partition maintenance. The owner,
+superusers and single-role installations are outside that protection; shipping the `log: audit`
+stream to an append-only store covers them ([H-39](spec/operations-and-observability.md#h-39--audit-records-are-not-tamper-evident)).
 
 **Alternatives considered.** Writing every event asynchronously: changes without records after a
-crash. Writing every event synchronously: a denial flood blocks request handling.
+crash. Writing every event synchronously: a denial flood blocks request handling. Auditing every
+read by default: one `npm ci` issues hundreds of requests, and audit rows would become the largest
+write load of an HA installation. Refused reads plus one sampled event per principal, version and
+day: a cluster-wide deduplication store on the hottest path. A hash chain over audit rows, or sealed
+checkpoints: weighed in [ADR-027](#adr-027--structured-logs-prometheus-metrics-otlp-traces-audit-in-postgresql-inv-16).
 
-**Spec:** [R-OPS-015](spec/operations-and-observability.md#r-ops-015--audit-recording), [R-OPS-016](spec/operations-and-observability.md#r-ops-016--audit-event-catalog), [R-OPS-017](spec/operations-and-observability.md#r-ops-017--audit-query-export-and-retention), [R-AUTHZ-029](spec/authorization.md#r-authz-029--audit-of-authorization-decisions); open: [Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records),
+**Spec:** [R-OPS-015](spec/operations-and-observability.md#r-ops-015--audit-recording), [R-OPS-016](spec/operations-and-observability.md#r-ops-016--audit-event-catalog), [R-OPS-017](spec/operations-and-observability.md#r-ops-017--audit-query-export-and-retention), [R-AUTHZ-029](spec/authorization.md#r-authz-029--audit-of-authorization-decisions); decided: [Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records),
 [Q-AUTHZ-5](spec/authorization.md#q-authz-5--default-audit-level-for-reads).
 
 ### ADR-081 · Configuration as code: documents own their objects; plan before apply (P1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Platform teams manage repositories, groups, policies and CI mappings in Git and expect a
 reviewable plan before anything changes.
@@ -1963,21 +2729,37 @@ with a hash; apply can require that hash, refuses conflicts (objects owned by no
 adoption) and blocks destructive changes without an explicit flag. At start-up, replicas can apply
 documents under an advisory lock; destructive changes are never applied at start-up, and a failing
 document keeps the replica unready so a rollout stalls while old replicas serve. Export turns an
-existing installation into a document. Managed objects are proposed to be locked against API and UI
-edits ([Q-OPS-8](spec/operations-and-observability.md#q-ops-8--locking-objects-managed-by-configuration-documents)).
+existing installation into a document. Further rules:
+- **Document kinds.** Documents declare repositories, groups, policies and the CI kinds `ciIssuers`
+  and `ciMappings`. A mapping names its `issuer`, and the CI kind is never called a provider, so
+  that no reader takes it for a login provider.
+- **No login configuration.** Login providers, their claim mapping and claim-to-group rules are
+  never document content. They live only in the configuration file, and a `loginProviders` key or a
+  claim-mapping field on a group answers `422` ([Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents), option (a); [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15)).
+- **Locking.** Managed objects are locked by default (`lock_managed_objects: true`, one global
+  switch). API and UI changes to them answer `409`, naming the owning document
+  ([Q-OPS-8](spec/operations-and-observability.md#q-ops-8--locking-objects-managed-by-configuration-documents), option (a)). The emergency path leads through the source of truth: correct the
+  document and apply it through the API, or through the CLI's database mode when nobody can log in;
+  `adopt` moves ownership.
 
 **Consequences.** One reviewable path for configuration changes; a broken document cannot take over a
-running installation.
+running installation. A bad apply cannot remove the only working login, and no apply can strip the
+rule that makes someone an administrator. A UI fix is never silently reverted by the next pipeline
+run, because the lock refuses it and names the document instead.
 
 **Alternatives considered.** Imperative scripts against the API: no plan, no drift detection.
-Kubernetes custom resources: configuration bound to cluster permissions.
+Kubernetes custom resources: configuration bound to cluster permissions. Login providers, or only
+their claim-to-group rules, as a document kind: one apply, also through the API without a Git
+review, could lock every OIDC administrator out. Unlocked managed objects: an emergency UI fix is
+reverted by the next pipeline run. Per-document locking, or an audited administrator override per
+edit: a second place to look, or the same revert one step later.
 
-**Spec:** [R-OPS-029](spec/operations-and-observability.md#r-ops-029--configuration-as-code-document), [R-OPS-030](spec/operations-and-observability.md#r-ops-030--diff-and-apply), [R-OPS-031](spec/operations-and-observability.md#r-ops-031--startup-bootstrap-from-configuration-documents), [R-OPS-032](spec/operations-and-observability.md#r-ops-032--configuration-export), [R-API-044](spec/api-and-ui.md#r-api-044--configuration-as-code); open:
+**Spec:** [R-OPS-029](spec/operations-and-observability.md#r-ops-029--configuration-as-code-document), [R-OPS-030](spec/operations-and-observability.md#r-ops-030--diff-and-apply), [R-OPS-031](spec/operations-and-observability.md#r-ops-031--startup-bootstrap-from-configuration-documents), [R-OPS-032](spec/operations-and-observability.md#r-ops-032--configuration-export), [R-API-044](spec/api-and-ui.md#r-api-044--configuration-as-code); decided:
 [Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents), [Q-OPS-8](spec/operations-and-observability.md#q-ops-8--locking-objects-managed-by-configuration-documents).
 
 ### ADR-082 · Events through a transactional outbox, as CloudEvents, signed per Standard Webhooks (P1)
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Webhook receivers need every committed change exactly as it happened and nothing from
 rolled-back transactions, in a format they can parse with existing libraries.
@@ -1986,22 +2768,43 @@ rolled-back transactions, in a format they can parse with existing libraries.
 enabled subscription for the domain no row is written. Dispatch claims rows with `SKIP LOCKED` and
 delivers through the job queue with retries. The body is a CloudEvents 1.0 event in structured JSON
 mode; requests are signed following the Standard Webhooks specification. Redirects are not followed,
-and target addresses pass the outbound address checks, with private ranges denied by default.
+and target addresses pass the outbound address checks, with private ranges denied by default. The
+CloudEvents `type` is `trove.` followed by the registry name, for example
+`trove.package.published` ([Q-OPS-5](spec/operations-and-observability.md#q-ops-5--cloudevents-type-prefix), option (a)).
+
+Templated request bodies and headers use Go's `text/template`, restricted
+([Q-OPS-11](spec/operations-and-observability.md#q-ops-11--template-language-conditionals-loops-and-functions), option (b)):
+- **Allowed.** `if`, `else`, `with`, variables, and at most 16 non-nested `range` actions over event
+  data.
+- **Functions.** A fixed set without `call`, with number-aware comparisons, plus `json`, `yaml`,
+  `base64` and `default`.
+- **Data** is passed as JSON with `json.Number` numbers, so a `range` over a number fails and numbers
+  print exactly.
+- **Rejected on save.** `define`, `template`, `block`, nested `range`, and `range` over literals,
+  function results or variables.
 
 **Consequences.** Events cost nothing until someone subscribes. A new subscription receives events
-committed after it was enabled. The CloudEvents `type` prefix becomes a public contract at the first
-release ([Q-OPS-5](spec/operations-and-observability.md#q-ops-5--cloudevents-type-prefix)).
+committed after it was enabled. The `type` prefix is frozen from the first release that ships
+webhooks (P1); receivers match it literally on every installation, and `source` (the base URL)
+identifies the producing installation. With arrays capped at 1,000 items by the event schemas, one
+render is bounded to 16,000 iterations, so a template cannot tie up a delivery worker.
 
 **Alternatives considered.** Publishing after commit from request code: events lost on a crash
-between commit and send. A custom envelope: every receiver hand-written.
+between commit and send. A custom envelope: every receiver hand-written. A reverse-DNS `type`
+prefix: no project domain exists, and a code-hosting namespace or a per-installation prefix fails
+stability or uniformity. A minimal template subset: almost the same validator, without useful
+conditionals. A large third-party function library: functions that read the process environment
+would expose trove's own secrets. A different template language: unfamiliar to receiver authors
+and awkward for form-encoded and plain-text bodies.
 
-**Spec:** [R-OPS-035](spec/operations-and-observability.md#r-ops-035--event-outbox-and-dispatch), [R-OPS-036](spec/operations-and-observability.md#r-ops-036--event-envelope), [R-OPS-040](spec/operations-and-observability.md#r-ops-040--request-signing), [R-OPS-042](spec/operations-and-observability.md#r-ops-042--delivery-retries-and-outbound-protection); open: [Q-OPS-5](spec/operations-and-observability.md#q-ops-5--cloudevents-type-prefix).
+**Spec:** [R-OPS-035](spec/operations-and-observability.md#r-ops-035--event-outbox-and-dispatch), [R-OPS-036](spec/operations-and-observability.md#r-ops-036--event-envelope), [R-OPS-040](spec/operations-and-observability.md#r-ops-040--request-signing), [R-OPS-041](spec/operations-and-observability.md#r-ops-041--templated-requests-and-handler-secrets), [R-OPS-042](spec/operations-and-observability.md#r-ops-042--delivery-retries-and-outbound-protection); decided:
+[Q-OPS-5](spec/operations-and-observability.md#q-ops-5--cloudevents-type-prefix), [Q-OPS-11](spec/operations-and-observability.md#q-ops-11--template-language-conditionals-loops-and-functions).
 
 ## Management API and UI
 
 ### ADR-083 · The OpenAPI 3.1 document is the API contract
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** The UI, scripts and configuration tools all use the management API. Drift between
 documentation, server and clients breaks them silently.
@@ -2011,60 +2814,110 @@ documentation, server and clients breaks them silently.
 authentication. Every operation declares a stable `operationId`, its authorization and its errors. CI
 fails on breaking changes within v1.
 
-**Consequences.** The contract can be reviewed before code exists. The generation approach is open;
-the recommendation is spec-first with generated Go server interfaces and generated TypeScript types
-([Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach)).
+The generation approach is decided ([Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach), option (a)). The document is written by hand:
+- **Go.** oapi-codegen (v2.8 or later) generates the models and the `std-http-server` interface into
+  `internal/api/v1/gen/`, registered on `net/http.ServeMux`. The `/files` operations are excluded.
+  The strict-server variant is not used, because handlers set `ETag`, `Location`, `Link` and
+  `Retry-After` themselves and stream answers.
+- **TypeScript.** openapi-typescript (7.x, pinned in the lockfile) generates types into
+  `web/src/app/api/generated/`, used by thin hand-written Angular clients on `httpResource()`.
+- **Construct fixture.** oapi-codegen calls its 3.1 support initial, so a fixture document with
+  every construct the contract uses is generated in CI. A construct the generator mishandles is
+  written in an equivalent form, for example `enum: [x]` for `const: x`.
+- **Authorization.** The authorization step reads each operation's declaration from the embedded
+  document by `http.Request.Pattern`. A route without one stops start-up, so permission enforcement
+  never depends on the generator.
+- **Fallback.** Generated types only, with routes and parameter binding written by hand, the
+  document and the TypeScript side unchanged. It applies if a construct has no equivalent form or
+  the generator's 3.1 line stops moving.
+
+**Consequences.** The contract can be reviewed before code exists. Drift between document and
+server, and between document and UI, is a compile error, and a missing handler does not compile.
 
 **Alternatives considered.** Code-first generation: inverts the source of truth and ties the API to a
-framework.
+framework. A generated Angular service layer: observable-based services between the UI and the
+signals and `httpResource()` it is built on, and one more generator to move with every Angular
+major. Types only from the start: hand-written parsing and registration for every operation, with a
+forgotten handler found in CI instead of at compile time.
 
-**Spec:** [R-API-001](spec/api-and-ui.md#r-api-001--base-path-versions-and-compatibility), [R-API-002](spec/api-and-ui.md#r-api-002--openapi-31-document-as-the-contract), [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy); open: [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach).
+**Spec:** [R-API-001](spec/api-and-ui.md#r-api-001--base-path-versions-and-compatibility), [R-API-002](spec/api-and-ui.md#r-api-002--openapi-31-document-as-the-contract), [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy); decided: [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach).
 
 ### ADR-084 · Uniform API conventions: problem details, cursors, merge patch, ETags, idempotency keys
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Consistent conventions make every resource predictable for scripts and generated
 clients.
 
-**Decision.** Errors under `/api/v1`, `/auth` and `/files` are RFC 9457 problem details with a stable
-code whose description is served by every installation. Lists use keyset pagination with `limit`
-(default 50, maximum 500) and `cursor`, plus a `Link` header. PATCH bodies are JSON Merge Patch
-(RFC 7396); JSON Patch is not offered. Mutable resources carry a revision as strong ETag; `If-Match`
-is optional unless the owning page makes it mandatory (permission policies do). Creating POSTs accept
-an `Idempotency-Key`. Package protocol endpoints keep their ecosystems' error formats.
+**Decision.** The conventions:
+- **Errors.** Errors under `/api/v1`, `/auth` and `/files` are RFC 9457 problem details with a
+  stable code whose description is served by every installation. Package protocol endpoints keep
+  their ecosystems' error formats.
+- **Lists.** Every list endpoint uses keyset pagination with `limit` (default 50, maximum 500) and
+  `cursor`, the envelope `items` and `nextCursor`, and a `Link` header. There are no per-page
+  variants ([Q-API-6](spec/api-and-ui.md#q-api-6--pagination-parameter-names), option (a)).
+- **Updates.** PATCH bodies are JSON Merge Patch (RFC 7396); JSON Patch is not offered. Mutable
+  resources carry a revision as strong ETag. `If-Match` is required on every PUT and PATCH of a
+  resource that carries a revision ETag, and a request without it answers `428`. `If-Match: *` is
+  the explicit blind write. DELETE and delta-style edits (`add`/`remove` lists, role bindings,
+  assignments) are exempt, because they cannot overwrite another writer's change
+  ([Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes), option (b)).
+- **Creates.** Creating POSTs accept an `Idempotency-Key`.
+- **Actions.** Every action, on an item or on a collection, is a kebab-case sub-path verb, such as
+  `POST /api/v1/repositories/batch-create`. A literal segment in a key position is a reserved name
+  of that collection: declared in the OpenAPI document, refused as a key with
+  `422 reserved_name`, and checked in CI ([Q-API-7](spec/api-and-ui.md#q-api-7--syntax-of-custom-methods), option (a)).
 
 **Consequences.** One client library pattern for every resource; the UI is safe against double
-submits and lost updates. Some pages still use other parameter names or action syntax and must be
-aligned ([Q-API-6](spec/api-and-ui.md#q-api-6--pagination-parameter-names), [Q-API-7](spec/api-and-ui.md#q-api-7--syntax-of-custom-methods)).
+submits and lost updates. A stale write cannot silently revert a permission policy, the member
+order of a virtual repository or the conditions of a CI mapping, which decide what clients receive
+and who may publish. Every script that writes configuration sends one more header. The rule is
+derived from the document, with no switch, so there is one behavior to test. Five repository keys
+become reserved names (`batch-create`, `batch-update`, `batch-get`, `batch-delete`,
+`quick-setup`). Literals that already sat in key positions, such as `me` for users or `deliveries`
+for webhooks, are now reserved instead of silently shadowing a key. The pages that used other
+parameter names or action syntax are aligned with this.
 
-**Alternatives considered.** Offset pagination: unstable under concurrent writes. Mandatory
-`If-Match`: breaks deliberate blind updates by scripts ([Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes)).
+**Alternatives considered.** Offset pagination: unstable under concurrent writes. `pageSize` and
+`pageToken`: every other page would change. `If-Match` optional unless the owning page requires
+it, or required only on grant-defining resources: each depends on someone recognizing every field
+that is dangerous to lose, and a stale write of a virtual repository's members is a
+dependency-confusion path. Colon methods or a segment the key grammar excludes for collection
+actions: a second URL shape, while the reserved-name rule is needed anyway. A batch resource:
+operations with different status and atomicity behind one discriminated body.
 
-**Spec:** [R-API-009](spec/api-and-ui.md#r-api-009--errors-as-problem-details), [R-API-010](spec/api-and-ui.md#r-api-010--cursor-pagination), [R-API-012](spec/api-and-ui.md#r-api-012--optimistic-concurrency-with-etag-and-if-match), [R-API-013](spec/api-and-ui.md#r-api-013--partial-updates-with-json-merge-patch), [R-API-014](spec/api-and-ui.md#r-api-014--idempotency-keys-for-creates); open:
-[Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes), [Q-API-6](spec/api-and-ui.md#q-api-6--pagination-parameter-names), [Q-API-7](spec/api-and-ui.md#q-api-7--syntax-of-custom-methods).
+**Spec:** [R-API-004](spec/api-and-ui.md#r-api-004--resource-naming-identifiers-and-methods), [R-API-009](spec/api-and-ui.md#r-api-009--errors-as-problem-details), [R-API-010](spec/api-and-ui.md#r-api-010--cursor-pagination), [R-API-012](spec/api-and-ui.md#r-api-012--optimistic-concurrency-with-etag-and-if-match), [R-API-013](spec/api-and-ui.md#r-api-013--partial-updates-with-json-merge-patch), [R-API-014](spec/api-and-ui.md#r-api-014--idempotency-keys-for-creates);
+decided: [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes), [Q-API-6](spec/api-and-ui.md#q-api-6--pagination-parameter-names), [Q-API-7](spec/api-and-ui.md#q-api-7--syntax-of-custom-methods).
 
 ### ADR-085 · Long-running work answers 202 with a job
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Deleting a large repository, reindexing or applying configuration outlives an HTTP
 request and a replica restart.
 
 **Decision.** Such work answers 202 with the job's location and representation. Jobs survive replica
-restarts, are visible from every replica and can be cancelled. Owning pages may add a domain view of
-their runs that references the job.
+restarts, are visible from every replica and can be cancelled. Owning pages may add a read-only
+domain view of their runs that references the job. Every singleton maintenance task has exactly one
+start path, `POST /api/v1/system/tasks/{name}/run`, and one stop path, job cancel
+([Q-API-9](spec/api-and-ui.md#q-api-9--one-path-for-starting-stopping-and-reading-maintenance-work), option (c); [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work)). Per-resource actions and retention-policy runs keep their own
+resource paths.
 
-**Consequences.** Clients poll one job API for every kind of long-running work.
+**Consequences.** Clients poll one job API for every kind of long-running work. "Run now" on the
+system status screen works for every task without a special case, and a run that is active answers
+409 the same way everywhere.
 
 **Alternatives considered.** Synchronous calls with long timeouts: break at proxies and on replica
-restarts.
+restarts. Domain start and stop paths per task: a trigger and a stop mechanism per task. Generic
+paths with no domain views: domain results such as reclaimed bytes per run end up in generic job
+results.
 
-**Spec:** [R-API-015](spec/api-and-ui.md#r-api-015--long-running-work-as-jobs), [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-OPS-019](spec/operations-and-observability.md#r-ops-019--scheduled-maintenance-tasks-and-job-visibility).
+**Spec:** [R-API-015](spec/api-and-ui.md#r-api-015--long-running-work-as-jobs), [R-API-020](spec/api-and-ui.md#r-api-020--resource-map-and-routing), [R-API-040](spec/api-and-ui.md#r-api-040--garbage-collection-and-storage-summary), [R-ARCH-016](spec/architecture.md#r-arch-016--background-job-framework-on-postgresql), [R-OPS-019](spec/operations-and-observability.md#r-ops-019--scheduled-maintenance-tasks-and-job-visibility); decided:
+[Q-API-9](spec/api-and-ui.md#q-api-9--one-path-for-starting-stopping-and-reading-maintenance-work).
 
 ### ADR-086 · UI baseline: Angular 22 defaults, a strict CSP, nothing from foreign origins
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** The UI shares its origin with package content ([ADR-030](#adr-030--one-origin-for-ui-api-and-package-content)) and must work air-gapped.
 
@@ -2075,17 +2928,48 @@ cache of server data. UI documents carry a CSP with a per-response nonce and Tru
 self-hosted, no analytics, no CDN. Initial JavaScript is budgeted at 400 kB compressed (proposed);
 every feature is a lazy route.
 
-**Consequences.** Script injection through Angular's escape hatches is closed by the browser. The
-component library and the shell layout are open ([Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library), [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested)).
+Components ([Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library), option (a)):
+- **Library.** Angular Material and the CDK in the release line of the Angular major, plus
+  `@angular/aria` for the file tree and the member editor's lists, themed through design tokens.
+- **Icons** come from a self-hosted font used through ligatures. SVG icon registration through
+  `MatIconRegistry` is excluded: it takes URLs only from a `bypassSecurityTrust*` value and inserts
+  markup through the CDK's Trusted Types policy `angular#components`, which the CSP's
+  `trusted-types` list does not name.
+
+Shell ([Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested), option (c)):
+- **Navigation.** A left side bar pinned from 1024 CSS px and a drawer below.
+- **Density.** Compact density (Material density `-2`) everywhere, which keeps targets above the
+  24 CSS px of WCAG 2.5.8.
+- **Layouts.** One- or two-column layouts switch by container queries on the content area.
+
+Two further screens follow the same approach:
+- **Package details** ([Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested), option (c)). Two columns with a sticky install panel from 960 CSS px
+  of content width, otherwise one column with the install panel directly below the header.
+- **Policy editor** ([Q-UI-4](spec/api-and-ui.md#q-ui-4--layout-of-the-policy-editor-and-the-explainer-example-screenshot-requested), option (a)). One page for create and edit, with an in-page table of
+  contents and a sticky preview fed by validation. The explainer is its own screen, opened in a new
+  tab.
+
+**Consequences.** Script injection through Angular's escape hatches is closed by the browser, and
+the icon choice keeps it closed without widening the CSP for a cosmetic gain. The widget layer
+ships in lockstep with Angular, one version of every dependency. Collapsing or pinning the side bar
+never breaks a screen, and the UI works down to 320 CSS px. The owner's example screenshots are no
+longer a precondition; the walkthrough takes their place and adjusts tokens and spacing, not the
+structure.
 
 **Alternatives considered.** A looser CSP for third-party widgets: widens the attack surface on the
-shared origin.
+shared origin. A third-party component suite: majors that trail Angular's, and another large
+dependency whose CSP behavior must be verified. Own components on the CDK only: weeks of widget
+work before the first screen. Top navigation: two areas with 25 routes do not fit a top bar.
+Breakpoints on the viewport: every two-column screen would carry the shell's layout logic. A
+navigation rail: a second navigation design for an audience that scans by name. A wizard for
+policies: hides two of principals, resources and actions at every step.
 
-**Spec:** [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery), [R-UI-002](spec/api-and-ui.md#r-ui-002--application-shell), [R-UI-046](spec/api-and-ui.md#r-ui-046--state-management-with-signals); open: [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library), [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested).
+**Spec:** [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery), [R-UI-002](spec/api-and-ui.md#r-ui-002--application-shell), [R-UI-007](spec/api-and-ui.md#r-ui-007--package-details-and-versions), [R-UI-027](spec/api-and-ui.md#r-ui-027--permission-policy-list-and-editor), [R-UI-046](spec/api-and-ui.md#r-ui-046--state-management-with-signals); decided:
+[Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library), [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested), [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested), [Q-UI-4](spec/api-and-ui.md#q-ui-4--layout-of-the-policy-editor-and-the-explainer-example-screenshot-requested).
 
 ### ADR-087 · READMEs rendered on the server through an allowlist sanitizer
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** Package READMEs are author-controlled Markdown with embedded HTML, displayed on the UI's
 origin.
@@ -2094,19 +2978,29 @@ origin.
 fixed allowlist of elements and attributes. Links are limited to `http`, `https`, `mailto` and
 fragments; `id` and `name` are kept only with a `user-content-` prefix; images pointing at trove's
 own origin are dropped, so a README cannot make the viewer's browser send authenticated requests.
-External images are blocked by default and replaced by a link.
+External images are blocked by default and replaced by a link. An operator can list exact `https`
+origins in `ui.readme.external_image_origins`, default empty. The sanitizer keeps images from
+those origins, and the same list is mirrored into the UI's CSP `img-src`, so the browser enforces
+exactly what the sanitizer allows ([Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes), option (d)).
 
-**Consequences.** One renderer and one policy for every client. Air-gapped installations lose
-nothing; others can allow external images as an operator option ([Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes)).
+**Consequences.** One renderer and one policy for every client. Air-gapped and cautious
+installations lose nothing; others enable exactly the hosts they trust, typically an internal
+GitLab or badge service. A sanitizer bug cannot load an image from an unlisted host, and the
+cross-origin request carries no page URL, because UI documents use
+`Referrer-Policy: same-origin`. Badges of public packages from unlisted hosts still show as links.
+The README cache stores the hash of the list.
 
 **Alternatives considered.** Rendering in the browser: a sanitizer per client. Proxying external
 images through trove: a server-side request forgery surface controlled by package authors.
+Allowing every `https` image: every viewer's address and the package name reach any host a package
+author picks, including tracking pixels in public packages. Blocking always: internal badges and
+diagrams never show, even from hosts the operator trusts.
 
-**Spec:** [R-UI-008](spec/api-and-ui.md#r-ui-008--sanitized-readme-rendering), [R-API-029](spec/api-and-ui.md#r-api-029--packages-versions-and-readme); open: [Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes).
+**Spec:** [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery), [R-UI-008](spec/api-and-ui.md#r-ui-008--sanitized-readme-rendering), [R-API-029](spec/api-and-ui.md#r-api-029--packages-versions-and-readme); decided: [Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes).
 
 ### ADR-088 · English and German in the MVP
 
-**Status:** Proposed
+**Status:** Decided by the development agent — owner review at the walkthrough
 
 **Context.** The owner's users read English and German.
 
@@ -2115,177 +3009,142 @@ translatable, sentences are never concatenated from fragments, and counts use IC
 messages. Locale choice: user preference, then `Accept-Language`, then the configured default. API
 texts stay English; the UI translates problem codes.
 
-**Consequences.** Every UI change carries its German text. The mechanism is open; the
-recommendation is Angular's compile-time i18n with one build per locale under `/ui/<locale>/`
-([Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism)).
+The mechanism is decided: Angular's compile-time i18n, `@angular/localize`, with one build per
+locale under `/ui/{locale}/` and no runtime translation library; switching the language reloads the
+route under the other locale ([Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism), option (a)).
 
-**Alternatives considered.** English only: excludes part of the intended audience.
+**Consequences.** Every UI change carries its German text, and a missing translation fails the
+build instead of reaching a German user. No dependency outside Angular's release line and no
+runtime cost. Each locale adds a build to the binary, and UI URLs carry a locale prefix.
 
-**Spec:** [R-UI-045](spec/api-and-ui.md#r-ui-045--internationalization), [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery); open: [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism).
+**Alternatives considered.** English only: excludes part of the intended audience. A runtime
+translation library: one build and an instant switch, but string keys whose typos compile, and a
+dependency outside Angular's release line. `@angular/localize` with translations loaded at run time:
+the build-time check of missing translations would have to be rebuilt as a separate step.
 
-## Open decisions
+**Spec:** [R-UI-045](spec/api-and-ui.md#r-ui-045--internationalization), [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery); decided: [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism).
 
-Every open question on the spec pages, with the option its page recommends. The reasoning stays on
-the page; follow the link. The **ADR** column names the entry the answer changes or confirms.
+## Decisions by the development agent
 
-**Questions that appear on several pages.** Readiness on object-storage failure: [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12),
-[Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness) and [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) (storage.md and ha-and-helm.md recommend gating readiness on PostgreSQL
-only; operations-and-observability.md recommends a configurable switch and puts the same change to
-the owner). Owner of build records: [Q-AUTHZ-8](spec/authorization.md#q-authz-8--spec-page-for-build-metadata), [Q-API-5](spec/api-and-ui.md#q-api-5--owning-page-for-build-information) and [Q-STOR-3](spec/storage.md#q-stor-3--owner-of-build-records) (all recommend a new
-page `builds.md`). Cron syntax: [Q-OPS-7](spec/operations-and-observability.md#q-ops-7--one-cron-syntax-for-the-whole-system) and [Q-STOR-4](spec/storage.md#q-stor-4--cron-dialect-shared-by-all-schedules) (both recommend five-field cron in UTC).
-Where the human-login OIDC client is configured: [Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) and [Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents) (both recommend the
-configuration file).
+The development agent selected each of these decisions from the options documented in the
+question's block on its spec page, which also records the rationale, and the owner reviews them
+at the walkthrough. The roadmap's questions `Q-ROAD-n` are decided in the same form on
+[coverage/roadmap.md](coverage/roadmap.md#decisions) and close the table.
 
-### Architecture
-
-| ID | Question | Recommended | ADR |
+| ID | Question | Chosen option | ADR |
 |---|---|---|---|
-| [Q-ARCH-1](spec/architecture.md#q-arch-1--http-router) | Which HTTP router? | (a) `net/http.ServeMux` with format-owned path matching | [ADR-029](#adr-029--formats-are-compiled-in-plug-ins-behind-a-narrow-host-interface) |
-| [Q-ARCH-2](spec/architecture.md#q-arch-2--postgresql-driver-and-query-layer) | Which PostgreSQL driver and query layer? | (a) pgx v5 with sqlc-generated queries | [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) |
-| [Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner) | Which migration runner? | (a) goose v3 Provider API, under trove's own lock and compatibility gate | [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) |
-| [Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library) | Which S3 client library? | (a) aws-sdk-go-v2 `service/s3` with a trove-owned multipart upload | [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) |
-| [Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation) | Own job queue or an external queue library? | (a) the queue of R-ARCH-016 | [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work) |
-| [Q-ARCH-6](spec/architecture.md#q-arch-6--cross-replica-collapse-holds-a-connection-for-the-whole-upstream-transfer) | Keep the cross-replica fetch lock although it holds a connection for the whole transfer? | (a) keep it with a bounded pool and bypass; revisit when OCI remotes exist | [ADR-022](#adr-022--pull-through-proxy-semantics-inv-11) |
-| [Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills) | Lock key form for cache fills? | (a) two-key form with category `fetch` | [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) |
-| [Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits) | How to NOTIFY on hot-path commits? | (a) post-commit coalescer, at most one NOTIFY per channel per 50 ms per replica | [ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early) |
-| [Q-ARCH-9](spec/architecture.md#q-arch-9--freshness-of-merged-metadata-for-local-members) | Validate local members' revision on every merged-metadata hit? | (a) yes, in every format | [ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early) |
-
-### Repositories and pull-through proxy
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md, for every stored secret | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
-| [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) allow `0` | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
-| [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (a) mark it gone, answer 404 for the document, keep serving cached artifacts | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
-| [Q-REPO-4](spec/repositories-and-proxy.md#q-repo-4--scope-of-remote-refusal-for-claimed-names) | Scope of remote refusal for claimed names? | (a) system-wide, for `global` claims only | [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) |
-| [Q-REPO-5](spec/repositories-and-proxy.md#q-repo-5--generic-or-format-level-placement-of-pins-extra-hosts-and-upstream-authentication) | Generic or format-level settings for pins, extra hosts and upstream authentication? | (a) generic members; align the npm page | [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) |
-
-### Storage
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12) | Should object-storage reachability gate readiness? | (b) readiness on PostgreSQL and process health only | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12), [ADR-043](#adr-043--object-store-outage-no-local-queue-and-201-means-durable) |
-| [Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand) | SHA-512 for every blob or only on demand? | (a) every blob | [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) |
-| [Q-STOR-3](spec/storage.md#q-stor-3--owner-of-build-records) | Which page owns build records? | (a) a new page `builds.md` | — |
-| [Q-STOR-4](spec/storage.md#q-stor-4--cron-dialect-shared-by-all-schedules) | Which cron dialect for all schedules? | (a) five-field cron in UTC with `@hourly`, `@daily`, `@weekly` | [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) |
+| [Q-ARCH-1](spec/architecture.md#q-arch-1--http-router) | Which HTTP router? | (a) `net/http.ServeMux` for every route; each format resolves its own escaped path behind its literal prefix | [ADR-029](#adr-029--formats-are-compiled-in-plug-ins-behind-a-narrow-host-interface) |
+| [Q-ARCH-2](spec/architecture.md#q-arch-2--postgresql-driver-and-query-layer) | Which PostgreSQL driver and query layer? | (d) pgx's native API, sqlc for static queries and the confined `listq` builder for dynamic list and search queries; no `database/sql` | [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) |
+| [Q-ARCH-3](spec/architecture.md#q-arch-3--migration-runner) | Which migration runner? | (d) a trove-owned runner on native pgx that applies each step with its `schema_migration` row in one transaction; replaces the earlier goose choice | [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) |
+| [Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library) | Which S3 client library? | (a) aws-sdk-go-v2 `service/s3` with a trove-owned multipart upload that reads its parts from the spool file | [ADR-004](#adr-004--s3-as-binary-storage), [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) |
+| [Q-ARCH-5](spec/architecture.md#q-arch-5--job-queue-implementation) | Own job queue or an external queue library? | (a) the trove-owned PostgreSQL job table and claim query of R-ARCH-016 | [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work) |
+| [Q-ARCH-6](spec/architecture.md#q-arch-6--cross-replica-collapse-holds-a-connection-for-the-whole-upstream-transfer) | Keep the cross-replica fetch lock although it holds a connection for the whole transfer? | (a) keep the session advisory lock on a bounded lock pool with a bypass, behind `cluster.FlightLock` | [ADR-022](#adr-022--pull-through-proxy-semantics-inv-11) |
+| [Q-ARCH-7](spec/architecture.md#q-arch-7--lock-key-form-for-cache-fills) | Lock key form for cache fills? | (a) the two-key form with a registered category; the fetch lock is `(2, <32-bit hash of the flight key>)` | [ADR-022](#adr-022--pull-through-proxy-semantics-inv-11), [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) |
+| [Q-ARCH-8](spec/architecture.md#q-arch-8--notify-on-hot-path-commits) | How to NOTIFY on hot-path commits? | (a) channels registered by class; hot-path notifications leave after commit through a per-replica coalescer, at most one per channel per 50 ms | [ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early) |
+| [Q-ARCH-9](spec/architecture.md#q-arch-9--freshness-of-merged-metadata-for-local-members) | Validate local members' revision on every merged-metadata hit? | (a) yes: the core checks every eligible local member's `rev_seq` on each hit, for every format | [ADR-031](#adr-031--caches-validate-themselves-notifications-only-evict-early) |
+| [Q-ARCH-10](spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render) | Separate content origin for package content a browser can render? | (d) MVP: one origin with core-enforced content headers and one place that builds content links; an optional content origin in P1 (R-ARCH-029) | [ADR-030](#adr-030--one-origin-for-ui-api-and-package-content) |
+| [Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6) | Change INV-6's URL layout or port numbers? | (a) keep INV-6: `/api/<format>/<repoKey>/`, `/api/v1/`, ports 8080 and 8081 | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6) |
+| [Q-ARCH-12](spec/architecture.md#q-arch-12--repository-wide-indexes-rendered-per-request-or-built-by-jobs-and-does-a-publish-wait) | Repository-wide indexes rendered per request or built by jobs, and does a publish wait? | (d) per request by default, jobs only by justified exception, a publish never waits | [ADR-089](#adr-089--derived-metadata-is-rendered-per-request-and-a-publish-never-waits-for-an-index) |
+| [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
+| [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
+| [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
+| [Q-REPO-4](spec/repositories-and-proxy.md#q-repo-4--scope-of-remote-refusal-for-claimed-names) | Scope of remote refusal for claimed names? | (a) every remote of the format refuses `global`-claimed names, also when addressed directly, unless a pin rule names that remote | [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) |
+| [Q-REPO-5](spec/repositories-and-proxy.md#q-repo-5--generic-or-format-level-placement-of-pins-extra-hosts-and-upstream-authentication) | Generic or format-level settings for pins, extra hosts and upstream authentication? | (a) generic members; format pages add semantics and may narrow them, but define none of their own | [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) |
+| [Q-REPO-6](spec/repositories-and-proxy.md#q-repo-6--local-publish-of-a-name-that-a-remote-member-already-serves-h-10) | Local publish of a name a remote member already serves? | (b) the first publish needs `manage` or a prior manual claim, is audited and fails closed | [ADR-036](#adr-036--dependency-confusion-protection-through-namespace-claims-and-pin-rules) |
+| [Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-storage-reachability-inv-12) | Should object-storage reachability gate readiness? | (d) only the first readiness, through the start-up check; continuous gating as an opt-in; changes INV-12; same choice as Q-OPS-2 and Q-HA-1 | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12), [ADR-043](#adr-043--object-store-outage-no-local-queue-and-201-means-durable) |
+| [Q-STOR-2](spec/storage.md#q-stor-2--sha-512-for-every-blob-or-only-on-demand) | SHA-512 for every blob or only on demand? | (a) every blob; aligns INV-4's wording | [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) |
+| [Q-STOR-3](spec/storage.md#q-stor-3--owner-of-build-records) | Which page owns build records? | (a) a new page `builds.md` (`R-BLD`), written before P1 build work starts; same choice as Q-AUTHZ-8 and Q-API-5 | — |
+| [Q-STOR-4](spec/storage.md#q-stor-4--cron-dialect-shared-by-all-schedules) | Which cron dialect for all schedules? | (a) five-field cron in UTC with the Kubernetes macros; other dialects' forms rejected; same choice as Q-OPS-7 | [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) |
 | [Q-STOR-5](spec/storage.md#q-stor-5--does-overwriting-a-file-send-the-previous-content-to-the-trash-can) | Does an overwrite send the previous content to the trash can? | (a) yes, for user-deployed files in local repositories | [ADR-044](#adr-044--a-trash-can-that-also-covers-overwrites-p1) |
-| [Q-STOR-6](spec/storage.md#q-stor-6--download-verification-on-by-default) | Download verification on by default? | (a) on | — |
-| [Q-STOR-7](spec/storage.md#q-stor-7--status-code-for-an-exceeded-quota) | Status code for an exceeded quota? | (a) 507 for quotas, 413 only for the per-request size limit | — |
-| [Q-STOR-8](spec/storage.md#q-stor-8--copy-and-move-target-semantics) | Copy and move target semantics? | (a) the target path is the exact destination; existing folders are merged | — |
-| [Q-STOR-9](spec/storage.md#q-stor-9--one-pattern-syntax-across-retention-and-permissions) | One pattern syntax for retention and permissions? | (a) one matcher, owned by authorization.md | [ADR-037](#adr-037--one-name-pattern-syntax-most-specific-wins-applied-to-every-protocol-request) |
-
-### Identity and authentication
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) | Where does login provider configuration live? | (a) configuration file only | [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) |
-| [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name) | Should the session cookie use the `__Host-` prefix? | (b) amend INV-8 to `__Host-trv_session` (and the CSRF cookie) | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8), [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) |
-| [Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation) | Refresh tokens or rotation only? | (a) rotation only | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |
-| [Q-AUTH-4](spec/identity-and-authentication.md#q-auth-4--missing-group-claim) | What happens when the group claim is missing at login? | (a) clear the synced groups, with a warning event | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7) |
-| [Q-AUTH-5](spec/identity-and-authentication.md#q-auth-5--dormancy-default) | Dormant-user deactivation on by default? | (a) on, after 90 days | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7) |
-| [Q-AUTH-6](spec/identity-and-authentication.md#q-auth-6--unauthenticated-revoke-by-value) | Accept unauthenticated revocation by token value? | (a) yes, rate-limited | [ADR-048](#adr-048--tokens-hashed-with-sha-256-a-positive-only-cache-bounded-revocation-latency) |
-| [Q-AUTH-7](spec/identity-and-authentication.md#q-auth-7--administrators-issuing-tokens-for-users) | May administrators create tokens owned by other users? | (a) no; automation uses service accounts | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |
-
-### Authorization
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-AUTHZ-1](spec/authorization.md#q-authz-1--endpoint-gate-on-virtual-repositories) | Does using a virtual repository require `read` on it? | (a) explicit gate plus member rights | [ADR-053](#adr-053--virtual-repositories-endpoint-gate-plus-member-rights) |
-| [Q-AUTHZ-2](spec/authorization.md#q-authz-2--ownership-enforcement-default-for-new-npm-and-nuget-local-repositories) | Ownership enforcement default for new npm and NuGet local repositories? | (a) `enforce` | [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) |
-| [Q-AUTHZ-3](spec/authorization.md#q-authz-3--built-in-principal-for-all-authenticated-users) | A built-in principal for all authenticated users? | (b) `authenticated`, covering users and service accounts but not CI tokens; P1 | [ADR-020](#adr-020--deny-by-default-allow-only-permission-policies-inv-9) |
-| [Q-AUTHZ-4](spec/authorization.md#q-authz-4--default-populate-action-of-remote-repositories) | Default cache-fill action of remote repositories? | (a) `read`; refreshing expired metadata counts as populating | [ADR-054](#adr-054--cache-fills-are-guarded-by-a-configurable-action-read-by-default) |
-| [Q-AUTHZ-5](spec/authorization.md#q-authz-5--default-audit-level-for-reads) | Default audit level for reads? | (b) `denied` | [ADR-080](#adr-080--audit-records-commit-with-the-change-they-record) |
-| [Q-AUTHZ-6](spec/authorization.md#q-authz-6--default-ownership-of-ci-inline-grants-that-write) | Default ownership mode of CI inline grants that write? | (b) `bind_project` | [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) |
-| [Q-AUTHZ-7](spec/authorization.md#q-authz-7--ci-delegations-and-p1-projects) | How do CI delegations relate to P1 projects? | (a) independent in P1; (b) project-bound once projects gain roles in P2 | [ADR-058](#adr-058--projects-for-delegated-administration-reduced-in-p1) |
-| [Q-AUTHZ-8](spec/authorization.md#q-authz-8--spec-page-for-build-metadata) | Which page owns build metadata? | (a) a new page `builds.md` | — |
-| [Q-AUTHZ-9](spec/authorization.md#q-authz-9--shape-of-the-repository-part-of-a-token-scope) | Shape of the repository part of a token scope? | (a) the policy resource set: repositories, packages, paths, actions | [ADR-051](#adr-051--actions-are-explicit-and-a-token-scope-only-narrows) |
-
-### GitLab CI OIDC
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
+| [Q-STOR-6](spec/storage.md#q-stor-6--download-verification-on-by-default) | Download verification on by default? | (a) on; `storage.download.verify: false` remains for CPU-bound replicas | — |
+| [Q-STOR-7](spec/storage.md#q-stor-7--status-code-for-an-exceeded-quota) | Status code for an exceeded quota? | (a) `507` for every quota and capacity limit, `413` only for the per-request size limit | — |
+| [Q-STOR-8](spec/storage.md#q-stor-8--copy-and-move-target-semantics) | Copy and move target semantics? | (a) the target path is the exact destination; existing folders are merged; identical content counts as `unchanged` | — |
+| [Q-STOR-9](spec/storage.md#q-stor-9--one-pattern-syntax-across-retention-and-permissions) | One pattern syntax for retention and permissions? | (a) the selectors and patterns of R-AUTHZ-004 and R-AUTHZ-005 through the same code; include key selectors bound by ID, exclude key selectors by key | [ADR-037](#adr-037--one-name-pattern-syntax-most-specific-wins-applied-to-every-protocol-request) |
+| [Q-STOR-10](spec/storage.md#q-stor-10--storage-maintenance-jobs-and-the-storage-summary-one-task-framework-one-path) | Storage jobs and the storage summary: own run API or the shared task framework? | (a) tasks of the shared framework with one start and one stop path each; storage keeps the read paths of its results; same choice as Q-API-9 | [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work), [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) |
+| [Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) | Where does login provider configuration live? | (a) the configuration file only, claim mapping, gates and group rules included; same choice as Q-OPS-6 | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7), [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) |
+| [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name) | Should the cookies use the `__Host-` prefix? | (c) all three: `__Host-trv_session`, `__Host-trv_csrf`, `__Host-trv_oidc_binding`; changes INV-8 | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8), [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) |
+| [Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation) | Refresh tokens or rotation only? | (a) no refresh tokens; rotation and repeated login are the renewal paths | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |
+| [Q-AUTH-4](spec/identity-and-authentication.md#q-auth-4--missing-group-claim) | What happens when the group claim is missing at login? | (a) clear the synced groups, with the warning event `user.groups.claim_missing`; `keep` and `deny` stay per-provider settings | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7) |
+| [Q-AUTH-5](spec/identity-and-authentication.md#q-auth-5--dormancy-default) | Dormant-user deactivation on by default? | (a) on, after 90 days (P1, with R-AUTH-021) | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7) |
+| [Q-AUTH-6](spec/identity-and-authentication.md#q-auth-6--unauthenticated-revoke-by-value) | Accept unauthenticated revocation by token value? | (a) yes, rate-limited and without an existence oracle; the forward cascade has no time limit | [ADR-048](#adr-048--tokens-hashed-with-sha-256-a-positive-only-cache-bounded-revocation-latency) |
+| [Q-AUTH-7](spec/identity-and-authentication.md#q-auth-7--administrators-issuing-tokens-for-users) | May administrators create tokens owned by other users? | (a) no, neither create nor rotate; automation uses service accounts | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |
+| [Q-AUTH-8](spec/identity-and-authentication.md#q-auth-8--address-binding-of-the-npm-web-login-poll) | Address binding of the npm web-login poll? | (d) bound to the starting network (IPv4 `/24`, IPv6 `/56` or an operator range); refused polls shown, audited and counted | [ADR-049](#adr-049--command-line-login-through-the-browser-session-p1) |
+| [Q-AUTHZ-1](spec/authorization.md#q-authz-1--endpoint-gate-on-virtual-repositories) | Does using a virtual repository require `read` on it? | (a) yes, as an endpoint gate that never grants member content | [ADR-053](#adr-053--virtual-repositories-endpoint-gate-plus-member-rights) |
+| [Q-AUTHZ-2](spec/authorization.md#q-authz-2--ownership-enforcement-default-for-new-npm-and-nuget-local-repositories) | Ownership enforcement default for new npm and NuGet local repositories? | (a) `enforce` unless the create request says `off` | [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) |
+| [Q-AUTHZ-3](spec/authorization.md#q-authz-3--built-in-principal-for-all-authenticated-users) | A built-in principal for all authenticated users? | (d) a read-only `authenticated` principal for users only, never service accounts or CI tokens, in the MVP | [ADR-020](#adr-020--deny-by-default-allow-only-permission-policies-inv-9) |
+| [Q-AUTHZ-4](spec/authorization.md#q-authz-4--default-populate-action-of-remote-repositories) | Default cache-fill action of remote repositories? | (a) `read`; `deploy` per repository for frozen mirrors; anonymous populating is flagged | [ADR-054](#adr-054--cache-fills-are-guarded-by-a-configurable-action-read-by-default) |
+| [Q-AUTHZ-5](spec/authorization.md#q-authz-5--default-audit-level-for-reads) | Default audit level for reads? | (b) refused reads are audited; allowed reads only with `authz.audit.reads: all` | [ADR-080](#adr-080--audit-records-commit-with-the-change-they-record) |
+| [Q-AUTHZ-6](spec/authorization.md#q-authz-6--default-ownership-of-ci-inline-grants-that-write) | Default ownership mode of CI inline grants that write? | (b) `bind_project`; any other inline grant is saved as `none` | [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) |
+| [Q-AUTHZ-7](spec/authorization.md#q-authz-7--ci-delegations-and-p1-projects) | How do CI delegations relate to P1 projects? | (a) independent of projects in P1 | [ADR-058](#adr-058--projects-for-delegated-administration-reduced-in-p1) |
+| [Q-AUTHZ-8](spec/authorization.md#q-authz-8--spec-page-for-build-metadata) | Which page owns build metadata? | (a) a new page `builds.md` (`R-BLD`); same choice as Q-STOR-3 and Q-API-5 | — |
+| [Q-AUTHZ-9](spec/authorization.md#q-authz-9--shape-of-the-repository-part-of-a-token-scope) | Shape of the repository part of a token scope? | (a) a policy resource set (repositories, packages, paths) plus `actions` | [ADR-051](#adr-051--actions-are-explicit-and-a-token-scope-only-narrows) |
+| [Q-AUTHZ-10](spec/authorization.md#q-authz-10--resource-types-a-token-scope-can-name) | Which resource types can a token scope name? | (b) the grant model's closed set `repositories`, `system`, `builds`, always intersected with the subject's rights | [ADR-051](#adr-051--actions-are-explicit-and-a-token-scope-only-narrows) |
 | [Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings) | First match per tier, or union of all matching mappings? | (a) first match within a tier, union across tiers | [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) |
-| [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter) | Grammar of the exchange's `scope` parameter? | (b) the token scope grammar of the identity page, with the interim grammar as its subset | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
-| [Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences) | Accept ID tokens with several audiences? | (a) reject | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |
-| [Q-CI-4](spec/gitlab-ci-oidc.md#q-ci-4--single-exchange-per-jti-by-default) | Single exchange per `jti` by default? | (a) off for GitLab and GitHub issuers, tracked and counted; on for generic issuers with shared audiences | [ADR-064](#adr-064--subject-token-reuse-is-recorded-single-use-is-opt-in) |
-| [Q-CI-5](spec/gitlab-ci-oidc.md#q-ci-5--build-the-ci_job_token-fallback-at-all) | Build the `CI_JOB_TOKEN` fallback at all? | (b) move it to P2 and build it only on a concrete need | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |
-| [Q-CI-6](spec/gitlab-ci-oidc.md#q-ci-6--how-a-ci-project-acquires-package-ownership) | How does a CI project acquire package ownership? | (a) claim on first publish within the grant pattern | [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) |
-| [Q-CI-7](spec/gitlab-ci-oidc.md#q-ci-7--revoke-ci-tokens-when-the-gitlab-job-ends) | Revoke CI tokens when the GitLab job ends? | (a) rely on the TTL bound for the MVP; reconsider job webhooks in P2 | [ADR-063](#adr-063--a-ci-tokens-lifetime-is-bounded-by-its-job) |
-| [Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens) | Status code for rejected subject tokens? | (a) 400 `invalid_request` with a `reason` | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
-| [Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines) | Default for cross-project (fork) pipelines? | (a) `deny` | [ADR-062](#adr-062--fork-pipelines-are-denied-by-default) |
-
-### npm
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6) | Add host-root routes next to INV-6? | A: two fixed host-root prefixes for the trusted-publishing exchange and attestations | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6), [ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1) |
-| [Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed) | Serve versions the upstream removed? | A: no, by default | [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
-| [Q-NPM-3](spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default) | Forward `npm audit` to the upstream by default? | A: forward, with internal names removed | — |
-| [Q-NPM-4](spec/formats/npm.md#q-npm-4--current-client-majors-in-the-acceptance-gate) | Gate on the current npm and pnpm majors? | A: gate on npm 11 and 12, pnpm 10 and 12, Yarn 4, Yarn 1.22 | [ADR-072](#adr-072--real-client-acceptance-matrices-gate-each-format) |
-| [Q-NPM-5](spec/formats/npm.md#q-npm-5--upstream-representation-for-remote-repositories) | Which upstream representation do remotes fetch? | A: the full document only; derive the abbreviated one | [ADR-068](#adr-068--npm-remotes-fetch-only-the-full-document) |
-| [Q-NPM-6](spec/formats/npm.md#q-npm-6--manifest-consistency-verify-or-derive) | Verify the publish manifest against the tarball, or derive it? | A: verify and reject on mismatch | — |
-| [Q-NPM-7](spec/formats/npm.md#q-npm-7--git-dependencies-in-the-external-dependency-rewrite) | Rewrite git dependencies in the external dependency rewrite? | A: HTTP(S) tarball URLs only in P1 | — |
-| [Q-NPM-8](spec/formats/npm.md#q-npm-8--purging-tombstones) | Offer a tombstone purge? | A: no purge in MVP and P1 | [ADR-067](#adr-067--npm-versions-are-immutable-guarded-by-tombstones) |
-| [Q-NPM-9](spec/formats/npm.md#q-npm-9--annotate-or-deploy-for-dist-tags-and-deprecation) | `annotate` or `deploy` for dist-tags and deprecation? | Resolved on its page: B, `deploy` | [ADR-052](#adr-052--changing-what-clients-install-needs-deploy-not-annotate) |
-
-### NuGet
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete) | Default meaning of a NuGet delete? | (a) unlist; hard delete as a setting or through management deletes | — |
-| [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes) | Metadata cache period of NuGet remotes? | (b) 300 s as the NuGet format default | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
-| [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids) | Allow non-ASCII package IDs? | (a) ASCII-only for pushes; upstream IDs pass through | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
-| [Q-NUGET-4](spec/formats/nuget.md#q-nuget-4--forwarding-search-to-the-upstream) | Forward search to the upstream? | (a) forward by default, switchable per remote | — |
-| [Q-NUGET-5](spec/formats/nuget.md#q-nuget-5--id-casing-on-later-pushes) | ID casing on later pushes? | (a) accept any casing; the first version's casing is the display name | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
-| [Q-NUGET-6](spec/formats/nuget.md#q-nuget-6--overwriting-an-existing-version) | May an existing version be overwritten? | (a) no; a repeated push answers 409 | [ADR-052](#adr-052--changing-what-clients-install-needs-deploy-not-annotate) |
-| [Q-NUGET-7](spec/formats/nuget.md#q-nuget-7--patterns-and-repository-level-upstream-documents) | Do patterns apply to repository-level upstream documents? | (a) no; the format marks them as repository-level | [ADR-037](#adr-037--one-name-pattern-syntax-most-specific-wins-applied-to-every-protocol-request) |
-
-### High availability and Helm
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) | Readiness on object-storage failure? | (b) process and PostgreSQL only; revise INV-12's wording | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) |
-| [Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor) | PostgreSQL version floor? | (b) 16 | [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) |
-| [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival) | Which S3 store for the local profile after MinIO's archival? | (b) SeaweedFS if the conformance check passes; MinIO stays in the nightly matrix | [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) |
-| [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci) | Reserve `/v2/` on the client listener for OCI? | (a) amend INV-6 | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6) |
-| [Q-HA-5](spec/ha-and-helm.md#q-ha-5--zero-downtime-upgrades-that-skip-minor-releases) | Zero-downtime upgrades that skip minor releases? | (a) adjacent minors only; skips go stepwise | [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) |
-| [Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers) | Support transaction-mode connection poolers? | (a) not in the MVP; (b) a separate direct host for session work as P2 | [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) |
-| [Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api) | Priority of Gateway API? | (b) HTTPRoute in the MVP, chart-created Gateways P1 | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
-| [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key) | Who creates the first encryption key? | (b) the operator; the chart fails without it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies), [ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets) |
-| [Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37) | Make revocations survive a database restore? | (b) a write-once journal in object storage, P1 | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
-| [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy) | Default of the egress NetworkPolicy? | (a) off | [ADR-039](#adr-039--egress-address-checks-after-dns-resolution-for-every-remote-connection) |
-| [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart) | Where are images and the chart published? | The registry of the forge that hosts the repository, decided with the forge | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
-| [Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp) | Replica registry at MVP? | (a) table and heartbeat in the MVP; API and UI P1 | [ADR-013](#adr-013--one-binary-identical-stateless-replicas-inv-2) |
-
-### Operations and observability
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-OPS-1](spec/operations-and-observability.md#q-ops-1--couple-liveness-to-prolonged-unreadiness) | Couple liveness to prolonged unreadiness? | (a) never by default; an opt-in grace period | — |
-| [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness) | Should object-storage reachability gate readiness? | (c) configurable with gating as default; (b) put to the owner as a change to INV-12 | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) |
-| [Q-OPS-3](spec/operations-and-observability.md#q-ops-3--anonymous-access-to-the-version-endpoint) | Anonymous access to the version endpoint? | (b) authenticated by default, opt-in public | — |
-| [Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records) | Tamper evidence for audit records? | (a) external append-only log store in P1; (b) hash chain as P2 hardening | [ADR-080](#adr-080--audit-records-commit-with-the-change-they-record) |
-| [Q-OPS-5](spec/operations-and-observability.md#q-ops-5--cloudevents-type-prefix) | CloudEvents `type` prefix? | (a) `trove.`, unless a project domain is named before the first webhook release | [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) |
-| [Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents) | May configuration documents declare the human-login OIDC client? | (a) no, configuration file only | [ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1) |
-| [Q-OPS-7](spec/operations-and-observability.md#q-ops-7--one-cron-syntax-for-the-whole-system) | One cron syntax for the whole system? | (a) five-field Kubernetes CronJob syntax with macros, in UTC | [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) |
-| [Q-OPS-8](spec/operations-and-observability.md#q-ops-8--locking-objects-managed-by-configuration-documents) | Lock objects managed by configuration documents? | (a) locked by default, with a global switch | [ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1) |
-| [Q-OPS-9](spec/operations-and-observability.md#q-ops-9--ownership-of-the-job-api) | Which page owns the job API? | (a) operations keeps the API, architecture.md the model | [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work) |
-| [Q-OPS-10](spec/operations-and-observability.md#q-ops-10--default-cap-for-the-repo-metric-label) | Default cap for the `repo` metric label? | (a) 500 per metric family and replica | [ADR-027](#adr-027--structured-logs-prometheus-metrics-otlp-traces-audit-in-postgresql-inv-16) |
-
-### Management API and UI
-
-| ID | Question | Recommended | ADR |
-|---|---|---|---|
-| [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach) | How is the OpenAPI document produced? | A: spec-first, generated Go server interfaces and TypeScript types, confirmed by a spike | [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) |
-| [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes) | Is `If-Match` mandatory on writes? | A: optional, mandatory where the owning page says so | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
-| [Q-API-3](spec/api-and-ui.md#q-api-3--cluster-wide-rate-limiting) | Cluster-wide rate limiting? | A: per replica for the MVP; B: shared counters for unauthenticated classes in P1 | — |
-| [Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files) | Does INV-17 cover byte transfers on `/files`? | A: amend INV-17 to "public, documented endpoints" | [ADR-028](#adr-028--the-ui-uses-only-the-public-api-inv-17) |
-| [Q-API-5](spec/api-and-ui.md#q-api-5--owning-page-for-build-information) | Which page owns build information? | A: a new page `builds.md` | — |
-| [Q-API-6](spec/api-and-ui.md#q-api-6--pagination-parameter-names) | Pagination parameter names? | A: `limit` and `cursor` everywhere | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
-| [Q-API-7](spec/api-and-ui.md#q-api-7--syntax-of-custom-methods) | Syntax of custom methods? | A: sub-path verbs | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
-| [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) | Which component library? | A: Angular Material with the CDK and `@angular/aria` | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
-| [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested) | Shell layout and density? Owner's example screenshot requested | A: left navigation, compact tables, until the screenshot decides | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
-| [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested) | Layout of the package details page? Owner's example screenshot requested | A: two columns on wide screens, one column on narrow ones | — |
-| [Q-UI-4](spec/api-and-ui.md#q-ui-4--layout-of-the-policy-editor-and-the-explainer-example-screenshot-requested) | Layout of the policy editor and the explainer? Owner's example screenshot requested | A: one page with a sticky preview; the explainer as its own screen | — |
-| [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism) | Internationalization mechanism? | A: `@angular/localize`, one build per locale | [ADR-088](#adr-088--english-and-german-in-the-mvp) |
-| [Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes) | External images in READMEs? | A: blocked by default; B (allow `https`) as an operator option | [ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer) |
+| [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter) | Grammar of the exchange's `scope` parameter? | (c) an RFC 6749 scope string as notation for the repository part of the R-AUTH-024 scope | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
+| [Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences) | Accept ID tokens with several audiences? | (c) only if every audience is an allowed audience of the CI issuer | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |
+| [Q-CI-4](spec/gitlab-ci-oidc.md#q-ci-4--single-exchange-per-jti-by-default) | Single exchange per `jti` by default? | (d) off for GitLab issuers, on for GitHub and generic issuers | [ADR-064](#adr-064--subject-token-reuse-is-recorded-single-use-depends-on-the-issuer-kind) |
+| [Q-CI-5](spec/gitlab-ci-oidc.md#q-ci-5--build-the-ci_job_token-fallback-at-all) | Build the `CI_JOB_TOKEN` fallback at all? | (b) keep it specified, P2, built only on a concrete need; aligns INV-10's wording | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |
+| [Q-CI-6](spec/gitlab-ci-oidc.md#q-ci-6--how-a-ci-project-acquires-package-ownership) | How does a CI project acquire package ownership? | (d) claim on first publish, with `bind_project` as the default of writing inline grants | [ADR-056](#adr-056--package-ownership-is-decided-by-the-first-publish) |
+| [Q-CI-7](spec/gitlab-ci-oidc.md#q-ci-7--revoke-ci-tokens-when-the-gitlab-job-ends) | Revoke CI tokens when the GitLab job ends? | (c) the TTL bound as the guarantee, plus self-revocation as the last step of `script` | [ADR-063](#adr-063--a-ci-tokens-lifetime-is-bounded-by-its-job) |
+| [Q-CI-8](spec/gitlab-ci-oidc.md#q-ci-8--status-code-for-rejected-subject-tokens) | Status code for rejected subject tokens? | (a) 400 `invalid_request` with a stable `reason`, in the OAuth error body | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
+| [Q-CI-9](spec/gitlab-ci-oidc.md#q-ci-9--default-for-cross-project-fork-pipelines) | Default for cross-project (fork) pipelines? | (d) deny; an opt-in to `read_only` per mapping, for that mapping's grants only | [ADR-062](#adr-062--fork-pipelines-are-denied-by-default) |
+| [Q-CI-10](spec/gitlab-ci-oidc.md#q-ci-10--principal-name-of-an-identity-mapping) | Principal name of an identity mapping? | (a) `<CI issuer name>/<mapping name>` | [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) |
+| [Q-CI-11](spec/gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match) | How does restore replay disable a mapping under first match? | (b) disable it and suspend every later enabled mapping of its tier (P1) | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
+| [Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6) | Add host-root routes next to INV-6? | (d) the exchange at npm's host-root path and below every registry URL; trove owns its host root; attestations later below the registry URL; changes INV-6 | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6), [ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1) |
+| [Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed) | Serve versions the upstream removed? | (a) no: removed versions and their tarballs are hidden by default; a per-remote switch for availability-first repositories | [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
+| [Q-NPM-3](spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default) | Forward `npm audit` to the upstream by default? | (c) forward, but only names the remote already holds a document for, minus internal names; withheld names are reported | [ADR-091](#adr-091--forwarded-search-and-audit-requests-withhold-protected-names) |
+| [Q-NPM-4](spec/formats/npm.md#q-npm-4--current-client-majors-in-the-acceptance-gate) | Gate on the current npm and pnpm majors? | (c) rule-based gate rows; today npm 10–12, pnpm 10–12, Yarn 4 and Yarn 1.22 | [ADR-072](#adr-072--real-client-acceptance-matrices-gate-each-format) |
+| [Q-NPM-5](spec/formats/npm.md#q-npm-5--upstream-representation-for-remote-repositories) | Which upstream representation do remotes fetch? | (a) the full document only; the abbreviated one is derived | [ADR-068](#adr-068--npm-remotes-fetch-only-the-full-document) |
+| [Q-NPM-6](spec/formats/npm.md#q-npm-6--manifest-consistency-verify-or-derive) | Verify the publish manifest against the tarball, or derive it? | (a) verify and reject, after the union of the clients' normalization steps (R-NPM-007) | — |
+| [Q-NPM-7](spec/formats/npm.md#q-npm-7--git-dependencies-in-the-external-dependency-rewrite) | Rewrite git dependencies in the external dependency rewrite? | (a) only HTTP(S) tarball URLs, in P1 | — |
+| [Q-NPM-8](spec/formats/npm.md#q-npm-8--purging-tombstones) | Offer a tombstone purge? | (a) no purge and no identical-bytes exception | [ADR-067](#adr-067--npm-and-nuget-versions-are-immutable-guarded-by-tombstones) |
+| [Q-NPM-9](spec/formats/npm.md#q-npm-9--annotate-or-deploy-for-dist-tags-and-deprecation) | `annotate` or `deploy` for dist-tags and deprecation? | (b) `deploy` plus ownership | [ADR-052](#adr-052--changing-what-clients-install-needs-deploy-not-annotate) |
+| [Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete) | Default meaning of a NuGet delete? | (a) the protocol `DELETE` unlists unless the repository sets `deleteMode: delete`; management, UI and raw deletes are hard deletes | [ADR-090](#adr-090--a-nuget-protocol-delete-unlists-by-default) |
+| [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes) | Metadata cache period of NuGet remotes? | (b) 300 s as the NuGet format default; 1800 s stays for not-found entries | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
+| [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids) | Allow non-ASCII package IDs? | (a) ASCII-restricted IDs for everything entering a local repository; upstream IDs keyed by the client's lowercased path | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
+| [Q-NUGET-4](spec/formats/nuget.md#q-nuget-4--forwarding-search-to-the-upstream) | Forward search to the upstream? | (c) forward by default, switchable per remote; never forward a query naming a protected ID | [ADR-091](#adr-091--forwarded-search-and-audit-requests-withhold-protected-names) |
+| [Q-NUGET-5](spec/formats/nuget.md#q-nuget-5--id-casing-on-later-pushes) | ID casing on later pushes? | (a) any casing is accepted; the creating version's casing stays the display name | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
+| [Q-NUGET-6](spec/formats/nuget.md#q-nuget-6--overwriting-an-existing-version) | May an existing version be overwritten? | (c) never: versions are immutable for the repository's lifetime, and every removal, moves included, leaves a tombstone | [ADR-067](#adr-067--npm-and-nuget-versions-are-immutable-guarded-by-tombstones) |
+| [Q-NUGET-7](spec/formats/nuget.md#q-nuget-7--patterns-and-repository-level-upstream-documents) | Do patterns apply to repository-level upstream documents? | (a) package-less requests are admitted; symbol requests are routed by the file name in the symbol key | [ADR-037](#adr-037--one-name-pattern-syntax-most-specific-wins-applied-to-every-protocol-request) |
+| [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) | Readiness on object-storage failure? | (d) gate only the first readiness; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-OPS-2 | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) |
+| [Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor) | PostgreSQL version floor? | (b) 16; raised only after a version's community end of life, announced one minor release ahead | [ADR-003](#adr-003--postgresql-as-the-database), [ADR-014](#adr-014--postgresql-is-the-only-stateful-dependency-besides-object-storage-inv-3) |
+| [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival) | Which S3 store for the local profile after MinIO's archival? | (e) SeaweedFS in the local profile and per-change CI; MinIO and AWS S3 nightly | [ADR-004](#adr-004--s3-as-binary-storage) |
+| [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci) | Reserve `/v2/` on the client listener for OCI? | (a) reserved in INV-6 from the MVP on, answering `404` until the OCI format exists; changes INV-6 | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6) |
+| [Q-HA-5](spec/ha-and-helm.md#q-ha-5--zero-downtime-upgrades-that-skip-minor-releases) | Zero-downtime upgrades that skip minor releases? | (a) adjacent minors only; skips go stepwise or with downtime, enforced by the contract guard | [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) |
+| [Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers) | Support transaction-mode connection poolers? | (a) not supported; split connections stay a P2 item | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12), [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) |
+| [Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api) | Priority of Gateway API? | (b) the HTTPRoute in the MVP, a chart-created Gateway in P1 | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
+| [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key) | Who creates the first encryption key? | (b) the operator; the chart fails without it and prints the command that creates one | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies), [ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets) |
+| [Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37) | Make revocations survive a database restore? | (b) at P1: a write-once revocation journal in object storage that `post-restore` replays; the MVP keeps the manual procedure | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
+| [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy) | Default of the egress NetworkPolicy? | (a) off, with a `NOTES.txt` warning and an example values file | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13), [ADR-039](#adr-039--egress-address-checks-after-dns-resolution-for-every-remote-connection) |
+| [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart) | Where are images and the chart published? | (a) `ghcr.io/guided-traffic`, signed from the GitHub Actions release workflow | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
+| [Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp) | Replica registry at MVP? | (c) table, heartbeat, pruning and read-only API in the MVP, and the UI status screen (R-UI-038) | [ADR-013](#adr-013--one-binary-identical-stateless-replicas-inv-2) |
+| [Q-OPS-1](spec/operations-and-observability.md#q-ops-1--couple-liveness-to-prolonged-unreadiness) | Couple liveness to prolonged unreadiness? | (d) never; liveness is a watchdog over trove's own loops | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) |
+| [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness) | Should object-storage reachability gate readiness? | (d) gate only the first readiness, then report and degrade; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-HA-1 | [ADR-023](#adr-023--high-availability-through-postgresql-coordination-inv-12) |
+| [Q-OPS-3](spec/operations-and-observability.md#q-ops-3--anonymous-access-to-the-version-endpoint) | Anonymous access to the version endpoint? | (b) authenticated by default; `system.public_version: true` opens it | — |
+| [Q-OPS-4](spec/operations-and-observability.md#q-ops-4--tamper-evidence-for-audit-records) | Tamper evidence for audit records? | (c) append-only for the runtime role, partitions and retention through an owner-held function, plus external shipping | [ADR-027](#adr-027--structured-logs-prometheus-metrics-otlp-traces-audit-in-postgresql-inv-16), [ADR-080](#adr-080--audit-records-commit-with-the-change-they-record) |
+| [Q-OPS-5](spec/operations-and-observability.md#q-ops-5--cloudevents-type-prefix) | CloudEvents `type` prefix? | (a) `trove.`, frozen from the first release that ships webhooks | [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) |
+| [Q-OPS-6](spec/operations-and-observability.md#q-ops-6--the-human-login-oidc-client-in-configuration-documents) | May configuration documents declare the human-login OIDC client? | (a) no: configuration file only, claim-to-group rules included; same choice as Q-AUTH-1 | [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15), [ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1) |
+| [Q-OPS-7](spec/operations-and-observability.md#q-ops-7--one-cron-syntax-for-the-whole-system) | One cron syntax for the whole system? | (a) five-field Kubernetes CronJob syntax with macros, in UTC, through one parser; same choice as Q-STOR-4 | [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) |
+| [Q-OPS-8](spec/operations-and-observability.md#q-ops-8--locking-objects-managed-by-configuration-documents) | Lock objects managed by configuration documents? | (a) locked by default, with one global switch | [ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1) |
+| [Q-OPS-9](spec/operations-and-observability.md#q-ops-9--ownership-of-the-job-api) | Which page owns the job API? | (a) operations keeps the API, raised to MVP; architecture.md keeps the model | [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work) |
+| [Q-OPS-10](spec/operations-and-observability.md#q-ops-10--default-cap-for-the-repo-metric-label) | Default cap for the `repo` metric label? | (a) 500 distinct repository keys per metric family and replica, `_other` beyond it | [ADR-027](#adr-027--structured-logs-prometheus-metrics-otlp-traces-audit-in-postgresql-inv-16) |
+| [Q-OPS-11](spec/operations-and-observability.md#q-ops-11--template-language-conditionals-loops-and-functions) | Which template language for webhook requests? | (b) restricted `text/template`: conditionals, at most 16 non-nested `range` actions, a fixed function set | [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) |
+| [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach) | How is the OpenAPI document produced? | (a) spec-first: oapi-codegen models and `net/http` server interface, openapi-typescript types, thin hand-written Angular clients | [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) |
+| [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes) | Is `If-Match` mandatory on writes? | (b) required on PUT and PATCH of revisioned resources; `If-Match: *` is the explicit blind write | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
+| [Q-API-3](spec/api-and-ui.md#q-api-3--cluster-wide-rate-limiting) | Cluster-wide rate limiting? | (a) per replica and in memory, permanently (H-43) | — |
+| [Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files) | Does INV-17 cover byte transfers on `/files`? | (a) amend INV-17 to "public, documented endpoints"; changes INV-17 | [ADR-028](#adr-028--the-ui-uses-only-the-public-api-inv-17) |
+| [Q-API-5](spec/api-and-ui.md#q-api-5--owning-page-for-build-information) | Which page owns build information? | (a) a new page `builds.md`; same choice as Q-AUTHZ-8 and Q-STOR-3 | — |
+| [Q-API-6](spec/api-and-ui.md#q-api-6--pagination-parameter-names) | Pagination parameter names? | (a) `limit` and `cursor` with the `items` and `nextCursor` envelope, everywhere | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
+| [Q-API-7](spec/api-and-ui.md#q-api-7--syntax-of-custom-methods) | Syntax of custom methods? | (a) kebab-case sub-path verbs; literal segments in key positions are reserved names | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
+| [Q-API-8](spec/api-and-ui.md#q-api-8--stored-secret-key-ring-status-through-the-api) | Key-ring status through the API? | (b) a read-only status endpoint, metrics and a UI card; re-encryption through the task trigger | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
+| [Q-API-9](spec/api-and-ui.md#q-api-9--one-path-for-starting-stopping-and-reading-maintenance-work) | One path for starting, stopping and reading maintenance work? | (c) one start and one stop path per maintenance task; owning pages keep read-only views; same choice as Q-STOR-10 | [ADR-034](#adr-034--one-postgresql-job-table-for-maintenance-api-operations-and-internal-work), [ADR-085](#adr-085--long-running-work-answers-202-with-a-job) |
+| [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) | Which component library? | (a) Angular Material with the CDK and `@angular/aria`; font icons | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
+| [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested) | Shell layout and density? | (c) a left side bar, compact density, container queries | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
+| [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested) | Layout of the package details page? | (c) two columns with a sticky install panel from 960 CSS px of content width; one column below | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
+| [Q-UI-4](spec/api-and-ui.md#q-ui-4--layout-of-the-policy-editor-and-the-explainer-example-screenshot-requested) | Layout of the policy editor and the explainer? | (a) one page with a sticky preview; the explainer as its own screen | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
+| [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism) | Internationalization mechanism? | (a) `@angular/localize`, one build per locale under `/ui/{locale}/` | [ADR-088](#adr-088--english-and-german-in-the-mvp) |
+| [Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes) | External images in READMEs? | (d) blocked by default; an operator allowlist of exact `https` origins, mirrored into the CSP | [ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer) |
+| [Q-ROAD-1](coverage/roadmap.md#q-road-1--generic-local-repositories-in-m1) | Generic local repositories in M1? | (a) the local class of the generic format is built in M1 as MVP, from a new spec page `formats/generic.md`; remote and virtual generic stay P1 | — |
+| [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-10) | Backup and restore in 1.0? | (a) R-HA-023 and R-HA-025 are built and drilled in M5 and keep their P1 label; the revocation journal is the first work after 1.0 | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
+| [Q-ROAD-3](coverage/roadmap.md#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget) | Which ecosystems after npm and NuGet? | (a) the P1 format order of the roadmap stands; the owner can reorder it at the walkthrough | — |
+| [Q-ROAD-4](coverage/roadmap.md#q-road-4--how-the-coverage-generator-learns-implementation-status) | How does the coverage generator learn implementation status? | (a) tests name the requirement IDs they verify, and the generator derives the status from CI results | — |

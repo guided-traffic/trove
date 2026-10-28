@@ -72,6 +72,7 @@ illustrations, not defaults.
 | Schema migrations | `trove migrate [up\|status]` | [R-ARCH-001](docs/spec/architecture.md) |
 | Bootstrap and recovery | `trove admin service-account create`, `trove admin token create\|revoke`, `trove admin break-glass status\|unlock\|end-sessions`, `trove admin user disable`, `trove admin sessions end` | [R-AUTH-015](docs/spec/identity-and-authentication.md) |
 | Configuration check | `trove admin config validate [--config <file>]` | [R-OPS-028](docs/spec/operations-and-observability.md) |
+| Operations and restore | `trove admin secrets status`, `trove admin storage check`, `trove admin storage verify`; restore procedure (P1, built for 1.0): `trove admin post-restore --restored-to <t>`, `trove admin storage restore-versions --before <t>`, `trove admin maintenance pause-deletions\|resume-deletions`; configuration as code (P1): `trove admin config diff\|apply -f <file>` | [R-ARCH-021](docs/spec/architecture.md), [R-STOR-035](docs/spec/storage.md), [R-HA-024](docs/spec/ha-and-helm.md), [R-HA-025](docs/spec/ha-and-helm.md), [R-OPS-030](docs/spec/operations-and-observability.md) |
 | Client listener | `:8080` (`server.listen`) | [INV-6](docs/spec/README.md), [R-ARCH-005](docs/spec/architecture.md) |
 | Operations listener | `:8081` (`server.ops_listen`), serving only `/healthz`, `/readyz`, `/metrics` | [INV-6](docs/spec/README.md), [R-ARCH-005](docs/spec/architecture.md) |
 
@@ -97,13 +98,14 @@ illustrations, not defaults.
 | Repository class | `local`, `remote`, `virtual` | [INV-5](docs/spec/README.md) |
 | Format ID | `^[a-z][a-z0-9-]{1,31}$`, never `^v[0-9]+$` (reserved for API versions) | [R-ARCH-005](docs/spec/architecture.md) |
 | OIDC provider ID | `^[a-z0-9][a-z0-9-]{0,31}$` | [R-AUTH-004](docs/spec/identity-and-authentication.md) |
-| Principal reference | `user:<username>`, `group:<name>`, `sa:<name>`, `ci:<issuer>/<mapping>`, `anonymous` | [R-AUTHZ-002](docs/spec/authorization.md) |
+| Principal reference | `user:<username>`, `group:<name>`, `sa:<name>`, `ci:<issuer>/<mapping>`, `authenticated` (every signed-in user, never a service account or CI token), `anonymous` | [R-AUTHZ-002](docs/spec/authorization.md), [R-AUTHZ-030](docs/spec/authorization.md) |
+| Package owner identity | a principal reference, or `ci:<issuer>:project:<project_id>` for every CI token of that GitLab project | [R-AUTHZ-018](docs/spec/authorization.md), [R-CI-015](docs/spec/gitlab-ci-oidc.md) |
 | Repository selector | a key, a pattern, or a class `@any-local`, `@any-remote`, `@any-virtual`, `@any`, optionally suffixed `:<format>` | [R-AUTHZ-004](docs/spec/authorization.md) |
 | Permission policy name | `^[a-z0-9][a-z0-9._-]{0,127}$` | [R-AUTHZ-021](docs/spec/authorization.md) |
 | Repository actions | `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` | [INV-9](docs/spec/README.md) |
 | System roles | `admin` (MVP); `security-admin`, `auditor`, `repository-admin`, `webhook-admin` (P1) | [R-AUTHZ-010](docs/spec/authorization.md) |
 | Capabilities | `<area>:<verb>`, e.g. `policies:read`, `tokens:revoke`, `content:bypass` | [R-AUTHZ-010](docs/spec/authorization.md) |
-| npm `whoami` name | user: username; service account: `sa:<name>`; CI token: `ci:<mapping name>` | [R-AUTH-033](docs/spec/identity-and-authentication.md) |
+| npm `whoami` name | user: username; service account: `sa:<name>`; CI token: `ci:<CI issuer name>/<mapping name>` | [R-AUTH-033](docs/spec/identity-and-authentication.md) |
 
 ### Credentials, cookies and headers
 
@@ -115,10 +117,13 @@ illustrations, not defaults.
 | Token layout | prefix + 43 base62 characters (32 random bytes) + 6 base62 characters (CRC-32), 57 characters in total | [R-AUTH-022](docs/spec/identity-and-authentication.md) |
 | Secret-scanner pattern | `\btrv_(?:pat\|sat\|cit)_[0-9A-Za-z]{49}\b` | [R-AUTH-022](docs/spec/identity-and-authentication.md) |
 | Token hint (shown in lists) | prefix + first 4 characters of the random part, e.g. `trv_pat_3kQ9` *(example)* | [R-AUTH-022](docs/spec/identity-and-authentication.md) |
-| UI session cookie | `trv_session` (Q-AUTH-2 proposes `__Host-trv_session`) | [INV-8](docs/spec/README.md), [R-AUTH-010](docs/spec/identity-and-authentication.md) |
-| CSRF cookie and header | cookie `trv_csrf`, header `X-CSRF-Token` | [R-AUTH-012](docs/spec/identity-and-authentication.md) |
+| Cookie names | `__Host-trv_<name>` for every trove cookie: host-only, `Secure`, `Path=/`, no `Domain`, enforced by the browser | [R-AUTH-010](docs/spec/identity-and-authentication.md), [Q-AUTH-2](docs/spec/identity-and-authentication.md) |
+| UI session cookie | `__Host-trv_session`; `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` | [INV-8](docs/spec/README.md), [R-AUTH-010](docs/spec/identity-and-authentication.md) |
+| CSRF cookie and header | cookie `__Host-trv_csrf` (`Secure`, `SameSite=Strict`, `Path=/`, not `HttpOnly` so the UI can read it), header `X-CSRF-Token` | [R-AUTH-012](docs/spec/identity-and-authentication.md) |
+| OIDC login-binding cookie | `__Host-trv_oidc_binding`; `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=600` | [R-AUTH-005](docs/spec/identity-and-authentication.md) |
 | Token presentation | `Authorization: Bearer <token>`; HTTP Basic with the token as password (any username); `X-NuGet-ApiKey` for NuGet pushes | [INV-8](docs/spec/README.md), [R-AUTH-033](docs/spec/identity-and-authentication.md) |
-| Fallback subject-token type (P1, off by default) | `urn:trove:token-type:gitlab-job-token` | [R-CI-007](docs/spec/gitlab-ci-oidc.md), [R-CI-022](docs/spec/gitlab-ci-oidc.md) |
+| Fallback subject-token type (P2, off by default) | `urn:trove:token-type:gitlab-job-token` | [R-CI-007](docs/spec/gitlab-ci-oidc.md), [R-CI-022](docs/spec/gitlab-ci-oidc.md) |
+| Signed content URL (P1) | query `trv_exp=<unix seconds>&trv_sid=<session row id>&trv_sig=v1.<key id>.<base64url HMAC-SHA-256>`, added only on the `303` hand-off of a session-cookie request to the content host | [R-ARCH-029](docs/spec/architecture.md) |
 | Webhook signing secret (P1) | `whsec_…`; headers `webhook-id`, `webhook-timestamp`, `webhook-signature` (Standard Webhooks) | [R-OPS-040](docs/spec/operations-and-observability.md) |
 | Response headers | `X-Request-Id` (every response), `X-Trove-Replica`, `Trove-Resolved-From` (virtual resolution), `Trove-Authz-Epoch` (policy writes) | [R-ARCH-005](docs/spec/architecture.md), [R-OPS-002](docs/spec/operations-and-observability.md), [R-REPO-019](docs/spec/repositories-and-proxy.md), [R-AUTHZ-021](docs/spec/authorization.md) |
 | Request headers | `Trove-Deploy-By-Checksum: ?1` with `Repr-Digest`; `Trove-Properties` (properties at deploy time) | [R-STOR-008](docs/spec/storage.md), [R-STOR-009](docs/spec/storage.md) |
@@ -132,6 +137,7 @@ illustrations, not defaults.
 | Environment override | `TROVE_` + key path in upper case, segments joined by `_`; e.g. `log.request.enabled` → `TROVE_LOG_REQUEST_ENABLED` | [R-OPS-028](docs/spec/operations-and-observability.md) |
 | Reserved variables | `TROVE_CONFIG_FILE`; `TROVE_CAC_*` for configuration-as-code secret references (P1) | [R-OPS-028](docs/spec/operations-and-observability.md) |
 | Secret-typed keys | companion `<name>_file`; an inline secret in the file stops startup | [R-OPS-028](docs/spec/operations-and-observability.md) |
+| Content origin (P1) | `server.content_base_url`: an `https` origin without a path whose host name differs from `server.base_url`'s, e.g. `https://trove-content.example.net` *(example)*; empty by default (proposed), which keeps one origin. `server.content_url_ttl`: lifetime of a signed content URL, `300s` by default (proposed) | [R-ARCH-029](docs/spec/architecture.md), [Q-ARCH-10](docs/spec/architecture.md) |
 | Variables the chart sets | `TROVE_RUNTIME_MEMORY_LIMIT_BYTES`, `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD`, `TROVE_DATABASE_PREFLIGHT_EXPECTED_REPLICAS`, `GOMAXPROCS` | [R-HA-030](docs/spec/ha-and-helm.md) |
 | Client-side variables in the examples | `TROVE_TOKEN`, `TROVE_URL`, `TROVE_ID_TOKEN` *(example)*. These are for client machines and CI jobs only. The server rejects unknown `TROVE_` variables at startup, so do not set them in its environment. | [R-CI-028](docs/spec/gitlab-ci-oidc.md), [R-OPS-028](docs/spec/operations-and-observability.md) |
 
@@ -152,7 +158,8 @@ illustrations, not defaults.
 | Pod annotation | `checksum/config` (hash of the rendered ConfigMap) | [R-HA-028](docs/spec/ha-and-helm.md) |
 | Secret mounts | `/var/run/secrets/trove/<name>/`, see below | [R-HA-030](docs/spec/ha-and-helm.md) |
 | Trusted CA bundles | `/etc/trove/ca/` | [R-HA-030](docs/spec/ha-and-helm.md) |
-| Image | `<registry>/<repository>`, multi-arch `linux/amd64`, `linux/arm64`; publishing location open (Q-HA-11) | [R-HA-047](docs/spec/ha-and-helm.md) |
+| Image | `<registry>/<repository>`, multi-arch `linux/amd64`, `linux/arm64`; published as `ghcr.io/guided-traffic/trove` (`image.registry: ghcr.io`, `image.repository: guided-traffic/trove`) | [R-HA-047](docs/spec/ha-and-helm.md), [R-HA-031](docs/spec/ha-and-helm.md), [Q-HA-11](docs/spec/ha-and-helm.md) |
+| Chart package | `oci://ghcr.io/guided-traffic/charts/trove`, signed with cosign from the release workflow | [R-HA-047](docs/spec/ha-and-helm.md) |
 
 <details>
 <summary>Secret mount paths (the chart never creates a Secret; every entry references an existing one)</summary>
@@ -180,10 +187,10 @@ Source: [R-HA-030](docs/spec/ha-and-helm.md).
 |---|---|
 | kind cluster, namespace, Helm release | `trove` |
 | CloudNativePG cluster | `trove-db` (application Secret `trove-db-app`) |
-| MinIO bucket | `trove-blobs` |
+| S3 store (SeaweedFS) | Service `trove-s3` (port 9000); buckets `trove-blobs` (versioning on) and `trove-pg-archive` (WAL archive) |
 | Encryption key Secret | `trove-encryption-keys` |
 | Break-glass Secret | `trove-break-glass` |
-| Files | `deploy/dev/kind.yaml`, `deploy/dev/postgres.yaml`, `deploy/dev/minio.yaml`, `deploy/dev/values-dev.yaml` |
+| Files | `deploy/dev/kind.yaml`, `deploy/dev/postgres.yaml`, `deploy/dev/s3.yaml`, `deploy/dev/values-dev.yaml` |
 
 Source: [R-HA-051](docs/spec/ha-and-helm.md).
 
@@ -196,6 +203,7 @@ Source: [R-HA-051](docs/spec/ha-and-helm.md).
 | Blobs | `<prefix>/sha256/<h0h1>/<h2h3>/<64 hex>`; `<prefix>` defaults to `trove`, e.g. `trove/sha256/5b/e0/5be0c1d2…` *(example)* | [INV-4](docs/spec/README.md), [R-STOR-001](docs/spec/storage.md) |
 | Upload-session chunks | `<prefix>/_uploads/<session-uuid>/<seq>` | [R-STOR-001](docs/spec/storage.md) |
 | Probe objects | `<prefix>/_probe/<replica-id>` | [R-STOR-001](docs/spec/storage.md) |
+| Revocation journal (P1) | `<prefix>/_journal/revocations/<yyyy>/<mm>/<dd>/<id>.json`; never deleted by trove | [R-STOR-001](docs/spec/storage.md), [R-HA-054](docs/spec/ha-and-helm.md) |
 
 trove reports any other object below `<prefix>/` as foreign and never deletes it. Object keys never
 contain a repository key, path or file name.
@@ -208,24 +216,25 @@ contain a repository key, path or file name.
 | Schema | `trove` (`database.schema`) | [R-HA-014](docs/spec/ha-and-helm.md) |
 | Roles, two-role mode | `trove_owner` (owns the schema, runs migrations), `trove_app` (holds the DML grants, no login), `trove_app_a` and `trove_app_b` (logins, alternated on rotation) | [R-HA-014](docs/spec/ha-and-helm.md), [R-HA-017](docs/spec/ha-and-helm.md) |
 | `application_name` | `trove:<replica>:<pool>`, pool ∈ `main`, `notify`, `locks`, `migrate` | [R-ARCH-019](docs/spec/architecture.md) |
-| `LISTEN/NOTIFY` channels | `trove_<area>`: `trove_jobs`, `trove_cache`, `trove_auth`, `trove_authz`, `trove_proxy_fetch`, `trove_system_state`, `trove_support`, `trove_webhooks` | [R-ARCH-018](docs/spec/architecture.md) |
+| `LISTEN/NOTIFY` channels | `trove_<area>`: `trove_jobs`, `trove_cache`, `trove_auth`, `trove_authz`, `trove_repo_config`, `trove_claims`, `trove_cache_invalidation`, `trove_proxy_fetch`, `trove_metadata_changed`, `trove_upstream_state`, `trove_system_state`, `trove_support`, `trove_webhooks`, `trove_events`, `trove_ci_issuer_keys`, `trove_ci_mappings` | [R-ARCH-018](docs/spec/architecture.md) |
 | Advisory-lock categories | two-`int4` form, first key = category: `1` lease, `2` fetch, `3` migration, `4` config | [R-ARCH-017](docs/spec/architecture.md) |
+| Job key of index rebuilds (`job.dedup_key`) | `index:<repository id>`, shared by the automatic rebuild (`coalesce`) and the manual reindex (`exclusive`), so the two never run at the same time | [R-ARCH-016](docs/spec/architecture.md), [R-REPO-016](docs/spec/repositories-and-proxy.md), [Q-ARCH-12](docs/spec/architecture.md) |
 
 <details>
 <summary>Tables, by the spec page that defines them</summary>
 
 | Spec page | Tables |
 |---|---|
-| [architecture.md](docs/spec/architecture.md) | `job`, `schema_compat`, `secret_key_canary` |
-| [storage.md](docs/spec/storage.md) | `repositories`, `blobs`, `items`, `item_properties`, `item_download_stats`, `packages`, `package_versions`, `property_sets`, `property_set_entries`, `property_set_repositories`, `upload_sessions`, `blob_gc_queue`, `maintenance_runs`, `repository_usage`, `storage_usage_deltas`, `retention_policies`, `retention_runs`, `retention_run_items` |
+| [architecture.md](docs/spec/architecture.md) | `job`, `secret_key_canary` |
+| [storage.md](docs/spec/storage.md) | `repositories`, `blobs`, `items`, `item_properties`, `item_download_stats`, `packages`, `package_versions`, `property_sets`, `property_set_entries`, `property_set_repositories`, `upload_sessions`, `blob_gc_queue`, `repository_usage`, `storage_usage_deltas`, `retention_policies`, `retention_runs`, `retention_run_items` |
 | [repositories-and-proxy.md](docs/spec/repositories-and-proxy.md) | `virtual_members`, `virtual_deploy_targets`, `virtual_pin_rules`, `virtual_pin_members`, `namespace_claims`, `remote_references`, `remote_cache_entries`, `remote_negative_entries`, `remote_upstream_state`, `remote_url_map`, `remote_cache_invalidations`, `repository_secrets`, `client_certificates`, `outbound_proxies` |
 | [identity-and-authentication.md](docs/spec/identity-and-authentication.md) | `principal`, `app_user`, `user_identity`, `user_group`, `group_membership`, `service_account`, `service_account_owner`, `api_token`, `ui_session`, `oidc_login_flow`, `cli_login`, `auth_lockout`, `auth_settings` |
 | [authorization.md](docs/spec/authorization.md) | `authz_epoch`, `authz_policy`, `authz_policy_selector`, `authz_policy_pattern`, `authz_policy_entry`, `authz_role_binding`, `package_ownership`, `package_owner`, `project`, `project_admin` |
 | [gitlab-ci-oidc.md](docs/spec/gitlab-ci-oidc.md) | `ci_issuers`, `ci_issuer_keys`, `ci_mappings`, `ci_subject_token_uses`, `ci_token_issuances`, `ci_delegations` |
 | [formats/npm.md](docs/spec/formats/npm.md) | `npm_packages`, `npm_versions`, `npm_tombstones`, `npm_remote_packages`, `npm_remote_versions` |
-| [formats/nuget.md](docs/spec/formats/nuget.md) | `nuget_package_state`, `nuget_version`, `nuget_symbol_package`, `nuget_symbol_file` |
-| [ha-and-helm.md](docs/spec/ha-and-helm.md) | `schedule`, `schema_migration`, `schema_state`, `background_migration` (and a sketch of `job`, which architecture.md owns) |
-| [operations-and-observability.md](docs/spec/operations-and-observability.md) | `replica`, `audit_event`, `storage_summary`, `system_state`, `support_bundle`, `support_bundle_part`, `config_document`, `config_managed_object`, `event_outbox`, `webhook_subscription`, `webhook_secret`, `webhook_delivery` |
+| [formats/nuget.md](docs/spec/formats/nuget.md) | `nuget_version`, `nuget_tombstone`, `nuget_symbol_package`, `nuget_symbol_file` |
+| [ha-and-helm.md](docs/spec/ha-and-helm.md) | `schedule`, `schema_migration`, `schema_state`, `background_migration`, `revocation_outbox` (and sketches of `job` and `audit_policy`, which architecture.md and operations-and-observability.md own) |
+| [operations-and-observability.md](docs/spec/operations-and-observability.md) | `replica`, `audit_event`, `audit_policy`, `storage_summary`, `system_state`, `support_bundle`, `support_bundle_part`, `config_document`, `config_managed_object`, `event_outbox`, `webhook_subscription`, `webhook_secret`, `webhook_delivery` |
 | [api-and-ui.md](docs/spec/api-and-ui.md) | `api_idempotency_keys`, `user_preferences`, `package_readme_cache` |
 
 </details>
@@ -237,7 +246,7 @@ contain a repository key, path or file name.
 | Metric families | `trove_<subsystem>_…`, format-specific `trove_<format>_…`; base units in the name (`_seconds`, `_bytes`), `_total` on counters | [INV-16](docs/spec/README.md), [R-OPS-007](docs/spec/operations-and-observability.md) |
 | Build info | `trove_build_info{version,revision,goversion}` | [R-OPS-007](docs/spec/operations-and-observability.md) |
 | Capped label overflow | `repo="_other"`, counted in `trove_metrics_label_overflow_total` | [R-OPS-007](docs/spec/operations-and-observability.md) |
-| Event type (CloudEvents) | `trove.<event>`, e.g. `trove.package.published`; prefix still open (Q-OPS-5) | [R-OPS-036](docs/spec/operations-and-observability.md) |
+| Event type (CloudEvents, P1) | `trove.<event>`, e.g. `trove.package.published`; the prefix is fixed from the first release that ships webhooks (Q-OPS-5) | [R-OPS-036](docs/spec/operations-and-observability.md) |
 
 ## 📚 Documentation
 
@@ -396,6 +405,8 @@ publish:
     # single quotes: npm expands ${TROVE_TOKEN} at run time, the token never reaches the file
     - echo '//trove.example.com/api/npm/npm-local/:_authToken=${TROVE_TOKEN}' >> .npmrc
     - npm publish --registry https://trove.example.com/api/npm/npm-local/
+    # last step: the job revokes its own token; the 15-minute lifetime covers failed jobs (Q-CI-7)
+    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- https://trove.example.com/api/v1/tokens/current
 ```
 
 <details>
@@ -453,7 +464,8 @@ setting with `# default (proposed)` or `# example`.
 | Basic token presentation `auth.clients.basic.enabled` | `true` | Turning it off removes the Basic form everywhere and breaks NuGet restore and `_auth` users. Basic with a password never works either way. | [R-AUTH-033](docs/spec/identity-and-authentication.md) |
 | Metrics access `config.metrics.auth` | `none` | With `none`, any pod that reaches port 8081 reads the metrics, and only the NetworkPolicy limits that (H-41). `static` requires a bearer token. | [R-OPS-006](docs/spec/operations-and-observability.md) |
 | Egress NetworkPolicy `networkPolicy.egress.enabled` | `false` | Without it, remote repositories can reach private networks (H-6) | [R-HA-042](docs/spec/ha-and-helm.md) |
-| `CI_JOB_TOKEN` fallback (P1) | off; needs `ci.job_token_fallback.enabled` and the issuer's flag | When on, trove receives a live GitLab credential (H-28) and cannot recognize fork pipelines (H-29). Grants are capped to `read`. | [R-CI-022](docs/spec/gitlab-ci-oidc.md) |
+| Separate content origin `server.content_base_url` (P1) | empty (one origin) | Empty: package files a browser can render are served on the UI's origin, and only the content headers the core sets keep them from running as script there; a proxy that strips those headers, or a browser that ignores both `attachment` and CSP `sandbox`, defeats them (H-3). Set: browser requests for content are handed to a second host that never receives the session cookie. A host on the UI's registrable domain is accepted but stays same-site, which start-up logs as a warning; a separate registrable domain is recommended. | [R-ARCH-007](docs/spec/architecture.md), [R-ARCH-029](docs/spec/architecture.md) |
+| `CI_JOB_TOKEN` fallback (P2) | off; not built until a pipeline population needs it (Q-CI-5), and until then `ci.job_token_fallback.enabled: true` stops startup. Once built it needs that key and the issuer's flag | When on, trove receives a live GitLab credential (H-28) and cannot recognize fork pipelines (H-29). Grants are capped to `read`. | [R-CI-022](docs/spec/gitlab-ci-oidc.md) |
 
 ## 🛠 Development
 

@@ -16,7 +16,7 @@ This page specifies how trove stays available and how it is deployed. It covers:
   deleted blob.
 - The Helm chart `deploy/helm/trove`: every resource it renders and its complete `values.yaml`.
 - Edge-proxy requirements for large uploads, sizing guidance, the local development profile
-  (kind, CloudNativePG, MinIO) and the failure-injection suite that proves all of the above.
+  (kind, CloudNativePG, SeaweedFS) and the failure-injection suite that proves all of the above.
 
 Semantics owned elsewhere are referenced, not repeated. The probe endpoints and replica registry
 are in [operations-and-observability.md](operations-and-observability.md). Blob commit, garbage
@@ -40,7 +40,11 @@ through workload identity). The storage entries themselves belong to [storage.md
 | `server.base_url`, trusted proxies, forwarded headers | [operations-and-observability.md](operations-and-observability.md) R-OPS-005 |
 | Metric names and the metrics catalog | [operations-and-observability.md](operations-and-observability.md) R-OPS-006 to R-OPS-008 |
 | Spool admission, commit protocol, garbage collection, orphan sweep, object-store client, outage table | [storage.md](storage.md) R-STOR-004, R-STOR-005, R-STOR-024 to R-STOR-026, R-STOR-030 to R-STOR-036 |
-| Secret sealing format, key ring and the `secrets_reencrypt` job | [architecture.md](architecture.md) R-ARCH-021 |
+| Secret sealing format, key ring and the `secrets-reencrypt` task | [architecture.md](architecture.md) R-ARCH-021 |
+| Key-ring status `GET /api/v1/system/encryption` and the re-encryption trigger | [api-and-ui.md](api-and-ui.md) R-API-049 |
+| Migration files, their header comments and the migration runner | [architecture.md](architecture.md) R-ARCH-026 |
+| Content origin semantics (`server.content_base_url`) | [architecture.md](architecture.md) R-ARCH-029 |
+| Append-only audit rows, `audit_policy`, `audit_maintain_partitions()` | [operations-and-observability.md](operations-and-observability.md) R-OPS-015 |
 | Outbound CA bundles, egress address policy | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-035, R-REPO-038 |
 | Cross-replica fetch collapse and its lock pool | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 |
 | Break-glass account, `trove admin` bootstrap commands, session table | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-014, R-AUTH-015, R-AUTH-010 |
@@ -138,7 +142,7 @@ Acceptance criteria:
 - With the split and `server.replicaCount: 2`, `worker.replicaCount: 2`,
   `kubectl get deploy -l app.kubernetes.io/instance=trove` lists `trove-api` and
   `trove-worker`; `GET /api/v1/system/replicas` shows roles `["api"]` and `["worker"]`.
-- A manual GC run (`POST /api/v1/maintenance/gc-runs`) through the API pods is executed on a
+- A manual GC run (`POST /api/v1/system/tasks/gc/run`) through the API pods is executed on a
   worker pod (its `trove_lease_held` series is 1 during the run).
 - `helm template … --set roleSplit.enabled=true --set worker.replicaCount=0` fails and names
   `worker.replicaCount`.
@@ -148,8 +152,11 @@ Priority: **MVP** · Covers: HA-006, HA-009
 
 The replica registry of R-OPS-003 (table `replica`, heartbeat every `system.heartbeat_interval`,
 stale after `system.heartbeat_stale_after`) is the single source of truth for "which replicas are
-alive, with which version and roles". This page uses it for four HA mechanisms. They need the table
-and the heartbeat at MVP, even though the registry API and UI are P1 in R-OPS-003 (Q-HA-12).
+alive, with which version and roles". This page uses it for four HA mechanisms. The table, the
+heartbeat, the pruning of stale rows and the read-only API `GET /api/v1/system/replicas` are
+therefore MVP (Q-HA-12). The UI status screen is MVP as well ([api-and-ui.md](api-and-ui.md)
+R-UI-038, Q-API-8): it renders only from MVP endpoints and is the only UI view of the replicas, the
+scheduled tasks and the key ring. R-HA-001 and R-HA-020 verify rollouts through the replica API.
 
 | Use | Rule |
 |---|---|
@@ -194,6 +201,13 @@ Priority: **MVP** · Covers: HA-006
   no cache flush.
 - Payloads stay below PostgreSQL's 8,000-byte limit. A change that touches many objects sends one
   "flush" message per cache, not one message per object.
+- **Delivery probe.** After every (re)connection of the `LISTEN` session, the replica sends a probe
+  notification on its own replica channel through the main pool. It reports `notify` as passing
+  only after that probe has arrived on the listener session. The probe proves the whole path, and
+  it is the guard against an unsupported transaction-mode pooler (R-HA-006, Q-HA-6), under which
+  the listener is expected never to receive it. A missing probe keeps the replica not ready and
+  logs, once per minute, that `LISTEN` delivery failed and that transaction-mode poolers are not
+  supported.
 
 Acceptance criteria:
 
@@ -202,6 +216,9 @@ Acceptance criteria:
   permission change made through another replica afterwards takes effect on it.
 - With the listener recycled by a credential rotation, `trove_cache_flushes_total{reason="reconnect"}`
   does not increase.
+- A replica connected through PgBouncer with `pool_mode = transaction` (test fixture) stays not
+  ready with `"failing":["notify"]` and logs the pooler message; the same replica through
+  `pool_mode = session` becomes ready.
 
 ### R-HA-005 · Leader-less scheduling and job leases
 Priority: **MVP** · Covers: HA-002, HA-007
@@ -300,8 +317,11 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-007
 
 Work that must not run twice at the same time (the scheduler tick, garbage collection, the orphan
-sweep, retention runs, reindexing, secret re-encryption, background migrations) runs under an
-*advisory-lock lease* (INV-12):
+sweep, retention runs, secret re-encryption, background migrations) runs under an
+*advisory-lock lease* (INV-12). Reindexing is not on this list: a manual reindex and an automatic
+index rebuild are jobs with the dedup key `index:<repository id>` ([architecture.md](architecture.md)
+R-ARCH-016), which keeps two runs for one repository apart without a lease, because leases carry
+registered numbers only (R-ARCH-017). A lease works as follows:
 
 1. The worker takes a connection from the dedicated lease pool (`database.lease_pool_size`) and
    calls `pg_try_advisory_lock(<class>, <key>)`, a session-level lock
@@ -318,12 +338,20 @@ sweep, retention runs, reindexing, secret re-encryption, background migrations) 
    restartable from their persisted cursor.
 4. A partitioned replica detects the loss of its session through TCP keepalive and user timeout
    (`database.keepalive.*`, R-HA-015) before the server releases the lock through its own keepalive
-   (R-HA-013). Client-side detection (default ≤ 30 s) is shorter than server-side release
-   (recommended ≤ 120 s), and fencing (2) covers the remaining window.
-5. Transaction-mode connection poolers break session-level locks. trove MUST NOT be connected
-   through one (Q-HA-6).
+   (R-HA-013). trove sends the server-side keepalive settings as startup parameters on every
+   session that holds advisory locks (R-HA-015), so the server-side bound holds even where the
+   server's own settings are left at the operating-system default. Client-side detection
+   (default ≤ 30 s) is shorter than server-side release (default ≤ 120 s), and fencing (2) covers
+   the remaining window.
+5. Transaction-mode and statement-mode connection poolers break session-level locks, `LISTEN` and
+   the fetch-collapse locks of R-REPO-026. trove MUST NOT be connected through one (Q-HA-6). Direct
+   connections and session-mode poolers (for example PgBouncer with `pool_mode = session`) are
+   supported. The delivery probe of R-HA-004 keeps a replica not ready in the usual
+   misconfiguration. It is a guard, not a proof; the supported setups are the ones named here.
+   Splitting the main pool onto a transaction-mode pooler while session work connects directly is
+   P2 (Deferred).
 
-***Lock key registry.** Every advisory lock uses the two-argument form with a registered category as
+**Lock key registry.** Every advisory lock uses the two-argument form with a registered category as
 `classid`, as fixed by the registry of [architecture.md](architecture.md) R-ARCH-017, so `pg_locks`
 names every lock (ADR-077). This page uses three of its categories:
 
@@ -362,14 +390,13 @@ trove MUST behave as in this table. Each row is exercised by the failure-injecti
 |---|---|---|---|---|
 | Container crash (panic, OOM kill) | kubelet; session end releases locks | In-flight requests of that pod end; nothing half-committed (a `201` means durable, R-STOR-004); its job leases expire; its advisory locks are released immediately | Requests on that pod fail with connection reset or `502` from the proxy; npm (`fetch-retries`) and NuGet clients retry | kubelet restarts the container; the spool directory is emptied at start (R-HA-012) |
 | Pod eviction, node drain, rolling restart | `SIGTERM` | Drain (R-HA-011): readiness fails at once, in-flight requests finish within the grace period, jobs are released | None for requests shorter than the grace period; longer transfers are cut | PDB keeps all but one replica serving (R-HA-032) |
-| Node loss (no `SIGTERM`) | Node controller marks the node not ready | Endpoints of the lost pods are removed when their Ready condition flips; job leases expire; advisory locks are released by the server's TCP keepalive (R-HA-013) | Requests routed to the lost pods fail until the endpoints are removed (tens of seconds) | Pods are recreated after `server.nodeFailureTolerationSeconds` (R-HA-032) |
+| Node loss (no `SIGTERM`) | Node controller marks the node not ready | Endpoints of the lost pods are removed when their Ready condition flips; job leases expire; advisory locks are released by the server's TCP keepalive, which trove sets on its lock-holding sessions (R-HA-013, R-HA-015) | Requests routed to the lost pods fail until the endpoints are removed (tens of seconds) | Pods are recreated after `server.nodeFailureTolerationSeconds` (R-HA-032) |
 | One replica cut off from PostgreSQL | `database` check (R-OPS-001) | That replica answers `503` and turns not ready after the check threshold; its singleton work stops (R-HA-006) | Traffic moves to the other replicas | Automatic when the network heals |
 | PostgreSQL switchover or failover | Connection errors, SQLSTATE `57P01`, `25006`, class `08` | Retry with backoff within `database.retry.max_elapsed`, pool reset, listener reconnect with cache flush, singleton work aborts and resumes on the next run (R-HA-009) | Requests stall for up to the retry budget; those that exceed it get `503` with `Retry-After` | Automatic |
 | PostgreSQL unavailable beyond the retry budget | `database` check on every replica | Every replica answers `503` and turns not ready; liveness stays `200`, so nothing restarts; authorization fails closed after `authz.cache.max_staleness` ([authorization.md](authorization.md)) | `503` for everything (the Service has no ready endpoints) | Readiness returns when PostgreSQL does; no manual step |
 | PostgreSQL connection limit reached (`53300`) | Connect error | Backoff and retry inside the budget; metric `trove_db_retries_total{kind="too_many_connections"}` | Latency, then `503` | Size the budget (R-HA-016) |
-| Object storage unreachable from all replicas | Circuit breaker (R-STOR-033), `objectStore` check | Behavior per [storage.md](storage.md) R-STOR-036: new uploads `503`, downloads of stored content `503`, metadata, listings, deletes, deduplicated uploads and the API keep working. Readiness: see the next row | Degraded: reads of metadata succeed, blob transfers fail with retryable `503` | Automatic; no blob is marked missing because of errors |
-| Same, longer than `storage.s3.readiness.fail_after` | `objectStore` check with hysteresis | With INV-12 as written, every replica turns not ready and the degraded service becomes a full outage. Q-HA-1 recommends that readiness ignore a shared object-store outage | `503` for everything while the outage lasts (as specified today) | Automatic |
-| Object storage unreachable from one replica only | Its circuit opens; peers' do not | That replica's blob requests fail fast with `503` and, after `fail_after`, it turns not ready | Requests that hit it fail until then; clients retry onto other replicas | Automatic |
+| Object storage unreachable from all replicas, for any duration | Circuit breaker (R-STOR-033), `objectStore` check, alert `TroveObjectStoreUnreachable` | Behavior per [storage.md](storage.md) R-STOR-036: new uploads `503`, downloads of stored content `503`, metadata, listings, deletes, deduplicated uploads and the API keep working. Running replicas stay ready (R-HA-008, Q-HA-1). A replica that starts during the outage stays not ready until its startup check (R-STOR-035) succeeds; it retries without exiting, so it becomes ready as soon as the store returns | Degraded: reads of metadata, the UI, logins and CI token exchange succeed; blob transfers fail with retryable `503` | Automatic; no blob is marked missing because of errors |
+| Object storage unreachable from one replica only | Its circuit opens; peers' do not; alert `TroveObjectStoreUnreachableSingleReplica` | That replica's blob requests fail fast with `503` and `Retry-After`; it stays ready | Blob requests that hit it fail; clients' retries are balanced by the edge proxy and usually reach another replica | Automatic when its network path heals; otherwise the responder deletes the pod |
 | S3 throttling (`503 SlowDown`) | SDK retryer | Retries with backoff (R-STOR-033) | Higher latency | The content-addressed key layout spreads load across prefixes (R-HA-050) |
 | S3 credentials fail (expired web identity, revoked key) | `AccessDenied`, refresh error | Counted as object-store failure; logged with the credential source, never the secret | As the outage rows | Fix the credential; static key files are re-read (R-STOR-031) |
 | Spool volume full | Spool budget (R-STOR-004) | New uploads `503` with `Retry-After`; uploads larger than the whole budget `413` | Retry succeeds when space frees | R-HA-035 sizing |
@@ -400,12 +427,26 @@ the check thresholds and the chart's probe settings (R-HA-034) must satisfy toge
   readiness window, replicas stay ready and requests ride out the switchover in their retry loop
   (R-HA-009). A longer outage removes all replicas from the Service, so the edge proxy answers
   `503` at once instead of letting requests queue.
-- Object-storage readiness follows R-STOR-036 (`storage.s3.readiness.fail_after: 60s`, hysteresis)
-  until Q-HA-1 is decided. The chart passes `config.health.require_object_store` through unchanged.
-- A replica with an incompatible schema (R-HA-018) stays not ready and logs the required schema
-  version once per minute. It does not exit, so the rollout stalls visibly with
-  `maxUnavailable: 0` (R-HA-020) instead of crash-looping.
-- Because a shared outage makes every replica unready at once, the PodDisruptionBudget uses
+- Object storage gates readiness only until a replica is ready for the first time (Q-HA-1). A
+  replica becomes ready only after its object-store startup check (R-STOR-035,
+  `storage.s3.startup_check: true`) has passed, so a release with a wrong bucket, endpoint,
+  credential or CA never replaces working pods: the rollout stalls with `maxUnavailable: 0`.
+  After that, the `objectStore` check keeps running and is reported (verbose `/readyz`, the
+  replica registry, metrics), but its failure MUST NOT make the replica unready. Blob requests
+  degrade one by one through the circuit breaker (R-STOR-033, R-STOR-036), and the two alerts of
+  R-HA-045 tell a shared outage from a single replica's problem.
+- `health.require_object_store` defaults to `false` and implements this rule. `true` makes the
+  `objectStore` check gate readiness continuously, debounced by R-OPS-001's
+  `health.failure_threshold` and `health.success_threshold`. It is meant for an installation behind
+  an outer load balancer that can fail over to a second installation. The chart passes
+  `config.health.require_object_store` through unchanged.
+- A replica whose schema is behind its `requiredSchema` (R-HA-018) stays not ready and logs the
+  required schema version once per minute. It does not exit, so the rollout stalls visibly with
+  `maxUnavailable: 0` (R-HA-020) instead of crash-looping, and the replica becomes ready as soon as
+  the migration has run. A binary older than `compat_floor` can never serve against that schema and
+  exits instead ([architecture.md](architecture.md) R-ARCH-026).
+- Because a PostgreSQL outage (and, with `health.require_object_store: true`, an object-storage
+  outage) makes every replica unready at once, the PodDisruptionBudget uses
   `unhealthyPodEvictionPolicy: AlwaysAllow` (R-HA-032). Otherwise a node drain during the outage
   would be blocked, since the default policy treats unready pods as already disrupted
   ([PDB unhealthy pod eviction policy](https://kubernetes.io/docs/tasks/run-application/configure-pdb/#unhealthy-pod-eviction-policy),
@@ -532,10 +573,16 @@ this page requires the following:
 
 Acceptance criteria (in addition to R-STOR-036's):
 
-- With MinIO scaled to 0 for 5 minutes during an `npm ci` loop against a virtual repository whose
-  tarballs are cached: `npm view <pkg> versions` keeps succeeding for the whole period, while
+- With the local profile's S3 store scaled to 0 for 5 minutes during an `npm ci` loop against a
+  virtual repository whose tarballs are cached: `npm view <pkg> versions` keeps succeeding for the
+  whole period, every replica's `/readyz` keeps answering `200`, while
   `curl -T big.bin https://trove.example.com/files/generic-local/x.bin -H 'Expect: 100-continue'`
-  receives `503` without sending the body. Within `recover_after` of MinIO returning, both work.
+  receives `503` without sending the body. Within `storage.s3.circuit_breaker.open_duration`
+  plus 10 s of the store returning, both work.
+- A pod deleted during that outage is replaced, and the replacement stays not ready until the store
+  returns. Its container restart count stays unchanged throughout, because the startup check
+  retries transient errors without exiting (R-STOR-035), and it becomes ready within 60 s after the
+  store returns.
 - The alert `TroveObjectStoreUnreachable` fires during the outage, and
   `TroveObjectStoreUnreachableSingleReplica` does not.
 
@@ -584,7 +631,7 @@ PostgreSQL (R-STOR-004). What a crash leaves behind, and what removes it:
 | Objects written to S3 whose metadata commit never happened | Orphan sweep after `storage.orphans.min_age` (R-STOR-026) |
 | Incomplete multipart uploads | Orphan sweep (`storage.orphans.multipart_max_age`), plus a bucket lifecycle rule `AbortIncompleteMultipartUpload` after 1 day as a second line ([lifecycle rule](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html)) |
 | Jobs in `running` with a dead owner | Lease expiry and the reaper (R-HA-005) |
-| Advisory locks of the dead process | Released when its session ends; on node loss after the server's TCP keepalive (R-HA-013) |
+| Advisory locks of the dead process | Released when its session ends; on node loss after the server's TCP keepalive, which trove sets per session (R-HA-013, R-HA-015) |
 | A `replica` row with a stale heartbeat | Shown as `lost`, pruned after 24 h (R-OPS-003) |
 | Remote-fetch collapse locks | Released with the session (R-REPO-026) |
 
@@ -608,11 +655,19 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-058, HA-003
 
 **Versions.** trove MUST support PostgreSQL 16, 17 and 18 and MUST refuse to start against an
-older server (`server_version_num < 160000`) with a message naming the version found. A new major
-version is added to the support list once the CI matrix passes on it. This is the proposed floor;
-Q-HA-2 weighs 15, 16 and 17. Support dates verified 2026-10-28 on the
+older server (`server_version_num < 160000`) with a message naming the version found. The floor is
+16 (Q-HA-2). Support dates verified 2026-10-28 on the
 [PostgreSQL versioning page](https://www.postgresql.org/support/versioning/): 14 ends 2026-11-12,
 15 on 2027-11-11, 16 on 2028-11-09, 17 on 2029-11-08, 18 on 2030-11-14.
+
+- A new major version joins the support list once it is generally available and the CI matrix
+  passes on it. PostgreSQL 19 is at release candidate stage; its general availability is planned
+  for 2026-11-19 ([RC 1 announcement](https://www.postgresql.org/about/news/postgresql-19-rc-1-released-3409/),
+  verified 2026-10-28).
+- The floor moves only with the community support window: the first trove minor release published
+  after a major version's end of life MAY drop that version, and the release notes of the minor
+  release before it MUST announce the drop. A schema or query feature that needs a newer version
+  than the floor is not used until the floor reaches it.
 
 trove uses only the primary. Read replicas are not used for queries, because every node must see
 one consistent view (HA-003) and replica lag would show stale permissions and stale package lists.
@@ -624,7 +679,7 @@ Routing reads to replicas is Deferred.
 |---|---|---|
 | `server_encoding` | `UTF8` (checked at startup) | Package names and metadata are Unicode |
 | `max_connections` | ≥ the budget of R-HA-016 (checked by the migration Job) | Scaling out without it exhausts connections |
-| `tcp_keepalives_idle`, `tcp_keepalives_interval`, `tcp_keepalives_count` | Recommended `60`, `10`, `6` | The server ends the session of a vanished replica, and releases its advisory locks, within about 2 minutes instead of the OS default ([connection settings](https://www.postgresql.org/docs/current/runtime-config-connection.html)) |
+| `tcp_keepalives_idle`, `tcp_keepalives_interval`, `tcp_keepalives_count` | Recommended `60`, `10`, `6` | The server ends the session of a vanished replica, and releases its advisory locks, within about 2 minutes instead of the OS default ([connection settings](https://www.postgresql.org/docs/current/runtime-config-connection.html)). trove sends the same values as startup parameters on every session it opens, the lock-holding ones included (R-HA-015), so the advisory-lock bound holds without this server setting; the server setting still covers other clients |
 | `client_connection_check_interval` | Recommended `10s` | Detects a vanished client during a long query |
 | WAL archiving | Required for point-in-time recovery (R-HA-023) | Restore to a point in time |
 | Synchronous replication | Recommended, with one synchronous standby | Without it, a failover can lose transactions that were acknowledged as `201`. With CloudNativePG: `postgresql.synchronous: {method: any, number: 1, dataDurability: required}` ([replication](https://cloudnative-pg.io/docs/1.30/replication)); `required` pauses writes when no standby is available, `preferred` keeps writing and risks that loss |
@@ -675,7 +730,8 @@ Acceptance criteria:
 
 - Starting against PostgreSQL 15 exits with status 1 and the log line names `15.x` and the minimum
   `16`.
-- The CI matrix runs the integration suite against 16, 17 and 18.
+- The CI matrix runs the integration suite against every supported major version (16, 17 and 18;
+  19 once it is added).
 - `SHOW tcp_keepalives_idle` on the test cluster returns `60`; R-HA-006's partition test passes.
 
 ### R-HA-014 · Database provisioning, roles and privileges
@@ -718,6 +774,36 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA trove
   GRANT USAGE, SELECT ON SEQUENCES TO trove_app;
 ```
 
+**Audit objects are the exception** ([operations-and-observability.md](operations-and-observability.md)
+R-OPS-015, Q-OPS-4). Audit rows are append-only for the runtime role, and partition maintenance
+and retention belong to the owner. The migration that creates the audit objects (run as
+`trove_owner`) therefore narrows the defaults above:
+
+```sql
+-- audit_event: INSERT and SELECT only
+REVOKE UPDATE, DELETE, TRUNCATE ON audit_event FROM trove_app;
+-- audit_policy: owner-written retention, readable but not writable by the runtime role
+CREATE TABLE audit_policy (…);                        -- columns: R-OPS-015
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON audit_policy FROM trove_app;
+-- the only path to partition DDL
+CREATE FUNCTION audit_maintain_partitions() RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = trove, pg_temp
+  AS $$ … $$;                                         -- body: R-OPS-015
+REVOKE ALL ON FUNCTION audit_maintain_partitions() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
+```
+
+- Partitions of `audit_event` carry no grant for `trove_app`; the runtime role reaches them only
+  through the parent table. `audit_maintain_partitions()` runs as the owner, so the default
+  privileges above would grant DML on every partition it creates. The function therefore revokes
+  them (`REVOKE ALL ON <partition> FROM trove_app`) on every partition it creates.
+- The migration Job reads `audit.retention_days` from the same configuration file as the replicas
+  (R-HA-019, R-HA-030). After applying the steps, `trove migrate` writes it into `audit_policy` and
+  then calls `audit_maintain_partitions()`. Retention is therefore owner data that a compromised
+  replica cannot shorten, and the partitions exist before the first replica of the release writes
+  (R-OPS-015, R-OPS-017).
+- In single-role mode the runtime role owns these objects, so none of this applies there (R-OPS-015,
+  H-39).
 - The runtime role needs no privilege for advisory locks, `LISTEN` or `NOTIFY`.
 - Preflight, run by the migration Job and by every replica at startup, MUST check:
   - the server version (R-HA-013);
@@ -725,8 +811,17 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA trove
   - that the runtime role is not a superuser (`rolsuper`); a superuser runtime role is refused
     unless `database.preflight.allow_superuser: true`;
   - that schema `trove` exists and is owned by the migration role;
-  - after migrations, that the runtime role holds the expected table privileges
-    (`has_table_privilege` on every table of the schema).
+  - after migrations, that the runtime role holds exactly the expected privileges
+    (`has_table_privilege`, `has_function_privilege`):
+    - `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table of the schema except the audit
+      objects below (the defaults above);
+    - `SELECT` and `INSERT` on `audit_event`, and none of `UPDATE`, `DELETE`, `TRUNCATE`;
+    - `SELECT` on `audit_policy`, and none of `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`;
+    - no privilege on any partition of `audit_event`;
+    - `EXECUTE` on `audit_maintain_partitions()`.
+
+    A missing grant and a surplus grant on the audit objects both fail the check. In single-role
+    mode the runtime role owns every object, so the check is skipped there.
 - Managed services: on Amazon RDS the administrator account is not a true superuser, and the SQL
   above runs as that account unchanged. With CloudNativePG, `bootstrap.initdb.owner` creates the
   owner; the two runtime roles are added through the cluster's managed roles or with the SQL above.
@@ -744,6 +839,10 @@ Acceptance criteria:
 
 - With the two-role setup, `psql -U trove_app_a -c 'DROP TABLE trove.job'` fails with
   `42501` (insufficient privilege), and the whole integration suite passes.
+- With the two-role setup, `psql -U trove_app_a -c 'DELETE FROM trove.audit_event'` fails with
+  `42501`.
+- After `GRANT UPDATE ON trove.audit_event TO trove_app` by hand, a replica's preflight fails and
+  names `audit_event` and `UPDATE`.
 - A runtime role with `SUPERUSER` makes the replica exit with a message naming
   `database.preflight.allow_superuser`.
 
@@ -774,6 +873,14 @@ Priority: **MVP** · Covers: HA-061, HA-063
 | `idle_in_transaction_session_timeout` | `database.session.idle_in_transaction_session_timeout` |
 | `TimeZone` | `UTC` |
 | `search_path` | `database.schema` |
+| `tcp_keepalives_idle`, `tcp_keepalives_interval`, `tcp_keepalives_count` | `database.server_keepalive.idle`, `.interval` (whole seconds) and `.count` |
+
+- The server-side keepalive parameters are user-settable (context `user`), so they need no
+  privilege and no server configuration. They make the server end the session of a vanished
+  replica, and release its advisory locks (R-HA-006, R-REPO-026), within
+  `idle + interval × count` (about 2 minutes with the defaults), the bound R-HA-013 recommends for
+  the server setting. They are sent on every session, which includes the listener (coordination)
+  session, the lease pool and the fetch-collapse lock pool that hold session-level locks.
 
 Configuration:
 
@@ -794,12 +901,19 @@ database:
     statement_timeout: 30s            # default (proposed)
     lock_timeout: 5s                  # default (proposed)
     idle_in_transaction_session_timeout: 60s  # default (proposed)
+  server_keepalive:                   # sent as tcp_keepalives_* startup parameters
+    idle: 60s                         # default (proposed)
+    interval: 10s                     # default (proposed)
+    count: 6                          # default (proposed)
 ```
 
 Acceptance criteria:
 
 - `SELECT application_name, ssl FROM pg_stat_activity JOIN pg_stat_ssl USING (pid) WHERE application_name LIKE 'trove/%'`
   shows `ssl = true` for every trove session.
+- Against a server whose `tcp_keepalives_*` settings are left at `0` (operating-system default),
+  R-HA-006's partition test passes, and the other replica takes the lease within 150 s of the
+  partition.
 - With `sslMode: verify-full` and a host name not in the server certificate, startup fails with a
   TLS verification error naming the host.
 - `kubectl exec <pod> -- ls /var/run/secrets/trove/database-ca/` lists `ca.crt` only.
@@ -913,6 +1027,19 @@ Release N and release N−1 run side by side against one schema during every rol
 | **expand** | New tables, new nullable columns or columns with a constant default, new indexes (built `CONCURRENTLY`), new constraints added `NOT VALID` and validated in a later step, new views, new functions | By the migration Job of the release that ships it, before any of its pods start |
 | **contract** | Dropping tables, columns, indexes, constraints and functions; `SET NOT NULL`; renames (only as add-copy-drop over several releases, never `RENAME` of an object an older release reads) | Only when no live replica runs a release that still uses the object (guard below) |
 
+- **Runner.** Steps are applied by trove's own runner on the native pgx API
+  ([architecture.md](architecture.md) R-ARCH-026, Q-ARCH-3); no migration library and no
+  `database/sql` are involved. A transactional step and its `schema_migration` row commit in one
+  transaction, so a crash leaves neither.
+- **File headers.** Each step is an embedded SQL file `internal/meta/postgres/migrations/NNNNN_<name>.sql`
+  whose header comments declare what this requirement needs (R-ARCH-026 owns the syntax):
+
+  | Header | Meaning |
+  |---|---|
+  | `-- trove:phase expand` or `-- trove:phase contract` | The step's class (table above); every file has exactly one |
+  | `-- trove:no-transaction` | The step cannot run in a transaction block; the file holds exactly one statement |
+  | `-- trove:requires-app >= <version>` | Contract steps only, and required there: the oldest release allowed to serve once the step is applied |
+
 - Data changes are not migrations. Backfills run as background data migrations (R-HA-022), never
   inside the migration Job, so the Job's duration does not grow with the data.
 - Every step runs with `lock_timeout` = `migrate.ddl_lock_timeout` and is retried up to
@@ -921,8 +1048,8 @@ Release N and release N−1 run side by side against one schema during every rol
   long transaction.
 - `CREATE INDEX CONCURRENTLY` cannot run in a transaction block
   ([CREATE INDEX](https://www.postgresql.org/docs/current/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY)).
-  Such steps are single-statement, non-transactional and idempotent. Before retrying, a step drops
-  an `INVALID` index left by a failed attempt.
+  Such steps carry `-- trove:no-transaction`, hold a single statement and are idempotent. Before
+  retrying, the runner drops an `INVALID` index left by a failed attempt.
 - `SET NOT NULL` on a large table goes through `CHECK (col IS NOT NULL) NOT VALID`,
   `VALIDATE CONSTRAINT`, then `SET NOT NULL`, which uses the validated check instead of a full scan
   under an exclusive lock.
@@ -930,28 +1057,36 @@ Release N and release N−1 run side by side against one schema during every rol
 **Schema compatibility window.**
 
 - Each binary embeds `requiredSchema`, the number of its newest expand step.
-- Each contract step declares `lastUsedBy`, the newest release whose code still reads or writes the
-  object it removes.
-- The database records `compat_floor` = 1 + the highest `lastUsedBy` of all applied contract steps
-  (as a release version).
+- Each contract step declares `requires-app` in its header: the oldest release allowed to serve
+  once the step is applied. The release before it is the step's `lastUsedBy`, the newest release
+  whose code still reads or writes the object the step removes. `requires-app` is the declared
+  value; `lastUsedBy` is only a name for the release before it.
+- The database records `compat_floor` = the highest `requires-app` of all applied contract steps,
+  or `0.0.0` while none is applied. No version arithmetic is involved: the floor is a declared
+  version, compared as a semantic version.
 - A binary of version V can serve iff `applied ≥ requiredSchema` and `compat_floor ≤ V`. Newer
   expand steps do not make an older binary incompatible. The window has no upper bound on the
   schema number, which keeps N−1 ready while N's expand steps are applied. The `schema` readiness
-  check of R-OPS-001 MUST implement exactly this rule.
+  check of R-OPS-001 MUST implement exactly this rule: below `requiredSchema` the replica waits not
+  ready (R-HA-008), and with `compat_floor` above V it exits with
+  `schema requires trove >= <compat_floor>` (R-ARCH-026).
 
 **Contract guard.** Before applying a contract step, `trove migrate` reads the live replicas
-(R-HA-003). If any of them runs a version ≤ `lastUsedBy`, the Job MUST fail without applying
-anything. The error lists those replicas and the two ways forward: upgrade one minor release at a
-time, or stop all replicas and upgrade with downtime (R-HA-021).
+(R-HA-003). If any of them runs a version below the step's `requires-app` (that is, ≤ its
+`lastUsedBy`), `trove migrate` MUST exit with status `3` without applying anything, which fails the
+Job. The error lists those replicas and the two ways forward: upgrade one minor release at a time,
+or stop all replicas and upgrade with downtime (R-HA-021). There is no override flag. The downtime
+path scales the replicas to zero, so the registry lists none and the guard passes; an override
+while old replicas are live would let the step break them (R-ARCH-026, Q-ARCH-3).
 
 ```sql
 CREATE TABLE schema_migration (
   version        integer     PRIMARY KEY,
-  name           text        NOT NULL,             -- e.g. '0057_package_tags'
-  class          text        NOT NULL CHECK (class IN ('expand','contract')),
+  name           text        NOT NULL,             -- e.g. '00057_package_tags'
+  class          text        NOT NULL CHECK (class IN ('expand','contract')),  -- trove:phase
   release        text        NOT NULL,             -- trove version that ships the step
-  last_used_by   text,                             -- contract only
-  transactional  boolean     NOT NULL,
+  requires_app   text,                             -- trove:requires-app; contract only
+  transactional  boolean     NOT NULL,             -- false with trove:no-transaction
   checksum       bytea       NOT NULL,             -- SHA-256 of the embedded SQL
   applied_at     timestamptz NOT NULL DEFAULT now(),
   duration_ms    integer     NOT NULL
@@ -960,7 +1095,7 @@ CREATE TABLE schema_migration (
 CREATE TABLE schema_state (
   id             boolean     PRIMARY KEY DEFAULT true CHECK (id),
   applied        integer     NOT NULL,
-  compat_floor   text        NOT NULL              -- oldest trove version allowed to serve
+  compat_floor   text        NOT NULL              -- highest applied requires_app; '0.0.0' if none
 );
 ```
 
@@ -979,7 +1114,7 @@ API (permission: `system.read`, [operations-and-observability.md](operations-and
   "binary": {"version": "0.4.0", "requiredSchema": 57},
   "pending": [],
   "applied": [
-    {"version": 57, "name": "0057_package_tags", "class": "expand", "release": "0.4.0",
+    {"version": 57, "name": "00057_package_tags", "class": "expand", "release": "0.4.0",
      "appliedAt": "2026-10-28T12:00:03.114Z", "durationMs": 412}
   ],
   "background": [
@@ -1003,11 +1138,15 @@ migrate:
 Acceptance criteria:
 
 - A CI check fails a change that adds a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`)
-  to an expand-class migration file.
+  to a file headed `-- trove:phase expand`, a file without a valid `phase` header, and a contract
+  file without `-- trove:requires-app` (R-ARCH-026).
 - Integration test: the previous release's binary passes its full API suite against a schema with
   the current release's expand steps applied.
 - With a 0.3.x replica alive, a migration plan that contains a contract step with
-  `lastUsedBy: 0.3.0` fails and names that replica.
+  `-- trove:requires-app >= 0.4.0` makes `trove migrate` exit with status `3`, apply nothing and
+  name that replica.
+- After that step is applied with no older replica alive, `GET /api/v1/system/migrations` reports
+  `compatFloor: "0.4.0"`.
 - A migration whose DDL waits behind a transaction held open for 2 minutes does not block reads on
   the table for more than `ddl_lock_timeout` per attempt (measured with a concurrent `SELECT` loop).
 
@@ -1024,17 +1163,25 @@ Priority: **MVP** · Covers: HA-066, HA-069
   MUST NOT depend on chart-rendered ordinary resources. Its configuration ConfigMap and its
   ServiceAccount are rendered as hook resources with weight `-10`. Secrets are pre-existing
   (R-HA-030).
-- The Job runs `trove migrate up`, which does the following in order:
+- The hook ConfigMap carries the same `trove.yaml` as `<fullname>-config` (R-HA-030), so
+  `trove migrate` reads `audit.retention_days` and the `database` and `migrate` sections from the
+  same configuration file as the replicas.
+- The Job runs `trove migrate up`, trove's own runner on native pgx (R-ARCH-026), which does the
+  following in order:
   1. preflight (R-HA-013, R-HA-014, R-HA-016);
-  2. `pg_advisory_lock(3, 0)` (category `migration`, R-ARCH-017), waiting up to `migrate.advisory_lock_wait`, so concurrent Jobs
-     serialize and the second finds nothing to do;
+  2. `pg_advisory_lock(3, 0)` (category `migration`, R-ARCH-017), waiting up to
+     `migrate.advisory_lock_wait`, so concurrent Jobs serialize and the second finds nothing to do.
+     Every later step runs on that same connection;
   3. verify the checksums of applied steps;
-  4. compute the plan, run the contract guard, apply the steps, update `schema_state`;
-  5. release the lock and print a JSON summary to stdout;
-  6. write an audit event `system.schema.migrated` with the applied versions.
+  4. compute the plan, run the contract guard (exit status `3` when it refuses, R-HA-018), apply
+     the steps, update `schema_state`;
+  5. write `audit.retention_days` into `audit_policy`, then call `audit_maintain_partitions()`
+     (R-HA-014, [operations-and-observability.md](operations-and-observability.md) R-OPS-015);
+  6. release the lock and print a JSON summary to stdout;
+  7. write an audit event `system.schema.migrated` with the applied versions.
 - The Job uses the migration credentials (`secrets.databaseMigration`), or the runtime credentials
-  in single-role mode. It has no S3 configuration, no service-account token, and the same pod and
-  container security context as the replicas.
+  in single-role mode. It mounts no S3 credential and no service-account token, and it has the same
+  pod and container security context as the replicas.
 - Job settings: `backoffLimit` 2 (steps are idempotent), `activeDeadlineSeconds` 1800 and
   `ttlSecondsAfterFinished` 86400, so the logs stay readable for a day.
 - Helm's default `--timeout` (5 m) is shorter than the Job deadline. The documented command is
@@ -1047,9 +1194,9 @@ Priority: **MVP** · Covers: HA-066, HA-069
   means, for example `kubectl -n trove run trove-migrate --rm -i --restart=Never --image=… -- trove migrate up`
   with the same mounts. New pods stay not ready until the schema is sufficient (R-HA-008).
 - **Rollback.** `helm rollback` to release N−1 after an upgrade to N is supported. N's Job applied
-  only expand steps that N−1 tolerates, and contract steps whose objects N−1 no longer uses.
-  `compat_floor` is therefore ≤ N−1. Rolling back further than one release requires a database
-  restore.
+  only expand steps that N−1 tolerates, and contract steps whose objects N−1 no longer uses, which
+  declare `requires-app` N−1 or lower (R-HA-021). `compat_floor` is therefore ≤ N−1. Rolling back
+  further than one release requires a database restore.
 
 Acceptance criteria:
 
@@ -1100,11 +1247,19 @@ Priority: **MVP** · Covers: OPS-072, HA-070
 |---|---|
 | Patch (x.y.z → x.y.z+1) | Rolling, zero downtime; patch releases contain no contract steps |
 | Next minor (x.y → x.y+1) | Rolling, zero downtime (R-HA-020) |
-| Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor, or with downtime: scale to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018). See Q-HA-5 |
+| Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
 | Major | As stated in the release notes; skipping a major is not supported |
 
 - The Helm chart is the only supported installation and upgrade method (INV-13). The chart version
   and the application version are released together. `appVersion` is the default image tag.
+- The compatibility window is one minor release (Q-HA-5). A contract step shipped in minor release
+  N may remove only objects that N−1 no longer uses, so its header declares
+  `-- trove:requires-app >= N−1` or lower ([architecture.md](architecture.md) R-ARCH-026), and its
+  `lastUsedBy`, the release before, is N−2 or older. This is R-ARCH-026's rule that a contract step
+  ships at the earliest one minor after the release that stopped using the old objects. Every
+  release's notes name the oldest release it can be upgraded from without downtime and, when
+  contract steps are included, the stepwise path from older minors. The contract guard's error
+  names the same path.
 - Preparation:
   1. Read the release notes for breaking changes and new required values.
   2. Confirm that the PostgreSQL backup is current, and note the time as a restore point
@@ -1120,17 +1275,25 @@ Priority: **MVP** · Covers: OPS-072, HA-070
 
 Acceptance criteria:
 
-- Upgrading from 0.2.x directly to 0.4.x with a contract step whose `lastUsedBy` is 0.2.x fails in
-  the Job with the message of R-HA-018. After `kubectl scale deploy/trove --replicas=0`, a 30 s
-  wait and `helm upgrade`, it succeeds.
+- Upgrading from 0.2.x directly to 0.4.x with a contract step headed
+  `-- trove:requires-app >= 0.3.0` fails in the Job (`trove migrate` exits with status `3`) with
+  the message of R-HA-018. After `kubectl scale deploy/trove --replicas=0`, a 30 s wait and
+  `helm upgrade`, it succeeds without any override.
 
 ### R-HA-022 · Background data migrations
 Priority: **MVP** · Covers: OPS-074
 
 - A data change too large for the migration Job (backfills, re-hashing, re-indexing metadata) is a
-  named background migration. It runs as a singleton job under a lease (R-HA-006), in keyset
-  batches of `jobs.background_migrations.batch_size` rows, with `pause_between_batches` between them.
-  It persists its cursor after every batch, so an interruption resumes where it stopped.
+  named background migration. It runs as a job of kind `data_migration_<name>` on the job queue
+  ([architecture.md](architecture.md) R-ARCH-016, R-ARCH-026), as a singleton under a lease
+  (R-HA-006), in keyset batches of `jobs.background_migrations.batch_size` rows, with
+  `pause_between_batches` between them. It persists its cursor after every batch, so an
+  interruption resumes where it stopped.
+- Its runs are visible in the job API (`GET /api/v1/system/jobs?kind=data_migration_<name>`).
+  `background_migration` below keeps the durable state that the contract guard and
+  `GET /api/v1/system/migrations` read, also after the job rows are deleted (`jobs.retention`).
+- During a rolling upgrade, an N−1 worker never claims a `data_migration_<name>` kind introduced
+  in N, because workers claim only the kinds they know (R-HA-005).
 - A background migration starts only when the cluster minimum version (R-HA-003) is ≥ the release
   that introduced it. Otherwise an older replica could write rows in the old shape behind the
   backfill.
@@ -1245,7 +1408,7 @@ that restores to older points must work.
 - **Reads of a missing object.** If an object is nevertheless missing (restore outside the window,
   out-of-band deletion, disaster-recovery lag), reading it MUST answer `503` with `Retry-After`,
   never `404`. The item exists, and its content may come back through replication or version
-  restore. It also counts `trove_storage_blob_missing_total` and marks the blob
+  restore. It also counts `trove_storage_blobs_damaged_total{status="missing"}` and marks the blob
   `content_status = 'missing'` per R-STOR-027. A remote repository treats it as a cache miss and
   fetches again (R-STOR-027).
 - **Orphans after restore.** Objects written after *t* have no row in the restored database. The
@@ -1286,8 +1449,11 @@ Deferred (repository export and import, OPS-036 and OPS-037, are P2).
    - ends every UI session (`trove admin sessions end --all`, R-AUTH-015);
    - runs `trove admin storage verify --since <t − storage.gc.grace_period>` and prints the
      number of referenced blobs whose objects are missing;
+   - re-applies the revocation journal entries newer than *t* (R-HA-054) and prints one line per
+     entry, including every object it suspended;
    - writes the audit event `system.restored` with *t*;
-   - prints a reminder that revocations and permission removals made after *t* are undone (H-37).
+   - prints a reminder that access granted after *t* is gone and that revocations newer than the
+     last shipped journal entry are undone (H-37).
 5. **Repair missing blobs** if step 4 reported any and the bucket is versioned:
    `trove admin storage restore-versions --before <t>` removes the delete markers of missing
    referenced objects. This needs a separate credential with `s3:ListBucketVersions` and
@@ -1316,7 +1482,8 @@ Acceptance criteria (restore drill, part of R-HA-052, run monthly in CI):
   - `npm view` shows exactly the versions published before *t*.
   - A package published after *t* is absent, and its object is not deleted while the pause is set.
   - After `resume-deletions` and an orphan sweep with the test `min_age`, that object is removed.
-  - A token revoked after *t* works again, which documents H-37.
+  - A token revoked after *t* is rejected after step 4 (R-HA-054). With
+    `backup.revocation_journal.enabled: false` it works again, which documents H-37.
 
 ### R-HA-026 · Cross-site disaster recovery
 Priority: **P1** · Covers: OPS-033
@@ -1378,26 +1545,39 @@ sealed rows still reference. This requirement covers what HA and the chart add:
   Secret is named (R-HA-029). A key generated at install time is lost or regenerated on the next
   render wherever Helm's `lookup` is unavailable (`helm template`, Argo CD). A regenerated key
   silently makes every sealed value undecryptable. R-ARCH-021 likewise has no default and no
-  generated key; Q-HA-8 records the alternatives.
+  generated key. The operator creates the Secret before the first install (Q-HA-8), by hand as
+  below or through the cluster's secret tooling (an external-secrets operator, a vault injector,
+  sealed secrets). When `secrets.encryption.existingSecret` or `secrets.encryption.keys` is empty,
+  the rendering error (R-HA-029) prints this command:
 
   ```shell
   kubectl -n trove create secret generic trove-encryption-keys \
-    --from-file=k2026-10.key=<(head -c 32 /dev/urandom | base64)
+    --from-file=2026-10.key=<(head -c 32 /dev/urandom | base64)
   ```
+
+  The file name without `.key` is the key ID, here `2026-10`, the form R-ARCH-021 uses.
 - **Missing keys.** The canary check of R-ARCH-021 stops a replica whose ring lacks a key ID that
   sealed rows reference; it logs the expected and found key IDs, never key material. Old and new
   replicas with different active keys during step 2 of a rotation are expected and harmless,
   because by then every ring holds both keys.
 - **Rotation without a decryption gap.** A plain "new key first, roll out" would let new pods seal
   with a key that old pods do not have yet. Rotation therefore takes two rollouts before the
-  re-encryption of R-ARCH-021:
+  re-encryption of R-ARCH-021. Each step can be checked without a shell in a pod through
+  `GET /api/v1/system/encryption` ([api-and-ui.md](api-and-ui.md) R-API-049, permission
+  `system.read`):
   1. Add the new key to the Secret and *append* it to `secrets.encryption.keys` (decrypt-only
      everywhere). `helm upgrade`.
-  2. Move it to the first position, which makes it `secrets.active_key_id`. `helm upgrade`. Every
-     replica already holds it, so values sealed by new pods are readable by old pods.
-  3. Run the `secrets_reencrypt` job (R-ARCH-021, R-ARCH-016).
-  4. When `trove admin secrets status` reports no rows under the old key ID, remove it from the
-     list, `helm upgrade`, then remove it from the Secret.
+  2. Before this step, check that `GET /api/v1/system/encryption` lists the new key ID in every
+     replica's `keyIds` and reports `ringsCompatible: true`. Then move the key to the first
+     position, which makes it `secrets.active_key_id`. `helm upgrade`. Every replica already holds
+     it, so values sealed by new pods are readable by old pods.
+  3. Start the re-encryption with `POST /api/v1/system/tasks/secrets-reencrypt/run` (R-API-049;
+     the `secrets-reencrypt` task of R-ARCH-021 and R-ARCH-016). It answers `409`
+     `key_ring_incompatible` while a live replica's ring lacks a key ID that is active somewhere or
+     still referenced, and `409` with the running job while one runs.
+  4. When `trove admin secrets status` or `GET /api/v1/system/encryption` (R-API-049) reports no
+     values under the old key ID, remove it from the list, `helm upgrade`, then remove it from the
+     Secret.
 
   The chart adds a checksum of `secrets.encryption.keys` (names only) to the pod template, so a
   change to the list rolls the pods.
@@ -1409,6 +1589,150 @@ Acceptance criteria:
   a private upstream: no iteration fails with `502 upstream_secret_unavailable`.
 - A pod started with a different Secret content exits with the key-ring mismatch message of
   R-ARCH-021, while the others keep serving.
+
+### R-HA-054 · Revocation journal in object storage
+Priority: **P1** · Covers: trove-only
+
+A database restore to time *t* undoes every access removal made after *t* (H-37). trove therefore
+records every change to an access-bearing object a second time, outside PostgreSQL, and
+`trove admin post-restore` re-applies the removals among the entries newer than *t* (R-HA-025,
+step 4; Q-HA-9). Replay never grants access.
+
+**What is journaled.** Transactional audit events (R-OPS-015) whose entry in the event registry
+(R-OPS-014) declares `journal: revocation`. When the audit writer inserts such an event, it inserts
+a `revocation_outbox` row in the same transaction. A committed change therefore always has its
+journal row, and a rolled-back change never has one. The owning pages flag their events and define
+what an entry carries. An event type added later is covered by setting its flag, without a change
+to this mechanism. At least these events are flagged:
+
+| Audit event | Owner | Replay |
+|---|---|---|
+| `token.revoked`, `ci.token.revoked` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-029, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-017 | Revoke the token, with the cascade of R-AUTH-029 |
+| `token.rotated` | identity R-AUTH-030 | Set the predecessor's `expires_at` to the earlier of its current and its journaled value; revoke it when the overlap was 0 |
+| `user.disabled`, `user.deleted` | identity R-AUTH-016, R-AUTH-021, R-AUTH-039 | Disable the user |
+| `serviceaccount.disabled`, `serviceaccount.deleted` | identity R-AUTH-020 | Disable the service account |
+| `group.deleted` | identity R-AUTH-018 | Delete the group |
+| `group.members.changed`, `user.groups.synced` | identity R-AUTH-018, R-AUTH-008, R-AUTH-039 | Remove each removed membership with its source; added members are ignored |
+| `authz.role.unbound` | [authorization.md](authorization.md) R-AUTHZ-022 | Remove the role binding |
+| `authz.policy.deleted` | authorization R-AUTHZ-021 | Delete the policy |
+| `authz.ownership.removed`, `authz.ownership.released` | authorization R-AUTHZ-019 | Remove the owner |
+| `ci.issuer.*` and `ci.mapping.*` disables and deletions | gitlab-ci R-CI-002, R-CI-019, R-CI-020 | Disable the issuer or mapping. Disabling a mapping that was enabled also suspends every later enabled mapping of its tier, so no job falls through to a mapping that grants more ([Q-CI-11](gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match)) |
+| `authz.policy.updated`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
+
+The break-glass account's `enabled` state lives in the configuration file, not in PostgreSQL, so a
+restore does not revive it and it is not journaled.
+
+**Replay rules.**
+
+- Removals (revoke, disable, delete, remove) are applied as recorded. Each is idempotent: a subject
+  already in the recorded state is reported `already in effect`, one missing from the restored
+  database `subject unknown`. A deleted user, service account, CI issuer or mapping is disabled
+  rather than deleted, so a mistaken or forged entry stays reversible; disabling already makes
+  its tokens fail (R-AUTH-016, R-AUTH-020, R-CI-017).
+- **Update rule.** An update entry carries the object's state before and after the change, without
+  secrets. Replay compares the object's *current* state with the journaled after-state through the
+  owning page's comparator `narrows(current, after)`. The comparator answers true only when the
+  after-state grants nothing that the current state does not, and false whenever it cannot tell.
+  1. True: the access-bearing fields are set to the after-state (`applied`). Replay never changes
+     identifying fields (names, keys).
+  2. False, and the journaled before-state is contained in the after-state (the change only added
+     access): the entry is skipped (`skipped`). Access granted after *t* is not restored.
+  3. False otherwise: the object is suspended (`suspended`). A policy loses all its entries, an
+     issuer or mapping is disabled, an access setting takes its most restrictive value. The output
+     prints the journaled after-state, so an administrator can review and re-apply it.
+
+  Case 3 is a narrowing on top of a broadening that the restored database lacks. Applying it to the
+  older state could keep access the narrowing removed, so replay fails closed instead. Comparators
+  MUST be conservative: an emptied include list, for example, is unrestricted under R-AUTHZ-005, so
+  removing the last include pattern never counts as narrowing.
+- **Forged entries cannot escalate.** Whoever holds the runtime S3 credential can write journal
+  objects. A removal only removes. Where removing one object can widen what another grants, the
+  owning page adds a fail-closed step: a disabled CI mapping would let its jobs fall through to the
+  next mapping of its tier, so replay suspends those mappings too (R-CI-020, Q-CI-11). An update is
+  applied only when it grants nothing beyond the
+  object's current state, and the forgeable before-state only chooses between skipping and
+  suspending. An entry of an unknown event type is reported and skipped.
+- Within the replay margin (below), an update that is already reflected in the restored database
+  can undo a broadening made shortly before *t*. Replay then fails closed, too.
+
+**Outbox and shipping.**
+
+- A worker job ships the rows in `id` order to
+  `<storage.s3.prefix>/_journal/revocations/<yyyy>/<mm>/<dd>/<id>.json`, one object per entry, and
+  deletes each row after its object was written. A row whose object was written but whose deletion
+  did not commit is shipped again under the same key with identical content, which is harmless.
+  trove never deletes a journal object. `_journal/` is a key family of
+  [storage.md](storage.md) R-STOR-001, so the orphan sweep leaves it alone.
+- Shipping is triggered through `NOTIFY` and runs at least every
+  `backup.revocation_journal.ship_interval`.
+- A change never waits for object storage. During an object-store outage the outbox grows and ships
+  afterwards. The gauge `trove_revocation_journal_pending` shows the backlog.
+
+**Replay run.**
+
+- `trove admin post-restore --restored-to <t>` lists the entries with
+  `at > t − backup.revocation_journal.replay_margin` and sorts them by `at` and `id`. It applies
+  them in that order, each to the state its predecessors left.
+- It prints one line per entry (`applied`, `already in effect`, `subject unknown`, `skipped`,
+  `suspended`) and writes the audit event `system.restore.journal_replayed` with the counts.
+- The margin covers transactions that started before *t* and committed after it (`at` is the
+  transaction's `now()`).
+- With bucket versioning and the restore credential of R-HA-025 step 5 (`--credentials-file`),
+  replay lists object versions as well, so a delete marker set with the runtime credential cannot
+  hide an entry. Without versioning, a holder of the runtime credential can delete journal objects
+  and so revive what they recorded.
+- If replay leaves no `admin` role binding, the output says so. The break-glass account
+  (R-AUTH-014) is the way back in.
+
+**Residual gap.** Entries not yet shipped when the old database stopped (normally less than one
+shipping interval). Access granted after *t*, including reactivations, is absent from the restored
+database and never replayed; an administrator grants it again. Objects suspended under case 3 of
+the update rule grant nothing until an administrator reviews them.
+
+**Retention.** Journal objects are kept until the operator expires them, for example with a bucket
+lifecycle rule on the `_journal/` prefix that is longer than `backup.recovery_window`. An entry is a
+few hundred bytes, an update entry a few kilobytes.
+
+```sql
+CREATE TABLE revocation_outbox (
+  id     uuid        PRIMARY KEY,        -- the audit event's ID (UUIDv7)
+  at     timestamptz NOT NULL,           -- the audit event's occurred_at, the transaction's now()
+  event  text        NOT NULL,           -- registry name, e.g. 'token.revoked'
+  entry  jsonb       NOT NULL            -- the journal object body; no secrets, no token hashes
+);
+```
+
+Journal objects (examples, one object per line):
+
+```json
+{"v": 1, "id": "0192f0c4-7a1e-7c3b-9d2e-5b8f1a2c3d4e", "at": "2026-10-28T12:00:03.114Z", "event": "token.revoked", "subject": {"type": "token", "id": "0192f0a1-…"}, "actor": "user:alice"}
+{"v": 1, "id": "0192f0d2-…", "at": "2026-10-28T12:04:41.902Z", "event": "authz.policy.updated", "subject": {"type": "permission_policy", "id": "0191aa07-…"}, "before": {"entries": [{"principal": "group:team-web", "actions": ["deploy", "read"]}]}, "after": {"entries": [{"principal": "group:team-web", "actions": ["read"]}]}, "actor": "user:sec-alice"}
+```
+
+Configuration:
+
+```yaml
+backup:
+  revocation_journal:
+    enabled: true          # default (proposed)
+    ship_interval: 5s      # default (proposed)
+    replay_margin: 5m      # default (proposed); longer than any transaction (R-HA-015 timeouts)
+```
+
+Acceptance criteria:
+
+- Revoke a personal access token, wait `ship_interval`, restore the database to a point before the
+  revocation and run `post-restore`: the token is rejected with `401`, and the output lists
+  `token.revoked … applied`.
+- Remove `deploy` from a policy entry and unbind `admin` from a group, then restore to a point
+  before both changes and run `post-restore`: the entry holds only `read`, and the group's members
+  are not administrators. A policy that was first broadened and then narrowed after *t* ends
+  `suspended` and grants nothing.
+- With the S3 store stopped, revoking a token takes effect at once; its journal object appears
+  within `ship_interval` after the store returns.
+- Three hand-written journal objects (one with an unknown event type, one whose after-state adds an
+  action to a policy, one whose before-state is forged so that the addition looks like a
+  narrowing) are reported `skipped` or `suspended`, and no principal gains access.
 
 ## Helm chart
 
@@ -1442,7 +1766,7 @@ does not contain `trove`, overridable by `fullnameOverride`):
 | HorizontalPodAutoscaler (`autoscaling/v2`) | per Deployment | `autoscaling.enabled` |
 | Ingress | `<fullname>` | `ingress.enabled` |
 | HTTPRoute | `<fullname>` | `gateway.enabled` |
-| Gateway | `<fullname>-gateway` | `gateway.enabled` and `gateway.create.enabled` |
+| Gateway | `<fullname>-gateway` | `gateway.enabled` and `gateway.create.enabled` (P1, R-HA-053) |
 | NetworkPolicy | `<fullname>` (and `<fullname>-migrate` for the Job) | `networkPolicy.enabled` |
 | ServiceMonitor, PrometheusRule | `<fullname>` | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
 | anything | from `extraObjects` | listed |
@@ -1478,7 +1802,7 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `config.database.host` or `secrets.database.existingSecret` empty | the value |
 | `config.storage.s3.bucket` empty | the value |
 | `config.storage.s3.credentials.source: static` without `secrets.s3.existingSecret` | both |
-| `secrets.encryption.existingSecret` or `secrets.encryption.keys` empty | the value |
+| `secrets.encryption.existingSecret` or `secrets.encryption.keys` empty | the value, and the key-creation command of R-HA-027 |
 | `highAvailability.enforce` and fewer than 2 replicas (`replicaCount`, or `autoscaling.minReplicas`) for any Deployment, or a disabled PDB | the Deployment |
 | `roleSplit.enabled` and `worker.replicaCount` (or minimum) < 1 | `worker.replicaCount` |
 | `config.storage.upload.max_size` > the spool budget derived from `spool.sizeLimit` (R-HA-035) | both |
@@ -1486,7 +1810,8 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `gateway.enabled` without `gateway.parentRefs` and without `gateway.create.enabled` | `gateway.parentRefs` |
 | `gateway.enabled` and `.Capabilities.APIVersions` lacks `gateway.networking.k8s.io/v1/HTTPRoute` | the missing API |
 | `metrics.serviceMonitor.enabled` (or `prometheusRule`) and the `monitoring.coreos.com/v1` API missing | the missing API |
-| A chart-managed configuration key set inside `config` (secret file paths, `roles`, `storage.spool.dir`) | the key |
+| A chart-managed configuration key set inside `config` (secret file paths, `roles`, `storage.spool.dir`, `server.content_base_url`) | the key |
+| `contentOrigin.host` equal to the host of `config.server.base_url` or of a `config.server.additional_base_urls` entry (P1, R-HA-055) | `contentOrigin.host` |
 | `podDisruptionBudget` with both `minAvailable` and `maxUnavailable` set | both |
 
 - `values.schema.json` validates every chart-owned value (types, enums, `additionalProperties:
@@ -1514,7 +1839,9 @@ Priority: **MVP** · Covers: HA-033, HA-035, HA-036, HA-037, HA-053
   - secret file paths;
   - `roles` per Deployment;
   - `storage.spool.dir`;
-  - `storage.spool.max_bytes`, derived from the volume when unset (R-HA-035).
+  - `storage.spool.max_bytes`, derived from the volume when unset (R-HA-035);
+  - `server.content_base_url`, rendered as `https://<contentOrigin.host>` when `contentOrigin.host`
+    is set (P1, R-HA-055).
 - Precedence follows INV-15: environment variable `TROVE_<SECTION>_<KEY>` (nested keys joined
   with `_`, e.g. `TROVE_DATABASE_POOL_MAX_CONNS`) > file > built-in default. `extraEnv` can
   therefore override any file value. The chart itself sets only:
@@ -1581,6 +1908,9 @@ Priority: **MVP** · Covers: HA-029
 
 The complete `values.yaml`. Every value carries `# default (proposed)` or `# example`. Keys under
 `config` belong to the pages named in the comments; this page only fixes how the chart wires them.
+Keys marked P1 (`gateway.create`, `contentOrigin`, `config.backup.revocation_journal`, `bootstrap`) enter the chart
+with the release that implements them: the `config` subtree is validated against the schema the
+binary emits (R-HA-029), so a key the binary does not know yet would fail `helm install`.
 
 <details>
 <summary>deploy/helm/trove/values.yaml</summary>
@@ -1597,8 +1927,8 @@ commonLabels: {}                        # default (proposed)
 commonAnnotations: {}                   # default (proposed)
 
 image:
-  registry: ghcr.io                     # example; publishing location open (Q-HA-11)
-  repository: trove/trove           # example
+  registry: ghcr.io                     # default (proposed) (Q-HA-11)
+  repository: guided-traffic/trove      # default (proposed)
   tag: ""                               # default (proposed): empty = chart appVersion
   digest: ""                            # default (proposed); example: sha256:<64 hex>; wins over tag
   pullPolicy: IfNotPresent              # default (proposed)
@@ -1723,14 +2053,15 @@ worker:
   extraEnv: []                          # default (proposed)
 
 # ── trove configuration (rendered to /etc/trove/trove.yaml) ───────────
-# Chart-managed keys (secret file paths, roles, storage.spool.dir) must not be set here (R-HA-029).
+# Chart-managed keys (secret file paths, roles, storage.spool.dir, server.content_base_url) must not be set here (R-HA-029).
+# The migration Job's hook ConfigMap carries the same file (R-HA-019).
 config:
   server:                               # operations-and-observability.md R-OPS-005
     base_url: ""                        # required; example: https://trove.example.com
     trusted_proxies: []                 # default (proposed); example: ["10.244.0.0/16"] (ingress controller pod CIDR)
     additional_base_urls: []            # default (proposed)
   health:                               # operations-and-observability.md R-OPS-001
-    require_object_store: true          # default (proposed); INV-12, see Q-HA-1
+    require_object_store: false         # default (proposed): object storage gates only the first readiness (R-HA-008, Q-HA-1)
     shutdown_drain_delay: 5s            # default (proposed)
   metrics:                              # operations-and-observability.md R-OPS-006
     enabled: true                       # default (proposed)
@@ -1767,6 +2098,10 @@ config:
       interval: 5s                      # default (proposed)
       count: 3                          # default (proposed)
       user_timeout: 30s                 # default (proposed)
+    server_keepalive:                   # sent as tcp_keepalives_* startup parameters (R-HA-015)
+      idle: 60s                         # default (proposed)
+      interval: 10s                     # default (proposed)
+      count: 6                          # default (proposed)
     preflight:
       connection_budget: enforce        # default (proposed): enforce | warn
       reserved_connections: 10          # default (proposed)
@@ -1777,7 +2112,7 @@ config:
       prefix: trove                   # default (proposed) in storage.md
       region: ""                        # example: eu-central-1
       endpoint: ""                      # default (proposed): AWS resolution; example: https://minio.trove.svc:9000
-      force_path_style: false           # default (proposed); true for MinIO and Ceph RGW
+      force_path_style: false           # default (proposed); true for MinIO, SeaweedFS and Ceph RGW
       credentials:
         source: default                 # default (proposed): default | webIdentity | static
         role_arn: ""                    # default (proposed)
@@ -1801,8 +2136,14 @@ config:
   backup:
     recovery_window: 0s                 # default (proposed): undeclared; example: 168h (R-HA-024)
     object_versioning: false            # default (proposed)
+    revocation_journal:                 # P1 (R-HA-054)
+      enabled: true                     # default (proposed)
+      ship_interval: 5s                 # default (proposed)
+      replay_margin: 5m                 # default (proposed)
   runtime:
     memory_limit_ratio: 0.85            # default (proposed) (R-HA-036)
+  audit:                                # operations-and-observability.md R-OPS-015, R-OPS-017
+    retention_days: 365                 # default (proposed); written to audit_policy by the migration Job (R-HA-014)
   auth: {}                              # default (proposed): empty; identity-and-authentication.md (OIDC providers, breakGlass.username, …)
   authz: {}                             # default (proposed): empty; authorization.md
   ci: {}                                # default (proposed): empty; gitlab-ci-oidc.md
@@ -1838,7 +2179,7 @@ secrets:
     key: password                       # default (proposed); plaintext or Argon2id PHC hash (R-AUTH-014)
   encryption:
     existingSecret: ""                  # required; example: trove-encryption-keys
-    keys: []                            # required; ordered, first = active; example: [k2026-10.key, k2026-04.key]
+    keys: []                            # required; ordered, first = active; example: [2026-10.key, 2026-04.key]
   metricsToken:
     existingSecret: ""                  # default (proposed); needed with config.metrics.auth static
     key: token                          # default (proposed)
@@ -1936,8 +2277,7 @@ ingress:
   annotations: {}                       # default (proposed); controller-specific settings (R-HA-039)
   labels: {}                            # default (proposed)
   hosts: []                             # default (proposed): empty = host of config.server.base_url
-  path: /                               # default (proposed)
-  pathType: Prefix                      # default (proposed)
+  # No path value: every host is routed whole, path / with pathType Prefix (R-HA-037).
   tls: []                               # default (proposed); example: [{secretName: trove-tls, hosts: [trove.example.com]}]
 
 gateway:
@@ -1951,10 +2291,15 @@ gateway:
     backendRequest: 3600s               # default (proposed)
   filters: []                           # default (proposed); HTTPRoute filters on the main rule
   extraRules: []                        # default (proposed)
-  create:
+  create:                               # P1 (R-HA-053)
     enabled: false                      # default (proposed): attach to an existing Gateway
     gatewayClassName: ""                # default (proposed); example: envoy-gateway
     listeners: []                       # default (proposed); example: [{name: https, protocol: HTTPS, port: 443, tls: {certificateRefs: [{name: trove-tls}]}}]
+
+contentOrigin:                          # P1 (R-HA-055); renders config.server.content_base_url (R-ARCH-029)
+  host: ""                              # default (proposed): empty = one origin (R-ARCH-007); example: trove-content.example.net
+  tls:
+    secretName: ""                      # default (proposed): no TLS entry of its own; example: trove-content-tls
 
 # ── Network policy (R-HA-042) ──────────────────────────────────────────────
 networkPolicy:
@@ -2192,9 +2537,19 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 
 - **One entry point (HA-012).** All client traffic (UI, API, package protocols, raw files, login)
-  uses one port and one Service (`<fullname>:8080`). The Ingress has one rule, path `/`, prefix match,
-  to that Service. There is no second route that bypasses anything, because no internal component
-  sits behind the replica. The operations port is never routed by the Ingress or the Gateway.
+  uses one port and one Service (`<fullname>:8080`). The Ingress has one rule per host, path `/`,
+  `pathType: Prefix`, to that Service. There is no second route that bypasses anything, because no
+  internal component sits behind the replica. The operations port is never routed by the Ingress or
+  the Gateway.
+- **The whole host, never a sub-path.** trove owns the root of every host it is served on.
+  Clients fix some routes at the host root (npm's `/-/npm/v1/` exchange prefix,
+  [formats/npm.md](formats/npm.md) Q-NPM-1; `/v2/` for OCI, Q-HA-4), which INV-6 reserves next to
+  `/auth/` and `/ui/`; the session cookie carries the `__Host-` prefix with `Path=/`; and
+  `server.base_url` is an origin without a path
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-005). The Ingress path
+  and the HTTPRoute match (`PathPrefix /`, R-HA-038) are therefore fixed and not values.
+  `values.schema.json` declares `ingress` and `gateway` with `additionalProperties: false`, so
+  `--set ingress.path=/trove` fails schema validation before anything renders (R-HA-029).
 - **Load balancer (HA-022).** An Ingress controller or a Gateway API implementation (R-HA-038) is
   the load balancer. The Service is `ClusterIP` by default. `service.type: LoadBalancer` is allowed
   for clusters without either, with TLS terminated at the cloud load balancer through its
@@ -2210,7 +2565,8 @@ Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 - ingress-nginx, the most common controller, was retired by the Kubernetes project in March 2026
   and receives no further fixes
   ([retirement announcement](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)).
-  The chart's Ingress is controller-neutral. New installations should prefer Gateway API (Q-HA-7).
+  The chart's Ingress is controller-neutral. The chart renders an HTTPRoute from the MVP on
+  (R-HA-038, Q-HA-7), and new installations should prefer it.
 
 Acceptance criteria:
 
@@ -2218,19 +2574,20 @@ Acceptance criteria:
   returns `200` with a certificate for the host.
 - `curl -s https://trove.example.com:8081/metrics` and any Ingress path to the operations port
   fail. The Ingress manifest contains no rule for port 8081.
+- `helm template … --set ingress.enabled=true --set ingress.path=/trove` fails schema validation
+  and names `path`. Every rendered Ingress rule has path `/` and `pathType: Prefix`.
 
 ### R-HA-038 · Gateway API exposure
-Priority: **P1** · Covers: HA-040
+Priority: **MVP** · Covers: HA-040
 
 - With `gateway.enabled: true` the chart renders an `HTTPRoute` (`gateway.networking.k8s.io/v1`).
-  It attaches to `gateway.parentRefs`, with `hostnames` defaulting to the base URL's host, one rule
-  with `PathPrefix /` to the Service, and `timeouts.request` / `timeouts.backendRequest` from the
-  values. HTTPRoute timeouts are part of the Standard channel since Gateway API v1.2
+  It attaches to `gateway.parentRefs`, with `hostnames` defaulting to the base URL's host (plus the
+  content host of R-HA-055 when set), one rule with `PathPrefix /` to the Service (fixed, not a
+  value, R-HA-037), and `timeouts.request` / `timeouts.backendRequest` from the values. HTTPRoute timeouts are part of the Standard channel since Gateway API v1.2
   ([GEP-1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/)), so v1.2 CRDs are the minimum.
   `backendRequest` MUST NOT exceed `request`.
-- Attaching to an existing, platform-owned Gateway is the default. `gateway.create.enabled` renders
-  a Gateway named `<fullname>-gateway` (the suffix avoids clashes with Services that some
-  implementations create) for single-tenant clusters.
+- The HTTPRoute is MVP (Q-HA-7). It attaches to an existing, platform-owned Gateway. A Gateway
+  rendered by the chart is P1 (R-HA-053).
 - Ingress and HTTPRoute may be enabled at the same time, for migrating between them with a DNS
   switch and an instant way back.
 - Body size, request buffering and slash handling are not part of the Gateway API. They are set
@@ -2243,6 +2600,19 @@ Acceptance criteria:
   `npm view @acme/ui` (scoped name, encoded slash) work through the HTTPRoute.
 - Rendering with `gateway.enabled: true` and no Gateway API in the cluster fails before anything is
   created (R-HA-029).
+
+### R-HA-053 · Chart-created Gateway
+Priority: **P1** · Covers: HA-040
+
+- `gateway.create.enabled: true` renders a Gateway named `<fullname>-gateway` with
+  `gateway.create.gatewayClassName` and `gateway.create.listeners`, and attaches the HTTPRoute of
+  R-HA-038 to it. The suffix avoids clashes with Services that some implementations create. It is
+  meant for single-tenant clusters; shared clusters attach to a platform-owned Gateway.
+- The chart does not create a TLS Secret for the listener. Certificates come from an existing Secret
+  or from cert-manager's Gateway support.
+
+Acceptance criteria: with Envoy Gateway in kind and `gateway.create.enabled: true`, R-HA-038's
+criteria pass through the chart-created Gateway, and `helm uninstall` removes it.
 
 ### R-HA-039 · Proxy requirements for large and long transfers
 Priority: **MVP** · Covers: HA-024
@@ -2358,13 +2728,69 @@ R-OPS-005 specifies URL generation and the trust rules. The chart side:
 Acceptance criteria: R-OPS-005's criteria pass through the chart's Ingress with
 `trusted_proxies` set to the ingress controller's pod CIDR.
 
+### R-HA-055 · Optional content host at the edge
+Priority: **P1** · Covers: trove-only
+
+[architecture.md](architecture.md) R-ARCH-029 specifies the optional content origin: package
+content a browser could render is served from a second host name that never receives the UI's
+session cookie (Q-ARCH-10). This requirement is the chart side.
+
+- `contentOrigin.host` names the content host. When it is set, the chart:
+  - renders `server.content_base_url: https://<contentOrigin.host>` into `trove.yaml`, a
+    chart-managed key (R-HA-030), so the published host and the URLs trove generates cannot
+    diverge, as for `base_url` (R-HA-040);
+  - adds a rule for that host to the Ingress (path `/`, `pathType: Prefix`, R-HA-037) and adds the
+    host to the HTTPRoute's `hostnames` (R-HA-038). Both route to the same Service
+    `<fullname>:8080`. There is no second Service, port or Deployment: the replica tells the hosts
+    apart (R-ARCH-029, with the host resolved by R-ARCH-006);
+  - with `contentOrigin.tls.secretName`, adds a TLS entry of its own to the Ingress
+    (`{secretName: <contentOrigin.tls.secretName>, hosts: [<contentOrigin.host>]}`), so the content
+    host has its own certificate; with cert-manager's Ingress annotation (R-HA-037), cert-manager
+    issues it. With a chart-created Gateway (R-HA-053), it adds an HTTPS listener `content` on port
+    443 for that host with that certificate. On a platform-owned Gateway, a listener of the
+    platform must cover the host.
+- Host rules, checked before anything is applied:
+  - `values.schema.json` accepts only a DNS host name for `contentOrigin.host`, without scheme,
+    port or path. A content origin on the UI's host with another port, which R-ARCH-029 refuses
+    because browsers do not isolate cookies by port, therefore cannot be configured.
+  - Rendering fails when `contentOrigin.host` equals the host of `config.server.base_url` or of a
+    `config.server.additional_base_urls` entry (R-HA-029).
+  - A subdomain of the UI's registrable domain renders, and the replica logs R-ARCH-029's warning at
+    start-up. A separate registrable domain, such as `trove-content.example.net`, is recommended.
+  - The start-up checks of R-ARCH-029 stay the second line, also for installations that run the
+    binary without the chart.
+- The edge requirements of R-HA-039 apply to the content host unchanged. NetworkPolicies
+  (R-HA-042) need no change, because the traffic reaches the same port.
+- With `contentOrigin.host` empty (default) nothing extra is rendered: one origin with the content
+  headers of R-ARCH-007.
+
+Acceptance criteria:
+
+- `helm template … --set ingress.enabled=true --set contentOrigin.host=trove-content.example.net --set contentOrigin.tls.secretName=trove-content-tls`
+  renders one Ingress with two rules, both to `<fullname>:8080`, a TLS entry with
+  `trove-content-tls` for the content host, and `server.content_base_url: https://trove-content.example.net`
+  in `trove.yaml`. With `gateway.enabled: true`, the HTTPRoute lists both host names.
+- With `config.server.base_url: https://trove.example.com`, `--set contentOrigin.host=trove.example.com`
+  fails and names `contentOrigin.host`; `--set contentOrigin.host=trove.example.com:8443` fails
+  schema validation; `--set config.server.content_base_url=https://x.example.net` fails as a
+  chart-managed key.
+- R-ARCH-029's acceptance criteria pass through the chart's Ingress with Traefik and a cert-manager
+  issuer, as in R-HA-037's criteria.
+
 ### R-HA-041 · Container-registry routing at the edge
 Priority: **P1** · Covers: HA-027
 
 Docker and OCI clients address a registry at the host root (`https://<host>/v2/…`). A path prefix
-is not possible, so the OCI format needs `/v2/` on the client listener (Q-HA-4 asks to reserve it
-in INV-6).
+is not possible, so the OCI format needs `/v2/` on the client listener. INV-6 reserves `/v2/` for
+the OCI distribution API (Q-HA-4): no other route may use it, from the MVP on, so the OCI format
+can be added later without moving anything.
 
+- **The reservation is MVP; the routing below is P1.** Until the OCI format exists, `/v2/` and
+  everything below it answer `404` through the listener's "anything else" row
+  ([architecture.md](architecture.md) R-ARCH-005). A route-table test fails when any registered
+  client-listener pattern other than the OCI format's starts with `/v2/`. ServeMux's own conflict
+  check is not enough, because a more specific pattern such as `/v2/x` does not conflict with
+  `/v2/`.
 - The chart routes the whole host to trove (R-HA-037). `/v2/` reaches trove without rewrite
   rules. The repository is the first path segment after `/v2/`
   (`docker pull trove.example.com/docker-all/library/alpine:3`). The OCI format page specifies
@@ -2405,8 +2831,15 @@ With `networkPolicy.enabled: true` (default) the chart renders, for all trove po
 - Kubelet probes: most CNIs exempt node-to-pod probe traffic from policies. Where one does not,
   `probeCIDRs` adds the node CIDRs to the 8081 rule.
 
-Egress stays off by default. A wrong guess about where PostgreSQL and S3 live breaks the
-installation, while a missing egress policy only removes the second layer (Q-HA-10).
+Egress stays off by default (Q-HA-10). A wrong guess about where PostgreSQL and S3 live breaks the
+installation, while a missing egress policy only removes the second layer. To keep the choice
+visible:
+
+- `NOTES.txt` states, when `networkPolicy.egress.enabled` is false, that egress from the pods is
+  unrestricted, and points to the production example.
+- `deploy/helm/trove/examples/egress.yaml` is a values file with an egress block for a typical
+  production setup (CloudNativePG in the namespace, AWS S3, internet upstreams). Every value in it is
+  marked `# example`, and a CI value set renders it.
 
 Acceptance criteria:
 
@@ -2432,7 +2865,8 @@ Priority: **MVP** · Covers: HA-019
   (catalog HA-006, HA-019).
 
 Acceptance criteria: R-REPO-035's criterion passes with the bundle supplied through
-`trustedCA.existingConfigMap`, and a MinIO with a private CA works with `useForObjectStore: true`.
+`trustedCA.existingConfigMap`, and an S3-compatible store with a private CA (the local profile's
+store behind a TLS endpoint) works with `useForObjectStore: true`.
 
 ### R-HA-044 · IPv6 and dual-stack
 Priority: **P1** · Covers: HA-020
@@ -2472,19 +2906,21 @@ Priority: **P1** · Covers: HA-055
 | `TroveLeaseLost` | `increase(trove_lease_lost_total[15m]) > 3` | 0m |
 | `TroveMixedVersions` | `count(count by (version) (trove_build_info)) > 1` | 2h |
 | `TroveSpoolNearlyFull` | `max(trove_spool_used_bytes / (trove_spool_used_bytes + trove_spool_free_bytes)) > 0.9` | 10m |
-| `TroveBlobMissing` | `increase(trove_storage_blob_missing_total[1h]) > 0` | 0m |
+| `TroveBlobMissing` | `increase(trove_storage_blobs_damaged_total{status="missing"}[1h]) > 0` | 0m |
 | `TroveGCStale` | `time() - max(trove_gc_last_success_timestamp_seconds) > 172800` | 1h |
 | `TroveBackupCheckFailed` | `min(trove_backup_check_ok) == 0` | 1h |
+| `TroveRevocationJournalBacklog` | `max(trove_revocation_journal_pending) > 0` (R-HA-054) | 15m |
 
 Metric names come from [operations-and-observability.md](operations-and-observability.md) R-OPS-008
-and [storage.md](storage.md). This page adds `trove_db_retries_total`,
-`trove_db_pool_resets_total`, `trove_db_commit_unknown_total`, `trove_lease_lost_total`,
-`trove_storage_blob_missing_total` and `trove_backup_check_ok`. Expressions are sketches; the
-rule file is tested with `promtool test rules` in CI.
+and [storage.md](storage.md); `trove_storage_blobs_damaged_total{status}` is storage.md's
+(R-STOR-027), counted by every detection of a missing or corrupt blob. This page adds
+`trove_db_retries_total`, `trove_db_pool_resets_total`, `trove_db_commit_unknown_total`,
+`trove_lease_lost_total`, `trove_backup_check_ok` and `trove_revocation_journal_pending`.
+Expressions are sketches; the rule file is tested with `promtool test rules` in CI.
 
-Acceptance criteria: `promtool check rules` and `promtool test rules` pass. With MinIO stopped in
-the local profile, `TroveObjectStoreUnreachable` fires in a Prometheus scraping through the
-ServiceMonitor.
+Acceptance criteria: `promtool check rules` and `promtool test rules` pass. With the S3 store
+stopped in the local profile, `TroveObjectStoreUnreachable` fires in a Prometheus scraping through
+the ServiceMonitor.
 
 ### R-HA-046 · Extension points
 Priority: **P1** · Covers: HA-048, HA-049, HA-050, HA-051
@@ -2511,19 +2947,26 @@ Priority: **P1** · Covers: HA-056, OPS-076
   `@<digest>` when set, otherwise `:<tag or appVersion>`. `global.imagePullSecrets` and
   `imagePullSecrets` apply to all pods, including the hook Jobs.
 - Images are multi-architecture (`linux/amd64`, `linux/arm64`).
-- The chart is published as an OCI artifact
-  ([Helm OCI registries](https://helm.sh/docs/topics/registries/)):
-  `helm upgrade --install trove oci://ghcr.io/trove/charts/trove --version 0.4.0` (example
-  location, Q-HA-11).
+- **Publishing location (Q-HA-11).** The repository is hosted on GitHub (`origin` is
+  `github.com/guided-traffic/trove`), so the release workflow publishes to the GitHub Container
+  Registry of that organization and nowhere else:
+  - image `ghcr.io/guided-traffic/trove`;
+  - chart `oci://ghcr.io/guided-traffic/charts/trove`
+    ([Helm OCI registries](https://helm.sh/docs/topics/registries/)):
+    `helm upgrade --install trove oci://ghcr.io/guided-traffic/charts/trove --version 0.4.0`
+    (version is an example).
+
+  Both packages are public, so anonymous pulls work. Mirrors are the operator's (air-gapped,
+  below).
 - **Signatures and provenance.** Every image and every chart artifact is signed with Sigstore cosign
-  in keyless mode from the release pipeline's OIDC identity
+  in keyless mode from the release workflow's GitHub Actions OIDC identity
   ([Sigstore](https://docs.sigstore.dev/)). Each carries an SPDX SBOM and a SLSA provenance
   attestation ([SLSA](https://slsa.dev/)). Verification:
 
   ```shell
-  cosign verify ghcr.io/trove/trove@sha256:<digest> \
-    --certificate-identity-regexp '^https://github.com/guided-traffic/trove/' \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com    # example identity
+  cosign verify ghcr.io/guided-traffic/trove@sha256:<digest> \
+    --certificate-identity-regexp '^https://github\.com/guided-traffic/trove/\.github/workflows/release\.yml@refs/tags/v' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
 
   A cluster policy engine (for example a Kyverno image verification policy) can enforce this at
@@ -2544,9 +2987,18 @@ Acceptance criteria:
 ### R-HA-048 · Uninstall and data removal
 Priority: **MVP** · Covers: HA-071
 
-- `helm uninstall trove -n trove` removes every release-managed resource. The spool is an
-  `emptyDir` or an ephemeral volume, so no PersistentVolumeClaim survives. The catalog's manual
-  claim cleanup does not exist here.
+- `helm uninstall trove -n trove` removes every release-managed resource. The chart renders no
+  StatefulSet, no PersistentVolumeClaim and no resource with `helm.sh/resource-policy: keep`, so
+  uninstall leaves no claim behind that would have to be either kept or deleted by label (HA-071).
+  - With `spool.type: emptyDir` (default) there is no claim at all.
+  - With `spool.type: ephemeral` each pod's claim is a generic ephemeral volume owned by its pod.
+    Kubernetes deletes the claim with the pod
+    ([generic ephemeral volumes](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes)).
+    The claim template carries the release's labels, so the claims are visible while pods run.
+    Whether the underlying volume is deleted follows the storage class's reclaim policy.
+    `spool.ephemeral.storageClassName` SHOULD name a class with `reclaimPolicy: Delete`; with
+    `Retain`, released volumes holding transient upload data accumulate and must be deleted by
+    hand.
 - Hook resources are not part of the release
   ([chart hooks](https://helm.sh/docs/topics/charts_hooks/)). The migration Job deletes itself
   through `ttlSecondsAfterFinished`. The hook ConfigMap and ServiceAccount are removed with
@@ -2563,9 +3015,13 @@ Priority: **MVP** · Covers: HA-071
   Deleting the keys first would make the database backups' sealed secrets undecryptable while the
   backups still exist.
 
-Acceptance criteria: after `helm uninstall` and the documented `kubectl delete`,
-`kubectl get all,cm,sa,pdb,hpa,ingress,httproute,networkpolicy -n trove -l app.kubernetes.io/instance=trove`
-returns nothing, and the database and bucket are unchanged.
+Acceptance criteria:
+
+- After `helm uninstall` and the documented `kubectl delete`,
+  `kubectl get all,cm,sa,pdb,hpa,ingress,httproute,networkpolicy -n trove -l app.kubernetes.io/instance=trove`
+  returns nothing, and the database and bucket are unchanged.
+- With `spool.type: ephemeral`, `kubectl get pvc -n trove -l app.kubernetes.io/instance=trove`
+  lists one claim per pod before the uninstall and nothing within 2 minutes after it.
 
 ## Platform, sizing and environments
 
@@ -2629,14 +3085,14 @@ Priority: **MVP** · Covers: trove-only
 
 A developer brings up a production-shaped installation (two replicas, HA PostgreSQL, S3, the real
 chart) on a laptop with one command. Files live in `deploy/dev/`. Tool versions (kind, kubectl,
-Helm, CloudNativePG operator chart, PostgreSQL image, MinIO) are pinned once in the repository's
-tool pins and read by the task runner and CI alike.
+Helm, CloudNativePG operator chart, PostgreSQL image, SeaweedFS image) are pinned once in the
+repository's tool pins and read by the task runner and CI alike. Images are pinned by digest.
 
 | File | Content |
 |---|---|
 | `deploy/dev/kind.yaml` | One control-plane and two worker nodes, labeled with two zones, so spreading, drains and node loss can be exercised |
 | `deploy/dev/postgres.yaml` | CloudNativePG `Cluster` `trove-db`: 2 instances, synchronous replication with `dataDurability: preferred` (a stopped standby does not pause writes on a laptop), the settings of R-HA-013, `bootstrap.initdb` with database `trove` and owner `trove` (single-role mode) |
-| `deploy/dev/minio.yaml` | Single-node MinIO Deployment and Service on port 9000 with an `emptyDir`, plus a Job that creates bucket `trove-blobs` with versioning enabled |
+| `deploy/dev/s3.yaml` | Single-process SeaweedFS Deployment (master, volume server, filer and S3 gateway in one `weed` process) with an `emptyDir`, Service `trove-s3` on port 9000 mapped to the S3 gateway, plus a Job that creates bucket `trove-blobs` with versioning enabled and bucket `trove-pg-archive` for the WAL archive (Q-HA-3) |
 | `deploy/dev/values-dev.yaml` | Chart values: 2 replicas, `host.whenUnsatisfiable: ScheduleAnyway`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets |
 
 Steps behind the task-runner target `dev-up` (target names are an example until the task runner is
@@ -2647,7 +3103,7 @@ kind create cluster --name trove --config deploy/dev/kind.yaml
 helm upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts \
   -n cnpg-system --create-namespace --version "$CNPG_CHART_VERSION" --wait
 kubectl create namespace trove
-kubectl -n trove apply -f deploy/dev/postgres.yaml -f deploy/dev/minio.yaml
+kubectl -n trove apply -f deploy/dev/postgres.yaml -f deploy/dev/s3.yaml
 kubectl -n trove wait --for=condition=Ready cluster/trove-db --timeout=5m
 kubectl -n trove create secret generic trove-encryption-keys \
   --from-file=dev.key=<(head -c 32 /dev/urandom | base64)
@@ -2664,13 +3120,24 @@ kubectl -n trove port-forward svc/trove 8080:8080
 - Further targets:
   - `dev-down` deletes the kind cluster;
   - `dev-failover` runs `kubectl cnpg promote trove-db <standby>`;
-  - `dev-s3-outage` scales MinIO to 0 for a given duration;
+  - `dev-s3-outage` scales the S3 store to 0 for a given duration;
   - `dev-chaos` runs the R-HA-052 suite.
-- **MinIO status.** The MinIO community repository was archived on 2026-04-25 and is distributed as
+- **S3 store (Q-HA-3).** The profile and the per-change CI run SeaweedFS
+  ([repository](https://github.com/seaweedfs/seaweedfs), Apache-2.0, maintained, images published).
+  Its documentation lists bucket versioning, version listing, delete markers and deletes by version
+  ID, which the restore drill (R-HA-025) needs
+  ([S3 object versioning](https://github.com/seaweedfs/seaweedfs/wiki/S3-Object-Versioning)). It
+  also states that version-specific lifecycle rules are not fully implemented; the profile
+  therefore relies on the orphan sweep (R-HA-012), not on lifecycle rules. The profile counts as
+  valid only while `trove admin storage check` (R-STOR-035) and the restore drill pass on it.
+- **MinIO.** The MinIO community repository was archived on 2026-04-25 and is distributed as
   source only, without prebuilt binaries or images ([repository](https://github.com/minio/minio)).
-  The profile therefore pins an image built from that source at a fixed commit, or a previously
-  published image. Q-HA-3 proposes a maintained replacement. MinIO stays a supported production
-  target as long as it passes R-STOR-035's conformance check.
+  MinIO stays a supported production target as long as it passes R-STOR-035's conformance check.
+  The nightly CI matrix keeps a MinIO job, built from that source at a pinned commit and run only
+  in isolated nightly runners, because the build receives no security fixes. AWS S3 is the
+  nightly reference store. Its job needs an AWS account and a CI role that the repository does not
+  have yet; until the owner provides them, the nightly results list the AWS job as skipped, never
+  as passed.
 - The break-glass password is printed once by the target (`kubectl get secret … | base64 -d`).
   OIDC is optional in dev. An optional Dex overlay belongs to
   [identity-and-authentication.md](identity-and-authentication.md).
@@ -2704,7 +3171,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | PostgreSQL primary loss | Force-delete the primary pod | Failures only within `retry.maxElapsed`, all `503`; recovery without intervention |
 | PostgreSQL partition of one replica | NetworkPolicy denying egress to PostgreSQL for one pod | That pod unready within 15 s; no failed iteration overall; its leases move |
 | PostgreSQL outage | Scale the database to 0 instances for 2 min (hibernation) | No container restart; full recovery within 30 s of return |
-| Object-store outage | MinIO scaled to 0 for 30 s and for 5 min | 30 s: metadata succeeds throughout; 5 min: as R-STOR-036 and Q-HA-1's current resolution state |
+| Object-store outage | The S3 store scaled to 0 for 30 s and for 5 min; during the 5-minute run one replica is deleted | Metadata, UI and API succeed throughout; blob transfers answer `503` with `Retry-After` (R-STOR-036); no running replica turns unready (R-HA-008); the replacement pod started during the outage stays not ready with its container restart count unchanged, because the startup check retries without exiting (R-STOR-035), and becomes ready within 60 s after the store returns; full recovery within `storage.s3.circuit_breaker.open_duration` + 10 s |
 | Node drain | `kubectl drain` of a worker node | Zero failed iterations; PDB respected |
 | Node loss | `docker stop` of a kind worker node | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s; no duplicate singleton work (lease table) |
 | Listener loss | `pg_terminate_backend` of the `listen` session | Cache flush recorded; next permission change visible on that replica |
@@ -2737,7 +3204,7 @@ Acceptance criteria: the suite exists, runs as described, and is green before an
 | OPS-032 | P2 | Scheduled application-level backups: platform PITR plus bucket versioning instead (R-HA-023) |
 | trove-only | P2 | Read-only queries routed to PostgreSQL standbys |
 | trove-only | P2 | Worker autoscaling on queue depth (`trove_jobs_oldest_queued_age_seconds` through an external metrics adapter) |
-| trove-only | P2 | Transaction-mode connection pooler support (Q-HA-6) |
+| trove-only | P2 | Split connections: the main pool through a transaction-mode pooler, listener, lease and lock sessions direct (Q-HA-6, option (b)) |
 | trove-only | Later | Active-active operation across sites |
 
 Out of scope, listed for completeness: HA-017 (service trust key between internal services; one
@@ -2760,7 +3227,10 @@ management).
   Restrict `get`/`list` on Secrets in that namespace to the platform team. Enable encryption at
   rest for Secrets in etcd. Prefer an Argon2id hash for the break-glass Secret (R-AUTH-014).
 - **Least privilege in the database.** The runtime role is not a superuser and, in two-role mode,
-  has no DDL rights (R-HA-014). DDL credentials exist only in the short-lived migration Job pod.
+  has no DDL rights (R-HA-014). It can neither change nor delete audit rows, nor shorten their
+  retention, so a compromised replica or a SQL injection cannot erase its traces in the database
+  (R-HA-014, R-OPS-015); the owner and superusers still can, which external log shipping covers.
+  DDL credentials exist only in the short-lived migration Job pod.
 - **Least privilege in the bucket.** The runtime credential cannot delete object versions or change
   versioning, lifecycle or bucket policy. A compromised replica cannot destroy the history that
   restores depend on (R-HA-023). The archive bucket for PostgreSQL backups uses different
@@ -2776,183 +3246,425 @@ management).
 - **Supply chain.** Images and chart are signed, with SBOM and provenance, and installed by digest
   in production (R-HA-047).
 - **Restore is a security event.** It reverts revocations (H-37), so post-restore records an audit
-  event and prints the warning (R-HA-025).
+  event and prints the warning (R-HA-025). From P1 on it re-applies the revocation journal
+  (R-HA-054). Replay applies removals and only those updates that grant nothing beyond the
+  object's current state, so whoever can write to the bucket can at worst revoke access through the
+  journal, never grant any.
+- **Egress is unrestricted by default.** Without `networkPolicy.egress.enabled`, a compromised
+  trove process can reach every address the pod network reaches, including cloud metadata
+  endpoints and in-cluster services. trove's own outbound connections are checked by the address
+  policy of R-REPO-038 either way. The egress policy is the second layer for the case where the
+  process itself is no longer trustworthy (R-HA-042, Q-HA-10).
 
-## Open questions
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
 
 ### Q-HA-1 · Readiness on object-storage failure
 
-The same question as Q-STOR-1 ([storage.md](storage.md)) and Q-OPS-2
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This is the same question as Q-STOR-1 ([storage.md](storage.md)) and Q-OPS-2
 ([operations-and-observability.md](operations-and-observability.md)), seen from the failure-mode
-contract. INV-12 ties readiness to object-storage reachability. Under a shared outage this removes
-every replica from the Service after `fail_after` and turns R-STOR-036's degraded mode into a full
-outage.
+contract. The three pages must agree on one rule; this page's choice is the storage page's
+default-plus-opt-in with the first-readiness gate made explicit.
 
-- (a) Keep INV-12 literally (readiness fails, with R-STOR-036's hysteresis).
-- (b) Readiness reflects the process and PostgreSQL only. Object-storage health is the circuit
-  breaker per request plus the two alerts of R-HA-045 (shared outage, single replica).
-- (c) Readiness fails on S3 only when this replica fails while others succeed, compared through the
-  `replica.checks` column.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Gate continuously | Readiness fails whenever the `objectStore` check fails, debounced by R-OPS-001's thresholds (INV-12 as written) | Removes a replica whose own S3 path is broken; matches INV-12's wording | A shared outage empties the Service. UI, API, logins, CI token exchange, metadata and deletes go down together with blob traffic, and operators lose the UI they diagnose with |
+| (b) Never gate | Readiness reflects the process and PostgreSQL only; S3 health is metrics, alerts and per-request circuit breaking | The degraded service of R-STOR-036 survives a shared outage; simplest rule | A release with a wrong bucket, endpoint, credential or CA becomes ready, replaces every working pod and breaks all blob traffic |
+| (c) Gate relatively | Readiness fails only when this replica fails while a majority of the other live replicas pass, compared through `replica.checks` | Handles the shared outage and the single-replica case automatically | Readiness depends on other replicas' heartbeats; stale rows and two-replica ties add states to test; the single-replica case already fails fast per request |
+| (d) Gate the first readiness only | A replica becomes ready only after its startup check (R-STOR-035) passed; afterwards S3 failures degrade blob requests one by one and raise alerts; `health.require_object_store: true` restores (a) | Keeps (b)'s degraded service and still stalls a misconfigured rollout; reuses the startup check storage.md already specifies; no cross-replica logic | A replica that loses only its own S3 path stays in the Service and answers blob requests with a fast `503` until its path heals or someone acts on the alert. Pods restarted, rescheduled or added by the autoscaler during a long shared outage cannot become ready, so capacity shrinks until the store returns |
+| (e) Gate the first readiness unless the settings are proven | As (d), but a replica whose startup check fails with a transient error may still become ready when a fingerprint of its S3 settings (endpoint, region, bucket, prefix, credential source, CA) matches one that a live replica has verified, as recorded in the replica registry | Pods that start during a long shared outage rejoin, so capacity does not shrink | The fingerprint cannot see credential contents under workload identity, so a broken role or key behind unchanged settings passes, which is the misconfiguration the gate exists for; adds shared state for a rare overlap of a long outage with pod churn |
 
-Recommendation: (b), revising INV-12's wording to "readiness tied to database reachability;
-object-storage failures degrade blob requests". This page adds two reasons to storage.md's:
+**Choice:** (d) — object storage gates only a replica's first readiness; after that, failures
+degrade blob requests per request and raise alerts, and running replicas stay ready.
 
-- under (a) a shared outage also hides the UI and API that operators use to diagnose it;
-- the single-replica case (c) is visible within minutes through
-  `TroveObjectStoreUnreachableSingleReplica`, and clients retry its `503` onto other replicas.
+**Rationale:** Readiness exists to send traffic to replicas that can serve it. With one shared
+bucket, a shared outage leaves no better replica, so (a) only switches off what still works:
+metadata from PostgreSQL, the UI, logins, `trv_cit_` exchange, deletes and deduplicated uploads
+(R-STOR-036). (b) gets the shared outage right but drops the one case where gating protects
+something real: a rollout with a broken S3 configuration. Under (d) the new pods never become
+ready, `maxUnavailable: 0` keeps the old ones, and the rollout stalls visibly, the same protection
+R-HA-008 gives against an incompatible schema. The mechanism already exists (R-STOR-035's startup
+check), so (d) costs one default (`health.require_object_store: false`) and no new code path. (c)
+would automate the single-replica case, but it couples readiness to other replicas' heartbeats.
+Clients already retry the fast `503` through the edge, which balances per request, and
+`TroveObjectStoreUnreachableSingleReplica` names the replica. (e) removes (d)'s one real cost, lost
+capacity when pods churn during a long shared outage, but it weakens the gate exactly where it
+matters: a rotated or revoked S3 role leaves the settings fingerprint unchanged. That cost also
+needs a long outage plus pod churn, and the shared-outage alert is already firing then; the
+PodDisruptionBudget keeps a node drain from evicting more than one ready pod meanwhile. The
+development agent revisits this if `TroveObjectStoreUnreachableSingleReplica` fires repeatedly in
+real installations (node-specific egress failures, for example), which calls for (c)'s majority
+rule on top of (d), or if capacity loss during long outages is observed, which calls for (e) with
+a credential check added to the fingerprint.
 
-Until decided, this page specifies (a) as R-STOR-036 does.
+This deliberately changes INV-12, which ties readiness to object-storage reachability. The edit to
+[README.md](README.md) is listed as a cross-page consequence.
+
+**Applied in the spec:** R-HA-007: the two shared-outage rows are merged into one in which running
+replicas stay ready and a replica started during the outage stays not ready; the single-replica row
+no longer turns the replica unready. R-HA-008: the bullet that deferred the rule to this question is replaced by
+the first-readiness rule and `health.require_object_store: false`. R-HA-010: acceptance criteria
+require `/readyz` to stay `200` during the outage and a replacement pod to stay not ready. R-HA-031:
+`config.health.require_object_store: false`. R-HA-052: new pass condition for the object-store
+scenario.
 
 ### Q-HA-2 · PostgreSQL version floor
 
-- (a) 15: widest reach; reaches end of support 2027-11-11, likely within a year of trove's first
-  release.
-- (b) 16: end of support 2028-11-09; available on all major managed services.
-- (c) 17: newest features; excludes installations that have not upgraded yet.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (b). The first release is unlikely before 2027. A floor that expires within months
-of it would force an early bump. Nothing in the design needs 17. The CI matrix stays at three
-versions.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 15 | Support 15, 16, 17, 18 | Widest reach | End of life 2027-11-11, probably within a year of trove's first release, which forces a floor bump soon after 1.0; four versions in the CI matrix before 19 arrives |
+| (b) 16 | Support 16, 17, 18; 19 after its general availability | End of life 2028-11-09; nothing in the design needs a newer version | Installations on 15 must upgrade PostgreSQL first |
+| (c) 17 | Support 17 and 18 | Fewest versions to test | Excludes 16, which the community supports for two more years, without a feature that needs 17 |
+
+**Choice:** (b) — PostgreSQL 16 is the floor; the floor moves only after a version's community end
+of life, announced one minor release ahead.
+
+**Rationale:** A floor that expires within months of the first release would force a breaking bump
+right after 1.0, and a higher floor would exclude supported servers for no gain. The spec was
+searched for version-specific features: UUIDv7 values are generated in Go ([architecture.md](architecture.md)), not with
+PostgreSQL 18's `uuidv7()`, and nothing else needs 17 or 18. Tying later bumps to the community end
+of life makes the floor predictable for operators. The development agent revisits this if a
+required feature exists only in 17 or later.
+
+**Applied in the spec:** R-HA-013: the floor is stated as decided; PostgreSQL 19 joins after its
+general availability (planned 2026-11-19, verified 2026-10-28) and a passing CI matrix; a rule for
+dropping a version after its end of life; the CI criterion covers every supported version.
 
 ### Q-HA-3 · S3 component of the local profile after MinIO's archival
 
-The MinIO community repository was archived on 2026-04-25 and ships source only.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Keep MinIO, built from the archived source or pinned to a last published image. It receives
-  no security fixes, which is acceptable on a laptop but not in shared CI runners exposed to
-  untrusted pull requests.
-- (b) SeaweedFS (Apache-2.0, maintained, publishes images; its documentation lists S3 versioning
-  and multipart support).
-- (c) Ceph RGW through Rook: closest to some production stores, but heavy for kind.
-- (d) Garage or another lightweight store, after R-STOR-035's conformance check.
+The MinIO community repository was archived on 2026-04-25 and ships source only. Garage was
+dropped as an option: its
+[S3 compatibility page](https://garagehq.deuxfleurs.fr/reference_manual/s3_compatibility.html)
+lists object versioning as not implemented, so the restore drill (R-HA-025) could not run on it.
 
-Recommendation: (b) for the dev profile and per-change CI, provided R-STOR-035's conformance check
-passes on it. Keep a MinIO job in the nightly matrix as long as installations run MinIO or its
-commercial successor. AWS S3 stays nightly as the reference.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) MinIO, pinned | An image built from the archived source at a fixed commit, or the last published image | The store most installations know | No security fixes; running it in shared CI runners that build untrusted pull requests is a risk; no upstream for bug reports |
+| (b) SeaweedFS | One `weed` process in the profile; Apache-2.0, maintained, images published | Documents bucket versioning, version listing, delete markers and deletes by version ID; light enough for kind | Its documentation says version-specific lifecycle rules are not fully implemented; less common in production than AWS S3 or MinIO |
+| (c) Ceph RGW through Rook | A Ceph cluster in kind | Closest to on-premises production stores | Operator, monitors and OSDs on a laptop; hard to fit R-HA-051's 10-minute `dev-up` budget |
+| (d) RustFS | Apache-2.0 store whose README lists bucket versioning as available; 1.0 line released in September 2026 | Operates much like MinIO | Weeks of release history; versioning in a single-drive dev deployment not verified |
+| (e) SeaweedFS per change, MinIO and AWS S3 nightly | (b) for the profile and per-change CI; the nightly matrix adds a MinIO job built at a pinned commit and an AWS S3 job as the reference | A maintained default for every developer and pull request, plus evidence for the stores installations run | Three stores to keep green |
+
+**Choice:** (e) — SeaweedFS runs in the local profile and per-change CI; MinIO (pinned source build,
+isolated nightly runners) and AWS S3 run nightly.
+
+**Rationale:** The profile has to exercise versioning, because the restore drill and
+`restore-versions` depend on it; that rules out Garage and leaves SeaweedFS as the maintained store
+with documented versioning that fits a laptop. The missing lifecycle support costs nothing, since
+the orphan sweep is the primary cleanup (R-HA-012) and the lifecycle rule only a second line.
+Keeping MinIO nightly protects installations that run it without exposing per-change runners to an
+unpatched build. AWS S3 stays the reference for consistency claims (R-STOR-035). The AWS job needs
+an AWS account and a CI role, which the repository does not have yet. The development agent
+revisits this if SeaweedFS fails `trove admin storage check` or the restore drill; RustFS (d) is
+then the next candidate.
+
+**Applied in the spec:** R-HA-051: `deploy/dev/minio.yaml` is replaced by `deploy/dev/s3.yaml`
+(SeaweedFS, images pinned by digest), the tool pins name SeaweedFS, and the MinIO bullet is split
+into an S3-store bullet and a MinIO bullet that defines the nightly job; the AWS S3 job is reported
+as skipped until the owner provides an AWS account and a CI role. R-HA-010, R-HA-043, R-HA-045
+and R-HA-052: criteria refer to the local profile's S3 store instead of MinIO. The page summary
+names SeaweedFS, and the `force_path_style` comment in R-HA-031 lists it.
 
 ### Q-HA-4 · Reserve `/v2/` on the client listener for OCI
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 INV-6 puts every package protocol under `/api/<format>/<repoKey>/`. Docker and OCI clients cannot
 use a path prefix before `/v2/`.
 
-- (a) Amend INV-6: `/v2/` is reserved for the OCI distribution API, with the repository as the first
-  segment.
-- (b) Serve OCI only on a separate host name per repository (subdomain routing), with `/v2/` at that
-  host's root.
-- (c) A separate listener port for OCI.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Reserve `/v2/` in INV-6 | `/v2/` on the client listener belongs to the OCI distribution API, with the repository key as the first segment | One host, one certificate, one Ingress rule; the chart already routes the whole host (R-HA-037); `docker pull trove.example.com/docker-all/alpine:3` works | One more host-root path besides npm's exchange prefix (Q-NPM-1); trove must own its host root, which INV-6 already assumes |
+| (b) Subdomain per repository only | `<repoKey>.trove.example.com/v2/` | Image names without a repository segment | Wildcard DNS and a wildcard certificate become mandatory for every OCI user |
+| (c) Separate listener port | For example `:5000` for OCI | No path can ever collide | A second Service port, Ingress or Gateway listener, firewall rule and certificate everywhere; image references carry the port |
+| (d) One dedicated registry host | A second host name (for example `registry.trove.example.com`) whose root is the OCI API; the main host keeps INV-6 unchanged | The main host's root stays free; no wildcard certificate | A second DNS name, certificate and Ingress or Gateway host for every installation that wants OCI; `server.base_url` alone no longer describes the installation, so URL generation needs a second base URL |
 
-Recommendation: (a), with (b) as an option of the OCI page. One host and one certificate keep the
-chart and the edge simple. A separate port (c) needs extra Service, Ingress and firewall rules
-everywhere.
+**Choice:** (a) — INV-6 reserves `/v2/` on the client listener for the OCI distribution API from the
+MVP on; subdomain routing stays an optional mode of the OCI format page (R-HA-041).
+
+**Rationale:** The reservation costs nothing now and prevents an MVP route from taking `/v2/` and
+forcing a breaking move when OCI arrives (F4 in the roadmap). (a) needs no edge configuration
+beyond R-HA-039, while (b), (c) and (d) push wildcard certificates, extra ports or a second host
+and certificate onto every installation. trove already owns its host root for npm's host-root
+exchange prefix (Q-NPM-1), so (a) adds no new assumption. (d) stays possible later as an optional mode of
+the OCI format, next to (b)'s subdomains. The development agent revisits this only if an OCI
+client turns up that cannot use repository-prefixed image names.
+
+This deliberately amends INV-6. The edit to [README.md](README.md) is listed as a cross-page
+consequence.
+
+**Applied in the spec:** R-HA-041: states that INV-6 reserves `/v2/` and that no other route may use
+it. A new bullet makes the reservation MVP: `/v2/` answers `404` until the OCI format exists, and a
+route-table test rejects any other client-listener pattern under `/v2/`, because ServeMux's
+conflict check does not catch a more specific pattern. The routing itself stays P1.
 
 ### Q-HA-5 · Zero-downtime upgrades that skip minor releases
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 The catalog (OPS-072) allows in-place upgrades to any later minor release. Expand/contract with a
 one-release compatibility window cannot keep N−2 and N serving side by side once N contracts what
 N−2 used.
 
-- (a) Zero downtime only for adjacent minors; skipping requires stepwise upgrades or downtime
-  (enforced by the contract guard).
-- (b) Keep every dropped object for two minors (contract steps declare `lastUsedBy` two releases
-  back), allowing skips of one minor without downtime.
-- (c) Ship no contract steps until a major release.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Adjacent minors only | Zero downtime from N−1 to N; a skip goes stepwise or with a short downtime; the contract guard enforces it | Compatibility code and dead columns live one release; the mixed-version tests cover one pair | Operators who skip releases run several `helm upgrade` commands or accept a short downtime |
+| (b) Two-minor window | Contract steps declare `lastUsedBy` two releases back; N−2 to N rolls | Skipping one minor needs no downtime | Compatibility code lives twice as long, and the mixed-version tests double (N−2 and N−1 against N) |
+| (c) No contract steps within a major | The schema only grows until the next major | Any minor to any later minor rolls | Dead schema accumulates for a whole major; renames and new `NOT NULL` constraints wait for a major |
 
-Recommendation: (a), with release notes that name the steps. (b) doubles the time dual-write code
-must live. (c) accumulates dead schema. Stepwise upgrades are cheap because each one is a rolling
-`helm upgrade`.
+**Choice:** (a) — rolling upgrades are zero-downtime between adjacent minors; skips go stepwise or
+with downtime, enforced by the contract guard.
+
+**Rationale:** Each stepwise upgrade is one rolling `helm upgrade`, so the cost of a skip is
+operator time, not availability, and the guard turns a mistake into a failed Job instead of broken
+replicas. (b) and (c) buy convenience with a longer life for code paths that are hard to test.
+[architecture.md](architecture.md) already promises N−1 to N without downtime (R-ARCH-026). The
+development agent revisits this if installations regularly lag more than one minor behind.
+
+**Applied in the spec:** R-HA-021: the skip row refers to this decision instead of the open
+question; a new bullet fixes the one-minor window (`lastUsedBy` of a contract step shipped in N is
+N−2 or older, stated also in R-ARCH-026's `requires-app` header terms) and what release notes and
+the guard's error must name.
 
 ### Q-HA-6 · Transaction-mode connection poolers
 
-Leases, the listener and the fetch-collapse lock need session-level state. PgBouncer in transaction
-mode breaks them.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Not supported. Connect directly or through a session-mode pooler.
-- (b) Allow a pooler for the main pool only, with a second direct host for listener, lease and lock
-  sessions.
-- (c) Replace session-level locks with table-based leases.
+Leases, the listener and the fetch-collapse lock need session-level state. PgBouncer in
+transaction mode breaks them.
 
-Recommendation: (a) for the MVP, (b) as P2 if connection counts become a problem. The budget of
-R-HA-016 is modest, and (c) would give up immediate lock release on session end, which R-HA-006's
-fencing builds on.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not supported | Direct connections or a session-mode pooler only | Advisory-lock fencing (R-HA-006), `LISTEN` and fetch collapse work as designed; nothing to build | Large replica counts need a larger `max_connections` (R-HA-016) |
+| (b) Split connections | The main pool goes through a transaction-mode pooler; listener, lease and lock sessions use a second, direct host | Fewer server connections at high replica counts | Two hosts to configure and secure; prepared-statement handling under the pooler; worth it only beyond the sizes of R-HA-050 |
+| (c) Table-based leases | Replace session-level locks with lease rows | Works through any pooler | Gives up immediate release on session end, which R-HA-006's fencing builds on; `LISTEN` would still need a direct session |
+
+**Choice:** (a) — transaction-mode and statement-mode poolers are not supported; (b) stays a P2
+item for installations whose connection counts demand it.
+
+**Rationale:** The spec text already followed (a) (R-HA-006 item 5 and the Deferred table), and this
+decision confirms it. The connection budget of R-HA-016 stays within normal `max_connections`
+values for the documented profiles (R-HA-050), so (b) solves a problem the MVP does not have, and
+(c) would weaken fencing, the property that keeps a partitioned replica from committing garbage
+collection decisions. What the text lacked was detection: a misconfigured pooler would have
+surfaced as silent cache staleness. The `notify` check now waits for a delivery probe, which keeps
+such a replica not ready. The development agent revisits this when a reference load test needs
+more connections than a managed database offers.
+
+**Applied in the spec:** R-HA-006 item 5: names transaction-mode and statement-mode poolers, states
+that direct connections and session-mode poolers are supported, and points to the probe and the
+P2 item. R-HA-004: new delivery-probe bullet and acceptance criterion with PgBouncer in both modes.
+The Deferred row stays P2 and now names option (b) instead of the question.
 
 ### Q-HA-7 · Priority of Gateway API
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 The catalog ranks Ingress MVP and Gateway API P1. ingress-nginx was retired in March 2026, and the
 Kubernetes project recommends Gateway API.
 
-- (a) Keep the catalog priorities.
-- (b) Make the HTTPRoute (attach to an existing Gateway) MVP, keep chart-created Gateways P1.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Catalog priorities | Ingress MVP, Gateway API P1 | Smallest MVP chart | Clusters that offer only a Gateway implementation cannot expose the MVP without hand-written routes; R-HA-039's tests already run through an HTTPRoute |
+| (b) HTTPRoute MVP, chart-created Gateway P1 | The chart attaches an HTTPRoute to an existing Gateway at MVP; rendering a Gateway comes later | Covers Gateway-only clusters with a few template lines; platform teams usually own Gateways | Two exposure paths to test from the MVP on |
+| (c) All of Gateway API MVP | HTTPRoute and chart-created Gateway at MVP | Single-tenant clusters need no separate Gateway manifest | Gateway listeners carry TLS and implementation-specific settings, which is more chart surface for a less common setup |
 
-Recommendation: (b). The HTTPRoute is a handful of template lines, and new clusters increasingly
-offer only Gateway implementations.
+**Choice:** (b) — the HTTPRoute is MVP; a Gateway rendered by the chart is P1.
+
+**Rationale:** The HTTPRoute is the part every Gateway-based cluster needs, and the CI setup that
+runs R-HA-039's tests through it exists anyway, so the cost is small. A chart-created Gateway mostly
+helps single-tenant clusters and brings listener and certificate settings into the chart, which can
+wait. The development agent revisits this if the walkthrough shows that most target clusters have no
+shared Gateway.
+
+**Applied in the spec:** R-HA-038 is now MVP and covers only the HTTPRoute; the new R-HA-053 (P1,
+Covers HA-040) holds the chart-created Gateway. R-HA-028's resource table and the
+`gateway.create` values block point to R-HA-053; R-HA-037 says the HTTPRoute exists from the MVP
+on.
 
 ### Q-HA-8 · Who creates the first encryption key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Operators expect `helm install` to work without preparing anything. [architecture.md](architecture.md)
 R-ARCH-021 has no default and no generated key, and this page forbids chart-generated Secrets.
 
-- (a) The chart generates the key and keeps it across upgrades with Helm's `lookup`.
-- (b) The operator creates it; the chart fails without it (R-HA-027).
-- (c) An opt-in hook Job creates it with `create` permission on Secrets.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Chart generates it | Generated on first install and kept across upgrades with Helm's `lookup` | `helm install` needs one Secret fewer | `lookup` returns nothing under `helm template` and Argo CD, so the key is regenerated on every GitOps sync and every sealed value becomes undecryptable without an error |
+| (b) Operator creates it | The chart fails rendering without it and prints the one-line command that creates a key | No generated value can change on re-render; works with every secret tool (external-secrets operators, sealed secrets); the chart keeps needing no Secret permissions | One preparation step before the first install |
+| (c) Opt-in hook Job | A Job with `create` on Secrets generates the key once | Install works without preparation when enabled | Grants the release a Secret-write permission it otherwise never needs; a deleted Secret is silently regenerated with a new key |
 
-Recommendation: (b). `lookup` returns nothing under `helm template` and Argo CD, so (a) regenerates
-the key on every GitOps sync and silently makes all sealed values undecryptable. (c) grants the
-chart a Secret-write permission it otherwise never needs.
+**Choice:** (b) — the operator creates the key Secret; the chart fails without it and prints the
+command that creates one.
+
+**Rationale:** The failure mode of (a) and (c) is the worst kind: silent and irreversible loss of
+every stored upstream credential, which the catalog also warns about (HA-016). (b) turns the
+preparation step into a fail-fast error that already contains the fix, so it costs one command. The
+development agent revisits this only if Helm gains a render-stable way to keep generated values
+that also works offline.
+
+**Applied in the spec:** R-HA-027: the key is created by the operator, by hand or through secret
+tooling, and the rendering error prints the creation command. R-HA-029: the encryption row names
+that command.
 
 ### Q-HA-9 · Making revocations survive a database restore (H-37)
 
-- (a) Document the gap. The operator replays revocations from the audit log stream by hand.
-- (b) Append every revocation, user deactivation and permission removal also to a write-once
-  journal in object storage (separate prefix, versioned). `post-restore` re-applies entries newer
-  than *t*.
-- (c) Invalidate all tokens on restore.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (b) as P1. It reuses the versioned bucket that restores already depend on and
-needs no new infrastructure. (c) breaks every CI pipeline and service account at once and
-punishes the restore, not the attacker.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Document the gap | The operator replays revocations from the audit log stream by hand | Nothing to build | Depends on someone doing it correctly under restore pressure; a leaked token revoked after *t* is valid until then |
+| (b) Revocation journal in object storage | Every change to an access-bearing object is also written, through an outbox that the audit writer fills in the same transaction, to a write-once journal under the blob bucket; `post-restore` re-applies the removals among the entries newer than *t* and never grants | Automatic; reuses the versioned bucket restores already depend on and the transactional audit events that already exist; a forged entry can deny access but never grant it | New write path (outbox, shipping job) and per-object replay rules; removals made in the last seconds before the old database stopped can be missed; an object whose history replay cannot reproduce exactly is suspended rather than restored |
+| (c) Invalidate all tokens on restore | `post-restore` revokes every token | Closes the gap completely for tokens | Breaks every CI pipeline and service account at once, does not cover permission removals, and punishes the restore instead of the attacker |
+| (d) Replay from the audit stream | `post-restore --audit-log <file>` re-applies revocations from an export of the `log: audit` stream | No new write path in trove | Depends on the operator's log pipeline keeping complete, untruncated events for the window; anyone who can write to the pipeline can inject events |
+
+**Choice:** (b) at P1 — a revocation journal in object storage that `post-restore` replays; the MVP
+keeps the manual procedure of (a).
+
+**Rationale:** A revoked credential that comes back to life is a security failure, and only (b)
+fixes it without an operator in the loop and without punishing legitimate users. Two design points
+keep (b) correct for one developer:
+
+- **The audit writer fills the outbox.** R-OPS-015 already writes these events in the transaction
+  of the change, so one hook there covers every owning page, and an event type added later is
+  covered by a registry flag instead of new emission code in each page.
+- **Replay compares against the current state.** A narrowing is applied only when the after-state
+  grants nothing beyond the object's current state; otherwise it is skipped or the object is
+  suspended. Trusting the journaled before-state instead would let a forged entry escalate, and
+  applying narrowing diffs blindly would broaden access where an empty include list means
+  "unrestricted" (R-AUTHZ-005). With this rule, the worst a writer with the runtime S3 credential
+  can do is revoke access, a denial of service and not an escalation.
+
+The journal is P1 although the restore procedure (R-HA-025) ships in 1.0
+([roadmap Q-ROAD-2](../coverage/roadmap.md#q-road-2--backup-and-restore-in-10)): it is a new write
+path across every access-bearing object type with per-object replay rules, and H-37 exists in
+every installation whose database is restored, whether or not a procedure is documented. Until the
+journal ships, H-37 stays live with the manual mitigation, and it is the first work after 1.0. The
+development agent revisits this in two cases: if a 1.0 installation needs a production restore
+before the journal ships, the journal is built ahead of all other work; if suspensions after
+restore drills turn out to be frequent, the replay rule moves to exact per-field narrowing where
+the owning page can define it.
+
+**Applied in the spec:** New R-HA-054 (P1). It defines the registry flag `journal: revocation`, the
+minimum set of flagged audit events under their existing names (token revocation and rotation,
+user and service-account disables and deletions, group deletion and membership removals from every
+source, role unbinding, policy deletion and updates, ownership removal, CI issuer and mapping
+changes, access settings), the outbox table, the object layout, the replay rules with the
+comparator and suspension, the configuration `backup.revocation_journal.*` and acceptance criteria
+that include forged entries. The break-glass `enabled` state is excluded, because it lives in the
+configuration file. R-HA-025 step 4 replays the journal and reports suspended objects, and the
+drill criterion expects a revoked token to stay revoked. R-HA-031 adds the
+`backup.revocation_journal` values, R-HA-045 adds `TroveRevocationJournalBacklog`, and H-37 and the
+Security notes describe what stays live before and after P1.
 
 ### Q-HA-10 · Default of the egress NetworkPolicy
 
-- (a) Off (as specified): ingress policy on, egress opt-in.
-- (b) On with a default that allows DNS, 5432 and 443 anywhere except link-local.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: (a). An egress policy that guesses wrong breaks the installation at first start,
-and (b)'s rules would add little to R-REPO-038's address policy. The documentation shows the
-production egress block next to the profile files.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Off by default | Ingress policy on; egress opt-in, with a warning in `NOTES.txt` and an example values file | An installation never breaks because the chart guessed the network wrong; R-REPO-038 already checks trove's own outbound addresses | A compromised process can reach everything the pod network reaches until the operator enables egress |
+| (b) On with a generic allow-list | DNS, port 5432 and port 443 to anywhere except link-local ranges | Blocks cloud metadata endpoints by default | Breaks NodeLocal DNSCache (link-local address), GKE workload identity (metadata server on 169.254.169.254), EKS Pod Identity (169.254.170.23), S3 stores and upstreams on other ports; for AWS S3 the rule cannot be narrower than "any address on 443", because NetworkPolicy has no DNS names or prefix lists |
+| (c) On, explicit targets required | Rendering fails unless database and object-storage targets are given | No guessing; forces a deliberate egress design | Breaks the six-value minimal install (R-HA-031); managed databases and AWS S3 have no stable pod selectors or narrow CIDRs to give |
+| (d) On, everything except the metadata address | One rule: egress to `0.0.0.0/0` and `::/0` except `169.254.169.254/32` (and `fd00:ec2::254/128`) | Blocks the classic credential theft through the cloud metadata service and nothing else | GKE workload identity serves tokens from that very address, so S3 credentials break there; on CNIs whose `ipBlock` rules do not match cluster pod addresses (Cilium, for example), in-cluster PostgreSQL and S3 become unreachable |
+
+**Choice:** (a) — egress stays off by default; `NOTES.txt` says so and points to
+`deploy/helm/trove/examples/egress.yaml`.
+
+**Rationale:** Of the four, only (a) cannot break a working cluster at first start. (b)'s
+protection reduces to blocking link-local addresses, which is exactly what breaks common platform
+features, and (d), the narrowest default that still blocks something, breaks GKE identity and
+in-cluster dependencies on common CNIs. The real protection against outbound misuse by trove's own code is R-REPO-038, which
+applies regardless. The egress policy matters when the process is compromised, so it is made
+visible (NOTES, example file, Security notes) rather than silently absent. The development agent
+revisits this if the chart gains a reliable way to detect the cluster's DNS and identity endpoints.
+
+**Applied in the spec:** R-HA-042: the default is stated as decided, `NOTES.txt` warns while egress
+is off, and an example values file rendered in CI is added. Security notes: new bullet on
+unrestricted egress.
 
 ### Q-HA-11 · Publishing location of images and chart
 
-- (a) The GitHub Container Registry of the project's GitHub organization.
-- (b) The GitLab container registry of the project's GitLab group.
-- (c) Both, mirrored.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Recommendation: decide together with the forge that hosts the repository. Use that forge's registry
-only, so signatures, provenance and the release pipeline share one OIDC identity. The values file
-uses `ghcr.io/trove/trove` as an example until then.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) GitHub Container Registry of the hosting organization | `ghcr.io/guided-traffic/trove` and `oci://ghcr.io/guided-traffic/charts/trove` | The repository is on GitHub (`origin` is `github.com/guided-traffic/trove`, verified with `git remote -v`); the release workflow pushes and signs with its own OIDC identity, no stored registry credential | Anonymous pulls depend on GitHub's availability; packages must be set to public once |
+| (b) GitLab container registry of a GitLab group | Images and chart in a GitLab project's registry | Close to the GitLab CI users trove serves | The repository and its release workflow are not on GitLab; pushing would need a stored GitLab token and a second identity for signatures |
+| (c) Both, mirrored | Publish to GitHub and GitLab | Pull from either | Two signature identities to document and verify; twice the release surface for no functional gain; operators mirror anyway |
+| (d) Docker Hub | `docker.io/<org>/trove`, the chart as an OCI artifact there | Default registry of every container tool; the widest reach | Anonymous pulls are rate-limited per source address, which hits CI fleets and clusters behind one NAT address; the release workflow needs a stored registry token; an organization account must be created first |
+
+**Choice:** (a) — images and chart are published to the GitHub Container Registry of the
+`guided-traffic` organization and signed from the GitHub Actions release workflow.
+
+**Rationale:** Publishing where the release workflow runs keeps one identity for building, pushing,
+signing and provenance, which is what makes `cosign verify` meaningful, and needs no stored
+registry credential, unlike (b) and (d). Air-gapped and pull-limited installations mirror by digest
+anyway (R-HA-047). The development agent revisits this
+if the repository moves to another forge.
+
+**Applied in the spec:** R-HA-031: `image.registry: ghcr.io` and `image.repository:
+guided-traffic/trove` are now proposed defaults. R-HA-047: publishing location, chart reference and
+the exact certificate identity of the release workflow.
 
 ### Q-HA-12 · Replica registry at MVP
 
-R-OPS-003 marks the replica registry P1 (OPS-008, the status screen). This page needs the table and
-heartbeat at MVP: contract guard, cluster minimum version, key-set check.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Make the table and heartbeat MVP, keep the API and UI P1.
-- (b) Keep all of it P1 and give HA its own minimal heartbeat table.
+The catalog ranks the replica status screen P1 (OPS-008), and R-OPS-003 was drafted as P1 as a
+whole. This page needs the table and heartbeat at MVP for the contract guard, the cluster minimum
+version and the post-restore cleanup.
 
-Recommendation: (a). One table, one heartbeat, no second source of truth about which replicas are
-alive.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Table and heartbeat MVP | API and UI stay P1 | Smallest MVP | R-HA-001's and R-HA-020's MVP acceptance criteria use `GET /api/v1/system/replicas`, so they could not run |
+| (b) All P1, separate HA table | HA keeps its own minimal heartbeat table | R-OPS-003 unchanged | Two sources of truth about which replicas are alive |
+| (c) Table, heartbeat, pruning and read-only API MVP | Everything the HA mechanisms and rollout checks read is MVP; the UI status screen is ranked by [api-and-ui.md](api-and-ui.md) R-UI-038 | MVP acceptance criteria and rollout verification work; the API is one read query | Slightly more MVP scope |
+
+**Choice:** (c) — the table, the heartbeat, the pruning of stale rows and the read-only replica API
+are MVP. The UI status screen is MVP as well: [api-and-ui.md](api-and-ui.md) R-UI-038 ranks it MVP
+(Q-API-8 there), and this choice follows that ranking.
+
+**Rationale:** The API is what operators and the failure-injection suite use to verify a rollout,
+and it is a single `SELECT` behind an existing permission. Without pruning, every crashed pod would
+leave a row forever. The status screen renders only from endpoints that are MVP (this API,
+R-OPS-004, the task and job API of R-OPS-019, R-API-049), so it adds no backend work, and it is the
+only UI view of the replicas, the scheduled tasks and the key ring. The development agent revisits
+this only if R-OPS-003's API grows beyond a read-only list.
+
+**Applied in the spec:** R-HA-003: states which parts of the registry are MVP, that the UI status
+screen (R-UI-038) is MVP as well, and that R-HA-001 and R-HA-020 verify through the API.
+[operations-and-observability.md](operations-and-observability.md) R-OPS-003 states the same
+(registry, API and status screen MVP), so no cross-page edit remains.
 
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
 
 Restoring PostgreSQL to time *t* restores every token, session, user and permission policy as it
-was at *t*. Revocations, user deactivations, permission removals and break-glass lockouts made after
-*t* are undone. A token revoked because it leaked becomes valid again. `post-restore` ends all UI
+was at *t*. Token revocations, user and service-account disables, group-membership and role-binding
+removals, policy narrowings and CI mapping changes made after *t* are undone. A token revoked
+because it leaked becomes valid again. `post-restore` ends all UI
 sessions and prints a warning, but it cannot know what happened after *t*: those facts were only in
-the lost part of the database and in the audit log stream. The current mitigation is manual. Read
-the `log: audit` stream from *t* to the restore, and repeat each revocation and removal through
-`trove admin token revoke` and the API. Q-HA-9 proposes a revocation journal in object storage
-that `post-restore` replays.
+the lost part of the database and in the audit log stream.
+
+- **Live in the MVP.** The mitigation is manual: read the `log: audit` stream from *t* to the
+  restore, and repeat each revocation and removal through `trove admin token revoke` and the API.
+- **From P1 on (R-HA-054, Q-HA-9),** `post-restore` re-applies the revocation journal kept in
+  object storage. What stays live then: removals whose outbox rows had not been shipped when the old
+  database stopped (normally less than one shipping interval, default 5 s), every removal made
+  while `backup.revocation_journal.enabled` was false, and, without bucket versioning, journal
+  objects deleted with the runtime S3 credential. Access granted after *t* is lost rather than
+  revived, and objects whose history replay cannot reproduce exactly are suspended; both fail
+  closed.
 
 ### H-38 · Plain HTTP between the edge proxy and the replicas
 

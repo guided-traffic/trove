@@ -8,7 +8,7 @@ asks GitLab for an OIDC ID token addressed to trove. It exchanges that token at
 token it installs dependencies and publishes the packages it builds. The page covers the trusted
 issuer configuration, ID-token validation, identity mappings (the ordered rules that turn
 verified claims into grants), grant templating and package-ownership binding, token lifetime,
-replay protection, audit, the optional `CI_JOB_TOKEN` fallback, and GitHub Actions and generic
+replay protection, audit, the optional `CI_JOB_TOKEN` fallback (P2), and GitHub Actions and generic
 OIDC issuers as later uses of the same mechanism. The page specifies only the CI side of these
 features. Other spec pages own the token store and token presentation
 ([identity-and-authentication.md](identity-and-authentication.md)), the permission model,
@@ -35,7 +35,7 @@ the subject of the OIDC path:
 | How a third party verifies it | Offline: signature against the issuer's published JWKS, plus `iss`, `aud`, `exp`, `nbf`, `iat` ([RFC 7519](https://www.rfc-editor.org/rfc/rfc7519)) | Only by calling GitLab (`GET /api/v4/job` with the token), while the job is running |
 | Format | JWT (compact JWS) | GitLab-internal. Since GitLab 19.0 job tokens use a JWT format by default (a group can switch back until 20.0), but GitLab documents neither claims nor verification keys for third parties. trove treats it as an opaque string. |
 | Lifetime | Expires at the job's timeout, or after 5 minutes if no timeout is set | Valid while the job runs; revoked when the job finishes |
-| trove use | The normal path, MVP (R-CI-001 to R-CI-021) | Optional fallback, off by default (R-CI-022) |
+| trove use | The normal path, MVP (R-CI-001 to R-CI-021) | Optional fallback, P2, off by default (R-CI-022, Q-CI-5) |
 
 Sources: [ID token authentication](https://docs.gitlab.com/ci/secrets/id_token_authentication/),
 [CI/CD job token](https://docs.gitlab.com/ci/jobs/ci_job_token/),
@@ -97,17 +97,17 @@ Settings of a CI issuer (API field names; durations over the API are integer sec
 cannot be mixed up):
 
 <details>
-<summary>CI issuer settings (22)</summary>
+<summary>CI issuer settings (21)</summary>
 
 | Field | Meaning | Value |
 |---|---|---|
 | `name` | Handle in the API, audit and metrics | — |
-| `kind` | `gitlab`, `github`, `generic` | — |
+| `kind` | Closed enum of the lowercase literals `gitlab`, `github`, `generic` (R-CI-002) | — |
 | `issuer` | Expected `iss`, compared exactly (no trailing-slash or case normalization) | — |
 | `discovery_url` | OIDC discovery document | `null` = `<issuer>/.well-known/openid-configuration` # default (proposed) |
 | `jwks_uri` | Overrides the key-set URL from discovery | `null` # default (proposed) |
-| `allowed_audiences` | Accepted `aud` values, exact string match | `[<server.base_url>]` # default (proposed) |
-| `reject_multiple_audiences` | Reject tokens whose `aud` array has more than one element | `true` # default (proposed) |
+| `allowed_audiences` | Accepted `aud` values, exact string match; at least one entry, so the audience is always checked (R-CI-004 step 7). The second default value serves npm-family trusted publishing (below) | `[<server.base_url>, "npm:<host name of server.base_url>"]` # default (proposed) |
+| `exclusive_audience` | Every element of `aud` must be an entry of `allowed_audiences`, so the token names no recipient other than trove (Q-CI-3) | `true` # default (proposed) |
 | `allowed_algorithms` | JWS algorithms accepted | `["RS256"]` # default (proposed) for `gitlab` and `github` |
 | `allowed_typ` | Accepted `typ` header values, compared case-insensitively | `["JWT"]` # default (proposed) |
 | `allow_missing_typ` | Accept tokens without a `typ` header | `true` # default (proposed) |
@@ -115,16 +115,32 @@ cannot be mixed up):
 | `required_claims` | Claims that must be present and non-null | kind preset, see R-CI-006 |
 | `public_issuer` | Anyone can obtain tokens from this issuer (e.g. GitLab.com, or any instance with open sign-up). Turns on the ID-pinning rule of R-CI-010. | `true` # default (proposed) |
 | `pin_claims` | Claims that count as immutable identifiers for the pinning rule | `gitlab`: `project_id`, `namespace_id`, `job_project_id`, `job_namespace_id` # default (proposed) |
-| `single_use_subject_tokens` | Reject a second exchange of the same `jti` (R-CI-018) | `false` # default (proposed) |
-| `cross_project_source` | Default handling of cross-project (fork) pipelines (R-CI-012) | `deny` # default (proposed) |
+| `single_use_subject_tokens` | Reject a second exchange of the same `jti` (R-CI-018, Q-CI-4) | kind preset: `false` for `gitlab`, `true` for `github` and `generic` # default (proposed) |
 | `max_ttl_seconds` | Upper bound for CI tokens of this issuer, at most `ci.token.max_ttl` | `null` (global bound only) # default (proposed) |
 | `ca_bundle_ref` | Reference to a PEM bundle (file or environment variable, INV-15) for instances behind a private CA | `null` # default (proposed) |
 | `use_outbound_proxy` | Route discovery, key and GitLab API calls through the system outbound proxy ([repositories-and-proxy.md](repositories-and-proxy.md)) | `false` # default (proposed) |
-| `job_token_fallback` | R-CI-022 settings | `{"enabled": false}` # default (proposed) |
+| `job_token_fallback` | R-CI-022 settings (P2) | `{"enabled": false}` # default (proposed) |
 | `enabled` | Disabled issuers reject every exchange | `true` # default (proposed) |
 | `description` | Free text | `""` |
 
 </details>
+
+**Default audiences.** A CI issuer created without `allowed_audiences` gets two entries, filled in
+from the configuration at create time: the base URL (`https://packages.example.com`) and `npm:`
+followed by its host name as `new URL(…).hostname` yields it, without port
+(`npm:packages.example.com`). The second value is the audience of native trusted publishing by
+npm-family clients ([formats/npm.md](formats/npm.md) R-NPM-022, Q-NPM-1, P1), checked there in the
+published client sources: pnpm 11.28.6 and later and 12.12.1 and later use `NPM_ID_TOKEN` only when
+its `aud` equals or contains `npm:<registry host name>`, and npm requests exactly
+`npm:${new URL(registry).hostname}` on GitHub Actions (R-CI-025). Both values name this
+installation and no other recipient, so `exclusive_audience` keeps its meaning: a token that also
+names another service is still rejected. An administrator who sets `allowed_audiences` explicitly
+and leaves out the `npm:` value breaks native trusted publishing for pnpm, which requires that
+audience, and for npm on GitHub Actions, which requests it. npm and Yarn 4 in GitLab CI check no
+audience on `NPM_ID_TOKEN`, and the generic exchange (R-CI-007) keeps working. Clients that reach
+trove under an origin of
+`server.additional_base_urls` ([operations-and-observability.md](operations-and-observability.md)
+R-OPS-005) request that origin's values, which the administrator adds.
 
 Several GitLab instances are several CI issuers (R-CI-005). trove MUST NOT accept an
 `alg` of `none` or any HMAC algorithm (`HS256`, `HS384`, `HS512`) in `allowed_algorithms`
@@ -149,7 +165,7 @@ CREATE TABLE ci_issuers (
   discovery_url              text,
   jwks_uri                   text,
   allowed_audiences          text[] NOT NULL CHECK (cardinality(allowed_audiences) >= 1),
-  reject_multiple_audiences  boolean NOT NULL DEFAULT true,
+  exclusive_audience         boolean NOT NULL DEFAULT true,
   allowed_algorithms         text[] NOT NULL DEFAULT '{RS256}',
   allowed_typ                text[] NOT NULL DEFAULT '{JWT}',
   allow_missing_typ          boolean NOT NULL DEFAULT true,
@@ -158,9 +174,7 @@ CREATE TABLE ci_issuers (
   required_claims            text[] NOT NULL,
   public_issuer              boolean NOT NULL DEFAULT true,
   pin_claims                 text[] NOT NULL,
-  single_use_subject_tokens  boolean NOT NULL DEFAULT false,
-  cross_project_source       text NOT NULL DEFAULT 'deny'
-                               CHECK (cross_project_source IN ('deny', 'read_only')),
+  single_use_subject_tokens  boolean NOT NULL,              -- kind preset: false (gitlab), true (github, generic)
   max_ttl                    interval,
   ca_bundle_ref              text,
   use_outbound_proxy         boolean NOT NULL DEFAULT false,
@@ -181,21 +195,51 @@ CREATE TABLE ci_issuers (
 - Creating a `gitlab` CI issuer with `pin_claims: ["project_path"]` fails with 422
   `pin_claim_not_immutable`. Creating one with `issuer = https://gitlab.com` and
   `public_issuer: false` fails with 422 `public_issuer_required`.
+- With `server.base_url: https://packages.example.com:8443`, a CI issuer created without
+  `allowed_audiences` reads back
+  `["https://packages.example.com:8443", "npm:packages.example.com"]`.
 
 ### R-CI-002 · CI issuer management API
 Priority: **MVP** · Covers: CIOIDC-005, ADMAPI-028
 
-All operations require the system administrator role (INV-9). Pagination, error envelope and
-optimistic concurrency follow [api-and-ui.md](api-and-ui.md). An update carries the `version`
-it read, and a stale `version` answers 409.
+All operations require the system administrator role (INV-9). Pagination and the error envelope
+follow [api-and-ui.md](api-and-ui.md): errors are problem details (R-API-009), and the reason names
+this page gives for management operations (`pin_required`, `discovery_unreachable`, …) are their
+`code`. Optimistic concurrency follows R-API-012: GET returns `ETag: "<version>"`, PUT requires
+`If-Match` (428 `precondition_required` without it, and nothing changes; `If-Match: *` for a
+deliberate blind write), DELETE accepts it, and a stale tag answers 412 `precondition_failed` with
+`currentEtag`. A lost update here is a grant change: a stale `PUT` of a mapping can restore
+conditions or grants another administrator just narrowed ([api-and-ui.md](api-and-ui.md)
+Q-API-2). Requests and acceptance criteria on this page that `PUT` an issuer or a mapping send the
+`If-Match` the caller read, unless they say otherwise.
+
+The representation is fixed so that the catalog's open points (CIOIDC-005) have one answer:
+
+- `kind` is a closed enum of the lowercase literals `gitlab`, `github` and `generic`. Display
+  names such as `GitHub` or `Generic OpenID Connect`, other spellings and other case answer 422
+  `validation_failed` with pointer `/kind`. Until R-CI-025 and R-CI-026 ship (P1), `github` and
+  `generic` answer 422 `kind_not_available`.
+- Create answers 201 with `Location` (R-API-004), not 200.
+- PUT replaces the full representation. An omitted optional field takes its default, so changing
+  one setting is GET, modify, PUT; the read-only fields of a GET body (`version`, `created_at`,
+  `updated_at`) are accepted and ignored (R-API-003). There is no PATCH.
+- Field names: this page writes API fields in the snake_case of their database columns. On the
+  wire, every management-API field of this page (issuers, mappings, conditions, grants,
+  delegations, issuances, dry run) uses the lowerCamelCase form that R-API-003 requires, by
+  mechanical conversion (`allowed_audiences` → `allowedAudiences`, `ignore_case` →
+  `ignoreCase`). Claim names inside conditions and templates (`project_id`) are data, not field
+  names, and keep the issuer's spelling. The exchange endpoint (R-CI-007, R-CI-008) keeps the
+  OAuth names of RFC 8693 and its extensions `ci_issuer`, `ttl`, `mappings` and `reason`. Its
+  error member `requestId` keeps the spelling it has in every other trove error body (R-API-009),
+  so one key finds the matching log line and audit event everywhere.
 
 | Method and path | Purpose | Success | Errors |
 |---|---|---|---|
 | `GET /api/v1/ci/issuers` | List CI issuers with mapping count and key status | 200 | 401, 403 |
 | `POST /api/v1/ci/issuers` | Create; validates discovery and keys unless `"validate": false` | 201 + record | 409 duplicate name or issuer, 422 invalid or unreachable |
-| `GET /api/v1/ci/issuers/{name}` | Read | 200 | 404 |
-| `PUT /api/v1/ci/issuers/{name}` | Replace; `name` and `issuer` are immutable | 200 | 404, 409, 422 |
-| `DELETE /api/v1/ci/issuers/{name}` | Delete; refuses while mappings exist unless `?cascade=true` | 204 | 404, 409 |
+| `GET /api/v1/ci/issuers/{name}` | Read | 200 + `ETag` | 404 |
+| `PUT /api/v1/ci/issuers/{name}` | Replace; `name` and `issuer` are immutable; `If-Match` required | 200 + new `ETag` | 404, 412 `precondition_failed`, 422, 428 `precondition_required` |
+| `DELETE /api/v1/ci/issuers/{name}` | Delete; refuses while mappings exist unless `?cascade=true`; `If-Match` optional | 204 | 404, 409, 412 |
 | `GET /api/v1/ci/issuers/{name}/keys` | Cached key set: `kid`, `kty`, `alg`, fetch time, next refresh, last error | 200 | 404 |
 | `POST /api/v1/ci/issuers/{name}/keys/refresh` | Force a discovery and key refresh now | 200 + key status | 404, 502 issuer unreachable |
 
@@ -206,7 +250,7 @@ Request sketch for `POST /api/v1/ci/issuers`:
   "name": "gitlab-com",
   "kind": "gitlab",
   "issuer": "https://gitlab.com",
-  "allowed_audiences": ["https://packages.example.com"],
+  "allowed_audiences": ["https://packages.example.com", "npm:packages.example.com"],
   "description": "GitLab.com, groups acme and acme-labs",
   "validate": true
 }
@@ -214,20 +258,42 @@ Request sketch for `POST /api/v1/ci/issuers`:
 
 The response is the full record with all defaults filled in, plus `version`, `created_at` and
 `updated_at`. A create with `"validate": true` (the default) fetches the discovery document and
-the key set synchronously. It fails with 422 and a `reason` (`discovery_unreachable`,
+the key set synchronously. It fails with 422 and a `code` (`discovery_unreachable`,
 `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`) when the issuer would not be
 usable.
 
 Disabling (`enabled: false`) or deleting a CI issuer revokes all unexpired CI tokens issued
-through it, in the same transaction (R-CI-017).
+through it, in the same transaction (R-CI-017). Deleting with `?cascade=true` deletes its mappings
+and their principals in that transaction (R-CI-009). The change writes `ci.issuer.disabled` or
+`ci.issuer.deleted`, and a cascade one `ci.mapping.deleted` per mapping; from P1 the revocation
+journal keeps these across a database restore (R-CI-020).
+
+**Configuration documents (P1).** A configuration document
+([operations-and-observability.md](operations-and-observability.md) R-OPS-029) declares CI issuers
+under the kind `ciIssuers`. Each entry is the request body of `POST /api/v1/ci/issuers`, with its
+lowerCamelCase field names, validation and defaults, and is identified by `name`. Applying the
+document (R-OPS-030) creates an issuer, replaces it as `PUT` does, or deletes it when it was pruned,
+and writes the same audit events as the API. Issuers are created before `ciMappings` and deleted
+after them. While an issuer is managed by a document and `config_as_code.lock_managed_objects` has
+its default `true` (R-OPS-029), `PUT` and `DELETE` through the API answer 409 and name the owning
+document. Configuration documents never
+declare login providers; a CI issuer only ever serves the token exchange (INV-10,
+[operations-and-observability.md](operations-and-observability.md) Q-OPS-6).
 
 **Acceptance criteria**
 
 - `curl -sS -X POST -H "Authorization: Bearer $ADMIN_PAT" -H 'Content-Type: application/json' --data @issuer.json https://packages.example.com/api/v1/ci/issuers`
   with the request above returns 201, and `GET .../keys` lists at least one RSA key.
 - A non-administrator PAT receives 403 on every operation in the table.
-- After `PUT` with `"enabled": false`, a CI token issued earlier through the issuer gets 401 on
-  `npm view @acme-billing/invoice-client` against trove.
+- After `PUT` with `"enabled": false` and the current `If-Match`, a CI token issued earlier
+  through the issuer gets 401 on `npm view @acme-billing/invoice-client` against trove.
+- `POST /api/v1/ci/issuers` with `"kind": "GitHub"` answers 422 with pointer `/kind`. A `PUT`
+  with `If-Match: "1"` after another `PUT` raised the version to 2 answers 412 with
+  `currentEtag` `"2"`.
+- `curl -sS -X PUT -H "Authorization: Bearer $ADMIN_PAT" -H 'Content-Type: application/json' --data @issuer.json https://packages.example.com/api/v1/ci/issuers/gitlab-com`
+  without `If-Match` answers 428 `precondition_required` and leaves the version unchanged. The
+  same call with the tag of a preceding `GET` (`-H 'If-Match: "2"'` while the version is 2)
+  answers 200 with `ETag: "3"`.
 
 ### R-CI-003 · Discovery, signing keys, caching and rotation
 Priority: **MVP** · Covers: CIOIDC-019, CIOIDC-031
@@ -256,7 +322,7 @@ Other keys are ignored and reported in the key status.
 Caching and refresh:
 
 - The last good key set of each CI issuer is stored in PostgreSQL and held in memory on every
-  replica. A refresh on any replica sends `NOTIFY ci_issuer_keys` and the other replicas reload
+  replica. A refresh on any replica sends `NOTIFY trove_ci_issuer_keys` and the other replicas reload
   from the database (INV-12). A restarted replica validates tokens without contacting GitLab.
 - Scheduled refresh: a background job refreshes keys whose `next_refresh_at` has passed. It
   claims rows with `FOR UPDATE SKIP LOCKED`, so exactly one replica fetches. The next refresh
@@ -354,8 +420,9 @@ reason code in brackets appears in the error response and the audit event (R-CI-
 6. Signature: verified with the key named by `kid`. Without `kid`, every usable key of the
    matching key type is tried, at most 10 [`signature_invalid`, `unknown_signing_key`].
 7. Audience: `aud` is a string or an array of strings. At least one element MUST equal an entry
-   of `allowed_audiences` [`audience_invalid`]. With `reject_multiple_audiences`, an array of
-   more than one element is rejected [`audience_not_exclusive`]
+   of `allowed_audiences` [`audience_invalid`]. With `exclusive_audience` (the default), every
+   element MUST equal an entry of `allowed_audiences`; an element naming any other recipient is
+   rejected [`audience_not_exclusive`]
    ([RFC 8725 §3.9](https://www.rfc-editor.org/rfc/rfc8725#section-3.9)).
 8. Time ([RFC 7519 §4.1.4–4.1.6](https://www.rfc-editor.org/rfc/rfc7519#section-4.1.4)): `exp`
    required and `now < exp + skew` [`token_expired`]; `nbf`, when present,
@@ -367,13 +434,28 @@ reason code in brackets appears in the error response and the audit event (R-CI-
 GitLab sets `nbf` a few seconds before `iat` in its documented example. The default 60-second
 skew absorbs this and normal clock drift between runners, GitLab and trove.
 
+The audience is always checked at the CI issuer (catalog CIOIDC-019 leaves open whether an
+unconfigured audience means "no check" or whether only mapping conditions check `aud`). trove has
+no unconfigured state: `allowed_audiences` has at least one entry (R-CI-001), and step 7 runs for
+every token. A mapping condition MAY additionally test `aud` like any other claim (R-CI-010, array
+claims are multi-valued) to narrow which of the allowed audiences a mapping accepts; it never
+replaces step 7.
+
 **Acceptance criteria**
 
 - Unit tests cover each step with a failing token and assert the reason code. One case is a
   token signed with HS256 using the RSA public key's bytes as the HMAC secret (the
   algorithm-confusion attack), which must fail with `algorithm_not_allowed`.
 - A GitLab ID token whose `aud` is `["https://packages.example.com", "https://vault.example.com"]`
-  is rejected with `audience_not_exclusive` under the default settings.
+  is rejected with `audience_not_exclusive` under the default settings. With `allowed_audiences`
+  `["https://packages.example.com", "https://packages.internal.example.com"]`, a token whose `aud`
+  is exactly those two values is accepted.
+- Under the default `allowed_audiences` of an installation at `https://packages.example.com`,
+  tokens whose `aud` is `npm:packages.example.com`, or
+  `["https://packages.example.com", "npm:packages.example.com"]`, are accepted. A token whose `aud`
+  is `["npm:packages.example.com", "npm:registry.npmjs.org"]` is rejected with
+  `audience_not_exclusive`, and one whose `aud` is `npm:registry.npmjs.org` with
+  `audience_invalid`.
 - A token with `exp = now - 30` is accepted with a 60-second skew. A token with `exp = now - 61`
   is rejected.
 
@@ -418,8 +500,14 @@ publish:
       aud: https://packages.example.com     # example: one of the CI issuer's allowed_audiences
 ```
 
-- `aud` SHOULD be a single string. GitLab also accepts an array, which delivers the same token to
-  several services. trove rejects such tokens by default (R-CI-004 step 7).
+- `aud` SHOULD be a single string. GitLab also accepts an array, which addresses the same token to
+  several services. trove rejects such a token by default when any listed audience is not one of
+  the CI issuer's `allowed_audiences` (R-CI-004 step 7).
+- Native trusted publishing of npm, pnpm and Yarn 4 ([formats/npm.md](formats/npm.md) R-NPM-022,
+  P1) reads the ID token from `NPM_ID_TOKEN` instead, declared with
+  `aud: npm:<host name of trove's base URL>` (for example `npm:packages.example.com`), the audience
+  pnpm requires. The default `allowed_audiences` (R-CI-001) accepts both audiences, so one CI
+  issuer and its mappings serve both paths.
 - `id_tokens` may be set under `default:`. A job that declares its own `id_tokens` replaces the
   default entirely; GitLab does not merge them
   ([CI/CD YAML reference, `id_tokens`](https://docs.gitlab.com/ci/yaml/#id_tokens)).
@@ -479,21 +567,50 @@ sent twice answers 400 ([RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#
 | `subject_token` | yes | The GitLab ID token (or, R-CI-022, the job token) |
 | `subject_token_type` | yes | `urn:ietf:params:oauth:token-type:id_token` or `urn:ietf:params:oauth:token-type:jwt` (equivalent); `urn:trove:token-type:gitlab-job-token` only with R-CI-022 enabled |
 | `requested_token_type` | no | Absent or `urn:ietf:params:oauth:token-type:access_token` |
-| `scope` | no | Narrows the grants, space-delimited items `<action>` or `<action>:<repoKey>`, e.g. `read deploy:npm-internal`. Grammar to be aligned with R-AUTH, see Q-CI-2. |
+| `scope` | no | Narrows the grants: space-delimited items `<action>` or `<action>:<repository selector>`, e.g. `read:npm-all deploy:npm-internal` (grammar below, Q-CI-2) |
 | `audience`, `resource` | no | When present, MUST equal trove's configured base URL; otherwise 400 `invalid_target` |
 | `actor_token`, `actor_token_type` | no | Not supported: present → 400 [`actor_token_not_supported`] |
 | `ci_issuer` (trove extension) | no | CI issuer name; must match the issuer selected by `iss` (R-CI-005) |
 | `ttl` (trove extension) | no | Requested lifetime in seconds; can only shorten (R-CI-016) |
+
+**Scope parameter.** `scope` is an OAuth scope string
+([RFC 6749 §3.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.3)) whose items are a compact
+notation for the repository part of the token scope of
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-024. There is one scope
+model; this is only its request syntax:
+
+```text
+scope     = item *( SP item )
+item      = action [ ":" selector ]
+action    = "read" / "annotate" / "deploy" / "overwrite" / "delete"
+selector  = repository selector of authorization.md R-AUTHZ-004
+            ; key, key pattern, class or format filter: npm-internal, npm-team-*, @any-local:npm
+```
+
+- Each item becomes one scope grant `{"repositories": [<selector>], "actions": [<action>]}`; an
+  item without selector stands for `@any`. The token's stored scope is
+  `{"inherit": false, "repositories": [<grants>]}`. Without `scope`, it is `{"inherit": true}`
+  (the CI grants unnarrowed, [authorization.md](authorization.md) R-AUTHZ-013).
+- The item is split at its first `:`; the rest, including a format filter, is the selector.
+  Items are case-sensitive, duplicates are ignored, and at most 50 distinct items are accepted
+  (the grant limit of R-AUTH-024).
+- An unknown action, `manage`, an invalid selector or a key selector naming no existing
+  repository answers 400 `invalid_scope` [`scope_malformed`]. An item that admits no action the
+  matched grants hold at exchange time answers 400 `invalid_scope` [`scope_not_granted`]; no
+  partial token is issued. At use time the scope is a ceiling like every token scope
+  (R-AUTHZ-013).
+- Package and path narrowing is not expressible in the request. The mapping's grants already
+  carry it.
 
 Processing order:
 
 1. Parse and validate the request.
 2. Validate the subject token (R-CI-004).
 3. Record the `jti` (R-CI-018).
-4. Run the cross-project guard (R-CI-012).
+4. Classify the subject token as cross-project or not (R-CI-012).
 5. Select mappings (R-CI-009).
 6. Render grants (R-CI-013, R-CI-014).
-7. Apply caps (cross-project, fallback).
+7. Apply caps per matched mapping (cross-project opt-in, R-CI-012; fallback, R-CI-022).
 8. Intersect with `scope`.
 9. Compute the TTL (R-CI-016).
 10. Issue the token.
@@ -526,8 +643,9 @@ Success response (200, `Content-Type: application/json`, `Cache-Control: no-stor
 }
 ```
 
-- `scope` is always returned. It summarizes the granted actions per repository; package and path
-  patterns are not shown. The authoritative grant is the issuance record (R-CI-020).
+- `scope` is always returned, in the request grammar above: one item per action and repository
+  selector of the effective grants after narrowing, selectors as written in the grants. Package and
+  path patterns are not shown. The authoritative grant is the issuance record (R-CI-020).
 - No `refresh_token` is ever returned. CI tokens cannot be refreshed. A job that needs a new
   token exchanges its ID token again.
 - The token value appears only in this response. trove stores only its SHA-256 (INV-8).
@@ -558,7 +676,9 @@ ci:
 - The same request as JSON (`-H 'Content-Type: application/json' -d '{"grant_type": …}'`)
   returns an equivalent response.
 - `scope=deploy:nuget-internal` from a job whose mapping grants only npm returns 400
-  `invalid_scope`.
+  `invalid_scope` with reason `scope_not_granted`. `scope=read:@any-local:npm` from a job of the
+  reference mapping returns a token that installs from `npm-internal` and gets 403 on
+  `npm publish`. `scope=manage:npm-internal` returns 400 `scope_malformed`.
 - Two parallel exchanges of one ID token on two replicas both succeed under
   `single_use_subject_tokens: false`. Under `true`, exactly one succeeds.
 - With the `LISTEN` session of replica B blocked, mapping `acme-release-publish` is disabled
@@ -569,15 +689,19 @@ ci:
 Priority: **MVP** · Covers: CIOIDC-018
 
 Errors use the OAuth error response of
-[RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2). RFC 8693 §2.2.2 requires
-`invalid_request` for a subject token that is invalid or unacceptable by policy, so a rejected
-token answers 400, not 401 (Q-CI-8). trove adds a stable machine-readable `reason`:
+[RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2), with
+`Content-Type: application/json` and `Cache-Control: no-store`, not the problem details of the
+management API. RFC 8693 §2.2.2 requires `invalid_request` for a subject token that is invalid or
+unacceptable by policy, so a rejected token answers 400, not 401 (Q-CI-8). trove adds two
+members: a stable machine-readable `reason`, and `requestId`, which equals the `X-Request-Id`
+response header (R-API-019) and links the answer to the audit event:
 
 ```json
 {
   "error": "invalid_request",
   "error_description": "no identity mapping of CI issuer gitlab-com matched the token",
-  "reason": "no_matching_mapping"
+  "reason": "no_matching_mapping",
+  "requestId": "4bf92f3577b34da6a3ce929d0e0e4736"
 }
 ```
 
@@ -594,7 +718,7 @@ token answers 400, not 401 (Q-CI-8). trove adds a stable machine-readable `reaso
 - `error_description` contains no claim values and no token material. Details go to the audit
   event (R-CI-020).
 - With `ci.exchange.expose_reason: false`, every 400 answers `invalid_request` without `reason`
-  and with a generic description. Logs and audit still record the reason.
+  and with a generic description, still with `requestId`. Logs and audit still record the reason.
 
 **Acceptance criteria**
 
@@ -611,11 +735,12 @@ An identity mapping belongs to one CI issuer and consists of:
 - a name, unique within the issuer;
 - a `priority`, a positive integer that is unique within the issuer's tier;
 - `enabled`;
-- `subject_kinds`: `["id_token"]` by default; R-CI-022 adds `job_token`;
+- `subject_kinds`: `["id_token"]` by default; R-CI-022 (P2) adds `job_token`;
 - a condition `match` (R-CI-010);
 - a grant specification `grants` (R-CI-013);
 - an optional `max_ttl_seconds`;
-- `options`: `cross_project_source` and `allow_unprotected_refs`;
+- `options`: `cross_project_source` (`deny` by default, or `read_only`; R-CI-012) and
+  `allow_unprotected_refs` (`false` by default; R-CI-011);
 - a description.
 
 Evaluation per exchange:
@@ -633,10 +758,29 @@ Evaluation per exchange:
    silent fall-through would hand out a different, unintended grant.
 
 First match within a tier allows narrow rules at low priority numbers to shape what broader rules
-below them give (for example, "merge request pipelines of acme: read only" before "acme
-protected tags: publish"). Whether to use the union of all matches instead is Q-CI-1.
+below them give. For example, "merge request pipelines of acme: read only" placed before "acme
+protected refs: publish" keeps a merge request pipeline whose source branch is protected from
+publishing, without a negated condition in the publish rule. The price is that a grant every
+pipeline needs (typically a read policy) is listed in each mapping a job can match first. Q-CI-1
+records why this beats a plain union of all matches.
 
 Limits: at most `ci.mappings.max_per_issuer` mappings per CI issuer.
+
+**Principal.** Every mapping is a principal of kind `ci_mapping` in the principal table of
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016, so policies, owner
+records and audit reference it like any other principal (INV-9). Its principal `name` is
+`<CI issuer name>/<mapping name>`, for example `gitlab-com/acme-release-publish` (Q-CI-10):
+
+- Mapping names are unique only per CI issuer. Both parts match `^[a-z0-9][a-z0-9._-]{1,63}$`, so
+  neither contains `/`, and the composite is unique under the table's `UNIQUE (kind, name)` and
+  splits back unambiguously.
+- The API reference is `ci:<CI issuer name>/<mapping name>`
+  ([authorization.md](authorization.md) R-AUTHZ-002).
+- Both parts are immutable (R-CI-002, R-CI-019), so the principal is never renamed.
+- Creating a mapping inserts its principal row in the same transaction. Deleting the mapping, or
+  its CI issuer with `?cascade=true`, deletes the principal row in the same transaction. Policy
+  entries, role bindings and owner entries go with it through their foreign keys (R-AUTHZ-002). A
+  mapping created later under the same name is a new principal and inherits nothing.
 
 **Data model**
 
@@ -644,6 +788,7 @@ Limits: at most `ci.mappings.max_per_issuer` mappings per CI issuer.
 CREATE TABLE ci_mappings (
   id             uuid PRIMARY KEY,
   issuer_id      uuid NOT NULL REFERENCES ci_issuers(id) ON DELETE RESTRICT,
+  principal_id   uuid NOT NULL UNIQUE REFERENCES principal(id),  -- kind 'ci_mapping', name '<issuer>/<mapping>'
   tier           text NOT NULL DEFAULT 'system',      -- 'system' or 'delegation:<uuid>' (P1)
   delegation_id  uuid,                                -- R-CI-023, NULL for the system tier
   name           text NOT NULL CHECK (name ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),
@@ -664,7 +809,9 @@ CREATE TABLE ci_mappings (
 );
 ```
 
-Mappings are cached in memory per replica and invalidated with `NOTIFY ci_mappings` (INV-12).
+Mappings are cached in memory per replica and invalidated with `NOTIFY trove_ci_mappings` (INV-12),
+an administrative channel of [architecture.md](architecture.md) R-ARCH-018, so a disable reaches
+every replica on commit.
 
 **Configuration**
 
@@ -676,11 +823,17 @@ ci:
 
 **Acceptance criteria**
 
-- Mappings `p10` (matches merge request pipelines, read only) and `p20` (matches protected tags,
-  publish): a protected-tag job gets `p20`'s grants, and a merge request job gets only `p10`'s.
+- Mappings `p10` (matches `pipeline_source` `merge_request_event`, read only) and `p20` (matches
+  `ref_protected` true, publish): a push pipeline on a protected tag gets `p20`'s grants. A merge
+  request pipeline whose source branch is protected matches both and gets only `p10`'s; its
+  `npm publish` gets 403.
 - A matched mapping whose template references an absent claim fails with
   `grant_render_failed`, even if a later mapping would match.
 - Two mappings with equal `priority` in one tier cannot be saved (409).
+- Mappings `release-publish` of CI issuers `gitlab-com` and `gitlab-internal` coexist. Their
+  principals are `gitlab-com/release-publish` and `gitlab-internal/release-publish`, and a policy
+  entry `ci:gitlab-com/release-publish` grants nothing to tokens of the other mapping. After the
+  `gitlab-com` mapping is deleted and created again, the policy no longer lists it.
 
 ### R-CI-010 · Claim conditions: matchers and combinators
 Priority: **MVP** · Covers: CIOIDC-008
@@ -790,7 +943,10 @@ Warnings (returned in the save response's `warnings` array; the save succeeds):
   no pin leaf (H-30);
 - `repository_template_unconstrained`: a `repositories` template (R-CI-014) without a `require`
   filter. Every project inside the pin chooses the substituted value through its own path, so it
-  can select any existing repository whose key fits the literal part.
+  can select any existing repository whose key fits the literal part;
+- `shared_ownership`: an inline grant with `deploy`, `overwrite` or `delete` and an explicit
+  `ownership: none`. Names it claims are owned by the mapping, so every project the mapping
+  matches can publish versions of them (R-CI-013, Q-CI-6).
 
 **Acceptance criteria**
 
@@ -852,13 +1008,22 @@ GitLab facts
   `project_id` (and `source_project_*` since 19.5) name the fork, `job_project_*` (since 18.4)
   name the parent, and `ref_protected` is `"false"`.
 
-Cross-project guard (runs before mapping evaluation): a subject token is *cross-project* when two
-of `project_id`, `job_project_id` and `source_project_id` are both present and differ. Then:
+Cross-project guard: before mapping evaluation, a subject token is classified as
+*cross-project* when two of `project_id`, `job_project_id` and `source_project_id` are both
+present and differ. For a cross-project token, the opt-in is decided per matched mapping, by that
+mapping's `options.cross_project_source`:
 
-- If the CI issuer's `cross_project_source` is `deny` (the default) and no matched mapping sets
-  `options.cross_project_source: read_only`, the exchange fails
-  [`cross_project_source_denied`].
-- Otherwise the grants of the matched mappings are capped to `read`.
+- `deny` (the default): the mapping contributes nothing. It is not recorded as one of the token's
+  mappings, so it is not in the token's principal set ([authorization.md](authorization.md)
+  R-AUTHZ-002) and policies naming it never apply to the token.
+- `read_only`: the mapping contributes its grants. The token carries the cap `read`, which bounds
+  its policy, group and inline grants at use time (R-CI-013).
+- If no matched mapping contributes, the exchange fails [`cross_project_source_denied`].
+
+There is no CI-issuer-wide switch. An opt-in covers exactly the grants of the mapping that
+carries it, and never those of another mapping matched in the same exchange (from P1, one per
+tier, R-CI-009). A mapping created later starts at `deny`. Setting `read_only` is visible in the
+API, the UI and the audit event of the save (R-CI-019).
 
 Fork code running in the parent pipeline controls its own CI configuration and could
 exfiltrate anything the token can read. Hence the default `deny`, not `read_only` (Q-CI-9).
@@ -878,6 +1043,9 @@ branch in `ref`. `ref_protected` describes the source branch, so R-CI-011 govern
 - A synthetic token with `project_id = "900"` and `job_project_id = "42"` is rejected with
   `cross_project_source_denied` under the default settings. With a matched mapping that sets
   `read_only`, the issued `scope` contains only `read:` items.
+- From P1 (two tiers): a cross-project token that matches a system mapping without the opt-in
+  and a delegated mapping with `read_only` receives only the delegated mapping's grants, capped
+  to `read`. A policy that names the system mapping grants that token nothing.
 - On a GitLab test instance, a fork merge request pipeline run in the parent project cannot
   publish to `npm-internal`.
 
@@ -922,14 +1090,22 @@ three, before caps and `scope` narrowing:
 - `groups`: trove groups whose grants the token also carries, also evaluated at use time.
 - `inline`: grants defined in the mapping. Each has a set of `repositories` (keys or patterns as
   in INV-9), exactly one of `packages` or `paths` (include/exclude patterns), `actions` from
-  `read`, `annotate`, `deploy`, `overwrite`, `delete`, and `ownership` (`none` by default, or
-  `bind_project`, see R-CI-015). Patterns may be templated (R-CI-014). trove renders inline
-  grants once at exchange time and stores them with the issuance (R-CI-020); a later mapping
-  edit does not change them.
+  `read`, `annotate`, `deploy`, `overwrite`, `delete`, and `ownership` (`bind_project` or
+  `none`, see R-CI-015). Patterns may be templated (R-CI-014). trove renders inline grants once
+  at exchange time and stores them with the issuance (R-CI-020); a later mapping edit does not
+  change them.
+- `ownership` defaults to `bind_project` when `actions` contain `deploy`, `overwrite` or
+  `delete`, and to `none` otherwise (Q-CI-6). The stored mapping always shows the resolved value.
+  An explicit `none` on a writing grant makes the mapping the owner of the names it claims
+  ([authorization.md](authorization.md) R-AUTHZ-018 rule 2), so every project the mapping matches
+  co-owns them; the save succeeds with the warning `shared_ownership` (R-CI-010).
 - `manage` is never grantable to a CI token (save fails with 422 `action_not_allowed`). CI tokens
   never carry the system administration role, and they cannot create tokens, call management
-  endpoints or exchange again. They are accepted on the package-protocol endpoints, `/files/…`
-  and the repository-content operations of `/api/v1` that need only repository actions.
+  endpoints or exchange again. They are accepted on the package-protocol endpoints, `/files/…`,
+  the repository-content operations of `/api/v1` that need only repository actions, and
+  `GET` and `DELETE /api/v1/tokens/current`
+  ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-028, R-AUTH-029), so a
+  job can inspect and revoke its own token (R-CI-017).
 - No user subject: a CI token's principal is the mapping, with the job identity as attributes. It
   is never a user. trove creates no transient user, and no "join automatically" group
   membership applies to CI tokens. This deliberately departs from the behavior described in
@@ -950,6 +1126,9 @@ ownership check of R-CI-015 on writes.
 - Removing the mapping from policy `ci-read-internal` makes the next `npm install` with an
   already issued token fail with 403, without a new exchange.
 - Saving a mapping with `actions: ["manage"]` returns 422 `action_not_allowed`.
+- An inline grant saved with `actions: ["read", "deploy"]` and no `ownership` reads back with
+  `"ownership": "bind_project"`. The same grant with an explicit `"ownership": "none"` is saved
+  with the warning `shared_ownership`.
 
 ### R-CI-014 · Claim templating and escaping
 Priority: **MVP** · Covers: CIOIDC-011, CIOIDC-013
@@ -994,6 +1173,23 @@ So a claim can never widen a pattern: a value of `*` renders as the literal `\*`
 group member names `npm-internal`) could select an arbitrary existing repository. The save fails
 with 422 `template_unanchored`.
 
+Points the catalog leaves open (CIOIDC-011), fixed for trove:
+
+- List-valued claims: only a JSON array of strings is a list. In `groups_from_claim` (R-CI-024)
+  the template runs once per element. A JSON string is one value and is never split at commas,
+  spaces or any other separator, because splitting would let one claim value name several
+  groups. Any other type is a render error.
+- Literal text in a template is literal. Only the `require` filter takes a regular expression
+  (RE2, full match), and a value that does not match it is a render error
+  [`grant_render_failed`]; there is no partial or "no-op" outcome.
+- Escaping inside a string argument is defined by the `string` rule above (`\"` and `\\`); `|`
+  and `$` have no special meaning there.
+- trove does not implement the catalog's stage-pattern language (`$n` back-references,
+  `op:replaceAll`). Patterns written for it are rewritten by hand into this grammar. Literal
+  text, `replace`, `segment`, `trim_prefix`, `trim_suffix` and `require` cover appending and
+  stripping affixes, extracting path segments, replacing characters and rejecting values;
+  rewrites that need regular-expression back-references have no equivalent (ADR-061).
+
 Examples (GitLab project `acme/billing/invoice-api`, namespace `acme/billing`):
 
 | Template | Result |
@@ -1009,6 +1205,8 @@ Examples (GitLab project `acme/billing/invoice-api`, namespace `acme/billing`):
   produces the pattern `a\*b`, which matches only the literal name `a*b`.
 - A `paths` template fed `../etc` fails with `grant_render_failed`.
 - A template with an unknown filter is rejected on save with 422 `template_invalid`.
+- With `groups_from_claim` on claim `groups` (R-CI-024), a JSON array `["a", "b"]` renders two
+  names; the string `"a,b"` renders the single value `a,b`, which `slug` turns into `a-b`.
 
 ### R-CI-015 · Package ownership binding
 Priority: **MVP** · Covers: CIOIDC-013
@@ -1019,23 +1217,34 @@ project path can also be taken over by another project after a rename. An inline
 `ownership: bind_project` therefore binds each package name to the GitLab project that first
 publishes it:
 
-- Owner identity: `ci:<ci-issuer-id>:project:<project_id>`. It is keyed by the immutable
-  `project_id`. `project_path` is kept as a display value and updated on every publish.
+- Owner identity: the CI issuer and the immutable `project_id`. It is stored by CI issuer ID and
+  project ID, and referenced in the API as `ci:<CI issuer name>:project:<project_id>`
+  ([authorization.md](authorization.md) R-AUTHZ-018, R-AUTHZ-019). `project_path` is kept as a
+  display value and updated on every publish.
 - On `deploy` or `overwrite` of package name *N* (normalized as the format defines: npm names
   case-sensitive, NuGet IDs case-insensitive) to repository *R* with such a grant:
-  - *N* has no owner in *R*: the publish claims it. The owner record and the upload commit
-    together, and a concurrent first publish of the same name loses on the store's unique
-    constraint and gets 403.
-  - The owner is this project: the publish is allowed.
-  - Another owner, including a user or service account: 403 [`package_owned_by_other_owner`],
-    plus audit event `ci.package_ownership.conflict`. This holds even though the grant pattern
-    matches.
+  - *N* has no owner and no stored version in *R*'s ownership domain: the publish claims it for
+    this project only. The owner record and the upload commit together. A concurrent first
+    publish of the same name by another project loses on the store's primary key and gets 403
+    (R-AUTHZ-018 rule 5).
+  - One of the token's owner identities is an owner: the publish is allowed. These identities are
+    the project identity and, as R-AUTHZ-018 rule 1 defines for every CI token, the token's
+    mappings and the groups they list.
+  - Only other owners, including users or service accounts: 403
+    [`package_owned_by_other_owner`], plus audit event `ci.package_ownership.conflict`. This holds
+    even though the grant pattern matches.
+  - *N* has stored versions but no owner (imported, published before enforcement was switched
+    on, or released): 403 [`package_owned_by_other_owner`]. Such a name needs `manage`
+    (R-AUTHZ-018 rule 3), which a CI token never holds. A person with `manage` adds the project
+    as owner (R-AUTHZ-019), and the next publish succeeds. A pattern match alone never takes over
+    an existing package.
 - A rename of the GitLab project keeps ownership, because `project_id` does not change. A new
   project that reuses the old path gets 403, which is the intended outcome.
 - Ownership records live in the package-ownership store of [authorization.md](authorization.md).
   That page also owns the administrator operations to pre-assign, transfer and release an owner.
   This page defines only the CI owner identity and when a CI publish claims or checks ownership.
-  Whether claiming on first publish is the right default is Q-CI-6.
+  CI ownership is acquired by the first publish, with `bind_project` as the default of writing
+  inline grants (R-CI-013, Q-CI-6, matching [authorization.md](authorization.md) Q-AUTHZ-6).
 
 **Acceptance criteria**
 
@@ -1045,6 +1254,9 @@ publishes it:
 - After renaming project A in GitLab, its next tag pipeline publishes `1.0.2` successfully.
 - Two concurrent first publishes of the same new name from two projects result in exactly one
   owner.
+- `@acme-billing/legacy` was imported with versions and has no owner. Project A's tag pipeline
+  gets 403 `package_owned_by_other_owner` on `npm publish`. After an administrator adds the owner
+  `ci:gitlab-com:project:101`, the same pipeline publishes successfully.
 
 ### R-CI-016 · CI token lifetime
 Priority: **MVP** · Covers: CIOIDC-007, CIOIDC-031
@@ -1066,8 +1278,10 @@ ttl = min( requested ttl          (if the request sent `ttl`; otherwise ci.token
   [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-026 (6 h). trove
   refuses to start with a larger value. One ceiling governs every CI token, so the two pages
   cannot drift apart.
-- A job that runs longer than one CI token's lifetime exchanges its ID token again. The ID token
-  stays valid until the job timeout, which is why single use is off by default (R-CI-018).
+- A job that runs longer than one CI token's lifetime exchanges again. A GitLab job presents the
+  same ID token, which stays valid until the job timeout; that is why single use is off by
+  default for `gitlab` issuers. A GitHub job requests a fresh ID token for each exchange
+  (R-CI-018, R-CI-025).
 - `expires_in` in the response is the computed `ttl`. The token's stored expiry is
   `issued_at + ttl`.
 
@@ -1105,14 +1319,20 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   - when a mapping is disabled or deleted (its unexpired tokens);
   - when a CI issuer is disabled or deleted (all of its unexpired tokens);
   - through the bulk revoke operation (R-CI-020);
-  - by an administrator revoking one token by ID (identity-and-authentication.md).
+  - by an administrator revoking one token by ID (identity-and-authentication.md);
+  - by the token itself through `DELETE /api/v1/tokens/current` (R-AUTH-029). The reference
+    pipeline and the setup snippets end each job's `script` with this call (R-CI-027, R-CI-028),
+    so the token of a job that succeeds dies with the job (Q-CI-7).
 
   Editing a mapping does not revoke its tokens. The inline grants of existing tokens stay frozen
   until they expire, and policy and group grants follow live changes.
-- The `principal` row of a mapping (kind `ci_mapping`,
-  [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016) mirrors `enabled`:
-  disabling the mapping sets the principal's `status` to `disabled` in the same transaction, and
-  enabling it sets it back. Token validation (R-AUTH-023) then rejects every CI token of a disabled
+
+  Every revocation writes `ci.token.revoked` (R-CI-020). From P1 the revocation journal keeps it
+  across a database restore, so a CI token revoked after the restore point stays revoked.
+- The `principal` row of a mapping (kind `ci_mapping`, name `<CI issuer name>/<mapping name>`,
+  R-CI-009; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016) mirrors
+  `enabled`: disabling the mapping sets the principal's `status` to `disabled` in the same
+  transaction, and enabling it sets it back. Token validation (R-AUTH-023) then rejects every CI token of a disabled
   mapping with `principal_disabled`, including one that escaped the revocation sweep. Together
   with the re-check of R-CI-007, no token of a disabled mapping is usable beyond the revocation
   latency bound.
@@ -1123,6 +1343,8 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   through Basic credentials, and with `dotnet nuget push -k`.
 - Disabling a mapping makes its unexpired tokens fail with 401 on the next request on every
   replica.
+- `DELETE /api/v1/tokens/current` with a CI token answers 204, and the token gets 401 on the next
+  `npm view`.
 
 ### R-CI-018 · Replay protection
 Priority: **MVP** · Covers: CIOIDC-018, CIOIDC-019
@@ -1133,15 +1355,23 @@ Priority: **MVP** · Covers: CIOIDC-018, CIOIDC-019
 - With `single_use_subject_tokens: true`, a second exchange of the same `jti` fails
   [`subject_token_replayed`] and creates audit event `ci.exchange.replayed`. A subject token
   without `jti` is then rejected [`required_claim_missing`].
-- With `false` (the default), repeated exchanges are allowed and counted. The issuance list shows
-  the count. Once the count exceeds `ci.replay.warn_after_exchanges`, every further exchange
-  emits a `ci.exchange.repeated` audit event.
+- With `false`, repeated exchanges are allowed and counted. The issuance list shows the count.
+  Once the count exceeds `ci.replay.warn_after_exchanges`, every further exchange emits a
+  `ci.exchange.repeated` audit event.
+- Defaults by kind (Q-CI-4): `false` for `gitlab`, `true` for `github` and `generic`. An
+  administrator may override either way per CI issuer.
 - Rows are deleted by a cleanup job once `exp + clock_skew + ci.replay.retention_after_expiry`
   has passed. After that the token fails the time check anyway.
-- Why the default is off: GitLab jobs often exchange once per tool step and retry on network
-  errors, and a long job has to re-exchange (R-CI-016). The audience binding, the short
-  ID-token lifetime and the masked job log already limit replay. Single use is the stricter
-  option for CI issuers whose audience is not exclusive to trove (R-CI-026). See Q-CI-4.
+- Why the default is off for GitLab: a GitLab job receives its ID tokens as the variables its
+  `id_tokens:` block declares and has no documented way to request another one during the run.
+  A job that exchanges in several steps, retries after a network error or outlives its first CI
+  token (R-CI-016) must present the same ID token again. The exclusive audience (R-CI-004 step 7),
+  the short ID-token lifetime and the masked job log limit replay there, and the exchange count
+  makes repeated use visible.
+- Why it is on for GitHub and generic issuers: a GitHub job requests an ID token on demand, so
+  each exchange can present a fresh one and single use costs a correct job nothing. A generic
+  issuer's audience is often shared with every other relying party of that issuer (R-CI-026), so
+  audience binding proves nothing there, and single use is the remaining control.
 
 **Data model**
 
@@ -1179,6 +1409,8 @@ ci:
 
 - With single use on, exchanging the same ID token twice with `curl` returns 200 and then 400
   `subject_token_replayed`. Concurrent exchanges on two replicas yield exactly one 200.
+- A `gitlab` CI issuer created without `single_use_subject_tokens` reads back `false`; a
+  `github` or `generic` one (P1) reads back `true`.
 - A failed exchange (for example the database rejects the token insert) does not increment the
   count, so a retry succeeds.
 
@@ -1191,10 +1423,13 @@ System administrators manage mappings (delegates in P1, R-CI-023):
 |---|---|---|---|
 | `GET /api/v1/ci/issuers/{issuer}/mappings` | List in evaluation order (tier, priority) | 200 | 404 issuer |
 | `POST /api/v1/ci/issuers/{issuer}/mappings` | Create | 201 + record + `warnings` | 409 name or priority taken, 422 rule violation |
-| `GET /api/v1/ci/issuers/{issuer}/mappings/{name}` | Read | 200 | 404 |
-| `PUT /api/v1/ci/issuers/{issuer}/mappings/{name}` | Replace (`name` immutable) | 200 + `warnings` | 404, 409, 422 |
-| `DELETE /api/v1/ci/issuers/{issuer}/mappings/{name}` | Delete; revokes its unexpired tokens | 204 | 404 |
+| `GET /api/v1/ci/issuers/{issuer}/mappings/{name}` | Read | 200 + `ETag` | 404 |
+| `PUT /api/v1/ci/issuers/{issuer}/mappings/{name}` | Replace (`name` immutable); `If-Match` required | 200 + new `ETag` + `warnings` | 404, 409 priority taken, 412 `precondition_failed` (stale `If-Match`), 422, 428 `precondition_required` (no `If-Match`) |
+| `DELETE /api/v1/ci/issuers/{issuer}/mappings/{name}` | Delete; revokes its unexpired tokens and deletes its principal (R-CI-009); `If-Match` optional | 204 | 404, 412 |
 | `POST /api/v1/ci/issuers/{issuer}/evaluate` | Dry run against a claim set | 200 | 404, 422 |
+
+Representation rules (closed enums, PUT as full replacement, ETag concurrency with `If-Match`
+required on PUT, lowerCamelCase on the wire) are those of R-CI-002.
 
 Mapping record sketch:
 
@@ -1250,8 +1485,23 @@ the time claims are given, issues nothing and records no `jti`:
 }
 ```
 
-Every create, update and delete emits an audit event with the before and after record
-(R-CI-020).
+Every create, update, disable, enable and delete emits an audit event with the before and after
+record (R-CI-020). From P1, disables, deletions and updates also enter the revocation journal, and
+its replay after a database restore disables, never deletes, a mapping (R-CI-020).
+
+**Configuration documents (P1).** A configuration document
+([operations-and-observability.md](operations-and-observability.md) R-OPS-029) declares mappings
+under the kind `ciMappings`. Each entry is the request body of
+`POST /api/v1/ci/issuers/{issuer}/mappings`, with its lowerCamelCase field names, validation,
+save-time rules, warnings and defaults, plus the field `issuer`, which carries the CI issuer name
+of the path parameter. An entry is identified by `issuer` and `name`, the two parts of the
+mapping's principal name (R-CI-009). The issuer may be declared in the same document
+(`ciIssuers`, R-CI-002) or exist already; the apply order of R-OPS-030 creates issuers before
+mappings and deletes mappings before issuers. Documents declare mappings of the `system` tier only,
+because the tier is a query parameter and not part of the body; delegated mappings (R-CI-023)
+are managed through the API. Under the default lock of R-OPS-029, `PUT` and `DELETE` of a managed
+mapping through the API answer 409 and name the owning document. Applying writes the same audit
+events as the API.
 
 **Acceptance criteria**
 
@@ -1328,14 +1578,95 @@ CREATE INDEX ci_issuances_expiry  ON ci_token_issuances (expires_at);
 | `ci.exchange.succeeded` | Token issued | `token_id`, CI issuer, mappings, claim snapshot, granted scope, TTL |
 | `ci.exchange.denied` | Any 400/429 | `reason`, and the CI issuer if one was resolved. Before the signature is verified, only the unverified `iss` and `kid` are logged and no other claims, so forged tokens cannot inject log content. After verification, the claim snapshot is logged. |
 | `ci.exchange.replayed`, `ci.exchange.repeated` | R-CI-018 | `jti`, count |
-| `ci.token.revoked` | Any revocation of a CI token | cause (mapping, issuer, bulk, single) |
-| `ci.issuer.*`, `ci.mapping.*` | Create, update, delete | before and after record |
+| `ci.token.revoked` | Any revocation of a CI token | the revoked token IDs, at most 1,000 per event (R-OPS-014; a larger revocation writes several events), and the cause (mapping, issuer, bulk, single, self through `DELETE /api/v1/tokens/current`) |
+| `ci.issuer.created`, `ci.issuer.updated`, `ci.issuer.disabled`, `ci.issuer.enabled`, `ci.issuer.deleted` | Create; `PUT` (below); delete | before and after record |
+| `ci.mapping.created`, `ci.mapping.updated`, `ci.mapping.disabled`, `ci.mapping.enabled`, `ci.mapping.deleted` | Create; `PUT` (below); delete, including the cascades of an issuer or delegation deletion | before and after record |
 | `ci.keys.refreshed`, `ci.keys.refresh_failed` | R-CI-003 | `kid` list, error |
 | `ci.package_ownership.claimed`, `ci.package_ownership.conflict` | R-CI-015 | repository, package, owner, `token_id` |
 | `ci.job_token.lookup` | R-CI-022 | outcome, GitLab status, latency |
 
+A `PUT` of an issuer or mapping writes exactly one event, chosen by `enabled`: `.disabled` when it
+changes `true` to `false`, `.enabled` when it changes `false` to `true`, and `.updated` otherwise.
+Each carries the full before and after record, so a `.disabled` event also shows the other fields
+changed with it. Applying a configuration document (R-OPS-030) writes the same events as the API.
+
 trove never logs the subject token, the job token or the issued token, at any log level. The
 HTTP client used for GitLab calls redacts the `JOB-TOKEN` and `Authorization` headers.
+
+**Revocation journal (P1).** A database restore to time *t* undoes every access removal made
+after *t* ([ha-and-helm.md](ha-and-helm.md) H-37). The events below are therefore flagged
+`journal: revocation` in the event registry
+([operations-and-observability.md](operations-and-observability.md) R-OPS-014). The audit writer
+copies each one into the revocation journal of [ha-and-helm.md](ha-and-helm.md) R-HA-054, and
+`trove admin post-restore` re-applies it (Q-HA-9). An entry carries IDs and records, never a token
+value, hash or other secret. CI issuer and mapping records hold no secret: `ca_bundle_ref` is a
+reference to a PEM bundle, not key material.
+
+| Event | The journal entry carries | Replay (R-HA-054) |
+|---|---|---|
+| `ci.token.revoked` | The revoked token IDs and the cause | Revoke each token as R-AUTH-029 does |
+| `ci.issuer.disabled`, `ci.issuer.deleted` | The issuer's ID and name, and its record before the change | Disable the issuer as R-CI-002 does, which revokes its unexpired tokens. A deleted issuer is disabled, never deleted |
+| `ci.mapping.disabled`, `ci.mapping.deleted` | The mapping's ID, CI issuer, name, tier and priority, and its record before the change | Disable the mapping as R-CI-019 does (tokens revoked, principal `disabled`, R-CI-017), never delete it, and suspend the later mappings of its tier (below) |
+| `ci.issuer.updated`, `ci.mapping.updated` | The record before and after the change | Update rule of R-HA-054 with the comparators below |
+
+- **Not journaled.** The `.created` and `.enabled` events, `ci.exchange.*`, `ci.keys.*`,
+  `ci.package_ownership.*` and `ci.job_token.lookup`. They grant or only record, and replay never
+  grants (R-HA-054).
+- **Every path writes the event.** The API of R-CI-002 and R-CI-019, `?cascade=true` on an issuer
+  (one `ci.mapping.deleted` per mapping), the deletion of a delegation (R-CI-023), a
+  configuration-document apply (R-OPS-030), and every revocation cause of R-CI-017, including the
+  bulk revocation above.
+- **Suspended means disabled.** When the update rule suspends an issuer or a mapping (case 3 of
+  R-HA-054), replay disables it as in the table, and the output prints the journaled after-state for
+  review. Replay never deletes an issuer or a mapping, so a mistaken or forged entry stays
+  reversible: an administrator enables the object again.
+- **Replay never lifts a first-match shadow (Q-CI-11).** Within a tier, the first matching mapping
+  decides (R-CI-009). Disabling a mapping therefore lets the jobs it matched fall through to a later
+  mapping, which may grant more: in R-CI-009's example, disabling the read-only merge-request
+  mapping lets merge request pipelines from a protected source branch publish. Whenever replay
+  disables a mapping that was enabled, for a disable or delete entry or as a suspension, it also
+  suspends every enabled mapping of the same tier with a higher `priority` number, disables each as
+  R-CI-019 does, and prints each as `suspended`. A mapping that was already disabled needs no such
+  step, because its jobs already fall through. Mappings of other tiers are not touched, because
+  tiers combine by union. An issuer needs no such step: `iss` selects exactly one issuer (R-CI-005), and a disabled
+  issuer answers every exchange with `issuer_disabled`.
+
+**Comparators.** `narrows(current, after)` of R-HA-054 is true only when every field in the table
+is equal in `current` and `after` or differs in the direction the table allows. Any other
+difference, including a field the comparator does not know, makes it false. Case 2's test of
+R-HA-054, whether the journaled before-state is contained in the after-state, is
+`narrows(after, before)` under the same rules. `description` is ignored, and replay never changes
+identifying fields: `name`, `issuer` and `kind` of an issuer; `name`, CI issuer and tier of a
+mapping.
+
+| Object | Field | Narrowing difference allowed |
+|---|---|---|
+| CI issuer | `allowed_audiences`, `allowed_algorithms`, `allowed_typ` | `after` is a non-empty subset |
+| CI issuer | `required_claims` | `after` is a superset |
+| CI issuer | `exclusive_audience`, `single_use_subject_tokens` | `after` is `true` |
+| CI issuer | `allow_missing_typ`, `job_token_fallback.enabled` | `after` is `false` |
+| CI issuer | `clock_skew_seconds`, `max_ttl_seconds` | `after` is not larger; a `null` `max_ttl_seconds` counts as unbounded |
+| CI issuer | `enabled`, `discovery_url`, `jwks_uri`, `ca_bundle_ref`, `use_outbound_proxy`, `public_issuer`, `pin_claims`, every other field of `job_token_fallback` | none, must be equal |
+| Mapping | `grants` | `after` is a pure removal (below) |
+| Mapping | `max_ttl_seconds` | `after` is not larger; `null` counts as unbounded |
+| Mapping | `options.cross_project_source` | `after` is `deny` |
+| Mapping | `options.allow_unprotected_refs` | `after` is `false` |
+| Mapping | `enabled`, `priority`, `subject_kinds`, `match` | none, must be equal |
+
+- **Pure removal of grants.** Nothing was added: `policies`, `groups` and, from P1,
+  `service_accounts` are subsets. Every inline grant of `after` equals an inline grant of `current`,
+  except that its `repositories`, its `actions` and the `include` list of its `packages` or `paths`
+  may be non-empty subsets; `exclude`, `ownership` and every template stay unchanged. From P1,
+  `groups_from_claim` is unchanged or removed, and `triggering_user` is unchanged. The result is not
+  empty (R-CI-013 refuses an empty grant). Removing the last include pattern never counts, because
+  an empty include list is unrestricted ([authorization.md](authorization.md) R-AUTHZ-005).
+  Removing `triggering_user` widens the grant, because it narrows by intersection (R-CI-024).
+- **Conditions and order are never a narrowing.** Every change of `match` counts as not narrowing,
+  even one that only removes a leaf: removing a leaf widens an `all`, narrows an `any` and flips
+  under `not`. Changes of `enabled`, `priority` and `subject_kinds` count the same way, because each
+  changes which mapping is a tier's first match and can let jobs fall through to a later mapping.
+  A different key source (`discovery_url`, `jwks_uri`, `ca_bundle_ref`) cannot be ordered at all.
+  For each of these R-HA-054 skips the entry or suspends the object.
 
 **Metrics** (INV-16; labels have bounded cardinality and carry no project or user names):
 
@@ -1364,6 +1695,22 @@ ci:
   of that pipeline's tokens fail with 401.
 - A forged token with a bad signature and a 10 kB `project_path` produces a
   `ci.exchange.denied` event without `project_path`.
+- `PUT` of a mapping that changes only `enabled` from `true` to `false` writes one
+  `ci.mapping.disabled` event and no `ci.mapping.updated` event.
+- From P1, each of the following is made after the restore point *t*, followed by a restore to *t*
+  and `post-restore` (R-HA-025):
+  - A CI token issued with `ttl=3600` and revoked through `POST /api/v1/ci/issuances/revoke` is
+    rejected as revoked, not as expired, and the output lists `ci.token.revoked … applied`.
+  - Mappings `acme-mr-readonly` (priority 10), `acme-release-publish` (100) and `acme-read` (900)
+    share the `system` tier, and `acme-mr-readonly` is deleted. After replay all three are
+    disabled and none is deleted: the output lists `ci.mapping.deleted … applied` and the other two
+    as `suspended`. A merge request pipeline from a protected source branch then gets
+    `no_matching_mapping`, not a deploy grant.
+  - `deploy` is removed from an inline grant of a mapping: replay applies it. A leaf is removed
+    from the `all` of that mapping's `match`: the mapping ends `suspended`, that is disabled.
+  - A hand-written journal object for `ci.issuer.updated` whose after-state adds an audience, and
+    one whose before-state is forged to make that addition look like a removal, end `skipped` or
+    `suspended`, and the issuer accepts no new audience.
 
 ### R-CI-021 · Exchange endpoint hardening
 Priority: **MVP** · Covers: CIOIDC-018
@@ -1402,12 +1749,21 @@ ci:
   than 100 audit rows.
 
 ### R-CI-022 · `CI_JOB_TOKEN` fallback
-Priority: **P1** · Covers: CIOIDC-038, CIOIDC-039, CIOIDC-040
+Priority: **P2** · Covers: CIOIDC-038, CIOIDC-039, CIOIDC-040
 
 An optional mode for jobs that present `CI_JOB_TOKEN` instead of an ID token. It is off by
-default (INV-10). Q-CI-5 weighs whether to build it at all. The mode is enabled only when both
-the global `ci.job_token_fallback.enabled` and the CI issuer's `job_token_fallback.enabled` are
-`true`, and only for `gitlab` issuers.
+default (INV-10). It is deferred to P2 and built only when a concrete population of pipelines
+cannot add an `id_tokens:` block (Q-CI-5). Until then, builds without the mode:
+
+- answer the job-token subject type with `unsupported_subject_token_type`;
+- refuse a CI issuer with `job_token_fallback.enabled: true` and a mapping whose `subject_kinds`
+  contains `job_token`, with 422 `job_token_fallback_not_available`;
+- refuse to start when `ci.job_token_fallback.enabled` is `true`, with a message that names the
+  key.
+
+Once built, the mode is enabled only when both the global
+`ci.job_token_fallback.enabled` and the CI issuer's `job_token_fallback.enabled` are `true`, and
+only for `gitlab` issuers.
 
 ```mermaid
 sequenceDiagram
@@ -1431,9 +1787,11 @@ Behavior:
   (no SSRF). TLS, CA bundle and outbound proxy are as in R-CI-003. Timeout
   `ci.job_token_fallback.request_timeout`; one retry only on connection errors. GitLab 401/403 →
   [`job_token_rejected`]; other errors or a timeout → 503 [`gitlab_unreachable`].
-- The response must have `status = "running"`, otherwise [`job_not_running`]. trove
-  synthesizes claims only from fields documented for this endpoint (verified 2026-10-28 against
-  [Jobs API, retrieve a job by job token](https://docs.gitlab.com/api/jobs/#retrieve-a-job-by-job-token)):
+- The response must have `status = "running"`, otherwise [`job_not_running`]. GitLab documents
+  this endpoint only through an example response, with no field descriptions
+  ([Jobs API, retrieve a job by job token](https://docs.gitlab.com/api/jobs/#retrieve-a-job-by-job-token),
+  read 2026-10-28). trove synthesizes claims only from fields of that example whose meaning is
+  unambiguous:
 
   | Synthesized claim | Source field |
   |---|---|
@@ -1446,9 +1804,21 @@ Behavior:
   | `user_id`, `user_login` | `user.id`, `user.username` |
   | `iss` | the CI issuer's issuer URL (not from GitLab) |
 
-  The response contains no project path, no namespace and no ref protection. `project_path`,
-  `namespace_*`, `ref_protected`, `environment*`, `pipeline_source` and `jti` are therefore
+  The example contains no project path (only inside `web_url`, which trove does not parse), no
+  namespace, no ref protection and no `job_project_*` or `source_project_*` fields; its `project`
+  object holds only `ci_job_token_scope_enabled`. `project_path`, `namespace_*`,
+  `ref_protected`, `environment*`, `job_project_*`, `source_project_*` and `jti` are therefore
   absent, and conditions on them behave as R-CI-010 defines for missing claims.
+- The example also carries `source` (`"push"`). Its meaning is not documented for this endpoint;
+  trove assumes it holds the pipeline-source values of `CI_PIPELINE_SOURCE` (not verified against
+  a GitLab instance). Because that meaning is an assumption, trove never synthesizes
+  `pipeline_source` from it, so no mapping can grant on it. It uses the field only to refuse: a
+  job whose `source` is absent,
+  `merge_request_event` or `external_pull_request_event` counts as cross-project, because the
+  fallback cannot tell a fork pipeline run in the parent project from a same-project one (H-29).
+  The cross-project rule of R-CI-012 then applies per matched mapping: only a `job_token`
+  mapping that sets `cross_project_source: read_only` contributes, and without one the exchange
+  fails [`cross_project_source_denied`].
 - Only mappings with `job_token` in `subject_kinds` are evaluated. ID-token mappings never match
   fallback claims by accident. The pinning rule applies to `project_id`.
 - Fallback grants are always capped to `read`. Without `ref_protected`, trove cannot tell a
@@ -1482,11 +1852,16 @@ ci:
 
 - With the mode disabled (default), `subject_token_type=urn:trove:token-type:gitlab-job-token`
   answers 400 `unsupported_subject_token_type` and trove makes no call to GitLab.
+- In a build without the mode, `PUT` of a CI issuer with `"job_token_fallback": {"enabled": true}`
+  answers 422 `job_token_fallback_not_available`.
 - With the mode enabled and a mapping `{"claim": "project_id", "equals": "4242"}` with
   `subject_kinds: ["job_token"]`, a running job of project 4242 gets a token whose `scope` holds
   only `read:` items. `npm install` works and `npm publish` gets 403.
 - After the job has finished, an exchange with its job token answers `job_token_rejected` or
   `job_not_running`.
+- A merge request pipeline job of project 4242 gets `cross_project_source_denied` under the
+  default settings, and a token with only `read:` items once the mapping sets
+  `cross_project_source: read_only`.
 - A packet capture of the GitLab call shows the token only in the `JOB-TOKEN` header, and no
   trove log line contains it.
 
@@ -1514,7 +1889,8 @@ explicit bounds:
   shadow nor reduce what system mappings give.
 - Visibility: delegates list only the mappings of their own delegations. The catalog's switch for
   hiding global mappings (CIOIDC-016, IAM-040) is therefore unnecessary.
-- Deleting a delegation deletes its mappings and revokes their tokens.
+- Deleting a delegation deletes its mappings and revokes their tokens. It writes one
+  `ci.mapping.deleted` per mapping, so the revocation journal covers them (R-CI-020).
 
 **Data model**
 
@@ -1529,6 +1905,7 @@ CREATE TABLE ci_delegations (
   allowed_repositories   text[] NOT NULL,
   allowed_actions        text[] NOT NULL,
   max_ttl                interval,
+  version                bigint NOT NULL DEFAULT 1,      -- ETag, R-API-012
   created_by             text NOT NULL,
   created_at             timestamptz NOT NULL DEFAULT now(),
   CHECK (cardinality(allowed_project_ids) + cardinality(allowed_namespace_ids) >= 1),
@@ -1537,8 +1914,13 @@ CREATE TABLE ci_delegations (
 ```
 
 **API**: `GET|POST /api/v1/ci/issuers/{issuer}/delegations` and
-`GET|PUT|DELETE /api/v1/ci/issuers/{issuer}/delegations/{id}` (system administrator). The mapping
-endpoints of R-CI-019 accept the `tier` query parameter for delegates.
+`GET|PUT|DELETE /api/v1/ci/issuers/{issuer}/delegations/{id}` (system administrator). A
+delegation follows R-CI-002's concurrency rules: `GET` returns `ETag: "<version>"`, `PUT` replaces
+it and requires `If-Match` (428 `precondition_required` without it, 412 `precondition_failed` when
+stale, `If-Match: *` for a deliberate blind write), and `DELETE` accepts it. The bounds are arrays
+replaced whole, so a stale `PUT` could silently restore a project or repository another
+administrator had just removed. The mapping endpoints of R-CI-019 accept the `tier` query
+parameter for delegates.
 
 **Acceptance criteria**
 
@@ -1607,9 +1989,15 @@ Same mechanism, kind `github`:
   (fetched 2026-10-28). An enterprise with its own issuer URL configures that URL instead.
 - Preset: `public_issuer: true`; `pin_claims`: `repository_id`, `repository_owner_id`;
   `required_claims`: `iss`, `sub`, `aud`, `exp`, `iat`, `jti`, `repository`, `repository_id`,
-  `repository_owner`, `repository_owner_id`, `ref`, `ref_type`, `event_name`, `run_id`.
-  `repository_owner_id` plays the role of an organization restriction. Unlike the organization
-  name, it survives renames.
+  `repository_owner`, `repository_owner_id`, `ref`, `ref_type`, `event_name`, `run_id`;
+  `single_use_subject_tokens: true` (R-CI-018). `repository_owner_id` plays the role of an
+  organization restriction. Unlike the organization name, it survives renames.
+- Each exchange requests a fresh ID token from the runner, as the step below does. A workflow that
+  stores one ID token and exchanges it twice gets `subject_token_replayed` on the second exchange.
+- npm's native trusted publishing on GitHub Actions requests its ID token itself, with audience
+  exactly `npm:${new URL(registry).hostname}`, and posts it to the exchange route of
+  [formats/npm.md](formats/npm.md) R-NPM-022. The default `allowed_audiences` of R-CI-001 contains
+  that value for a registry URL on trove's base URL, so no audience setting is needed for it.
 - The `unprotected_write` rule uses GitHub's `ref_protected` claim (listed in GitHub's
   discovery `claims_supported`). For reusable workflows, `job_workflow_ref` can pin the called
   workflow.
@@ -1642,6 +2030,8 @@ Same mechanism, kind `github`:
   `no_matching_mapping`.
 - A `github` mapping without a `repository_id` or `repository_owner_id` pin is rejected with
   `pin_required`.
+- Two steps of one job that each request their own ID token both exchange successfully; a
+  second exchange of the same ID token answers 400 `subject_token_replayed`.
 
 ### R-CI-026 · Generic OIDC issuers
 Priority: **P1** · Covers: CIOIDC-002, CIOIDC-004
@@ -1658,8 +2048,8 @@ Kubernetes service-account token issuers, and other CI systems.
   - audience `api://AzureADTokenExchange`.
 
   Because that audience is shared with every other relying party of the same issuer, trove
-  cannot rely on it for exclusivity. Mappings should pin `sub` exactly, and
-  `single_use_subject_tokens: true` is recommended.
+  cannot rely on it for exclusivity. Mappings should pin `sub` exactly. `generic` issuers
+  therefore default to `single_use_subject_tokens: true` (R-CI-018, Q-CI-4).
 - Microsoft Entra applications that sign with application-specific keys are supported by setting
   `jwks_uri` explicitly. No separate application-ID setting exists.
 
@@ -1679,7 +2069,9 @@ ready-to-paste snippet as `text/plain`:
 - the `id_tokens:` block (or the GitHub permission and exchange step) with the issuer's first
   allowed audience;
 - the exchange step;
-- the `.npmrc` or `nuget.config` lines for the repositories named in the mapping's grants.
+- the `.npmrc` or `nuget.config` lines for the repositories named in the mapping's grants;
+- the closing step that revokes the CI token through `DELETE /api/v1/tokens/current`
+  (R-CI-017).
 
 The snippet contains no secret. Required permission: system administrator, or the delegate who
 owns the mapping. The UI shows it on the CI identity screen
@@ -1709,6 +2101,8 @@ there.
   or fails with `no_matching_mapping` if none exists.
 - `GET /api/v1/ci/issuances?job_id=$CI_JOB_ID` lists both jobs' tokens with the right
   `project_id`, `ref` and `sha`.
+- After both jobs pass, their CI tokens are revoked (`token.revoked`, reason `owner`) and get 401
+  on `npm view`, although their `expires_in` has not passed.
 - No job log contains a `trv_cit_` value or the ID token.
 
 ## Examples
@@ -1722,10 +2116,13 @@ CI issuer for GitLab.com (`POST /api/v1/ci/issuers`; values are examples):
   "name": "gitlab-com",
   "kind": "gitlab",
   "issuer": "https://gitlab.com",
-  "allowed_audiences": ["https://packages.example.com"],
+  "allowed_audiences": ["https://packages.example.com", "npm:packages.example.com"],
   "description": "GitLab.com group acme"
 }
 ```
+
+The two audiences are the default (R-CI-001), written out here; the second serves npm-family
+trusted publishing ([formats/npm.md](formats/npm.md) R-NPM-022, P1).
 
 Mapping (`POST /api/v1/ci/issuers/gitlab-com/mappings`). Namespace `acme/billing` has ID `4711`
 in this example:
@@ -1760,6 +2157,51 @@ in this example:
 
 A second mapping with a higher priority number, for example `acme-read` at priority 900, pins
 the same namespace and grants only `ci-read-internal` to every other pipeline of the group.
+
+The same CI issuer and mapping in a configuration document (P1,
+[operations-and-observability.md](operations-and-observability.md) R-OPS-029). Each entry is the
+request body above in its lowerCamelCase wire form (R-CI-002); a `ciMappings` entry adds `issuer`,
+the path parameter of the create operation (R-CI-019):
+
+```yaml
+apiVersion: trove/v1
+kind: Configuration
+metadata:
+  name: ci-gitlab-com                      # example
+spec:
+  ciIssuers:
+    - name: gitlab-com
+      kind: gitlab
+      issuer: https://gitlab.com
+      allowedAudiences: ["https://packages.example.com", "npm:packages.example.com"]
+      description: GitLab.com group acme
+  ciMappings:
+    - issuer: gitlab-com                   # {issuer} of POST /api/v1/ci/issuers/{issuer}/mappings
+      name: acme-release-publish
+      description: Protected tags in acme/billing publish their own npm and NuGet packages
+      priority: 100
+      match:
+        all:
+          - {claim: namespace_id, equals: "4711"}
+          - {claim: ref_type, equals: tag}
+          - {claim: ref_protected, equals: true}
+          - {claim: pipeline_source, in: [push, web]}
+      grants:
+        policies: [ci-read-internal]
+        inline:
+          - repositories: [npm-internal]
+            packages: {include: ["@{{ namespace_path | slug }}/*"]}
+            actions: [read, deploy]
+            ownership: bind_project
+          - repositories: [nuget-internal]
+            packages:
+              include:
+                - '{{ project_path | replace "/" "." | replace "-" "" }}'
+                - '{{ project_path | replace "/" "." | replace "-" "" }}.*'
+            actions: [read, deploy]
+            ownership: bind_project
+      maxTtlSeconds: 1800
+```
 
 ### GitLab side
 
@@ -1809,8 +2251,10 @@ publish-npm:
       //packages.example.com/api/npm/npm-internal/:_authToken=${TROVE_TOKEN}
       EOF
     - npm ci
-    - npm version --no-git-tag-version "${CI_COMMIT_TAG#v}"
+    - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
     - npm publish --registry https://packages.example.com/api/npm/npm-internal/
+    # Last step: revoke the CI token, so it does not outlive the job (R-CI-017).
+    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 
 push-nuget:
   stage: publish
@@ -1828,6 +2272,7 @@ push-nuget:
       dotnet nuget push "out/*.nupkg"
       --source "$TROVE_URL/api/nuget/nuget-internal/v3/index.json"
       --api-key "$TROVE_TOKEN"
+    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 ```
 
 `nuget.config` in the repository root. Developers use the same file with their personal access
@@ -1852,7 +2297,16 @@ token in `TROVE_TOKEN`:
 Notes on the examples:
 
 - `printf … | curl --data-urlencode 'subject_token@-'` keeps the ID token out of the process
-  list. `printf` is a shell builtin.
+  list. `printf` is a shell builtin. The closing revocation reads its header from standard input
+  (`-H @-`, curl 7.55 and later) for the same reason.
+- The revocation is the last line of `script`, not an `after_script`: `after_script` runs in a
+  separate shell that does not see variables exported in `before_script` or `script`, so it never
+  holds the CI token. It also does not run for jobs that time out, unless the runner's script
+  timeouts are configured for it
+  ([`after_script`](https://docs.gitlab.com/ci/yaml/#after_script), read 2026-10-28). A job that
+  fails or is cancelled before the last line keeps its token until `expires_in` (H-26).
+- `npm version --allow-same-version` keeps the job working when `package.json` already carries
+  the tag's version; without it, npm stops with "Version not changed".
 - NuGet expands `%VAR%` in `nuget.config` values on every platform, and leaves the literal text
   when the variable is unset
   ([nuget.config reference](https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#using-environment-variables)).
@@ -1883,6 +2337,10 @@ Notes on the examples:
 - CIOIDC-028 (P2): exchange of a signed cloud caller-identity request.
 - CIOIDC-029 (P2): passwordless image pulls for Kubernetes workloads. This depends on the
   container formats (P1) and on CIOIDC-027 and CIOIDC-028.
+- CIOIDC-038 to CIOIDC-040 (P2): the `CI_JOB_TOKEN` fallback. R-CI-022 specifies it; it is built
+  only when a concrete need appears (Q-CI-5).
+- Revocation of CI tokens on job end through GitLab job webhooks, or through a job-scoped revoke
+  call that presents the ID token (Q-CI-7). Not planned; the TTL bound and self-revocation apply.
 
 ## Security notes
 
@@ -1898,131 +2356,390 @@ Notes on the examples:
   immutable IDs bind it to an organization.
 - Subject tokens and CI tokens are bearer credentials. Both are kept out of logs, error bodies
   and process lists (examples). Responses carry `Cache-Control: no-store`.
-- Multi-audience ID tokens are delivered to every listed service, and any of them could replay
-  the token at trove. They are rejected by default (R-CI-004).
+- An ID token that also names another service in `aud` is addressed to that service too, and it
+  could replay the token at trove. Such tokens are rejected by default; only audiences that all
+  belong to trove are accepted together (R-CI-004). Both default audiences, the base URL and
+  `npm:<host name>`, name this installation only (R-CI-001): trove owns the host it runs on
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-005). The `npm:` value
+  carries no port, so it relies on that ownership for every port of the host name, as the
+  `__Host-trv_session` cookie already does.
 - Algorithm and key handling follow RFC 8725:
   - an allowlist of asymmetric algorithms and no `none` or HMAC;
   - the key type must match the algorithm;
   - no keys taken from token headers;
   - `kid` used only as a lookup key.
 - Outbound calls go to administrator-configured URLs only: discovery, keys, and the GitLab Jobs
-  API in fallback mode. Tokens cannot make trove fetch other URLs.
+  API in fallback mode (P2). Tokens cannot make trove fetch other URLs.
 - Package ownership (R-CI-015) keeps overlapping name patterns and reused project paths from
   turning into package takeover.
 - Rate limits are per replica (R-CI-021). An attacker can get roughly `replicas × limit`
   exchange attempts. That is acceptable because each attempt costs one signature check.
+- A database restore would revive CI tokens, issuers and mappings that were revoked, disabled or
+  narrowed after the restore point ([ha-and-helm.md](ha-and-helm.md) H-37). From P1 the revocation
+  journal replays those changes (R-CI-020). Replay disables but never deletes, and it suspends the
+  later mappings of a disabled mapping's tier, so a forged journal entry can deny CI access but
+  cannot lift a first-match shadow and grant more (Q-CI-11).
 
-## Open questions
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
 
 ### Q-CI-1 · First match per tier or union of all matching mappings
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) First match within a tier, union across tiers (specified above).
-- (b) Union of every matching mapping.
-- (c) Strict first match over all mappings, as in the catalog (CIOIDC-009).
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) First match per tier, union across tiers | Within a tier, mappings are tried in ascending `priority` and the first true condition is the tier's match. The token gets the union of the tier matches. The MVP has one tier. | One mapping explains each tier's result. A narrow rule at a low number shapes what broader rules below it give. A misordered rule gives fewer grants, never more. Delegated mappings (P1) neither shadow system mappings nor are shadowed by them. | Order matters: a forgotten low-numbered rule can hide a broader one (the dry run, R-CI-019, shows it). A grant every pipeline needs is listed in each mapping a job can match first. |
+| (b) Union of every matching mapping | Every mapping whose condition is true contributes. | No ordering to reason about; no mapping repeats another's grants. | "Merge request pipelines only read, even from a protected source branch" needs a negated condition in every write rule, and a forgotten negation hands out the write grant. Adding a mapping can only widen what some job gets. |
+| (c) Strict first match across all mappings | One global order, as in the catalog (CIOIDC-009). | Simplest evaluation. | From P1, delegated and system mappings compete for priority numbers, and a delegate's rule can shadow a system grant. |
+| (d) First match with an opt-in fall-through | First match, but a mapping flagged `continue` lets evaluation go on and adds later matches. | One rule can add a common read grant to every later match. | Order-dependent unions return. Trace, audit and review must explain chains. Listing the shared policy in each mapping gives the same result. |
 
-Recommendation: (a). Within a tier, first match gives one predictable, auditable answer and allows
-narrowing rules at low priority numbers. Across tiers, union keeps delegates (P1) from shadowing
-system grants and the other way round. (b) is simpler to explain but cannot express "merge request
-pipelines get less than release pipelines" without negations in every rule. (c) makes delegated
-mappings fight with system mappings over priority numbers.
+**Choice:** (a) — first match within a tier, union across tiers.
+
+**Rationale:** With one tier in the MVP, (a) behaves exactly like the catalog's first match, so it
+costs nothing now. It already fixes the P1 property that matters: delegates add grants within
+their bounds and never interfere with system mappings, the failure mode of (c). Against (b), the
+difference shows in a merge request pipeline whose source branch is protected: it carries
+`ref_protected: "true"` (R-CI-012), so under a union it also matches "acme protected refs:
+publish" unless every write rule excludes `merge_request_event`. A forgotten exclusion fails open.
+Under (a), "merge request pipelines: read only" placed above the publish rule settles it once, and
+a misordered rule fails closed. Each tier's decision is also explained by exactly one mapping in
+the issuance record and the dry run. The cost of (a) is repeating the common read policy in each
+mapping, one name per mapping; (d) would remove that repetition at the price of explaining chains.
+The development agent would revisit this if administrators end up copying the same read grant
+into many mappings, which would argue for (d).
+
+**Applied in the spec:** R-CI-009: the explanation of first match now uses protected refs instead
+of protected tags (merge request pipelines never run on tags, so the old example did not need
+first match) and names the cost of repeating common grants. Its first acceptance criterion now uses
+a merge request pipeline from a protected source branch that matches both mappings; the earlier
+criterion passed under a union too. R-CI-023 already relies on the union across tiers.
 
 ### Q-CI-2 · Grammar of the `scope` request parameter
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) The interim `<action>[:<repoKey>]` grammar of R-CI-007.
-- (b) The scope grammar that [identity-and-authentication.md](identity-and-authentication.md)
-  defines for personal and service-account tokens.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Own string grammar | Space-delimited `<action>` or `<action>:<repoKey>`, parsed into a CI-specific structure. | Trivial, OAuth-conformant. | A second scope model next to R-AUTH-024. Keys only: no patterns, classes or format filters. |
+| (b) The JSON scope of R-AUTH-024 in the request | The job sends the same JSON structure that personal and service-account tokens use, in `scope` or in an extension parameter. | One language, including package and path narrowing. | JSON is not a valid OAuth scope ([RFC 6749 §3.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.3) excludes `"`, `\` and spaces from a scope token), so standard clients cannot send it in `scope`. An extension parameter makes requests non-standard and pushes JSON quoting into shell scripts. |
+| (c) OAuth string as notation for R-AUTH-024 | Items `<action>` or `<action>:<selector>` with any repository selector of R-AUTHZ-004. Each item becomes one repository grant of the R-AUTH-024 structure, which is what the token stores. | OAuth-conformant and easy to type in `curl`. One scope model, one selector syntax, one evaluator. The response's `scope` uses the same notation. | No package or path narrowing in the request. |
+| (d) No `scope` parameter in the MVP | The exchange always issues the mapping's full grants; a request with `scope` answers 400. | Nothing to parse or validate; the mapping already defines what a job gets. | Every step of a job holds the job's full grants. A job cannot exchange a read-only token for `npm ci`, which runs its dependencies' install scripts, and a deploy token only for the publish step. |
 
-Recommendation: (b) once R-AUTH fixes it, with (a) as its subset. One scope language for all
-tokens keeps clients and the authorization code single. The CI page should not invent a second
-one.
+**Choice:** (c) — an RFC 6749 scope string whose items are a notation for the repository part of
+the R-AUTH-024 scope.
+
+**Rationale:** Narrowing at exchange time has a concrete security use: a pipeline can give the
+install step, which runs third-party install scripts, a token without `deploy`. That rules out
+(d), whose saving is one small parser. (c) is what (b) aimed for, one scope model for every token,
+without breaking the OAuth request format that RFC 8693 clients produce. The selector syntax is
+reused unchanged, so `read:@any-local:npm` means the same thing as in a policy. Package and path
+narrowing is not needed in the request, because the mapping's grants already carry it, and inside
+trove the stored scope still expresses it: the package-bound token of npm trusted publishing
+([formats/npm.md](formats/npm.md) R-NPM-022) uses the same structure. (a) would leave the
+authorization code with a second, weaker structure. The development agent would revisit this if
+one job has to narrow to individual packages at exchange time, for example a monorepo job
+publishing on behalf of several projects; an extension parameter carrying the R-AUTH-024 JSON
+would then be added.
+
+**Applied in the spec:** R-CI-007: the `scope` row and a new "Scope parameter" paragraph (grammar,
+translation into the stored token scope, `{"inherit": true}` when absent, limit of 50 items,
+`scope_malformed` and `scope_not_granted`); the response `scope` uses the same grammar; acceptance
+criteria extended.
 
 ### Q-CI-3 · Default for ID tokens with several audiences
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Reject (specified default).
-- (b) Accept when one element is trove's audience (RFC 7519 allows it).
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Reject every `aud` array with more than one element | Only a single audience is accepted. | Simple rule. | Also rejects a token that names two trove base URLs (internal and external host name), although no third party is involved. |
+| (b) Accept when one element is an allowed audience | The minimum of [RFC 7519 §4.1.3](https://www.rfc-editor.org/rfc/rfc7519#section-4.1.3). | Accepts every token GitLab can produce. | A token addressed to trove and to a secrets manager reaches that secrets manager, which can then exchange it at trove ([RFC 8725 §3.9](https://www.rfc-editor.org/rfc/rfc8725#section-3.9)). |
+| (c) Exclusive audience | Accept only when every element of `aud` is one of the CI issuer's `allowed_audiences`. Setting `exclusive_audience`, default `true`. | Blocks exactly the case that makes multi-audience tokens dangerous, another recipient, and accepts the harmless one. Same implementation cost as (a). | One more sentence to explain than (a). |
 
-Recommendation: (a). A token addressed to trove and to, say, a secrets manager reaches that
-secrets manager too, which could then exchange it at trove. GitLab lets a job request one
-token per audience at no cost, so rejecting costs the user nothing.
+**Choice:** (c) — every element of `aud` must be an allowed audience of the CI issuer.
+
+**Rationale:** The risk is not the number of audiences but a recipient other than trove that could
+replay the token. (c) states that property directly. It keeps the protection of (a) and does not
+reject a deployment that lists two host names of its own. (b) gives up the protection, and GitLab
+lets a job declare one ID token per audience in `id_tokens:` at no cost, so nobody needs it. The
+development agent would revisit this only if a client could not avoid foreign audiences; single
+use (R-CI-018) would then be the compensating control.
+
+**Applied in the spec:** R-CI-001: `reject_multiple_audiences` replaced by `exclusive_audience`
+(table and data model), `allowed_audiences` states that the audience is always checked. R-CI-004
+step 7 and its acceptance criteria, R-CI-006 (the `aud` bullet) and the security notes follow (c).
 
 ### Q-CI-4 · Single exchange per `jti` by default
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Off, tracked and counted (specified).
-- (b) On for every CI issuer.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Off for every kind, counted | Repeated exchanges are allowed, counted and audited beyond a threshold. | Never breaks a job. | For issuers with a shared audience, every other relying party can replay the token at trove, and only an audit event records it. |
+| (b) On for every kind | A second exchange of the same `jti` fails. | Strongest replay protection. | Breaks GitLab jobs that exchange per tool step, retry after a network error or re-exchange after the CI token expired, which R-CI-016 relies on for long jobs. |
+| (c) Preset by kind: off for `gitlab` and `github`, on for `generic` | Single use only where the audience is shared; overridable per CI issuer. | Covers the shared-audience case. | Leaves GitHub without single use although nothing there needs repeated exchanges of one token. |
+| (d) Preset by how the job obtains its subject token | Off for `gitlab`, whose job gets its ID tokens once as variables; on for `github`, whose steps request ID tokens on demand, and for `generic`, whose audiences are often shared. Overridable per CI issuer. | Each kind gets the strongest control its real clients tolerate. | The default differs between kinds and must be documented. |
 
-Recommendation: (a) for `gitlab` and `github` issuers. Their tokens are audience-bound to trove
-and short-lived, and jobs legitimately exchange several times (per tool step, after a network
-error, after the first CI token expired). Recommend (b) in the documentation for `generic` issuers
-with a shared audience (R-CI-026).
+**Choice:** (d) — off for `gitlab`, on for `github` and `generic`.
+
+**Rationale:** A GitLab job receives its ID tokens as the variables its `id_tokens:` block declares,
+and GitLab documents no way to request another during the run. Re-exchanging the same token is
+therefore how a long GitLab job renews its CI token (R-CI-016), and (b) would break it; the
+exclusive audience (Q-CI-3) already ensures that only the job and trove hold the token. A GitHub
+step requests an ID token whenever it needs one (GitHub's OIDC documentation, read 2026-10-28), so
+the reason that keeps single use off for GitLab does not apply, and single use costs a correctly
+written workflow nothing. (c), the choice before this review, rested on "jobs exchange per tool step and
+re-exchange when the CI token expires", which holds for GitLab only; it would leave a replay
+control off for no benefit. For a generic issuer such as Azure DevOps with
+`api://AzureADTokenExchange`, audience binding proves nothing, so single use is the only replay
+control left. Not verified, and this is the gap: that every token request in one GitHub job yields
+a new `jti` (RFC 7519 requires `jti` to be unique per token, and GitHub's example token lives 300
+seconds, but neither was tested against a live workflow). The development agent would revisit the
+GitHub default if real workflows commonly reuse one ID token across exchanges, and the GitLab
+default if GitLab adds on-demand ID tokens or `ci.exchange.repeated` events show replays that job
+behavior does not explain.
+
+**Applied in the spec:** R-CI-001: `single_use_subject_tokens` preset `false` for `gitlab`, `true`
+for `github` and `generic` (table and data model). R-CI-018: defaults by kind, the reasoning split
+into GitLab and GitHub/generic, and the acceptance criterion. R-CI-025: the preset lists single use,
+a bullet states that each exchange requests a fresh ID token, and a new acceptance criterion.
+R-CI-016: the re-exchange bullet distinguishes GitLab (same ID token) from GitHub (fresh one).
+R-CI-026 keeps the generic default. H-25 states where single use is on.
 
 ### Q-CI-5 · Build the `CI_JOB_TOKEN` fallback at all
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Build it as specified (P1, read-only, off by default).
-- (b) Move it to P2 and build it only when a concrete need appears.
-- (c) Drop it.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Build it in P1 as specified | Read-only, off by default, enabled per installation and CI issuer. | Ready for pipelines that cannot add `id_tokens:`. | Puts a live GitLab credential into trove (H-28), adds a runtime dependency on GitLab, can never grant writes and cannot recognize fork pipelines (H-29). Development time goes to a path nobody has asked for yet. |
+| (b) Keep the specification, move it to P2 | R-CI-022 stays specified and reviewed, but is built only when a concrete population of pipelines needs it. | No exposure and no effort until there is a need; the design is ready when it comes. | A pipeline that cannot add `id_tokens:` has no CI path to trove until then; it uses a service-account token. |
+| (c) Drop it | Remove R-CI-022. | Smallest surface. | Throws away a worked-out design; a later need would start from zero. |
 
-Recommendation: (b). Because of INV-8, the fallback still needs an exchange step in the job; it
-saves only the `id_tokens:` block. In return it puts a GitLab credential in trove's hands, adds
-a runtime dependency on GitLab, and can never grant writes. Every supported GitLab version issues
-ID tokens. If the owner sees a population of pipelines that cannot add `id_tokens:`, (a) is
-specified and ready.
+**Choice:** (b) — R-CI-022 stays specified, priority P2, built only on a concrete need.
+
+**Rationale:** The owner constraint asks for an OIDC procedure, and every supported GitLab version
+issues ID tokens (the predecessors were removed in GitLab 17.0, CIOIDC-030). Because trove never
+accepts foreign credentials on package endpoints (INV-8), the fallback still needs an exchange step
+in the job; it saves only the `id_tokens:` block. In return it brings a GitLab credential into
+trove and a read path that fork pipelines can use (H-28, H-29). H-29's premise was re-checked on
+2026-10-28: the documented response of `GET /api/v4/job` has no project path, namespace,
+`ref_protected`, `job_project_*` or `source_project_*` fields, and its `project` object holds only
+`ci_job_token_scope_enabled`. (c) would discard a reviewed design that becomes useful if, for
+example, shared CI templates outside the owner's control cannot be changed. The development agent
+would revisit this when such a population of pipelines appears.
+
+**Applied in the spec:** R-CI-022: priority P2 and the build condition. Until it is built, the
+job-token subject type answers `unsupported_subject_token_type`, enabling the mode on a CI issuer
+or listing `job_token` in a mapping answers 422 `job_token_fallback_not_available`, and the global
+key stops startup, so no configuration suggests a mode that does not exist; new acceptance
+criterion. R-CI-009 marks `job_token` as P2. The credential comparison table, the security notes
+and the Deferred section mark it P2. INV-10 is not changed: it already calls the fallback optional
+and off by default.
 
 ### Q-CI-6 · How a CI project acquires package ownership
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Claim on first publish within the grant pattern (specified).
-- (b) Only administrator pre-registration.
-- (c) No ownership; rely on non-overlapping patterns.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Claim on first publish, `bind_project` opt-in | A grant with `ownership: bind_project` claims a new name for the project; the default is `none`. | No administration for new packages. | A writing grant without the option makes the mapping the owner, so every project of a group-wide mapping co-owns everything any of them publishes, and nobody notices. |
+| (b) Administrator pre-assignment only | Every name is assigned to a project before its first publish. | Full control. | Administration for every new package; pipelines fail until someone acts. |
+| (c) No ownership | Rely on non-overlapping name patterns. | Nothing to build. | When slugs collide (`acme/billing` and `acme-billing` both render `@acme-billing/*`) one project silently publishes versions of another's package. |
+| (d) Claim on first publish, `bind_project` by default | As (a), but writing inline grants default to `bind_project`. An explicit `none` shares names across the mapping's projects and draws a warning. Names that already have versions but no owner are never claimed by a CI publish; a holder of `manage` adds the project as owner first (R-AUTHZ-018 rule 3, R-AUTHZ-019). | Per-project ownership is the default, without administration for new names. Sharing stays possible and visible. Existing packages cannot be taken over by a pattern match. | A legacy package needs one owner assignment before CI can publish it. |
 
-Recommendation: (a). It needs no extra administration for the common case, and (b) remains
-available through the ownership store of [authorization.md](authorization.md) for names that must
-be reserved. (c) silently allows one project to publish versions of another project's package
-whenever the slugs collide.
+**Choice:** (d) — claim on first publish, with `bind_project` as the default of writing inline
+grants: an inline grant whose `actions` contain `deploy`, `overwrite` or `delete` and that omits
+`ownership` is saved as `bind_project`, any other inline grant as `none`, and an explicit `none`
+on a writing grant is saved with the warning `shared_ownership` (R-CI-013, R-CI-010). This is the
+same decision as [authorization.md](authorization.md) Q-AUTHZ-6 (option (b) there); the two pages
+record one rule, not two.
+
+**Rationale:** First publish keeps new packages free of administration, which rules out (b). (c) is
+the slug-collision takeover that ownership exists to prevent. The difference between (a) and (d) is
+the default: under (a), the common group-wide mapping quietly turns every project into a co-owner,
+which defeats per-project ownership exactly where it matters. (d) makes the safe outcome the
+default and keeps sharing as an explicit, warned choice. Aligning with rule 3 of
+[authorization.md](authorization.md) R-AUTHZ-018 closes the remaining gap: a CI token never holds
+`manage`, so it cannot claim a name that already has versions. [authorization.md](authorization.md)
+decided the same default in Q-AUTHZ-6 (option (b)), so both pages state one rule, and its check of
+a publishing token's owner identities (R-AUTHZ-018 rule 1) is the one R-CI-015 applies. The
+development agent would revisit this if assigning owners to legacy names becomes a burden during
+migrations; the answer would be a bulk assignment operation, not a weaker rule. If several GitLab projects of one
+group must publish one package family, the remedy is an explicit `ownership: none` on that grant,
+not a different default.
+
+**Applied in the spec:** R-CI-013: `ownership` defaults to `bind_project` for grants with `deploy`,
+`overwrite` or `delete`, `none` otherwise; explicit `none` draws `shared_ownership`; new acceptance
+criterion. R-CI-010: warning `shared_ownership`. R-CI-015: owner identity stored by CI issuer ID
+and project ID, referenced as `ci:<CI issuer name>:project:<project_id>`; a publish is allowed when
+any owner identity of the token is an owner, as R-AUTHZ-018 rule 1 defines (project identity,
+mappings, their groups), where the earlier text allowed the project alone; names with versions but
+no owner need a `manage` holder to add the project as owner; the concurrency sentence follows
+R-AUTHZ-018 rule 5; new acceptance criterion. Q-AUTHZ-6 on [authorization.md](authorization.md)
+records the same default from the authorization side (R-AUTHZ-014); R-CI-013 and R-CI-015 already
+state the `bind_project` default and the `shared_ownership` warning, so that decision needed no
+further edit to their text.
 
 ### Q-CI-7 · Revoke CI tokens when the GitLab job ends
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) Rely on the TTL bound by the ID token's `exp` (specified).
-- (b) Subscribe to GitLab job webhooks and revoke on job completion.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) TTL bound only | The token lives until `expires_in`: 15 minutes by default, never past the job timeout (R-CI-016). | Nothing to build or configure. | Every token outlives its job by up to its remaining lifetime (H-26). |
+| (b) GitLab job webhooks | GitLab notifies trove when a job ends, and trove revokes that job's tokens. | Also covers failed, cancelled and timed-out jobs. | A webhook and its secret on every GitLab project or group, an inbound endpoint reachable from GitLab, and asynchronous best-effort delivery, all for a window of minutes. |
+| (c) TTL bound plus self-revocation | The job revokes its own token through `DELETE /api/v1/tokens/current` (R-AUTH-029, already MVP) as the last command of `script`. The reference pipeline and the snippets include it. | No new server code. Closes the window for every job that succeeds, the common case. | Does not run when the job fails, is cancelled or times out before the last line. Depends on pipelines keeping the line. |
+| (d) Job-scoped revoke with the ID token | A new call presents the ID token and revokes every CI token issued for that job, from `after_script`. | GitLab documents ID tokens as usable in `after_script`, which runs after a script failure and, since GitLab 17.0, on cancellation. So it also covers failed and cancelled jobs. | A new unauthenticated endpoint that revokes by job identity. `after_script` does not run after a timeout unless the runner's script timeouts are configured for it, nor after other failure types ([`after_script`](https://docs.gitlab.com/ci/yaml/#after_script), read 2026-10-28). A job that defines its own `after_script` replaces the inherited one. |
 
-Recommendation: (a) for the MVP; reconsider (b) in P2. (b) needs a webhook secret per GitLab
-project or group and an inbound endpoint. With the default TTL of 15 minutes, the remaining
-window is short. The gap is recorded as H-26.
+**Choice:** (c) — the TTL bound stays the guarantee, and each job revokes its own token as its last
+step.
+
+**Rationale:** (c) uses an endpoint the MVP has anyway, so the common case (a successful publish
+job) ends with no live token at no cost, while the TTL bound still caps every other case. A
+variable exported in `script` is not visible in `after_script`, which runs in a separate shell
+(same reference), so the revocation belongs at the end of `script`. (b) needs configuration on
+every GitLab project or group for a window of minutes. (d) is better grounded than it first
+looked, because GitLab documents the ID token as available in `after_script`. It still needs a
+new anonymous mutating endpoint, misses timeouts, and gains at most the remaining TTL of a failed
+or cancelled job; a token stolen during the job can be used during the job anyway. Deferring (d)
+defers hardening and does not weaken the MVP's guarantee, which is the TTL bound. The development
+agent would add (d) as a P1 requirement, reusing the validation of R-CI-004 and revoking by CI
+issuer and `job_id`, if audit shows CI tokens of failed or cancelled jobs in use after their job
+ended.
+
+**Applied in the spec:** R-CI-013: CI tokens may call `GET` and `DELETE /api/v1/tokens/current`.
+R-CI-017: self-revocation added to the revocation causes, with an acceptance criterion. R-CI-020:
+`ci.token.revoked` names self-revocation as a cause. R-CI-027: the snippet ends with the revocation
+step. Examples and R-CI-028: both jobs end with the revocation, and an acceptance criterion checks
+it; the notes on the examples state the verified `after_script` behavior. H-26 and the Deferred
+section updated.
 
 ### Q-CI-8 · Status code for rejected subject tokens
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) 400 `invalid_request` with a `reason` (specified, as RFC 8693 §2.2.2 requires).
-- (b) 401, as in the catalog (CIOIDC-018).
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 400 `invalid_request` with `reason`, OAuth error body | As [RFC 8693 §2.2.2](https://www.rfc-editor.org/rfc/rfc8693#section-2.2.2) requires for invalid or unacceptable subject tokens, in the `application/json` error body of [RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2), plus `reason` and `requestId`. | Standard behavior for token-exchange clients; `reason` gives scripts precise causes. | Differs from the catalog (CIOIDC-018); the only trove endpoint whose errors are not problem details. |
+| (b) 401 | As in the catalog. | Reads like "your credential was rejected". | Contradicts RFC 8693. No client is known to depend on it. |
+| (c) 400 `invalid_grant` for token failures | `invalid_grant` when the subject token fails validation or policy, `invalid_request` only for malformed requests, as some security token services answer. | Separates bad tokens from bad requests by `error`. | Deviates from the RFC's MUST; the same distinction is already in `reason`. |
+| (d) 400 `invalid_request` inside a problem-details body | The management API's `application/problem+json` body (R-API-009) with `error` and `error_description` added. | One error format across `/api/v1`. | Not the `application/json` body RFC 6749 §5.2 specifies; every message is carried twice (`detail` and `error_description`); OAuth clients gain nothing from the extra members. |
 
-Recommendation: (a). Standard OAuth clients and libraries expect RFC 8693 behavior. The `reason`
-field gives scripts the precision that a status code would not. No client is known to depend on
-401.
+**Choice:** (a) — 400 `invalid_request` with a stable `reason`, in the OAuth error body.
+
+**Rationale:** RFC 8693 states the code as a MUST, and standard OAuth libraries follow the RFC. The
+CI scripts of R-CI-028 test for `access_token` and print `reason`, so (b) and (c) give them
+nothing. The body is the OAuth error JSON with `reason` and `requestId`, not problem details,
+because the endpoint speaks OAuth to OAuth clients; (d) would bend that format for the benefit of
+the management API's tooling, which never calls this endpoint. `requestId` keeps the spelling of
+every other trove error body and links the answer to the audit event. The development agent would
+revisit this only if a client used in CI pipelines turned out to depend on 401 or `invalid_grant`.
+
+**Applied in the spec:** R-CI-008: content type, `Cache-Control: no-store` and the `requestId`
+member stated; the example carries it; `expose_reason: false` keeps `requestId`. R-CI-002: the
+naming rule lists `requestId` as the one member that keeps trove's spelling.
 
 ### Q-CI-9 · Default for cross-project (fork) pipelines
 
-Options:
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-- (a) `deny` (specified).
-- (b) `read_only`.
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `deny` by default, opt-in per CI issuer or per mapping | A cross-project subject token gets no token unless the CI issuer or a matched mapping sets `read_only`, which caps grants to `read`. | One issuer-wide switch for groups that accept fork reads everywhere. | The issuer-wide switch reaches mappings written later, including delegated ones (P1), whose authors never chose it. As specified, one opted-in mapping released the capped grants of every matched mapping. |
+| (b) `read_only` by default | Cross-project tokens get read grants. | Fork merge request pipelines work out of the box. | Fork code controls its own CI configuration and can exfiltrate every package the token reads. The parent member who starts the pipeline may not have read the fork's `.gitlab-ci.yml` change. |
+| (c) Always deny, no opt-in | No cross-project token under any configuration. | No configuration can expose packages to fork code. | Removes a legitimate, deliberate choice for groups whose packages behind trove are not confidential. |
+| (d) `deny` by default, opt-in per mapping only | Each matched mapping decides for itself: with `read_only` it contributes its grants capped to `read`; otherwise it contributes nothing and is not one of the token's mappings. No issuer-wide switch. | The opt-in sits on the grants it exposes, is visible in API, UI and audit, and never reaches another mapping or a later one. | A group that wants the opt-in on many mappings sets it on each. |
 
-Recommendation: (a). In such pipelines the fork author controls the CI configuration, so even
-read access lets them exfiltrate private packages. GitLab requires a parent-project member to
-start the pipeline, but that member may not read the fork's changes to `.gitlab-ci.yml`.
-Mappings can opt into `read_only` where the group accepts this.
+**Choice:** (d) — `deny` by default, with an explicit opt-in to `read_only` on the mapping, applied
+to that mapping's grants only.
+
+**Rationale:** The exposure in (b) is reading, so a read-only cap does not contain it, and the
+default must be the safe one. (c) removes a decision that some groups can make knowingly. The
+choice before this review, (a), had two flaws. Its issuer-wide switch silently extends to every mapping created
+later, the trap [authorization.md](authorization.md) R-AUTHZ-003 closes for `anonymous` by refusing
+dynamic selectors. Its rule also capped and released the grants of all matched mappings once any
+one opted in, so from P1 a delegate's opt-in on a delegated mapping would have exposed the system
+mappings' read grants to fork code. (d) ties the decision to the grants it exposes, and the rule is
+simpler to build: one option per mapping, no inheritance. A mapping that does not contribute is
+left out of the token's mappings, so policies naming it cannot reach the token at use time. The
+development agent would revisit this towards (c) if audits show opt-ins on mappings that cover
+private repositories, and would add an issuer-wide default only if many mappings carry the opt-in
+and the owner accepts that it reaches later mappings.
+
+**Applied in the spec:** R-CI-001: `cross_project_source` removed from the CI issuer (settings
+table, now 21 entries, and data model). R-CI-012: the guard classifies the token before mapping
+evaluation and decides per matched mapping; a non-contributing mapping is not recorded as one of
+the token's mappings; no issuer-wide switch; new P1 acceptance criterion. R-CI-007: processing
+steps 4 and 7. R-CI-009: option values and defaults. R-CI-022: the per-mapping rule for job-token
+subjects.
+
+### Q-CI-10 · Principal name of an identity mapping
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `<CI issuer name>/<mapping name>` | The principal name joins both names with `/`, for example `gitlab-com/acme-release-publish`. | Unique and splittable: both parts match `^[a-z0-9][a-z0-9._-]{1,63}$`, which excludes `/`. Both parts are immutable, so the principal is never renamed. Matches the reference `ci:<issuer>/<mapping>` that [authorization.md](authorization.md) R-AUTHZ-002 already uses. Readable in audit events. | A name that is longer than either part. |
+| (b) Globally unique mapping names | Mapping names unique across all CI issuers; the principal name is the mapping name. | Shortest names. | Forces coordination across GitLab instances: `release-publish` can exist only once. Contradicts the per-issuer scoping of mappings. |
+| (c) Mapping UUID as principal name | The API translates `<issuer>/<mapping>` to the UUID. | No naming rule at all. | Database rows, audit events and support work show opaque IDs; a readable name is still needed for the API. |
+
+**Choice:** (a) — the principal name is `<CI issuer name>/<mapping name>`.
+
+**Rationale:** This question was raised while deciding this page:
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016 makes principal names
+unique per kind (`UNIQUE (kind, name)`), while mapping names are unique only per CI issuer
+(R-CI-009). (a) satisfies the existing unique constraint without touching it, keeps the reference
+syntax that the authorization page already uses, and needs no rename logic because both names are
+immutable. (b) would impose a global namespace on a per-issuer concept, and (c) trades readability
+for nothing. The development agent would revisit this only if issuer or mapping renames became a
+requirement; the rename would then update the principal name in the same transaction.
+
+**Applied in the spec:** R-CI-009: new "Principal" paragraph (name, reference, lifecycle) and the
+`principal_id` column of `ci_mappings`; new acceptance criterion. R-CI-002: issuer deletion with
+`?cascade=true` deletes the principals. R-CI-017 names the principal. R-CI-019: mapping deletion
+deletes its principal.
+
+### Q-CI-11 · Replaying a mapping disable under first match
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This question was raised while applying [ha-and-helm.md](ha-and-helm.md) Q-HA-9 to this page.
+R-HA-054 replays a disabled or deleted mapping, and suspends one it cannot compare, by disabling
+it, and promises that replay never grants access. Under first match within a tier (Q-CI-1,
+R-CI-009) disabling a mapping can grant: the jobs it matched fall through to the next matching
+mapping. A forged journal entry that disables the read-only merge-request mapping placed above a
+publish mapping would let merge request pipelines from a protected source branch publish.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Disable only the mapping | As R-HA-054's table states | Nothing beyond the generic rule; a genuine entry reproduces the state before the restore | Breaks R-HA-054's guarantee: whoever holds the runtime S3 credential can escalate CI grants with a forged removal |
+| (b) Disable the mapping and suspend every later mapping of its tier | Every enabled mapping of the same tier with a higher `priority` number is disabled too and reported `suspended` | Fails closed with the one state R-HA-054 already uses; one query per tier; no comparison between mappings | Later mappings of that tier stop matching until an administrator re-enables them, for genuine entries too |
+| (c) Disable the mapping and suspend only later mappings that grant more | Compare the grants of each later mapping with those of the disabled one | Less collateral | Must compare templated grants, policies, groups and owner records of two different principals; more code and more ways to be wrong, for a procedure that runs only after a restore |
+| (d) A blocking state | The replayed mapping keeps matching but contributes nothing, so nothing falls through | Precise, no collateral | A third mapping state in evaluation, API and UI, against R-HA-054's decision that suspended means disabled |
+
+**Choice:** (b) — when replay disables a mapping that was enabled, it also suspends every later
+enabled mapping of the same tier.
+
+**Rationale:** Restores are rare, and the journal holds only the entries after the restore point,
+so the collateral of (b) is limited to mapping disables made in that window, and it is visible in
+the replay output. (a) turns a denial-of-service channel into an escalation channel, which is the
+one thing R-HA-054 must rule out. (c) is the right shape in principle, but it needs a grant
+comparison across two principals, including package ownership bound to each mapping (R-CI-015),
+and an error there fails open. (d) is precise but adds a state everywhere for a recovery path.
+Tiers combine by union (R-CI-009), so other tiers need no step, and issuers need none because `iss`
+selects exactly one. The same fall-through is why the comparator never treats a change of
+`match`, `priority`, `enabled` or `subject_kinds` as narrowing. The development agent would revisit
+this towards (c) if restore drills show suspensions that administrators routinely undo.
+
+**Applied in the spec:** R-CI-020: the revocation journal section (flagged events, entry content,
+replay per event, "every path writes the event", suspended means disabled, this rule, the
+comparators with the pure-removal rule for grants) and P1 acceptance criteria, including a deleted
+shadowing mapping. R-CI-019, R-CI-002, R-CI-017 and R-CI-023 point to it. Cross-page:
+[ha-and-helm.md](ha-and-helm.md) R-HA-054, whose table row for mapping disables and deletions
+names this extra step and whose rule on forged entries refers to it.
 
 ## What this does not cover
 
@@ -2039,14 +2756,21 @@ claimed job.
 
 Both the ID token and the issued CI token are bearer credentials. Anyone who reads them while
 they are valid can use them: from a runner shared between jobs, a privileged container, or a
-debug log printed with `set -x`. Single use (R-CI-018) limits the ID token to one exchange. A
-stolen CI token works until it expires or is revoked. Sender-constrained tokens (DPoP,
+debug log printed with `set -x`. Where single use is on (R-CI-018: by default for GitHub and
+generic issuers, not for GitLab), the ID token is limited to one exchange; a GitLab ID token can
+be exchanged again until it expires, and only the exchange count shows it. A stolen CI token
+works until it expires or is revoked. Sender-constrained tokens (DPoP,
 [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), or mutual TLS) are not specified.
 
 ### H-26 · CI tokens outlive the job
 
-A CI token stays valid until its `expires_in`, even after the job has finished (Q-CI-7).
-Default worst case: 15 minutes, or up to `ci.token.max_ttl`.
+Component: CI token lifetime and revocation (R-CI-016, R-CI-017). Subject: the CI token of a job
+that fails, is cancelled or times out before its closing `DELETE /api/v1/tokens/current`, or of a
+pipeline that omits that step. Live with the MVP. Such a token stays valid until its
+`expires_in` after the job has finished: by default at most 15 minutes, never more than
+`ci.token.max_ttl` or the ID token's remaining lifetime. trove learns nothing about the job's end
+(Q-CI-7). What makes it real: someone who read the token during the job (H-25) and uses it after a
+failed or cancelled run.
 
 ### H-27 · Group hierarchies cannot be pinned by immutable ID
 
@@ -2068,15 +2792,33 @@ issuer.
 
 ### H-29 · The job-token fallback cannot recognize fork pipelines
 
-Component: the `CI_JOB_TOKEN` fallback (R-CI-022). Subject: a merge request pipeline from a fork
-that a member of the parent project runs in the parent project. Dormant: it becomes live once
-R-CI-022 is enabled globally and on a CI issuer and a `job_token` mapping matches the parent's
-`project_id`. The job API response carries no `job_project_*` or `source_project_*` fields, so the
-cross-project guard of R-CI-012 cannot run, and the synthesized `project_id` names the parent. The
-fork author's CI configuration then receives the parent's read grants and can exfiltrate every
-package they cover. The fallback's cap to `read` does not help, because reading is the exposure.
+Component: the `CI_JOB_TOKEN` fallback (R-CI-022, P2). Subject: a merge request pipeline from a
+fork that a member of the parent project runs in the parent project. Dormant: the fallback is not
+built before P2, and once built it is live only when it is enabled globally and on a CI issuer and
+a `job_token` mapping matches the parent's `project_id`.
+
+The response of `GET /api/v4/job` carries no `job_project_*` or `source_project_*` fields and no
+project path. Verified on 2026-10-28 against the example response of
+[Jobs API, retrieve a job by job token](https://docs.gitlab.com/api/jobs/#retrieve-a-job-by-job-token),
+the only description GitLab gives of that response. Its `project` object holds only
+`ci_job_token_scope_enabled`. The ID-token claims that do separate the two projects are documented
+only for ID tokens
+([token payload](https://docs.gitlab.com/ci/secrets/id_token_authentication/#token-payload):
+`job_project_*` since GitLab 18.4, `source_project_*` since 19.5). So the cross-project guard of
+R-CI-012 cannot compare projects, and the synthesized `project_id` (`pipeline.project_id`) names
+the parent.
+
+R-CI-022 narrows this with the response's `source` field: a job whose `source` is absent or a
+merge-request source counts as cross-project and is denied unless a mapping opts into
+`read_only`. Two cases remain:
+
+- A mapping that opts in hands the fork author's CI configuration the parent's read grants. The
+  fallback's cap to `read` does not help, because reading is the exposure.
+- `source` is undocumented for this endpoint. If GitLab reports a fork pipeline under another
+  value, the guard does not fire.
+
 What makes it real: a parent project that runs fork pipelines in its own context, plus a fallback
-mapping on that project.
+mapping on that project, and either an opt-in or a change in what GitLab reports as `source`.
 
 ### H-30 · Path-only read mappings on private issuers follow released paths
 

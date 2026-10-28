@@ -54,9 +54,15 @@ repository speaks the NuGet v3 protocol; there is no per-repository protocol swi
 
 Format registration (R-REPO-003 in [repositories-and-proxy.md](../repositories-and-proxy.md)):
 name `nuget`; classes `local`, `remote`, `virtual`; protocol base path `/api/nuget/{key}/`;
-default upstream URL `https://api.nuget.org/v3/index.json`; priority members and package pinning
-supported; package name = package ID, canonicalized by ASCII lowercasing (R-NUGET-003); request
-descriptors as in R-NUGET-015.
+default upstream URL `https://api.nuget.org/v3/index.json`, with the proposed extra host
+`{"pattern": "*.nuget.org", "sendCredentials": false}` for it (R-NUGET-014); default metadata
+period 300 s and not-found period 1800 s (R-NUGET-015); pattern subject `name` (R-REPO-005);
+priority members (R-REPO-022), pin rules and namespace claims (R-REPO-023) supported; package
+name = package ID, lowercased as R-NUGET-003 defines `lower_id`; package-document path
+`{lower_id}/index.json`, the flat-container version list, whose existence upstream stands for the
+ID's existence (used by the gone rule of R-REPO-029 and the shadowing probe of R-REPO-048);
+request descriptors as in R-NUGET-015, where symbol files carry a routing name derived from the file
+name in the symbol key.
 
 Endpoint layout. All protocol resources of one repository MUST live below `<feed>/`, so that
 NuGet 6.7 and later, which pre-authenticate only URLs in or below the directory of an
@@ -135,7 +141,8 @@ HTTP conventions for every NuGet endpoint:
   are ignored.
 - The service index, flat container and registration documents carry a strong `ETag`;
   `If-None-Match` with a matching value answers 304. For documents rendered from local rows the
-  ETag derives from the package's revision (R-NUGET-005), the hive and `<base>`; for remote
+  ETag derives from the package's `packages.rev_seq` ([architecture.md](../architecture.md)
+  R-ARCH-009), the hive and `<base>`; for remote
   documents from the stored upstream document's digest and the serving address (R-REPO-043);
   through a virtual repository it also covers the fingerprint of the contributing members
   (R-REPO-020). Package files follow [storage.md](../storage.md) (R-STOR-012). Search and
@@ -144,7 +151,8 @@ HTTP conventions for every NuGet endpoint:
   missing or invalid credentials, 403 or 404 per [authorization.md](../authorization.md)
   (R-AUTHZ-016), 405 operation not offered by this repository class, 409 conflict, 413 too large,
   502 or 503 for upstream and storage failures as [repositories-and-proxy.md](../repositories-and-proxy.md)
-  and [storage.md](../storage.md) define them.
+  and [storage.md](../storage.md) define them, 507 for a reached quota or capacity limit
+  ([storage.md](../storage.md) R-STOR-029, P1).
 - Error bodies on NuGet protocol endpoints are one line of `text/plain; charset=utf-8` in the form
   `<code>: <message>`, using the codes of the owning pages (for example `credentials_required`,
   `invalid_token`, `deny.ownership`, `no_deploy_target`). NuGet clients print status and reason
@@ -198,12 +206,36 @@ Priority: **MVP** · Covers: PKG-NUGET-008, PKG-NUGET-009, PKG-NUGET-011, PKG-NU
 
 Package IDs:
 
-- A pushed ID MUST match `^[A-Za-z0-9_]+([.-][A-Za-z0-9_]+)*$` and be at most 100 characters
-  (NuGet's ID rule restricted to ASCII; Q-NUGET-3). Violations answer 400.
-- IDs are case-insensitive. The canonical package name is `lower_id`, the ASCII-lowercased ID;
-  [authorization.md](../authorization.md) compares name patterns against it. The package's display
-  name is the casing of its first stored version; every version keeps the casing of its own
-  `.nuspec` in its catalog entry (Q-NUGET-5).
+- **Local rule.** An ID that enters a local repository (push, raw deploy, upload, copy or move)
+  MUST match `^[A-Za-z0-9_]+([.-][A-Za-z0-9_]+)*$` and be at most 100 characters; violations
+  answer 400 (Q-NUGET-3). This is NuGet's general ID rule intersected with the restricted ASCII
+  set that nuget.org has required for new IDs since 2026-06-15 and for every push since
+  2026-07-15, and that `dotnet pack` warns about from .NET 11 on
+  ([NU5052](https://learn.microsoft.com/en-us/dotnet/core/compatibility/sdk/11/nuget-pack-nu5052-packageid),
+  [announcement](https://github.com/NuGet/Announcements/issues/75)). The announcement's regular
+  expression admits `_` only as the first character, while the NU5052 page admits it anywhere;
+  trove follows NU5052, because `_` is ASCII and raises no case-mapping question, and refusing it
+  would reject IDs the SDK packs without a warning.
+- Dependency IDs inside a `.nuspec` follow the upstream rule below, not the local rule, because a
+  local package may depend on a legacy upstream ID. Where trove would have to lowercase a
+  non-ASCII dependency ID to build a URL, it omits that optional URL instead (R-NUGET-009).
+- **Upstream rule.** An ID of a package cached by a remote repository (R-NUGET-015) MUST match
+  NuGet's general rule `^\w+([.-]\w+)*$`, where a word character is one of the Unicode categories
+  L, Mn, Nd or Pc (the .NET definition of `\w`; Go's `regexp` `\w` is ASCII-only and MUST NOT be
+  used for it), and be at most 100 characters. This keeps the legacy IDs restorable that nuget.org
+  still serves outside the ASCII set (about 119 IDs per the announcement above).
+- IDs are case-insensitive. The canonical package name is `lower_id`. For an ID under the local
+  rule it is the ASCII-lowercased ID, which equals .NET's `ToLowerInvariant` for ASCII. For a
+  cached upstream package it is the ID segment of the request path that filled the cache,
+  percent-decoded as UTF-8 with only its ASCII letters lowercased: for non-ASCII characters this is
+  the client's own lowercasing, which the upstream accepted. The declared ID MUST equal it under
+  Unicode simple case folding (R-NUGET-015). trove never lowercases a non-ASCII ID itself, so no ID
+  can map to different URLs on client and server. A cached package whose ID violates the local rule
+  cannot be copied or moved into a local repository (400). [authorization.md](../authorization.md)
+  compares name patterns against `lower_id`.
+- The package's display name is the casing of the version that created the `packages` row; it does
+  not change on later pushes in other casing, which are accepted (Q-NUGET-5). Every version keeps
+  the casing of its own `.nuspec` in its catalog entry.
 
 Versions. NuGet versions are `Major[.Minor[.Patch[.Revision]]][-Prerelease][+Metadata]`
 ([package versioning](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)).
@@ -223,6 +255,11 @@ trove keeps three forms per version:
 - Two versions are equal when their URL forms are equal. `1`, `1.0`, `1.0.0` and `1.0.0.0` are
   one version; `1.0.0-beta` and `1.0.0-Beta` are one version; `3.0.0+a1` and `3.0.0+b2` are one
   version.
+- A zero fourth part and build metadata are both dropped from the URL form, whatever their
+  combination: `2.5.1.0+sha.9f2c` has the URL form `2.5.1`, is stored at
+  `{lower_id}/2.5.1/{lower_id}.2.5.1.nupkg` and appears as `2.5.1+sha.9f2c` in catalog entries and
+  search. No stored path or file name keeps a zero fourth part or build metadata; the original
+  string survives only in `nuget_version.original_version`.
 - A version string that NuGet cannot parse answers 400 on every ingestion path. A valid version
   is stored normalized; build metadata is never a reason to reject.
 - Ordering follows SemVer 2.0.0 precedence with NuGet's extensions: an optional fourth numeric
@@ -249,6 +286,7 @@ Acceptance criteria:
 | `01.02.03.0` | `1.2.3` | `1.2.3+other` | 409 |
 | `2.5` | `2.5.0` | `2.5.0.0` | 409 |
 | `2.5.1.3` | `2.5.1.3` | `2.5.1.3+x` | 409 |
+| `2.6.1.0+sha.9f2c` | `2.6.1` | `2.6.1` | 409 |
 | `1.0.0-Beta.2` | `1.0.0-beta.2` | `1.0.0-BETA.2` | 409 |
 | `1.0.0-beta` | `1.0.0-beta` | `1.0.0-beta.1` | 201 |
 
@@ -257,6 +295,13 @@ Acceptance criteria:
   `["0.9.0","1.0.0-alpha","1.0.0-rc.2","1.0.0-rc.10","1.0.0","1.0.0.1"]`.
 - `curl <feed>/flatcontainer/ACME.Widgets/1.2.3.0/acme.widgets.1.2.3.nupkg` returns the same bytes
   as the lowercase canonical URL.
+- After pushing `Acme.Widgets` `2.6.1.0+sha.9f2c`, `/files/nuget-local/acme.widgets/2.6.1/acme.widgets.2.6.1.nupkg`
+  exists and the SemVer 2 registration leaf shows `"version": "2.6.1+sha.9f2c"`.
+- Pushing a package with ID `Müller.Logging` or `Acme..Widgets` answers 400. A stub upstream
+  serving `Müller.Logging` 1.0.0 lets `dotnet restore` through `nuget-org` restore it, and its
+  `lower_id` is `müller.logging`.
+- A push of `ACME.Widgets` 1.2.4 after `Acme.Widgets` 1.2.3 succeeds; search still shows
+  `Acme.Widgets`, and the 1.2.4 catalog entry shows `"id": "ACME.Widgets"`.
 - The golden-vector test passes in CI.
 
 ### R-NUGET-004 · SemVer 2.0.0 classification and visibility
@@ -320,7 +365,9 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 3. Parse the `.nuspec` as XML: UTF-8 or UTF-16; a document type declaration is rejected (400);
    no entity expansion; elements matched by local name in any `nuspec` namespace version; at most
    `nuget.archive.max_nuspec_bytes`.
-4. Validate `id` and `version` (R-NUGET-003) and every dependency range. On the package pipeline a
+4. Validate `id` (R-NUGET-003: the local rule for content entering a local repository, the
+   upstream rule for remote cache fills), `version`, every dependency ID (upstream rule) and every
+   dependency range. On the package pipeline a
    package whose package types include `SymbolsPackage` is rejected with 400 and the message that
    symbol packages go to the symbol publish resource (R-NUGET-020).
 5. Authorize with the declared ID as coordinate (R-AUTHZ-005 in
@@ -331,18 +378,20 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 6. In the commit transaction (R-STOR-005): create the `packages` row if absent and the
    `package_versions` row (its unique index on the URL form makes a duplicate answer 409); create
    the item of the `.nupkg` as lead item and the derived items with `generated = true`; insert
-   the NuGet side rows below; bump the package revision; publish the change notification of
-   R-REPO-020 so merged caches drop.
+   the NuGet side rows below; increment `packages.rev_seq` (R-ARCH-009); publish the change
+   notification of R-REPO-020 so merged caches drop.
 
 - The `.nupkg` is stored byte for byte as received; trove never rewrites a package, because
   package signatures and lock-file hashes would fail on the client
   ([implementation guide](https://learn.microsoft.com/en-us/nuget/api/implementation-guide)). A
   `.signature.p7s` entry is kept and not verified (H-36).
 - Metadata is complete when the ingestion request returns: a client that pushes and immediately
-  restores or searches sees the new version, on any replica (R-ARCH-011 in
+  restores or searches sees the new version, on any replica (R-ARCH-012 in
   [architecture.md](../architecture.md)). There is no asynchronous metadata calculation for NuGet;
-  every protocol document is rendered from the rows below, and `nuget_package_state.revision` is
-  the package's change sequence that keys R-ARCH-012's rendition cache.
+  every protocol document is rendered from the rows below, and the generic `packages.rev_seq`
+  (R-ARCH-009) is the package's change sequence that keys R-ARCH-012's rendition cache and the
+  ETags of R-NUGET-002. NuGet keeps no counter of its own: the core reads `rev_seq` without format
+  code, also for the merged-metadata check of virtual repositories (R-ARCH-015).
 - Raw deploy (R-STOR-007): `PUT /files/<repoKey>/{lower_id}/{lower_version}/{lower_id}.{lower_version}.nupkg`
   runs this pipeline; a declared ID or version that does not match the path answers 400
   (R-AUTHZ-005). A `.snupkg` at its canonical path runs R-NUGET-020. Every other path or file type
@@ -351,12 +400,18 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 - Upload through the management API without a target path (the UI deploy dialog,
   [api-and-ui.md](../api-and-ui.md)): the plug-in derives the canonical path from the `.nuspec`.
 - Copy and move (R-STOR-019, P1): the plug-in hooks copy or move the NuGet side rows in the same
-  transaction; a version that already exists in the target answers 409. Sources may be NuGet
-  local repositories and remote caches.
+  transaction. A version that the target holds with other bytes, or that is tombstoned there
+  (R-NUGET-006), is refused as a per-item conflict with the code `nuget_version_exists` or
+  `nuget_version_deleted`, whatever `overwrite` says; a version the target holds with identical
+  bytes counts as `unchanged`. Sources may be NuGet local repositories and remote caches; a target
+  local repository applies the local ID rule of R-NUGET-003. A move removes the version from its
+  source repository and therefore writes a tombstone there (R-NUGET-006), because clients of the
+  source may have cached the version.
 - Raw delete (R-STOR-018) of a `.nupkg` removes the whole version: the `OnItemsRemoved` hook removes
-  the derived items, the symbol package and the side rows in the same transaction; with the trash
-  can enabled (R-STOR-022) the version is trashed and restored as a unit. A raw delete of a derived
-  item alone answers 409.
+  the derived items, the symbol package and the side rows and writes the version's tombstone
+  (R-NUGET-006) in the same transaction; with the trash can enabled (R-STOR-022) the version is
+  trashed and restored as a unit, and the `OnItemsRestored` hook removes the tombstone. A raw
+  delete of a derived item alone answers 409.
 
 Metadata extracted from the `.nuspec` into `nuget_version.metadata`:
 
@@ -385,8 +440,11 @@ the bytes live once in the blob store under their content address (INV-4).
 | `{lower_id}/{lower_version}/.symbols/<entry path>` | generated: PDB files from the symbol package (P1) | R-NUGET-021 |
 | `{lower_id}/{lower_version}/.embedded/icon`, `…/license`, `…/readme` | generated: embedded files (P1) | R-NUGET-024 |
 
-Because every path starts with `{lower_id}/`, an include or exclude pattern such as `acme.*/**`
-covers a package's files and metadata alike (R-REPO-005).
+Include and exclude patterns, claims and pin rules are name patterns matched against `lower_id`
+(R-REPO-005, R-REPO-023), so `Acme.*` covers a package's files and metadata alike. Every
+package path starts with `{lower_id}/`, so raw file access and listings group a package the same
+way. Paths that name no package (`.nuget/`, `.vulnerabilities/`, `.symbols/` in remote caches)
+follow R-NUGET-015.
 
 Data model. `repositories`, `packages`, `package_versions` and `items` are the core tables of
 R-STOR-003 in [storage.md](../storage.md). NuGet fills them as follows and adds side tables:
@@ -395,16 +453,12 @@ R-STOR-003 in [storage.md](../storage.md). NuGet fills them as follows and adds 
 |---|---|
 | `packages.name` | `lower_id` |
 | `packages.display_name` | ID casing of the first stored version |
+| `packages.rev_seq` | incremented in every transaction that changes the package's core or NuGet side rows: ingestion, unlist, relist, hard delete, trash restore, copy, move, remote cache fill, reindex (R-ARCH-009, R-ARCH-012) |
 | `package_versions.version` | URL form |
 | `package_versions.display_version` | full normalized version |
 | `package_versions.lead_item_id` | the `.nupkg` item |
 
 ```sql
-CREATE TABLE nuget_package_state (
-    package_id    bigint PRIMARY KEY REFERENCES packages (id) ON DELETE CASCADE,
-    revision      bigint NOT NULL DEFAULT 1        -- bumped on every change; feeds ETags
-);
-
 CREATE TABLE nuget_version (
     version_id       bigint      PRIMARY KEY REFERENCES package_versions (id) ON DELETE CASCADE,
     repository_id    bigint      NOT NULL REFERENCES repositories (id) ON DELETE CASCADE, -- denormalized for search
@@ -473,17 +527,63 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
 
 | Request | Body | Responses | Permission |
 |---|---|---|---|
-| `PUT <feed>/package` | `multipart/form-data`; the first part is the raw `.nupkg`; further parts, part names and part headers are ignored | 201 pushed (empty body); 400 invalid package; 401; 403 (including `deny.ownership`); 409 version exists after normalization; 413 too large | `deploy` on the ID, ownership (R-AUTHZ-007, R-AUTHZ-018) |
+| `PUT <feed>/package` | `multipart/form-data`; the first part is the raw `.nupkg`; further parts, part names and part headers are ignored | 201 pushed (empty body); 400 invalid package; 401; 403 (including `deny.ownership` and `shadows_remote_package`); 409 `nuget_version_exists` or `nuget_version_deleted` (URL form compared); 413 too large; 503 `shadow_check_unavailable`; 507 Insufficient Storage `quota_exceeded` when a repository quota or the system capacity limit is reached ([storage.md](../storage.md) R-STOR-029, P1) | `deploy` on the ID, ownership (R-AUTHZ-007, R-AUTHZ-018) |
 
 - The request runs the ingestion pipeline of R-NUGET-005. A body that is not
   `multipart/form-data` MAY be accepted as the raw `.nupkg`, for scripted uploads with `curl`.
 - This is an API-key endpoint (R-NUGET-012).
-- Versions are immutable: a push whose URL form already exists in the repository answers 409,
-  whatever its content and whatever permissions the caller holds (Q-NUGET-6). The NuGet clients'
-  skip-duplicate option (`--skip-duplicate`, `-SkipDuplicate`) relies on exactly this status.
+- Versions are immutable for the lifetime of the repository (Q-NUGET-6). A push whose URL form
+  exists in the repository answers 409 `nuget_version_exists`; a push whose URL form is tombstoned
+  answers 409 `nuget_version_deleted`. Both hold whatever the content and whatever permissions the
+  caller holds, `overwrite` included (R-AUTHZ-006 lets a format refuse overwrites), and for every
+  ingestion path into a local repository (protocol push, raw deploy, upload; copy and move report
+  them per item, R-NUGET-005). The NuGet clients' skip-duplicate option (`--skip-duplicate`,
+  `-SkipDuplicate`) relies on 409; it also skips a tombstoned version, whose restore then fails
+  with 404.
+- **Tombstones.** Every removal of a version from a local repository writes a `nuget_tombstone`
+  row with the SHA-512 of the removed `.nupkg`, in the transaction that removes the version: hard
+  delete through the protocol (R-NUGET-007), raw and management deletes (R-NUGET-005), a move to
+  another repository (R-NUGET-005), cleanup policies and repository caps
+  ([storage.md](../storage.md), P1). Unlisting and evicting a remote cache entry write none.
+  Tombstones survive the trash can and its purge. Restoring the version from the trash can
+  (R-STOR-023) removes its tombstone in the restore transaction, because the original bytes come
+  back. No API, UI or `trove admin` operation removes a tombstone, and a push of identical bytes is
+  refused like any other; only that restore and the deletion of the whole repository remove one,
+  as for npm (R-NPM-008).
+- **Shadowing check** ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-048,
+  Q-REPO-6). The first push of an ID into a local repository that holds no version of it and no
+  claim covering it runs the check, whether the push is addressed to the repository or to a
+  virtual repository that deploys into it. When a remote member of a containing virtual
+  repository serves the ID, a caller without `manage` on the ID (or `content:bypass`) gets 403
+  `shadows_remote_package`; when no member serves it but at least one cannot be asked, 503
+  `shadow_check_unavailable` with `Retry-After`. Nothing is stored in either case. The path the
+  check looks up and probes is the ID's package document, the flat-container version list
+  `{lower_id}/index.json` (R-NUGET-015). `PUT <feed>/package` answers with these codes, and
+  `dotnet nuget push` and `nuget push` report them as status code and reason phrase
+  (`403 (Forbidden)`, `503 (Service Unavailable)`), because a failed push prints no response body;
+  the code is in the one-line body of R-NUGET-002 for `curl` and in the audit event
+  (`deny.shadowing`). A symbol push never runs the check, because it needs the version to exist
+  already (R-NUGET-020).
 - Two concurrent pushes of the same version, on the same or different replicas, end with exactly
-  one 201 and 409 for the others (unique index in the commit transaction).
+  one 201 and 409 for the others (unique index in the commit transaction). Pushes and deletions
+  first create or lock the package's `packages` row (`FOR UPDATE`) and check versions and
+  tombstones only after that, so a push racing a hard delete of the same version sees either the
+  version or its tombstone, never neither.
 - A push to a remote repository answers 405. A push to a virtual repository is R-NUGET-019.
+
+Data model:
+
+```sql
+CREATE TABLE nuget_tombstone (           -- outlives the trash can and its purge; never purged
+    repository_id bigint      NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+    lower_id      text        NOT NULL,
+    lower_version text        NOT NULL,  -- URL form (R-NUGET-003)
+    sha512        bytea       NOT NULL,  -- of the removed .nupkg
+    deleted_at    timestamptz NOT NULL,
+    deleted_by    uuid        NOT NULL,
+    PRIMARY KEY (repository_id, lower_id, lower_version)
+);
+```
 
 Acceptance criteria:
 
@@ -493,6 +593,18 @@ Acceptance criteria:
 - Ten parallel `curl -X PUT -F package=@Acme.Widgets.2.0.0.nupkg` requests spread across two
   replicas yield one 201 and nine 409.
 - `curl -X PUT … <base>/api/nuget/nuget-org/v3/package` answers 405.
+- After a hard delete of `Acme.Widgets` 1.2.3 (R-NUGET-007), pushing a rebuilt 1.2.3 answers 409
+  `nuget_version_deleted`, also for a token holding `overwrite` and also after the trash can was
+  purged; pushing 1.2.5 succeeds. With the trash can enabled, restoring the deleted version brings
+  back the original SHA-512 and removes the tombstone.
+- After moving `Acme.Widgets` 1.2.6 from `nuget-local` to another local repository (P1), pushing a
+  rebuilt 1.2.6 to `nuget-local` answers 409 `nuget_version_deleted`.
+- `nuget-all` = [`nuget-local`, `nuget-org`], the stub upstream serves `newtonsoft.json`, and no
+  claim covers it: `dotnet nuget push Newtonsoft.Json.99.0.0.nupkg --source trove-local --api-key
+  "$TOKEN"` with a token holding `deploy` but not `manage` fails with `403 (Forbidden)`; the same
+  file sent with `curl -X PUT` answers 403 with a body starting `shadows_remote_package:`; nothing
+  is stored and no claim is created. While the circuit of `nuget-org` is open and nothing is stored
+  for `acme.brand.new`, its first push with that token answers 503 `shadow_check_unavailable`.
 
 ### R-NUGET-007 · Unlist, relist and delete
 Priority: **MVP** · Covers: PKG-NUGET-022, PKG-NUGET-049
@@ -508,17 +620,26 @@ API (both are API-key endpoints, R-NUGET-012):
 - Unlisted versions: absent from search and autocomplete; present in the flat container version
   list and downloadable; `"listed": false` in registration entries. `published` keeps the real
   publish time; trove always emits `listed` explicitly instead of nuget.org's year-1900 marker.
-- Hard delete (`deleteMode: delete`, or a raw delete of the `.nupkg`, R-NUGET-005) removes or
-  trashes the version as a unit per [storage.md](../storage.md) (R-STOR-018, R-STOR-022).
-  Relisting a hard-deleted version answers 404.
-- Unlist and relist bump the package revision and publish the change notification of R-REPO-020.
+- `deleteMode` decides only what the protocol `DELETE` does (Q-NUGET-1): `unlist` (the default)
+  or `delete`. Unlisting an already unlisted version answers 204 again.
+- Hard delete (protocol `DELETE` with `deleteMode: delete`; a delete through the management API or
+  the UI; a raw delete of the `.nupkg`, R-NUGET-005) removes or trashes the version as a unit per
+  [storage.md](../storage.md) (R-STOR-018, R-STOR-022) and writes its tombstone (R-NUGET-006), so
+  the version number can never return with other bytes. Management, UI and raw deletes are hard
+  deletes whatever `deleteMode` says; they need the same `delete` permission and ownership. Relisting
+  or deleting a hard-deleted version answers 404.
+- The repository settings page in the UI shows the effective `deleteMode`, so users know what
+  `dotnet nuget delete` does in that repository.
+- Unlist and relist increment `packages.rev_seq` (R-ARCH-009) and publish the change notification
+  of R-REPO-020.
 
-Configuration (per local repository, `formatSettings` of the repository document,
-[repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004):
+Configuration (per local repository: the format member `nuget` of the repository document,
+[repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004; not the `nuget` section of
+the system file):
 
 ```yaml
-formatSettings:
-  deleteMode: unlist         # default (proposed); unlist | delete (Q-NUGET-1)
+nuget:
+  deleteMode: unlist         # default (proposed); unlist | delete; decided in Q-NUGET-1
 ```
 
 Acceptance criteria:
@@ -526,7 +647,8 @@ Acceptance criteria:
 - `dotnet nuget delete Acme.Widgets 1.2.3 --source trove-local --api-key "$TOKEN" --non-interactive`
   exits 0. Afterwards `dotnet package search Acme.Widgets --source trove-local --exact-match`
   shows no `1.2.3`; the flat container list still contains `1.2.3`; a project pinned to `[1.2.3]`
-  still restores; the SemVer 2 registration shows `"listed": false`.
+  still restores; the SemVer 2 registration shows `"listed": false`. Running the delete command a
+  second time exits 0 as well.
 - `curl -X POST -H "X-NuGet-ApiKey: $TOKEN" <feed>/package/acme.widgets/1.2.3` answers 200 and the
   version is back in search; a second POST answers 200 again. A token with `delete` and
   `annotate` but without `deploy` gets 403 for the POST.
@@ -600,7 +722,7 @@ Documents per hive `<hive>`:
 | `packageContent` | flat container `.nupkg` URL (legacy duplicate) |
 | `authors`, `description`, `iconUrl`, `language`, `licenseUrl`, `minClientVersion`, `projectUrl`, `requireLicenseAcceptance`, `summary`, `tags`, `title` | from `metadata`; absent values omitted |
 | `licenseExpression` | `license` value when its type is `expression` |
-| `dependencyGroups` | per group `targetFramework` (verbatim, omitted when absent) and `dependencies` with `id`, `range` (verbatim; omitted when the `.nuspec` gave none) and `registration` (the dependency's index URL in the same hive of the same repository) |
+| `dependencyGroups` | per group `targetFramework` (verbatim, omitted when absent) and `dependencies` with `id`, `range` (verbatim; omitted when the `.nuspec` gave none) and `registration` (the dependency's index URL in the same hive of the same repository; omitted, as the protocol allows, when the dependency ID is outside the ASCII local rule of R-NUGET-003) |
 | `deprecation`, `vulnerabilities` | omitted for local packages; passed through for remote ones (R-NUGET-015) |
 | `readmeUrl` | omitted; README access is R-NUGET-024 |
 
@@ -830,7 +952,7 @@ Acceptance criteria:
 - With anonymous read granted on `nuget-local`: `curl <feed>/index.json` answers 200 without
   credentials; after setting `requireAuthentication: true` it answers 401, and a restore with
   `nuget.config` credentials succeeds and is audited under the token's principal.
-- `curl -X POST -b "trv_session=$S" <feed>/package/acme.widgets/1.2.3` answers 401.
+- `curl -X POST -b "__Host-trv_session=$S" <feed>/package/acme.widgets/1.2.3` answers 401.
 
 ### R-NUGET-013 · Permissions per NuGet operation
 Priority: **MVP** · Covers: PKG-NUGET-019
@@ -875,8 +997,8 @@ Priority: **MVP** · Covers: PKG-NUGET-023, PKG-NUGET-024, RMT-004
 Remote settings shared by all formats are fields of the `remote` section owned by
 [repositories-and-proxy.md](../repositories-and-proxy.md) (R-REPO-024). For NuGet:
 
-- `remote.upstream.url` is the upstream's v3 service index URL. The default for a new NuGet remote
-  is `https://api.nuget.org/v3/index.json`.
+- `remote.url` is the upstream's v3 service index URL. The default for a new NuGet remote is
+  `https://api.nuget.org/v3/index.json`.
 - On create, update and the upstream test (R-REPO-024 probes the service index), the plug-in
   requires a `PackageBaseAddress/3.0.0` resource and at least one `RegistrationsBaseUrl` type in
   the upstream index; otherwise the configuration is refused with 422 naming the missing resource.
@@ -886,39 +1008,40 @@ Remote settings shared by all formats are fields of the `remote` section owned b
   before the unversioned type; the autocomplete resource likewise; `VulnerabilityInfo/6.7.0` (P1).
   The upstream index is a metadata cache entry (R-NUGET-015); rediscovery happens when it expires.
 - Discovered resources may live on other hosts than the service index. They are fetched only when
-  their host is the upstream origin or matches `remote.upstream.extraHosts`; otherwise 502
-  `foreign_host_denied` (R-REPO-043). For the default upstream the NuGet format proposes
-  `extraHosts: [{"pattern": "*.nuget.org", "sendCredentials": false}]`, because nuget.org serves
-  search and symbols from other `nuget.org` hosts.
+  their host is the upstream origin or matches `remote.extraHosts`; otherwise 502
+  `foreign_host_denied` (R-REPO-043). `extraHosts` is the generic member of R-REPO-024 (Q-REPO-5);
+  NuGet defines no host list of its own. For its default upstream the NuGet format registers the
+  proposed entry `{"pattern": "*.nuget.org", "sendCredentials": false}` in the format catalog
+  (R-NUGET-001, R-REPO-003), because nuget.org serves search and symbols from other `nuget.org`
+  hosts.
 - A trove repository on another instance is a valid upstream: its service index is a plain v3
   index, so no special mode is needed.
 - The remote's own service index lists trove URLs only (R-NUGET-002); it never lists publish
   resources, and publish requests answer 405.
 
 Configuration (per remote repository; `remote` belongs to
-[repositories-and-proxy.md](../repositories-and-proxy.md) and is shown for context;
-`formatSettings` is NuGet's):
+[repositories-and-proxy.md](../repositories-and-proxy.md) and is shown for context; the format
+member `nuget` is NuGet's, R-REPO-004):
 
 ```yaml
 key: nuget-org                                   # example
 class: remote
 format: nuget
 remote:
-  upstream:
-    url: https://api.nuget.org/v3/index.json     # default (proposed) for NuGet remotes
-    extraHosts:                                  # proposed by the format for nuget.org
-      - pattern: "*.nuget.org"
-        sendCredentials: false
-formatSettings:
-  forwardSearch: true                            # default (proposed); R-NUGET-016, Q-NUGET-4
+  url: https://api.nuget.org/v3/index.json       # default (proposed) for NuGet remotes
+  extraHosts:                                    # proposed by the format for nuget.org (R-REPO-003)
+    - pattern: "*.nuget.org"
+      sendCredentials: false
+nuget:
+  forwardSearch: true                            # default (proposed); R-NUGET-016, decided in Q-NUGET-4
   symbolServerUrl: https://symbols.nuget.org/download/symbols   # default (proposed); empty disables; P1
   vulnerabilityInfo: true                        # default (proposed); P1
 ```
 
 Acceptance criteria:
 
-- Creating a remote with only `remote.upstream.url` set to nuget.org's index succeeds; the
-  upstream test reports it reachable.
+- Creating a remote with only `remote.url` set to nuget.org's index succeeds; the upstream test
+  reports it reachable.
 - Creating a remote whose upstream index lacks `PackageBaseAddress/3.0.0` (stub server) is refused
   with 422 naming it.
 - A remote whose upstream is `nuget-all` on a second trove instance restores packages through
@@ -935,12 +1058,12 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
 |---|---|---|---|
 | service index | rendered | — | none; built from the remote's configuration |
 | (discovery) | metadata | `.nuget/index.json` | upstream service index |
-| `flatcontainer/{lower_id}/index.json` | metadata | `{lower_id}/index.json` | upstream package content `{lower_id}/index.json` |
+| `flatcontainer/{lower_id}/index.json` | metadata; the ID's package document (R-REPO-003) | `{lower_id}/index.json` | upstream package content `{lower_id}/index.json` |
 | `.nupkg` | artifact | `{lower_id}/{lower_version}/{lower_id}.{lower_version}.nupkg` | upstream package content URL; when that answers 404 but the upstream registration lists the version, the leaf's `packageContent` (recorded in `remote_url_map`) |
 | `.nuspec` | artifact | `{lower_id}/{lower_version}/{lower_id}.nuspec` | extracted from the cached `.nupkg`; when that is not cached, upstream package content `.nuspec` |
 | any registration document | metadata | `{lower_id}/.registration/index.json` and `{lower_id}/.registration/page/{n}.json` | upstream registration index of the discovered hive, plus every non-inlined page |
 | search, autocomplete | search | — | R-NUGET-016 |
-| symbol file (P1) | artifact | `.symbols/<key>` | R-NUGET-022 |
+| symbol file (P1) | artifact; routing name = first segment of the key (the file name the debugger looks for) without its last extension, lowercased | `.symbols/<key>` | R-NUGET-022 |
 | vulnerability index and pages (P1) | metadata | `.vulnerabilities/index.json`, `.vulnerabilities/<name>.json` | R-NUGET-023 |
 
 - Stored upstream documents stay unchanged. Registration documents are not passed through: at
@@ -960,25 +1083,59 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
 
 - Upstream URLs for package content are derived from the discovered `PackageBaseAddress` and the
   canonical path, never from a host named in a client request (R-REPO-043).
-- Every cached `.nupkg` is parsed like an upload (R-NUGET-005 steps 1 to 4, without the
-  `SymbolsPackage` rejection) and recorded with `origin = 'cache'` rows; a package that fails
-  parsing is still served and cached, logged and counted (R-NUGET-028), but gets no NuGet rows.
-  The bytes are never altered. A cached `.nupkg` whose `.nuspec` parses but declares an ID or
-  version whose URL form differs from the canonical path MUST be refused with 502
+- Every cached `.nupkg` is parsed like an upload (R-NUGET-005 steps 1 to 4 with the upstream ID
+  rule of R-NUGET-003, without the `SymbolsPackage` rejection) and recorded with `origin = 'cache'`
+  rows; a package that fails parsing is still served and cached, logged and counted (R-NUGET-028),
+  but gets no NuGet rows. The bytes are never altered. A cached `.nupkg` whose `.nuspec` parses but
+  declares an ID that differs from the request's ID segment under Unicode simple case folding, or a
+  version whose URL form differs from the canonical path, MUST be refused with 502
   `upstream_package_mismatch` and not stored. NuGet v3 announces no content digest (H-35), so the
   declared identity is the only check that the upstream served the package that was asked for.
-- Include and exclude patterns of the remote (R-REPO-005) and namespace claims (R-REPO-023)
-  see the canonical paths above, so `acme.*/**` keeps internal IDs away from nuget.org. The
-  upstream service index and the vulnerability documents name no package; the plug-in marks them
-  repository-level and patterns are not applied to them, so a remote restricted to a few ID
-  prefixes still discovers its upstream (Q-NUGET-7). Symbol files are not exempt: their keys carry
-  assembly names.
+- Patterns and package-less requests (Q-NUGET-7). Include and exclude patterns of the remote
+  (R-REPO-005), namespace claims and pin rules (R-REPO-023) are name patterns matched against the
+  descriptor's package name, so `excludePatterns: ["Acme.*"]` keeps internal IDs away from
+  nuget.org for version lists, registrations, packages and search results alike. The upstream
+  service index, the vulnerability index and pages, search and autocomplete name no package: the
+  plug-in marks them repository-level, and R-REPO-005 admits them, so a remote restricted to a few
+  ID prefixes still discovers its upstream. Search has its own protection (R-NUGET-016). Symbol
+  files are not package-less: their descriptor carries the routing name of the table above (the
+  key's first segment without its last extension, lowercased: `acme.widgets` for
+  `acme.widgets.pdb/<index>/acme.widgets.pdb`, for the compressed probe
+  `acme.widgets.pdb/<index>/acme.widgets.pd_` and for a binary key
+  `acme.widgets.dll/<index>/acme.widgets.dll` alike), because a debugger probes every configured
+  symbol location for every module it loads, internal assemblies included, and SDK projects name
+  the package after the assembly by default
+  ([pack target](https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets#pack-target)).
+  Every key shape therefore gets a routing name; none is forwarded unprotected. The routing name
+  serves patterns, claims, pin rules and the gone rule below only; authorization of an upstream
+  symbol file stays repository-level (R-NUGET-013).
+- **Gone IDs** (R-REPO-029, Q-REPO-3). The version list `{lower_id}/index.json` is the ID's package
+  document. When the upstream answers 404 or 410 for it, the ID is marked gone: the remote and its
+  cache view answer 404 for every request that names the ID (the version list, every registration
+  document, the cached `.nupkg` and `.nuspec`, from P1 the embedded files and the symbol files
+  whose routing name is the ID), without an upstream request for those paths, and the remote
+  contributes nothing of the ID to virtual repositories, so a virtual repository answers 404 unless
+  another member serves it. The only upstream request for the ID is the version list: when a client
+  asks for it, or when another request for the ID arrives after the version list's negative entry
+  has expired or was invalidated, which then refreshes the version list first (R-REPO-025, gone
+  packages). The mark clears when the upstream serves the version list again. The
+  cached items stay stored, listed in the management item API and the cache view's entry list, and
+  copyable into a local repository (R-REPO-032), which is how a build keeps a package the upstream
+  withdrew legitimately. NuGet does not track removal per version: a version withdrawn from an ID
+  that still exists upstream disappears from the refreshed version list and registrations, but its
+  cached `.nupkg` stays downloadable by exact path ([repositories-and-proxy.md](../repositories-and-proxy.md)
+  H-5).
 - Digests (R-REPO-041): NuGet v3 package metadata announces no content digest, so in the MVP the
-  plug-in supplies none; `verify-if-available` records the computed digests. `checksumPolicy:
-  require` on a NuGet remote is refused with 422 until R-NUGET-029 supplies digests (H-35).
-- Metadata cache period: the NuGet format default registered under R-REPO-003 applies to the
-  service index, version lists, registrations and vulnerability data (R-REPO-024 lists 7200 s
-  today; Q-NUGET-2 proposes 300 s). `.nupkg`, `.nuspec`, icons and symbol files are immutable.
+  plug-in supplies none; `verify-if-available` records the computed digests.
+  `remote.integrity.checksumPolicy: require` on a NuGet remote is refused with 422 until
+  R-NUGET-029 supplies digests (H-35).
+- Metadata cache period (Q-NUGET-2): the NuGet format registers a default metadata period of
+  300 s (`cache.metadataTtlSeconds`, R-REPO-024) for the upstream service index, version lists,
+  registrations and vulnerability data, and keeps the not-found period at 1800 s. A refresh is a
+  conditional request collapsed across replicas (R-REPO-026, R-REPO-027), so an unchanged document
+  costs one 304 per period per remote repository, not one per client. Administrators may set any
+  period in the range of R-REPO-024 per remote. `.nupkg`, `.nuspec`, icons and symbol files are
+  immutable.
 - Push, delete and relist are not offered (405).
 
 Acceptance criteria (against a stub v3 upstream in CI and, in a nightly job, against nuget.org):
@@ -989,14 +1146,25 @@ Acceptance criteria (against a stub v3 upstream in CI and, in a nightly job, aga
   except `projectUrl`, `licenseUrl` and `iconUrl` starts with `<base>/api/nuget/nuget-org/v3/`.
 - For a stub upstream with 200 versions of one ID in non-inlined pages, the remote's index uses
   trove's paging and contains all 200 leaves.
-- With exclude pattern `acme.*/**`,
+- With `excludePatterns: ["Acme.*"]`,
   `curl <base>/api/nuget/nuget-org/v3/flatcontainer/acme.widgets/index.json` answers 404 and the
-  stub upstream records no request.
+  stub upstream records no request. With `includePatterns: ["Newtonsoft.*"]` instead, restoring
+  `Newtonsoft.Json 13.0.3` through `nuget-org` succeeds, which needs the upstream service index.
+- With default settings, a version the stub upstream adds to an already cached version list is
+  restorable through `nuget-org` at most 300 s (plus the refresh) later; while nothing changes,
+  the stub records only conditional requests answered 304, at most one per document per 300 s
+  across both replicas.
 - 50 concurrent restores of the same uncached package across two replicas cause one upstream
   `.nupkg` request.
 - The SHA-512 of a `.nupkg` served by the remote equals the one served by the upstream.
 - A stub upstream that serves `Other.Pkg 1.0.0` at the content URL of `acme.widgets` 1.0.0 causes
   502 `upstream_package_mismatch`, and no item exists afterwards.
+- `Acme.Gone` 1.0.0 is cached through `nuget-org`; after the metadata period the stub answers 404
+  for its version list. Then `registration-semver2/acme.gone/index.json`, the `.nuspec` and the
+  `.nupkg` answer 404 through `nuget-org`, `nuget-org~cache` and `nuget-all`, the stub records no
+  request for any of them, and the `.nupkg` item is still listed by the management item API (the
+  generic criterion is R-REPO-029's). After the stub serves the version list again and the negative
+  period has passed, `dotnet restore` of `Acme.Gone 1.0.0` through `nuget-all` succeeds.
 
 ### R-NUGET-016 · Search and autocomplete through a remote repository
 Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
@@ -1006,9 +1174,23 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   trove's limits (R-REPO-025 lets the plug-in map these parameters). Result URLs are rewritten as
   in R-NUGET-015 (`registration`, `versions[].@id` into the hive that matches the request's
   `semVerLevel`); `owners`, `verified`, `deprecation`, `vulnerabilities`, download counts and
-  `packageTypes` are kept. Results whose ID is excluded by the remote's patterns, reserved, or not
-  readable by the caller are removed, and `totalHits` is reduced by the number removed from the
-  returned page.
+  `packageTypes` are kept. Results whose ID is excluded by the remote's patterns, refused by remote
+  refusal (a `global` claim, R-REPO-023), or not readable by the caller are removed, and
+  `totalHits` is reduced by the number removed from the returned page. Through a virtual
+  repository, R-NUGET-018 step 2 also removes IDs that its claims and pin rules keep away from this
+  remote.
+- **Withheld queries** (Q-NUGET-4). A query is not forwarded when one of its terms is protected;
+  the remote then answers that request with its cache-only search. The plug-in splits `q` into
+  terms as R-NUGET-010 does (a phrase into its words), drops a `field:` prefix and lowercases each
+  term like an ID (R-NUGET-003). A term is protected when, for a package whose `lower_id` equals
+  the term, an exclude pattern of the remote, a namespace claim in effect for the request or a pin
+  rule in effect for the request would keep the package away from this remote (R-REPO-005,
+  R-REPO-023; through a virtual repository the claims and pin rules in effect in that virtual
+  repository, on the remote directly the `global` claims when remote refusal is on). A term is also
+  protected when it equals the literal part of such a prefix pattern without the `*` and without a
+  trailing `.`, `-` or `_` (for `Acme.*`: `acme`). Include patterns do not protect terms: they
+  restrict what a remote serves, not what is sensitive. The check uses the in-memory claim trie of
+  R-REPO-023 and adds no database query. Withheld requests are counted (R-NUGET-028).
 - Forwarded responses are kept in an in-process cache for `nuget.search.remote_result_ttl`; they are
   not persisted. Forwarding needs `read` on the remote; it caches nothing, so the cache fill rule
   does not apply.
@@ -1033,6 +1215,10 @@ Acceptance criteria:
 - With `forwardSearch: false`, the same search returns only packages restored through the remote
   before.
 - With the upstream unreachable, search answers 200 from the cache-only mode.
+- `nuget-local` claims `Acme.*` (scope `members`) and holds `Acme.Widgets`. Through `nuget-all`,
+  `q=acme`, `q=acme.payments` and `q=packageid:Acme.Widgets` answer 200 and the stub upstream
+  records no search request; `q=newtonsoft` is forwarded. With `excludePatterns: ["Contoso.*"]` on
+  `nuget-org`, `q=contoso.secret` sent to `nuget-org` directly is not forwarded either.
 
 ### R-NUGET-017 · Virtual repository: merged package content and metadata
 Priority: **MVP** · Covers: PKG-NUGET-026, REPO-035, REPO-036, REPO-037
@@ -1052,12 +1238,23 @@ metadata cache (R-REPO-020) and dependency-confusion protection (R-REPO-023) are
 - NuGet v3 has no "latest version" artifact request; clients choose from version lists. The union
   already contains every member's versions, upstream ones included, which is what REPO-036 asks
   for.
-- Pin rules and namespace claims (R-REPO-023) apply per ID: for a pinned ID, and for every ID that
-  a local member claims (automatically on its first publish with `local.autoClaim`), remote
-  members contribute nothing to its version list, registration,
-  downloads or search results, and are not asked upstream.
-- A publish to a member is visible through the virtual repository at once (R-REPO-020 drops the
-  merged entries on all replicas). A merge without a transiently failing remote member is served
+- Pin rules and namespace claims (R-REPO-023) apply per ID, matched against `lower_id` and
+  evaluated on stored configuration only, never on the caller's permissions:
+  - For an ID that a pin rule of the virtual repository selects, only that rule's `members`
+    contribute to its version list, registration, downloads and search results; a rule may name a
+    remote member (a partner feed), which is the only way a claimed ID reaches a remote.
+  - Otherwise, for an ID that a claim in effect in the virtual repository covers (a `members` claim
+    of a local member, which `local.autoClaim: true` creates on the ID's first publish, or a
+    `global` claim of any local NuGet repository), only the local members holding the most specific
+    claim contribute; remote members contribute nothing and are not asked upstream, and without
+    such a member the answer is 404.
+  - The first publish of an ID that a remote member serves needs `manage` or a prior manual claim
+    (R-REPO-048, R-NUGET-006); an auto claim is not created when another repository's claim in
+    effect in a containing virtual repository covers the ID (R-REPO-023).
+- A publish to a member is visible through the virtual repository at once, on every replica: the
+  core's merged-metadata cache checks the `packages.rev_seq` of every eligible local member on each
+  hit, notification or not ([architecture.md](../architecture.md) R-ARCH-015, Q-ARCH-9), and
+  R-REPO-020 also drops the merged entries. A merge without a transiently failing remote member is served
   with `Cache-Status: trove; detail=partial` and not cached (R-REPO-020).
 
 Configuration (per virtual repository; `virtual` belongs to
@@ -1073,19 +1270,21 @@ virtual:
   pinning:                                       # pin rules: R-REPO-023
     rules:
       - packages: ["Acme.*"]                     # example
-        repositories: [nuget-local]
+        members: [nuget-local]
 ```
 
 Acceptance criteria:
 
 - With `nuget-all` as the only source (`<clear />` in `nuget.config`), `dotnet restore` of a
   project referencing `Acme.Widgets 1.2.3` (local) and `Newtonsoft.Json 13.0.3` (remote) succeeds.
-- `Contoso.Util 2.0.0` in `nuget-local` and `Contoso.Util` `2.0.0` and `2.1.0` at the stub upstream,
-  `autoClaim: false` on `nuget-local`, no claims and no rules: the virtual version list is `["2.0.0","2.1.0"]`; the `2.0.0`
-  download carries `Trove-Resolved-From: nuget-local` and its registration entry carries the
-  local metadata. With `autoClaim: true` on `nuget-local` (the publish creates the claim) the list
-  is `["2.0.0"]` and the stub records no
-  request for `contoso.util`.
+- `Contoso.Util 2.0.0` in `nuget-local`, pushed by a holder of `manage` on it (R-REPO-048), and
+  `Contoso.Util` `2.0.0` and `2.1.0` at the stub upstream; `local.autoClaim: false` on
+  `nuget-local`, no claims and no rules: the virtual version list is `["2.0.0","2.1.0"]`; the
+  `2.0.0` download carries `Trove-Resolved-From: nuget-local` and its registration entry carries
+  the local metadata. With `local.autoClaim: true` on `nuget-local` (the push creates the claim)
+  the list is `["2.0.0"]` and the stub records no request for `contoso.util` afterwards.
+- A pin rule `{"packages": ["Partner.*"], "members": ["nuget-org"]}` in `nuget-all` resolves
+  `Partner.Sdk` from `nuget-org` although `nuget-local` claims `Partner.*`.
 - Push through `nuget-all`, then `dotnet restore --no-http-cache` through `nuget-all` on the other
   replica within one second sees the new version.
 - With the stub upstream down and nothing cached, local packages still restore through
@@ -1099,8 +1298,12 @@ R-REPO-019's filtering:
 
 1. Each member is queried in parallel with the request's filters, `skip=0` and
    `take = min(skip + take, virtualMergeWindow)`. Local members use R-NUGET-010, remote members
-   R-NUGET-016.
-2. Results of remote members for pinned or claimed IDs (R-REPO-023) are removed.
+   R-NUGET-016, including its withheld-query rule evaluated with this virtual repository's claims
+   and pin rules.
+2. Results of a remote member are removed for every ID that this virtual repository's pin rules
+   or claims keep away from that member (R-REPO-023, as in R-NUGET-017): an ID whose selected pin
+   rule does not name the member, or, without a pin rule, an ID that a claim in effect here
+   covers.
 3. The merged order is: packages whose ID equals a query term exactly (from any member), then the
    remaining results member by member in resolution order, each member's own order kept.
 4. Results are deduplicated by `lower_id`. For a package found in several members, `versions` is
@@ -1128,8 +1331,10 @@ Acceptance criteria:
 
 - `dotnet package search acme --source trove-all` returns local `Acme.*` packages before upstream
   results, and `q=packageid:newtonsoft.json` returns `Newtonsoft.Json` first.
-- A package present in `nuget-local` and at the stub upstream, not pinned, appears once with the
-  union of its versions; when pinned, only with the local versions.
+- A package present in `nuget-local` (`local.autoClaim: false`, pushed by a `manage` holder,
+  R-REPO-048) and at the stub upstream, neither pinned nor claimed, appears once with the union of
+  its versions; when a pin rule names only `nuget-local` for it, or a claim of `nuget-local` covers
+  it, only with the local versions.
 - `curl "<feed>/search?q=&skip=1000&take=20"` on `nuget-all` answers 200 with empty `data`.
 - Visual Studio 2022's browse tab on `nuget-all` loads more results while scrolling (manual check,
   recorded per release).
@@ -1160,7 +1365,7 @@ an API-key endpoint (R-NUGET-012):
 
 | Request | Responses | Permission |
 |---|---|---|
-| `PUT <feed>/symbolpackage`, body as package push, carrying a `.snupkg` | 201 stored; 400 invalid symbol package; 401; 403; 404 no package with that ID and version in the repository; 409 a different symbol package for that version exists; 413 | `deploy` on the ID, ownership |
+| `PUT <feed>/symbolpackage`, body as package push, carrying a `.snupkg` | 201 stored; 400 invalid symbol package; 401; 403; 404 no package with that ID and version in the repository; 409 a different symbol package for that version exists; 413; 507 Insufficient Storage `quota_exceeded` when a repository quota or the system capacity limit is reached ([storage.md](../storage.md) R-STOR-029, P1) | `deploy` on the ID, ownership |
 
 - Validation, beyond the archive and `.nuspec` rules of R-NUGET-005: the package types MUST include
   `SymbolsPackage`; the matching `.nupkg` (same URL form) MUST exist in the target repository;
@@ -1252,18 +1457,22 @@ Acceptance criteria:
 ### R-NUGET-022 · Symbol proxy and symbol resolution through virtual repositories
 Priority: **P1** · Covers: PKG-NUGET-031, PKG-NUGET-032
 
-- A remote repository with a non-empty `formatSettings.symbolServerUrl` answers
+- A remote repository with a non-empty `nuget.symbolServerUrl` answers
   `GET <feed>/symbols/<key>` by requesting `<symbolServerUrl>/<key>` (key lowercased) through the
   remote request path, forwarding a `SymbolChecksum` header when present; the public gallery's
   symbol server reportedly requires that header for Portable PDBs (not verified against Microsoft
-  documentation). The host must be the upstream origin or in `extraHosts` (R-NUGET-014). Results
+  documentation). The host must be the upstream origin or in `remote.extraHosts` (R-NUGET-014). Results
   are cached as immutable artifacts under `.symbols/<key>`; a cached Portable PDB is checked
   against the request's `SymbolChecksum` as in R-NUGET-021.
 - An upstream 404 enters the negative cache only for requests that carried a `SymbolChecksum`
   header or for Windows PDB keys, so a probe without header cannot hide a file from a later
   request with header.
-- The canonical path `.symbols/<key>` is not under a package ID; a remote whose include patterns
-  list only ID prefixes does not serve symbols unless `.symbols/**` is included.
+- Patterns, claims and pin rules see the routing name of a symbol request (the key's first segment
+  without its last extension, R-NUGET-015). A remote with `excludePatterns: ["Acme.*"]`, or a
+  virtual repository in which `Acme.*` is claimed or pinned to local members, never asks the
+  upstream symbol server for `acme.widgets.pdb` (nor for its `.pd_` probe); a remote with `includePatterns: ["Newtonsoft.*"]` serves
+  `newtonsoft.json.pdb` and nothing else. An internal assembly whose name no protecting pattern
+  covers is still requested upstream when a local member does not hold it (Security notes).
 - Symbol packages cannot be pushed into a remote repository (405).
 - A virtual repository answers symbol requests from its members in tier order: local symbol
   files first, then remote caches, then remote upstreams.
@@ -1276,6 +1485,8 @@ Acceptance criteria:
 - Through `nuget-all`, a key present in `nuget-local` is served locally without an upstream
   request; an unknown key requested with `SymbolChecksum` answers 404 and is not requested upstream
   again within the negative cache period.
+- With `Acme.*` claimed by `nuget-local`, a request through `nuget-all` for an `acme.payments.pdb`
+  key that no local member holds answers 404 and the stub symbol server records no request.
 
 ### R-NUGET-023 · Vulnerability information
 Priority: **P1** · Covers: PKG-NUGET-051
@@ -1284,7 +1495,7 @@ NuGet 6.7 and later download the
 [vulnerability resource](https://learn.microsoft.com/en-us/nuget/api/vulnerability-info) during
 restore and audit packages locally.
 
-- A remote repository with `formatSettings.vulnerabilityInfo: true` whose upstream offers
+- A remote repository with `nuget.vulnerabilityInfo: true` whose upstream offers
   `VulnerabilityInfo/6.7.0` lists the resource in its own service index and serves
   `<feed>/vulnerabilities/index.json` and `<feed>/vulnerabilities/<name>.json`. Index and pages are
   metadata cache entries; page URLs are rewritten to the remote; `@updated` is kept, so clients
@@ -1335,8 +1546,8 @@ Acceptance criteria:
   Studio 2022 package manager when installed from `nuget-local` (manual check, recorded per
   release).
 - `curl -I <feed>/flatcontainer/acme.widgets/1.5.0/readme` returns `text/markdown` with
-  `Content-Security-Policy: sandbox; default-src 'none'`; for a package without README it returns
-  404.
+  `Content-Security-Policy: sandbox; default-src 'none'` and
+  `Cross-Origin-Resource-Policy: same-site`; for a package without README it returns 404.
 
 ### R-NUGET-025 · Metadata reindex
 Priority: **P1** · Covers: PKG-NUGET-007, API-040, FMT-012
@@ -1354,6 +1565,8 @@ NuGet repositories the plug-in:
 - extracts missing embedded files (R-NUGET-024) and indexes symbol packages without
   `indexed_at` (R-NUGET-021);
 - checkpoints progress per `lower_id`, so a job resumed on another replica skips finished IDs;
+- increments `packages.rev_seq` (R-ARCH-009) of every package whose rows it changed, in the batch's
+  transaction, so no rendition cached under the old value is served again (R-ARCH-012);
 - never changes stored bytes.
 
 On a virtual repository the operation only drops the merged-metadata cache (R-REPO-016).
@@ -1469,7 +1682,8 @@ Event catalog, schema and metric conventions are owned by
   `nuget.symbolpush`, `nuget.symbols`, `nuget.vulnerabilities`.
 - Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repository,reason}`,
   `trove_nuget_remote_unparseable_packages_total{repository}`,
-  `trove_nuget_search_forward_failures_total{repository}`.
+  `trove_nuget_search_forward_failures_total{repository}`,
+  `trove_nuget_search_withheld_total{repository}` (R-NUGET-016).
 
 Acceptance criteria:
 
@@ -1485,13 +1699,13 @@ document) at catalog leaves that carry `packageHash` and `packageHashAlgorithm` 
 ([catalog](https://learn.microsoft.com/en-us/nuget/api/catalog-resource)).
 
 - On a cache miss for a `.nupkg`, the plug-in fetches that leaf when its host is the upstream
-  origin or in `extraHosts`, and supplies the decoded hash (SHA-512) as the announced digest to
+  origin or in `remote.extraHosts`, and supplies the decoded hash (SHA-512) as the announced digest to
   R-REPO-041. The leaf is cached as an immutable artifact under
   `{lower_id}/{lower_version}/.catalog-leaf.json`.
 - An upstream without catalog leaves, or a leaf without hash, supplies no digest; the policy of
   R-REPO-041 decides (`verify-if-available` accepts, `require` refuses with 502
-  `upstream_digest_missing`). With this requirement in place, `checksumPolicy: require` is allowed
-  on NuGet remotes.
+  `upstream_digest_missing`). With this requirement in place,
+  `remote.integrity.checksumPolicy: require` is allowed on NuGet remotes.
 - Whether the leaf hash always matches the repository-signed package that nuget.org serves was
   not verified; the nightly job settles it before the requirement ships.
 
@@ -1501,7 +1715,7 @@ Acceptance criteria:
   restore` fails, no item exists afterwards, and the integrity failure counter of R-REPO-041
   increments.
 - In the nightly job, restoring 50 popular nuget.org packages through a remote with
-  `checksumPolicy: require` succeeds.
+  `remote.integrity.checksumPolicy: require` succeeds.
 
 ## Deferred
 
@@ -1530,10 +1744,12 @@ Acceptance criteria:
   or push on the user's behalf.
 - **Package-derived content.** `.nuspec`, README, license and icon responses come from untrusted
   package authors and are served from trove's origin. They carry `X-Content-Type-Options:
-  nosniff` and `Content-Security-Policy: sandbox; default-src 'none'`; icons are served only as
-  `image/png` or `image/jpeg` after a content check. An XML document can run script in a browser
-  through XHTML-namespaced elements, which the sandbox prevents. Whether the UI and package
-  endpoints share an origin is decided in [architecture.md](../architecture.md).
+  nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` and
+  `Cross-Origin-Resource-Policy: same-site`, set by the core so no handler can drop them
+  ([architecture.md](../architecture.md) R-ARCH-007); icons are served only as `image/png` or
+  `image/jpeg` after a content check. An XML document can run script in a browser through
+  XHTML-namespaced elements, which the sandbox prevents. They share one origin in the MVP
+  (R-ARCH-007); an optional content origin is P1 (R-ARCH-029).
 - **Parser hardening.** `.nuspec` parsing rejects document type declarations and expands no
   entities; archive limits bound entries, total size and compression ratio; entry names are never
   used as filesystem paths (R-NUGET-005).
@@ -1545,13 +1761,32 @@ Acceptance criteria:
   `requireAuthentication`.
 - **Dependency confusion.** A virtual repository that merges local packages with nuget.org would
   offer a public package with an internal ID and a higher version. Pin rules and namespace
-  claims (R-REPO-023) apply to NuGet IDs case-insensitively (R-NUGET-017,
-  R-NUGET-018); client setup recommends one virtual source with `<clear />` (R-NUGET-026). The
-  remaining exposure (names that are neither published locally nor pinned nor reserved) is
-  tracked where the mechanism lives, in [authorization.md](../authorization.md) and
-  [repositories-and-proxy.md](../repositories-and-proxy.md).
+  claims (R-REPO-023) apply to NuGet IDs case-insensitively through `lower_id` (R-NUGET-017,
+  R-NUGET-018): the first publish of an ID claims it for its local repository
+  (`local.autoClaim`), a `global` claim also makes every NuGet remote refuse the ID when addressed
+  directly, and the first publish of an ID that a remote member serves needs `manage`
+  (R-REPO-048). Client setup recommends one virtual source with `<clear />` (R-NUGET-026). The
+  remaining exposure is tracked where the mechanism lives: IDs that no claim in effect and no pin
+  rule covers, `members` claims that do not protect virtual repositories without the claiming
+  repository (H-9), and deliberate or configuration-driven shadowing (H-10), in
+  [repositories-and-proxy.md](../repositories-and-proxy.md); prefixes without an owner in
+  [authorization.md](../authorization.md) (H-21).
 - **Search terms leave the network.** With `forwardSearch` on, search terms typed by users go to
-  the upstream (R-NUGET-016). Installations for which internal names are sensitive turn it off.
+  the upstream (R-NUGET-016), except queries with a term that an exclude pattern, a claim or a pin
+  rule protects. Free-text terms that no such pattern covers (`payments`, a project code name)
+  still leave; installations for which those are sensitive turn forwarding off per remote.
+- **Symbol probes leave the network.** Debuggers request a PDB for every loaded module. A symbol
+  request whose routing name (the file name in the key) no exclude pattern, claim or pin rule
+  covers, and that no local member answers, goes to the upstream symbol server and discloses the
+  assembly name (R-NUGET-022, P1).
+- **Upstream takedowns.** When nuget.org removes an ID, its version list answers 404 and the
+  remote stops serving the ID's documents and cached packages on every address (R-NUGET-015,
+  R-REPO-029), so lock-file restores by exact path stop receiving it too. A version withdrawn from
+  an ID that still exists stays downloadable by exact path from the cache, because NuGet does not
+  track removal per version ([repositories-and-proxy.md](../repositories-and-proxy.md) H-5).
+- **Deleted versions stay reserved.** A hard-deleted or moved version leaves a tombstone, so nobody
+  holding `deploy`, or even `overwrite`, can bring the version number back with other bytes and
+  silently replace what lock files and client caches recorded (R-NUGET-006).
 - **API keys are full tokens.** The value in `X-NuGet-ApiKey` is a trove token; client setup
   recommends tokens limited to `deploy` on one repository and short-lived CI tokens
   ([gitlab-ci-oidc.md](../gitlab-ci-oidc.md)). `nuget.config` encrypts stored secrets only on
@@ -1559,72 +1794,242 @@ Acceptance criteria:
 - **Symbol files can disclose source.** PDBs may contain source paths and embedded source; they
   are protected by the same `read` permission as the package (R-NUGET-013).
 
-## Open questions
+## Decisions
+
+Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
 
 ### Q-NUGET-1 · Default meaning of a NuGet delete
 
-Options: (a) unlist by default, hard delete as `deleteMode: delete` and through raw or management
-deletes; (b) hard delete by default; (c) unlist, then purge automatically after a retention period.
-Recommendation: (a). Projects restoring from lock files or exact versions keep working after an
-unlist, which is the protocol's own default reading; a real removal stays one setting or one
-management call away for whoever holds `delete`, and (c) belongs to the retention policies.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Unlist by default, hard delete per repository | The protocol `DELETE` unlists; `nuget.deleteMode: delete` turns it into a hard delete for one repository; management, UI and raw deletes are always hard | The protocol's own reading, as on the public gallery; consumers pinned to the version or restoring from lock files keep working; teams that clean CI feeds with `dotnet nuget delete` opt in per repository | One client command with two behaviors; the UI has to show which one applies |
+| (b) Hard delete by default | Every protocol `DELETE` removes the version (to the trash can when it is enabled) | What the command name suggests; storage is freed at once | A routine cleanup command breaks every consumer of that version; the trash can is P1, so in the MVP the removal is final |
+| (c) Protocol always unlists, no setting | Hard delete only through the management API, the UI or a raw delete | One behavior per path, nothing to configure | Scripted cleanup with the NuGet client becomes impossible and needs a second tool, while both paths need the same `delete` permission anyway |
+
+**Choice:** (a) — the protocol `DELETE` unlists unless the repository sets `deleteMode: delete`; management, UI and raw deletes are hard deletes.
+
+**Rationale:** Unlisting is reversible and never breaks a restore that already resolved the
+version. That matters most in the MVP, where the trash can (R-STOR-022) is P1 and a hard delete
+is final. A real removal stays one setting or one management call away for whoever holds `delete`.
+With the tombstones of Q-NUGET-6, a hard delete leaves the version number reserved, so offering it
+through the protocol cannot turn into an overwrite in two steps. (b) turns a common cleanup command
+into an outage for consumers.
+(c) removes the scripted cleanup path and gains no security, because both paths check the same
+permission and ownership. Purging unlisted versions automatically after a period is a retention
+policy ([storage.md](../storage.md)), not a delete mode. The development agent would revisit this
+if users expect `dotnet nuget delete` to free storage, or if unlisted versions pile up in a way
+cleanup policies cannot handle.
+
+**Applied in the spec:** R-NUGET-007: `deleteMode: unlist` is the decided default and governs only
+the protocol `DELETE`; management, UI and raw deletes are named as hard deletes; a hard delete
+writes a tombstone (R-NUGET-006); unlisting an unlisted version answers 204; the UI shows the
+effective mode; a criterion checks the repeated delete. The setting lives in the format member
+`nuget` of the repository document (`nuget.deleteMode`), because
+[repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004 (Q-REPO-5) puts format
+settings under a member named after the format, never under a generic name; R-NUGET-014,
+R-NUGET-022 and R-NUGET-023 use the same member for `forwardSearch`, `symbolServerUrl` and
+`vulnerabilityInfo`.
 
 ### Q-NUGET-2 · Metadata cache period of NuGet remotes
 
-Options: (a) keep the NuGet format default of 7200 s that R-REPO-024 lists; (b) register 300 s as
-the NuGet format default for the service index, version lists and registrations; (c) no caching,
-with a conditional request on every use. Recommendation: (b). A restore asks for the version list
-first, so a version released upstream stays unresolvable for the whole period; two hours make CI
-fail on freshly bumped dependencies (an automated update pull request opened minutes after the
-release), while 300 s keeps that window short and nuget.org's CDN absorbs the refreshes. (c) adds
-an upstream round trip to every package of every restore.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 7200 s | Keep the generic default of R-REPO-024 for the service index, version lists, registrations and vulnerability data | Fewest upstream requests; same value as npm | A version released upstream stays unresolvable through trove for up to two hours, so automated dependency-update merge requests opened minutes after a release fail CI |
+| (b) 300 s as the NuGet format default | The NuGet plug-in registers 300 s for those documents; the not-found period stays 1800 s | New upstream versions resolve within five minutes; each refresh is a conditional request collapsed across replicas, so an unchanged document costs one 304 per period per remote | About 24 times more revalidations of hot documents than (a); upstream latency is felt more often, bounded by the refresh timeout that serves the stale copy (R-REPO-027) |
+| (c) 0 s | Revalidate on every use | Always current | Every package of every restore waits for an upstream round trip; an upstream slowdown slows every restore up to the refresh timeout |
+| (d) Long period plus catalog-driven invalidation | Keep 7200 s, and let a singleton job follow the upstream's catalog resource with a cursor, dropping cached documents of IDs that changed (the pattern the NuGet implementation guide suggests for feeds that mirror nuget.org) | Freshness within the polling interval at the lowest request count per cached ID | Works only for upstreams that offer a catalog; other v3 feeds, trove instances among them, fall back to 7200 s; a cursor, a scheduler lease and catalog parsing are new scope, and trove consumes catalog leaves only from P1 on (R-NUGET-029) |
+
+**Choice:** (b) — the NuGet format registers a default metadata period of 300 s and keeps 1800 s for the not-found period.
+
+**Rationale:** A restore asks for the version list first. With (a), the time between an upstream
+release and its first successful restore through trove is up to two hours, which is exactly the
+window in which update bots open merge requests. 300 s keeps that window short. The extra load is
+small because refreshes are conditional, collapsed in-process and across replicas (R-REPO-026), and
+mostly answered with 304. A merged virtual entry never outlives the remote entries it was built
+from (R-REPO-020), so the virtual period adds nothing. (c) puts the upstream on the critical path of
+every restore and gains about five minutes of freshness. (d) is the efficient answer for nuget.org,
+but it works for one kind of upstream only and needs new machinery; (b) behaves the same for every
+v3 upstream and needs nothing beyond R-REPO-027. The not-found period stays at the generic 1800 s.
+A version list of an existing package is never a negative entry, so the period only governs IDs
+the upstream does not know: mostly internal names that no claim covers, and typos. Each expiry of
+such an entry sends the name upstream again, so a shorter period would multiply that disclosure. A
+public ID requested before it existed upstream becomes visible when the entry expires, or at once
+after an invalidation (R-REPO-045). The development agent would revisit this if upstream request
+metrics show rate limiting by the upstream, in which case (d) would be added on top of (b) for
+upstreams with a catalog, or if users need newly created public IDs faster than the not-found period
+allows.
+
+**Applied in the spec:** R-NUGET-001 lists the 300 s and 1800 s defaults in the format
+registration; R-NUGET-015 states the period, the documents it covers and the conditional refresh,
+and gains an acceptance criterion for upstream changes within 300 s.
+[repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-024 and R-REPO-027 list the
+300 s NuGet default as well (Q-REPO-2).
 
 ### Q-NUGET-3 · Non-ASCII package IDs
 
-Options: (a) ASCII-only IDs for pushes to local repositories, upstream IDs passed through as given;
-(b) NuGet's full ID rule, whose word characters include Unicode letters, with lowercasing that
-matches .NET's invariant culture exactly. Recommendation: (a). Lowercasing is part of every URL, of
-duplicate detection and of permission matching; Go's and .NET's Unicode case tables differ in
-corner cases, and an ID that lowercases differently on client and server is unreachable or matches
-the wrong grant. Non-ASCII IDs are rare in internal feeds; (b) can follow with a dedicated
-conformance test if a user needs it.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) ASCII on push, upstream IDs pass through | IDs entering a local repository follow NuGet's ID rule restricted to ASCII (the set nuget.org now enforces); IDs of cached upstream packages follow NuGet's general Unicode rule, keyed by the client's lowercased request path, identity checked by Unicode simple case folding | The rule nuget.org applies to every push and `dotnet pack` warns about; legacy public packages stay restorable; trove never lowercases a non-ASCII ID itself | Two ID rules in the plug-in; a cached legacy ID cannot be copied into a local repository |
+| (b) NuGet's full Unicode rule everywhere | Unicode IDs on push too, with lowercasing that matches .NET's invariant culture | Accepts everything an older client packs | trove would have to reproduce .NET's case tables across runtimes; it creates exactly the IDs the ecosystem is retiring for security reasons |
+| (c) ASCII everywhere | Cache fills of packages outside the ASCII set fail | One rule, simplest code | About 119 legacy IDs that nuget.org still serves become unrestorable through trove: a client-compatibility regression with no security gain |
+
+**Choice:** (a) — ASCII-restricted IDs for everything that enters a local repository; upstream IDs pass through under NuGet's general rule, keyed by the client's lowercased request path.
+
+**Rationale:** The question is settled by the ecosystem itself. nuget.org has required the
+restricted ASCII set for new IDs since 2026-06-15 and refuses every non-conforming push since
+2026-07-15, and `dotnet pack` warns from .NET 11 on (NU5052), for trove's reason: lowercasing
+differs between .NET Framework, modern .NET, Windows and Linux, so two visibly different IDs can
+map to one URL
+([NU5052](https://learn.microsoft.com/en-us/dotnet/core/compatibility/sdk/11/nuget-pack-nu5052-packageid),
+[announcement](https://github.com/NuGet/Announcements/issues/75)). (b) would rebuild that hazard
+inside trove. (c) breaks restores of the roughly 119 legacy IDs, which the announcement says remain
+available. Under (a), trove never has to lowercase a non-ASCII ID: a cached package is keyed by
+the path the client built, and the declared ID is only compared with it. A mismatch fails closed
+with 502, so a case-table difference can make a legacy package unrestorable but cannot make one
+ID reach another package's row or grant. Two clients that lowercase a legacy ID differently can at
+worst create two cache rows for one upstream package; the bytes are still stored once (INV-4). Where
+the two sources disagree (the announcement's expression admits `_` only as the first character,
+NU5052 anywhere), trove follows NU5052, the rule the SDK applies when packing. The development
+agent would revisit this if nuget.org retires the legacy IDs (then (c) would suffice), or if a
+legacy ID fails the identity check in practice.
+
+**Applied in the spec:** R-NUGET-003 splits the ID rules into a local rule and an upstream rule
+(including the .NET definition of `\w`, which Go's `regexp` does not provide), states the dates and
+the `_` reading, defines `lower_id` for both, holds dependency IDs to the upstream rule and forbids
+copying non-conforming cached IDs into local repositories; R-NUGET-005 step 4 selects the rule and
+validates dependency IDs; R-NUGET-009 omits the optional dependency `registration` URL for a
+non-ASCII dependency ID, so trove never lowercases one; R-NUGET-015 compares the declared ID by
+Unicode simple case folding; R-NUGET-003 gains criteria for a refused non-ASCII push and a restored
+legacy ID.
 
 ### Q-NUGET-4 · Forwarding search to the upstream
 
-Options: (a) forward by default, switchable per remote; (b) search only cached packages by
-default. Recommendation: (a). Visual Studio's browse tab and `dotnet package search` are how
-developers discover public packages, and a cache-only search shows only what someone already
-restored; installations that must not disclose search terms switch it off per remote.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Forward by default | Remote search forwards every query to the upstream; `forwardSearch: false` per remote turns it off | Visual Studio's browse tab and `dotnet package search` find public packages that nobody restored yet | Every query leaves the network, including queries for internal package names typed into a virtual repository's search |
+| (b) Cache-only by default | Remote search shows only packages someone already restored | No search term leaves the network | Discovery of public packages through trove does not work out of the box; developers bypass trove and add nuget.org as a source, which reopens dependency confusion |
+| (c) Forward by default, withhold protected queries | As (a), but a query is answered from the cache only when one of its terms names an ID that an exclude pattern, a claim or a pin rule keeps away from that remote | Discovery works; queries for the organization's own namespaces stay inside; reuses the routing decision that already exists | Free-text terms outside protected namespaces still leave; slightly more logic than (a) |
+
+**Choice:** (c) — forward by default, switchable per remote, and never forward a query with a term that an exclude pattern, claim or pin rule protects.
+
+**Rationale:** Search is how developers discover public packages, and a cache-only search pushes
+them to add nuget.org directly as a second source, the setup the client instructions warn against
+(R-NUGET-026). Forwarding queries for claimed or excluded names discloses exactly the names the
+administrator has marked as internal, and gains nothing: R-NUGET-018 removes remote results for
+claimed and pinned IDs anyway. (c) closes that leak with the in-memory claim trie that resolution
+already uses, at the cost of one function. The residual exposure (free-text terms such as a project
+code name) is named in the Security notes, and `forwardSearch: false` remains for installations
+that need more. The development agent would revisit this if users report missing public results
+for withheld queries, or if a deployment needs forwarding off by default.
+
+**Applied in the spec:** R-NUGET-014 sets `nuget.forwardSearch: true` as the per-remote default;
+R-NUGET-016 gains the withheld-query rule and two criteria; R-NUGET-018 applies it per virtual
+repository; R-NUGET-028 adds the counter `trove_nuget_search_withheld_total`; the Security notes
+describe what still leaves the network.
 
 ### Q-NUGET-5 · ID casing on later pushes
 
-Options: (a) accept any casing and keep the casing of the first version as the package's display
-name; (b) reject pushes whose ID casing differs from the stored one with 409; (c) accept and let the
-latest push define the display name. Recommendation: (a). NuGet treats IDs case-insensitively, so
-(b) blocks a legitimate casing correction for no protocol reason, while (c) makes search results
-flip casing with every push; each version still keeps its own casing in its catalog entry.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) First casing is the display name | Any casing is accepted; the version that created the package fixes the display name; each version keeps its own casing in its catalog entry | Stable display; matches NuGet's case-insensitive IDs; no push is refused for casing | A deliberate casing correction does not change the display name |
+| (b) Refuse other casing | A push whose ID casing differs from the stored one answers 409 | One casing everywhere | Blocks a legitimate casing correction for no protocol reason; CI fails on a cosmetic difference |
+| (c) Highest version's casing is the display name | The display name follows the casing of the highest stored version | A casing correction takes effect with the next release; backports of older versions do not flip it | The display name becomes a derived value that changes on delete and unlist; a single mis-cased release renames the package in every search result |
+
+**Choice:** (a) — accept any casing; the version that created the package fixes its display name.
+
+**Rationale:** NuGet treats IDs case-insensitively, so only the display is at stake. (a) keeps it
+stable and costs nothing. (b) refuses valid packages. (c) adds a recomputation on every version
+change for a cosmetic gain. A fourth variant, "the latest push defines the display name", was not
+listed because every backport push would flip the casing in search results. Each version's catalog
+entry still shows the casing its `.nuspec` declares, so clients see the corrected casing for new
+versions. The development agent would revisit this if package owners ask for casing corrections; a
+management operation that changes the display name would then be the smallest addition.
+
+**Applied in the spec:** R-NUGET-003 states that the display name comes from the version that
+created the `packages` row and does not change on later pushes, and gains an acceptance criterion
+for a push in other casing.
 
 ### Q-NUGET-6 · Overwriting an existing version
 
-Options: (a) versions are immutable, a repeated push always answers 409; (b) an opt-in
-per-repository setting that lets callers with `overwrite` (INV-9) replace a version.
-Recommendation: (a). NuGet clients cache packages by ID and version in the global packages folder
-and lock files record content hashes, so a replaced package silently diverges between machines or
-fails restores; Microsoft's implementation guide assumes one ID and version always stand for the
-same content. Development feeds get unique versions from pre-release counters instead. INV-9's
-`overwrite` action then has no effect on NuGet repositories, like on npm.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Immutable while stored | A repeated push answers 409; after a hard delete the version number is free again | Simple; no extra table | Delete and re-push replace a version in two steps: client caches and lock files that recorded the old bytes silently diverge or fail |
+| (b) Opt-in overwrite | A per-repository setting lets callers with `overwrite` replace a version | Convenient for scratch feeds that reuse versions | NuGet clients cache by ID and version in the global packages folder and lock files record content hashes, so a replaced package diverges between machines; the implementation guide forbids modifying packages because lock files and signature validation report changed bytes as tampering |
+| (c) Immutable for good, with tombstones | A repeated push answers 409; every removal of a version from a local repository (hard delete, raw delete, move, cleanup) leaves a tombstone, so the number never returns with other bytes; restoring from the trash can brings the original back | One ID and version mean one content forever, as for npm (R-NPM-008); hard delete through the protocol becomes safe to offer | A version deleted by mistake cannot be pushed again after the trash can was purged (in the MVP, which has no trash can, at once); the next version number has to be used; tombstone rows accumulate with every cleanup deletion and are never purged (one small row per version) |
+
+**Choice:** (c) — versions are immutable for the lifetime of the repository; every removal, a move included, leaves a tombstone, and only a trash-can restore brings a version back.
+
+**Rationale:** (b) breaks what every NuGet client relies on: the global packages folder and lock
+files treat one ID and version as one content. (a) still lets anyone with `deploy` and `delete`
+achieve the same effect in two steps, which defeats immutability as a supply-chain property. (c)
+makes "same ID and version, same bytes" hold per repository, matches the npm rule (R-NPM-008), and
+costs one small table and one lookup in the commit transaction. A move writes a tombstone too:
+clients of the source repository may have cached the version, so a rebuilt version under the same
+number there would diverge exactly as after a delete. Development feeds get unique versions from
+pre-release counters instead. INV-9's `overwrite` action has no effect on NuGet repositories, which
+R-AUTHZ-006 allows. As on the npm page (Q-NPM-8, decided without a purge), no operation purges a
+tombstone and a push of identical bytes is refused. The development agent would revisit this if an
+import from another system needs to reuse deleted version numbers, or if tombstone growth from
+cleanup policies becomes measurable; a system-administrator-only, audited purge would be the
+addition then, for both formats at once.
+
+**Applied in the spec:** R-NUGET-006 states lifetime immutability with the codes
+`nuget_version_exists` and `nuget_version_deleted`, defines tombstones (which removals write them,
+a move included; that they survive the trash can; that only a restore or deleting the repository
+removes them; that identical bytes are refused too), adds the `nuget_tombstone` table, the locking
+that orders a push against a concurrent delete, and acceptance criteria for a hard delete and a
+move; R-NUGET-005 reports copy and move conflicts per item with the same codes (identical bytes
+count as `unchanged`, R-STOR-019) and writes the source tombstone on a move; R-NUGET-007 (hard
+delete) refers to it; the Security notes gain "Deleted versions stay reserved".
 
 ### Q-NUGET-7 · Patterns and repository-level upstream documents
 
-Options: (a) the format plug-in may mark documents that name no package (NuGet's upstream service
-index and vulnerability data) as repository-level, and include and exclude patterns do not apply
-to them; (b) patterns apply to every canonical path, and administrators who restrict a NuGet
-remote with include patterns must also include `.nuget/**` and `.vulnerabilities/**`.
-Recommendation: (a). Patterns exist to keep package names away from upstreams; these documents
-reveal none, and under (b) a remote restricted to `newtonsoft.*/**` silently stops working because
-it can no longer read its upstream's service index. The rule needs confirmation in R-REPO-005 of
-[repositories-and-proxy.md](../repositories-and-proxy.md), which states that patterns apply to
-every upstream fetch.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Package-less requests admitted; symbol files get a routing name | The upstream service index, vulnerability documents, search and autocomplete are repository-level and admitted (R-REPO-005); a symbol request carries the file name of its key without the extension as routing name, so exclude patterns, claims and pin rules apply to it | Follows the name patterns of R-REPO-005; a restricted remote keeps discovering its upstream; internal assembly names are not probed upstream when their namespace is protected | Assembly names that no protecting pattern covers still reach the upstream symbol server |
+| (b) Package-less requests admitted; symbol requests filtered by their own patterns | As (a) for documents, but symbol requests carry no routing name; each remote gets separate symbol include and exclude patterns (`nuget.symbolIncludePatterns`, `nuget.symbolExcludePatterns`) matched against the file name in the key | Exact control where assembly names and package IDs differ | A second pattern list per remote that administrators must keep in step with the package patterns; claims and pin rules, which protect internal names in virtual repositories without per-remote configuration, never reach symbol requests; with the lists empty, every internal assembly name is probed upstream as in (c) |
+| (c) All package-less requests admitted, symbol files included | Symbol requests are repository-level like the service index | Simplest | A debugger probes every configured symbol location for every module it loads, so internal assembly names go to the public symbol server in every debugging session through a virtual repository with a nuget.org remote |
+
+**Choice:** (a) — requests that name no package are admitted, and symbol requests carry a routing name derived from the file name in the symbol key so patterns, claims and pin rules protect them.
+
+**Rationale:** Name patterns are already the rule for NuGet (R-REPO-005), and they admit requests
+that concern no package, which settles the service index and vulnerability documents. Path
+patterns on every canonical path are not an option on this page: R-REPO-005 rules them out for
+NuGet, and they would make a remote restricted to `Newtonsoft.*` unable to read its upstream's
+service index. The remaining question was symbol files. Debuggers ask for a PDB for every module,
+internal ones included, and SDK projects name the package after the assembly by default
+([pack target](https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets#pack-target)). A
+routing name taken from the file name in the key therefore lets the patterns and claims that protect
+`Acme.*` packages also protect `Acme.*` assemblies, with no new configuration. (b) gives finer
+control, but its protection starts only when an administrator maintains a second list per remote,
+and claims and pin rules never reach it; (c) sends every internal assembly name upstream. The
+routing name is taken from the key's first segment without its last extension, not only from keys
+ending in `.pdb`, because debuggers also send compressed (`.pd_`) and pointer probes and may ask a
+configured symbol server for binaries; a rule limited to `.pdb` keys would leave those shapes
+without a name and forward them unprotected. The routing name does not change authorization: upstream symbol files stay
+repository-level for permissions. The development agent would revisit this if assembly and package
+names diverge widely in practice, in which case the symbol patterns of (b) would be added on top of
+the routing name, not instead of it.
+
+**Applied in the spec:** R-NUGET-001 names pattern subject `name` and the symbol routing name;
+R-NUGET-005 replaces the path pattern `acme.*/**` with the name pattern `Acme.*`; R-NUGET-015 marks
+package-less documents repository-level, defines the routing name for every symbol key shape and
+updates its pattern criteria; R-NUGET-022 replaces the `.symbols/**` rule and gains a criterion; the
+Security notes name the residual symbol-probe disclosure.
 
 ## What this does not cover
 

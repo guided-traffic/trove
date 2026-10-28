@@ -1,6 +1,6 @@
 # Coverage
 
-> **As of:** 2026-10-28 · **Stage:** specification, no code yet · **Yardstick:**
+> **As of:** 2026-10-28 · **Stage:** specification, every question decided, no code yet · **Yardstick:**
 > [feature catalog](../features/README.md) · **Design:** [specification](../spec/README.md)
 
 This page answers two questions: how much of the feature catalog trove implements, and how much
@@ -18,35 +18,35 @@ regenerated.
 | Number | Value | Kind |
 |---|---|---|
 | **Implemented** | **0%** (0 of 2,239 catalog features) | fact, not computed: the repository holds no code yet |
-| **MVP features covered by spec requirements** | **99.7%** (358 of 359) | measured from `Covers:` lines |
-| P1 features covered by spec requirements | 56.1% (285 of 508) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 30.3% (656 of 2,167) | measured from `Covers:` lines |
+| **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
+| P1 features covered by spec requirements | 56.3% (286 of 508) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 30.4% (658 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 483 on 11 pages (336 MVP, 146 P1, 1 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 49 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 491 on 11 pages (342 MVP, 147 P1, 2 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 54 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
-In short: nothing is built yet, the first release is almost completely designed, and little
-beyond P1 is designed. 358 of the 359 MVP features are covered by at least one requirement. For
-each of those 358, at least one covering requirement is itself MVP, so the spec does not quietly
-move MVP work to a later release. The one open MVP entry is FMT-013; see
-[Honesty notes](#honesty-notes).
+In short: nothing is built yet, every MVP catalog entry is claimed by a requirement, and little
+beyond P1 is designed. All 359 MVP features are covered by at least one requirement. For each of
+them, at least one covering requirement is itself MVP, so the spec does not quietly move MVP work
+to a later release. Covered means claimed in a `Covers:` line, not reviewed against the feature;
+see [Honesty notes](#honesty-notes).
 
 ### By priority
 
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 359 | 358 | 1 | 99.7% | 358 | 0 |
-| **P1** | 508 | 285 | 223 | 56.1% | 46 | 0 |
-| **P2** | 909 | 13 | 896 | 1.4% | 5 | 0 |
+| **MVP** | 359 | 359 | 0 | 100% | 359 | 0 |
+| **P1** | 508 | 286 | 222 | 56.3% | 48 | 0 |
+| **P2** | 909 | 13 | 896 | 1.4% | 6 | 0 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 656 | 1,583 | 29.3% | 409 | 0 |
+| **Total** | 2,239 | 658 | 1,581 | 29.4% | 413 | 0 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward. On 2026-10-28,
-46 P1 features and 5 P2 features are covered by at least one MVP requirement, so in those places
+48 P1 features and 6 P2 features are covered by at least one MVP requirement, so in those places
 the first release does more than the priority rubric asks. Every table on this page counts them
 under their catalog priority.
 
@@ -71,13 +71,13 @@ Each page name links to that page's section of the checklist.
 | [Retention, cleanup and archiving](checklist.md#retention-cleanup-and-archiving-ret) | 42 | 0 | 26 | 3 | 11 | 2 | 26 | 16 |
 | [High availability and deployment](checklist.md#high-availability-and-deployment-ha) | 79 | 49 | 14 | 10 | 3 | 3 | 60 | 19 |
 | [Operations, monitoring and configuration](checklist.md#operations-monitoring-and-configuration-ops) | 100 | 17 | 23 | 34 | 1 | 25 | 40 | 60 |
-| [Events and extensibility](checklist.md#events-and-extensibility-evt) | 82 | 1 | 24 | 12 | 43 | 2 | 25 | 57 |
+| [Events and extensibility](checklist.md#events-and-extensibility-evt) | 82 | 1 | 24 | 12 | 43 | 2 | 26 | 56 |
 | [Distribution and release lifecycle](checklist.md#distribution-and-release-lifecycle-dist) | 70 | 0 | 0 | 0 | 69 | 1 | 0 | 70 |
 | [Security scanning and curation](checklist.md#security-scanning-and-curation-sec) | 98 | 0 | 22 | 18 | 56 | 2 | 0 | 98 |
 | [UI inventory](checklist.md#ui-inventory-ui) | 61 | 30 | 17 | 8 | 3 | 3 | 47 | 14 |
 | [Content API operation catalog](checklist.md#content-api-operation-catalog-api) | 166 | 11 | 56 | 48 | 48 | 3 | 67 | 99 |
 | [Operation catalog: administration API](checklist.md#operation-catalog-administration-api-admapi) | 114 | 34 | 23 | 23 | 28 | 6 | 54 | 60 |
-| [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 8 | 6 |
+| [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 9 | 5 |
 | [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond) | 34 | 0 | 5 | 26 | 3 | 0 | 2 | 32 |
 
 Per-format pages (38 pages, 782 features, 94 specified):
@@ -145,7 +145,13 @@ in the catalog defines it, and the summary here is no substitute:
 
 P1 is the work directly after the MVP: Docker/OCI, Maven, PyPI, Go, Helm charts and generic
 repositories, webhooks, retention and cleanup policies, the search API, build metadata basics,
-configuration as code and further CI OIDC providers. P2, *Later* and *Out of scope* are defined by the same rubric.
+configuration as code and further CI OIDC providers. Two P1 items ship in the first release
+anyway, because MVP acceptance tests depend on them:
+
+- the local class of generic repositories ([roadmap Q-ROAD-1](roadmap.md#q-road-1--generic-local-repositories-in-m1));
+- backup and restore ([roadmap Q-ROAD-2](roadmap.md#q-road-2--backup-and-restore-in-10)).
+
+P2, *Later* and *Out of scope* are defined by the same rubric.
 *Out of scope* entries stay in the catalog only so its inventory is complete. Nothing is planned
 for them.
 
@@ -159,9 +165,9 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 199 of 200 specified, 1 open (99.5%) | 313 of 362 specified, 49 open (86.5%) | 0 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **.NET team** | 197 of 198 specified, 1 open (99.5%) | 303 of 352 specified, 49 open (86.1%) | 0 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 440 of 460 specified, 20 open (95.7%) | 0 | Repositories 9; High availability and deployment 3; Operation catalog: administration API 3 |
+| **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 0 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 0 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 441 of 460 specified, 19 open (95.9%) | 0 | Repositories 9; High availability and deployment 3; Operation catalog: administration API 3 |
 
 Pages counted per audience:
 
@@ -176,15 +182,18 @@ Pages counted for no audience (41, 233 MVP and P1 entries): [Security scanning a
 
 What the open entries are, on 2026-10-28:
 
-- **npm-only team.** The only open MVP entry is FMT-013. The npm page itself is fully specified at
-  MVP and P1. Most of the open P1 entries fall into two groups:
+- **npm-only team.** All MVP entries on its pages are specified. The npm page itself is fully
+  specified at MVP and P1. All 48 open entries are P1, and most of them fall into two groups:
   - Search operations: only 3 of the 24 P1 entries on the search page are specified:
     - the global search box;
     - artifact browser search;
     - format-specific metadata search fields, through R-NPM-037.
-  - Build metadata: all 15 P1 entries are open, and no spec page owns build records yet. The open
-    questions Q-AUTHZ-8 in [authorization.md](../spec/authorization.md) and Q-API-5 in
-    [api-and-ui.md](../spec/api-and-ui.md) both recommend a new spec page for them.
+  - Build metadata: all 15 P1 entries are open, because the page that will own build records is
+    not written yet. The development agent decided that build records get their own page,
+    `builds.md` with prefix `R-BLD`. The page is written before P1 build work starts, in milestone
+    M9 of the [roadmap](roadmap.md). This one decision answers three questions, each with option
+    (a): Q-AUTHZ-8 in [authorization.md](../spec/authorization.md), Q-API-5 in
+    [api-and-ui.md](../spec/api-and-ui.md) and Q-STOR-3 in [storage.md](../spec/storage.md).
 
   The remaining 12 open entries fall into three groups:
   - Eight repository settings that matter only once other formats arrive:
@@ -208,9 +217,10 @@ What the open entries are, on 2026-10-28:
   - installing without Kubernetes (HA-077);
   - general settings, the container registry addressing method and reverse-proxy rules
     (OPS-057, OPS-062, OPS-063);
-  - the webhook management screen (EVT-034);
   - role and environment operations of the administration API (ADMAPI-019, ADMAPI-066,
-    ADMAPI-068);
+    ADMAPI-068). [authorization.md](../spec/authorization.md) and
+    [api-and-ui.md](../spec/api-and-ui.md) defer them to P2 together with roles and
+    environments. They stay open here because the catalog labels them P1;
   - 10 of the repository entries listed for the npm team: the eight format-specific settings
     and the two project entries. FMT-010 and FMT-014 are not counted here, because this audience
     does not count the formats page.
@@ -223,12 +233,17 @@ What the open entries are, on 2026-10-28:
    spec README are not entries.
 2. **Requirements.** Every heading `### R-<…>-<n> · <Title>` under [docs/spec/](../spec/) whose
    next line is `Priority: **<P>** · Covers: <ID>, <ID>, …` or `Covers: trove-only`. Other
-   headings on spec pages (open questions `Q-…`, gaps `H-…`, examples) are not requirements.
+   headings on spec pages (decided questions `Q-…`, gaps `H-…`, examples) are not requirements.
 3. **Status.** A feature is *specified* when its ID appears in the `Covers:` line of at least one
-   requirement, and *open* otherwise. The generator does not measure *implemented*. It reports 0
-   because no code exists (on 2026-10-28 the repository's only commit holds LICENSE and
-   README.md). Once code exists, *implemented* needs its own evidence for each requirement, such
-   as a passing acceptance test that names the requirement ID. That rule is not decided yet.
+   requirement, and *open* otherwise. *Implemented* follows the rule of
+   [roadmap Q-ROAD-4](roadmap.md#q-road-4--how-the-coverage-generator-learns-implementation-status):
+   - A requirement is implemented when a test whose name carries the requirement ID passes on
+     `main`. The generator reads that from CI's `go test -json` output and the end-to-end
+     reports.
+   - A feature is implemented only when every requirement that lists it in its `Covers:` line is
+     implemented. A feature that is partly built stays *specified*.
+
+   On 2026-10-28 the generator reports 0, because the repository holds documentation and no code.
 4. **Shares.** Plain counts: each feature counts once, whatever its size. The in-scope share
    leaves out *Out of scope* entries.
 5. **Audiences.** For each audience: the MVP and P1 entries of the pages in its row of the
@@ -250,7 +265,8 @@ What the open entries are, on 2026-10-28:
 **Gap: the generator is not in the repository.** For this version it ran outside the repository.
 Until it is committed and its compare-only mode runs in CI, nothing keeps
 [checklist.md](checklist.md) and the tables above current when a catalog or spec heading
-changes. Until then, the rules above are its specification.
+changes. Until then, the rules above are its specification. The roadmap builds it in M0 (WP0.9,
+exit criterion E0.8).
 
 ## Honesty notes
 
@@ -264,25 +280,20 @@ changes. Until then, the rules above are its specification.
   Nobody has spot-checked coverage claims for this page.
 - **Cross-format entries.** Entries on the [formats page](../features/formats/README.md) apply to
   every format. FMT-013 says explicitly that its MVP priority applies to the npm and NuGet rows
-  only, and every other row keeps its own format's priority. The other FMT entries were not
-  checked for the same pattern. For such an entry, *specified* means at most the npm and NuGet
-  part.
-- **The one open MVP entry, FMT-013** (*Client authentication styles and anonymous fallbacks*).
-  The design exists in parts, but no requirement names FMT-013:
-  - R-AUTH-033 *Client authentication matrix* in
-    [identity-and-authentication.md](../spec/identity-and-authentication.md) defines how npm and
-    NuGet clients present tokens.
-  - R-AUTH-037 and R-NUGET-012 cover anonymous access and NuGet endpoint authentication.
-
-  This looks like a missing ID in a `Covers:` line rather than missing design. It is not verified
-  that these requirements cover the per-format anonymous fallbacks FMT-013 asks for. Either
-  outcome is resolved in the spec: add FMT-013 to the covering requirement, or write the missing
-  requirement.
+  only, and every other row keeps its own format's priority. R-AUTH-033 *Client authentication
+  matrix* in
+  [identity-and-authentication.md](../spec/identity-and-authentication.md#r-auth-033--client-authentication-matrix),
+  which covers FMT-013, follows the same split. Its table *Authentication styles across formats*
+  maps every client style of FMT-013 to the one authentication stage (R-AUTH-001) and settles the
+  npm and NuGet rows at MVP. A client that cannot authenticate is served only as the anonymous
+  principal (R-AUTH-037), never through a per-repository bypass. The other rows are left to their
+  format pages under the same rules. The other FMT entries were not checked for the same pattern.
+  For such an entry, *specified* means at most the npm and NuGet part.
 - **The catalog's limits.** The catalog was written from public product documentation, so
   behavior that documentation leaves out is missing from it. Entries differ in granularity by
   page: one per operation on the API pages, one per protocol capability on the format pages. If
   the catalog grows, every share on this page moves without any change to trove. The catalog is
-  also a measure of breadth, not of design quality. The 49 `trove-only` requirements are design
+  also a measure of breadth, not of design quality. The 54 `trove-only` requirements are design
   work it does not measure at all, for example R-REPO-038 *Egress address rules for remote
   repositories* and R-STOR-013 *Download integrity verification*.
 - **Priorities are trove's own judgement** and can change. When a priority changes, the MVP
@@ -295,9 +306,22 @@ changes. Until then, the rules above are its specification.
   | Roles | P2 (IAM-054 global roles, IAM-055 project roles) | P1: role operations (ADMAPI-019, ADMAPI-066) |
   | Environments | P2 (IAM-063) | P1: environment operations (ADMAPI-068); REPO-013 also assigns environments |
 
-  The spec follows the P1 side for projects (R-AUTHZ-026), but not yet for roles and
-  environments. Five of the open P1 entries come from this disagreement. Settling the catalog
-  priority first is cheaper than designing those five.
+  The spec follows the P1 side for projects (R-AUTHZ-026) and the identity page's P2 for roles and
+  environments. [authorization.md](../spec/authorization.md) and
+  [api-and-ui.md](../spec/api-and-ui.md) defer ADMAPI-019, ADMAPI-066 and ADMAPI-068 to P2, each
+  with a reason, and the fixed system roles of R-AUTHZ-010 cover P1. Five of the open P1 entries
+  come from this disagreement:
+  - The three deferred ADMAPI entries stay open on purpose until the catalog's priority follows
+    the spec.
+  - REPO-013 and REPO-045 are assigned to R-AUTHZ-026 by
+    [repositories-and-proxy.md](../spec/repositories-and-proxy.md), but no requirement lists them
+    in its `Covers:` line yet. The roadmap places that addition in M10.
+- **Every design decision is the development agent's until the walkthrough.** The development
+  agent decided each question on the spec pages and in the roadmap by selecting one of the
+  documented options. The owner reviews the choices at the
+  [walkthrough](roadmap.md#owner-walkthrough) after the MVP milestones. A choice the owner
+  overturns there can move requirements between priorities, and with them every number on this
+  page, without any change to the catalog.
 - **Audiences are approximated at page level.** A page counts in full for an audience even when
   some of its entries belong to another team's work. For example, identity-and-access counts for
   the developer teams although most of it is administration. Some pages count for no audience;
@@ -307,8 +331,8 @@ changes. Until then, the rules above are its specification.
 
 ## Effort
 
-Not estimated. Nothing calibrates one yet: no requirement is implemented and the repository has a
-single commit, so there is no measured cost per requirement or per feature. Multiplying the MVP
+Not estimated. Nothing calibrates one yet: no requirement is implemented and the repository holds
+no code, so there is no measured cost per requirement or per feature. Multiplying the MVP
 requirement count by an assumed cost per requirement would be a guess presented as a derivation.
 
 A defensible estimate needs two steps:
@@ -320,8 +344,9 @@ A defensible estimate needs two steps:
 
 The size basis on 2026-10-28, from the tables above:
 
-- 336 MVP and 146 P1 requirements on 11 spec pages;
-- 223 P1 catalog entries that no requirement covers yet.
+- 342 MVP, 147 P1 and 2 P2 requirements on 11 spec pages, plus the MVP requirements of the
+  generic local class that M1 adds (roadmap Q-ROAD-1);
+- 222 P1 catalog entries that no requirement covers yet.
 
 ## Related pages
 

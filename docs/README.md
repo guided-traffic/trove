@@ -23,7 +23,7 @@ flowchart LR
 | Part | Question it answers | IDs | Entry point |
 |---|---|---|---|
 | Feature catalog | What does a full-featured binary repository manager do, precisely enough to build it compatibly? What priority does trove give each feature? | `<PREFIX>-nnn`, e.g. `RMT-004`; format pages `PKG-<FORMAT>-nnn` | [features/README.md](features/README.md) |
-| Specification | How will trove do it: invariants, requirements, data model, API, configuration and acceptance criteria | `INV-n`, `R-<AREA>-nnn`, open questions `Q-<AREA>-n`, security gaps `H-n` | [spec/README.md](spec/README.md) |
+| Specification | How will trove do it: invariants, requirements, data model, API, configuration and acceptance criteria | `INV-n`, `R-<AREA>-nnn`, decided questions `Q-<AREA>-n`, security gaps `H-n` | [spec/README.md](spec/README.md) |
 | Coverage | Which catalog entries a requirement covers, and what is left by priority | catalog and requirement IDs | [coverage/README.md](coverage/README.md) |
 | Decisions | Why the design is what it is, with the options that were weighed | one record per decision; every invariant becomes one | [decisions.md](decisions.md) |
 | Developer documentation | How to work on the repository: ID rules, adding entries and requirements, the planned code layout | — | [developer/README.md](developer/README.md) |
