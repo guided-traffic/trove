@@ -706,7 +706,7 @@ tracing:
   propagate_to_upstreams: false         # default
   queue_size: 2048                      # default; at least 1
 audit:
-  retention_days: 365                   # default; at least 1
+  retention_days: 365                   # default; 0 keeps every event
   async_buffer: 10000                   # default; at least 1
   denial_dedup_window: 1m               # default
   token_rejection_dedup_window: 5m      # default

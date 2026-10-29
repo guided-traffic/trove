@@ -129,7 +129,7 @@ reach PostgreSQL stays alive and unready.
 | 1 configuration | `config.Load` in `serve.go` |
 | 2 logging, metrics (with the TLS families), tracing; the listeners' TLS and the `tls` check (`startTLS`); ops listener; readiness 503, liveness 200 | `Start`, [wire_tls.go](../../internal/app/wire_tls.go) |
 | 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process; the component closes the pools it opened on every error or cancel return, because `startComponent` records a component only after `Start` succeeded) | `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
-| 4 `audit_maintain_partitions()` | `WIRING POINT` in `bootstrap` (the audit package does not exist yet) |
+| 4 audit: retention check, `audit_maintain_partitions()` until the current and next month exist, the recorder | `App.startAudit` ([wire_audit.go](../../internal/app/wire_audit.go)) |
 | 5 key ring; `outbound.New` with its `Err()` as a first-readiness check | `bootstrap` |
 | 6 object store: wait while `outbound.Err()` reports a problem (a CA file of `proxy.outbound.tls.ca_files` that loads later clears it without a restart), `s3.NewFromFactory` (a `storage.s3.ca_file` that does not load is a configuration error), `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
 | 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `valkeyComponent`, `startCoordination` ([wire_coordination.go](../../internal/app/wire_coordination.go)) |
@@ -242,7 +242,7 @@ compiles it and sends a real `SIGTERM` while a request is in flight. No release 
 - Authentication and authorization are stand-ins ([access.go](../../internal/app/access.go)): any
   presented credential is a 401, and `system.read` is held by nobody unless
   `system.bootstrap_anonymous_read: true`.
-- The audit partitions (step 4), the key-ring canary and the cache snapshots (step 8) are `WIRING POINT`s in
+- The key-ring canary and the cache snapshots (step 8) are `WIRING POINT`s in
   `bootstrap`; their packages do not exist yet. The trash purge and the upload-session expiry that R-STOR-025 puts at the
   start of a collection run are not part of the `gc` handler yet.
 - A shell started without infrastructure (`SkipInfrastructure`, the drain fixture) lists only itself as replica.

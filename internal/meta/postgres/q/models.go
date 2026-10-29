@@ -67,7 +67,7 @@ type AppUser struct {
 
 type AuditEvent struct {
 	ID           pgtype.UUID
-	OccurredAt   pgtype.Timestamptz
+	OccurredAt   time.Time
 	Action       string
 	Category     string
 	Outcome      string

@@ -82,6 +82,11 @@ type EventType struct {
 	Schema string
 }
 
+// sharedTypes are the event types that several producers share and that may
+// therefore declare an optional journal entry (R-OPS-014): npm journals neither
+// of them, NuGet journals both for its local repositories.
+var sharedTypes = map[string]bool{"package.published": true, "package.deleted": true}
+
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){1,2}$`)
 
 var reg = struct {
@@ -123,11 +128,20 @@ func Register(t EventType) {
 	default:
 		panic(fmt.Sprintf("audit: event %q has journal entry rule %q", t.Name, t.Entry))
 	}
+	if t.Entry != "" && t.Journal != JournalRevocation {
+		panic(fmt.Sprintf("audit: event %q declares a journal entry rule without the journal flag", t.Name))
+	}
+	if t.Entry == EntryOptional && !sharedTypes[t.Name] {
+		panic(fmt.Sprintf("audit: event %q is not a shared type and cannot declare an optional journal entry", t.Name))
+	}
 	if t.Journal == JournalRevocation && t.Entry == "" {
 		t.Entry = EntryRequired
 	}
 	if t.Schema == "" {
 		panic(fmt.Sprintf("audit: event %q has no data schema", t.Name))
+	}
+	if err := checkSchema(t.Schema); err != nil {
+		panic(fmt.Sprintf("audit: event %q has a bad data schema: %v", t.Name, err))
 	}
 	reg.mu.Lock()
 	defer reg.mu.Unlock()

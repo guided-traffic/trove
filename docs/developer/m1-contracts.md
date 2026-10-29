@@ -78,7 +78,7 @@ Rules that follow:
 | `session.Validator`, `Info`, `ErrInvalid`, `ErrCSRF` | [session.go](../../internal/auth/session/session.go) | resolves the session cookie, applies CSRF (R-AUTH-012) | WP1.1 |
 | `authz.Authorizer` (`Decide`, `Readable`, `Require`), `Subject`, `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`, `RequestKind` | [authz.go](../../internal/authz/authz.go) | the decision point; action constants of R-AUTHZ-006, capability names of R-AUTHZ-010 | WP1.3 |
 | `repository.Repository`, `Class`, `Reader`, `KeyPattern`, `ReservedKeys()` | [repository.go](../../internal/repository/repository.go) | the read model and the lookup by key | WP1.4 |
-| `audit.EventType`, `Register`, `Freeze`, `Lookup`, `Types`; `Event`, `Actor`, `Subject`, `Source`; `Recorder`, `Nop` | [registry.go](../../internal/audit/registry.go), [event.go](../../internal/audit/event.go) | registry with the journal flag (registry works now); the recorder interface | WP1.7 implements the recorder |
+| `audit.EventType`, `Register`, `Freeze`, `Lookup`, `Types`; `Event`, `Actor`, `Subject`, `Source`; `Recorder`, `Nop`; `Writer`, `Store` | [registry.go](../../internal/audit/registry.go), [event.go](../../internal/audit/event.go), [recorder.go](../../internal/audit/recorder.go), [store.go](../../internal/audit/store.go) | registry with the journal flag; the recorder interface and its implementation (`a.m1.recorder`); the query and maintenance (`a.m1.auditStore`). `Event` also carries `Repository`, `Path`, `Endpoint`, `Actor.TokenID`, `Actor.AuthMethod` and the outcome `Denied` (Q-OPS-40) | WP1.7; page [audit.md](audit.md) |
 | `v1.Access` (existing), `v1.NewAccess`, `v1.SubjectFrom` | [handlers.go](../../internal/api/v1/handlers.go), [subject.go](../../internal/api/v1/subject.go) | the permission check of the management API | WP1.3 |
 
 ### Request flow, principal to decision
@@ -154,7 +154,7 @@ constant. The list is the starting set from the spec pages; an owner adds more i
 | Area | Codes |
 |---|---|
 | `api` | `invalid_cursor`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `invalid_request` (R-API-004 to R-API-022) |
-| `audit` | codes of the audit query and export API (R-OPS-017) |
+| `audit` | `invalid_audit_range` (R-OPS-017) |
 | `identity` | `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict` |
 | `login` | `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating` |
 | `authz` | `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `authenticated_write_action`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `virtual_action_not_applicable` |

@@ -45,6 +45,11 @@ const (
 // constants between the markers.
 
 // >>> M1 audit
+
+// CodeInvalidAuditRange is a query or export range the audit API refuses: a missing
+// bound, an end before the start, or an export longer than 400 days (R-OPS-017).
+const CodeInvalidAuditRange = "invalid_audit_range"
+
 // <<< M1 audit
 //
 // >>> M1 api
@@ -105,6 +110,7 @@ var registry = []CodeInfo{
 	{CodeMisdirectedRequest, Misdirected, "Misdirected request", "The host of the request is not one this endpoint answers for. Send the request to the endpoint that serves the host, on a new connection."},
 
 	// >>> M1 audit
+	{CodeInvalidAuditRange, Invalid, "Invalid audit range", "The time range of the audit query or export is missing, ends before it starts, or exceeds the 400 days an export may cover. Send from and to as RFC 3339 times, with to after from."},
 	// <<< M1 audit
 	//
 	// >>> M1 api

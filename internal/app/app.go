@@ -300,9 +300,11 @@ func (a *App) bootstrap(ctx context.Context) error {
 		if err := a.startComponent(ctx, &postgresComponent{a: a}); err != nil {
 			return err
 		}
-		// WIRING POINT (step 4): audit_maintain_partitions() runs here once the
-		// audit package exists. The audit area builds the recorder here (a.m1.recorder).
+		// Step 4: the audit partitions, then the recorder (a.m1.recorder).
 		// >>> M1 audit
+		if err := a.startAudit(ctx); err != nil {
+			return err
+		}
 		// <<< M1 audit
 		// Step 6: the object store.
 		if err := a.startBlob(ctx); err != nil {

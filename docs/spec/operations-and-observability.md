@@ -5039,6 +5039,151 @@ gives it from the first migration. A runtime role that is not the owner (two-rol
 
 **Applied in the spec:** R-OPS-015 (a paragraph under "When it runs").
 
+### Q-OPS-39 · Where the retention write and the partition call belong
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-OPS-015 has `trove migrate` write `audit.retention_days` into `audit_policy` on every run, every
+replica call `audit_maintain_partitions()` at start-up, and the `audit-retention` task call it daily.
+Q-OPS-38 left the runner's write open because the runner had no `audit` configuration. In two-role
+mode the runtime role holds only SELECT on `audit_policy`, so only the owner can write it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The migrate Job writes it (chosen) | `MigrateOptions.AuditRetentionDays` carries `audit.retention_days`; after the steps (or when none was pending) the runner updates the row when the value differs and calls the function, under the migration lock, as the schema owner | The only party that holds the privilege writes the row, so a compromised replica cannot shorten retention; the chart already runs the Job on every upgrade | A changed value waits for the next `trove migrate` |
+| (b) Every replica writes it at start-up | The runtime login updates the row | A changed value applies at the next rollout without a Job | Impossible in two-role mode (`42501`), and in single-role mode it makes retention a runtime decision |
+| (c) A worker task writes it | The `audit-retention` task reconciles the row | No dependency on the Job | Same privilege problem as (b): a task that runs as the runtime role cannot write |
+
+**Choice:** (a) for the write, plus a reconciliation at start-up that never needs a privilege to
+succeed: `Store.SyncRetention` reads the stored value, warns naming `trove migrate` when it differs
+from the configuration, and writes it only when the login may (single-role mode, H-39). The
+`audit-retention` task only calls the function. The migrate Job and a replica both warn for a value
+below 90. `audit.retention_days: 0` (keep for ever) is a valid value, so the configuration's lower
+bound is 0, not 1.
+
+**Rationale:** R-OPS-015 already says the owner owns the row; the design question was only which
+process is the owner at run time. The development agent would revisit this if a deployment ran the
+Job with the runtime role in two-role mode, which the chart does not.
+
+**Applied in the spec:** none; R-OPS-015 and R-OPS-017 already say it. The configuration default and
+bound are in `internal/config/audit.go`.
+
+### Q-OPS-40 · The event carries every column of the table
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The shared `audit.Event` of M1 had an actor, a subject, a source and details, and the table of
+R-OPS-015 has more columns: `token_id`, `auth_method`, `endpoint`, `repository`, `path`, and the
+outcome `denied`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add the columns to the contract (chosen) | `Actor.TokenID`, `Actor.AuthMethod`, `Event.Repository`, `Event.Path`, `Event.Endpoint` and the outcome `audit.Denied`; a repository subject fills `repository` when the field is empty | The columns are first-class and filterable (R-OPS-017); additive, so no area breaks | The contract grows |
+| (b) Put them in `details` | Producers write the values into the data | No contract change | The filters of R-OPS-017 (`repository`, actor) could not use the indexes; every area would invent keys |
+
+**Choice:** (a). The contract's `break_glass` actor kind is stored as `breakglass` (the table's
+spelling); every other kind is stored as given. An actor ID or token ID that is not a UUID is not
+stored (the column is a `uuid`); the actor's name still is, which is how a system actor such as
+`system:backup` is recorded.
+
+**Rationale:** the columns exist for the query side; the cost of an additive field is lower than
+that of unindexed filters. Revisit if a column is added to the table.
+
+**Applied in the spec:** none.
+
+### Q-OPS-41 · What the asynchronous writer does while PostgreSQL does not answer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-OPS-015 bounds the buffer and says a full buffer writes the log copy and counts the drop. It does
+not say what the batch writer does when a write fails.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the batch and retry with a backoff (chosen) | The writer keeps its batch of at most 500 and retries after 0.5 s doubling to 10 s; the channel fills behind it; an event that finds it full is dropped to the log and counted | No event is lost to a short outage; memory stays bounded by `async_buffer` plus one batch; the request path never waits | Events behind a long outage are lost to the table (not to the log) |
+| (b) Drop the failed batch | Write the log copy and move on | Simplest | A switchover of a few seconds loses events that were fine |
+| (c) Spill to disk | Journal to a local file | No loss | State on the pod disk, which R-ARCH-032 forbids between requests |
+
+**Choice:** (a). A batch the table refuses for its data (SQLSTATE class 22 or 23) is split: the rows
+that insert are stored and each refused row is dropped to the log and counted, so one malformed
+event cannot hold up the others. At shutdown (`Flush`) the writer drains the buffer and the open
+deduplication summaries under the shutdown deadline; what it cannot write by then is written to the
+log and counted as dropped. Events that never reached the table are always in the log stream; that
+stream is the only copy of them (H-39 covers shipping it out).
+
+**Rationale:** R-OPS-015 asks that "a drain or a rollout loses no event while PostgreSQL is
+reachable"; (a) extends that to a short outage without unbounded memory. Revisit if the dropped
+counter shows buffer overflow in a normal outage; the buffer size is `audit.async_buffer`.
+
+**Applied in the spec:** none.
+
+### Q-OPS-42 · Keys and bounds of the deduplication
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-OPS-015 names the dedup keys of `authz.denied` (principal, action, repository, path), of anonymous
+denials (client address) and of `token.rejected` (token ID), but not what happens for a rejection
+whose token ID is unknown, how many windows a replica holds, or what the summary counts.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Bounded in-process table; an unknown token ID keys by client address (chosen) | At most `audit.async_buffer` open windows; a key that finds the table full is written undeduplicated; `details.count` of the summary is the number of repeats | Memory is bounded under a scan; a well-formed token of unknown ID still collapses | A full table lets distinct keys through, which the bounded buffer then absorbs |
+| (b) Unbounded table | One window per key | Exact | A scanner varying the path grows memory without limit |
+
+**Choice:** (a). The first occurrence carries `details.count` 1, the summary carries the repeats and
+`repeat_of`, so the sum over first events and summaries is exact; a summary's `occurred_at` is the
+time the window closed. The type names `authz.denied`, `token.rejected` and `artifact.downloaded`
+are known to the writer; the areas that own them register the types.
+
+**Rationale:** the keys are those of the requirement; the bound follows R-OPS-015's "bounded".
+Revisit if a measured scanner pattern needs a larger table than the buffer size.
+
+**Applied in the spec:** none.
+
+### Q-OPS-43 · Event time, event ID and the lookup by ID
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A journal row takes the `occurred_at` of its event as `at`, and R-HA-054 says `at` is the
+transaction's `now()` so that the replay margin covers transactions that started before the
+snapshot. The event ID is a UUIDv7 that carries a time, and `GET /api/v1/audit/events/{id}` needs a
+way to read one partition range instead of every partition.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `occurred_at` from the database, ID time from the producer (chosen) | A transactional event inserts `now()`; the ID is a UUIDv7 of the producer's clock; the lookup reads `occurred_at` within one hour of the ID's time | `at` is the transaction's time as R-HA-054 requires; the lookup prunes partitions | The two clocks differ by the transaction's length and the replicas' skew |
+| (b) `occurred_at` from the producer | The Go clock | One clock | `at` is no longer the transaction's `now()` |
+| (c) A second index on `id` | A global index | Exact lookup | Not possible on a partitioned table without the partition key; a scan of every partition otherwise |
+
+**Choice:** (a). Asynchronous events take the producer's time at the moment of `Record`. Events of
+one transaction share its time and sort by ID.
+
+**Rationale:** the replay margin is defined on the transaction's time; the lookup window is generous
+against transaction lengths bounded by the statement and idle timeouts. Revisit if a transaction
+may run longer than an hour.
+
+**Applied in the spec:** none.
+
+### Q-OPS-44 · The audit query is one static statement per direction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-019 sends dynamic list queries to `listq`; the filters of R-OPS-017 are all optional.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Static statements with optional filters (chosen) | `ListAuditEventsNewest` and `ListAuditEventsOldest` in `queries/audit.sql`; an empty filter is `''` | sqlc checks them; the time range and the keyset row comparison always use the primary key | A generic plan cannot pick a filter index for a rare filter |
+| (b) A `listq` builder | Assemble the `WHERE` per request | A plan per filter set | No `listq` exists yet; more code for a range-bounded query |
+
+**Choice:** (a). Every query is bounded by `occurred_at` (default the last 24 hours), so the scan is
+over the range's partitions through the primary key. Revisit if a filtered query over a long range
+is measured slow; the move is to `listq` without a change to the Go signature.
+
+**Rationale:** the bounded range keeps the cost proportional to the range, which is what R-OPS-017
+asks of the export as well.
+
+**Applied in the spec:** none.
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy
@@ -5053,22 +5198,6 @@ and not credentials.
 What makes it real: a collector endpoint that resolves to an address the egress policy would refuse, set in
 the configuration by someone who can write it. The policy that refuses the same address for upstreams does
 not apply to the exporter.
-
-### H-39 · Audit records are not tamper-evident
-
-In two-role mode, trove's runtime role can only insert and read audit events, and it cannot shorten
-their retention (R-OPS-015). Nothing makes the records tamper-evident, though:
-
-- the schema owner and any superuser can alter or delete rows;
-- in single-role mode, trove's own role is the schema owner, so a compromised replica can too;
-- the runtime role can insert forged events in either mode.
-
-Integrity against those holders rests on shipping the `log: audit` stream to a store outside
-trove's control, for example object storage with object lock or a SIEM. Neither trove nor the
-chart enforces that (Q-OPS-4). The gap is live from the first release for every installation that
-does not ship logs externally. For single-role installations it also covers a compromised replica.
-It becomes real for anyone who obtains the owner credential of the migration Job, a superuser
-login, or, in single-role mode, the runtime credential.
 
 ### H-40 · Outbound address checks are weaker through an outbound proxy
 

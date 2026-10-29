@@ -52,6 +52,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
 | [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
+| [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
@@ -96,7 +97,7 @@ trove/
 │   ├── app/                  # composition root: components per role, start and stop order
 │   ├── api/v1/               # system API handlers; gen/ is generated (oapi-codegen)
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
-│   ├── audit/                # event registry (journal flag) and the recorder interface; implementation in M1 (WP1.7)
+│   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
 │   ├── auth/                 # authentication stage contract; principal/ (principal table), token/, session/, oidc/ (M1)
 │   ├── authz/                # decision point contract: Subject, Coordinate, Decision, Authorizer (M1, WP1.3)
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)

@@ -129,11 +129,13 @@ live means a `replica.heartbeat_at` within `system.heartbeat_stale_after`), then
 Lock timeouts (55P03) retry `migrate.ddl_lock_retries` times. Exit codes: 0, 1 error, 2 usage, 3 refusal.
 `trove migrate status` takes no lock. Output: JSON log on stderr, JSON summary on stdout.
 
-Not implemented yet: the runner's per-run write of `audit.retention_days` into `audit_policy` and its call of
-`audit_maintain_partitions()` (the tables, the functions and the seeded row exist since migration 00006, see
-[Access-core tables](#access-core-tables-m1); the write belongs to the audit work, WP1.7, because the runner has no
-`audit` configuration), the `database.backup_role` grants and the grants check (no backup tables), the restore mode
-of the runner (M5), and the CI check against the latest release's files (no release yet).
+The runner also writes `audit.retention_days` into `audit_policy` (when it differs) and calls `audit_maintain_partitions()` after the
+steps, also when none was pending (`MigrateOptions.AuditRetentionDays`, [audit.go](../../internal/meta/postgres/audit.go); Q-OPS-39,
+[audit.md](audit.md)). `trove migrate` passes the configured value; a caller that leaves the option nil (a test with steps of its own) leaves
+the row alone.
+
+Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), the restore mode of the runner (M5), and
+the CI check against the latest release's files (no release yet).
 
 ### Privileges of the runtime role
 

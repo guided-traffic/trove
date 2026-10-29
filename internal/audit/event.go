@@ -10,10 +10,12 @@ import (
 // Outcome is the result an event reports (R-AUTH-041).
 type Outcome string
 
-// The outcomes.
+// The outcomes. Denied is an authorization refusal (authz.denied); the table
+// accepts these three.
 const (
 	Success Outcome = "success"
 	Failure Outcome = "failure"
+	Denied  Outcome = "denied"
 )
 
 // Actor is who did it. Kind is "user", "service_account", "ci", "break_glass",
@@ -24,6 +26,11 @@ type Actor struct {
 	Kind string
 	ID   string
 	Name string
+	// TokenID is the token the request authenticated with, empty for a session,
+	// a job or a command. AuthMethod is "bearer", "basic", "session", "api_key" or
+	// empty (R-OPS-017). Neither is ever a token value.
+	TokenID    string
+	AuthMethod string
 }
 
 // Subject is what the event affected: a principal, a token, a repository, a
@@ -55,6 +62,14 @@ type Event struct {
 	Reason  string
 	Source  Source
 	Subject Subject
+	// Repository, Path and Endpoint are the columns of the same names: the
+	// repository key and the path the event concerns, and the endpoint the request
+	// arrived on (empty for jobs). Repository falls back to the subject's name
+	// when the subject is a repository.
+	Repository string
+	Path       string
+	Endpoint   string
+	// Details is a JSON object of the type's data schema; nil is {}.
 	Details json.RawMessage
 	// Journal is the producer's journal entry (R-HA-054): IDs and states, never
 	// a secret. The recorder writes a revocation_outbox row in the same

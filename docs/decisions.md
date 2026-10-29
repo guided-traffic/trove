@@ -1276,7 +1276,7 @@ The details:
   ever updated.
 
 The owner, superusers and single-role installations are outside this protection; shipping the
-`log: audit` stream to an append-only store covers them ([H-39](spec/operations-and-observability.md#h-39--audit-records-are-not-tamper-evident)). Metric labels need
+`log: audit` stream to an append-only store covers them ([H-39](security/audit.md#h-39--audit-records-are-not-tamper-evident)). Metric labels need
 cardinality caps: by default 500 distinct repository keys per metric family and replica, with
 `repo="_other"` and an overflow counter beyond it ([R-OPS-007](spec/operations-and-observability.md#r-ops-007--metric-naming-labels-and-cardinality), [Q-OPS-10](spec/operations-and-observability.md#q-ops-10--default-cap-for-the-repo-metric-label), option (a)). Revisited on
 2026-10-28 (option (a) with (d)): the keys that keep their label are chosen from the repository
@@ -4371,7 +4371,7 @@ default ([H-23](spec/authorization.md#h-23--allowed-downloads-are-not-attributab
 replica or a SQL injection, acting as the runtime role, cannot rewrite or erase history, and a long
 audit export never makes transactional writes queue behind partition maintenance. The owner,
 superusers and single-role installations are outside that protection; shipping the `log: audit`
-stream to an append-only store covers them ([H-39](spec/operations-and-observability.md#h-39--audit-records-are-not-tamper-evident)).
+stream to an append-only store covers them ([H-39](security/audit.md#h-39--audit-records-are-not-tamper-evident)).
 
 **Alternatives considered.** Writing every event asynchronously: changes without records after a
 crash. Writing every event synchronously: a denial flood blocks request handling. Auditing every

@@ -44,6 +44,10 @@ type MigrateOptions struct {
 	// Steps overrides the embedded migrations; tests inject failing or additional
 	// steps through it. Nil means EmbeddedFS.
 	Steps fs.FS
+	// AuditRetentionDays is audit.retention_days. When set, every run writes it
+	// into audit_policy and calls audit_maintain_partitions() once the steps are
+	// applied (R-OPS-015); nil leaves the row alone (tests with their own steps).
+	AuditRetentionDays *int
 	// Log receives the progress lines; nil means slog.Default.
 	Log *slog.Logger
 }
@@ -248,7 +252,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if len(pending) == 0 {
 		res.NothingToDo = true
 		log.Info("nothing to do", "schema_applied", st.schemaApplied, "required_schema", res.RequiredSchema)
-		return res, nil
+		return res, syncAudit(ctx, conn, opts, log)
 	}
 
 	// 5. Apply.
@@ -260,7 +264,16 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 		res.Applied = append(res.Applied, sr)
 	}
 	res.SchemaApplied, res.CompatFloor = st.schemaApplied, st.compatFloor
-	return res, nil
+	return res, syncAudit(ctx, conn, opts, log)
+}
+
+// syncAudit is the audit part of every run, applied or not: the retention and
+// the partitions (R-OPS-015). It runs under the migration lock, as the schema owner.
+func syncAudit(ctx context.Context, conn *pgx.Conn, opts MigrateOptions, log *slog.Logger) error {
+	if opts.AuditRetentionDays == nil {
+		return nil
+	}
+	return syncAuditPolicy(ctx, conn, *opts.AuditRetentionDays, log)
 }
 
 // ensureSchema creates the schema if it is missing (a database owner may) and

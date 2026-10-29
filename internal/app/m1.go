@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -17,7 +18,11 @@ import (
 // the M0 stand-in of access.go applies.
 type m1Wiring struct {
 	// >>> M1 audit
-	// recorder audit.Recorder (declare it with the first use)
+	// recorder writes audit events (R-OPS-015); set at step 4 on every role with
+	// a main pool, nil elsewhere. auditStore reads the trail (R-OPS-017) and runs
+	// the partition maintenance of the audit-retention task.
+	recorder   audit.Recorder
+	auditStore *audit.Store
 	// <<< M1 audit
 
 	// >>> M1 api

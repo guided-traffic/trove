@@ -20,6 +20,9 @@ sql:
             go_type: "time.Time"
           - column: "blobs.created_at"
             go_type: "time.Time"
+          # The audit package reads event times as plain times (R-ARCH-002).
+          - column: "audit_event.occurred_at"
+            go_type: "time.Time"
           - db_type: "job_state"
             go_type: "string"
           - db_type: "job_state"

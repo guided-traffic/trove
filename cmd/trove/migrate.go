@@ -61,7 +61,10 @@ func migrateCmd(args []string, s streams) error {
 		Migrate:           cfg.Migrate,
 		Version:           buildinfo.Get().Version,
 		ReplicaStaleAfter: cfg.System.HeartbeatStaleAfter,
-		Log:               log,
+		// The runner is the schema owner and so the only writer of the retention
+		// in two-role mode (R-OPS-015).
+		AuditRetentionDays: &cfg.Audit.RetentionDays,
+		Log:                log,
 	}
 	switch action {
 	case "status":
