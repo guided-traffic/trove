@@ -133,7 +133,21 @@ task_postgres() {
   helm --kube-context "$CTX" upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts \
     --version "$CNPG_CHART_VERSION" -n cnpg-system --create-namespace \
     --set image.repository="${DEV_CNPG_OPERATOR_IMAGE%%:*}" --set image.tag="$image" --wait --timeout 5m
-  render "$DEV_DIR/postgres.yaml" | kn apply -f -
+  # helm --wait sees the operator pod ready before its admission webhook answers: the first apply
+  # of the Cluster then fails with "failed calling webhook mcluster.cnpg.io ... connection refused".
+  # Wait until the webhook Service has a ready endpoint, then apply, retrying while the webhook
+  # still refuses connections.
+  local deadline=$(( $(date +%s) + 300 ))
+  until [ -n "$(kubectl --context "$CTX" -n cnpg-system get endpointslices -l kubernetes.io/service-name=cnpg-webhook-service \
+      -o jsonpath='{range .items[*].endpoints[?(@.conditions.ready==true)]}{.addresses[0]}{end}' 2>/dev/null)" ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || die "the CloudNativePG webhook has no ready endpoint after 300s"
+    sleep 2
+  done
+  until render "$DEV_DIR/postgres.yaml" | kn apply -f - 2>"$LOGS/postgres-apply.err"; do
+    grep -q 'failed calling webhook' "$LOGS/postgres-apply.err" || { cat "$LOGS/postgres-apply.err" >&2; return 1; }
+    [ "$(date +%s)" -lt "$deadline" ] || { cat "$LOGS/postgres-apply.err" >&2; die "the CloudNativePG webhook still refuses the Cluster after 300s"; }
+    sleep 3
+  done
   # The cluster object exists before its status; wait for the condition.
   kn wait --for=condition=Ready cluster/trove-db --timeout=10m
   local ready

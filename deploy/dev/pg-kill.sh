@@ -14,6 +14,17 @@ before="$(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}')"
 log "force-deleting the primary pod $before"
 start="$(date +%s)"
 kn delete pod "$before" --grace-period=0 --force --wait=false >/dev/null 2>&1
+# The operator reports the cluster healthy until it has noticed the loss, so waiting for healthy at
+# once returned at once ("fault took 0s") and ended the test's window before the outage. First wait
+# until the operator has seen the loss: another primary, or the cluster no longer healthy.
+deadline=$(( $(date +%s) + 120 ))
+while :; do
+  cur="$(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}' 2>/dev/null || true)"
+  phase="$(kn get cluster trove-db -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+  if { [ -n "$cur" ] && [ "$cur" != "$before" ]; } || [ "$phase" != "Cluster in healthy state" ]; then break; fi
+  [ "$(date +%s)" -lt "$deadline" ] || die "the operator did not notice the loss of $before within 120s"
+  sleep 1
+done
 pg_wait_healthy 300 >/dev/null || exit 1
 after="$(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}')"
 log "healthy again after $(( $(date +%s) - start )) s; primary $before -> $after"
