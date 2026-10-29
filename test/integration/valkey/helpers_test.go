@@ -283,6 +283,10 @@ func failover(ctx context.Context, t *testing.T, v testenv.Valkey) (oldAddr, new
 	oldAddr = sentinelPrimary(ctx, t, v)
 	waitForReplica(ctx, t, v, oldAddr)
 	s := sentinelAdmin(t, v, v.Sentinels[0])
+	// The primary seeing its replica online is not enough: Sentinel promotes only a replica its own
+	// last INFO shows linked and healthy, and right after a failover it still holds the demoted
+	// node's stale view and answers NOGOODSLAVE. Wait for that view, then fail over.
+	waitSentinelReplica(ctx, t, s, v.PrimaryName)
 	if err := s.Do(ctx, s.B().SentinelFailover().Master(v.PrimaryName).Build()).Error(); err != nil {
 		t.Fatalf("SENTINEL FAILOVER: %v", err)
 	}
@@ -296,6 +300,26 @@ func failover(ctx context.Context, t *testing.T, v testenv.Valkey) (oldAddr, new
 	}
 	t.Fatalf("the primary is still %s after 60s", oldAddr)
 	return "", "", time.Time{}
+}
+
+// waitSentinelReplica waits until the Sentinel s lists a replica of name that it would promote:
+// flags exactly "slave" (not down, not disconnected) and master-link-status ok.
+func waitSentinelReplica(ctx context.Context, t *testing.T, s valkey.Client, name string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		replicas, err := s.Do(ctx, s.B().Arbitrary("SENTINEL", "REPLICAS", name).Build()).ToArray()
+		if err == nil {
+			for _, r := range replicas {
+				m, err := r.AsStrMap()
+				if err == nil && m["flags"] == "slave" && m["master-link-status"] == "ok" {
+					return
+				}
+			}
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatalf("Sentinel lists no replica of %s it could promote after 60s", name)
 }
 
 // restoreLayout fails over until the original primary (the first data node)
