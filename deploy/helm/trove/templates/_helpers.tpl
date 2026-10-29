@@ -201,6 +201,16 @@ keys win; setting one inside config is refused by trove.validate.
 {{- if eq (dig "metrics" "auth" "" .Values.config) "static" -}}
 {{- $_ := set $managed "metrics" (dict "bearer_token_file" "/var/run/secrets/trove/metrics/token") -}}
 {{- end -}}
+{{- /* Login (R-AUTH-004, R-AUTH-014): the paths of the web pods' mounts; without secrets.breakGlass the account is off. */ -}}
+{{- $bg := dict "enabled" false -}}
+{{- if $s.breakGlass.existingSecret -}}
+{{- $bg = dict "password_file" "/var/run/secrets/trove/break-glass/password" -}}
+{{- end -}}
+{{- $providers := dict -}}
+{{- range $s.oidc -}}
+{{- $_ := set $providers .providerId (dict "client_secret_file" (printf "/var/run/secrets/trove/oidc-%s/client-secret" .providerId)) -}}
+{{- end -}}
+{{- $_ := set $managed "auth" (dict "break_glass" $bg "oidc" (dict "providers" $providers)) -}}
 {{- $keys := $s.encryption.keys -}}
 {{- if $keys -}}
 {{- $files := list -}}

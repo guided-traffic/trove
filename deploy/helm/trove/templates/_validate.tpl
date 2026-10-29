@@ -30,6 +30,27 @@ pools) are added with those features.
 {{- fail (printf "trove: secrets.encryption.existingSecret and secrets.encryption.keys are required. The chart never generates the key (a regenerated key would make every sealed value undecryptable). Create the Secret before the first install:\n\n  kubectl -n %s create secret generic trove-encryption-keys \\\n    --from-file=2026-10.key=<(head -c 32 /dev/urandom | base64)\n\nthen set secrets.encryption.existingSecret=trove-encryption-keys and secrets.encryption.keys={2026-10.key}. The file name without .key is the key ID." $ns) -}}
 {{- end -}}
 
+{{- /* Login secrets (R-AUTH-004, R-AUTH-014). */ -}}
+{{- $oidcSeen := dict -}}
+{{- range $i, $o := $v.secrets.oidc -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9-]{0,31}$" ($o.providerId | default "")) -}}
+{{- fail (printf "trove: secrets.oidc[%d].providerId %q must match ^[a-z0-9][a-z0-9-]{0,31}$ (the provider ID of config.auth.oidc.providers, example: corp)" $i ($o.providerId | default "")) -}}
+{{- end -}}
+{{- if hasKey $oidcSeen $o.providerId -}}
+{{- fail (printf "trove: secrets.oidc has two entries for providerId %q" $o.providerId) -}}
+{{- end -}}
+{{- $_ := set $oidcSeen $o.providerId true -}}
+{{- if not $o.existingSecret -}}
+{{- fail (printf "trove: secrets.oidc[%d].existingSecret is required for providerId %q (example: trove-oidc-%s)" $i $o.providerId $o.providerId) -}}
+{{- end -}}
+{{- if not (hasKey (dig "auth" "oidc" "providers" (dict) $cfg) $o.providerId) -}}
+{{- fail (printf "trove: secrets.oidc[%d].providerId %q has no provider of that ID in config.auth.oidc.providers" $i $o.providerId) -}}
+{{- end -}}
+{{- if dig "auth" "oidc" "providers" $o.providerId "client_secret_file" "" $cfg -}}
+{{- fail (printf "trove: config.auth.oidc.providers.%s.client_secret_file is managed by the chart while secrets.oidc names the provider and must not be set" $o.providerId) -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Valkey (R-HA-056). */ -}}
 {{- if not $v.secrets.valkey.existingSecret -}}
 {{- fail "trove: secrets.valkey.existingSecret is required (example: trove-valkey)" -}}
@@ -91,7 +112,7 @@ pools) are added with those features.
 {{- end -}}
 
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}
-{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.ca_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" -}}
+{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.ca_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "auth.break_glass.password_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" -}}
 {{- if $t.enabled -}}
 {{- $managedPaths = concat $managedPaths (list "server.tls" "server.ops_tls") -}}
 {{- end -}}

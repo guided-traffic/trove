@@ -128,6 +128,8 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Endpoint certificate mount | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`tls.crt`, `tls.key`; `n` is the position in `tls.certificates`), client CA at `…/<name>/client-ca/ca.crt` | yes (`_endpoints.tpl`) |
 | PostgreSQL CA and client pair | `/var/run/secrets/trove/database-ca/ca.crt`, `/var/run/secrets/trove/database-client/tls.{crt,key}` | yes |
 | Object-store CA | `/var/run/secrets/trove/s3-ca/ca.crt` (`secrets.s3CA`; renders `storage.s3.ca_file`) | yes |
+| Break-glass password mount | `/var/run/secrets/trove/break-glass/password` (`secrets.breakGlass`; renders `auth.break_glass.password_file`; `web` pods only) | yes (`_secrets.tpl`) |
+| OIDC client secret mount | `/var/run/secrets/trove/oidc-<providerId>/client-secret` (`secrets.oidc[]`; renders `auth.oidc.providers.<providerId>.client_secret_file`; `web` pods only) | yes |
 | Valkey CA and client pair | `/var/run/secrets/trove/valkey-ca/ca.crt`, `/var/run/secrets/trove/valkey-client/tls.{crt,key}` | yes |
 | Kubernetes Service port of an endpoint | `<fullname>-ep-<name>`, port from `endpoints.<name>.port` | yes (`endpoint-services.yaml`) |
 | Metric families | `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total`, `trove_tls_reload_errors_total`, labels `kind`, `listener`, `name` | yes (`internal/tlsfiles/metrics.go`) |
@@ -955,6 +957,13 @@ secrets:
     existingSecret: ""                  # default: no client certificate
     certKey: tls.crt                    # default
     keyKey: tls.key                     # default
+  oidc: []                              # default: no client secrets. Web pods only, never worker, Job or backup pods (R-AUTH-042)
+  #  - providerId: corp                 # example: the ID of a provider in config.auth.oidc.providers, ^[a-z0-9][a-z0-9-]{0,31}$; the render fails for a provider that does not exist
+  #    existingSecret: trove-oidc-corp  # example; required
+  #    key: client-secret               # default; mounted at /var/run/secrets/trove/oidc-<providerId>/client-secret, renders client_secret_file of that provider
+  breakGlass:
+    existingSecret: ""                  # default: empty = the chart renders auth.break_glass.enabled: false; example: trove-break-glass. Web pods only (R-AUTH-014, R-AUTH-042)
+    key: password                       # default; plaintext of at least 20 characters or an Argon2id PHC hash; mounted at /var/run/secrets/trove/break-glass/password
   encryption:
     existingSecret: ""                  # required; example: trove-encryption-keys
     keys: []                            # required; ordered, first = active; example: [2026-10.key, 2026-04.key]
@@ -962,6 +971,43 @@ secrets:
     existingSecret: ""                  # default; needed with config.metrics.auth static
     key: token                          # default
 ```
+
+Security notes on the login secrets:
+
+- `secrets.breakGlass` is the password of an account that holds system administration without a role binding
+  ([R-AUTH-014](docs/spec/identity-and-authentication.md)). Whoever can read the Secret, or `get` it through the Kubernetes API,
+  is an administrator. Restrict that Secret with RBAC like the database credentials. A hash (Argon2id PHC) keeps the plaintext out of
+  the cluster; a plaintext password is hashed in memory by each `web` replica. Without the value the account is off, not open.
+- Both secrets are mounted as a directory of the Secret, read-only, without `subPath`, `defaultMode: 0440`, and only into `web`
+  pods (the main pool and endpoint pools): `worker`, the migration Job and the backup pods never get them. A rotated Secret
+  reaches the pods through the kubelet, trove notices the new file within `auth.break_glass.check_interval` and refuses the local
+  login for `auth.break_glass.rotation_hold` (Q-AUTH-14) and ends the break-glass sessions.
+- `config.auth.break_glass.password_file` and `config.auth.oidc.providers.<id>.client_secret_file` are chart-managed
+  for a provider named in `secrets.oidc`; setting them inside `config` fails the render. `client_secret_env` stays free for
+  installations that read the secret from the environment.
+
+**First sign-in with the break-glass account.** Create the Secret before the install; the internal-secrets-operator
+generates and, with `iso.gtrfc.com/rotate`, rotates the password (a rotation opens the 2-minute hold above):
+
+```shell
+kubectl -n trove apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trove-break-glass                    # example
+  annotations:
+    iso.gtrfc.com/autogenerate: password     # the field to generate
+    iso.gtrfc.com/length: "32"               # default: 32; trove needs at least 20
+    # iso.gtrfc.com/rotate: 90d              # example: optional rotation; the operator's minimum is 5m
+type: Opaque
+EOF
+helm upgrade --install trove trove/trove -n trove -f values.yaml --set secrets.breakGlass.existingSecret=trove-break-glass
+kubectl -n trove get secret trove-break-glass -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+Open `/ui/login?local=1` on the installation's base URL and sign in as `admin` (`auth.break_glass.username`, default `admin`) with that
+password. Without the operator, `kubectl create secret generic trove-break-glass --from-literal=password="$(head -c 24 /dev/urandom | base64)"`
+does the same once.
 
 Secret keys the platform produces for these values: the provisioner of the object store writes `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_REGION` and `S3_ENDPOINT`; the internal-secrets-operator generates values with the

@@ -131,12 +131,29 @@ Generated or created in namespace `trove`; nothing in `up.sh` makes a random val
 | `trove-valkey-tls` | `tls.crt`, `tls.key`, `ca.crt` | the Valkey operator, through cert-manager (`unifiedCertificate: true`: one Secret for both tiers) | Valkey and Sentinels; chart: `secrets.valkeyCA` (`ca.crt`) |
 | `trove-s3` | `access-key-id` (`trove-dev`), `secret-access-key` (40 characters) | internal-secrets-operator | SeaweedFS and the bucket Job; chart: `secrets.s3` |
 | `trove-encryption-keys` | `dev.key`: 32 random bytes, **raw** (`iso.gtrfc.com/type: bytes`) | internal-secrets-operator | chart: `secrets.encryption`; the file name without `.key`, `dev`, is the key ID. The key ring accepts a 32-byte file as it is and base64 text of 32 bytes |
-| `trove-break-glass` | `password` (32 characters, plaintext: at least 20 are required) | internal-secrets-operator | `auth.break_glass.password_file` of the dev values, through the projected volume `dev-auth` (below); the e2e tests read it for E1.1 and R-AUTH-042 |
+| `trove-break-glass` | `password` (32 characters, plaintext: at least 20 are required) | internal-secrets-operator, **rotated every 24 h** (`iso.gtrfc.com/rotate: 24h`) | chart: `secrets.breakGlass` (mounted into `web` pods, renders `auth.break_glass.password_file`); the e2e tests read it for E1.1 and R-AUTH-042 |
 | `trove-dev-ca` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager (self-signed root, ten years) | the Issuer `trove-dev-ca` |
 | `trove-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | trove's listeners (`tls.secretName`) and HAProxy Ingress, which verifies it (`ingress.backendTLS.caSecret`) |
 | `trove-edge-tls` | `tls.crt`, `tls.key` | cert-manager | the edge's certificate for `localhost` |
 | `trove-s3-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | SeaweedFS; trove mounts its `ca.crt` through `secrets.s3CA`, which renders `storage.s3.ca_file` |
 | `trove-customers-tls`, `trove-customers-wildcard-tls`, `trove-customers-edge-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | the endpoint `customers` (below) |
+
+**Rotation of `trove-break-glass`.** It is the one rotating Secret of the profile. The operator (1.6.14) takes `rotate` as a
+Go duration plus a `d` suffix, overwrites the field when the interval has passed, and refuses intervals below its
+`rotation.minInterval` (default `5m`; the profile installs it with the chart defaults) with a Warning Event on the Secret
+([README of the operator](https://github.com/guided-traffic/internal-secrets-operator#automatic-rotation)). Each rotation
+reaches the `web` pods through the kubelet (a directory mount, no `subPath`); trove notices the new file within
+`auth.break_glass.check_interval` (10 s), then answers the local login with 503 `break_glass_rotating` for the 2-minute
+`rotation_hold` and ends the break-glass sessions (Q-AUTH-14). That is acceptable in the dev profile, and it is why the interval is
+24 h and not minutes: a rotation inside an e2e run (E1.1, E1.11) would turn their local logins into 503. To trigger a
+rotation on demand, set a short interval and put it back:
+
+```shell
+kubectl --context kind-trove -n trove annotate secret trove-break-glass --overwrite iso.gtrfc.com/rotate=5m   # rotates when 5m passed since generated-at
+kubectl --context kind-trove -n trove annotate secret trove-break-glass --overwrite iso.gtrfc.com/rotate=24h
+```
+
+OIDC sign-in is not affected by a break-glass rotation. Do not set `rotate` on any other Secret of the profile.
 
 Never set `iso.gtrfc.com/rotate` on `trove-encryption-keys` (a rotation would destroy the encrypted data) or on
 `trove-valkey-auth` (a changed password reaches no running Valkey pod, the operator's documentation). The generator
@@ -280,10 +297,11 @@ kubectl --context kind-trove -n trove port-forward svc/trove-keycloak 8443:8443
 kubectl --context kind-trove -n trove get secret trove-keycloak -o jsonpath='{.data.alice-password}' | base64 -d
 ```
 
-The provider entry is part of values-dev.yaml. The chart has no values for the OIDC client secret and the break-glass
-password yet, so the three files the entry names (the client secret of `trove-keycloak`, the CA of `trove-keycloak-tls`,
-the password of `trove-break-glass`) are one projected volume, `extraVolumes` / `extraVolumeMounts`, under
-`/var/run/secrets/trove-dev/`. The dev CA is in `proxy.outbound.tls.ca_files`, so the outbound client trusts the IdP's
+The provider entry is part of values-dev.yaml. The client secret (Secret `trove-keycloak`) and the break-glass password
+(Secret `trove-break-glass`) are the chart values `secrets.oidc` and `secrets.breakGlass`, which mount them into the `web` pods
+and render `client_secret_file` and `password_file`. Only the CA of `trove-keycloak-tls` is still a volume of the dev values
+(`extraVolumes` / `extraVolumeMounts` at `/var/run/secrets/trove-dev/keycloak-ca.crt`): the chart has no `trustedCA` value yet
+(R-HA-043 is not built). That CA is in `proxy.outbound.tls.ca_files`, so the outbound client trusts the IdP's
 certificate. The group rule maps the claim values `trove-team-web` and `trove-platform-admins` to the groups `team-web`
 and `platform-admins`, which `create_groups` creates on the first login:
 
@@ -295,15 +313,22 @@ auth:
         display_name: Keycloak (dev)                # example
         issuer: https://trove-keycloak.trove.svc:8443/realms/trove   # example
         client_id: trove                            # example
-        client_secret_file: /var/run/secrets/trove-dev/oidc-keycloak/client-secret  # example: field client-secret
+        # client_secret_file is set by the chart from secrets.oidc (/var/run/secrets/trove/oidc-keycloak/client-secret)
         scopes: [openid, profile, email]            # default
         group_sync:
           rules:
             - match_regex: "trove-(.+)"             # example
               group: "$1"                           # example
         create_groups: true                         # example: the groups of the rules are created on login
-break_glass:
-  password_file: /var/run/secrets/trove-dev/break-glass/password   # example: field password of trove-break-glass
+```
+
+and in the chart values:
+
+```yaml
+secrets:
+  oidc:
+    - {providerId: keycloak, existingSecret: trove-keycloak, key: client-secret}   # example
+  breakGlass: {existingSecret: trove-break-glass, key: password}                    # example; password_file is rendered by the chart
 ```
 
 `up.sh` sets `KC_TROVE_BASE_URL` on the Deployment from the edge port of the cluster (`https://localhost:<port>`), and the
@@ -358,9 +383,9 @@ Not verified here, or not configured:
 
 - The ACL user, the separate Sentinel credential and `maxmemory` of Valkey (deviations above); R-ARCH-031's ACL
   criterion is proven by the integration stack only.
-- The chart has no value for the break-glass password and the OIDC client secret; the dev values mount them as a projected
-  volume of `extraVolumes`. With the default `auth.break_glass.enabled: true` and no `password_file`, a `web` replica starts
-  and refuses the local login (Q-AUTH-33).
+- The chart renders `auth.break_glass.enabled: false` without `secrets.breakGlass`; the dev values set it. The Keycloak CA is
+  still the `extraVolumes` workaround (no `trustedCA` value). A real rotation of `trove-break-glass` by the operator (the 24 h
+  interval, the hold and the ended sessions in a running cluster) is verified by the chart render and the code, not by a drill.
 - Valkey and the S3 gateway read their certificates at start: a cert-manager renewal reaches the Valkey pods through
   the operator's own rolling restart (ADR 0030 of the operator, not exercised here) and SeaweedFS at its next restart.
   trove re-reads the Valkey CA per handshake and the S3 CA per request.

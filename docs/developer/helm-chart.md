@@ -20,7 +20,7 @@ of being silently ignored.
 | PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | NetworkPolicy egress and the egress example (R-HA-042), ServiceMonitor, PrometheusRule |
 | NetworkPolicy ingress for `web`, `worker` and the migration Job (R-HA-042) | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
-| configuration file `trove.yaml`, Secret wiring, downward-API variables (R-HA-030) | `secrets.oidc`, `secrets.breakGlass`, `secrets.backupTarget`, `trustedCA`, `bootstrap` |
+| configuration file `trove.yaml`, Secret wiring including the login secrets `secrets.oidc` and `secrets.breakGlass`, downward-API variables (R-HA-030) | `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
 | Ingress, path `/` only (R-HA-037); TLS on trove's listeners (R-HA-063) | HTTPRoute for the default endpoint and for endpoints (`gateway.*`, R-HA-038, R-EP-008); profiles `small`, `medium`, `large` (R-HA-050), the complete values reference (R-HA-031) |
 | further endpoints: Service, Ingress, NetworkPolicy, optional pool, certificates (R-EP-008), see [Endpoints](#endpoints) | the validation rows of the features in the right column |
@@ -172,6 +172,8 @@ never as an environment variable (the one exception is the non-secret S3 setting
 | `secrets.valkeySentinel` | `username` (default: none), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` | `web`, `worker` |
 | `secrets.valkeyCA` | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` | `web`, `worker` |
 | `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` | `web`, `worker` |
+| `secrets.breakGlass` | `password` (the Secret's `key`) | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file` (also refused inside `config`); without the Secret `auth.break_glass.enabled: false` | `web` and pool pods; never `worker`, the Job or backup pods (R-AUTH-014, R-AUTH-042) |
+| `secrets.oidc[]` (`providerId`, `existingSecret`, `key`) | `client-secret` (the entry's `key`) | `/var/run/secrets/trove/oidc-<providerId>/` | `auth.oidc.providers.<providerId>.client_secret_file` (refused inside `config` for a listed provider) | `web` and pool pods only (R-AUTH-004, R-AUTH-042) |
 | `secrets.metricsToken` (`config.metrics.auth: static`) | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` | `web`, `worker` |
 | `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | `server.tls.certificates[0]` | the pods that load the pair, see [Mounts follow the listeners](#mounts-follow-the-listeners); never the Job |
 | `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | the main `web` pods |
@@ -363,6 +365,7 @@ tests in `chart_test.go` assert both, row by row.
 | `terminationGracePeriodSeconds` below `config.health.shutdown_drain_delay` + 15 s | implemented, per role |
 | Sentinel mode without addresses or `primary_name`; fewer than 3 addresses under `enforce`; standalone under `enforce` | implemented |
 | `secrets.valkey.existingSecret` empty | implemented |
+| `secrets.oidc[]`: an invalid or repeated `providerId`, an empty `existingSecret`, a `providerId` without a provider of that ID in `config.auth.oidc.providers`, `client_secret_file` set in `config` for it; `config.auth.break_glass.password_file` set | implemented, each naming the value |
 | `config.valkey.tls.mode: disable` without `allow_insecure` | implemented |
 | `podDisruptionBudget` with both `minAvailable` and `maxUnavailable` | implemented |
 | a chart-managed key set inside `config` | implemented (secret file paths, `storage.spool.dir`) |
@@ -416,6 +419,7 @@ is where the coverage generator reads the IDs from.
 | `R-EP-008` (`TestEndpoints`) | two endpoints render two Services (own port, selecting the main web pods), two Ingresses (class, hosts incl. the wildcard, TLS entry, backend), a NetworkPolicy per port, the `server.endpoints` block and the default endpoint's hosts; mounts of the pairs without `subPath`; backend TLS per controller; the pool (Deployment, PDB, Service, spread selector, policy with the operations port, no port on the main pods); NOTES; each validation row |
 | `R-HA-030`, `R-HA-029` (`TestS3ProvisionerSecret`) | bucket, region, endpoint by `secretKeyRef`, credentials as files with only their two keys, the Job reads none, the bucket is required unless the Secret carries it |
 | `R-HA-030` (`TestTLSMountsFollowTheListeners`) | the listener pair is mounted by the pods that load it: everywhere without `tls.ops`; with it, not into the worker, into an endpoint pool only while an endpoint it serves has no pair of its own; the client CA reaches the main `web` pods only |
+| `R-HA-030`, `R-AUTH-014`, `R-AUTH-042` (`TestLoginSecrets`) | `secrets.breakGlass` and `secrets.oidc[]` mount a directory of the Secret read-only without `subPath` into `web` and pool pods only (not `worker`, not the Job), render the config paths, take a different key, leave `enabled` alone with a Secret and render `auth.break_glass.enabled: false` without; the validation rows; the rendered file passes `trove admin config validate` |
 | `R-HA-030` (`TestS3CA`) | `secrets.s3CA` mounts read-only without `subPath` with the one projected key, renders `storage.s3.ca_file`, stays out of the Job; without it nothing is rendered and `config.storage.s3.ca_file` is refused |
 | `R-HA-063`, `R-HA-030` (`TestTLS`) | HTTPS probes, mount without `subPath` of exactly the certificate and key, config paths, `appProtocol`; missing `tls.secretName` fails; opt-out renders no TLS wiring; no TLS mount in the migration Job; client CA and `ops_tls` separation; per-controller Ingress settings (HAProxy Ingress default, verification and client-certificate rules); `BackendTLSPolicy`; every value set agrees between config and probe scheme |
 

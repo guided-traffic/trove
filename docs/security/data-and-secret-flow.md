@@ -23,13 +23,17 @@ Secret through `secretKeyRef` (`TROVE_STORAGE_S3_BUCKET`, `TROVE_STORAGE_S3_ENDP
 | Metrics bearer token | file `metrics.bearer_token_file` | on every request to `/metrics` with `auth: static` ([observability/metrics.go](../../internal/observability/metrics.go), `authorized`) | not logged |
 | OTLP headers | file `tracing.headers_file`, `Name: value` per line | once, when the exporter is built ([observability/otlp.go](../../internal/observability/otlp.go)) | not in the configuration |
 | Stored-secret key ring | files under `/var/run/secrets/trove/encryption/`, one per key | once, at start ([app.go](../../internal/app/app.go), `secrets.Load`) | see [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up) |
-| Break-glass password | not built (M1, R-AUTH-014) | not applicable | not applicable |
+| Break-glass password | one file, `/var/run/secrets/trove/break-glass/password`, from `secrets.breakGlass`; plaintext (at least 20 characters) or an Argon2id hash | at start and again whenever its modification time changes, looked at every `auth.break_glass.check_interval` ([oidc/breakglass.go](../../internal/auth/oidc/breakglass.go)); read by `web` replicas only (R-AUTH-042) | not in PostgreSQL, not in `worker`, the migration Job or the backup pods; not logged |
+| OIDC client secrets | one file per provider, `/var/run/secrets/trove/oidc-<providerId>/client-secret`, from `secrets.oidc[]` | when the file's modification time changes ([oidc/provider.go](../../internal/auth/oidc/provider.go)); `web` replicas only | not in PostgreSQL, not in `worker`, the Job or the backup pods |
 
 The chart mounts each Secret into the pods that need it and nowhere else ([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl)):
 
 - the key ring (`encryption`) only in the `web` and `worker` pods, never in the migration Job (the migration never seals or opens a value);
 - the object-store credentials only with `credentials.source: static`;
 - the metrics token only with `metrics.auth: static`;
+- the break-glass password and the OIDC client secrets only in the `web` pods and endpoint pools, which serve the login; the
+  `worker` and the Job never get them. The Secret that holds the break-glass password is an administrator credential: whoever can
+  read it through the Kubernetes API can sign in as the break-glass account, so its RBAC is the access control of that account;
 - the listener certificate (`tls.crt` and `tls.key`, not `ca.crt`) only in the pods whose process serves a listener.
 
 The Valkey and PostgreSQL files are mounted with `defaultMode: 0440`, read-only, without `subPath`, so a rotated Secret reaches

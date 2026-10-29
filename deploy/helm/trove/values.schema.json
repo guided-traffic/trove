@@ -831,6 +831,43 @@
           },
           "additionalProperties": false
         },
+        "oidc": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "providerId",
+              "existingSecret"
+            ],
+            "properties": {
+              "providerId": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+              },
+              "existingSecret": {
+                "type": "string",
+                "minLength": 1
+              },
+              "key": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "breakGlass": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
         "encryption": {
           "type": "object",
           "properties": {

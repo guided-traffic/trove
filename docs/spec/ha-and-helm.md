@@ -5974,6 +5974,9 @@ break-glass password in the dev values while the chart has no value for either.
 conditions: the chart gains the two secret values (then the projected volume goes), or a criterion needs a delay finer than
 `CLIENT PAUSE` (then a proxy).
 
+**Revisit applied:** the chart has the values `secrets.oidc` and `secrets.breakGlass` (built); values-dev.yaml uses them and no longer
+projects the client secret and the break-glass password. The Keycloak CA stays a volume of `extraVolumes` until `trustedCA` (R-HA-043) is built.
+
 **Applied in the spec:** none; [../developer/local-profile.md](../developer/local-profile.md) and
 [../developer/e2e.md](../developer/e2e.md#m1-tests).
 

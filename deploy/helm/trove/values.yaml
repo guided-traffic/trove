@@ -225,6 +225,13 @@ secrets:
     existingSecret: ""                  # default (proposed): no client certificate; needed while Valkey keeps tls-auth-clients yes
     certKey: tls.crt                    # default (proposed)
     keyKey: tls.key                     # default (proposed)
+  oidc: []                              # default (proposed): no client secrets; web pods only (R-AUTH-042). Each entry mounts the Secret at /var/run/secrets/trove/oidc-<providerId>/ and renders client_secret_file of that provider; the provider itself is config.auth.oidc.providers.<providerId>
+  #  - providerId: corp                 # example; the ID of a provider in config.auth.oidc.providers ([a-z0-9-], at most 32)
+  #    existingSecret: trove-oidc-corp  # example
+  #    key: client-secret               # default (proposed)
+  breakGlass:
+    existingSecret: ""                  # default (proposed): empty = config.auth.break_glass.enabled false; example: trove-break-glass. Web pods only (R-AUTH-014, R-AUTH-042)
+    key: password                       # default (proposed); plaintext (at least 20 characters) or an Argon2id PHC hash
   encryption:
     existingSecret: ""                  # required; example: trove-encryption-keys
     keys: []                            # required; ordered, first = active; example: [2026-10.key, 2026-04.key]

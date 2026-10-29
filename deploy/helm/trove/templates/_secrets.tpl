@@ -3,7 +3,8 @@ The Secret mounts of a pod (R-HA-030) as a YAML list. Argument: dict "root" . "s
 (web and worker pods) or "migrate" (the migration Job). Each entry names one existing Secret,
 the keys that are projected and the file name each key gets. Secrets mount read-only with
 defaultMode 0440, with items and without subPath, so a rotated Secret reaches the files.
-Secrets never become environment variables.
+Secrets never become environment variables. The login secrets (secrets.oidc, secrets.breakGlass) are
+mounted into web pods only.
 */}}
 {{- define "trove.secretMounts" -}}
 {{- $s := .root.Values.secrets -}}
@@ -51,6 +52,15 @@ Secrets never become environment variables.
 {{- end -}}
 {{- if $s.valkeyClientCert.existingSecret -}}
 {{- $out = append $out (dict "name" "valkey-client" "secret" $s.valkeyClientCert.existingSecret "path" "/var/run/secrets/trove/valkey-client" "items" (list (dict "key" $s.valkeyClientCert.certKey "path" "tls.crt") (dict "key" $s.valkeyClientCert.keyKey "path" "tls.key"))) -}}
+{{- end -}}
+{{- /* The login secrets belong to the pods that serve the client listener (R-AUTH-014, R-AUTH-042): web pods and pool pods, never worker or the migration Job. */ -}}
+{{- if eq (.role | default "") "web" -}}
+{{- range $s.oidc -}}
+{{- $out = append $out (dict "name" (printf "oidc-%s" .providerId) "secret" .existingSecret "path" (printf "/var/run/secrets/trove/oidc-%s" .providerId) "items" (list (dict "key" (.key | default "client-secret") "path" "client-secret"))) -}}
+{{- end -}}
+{{- if $s.breakGlass.existingSecret -}}
+{{- $out = append $out (dict "name" "break-glass" "secret" $s.breakGlass.existingSecret "path" "/var/run/secrets/trove/break-glass" "items" (list (dict "key" $s.breakGlass.key "path" "password"))) -}}
+{{- end -}}
 {{- end -}}
 {{- if eq (dig "metrics" "auth" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "metrics" "secret" $s.metricsToken.existingSecret "path" "/var/run/secrets/trove/metrics" "items" (list (dict "key" $s.metricsToken.key "path" "token"))) -}}
