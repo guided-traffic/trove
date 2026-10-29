@@ -185,6 +185,7 @@ checked every earlier decision against them:
 | [ADR-121](#adr-121--rendered-nuget-documents-carry-weak-etags) | Rendered NuGet documents carry weak ETags | Decided by the development agent — owner review at the walkthrough |
 | [ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones) | A restore replays NuGet publishes and deletes into tombstones | Decided by the development agent — owner review at the walkthrough |
 | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) | NuGet symbol packages are indexed by one job each on the worker role | Decided by the development agent — owner review at the walkthrough |
+| [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint) |
 
 </details>
 
@@ -525,6 +526,30 @@ several pods. A worker type that needs a ReadWriteOnce volume is acceptable, but
 
 **Spec:** [owner constraints](spec/README.md#owner-constraints), [INV-13](spec/README.md#design-invariants),
 [R-HA-035](spec/ha-and-helm.md#r-ha-035--spool-and-temporary-volumes), [R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent).
+
+### ADR-124 · Releases stay on major version 0
+
+**Status:** Accepted (owner constraint)
+
+**Context.** On 2026-10-29 the owner set the release numbering: development starts with `v0.1.0`,
+and there is no major release until the owner explicitly decides otherwise.
+
+**Decision.** trove releases stay on major version 0. Every completed project phase of
+[docs/projektplan/](projektplan/BETA.md) is released as the next minor version (`v0.1.0` for the
+foundation, `v0.7.0` for the beta, the next minors after it); fixes in between are patch releases.
+The Helm chart follows the same numbering.
+
+**Consequences.** Semantic Versioning would allow any change within 0.x; trove does not use that
+latitude. The promises of [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy)
+apply between 0.x minors as they would within a major: direct upgrade to any later minor, rolling
+upgrade without downtime from N-1 to N, deprecated configuration aliases for at least two minors. A
+breaking change in 0.x is announced in the release notes together with its migration path. The
+roadmap and the project plans name releases by these versions.
+
+**Alternatives considered.** None; set by the owner.
+
+**Spec:** [owner constraints](spec/README.md#owner-constraints), [R-ARCH-025](spec/architecture.md#r-arch-025--versioning-and-compatibility-policy),
+[roadmap](coverage/roadmap.md#milestones-at-a-glance).
 
 ## Design invariants
 
@@ -4853,6 +4878,6 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes) | External images in READMEs? | (d) blocked by default; an operator allowlist of exact `https` origins, mirrored into the CSP | [ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer) |
 | [Q-UI-7](spec/api-and-ui.md#q-ui-7--roles-drain-readiness-and-valkey-on-the-system-status-screen) | Roles, drain readiness and Valkey on the system status screen? | (b) the registry gains node and Sentinel reachability; replicas grouped by role, with drain safety per role and a Valkey summary on the status screen | [ADR-104](#adr-104--subsystems-per-role-web-serves-worker-owns-background-work-and-leases), [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) |
 | [Q-ROAD-1](coverage/roadmap.md#q-road-1--generic-local-repositories-in-m1) | Generic local repositories in M1? | (a) the local class of the generic format is built in M1 as MVP, from a new spec page `formats/generic.md`; remote and virtual generic stay P1 | — |
-| [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-10) | Backup and restore in 1.0? | (e) trove's own backup create and restore, the platform layer (R-HA-023, R-HA-025) and the revocation journal (R-HA-054, R-AUTHZ-031) are MVP and gate in M5; their work runs in its own lane from M1 on, and M0 gives every table its export class. Revisited 2026-10-28: was (a), both kept at P1 and the journal after 1.0 | [ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
+| [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-the-beta) | Backup and restore in the beta? | (e) trove's own backup create and restore, the platform layer (R-HA-023, R-HA-025) and the revocation journal (R-HA-054, R-AUTHZ-031) are MVP and gate in M5; their work runs in its own lane from M1 on, and M0 gives every table its export class. Revisited 2026-10-28: was (a), both kept at P1 and the journal after 1.0 | [ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-ROAD-3](coverage/roadmap.md#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget) | Which ecosystems after npm and NuGet? | (a) the P1 format order of the roadmap stands; revisited 2026-10-29: Ansible Galaxy (owner demand) is F0 and P1, ahead of F1 | — |
 | [Q-ROAD-4](coverage/roadmap.md#q-road-4--how-the-coverage-generator-learns-implementation-status) | How does the coverage generator learn implementation status? | (a) tests name the requirement IDs they verify, and the generator derives the status from CI results | — |

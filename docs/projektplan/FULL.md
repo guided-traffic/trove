@@ -3,8 +3,10 @@
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
 **Last updated:** 2026-10-29
 
-Everything that goes beyond the beta release in [BETA.md](BETA.md): the way from beta to GA, the
-remaining registry types, and platform features. Order and scope follow the
+Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
+registry types, and platform features. Every completed block or milestone ships the next minor
+version after the beta (`v0.8.0`, `v0.9.0`, …); trove stays on major version 0 until the owner
+decides otherwise. Order and scope follow the
 [roadmap](../coverage/roadmap.md); per-feature detail is in the [feature catalog](../features/README.md)
 and, once written, in the [spec](../spec/README.md).
 
@@ -17,7 +19,7 @@ repositories) before it counts as done.
 
 | Block | Content | Status |
 |---|---|---|
-| [A · Beta to GA](#a--beta-to-ga-10) | Beta feedback, import tooling, GA release `1.0.0` | ⚪ |
+| [A · Beta phase](#a--beta-phase) | Beta feedback, upgrade path, import tooling, user documentation | ⚪ |
 | [B · Registries after the beta](#b--registries-after-the-beta-p1) | Ansible Galaxy first, then generic, PyPI, Helm, OCI/Docker, Go, Maven | ⚪ |
 | [C · Platform features](#c--platform-features-p1) | npm/NuGet completion, retention, search, webhooks, identity breadth, HA breadth, curation | ⚪ |
 | [D · Further registries](#d--further-registries-p2) | 37 more registry types | ⚪ |
@@ -27,13 +29,13 @@ repositories) before it counts as done.
 
 ---
 
-## A · Beta to GA (1.0)
+## A · Beta phase
 
 - ⚪ Beta feedback collected, triaged and worked off
-- ⚪ Upgrade path from the beta to 1.0 tested (rolling upgrade, data kept)
+- ⚪ Upgrade path from the beta to the next releases tested (rolling upgrade, data kept)
 - ⚪ Import tooling: copy existing packages from the registries trove replaces (npm, NuGet, Ansible Galaxy) into trove (spec page to write)
 - ⚪ User documentation: getting started, client setup per registry, administration, operations runbook
-- ⚪ **GA release `1.0.0`**
+- ⚪ Next `v0` minor release
 
 ## B · Registries after the beta (P1)
 

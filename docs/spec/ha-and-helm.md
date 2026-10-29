@@ -4505,7 +4505,7 @@ Priority: **MVP** · Covers: HA-067, HA-052
 
 Starting points. They are not measured: trove does not exist yet. The reference load test
 (npm and NuGet clients replaying a recorded mix of installs, restores and publishes against remote,
-local and virtual repositories) replaces these numbers before 1.0, and CI publishes its results per
+local and virtual repositories) replaces these numbers before the beta, and CI publishes its results per
 release.
 
 | Profile | Typical use | `web` replicas (HPA min–max) | `worker` replicas (HPA min–max) | `web` requests CPU / memory | `web` memory limit | `database.pool.max_conns` | `web` spool | PostgreSQL | Pooler (R-HA-058) | `max_connections` (R-HA-016) | Valkey `maxmemory` |
@@ -4542,7 +4542,7 @@ release.
   ([architecture.md](architecture.md) Q-ARCH-18, R-HA-011).
 
 Acceptance criteria: the profile files exist and render (R-HA-029). The reference load test runs
-against each profile in CI before 1.0, and this table is updated from its results in the same change.
+against each profile in CI before the beta, and this table is updated from its results in the same change.
 
 ### R-HA-051 · Local development profile
 Priority: **MVP** · Covers: trove-only
@@ -4859,7 +4859,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) 15 | Support 15, 16, 17, 18 | Widest reach | End of life 2027-11-11, probably within a year of trove's first release, which forces a floor bump soon after 1.0; four versions in the CI matrix before 19 arrives |
+| (a) 15 | Support 15, 16, 17, 18 | Widest reach | End of life 2027-11-11, probably within a year of trove's first release, which forces a floor bump soon after the beta; four versions in the CI matrix before 19 arrives |
 | (b) 16 | Support 16, 17, 18; 19 after its general availability | End of life 2028-11-09; nothing in the design needs a newer version | Installations on 15 must upgrade PostgreSQL first |
 | (c) 17 | Support 17 and 18 | Fewest versions to test | Excludes 16, which the community supports for two more years, without a feature that needs 17 |
 
@@ -4867,7 +4867,7 @@ Status: **Decided by the development agent** — selected from the options below
 of life, announced one minor release ahead.
 
 **Rationale:** A floor that expires within months of the first release would force a breaking bump
-right after 1.0, and a higher floor would exclude supported servers for no gain. The spec was
+right after the beta, and a higher floor would exclude supported servers for no gain. The spec was
 searched for version-specific features: UUIDv7 values are generated in Go ([architecture.md](architecture.md)), not with
 PostgreSQL 18's `uuidv7()`, and nothing else needs 17 or 18. Tying later bumps to the community end
 of life makes the floor predictable for operators. The development agent revisits this if a
@@ -5079,7 +5079,7 @@ that command.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the journal moves from P1 to MVP. INV-19 makes `trove backup restore` an MVP path, and a restore from a scheduled backup undoes up to one backup interval of revocations, a day with the default schedule, instead of the minutes a point-in-time restore loses. That is the case this decision's revisit condition named: production restores in 1.0.
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the journal moves from P1 to MVP. INV-19 makes `trove backup restore` an MVP path, and a restore from a scheduled backup undoes up to one backup interval of revocations, a day with the default schedule, instead of the minutes a point-in-time restore loses. That is the case this decision's revisit condition named: production restores in the beta.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -5402,24 +5402,24 @@ Status: **Decided by the development agent** — selected from the options below
 
 R-HA-023 (platform layer: point-in-time recovery, bucket versioning, least privilege) and R-HA-025
 (point-in-time restore with the post-restore cleanup) carried the catalog's P1 for OPS-033, and the
-roadmap built both for 1.0 anyway
-([roadmap Q-ROAD-2](../coverage/roadmap.md#q-road-2--backup-and-restore-in-10), option (a)).
+roadmap built both for the beta anyway
+([roadmap Q-ROAD-2](../coverage/roadmap.md#q-road-2--backup-and-restore-in-the-beta), option (a)).
 INV-19 adds trove's own backup at MVP.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Keep both P1 | Labels as before; the roadmap keeps its named exception | No label change | The cleanup of R-HA-025's step 4 (replica rows, jobs, deletion pause, sessions, Valkey keyspace, journal replay) is, apart from the deletion pause, what a restore of a trove backup performs at MVP (R-BAK-022, R-BAK-024), so one cleanup would carry two priorities depending on the restore path |
 | (b) R-HA-025 MVP, R-HA-023 P1 | Only the restore procedure moves | The MVP restore path rests on MVP requirements only | R-HA-024, an MVP requirement, already reads R-HA-023's keys, and R-HA-023's least-privilege rules protect the source of every backup |
-| (c) Both MVP | Both are MVP requirements; the platform layer stays recommended, not required, for installations | Labels match what 1.0 ships; no part of the MVP restore path is P1; the roadmap's exception disappears | Two more MVP requirements to count, with no extra work, since both were already scheduled for 1.0 |
+| (c) Both MVP | Both are MVP requirements; the platform layer stays recommended, not required, for installations | Labels match what the beta ships; no part of the MVP restore path is P1; the roadmap's exception disappears | Two more MVP requirements to count, with no extra work, since both were already scheduled for the beta |
 | (d) Drop the point-in-time path | trove backups only | One restore path | The recovery point becomes one backup interval for every installation, also where the platform offers minutes |
 
 **Choice:** (c) — R-HA-023 and R-HA-025 are MVP; the platform layer remains a recommendation for
-installations, and its checks and rules are part of 1.0.
+installations, and its checks and rules are part of the beta.
 
 **Rationale:** Q-ROAD-2 kept the labels because nothing in the design had changed. INV-19 changed
 the design: restore is now an MVP path; it performs R-HA-025's cleanup in its own form and rests
 on R-HA-023's least-privilege rules. Raising both labels costs nothing in schedule, because both
-were in the 1.0 milestone already. (d) would throw away a recovery point of minutes that many
+were in the the beta milestone already. (d) would throw away a recovery point of minutes that many
 platforms provide.
 The development agent revisits this if the platform layer turns out to be rarely available in
 target installations; R-HA-023 could then return to P1 with its least-privilege rules moved into

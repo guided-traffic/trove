@@ -2987,6 +2987,12 @@ Priority: **MVP** · Covers: OPS-072, EVT-072
 | Configuration file | Key paths | Keys are only added within a major. A renamed key keeps its old name as a deprecated alias, with a start-up warning, for at least 2 minors. Removal happens only in a major. |
 | Helm chart | Own SemVer; `appVersion` = trove version | Same alias rule for values ([ha-and-helm.md](ha-and-helm.md)) |
 | Database schema | Migration sequence | Not a public interface. N and N-1 run against one schema (INV-3, R-ARCH-026). |
+
+**Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
+([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); every completed project
+phase is the next minor release. Semantic Versioning would allow any change within 0.x; trove does
+not use that latitude. The promises of the table apply between 0.x minors as they would within a
+major, and a breaking change in 0.x is announced in the release notes with its migration path.
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
 | Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
 | Format contract | `formats.ContractVersion` | Internal and compile-time checked; no external promise |

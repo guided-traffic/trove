@@ -171,7 +171,7 @@ anyway, because MVP acceptance tests depend on it: the local class of generic re
 ([roadmap Q-ROAD-1](roadmap.md#q-road-1--generic-local-repositories-in-m1)). Backup and restore
 used to be the second such item. Since 2026-10-28 they are MVP, together with the platform backup
 layer and the revocation journal
-([roadmap Q-ROAD-2](roadmap.md#q-road-2--backup-and-restore-in-10)).
+([roadmap Q-ROAD-2](roadmap.md#q-road-2--backup-and-restore-in-the-beta)).
 
 P2, *Later* and *Out of scope* are defined by the same rubric.
 *Out of scope* entries stay in the catalog only so its inventory is complete. Nothing is planned

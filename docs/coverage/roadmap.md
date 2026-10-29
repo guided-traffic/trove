@@ -24,7 +24,7 @@ INV-13, INV-18 and INV-19. This page folds the work they own into M0 to M5, all 
 | No state between requests, no ReadWriteMany | M0 (R-ARCH-032, R-HA-061), then per page in M1 to M4 | `scatter` profile from E0.11 on |
 | Backup create and restore, with the revocation journal | M5, in a lane that starts after M1 (Q-ROAD-2) | E5.11, E5.12 |
 
-This page orders the work from an empty repository to trove 1.0 (the MVP), then through P1, P2
+This page orders the work from an empty repository to the trove beta release (the MVP, `v0.7.0`), then through P1, P2
 and Later. It is built from these inputs:
 
 - the requirements in [docs/spec/](../spec/README.md), each with a `Priority:` line and a
@@ -92,7 +92,7 @@ Six findings shaped this plan:
    MVP, because a restore from a scheduled backup undoes up to one backup interval of revocations,
    and a restore refuses to run without the journal (R-BAK-020). The drill restores npm and NuGet
    data and replays CI revocations, so it can gate only once M3 and M4 exist.
-   [Q-ROAD-2](#q-road-2--backup-and-restore-in-10) (revisited, option (e)) builds the backup in a
+   [Q-ROAD-2](#q-road-2--backup-and-restore-in-the-beta) (revisited, option (e)) builds the backup in a
    lane that starts after M1 and gates it in M5.
 3. **The npm acceptance matrix includes P1 operations.** R-NPM-045's scenario list covers
    deprecate (R-NPM-018), login (R-NPM-020, R-NPM-021), audit (R-NPM-038) and search (R-NPM-037),
@@ -124,16 +124,16 @@ Six findings shaped this plan:
 
 | Milestone | Theme | Requirements | Can start when | Ends with |
 |---|---|---|---|---|
-| [M0](#m0--foundation) | Foundation: skeleton, pins, CI, PostgreSQL with a standby, Valkey with Sentinel, S3, coordination, `web` and `worker` roles, drain-safe shutdown, chart skeleton, coverage generator | 78 MVP, plus the `/v2/` reservation (Q-HA-4) | — | internal build |
-| [M1](#m1--access-core) | Access core: OIDC login, tokens, permissions, repositories, raw file transfer, admin UI, all of it across replicas | 131 MVP, plus the generic local class and its spec page (Q-ROAD-1) | M0 | internal build |
-| [M2](#m2--npm) | npm with local, remote and virtual repositories; proxy and virtual engines with request collapsing through Valkey | 81 MVP | M1 | pre-release 0.1 |
-| [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 27 MVP | M2's WP2.1 to WP2.3 | pre-release 0.2 |
-| [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | pre-release 0.3 |
-| [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 63 MVP | M3 and M4; the backup lane from M1 (Q-ROAD-2) | **1.0 candidate** |
-| [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | **Beta** `1.0.0-beta.1` |
-| Beta phase | Beta feedback worked off, upgrade path from the beta, import tooling, user documentation ([FULL.md](../projektplan/FULL.md) block A) | — | Beta | **1.0 GA** |
-| [M6 to M12](#p1-platform-milestones) | P1 platform | 141 P1, plus 3 spec pages to write (builds, search, curation) | Beta | 1.x minors |
-| [F0 to F7](#p1-format-expansion-order) | P1 formats | 2 P1 plus the 13 Ansible entries, 7 format spec pages to write and `formats/generic.md` to extend | Beta | 1.x minors |
+| [M0](#m0--foundation) | Foundation: skeleton, pins, CI, PostgreSQL with a standby, Valkey with Sentinel, S3, coordination, `web` and `worker` roles, drain-safe shutdown, chart skeleton, coverage generator | 78 MVP, plus the `/v2/` reservation (Q-HA-4) | — | `v0.1.0` |
+| [M1](#m1--access-core) | Access core: OIDC login, tokens, permissions, repositories, raw file transfer, admin UI, all of it across replicas | 131 MVP, plus the generic local class and its spec page (Q-ROAD-1) | M0 | `v0.2.0` |
+| [M2](#m2--npm) | npm with local, remote and virtual repositories; proxy and virtual engines with request collapsing through Valkey | 81 MVP | M1 | `v0.3.0` |
+| [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 27 MVP | M2's WP2.1 to WP2.3 | `v0.4.0` |
+| [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | `v0.5.0` |
+| [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 63 MVP | M3 and M4; the backup lane from M1 (Q-ROAD-2) | **beta candidate** `v0.6.0` |
+| [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | **beta** `v0.7.0` |
+| Beta phase | Beta feedback worked off, upgrade path from the beta, import tooling, user documentation ([FULL.md](../projektplan/FULL.md) block A) | — | Beta | further `v0` minors; 1.0 only on the owner's explicit decision |
+| [M6 to M12](#p1-platform-milestones) | P1 platform | 141 P1, plus 3 spec pages to write (builds, search, curation) | Beta | `v0` minors |
+| [F0 to F7](#p1-format-expansion-order) | P1 formats | 2 P1 plus the 13 Ansible entries, 7 format spec pages to write and `formats/generic.md` to extend | Beta | `v0` minors |
 
 ```mermaid
 flowchart LR
@@ -145,10 +145,10 @@ flowchart LR
   M3 --> M4
   M1 --> B["Backup lane: backup, restore, revocation journal"]
   M2 --> H["HA harness: chaos, drain and load loops"]
-  H --> M5["M5 HA hardening, backup, Helm GA = 1.0 candidate"]
+  H --> M5["M5 HA hardening, backup, Helm GA = beta candidate v0.6.0"]
   B --> M5
   M4 --> M5
-  M5 --> R["Owner walkthrough, objections worked off = 1.0"]
+  M5 --> R["Owner walkthrough, objections worked off = beta v0.7.0"]
   R --> P1["M6 to M12 platform"]
   R --> F["F1 to F7 formats"]
 ```
@@ -191,7 +191,7 @@ flowchart LR
   included (R-BAK-024, R-HA-054), so it can gate only once M3 and M4 exist. The snapshot, the blob
   pool, the garbage-collection hold and the restore procedure depend only on M0 and M1, so the
   backup lane runs in parallel with M2 to M4, as M4's work does
-  ([Q-ROAD-2](#q-road-2--backup-and-restore-in-10)). M0 already gives every table its export class
+  ([Q-ROAD-2](#q-road-2--backup-and-restore-in-the-beta)). M0 already gives every table its export class
   (R-BAK-004), so no table has to be classified after the fact.
 
 Orders considered and rejected:
@@ -246,7 +246,7 @@ walkthrough.
 | M2 | Q-NPM-1, Q-NPM-2, Q-NPM-4…6, Q-NPM-8…11, Q-NPM-13, Q-ARCH-6…9, Q-ARCH-12, Q-REPO-1…9, Q-AUTHZ-1, Q-AUTHZ-2, Q-AUTHZ-4, Q-UI-3, Q-UI-6, Q-OPS-10 | npm's trusted-publishing routes are reserved at the host root and below every registry URL, and the exchange itself is R-NPM-022 in M10 (Q-NPM-1). Versions the upstream removed are hidden by default (Q-NPM-2). The gate rows are npm 10, 11 and 12, pnpm 10, 11 and 12, Yarn 4 and Yarn 1.22 (Q-NPM-4). Remotes store only the full package document (Q-NPM-5). Inconsistent manifests are rejected (Q-NPM-6). Tombstones are never purged (Q-NPM-8). Dist-tags and deprecation need `deploy` plus ownership (Q-NPM-9). npm documents are cached per replica under keys read from PostgreSQL, and dates do not validate a document (Q-NPM-10). An identical publish retried by the same principal within 10 minutes is acknowledged with `201` and changes nothing (Q-NPM-11). A cached tarball is served only while its package document is current (Q-NPM-13). The fetch lock is a Valkey lock per flight with a 30 s TTL that the holder extends, behind `cluster.FlightLock`, with per-replica collapsing as the fallback; no PostgreSQL connection is held during a fetch (Q-ARCH-6). Its key is the SHA-256 of the flight key, and every remaining PostgreSQL advisory lock keeps the two-key form (Q-ARCH-7). Signals from client traffic leave through a post-commit coalescer to Valkey Pub/Sub, and trove sends no `NOTIFY` (Q-ARCH-8). Merged metadata checks each local member's `rev_seq` on every hit (Q-ARCH-9). Derived indexes are rendered per request, and no publish waits for one (Q-ARCH-12). R-ARCH-021 seals every stored secret (Q-REPO-1). A metadata period of `0` is allowed (Q-REPO-2). An upstream 404 or 410 for a package document marks the package gone (Q-REPO-3). Every remote of the format refuses `global`-claimed names (Q-REPO-4). Pins, claims, extra hosts and upstream credentials are generic members (Q-REPO-5). The shadowing check is R-REPO-048, and it reads no negative entry from Valkey (Q-REPO-6). A draining replica finishes the fetches it holds until 5 s before its deadline and takes no new flight after `SIGTERM` (Q-REPO-7). `limits.maxConcurrentFetches` is a budget for the installation, shared out per replica from the replica registry (Q-REPO-8). `remote.sourceNetwork` takes a CIDR prefix with one address per replica (Q-REPO-9). `read` on a virtual repository is only an endpoint gate (Q-AUTHZ-1). New npm and NuGet local repositories enforce ownership (Q-AUTHZ-2). `cacheFillAction` defaults to `read` (Q-AUTHZ-4). The package page has two columns from 960 CSS px (Q-UI-3). External README images are blocked unless their origin is listed (Q-UI-6). The `repo` metric label is capped at 500 keys per metric family, the same keys on every replica, chosen from the repository snapshot (Q-OPS-10). |
 | M3 | Q-NUGET-1…11 | A protocol delete unlists unless the repository sets `deleteMode: delete` (Q-NUGET-1). NuGet remotes default to a 300 s metadata period (Q-NUGET-2). IDs pushed to local repositories are ASCII (Q-NUGET-3). Search is forwarded to the upstream unless a term is protected (Q-NUGET-4). The version that created a package fixes its ID casing (Q-NUGET-5). Versions are immutable, every removal leaves a tombstone, and an identical-bytes push of a stored version answers 201 (Q-NUGET-6). Symbol requests carry a routing name for patterns, claims and pin rules (Q-NUGET-7). Forwarded search results are cached unfiltered in each `web` replica's memory and filtered on every use (Q-NUGET-8). Rendered documents carry a weak ETag over a render version and their inputs, and stored files keep the strong, content-addressed ETag (Q-NUGET-9). Publishes and deletions on local repositories are journaled, so that a restore reserves the numbers of lost versions for their exact bytes and reports revived versions; the replay arrives with the journal in M5 (Q-NUGET-10). A symbol push only validates and stores the `.snupkg`, and indexing runs as one `nuget-symbol-index` job per symbol package on `worker` (Q-NUGET-11). |
 | M4 | Q-CI-1…4, Q-CI-6…10, Q-CI-12…15, Q-AUTHZ-6 | Mappings use first match per tier and union across tiers (Q-CI-1). The `scope` parameter is a scope string per RFC 6749 (Q-CI-2). Every `aud` element must be an allowed audience (Q-CI-3). Single use is off for GitLab and on for GitHub and generic issuers (Q-CI-4). Ownership is claimed on first publish (Q-CI-6). Each job revokes its own CI token, and the TTL stays the bound (Q-CI-7). A rejected subject token answers 400 `invalid_request` (Q-CI-8). Fork pipelines are denied by default (Q-CI-9). A mapping's principal is named `<CI issuer name>/<mapping name>` (Q-CI-10). An issuer's key set lives in one PostgreSQL row, refreshed by a `worker` task, with in-process copies on every replica (Q-CI-12). The replay set lives in PostgreSQL only, inside the exchange transaction, and after a restore single-use issuers refuse subject tokens issued before it finished (Q-CI-13). Exchange limits count cluster-wide per client address and per issuer and subject (Q-CI-14). The exchange evaluates again from PostgreSQL when its mapping cache is behind the issuer row's `mappings_version` (Q-CI-15). A writing CI inline grant that omits `ownership` is saved as `bind_project`, and any other inline grant as `none` (Q-AUTHZ-6). |
-| M5 | Q-HA-1 (same as Q-STOR-1 and Q-OPS-2), Q-HA-5, Q-HA-6, Q-HA-7, Q-HA-9, Q-HA-10, Q-HA-17 (same as Q-BAK-9), Q-HA-18…20, Q-BAK-1…8, Q-BAK-10, Q-BAK-11, Q-API-10, Q-API-11, Q-NPM-12, Q-CI-11, Q-OPS-1, Q-OPS-15, Q-OPS-16, Q-ROAD-2 | Object storage gates only a replica's first readiness (Q-HA-1). Zero-downtime upgrades hold between adjacent minor releases only (Q-HA-5). Transaction-mode poolers are supported for the main pool, with a separate control pool (Q-HA-6, Q-HA-20). The HTTPRoute is MVP as R-HA-038, and a chart-created Gateway is P1 as R-HA-053 (Q-HA-7). The revocation journal in object storage is MVP and is replayed by `trove admin post-restore` and by every restore of a trove backup (Q-HA-9). The egress NetworkPolicy is off by default (Q-HA-10). The backup CronJob is rendered by default, and the chart fails without a backup target unless `backup.enabled: false` is set (Q-HA-17, Q-BAK-9). `restore.enabled` renders an ordinary restore Job with both roles at zero, no migration Job and the backup CronJob suspended (Q-HA-18). R-HA-023 and R-HA-025 are MVP (Q-HA-19). The database part of a backup is trove's own `COPY` export from one `REPEATABLE READ READ ONLY` snapshot (Q-BAK-1). A global hold and then per-blob pins, both under a lease, keep garbage collection away from a running backup's blobs (Q-BAK-2). Blobs go to a content-addressed pool that every backup of a target shares, incremental by digest, with mark-and-sweep retention (Q-BAK-3). A `backup_run` row with a partial unique index and a lease allows one target-writing run at a time (Q-BAK-4). A restore takes a new Valkey keyspace ID and lifts every registered revision column by 2^32 (Q-BAK-5). Backups use server-side encryption at MVP, and client-side encryption of the database files is P1 (Q-BAK-6). A restore goes into an empty installation; reusing an existing blob store is P1 (Q-BAK-7). A newer release restores a backup when its migrations contain every step of the backup (Q-BAK-8). An interrupted restore resumes on its own (Q-BAK-10). A run without progress for 30 minutes cancels itself (Q-BAK-11). The API and UI start no backup and show the `kubectl` command for a manual run (Q-API-10), and they list stored backups from the newest run that listed the target (Q-API-11). npm unpublishes are journaled, and replay withholds a restored version (Q-NPM-12). A replayed disable of a CI mapping also suspends every later enabled mapping of its tier (Q-CI-11). Liveness never reads readiness and fails only when one of trove's own loops stops making progress (Q-OPS-1). A single Valkey failover raises no alert; repeated failovers and replicas that disagree about the primary do (Q-OPS-15). Deleting trove's Valkey keys is always safe, and the installation-wide cache flush is P1 as R-OPS-047 (Q-OPS-16). trove's own backup create and restore, the platform layer and the revocation journal ship in 1.0, built in a lane that starts after M1 (Q-ROAD-2). |
+| M5 | Q-HA-1 (same as Q-STOR-1 and Q-OPS-2), Q-HA-5, Q-HA-6, Q-HA-7, Q-HA-9, Q-HA-10, Q-HA-17 (same as Q-BAK-9), Q-HA-18…20, Q-BAK-1…8, Q-BAK-10, Q-BAK-11, Q-API-10, Q-API-11, Q-NPM-12, Q-CI-11, Q-OPS-1, Q-OPS-15, Q-OPS-16, Q-ROAD-2 | Object storage gates only a replica's first readiness (Q-HA-1). Zero-downtime upgrades hold between adjacent minor releases only (Q-HA-5). Transaction-mode poolers are supported for the main pool, with a separate control pool (Q-HA-6, Q-HA-20). The HTTPRoute is MVP as R-HA-038, and a chart-created Gateway is P1 as R-HA-053 (Q-HA-7). The revocation journal in object storage is MVP and is replayed by `trove admin post-restore` and by every restore of a trove backup (Q-HA-9). The egress NetworkPolicy is off by default (Q-HA-10). The backup CronJob is rendered by default, and the chart fails without a backup target unless `backup.enabled: false` is set (Q-HA-17, Q-BAK-9). `restore.enabled` renders an ordinary restore Job with both roles at zero, no migration Job and the backup CronJob suspended (Q-HA-18). R-HA-023 and R-HA-025 are MVP (Q-HA-19). The database part of a backup is trove's own `COPY` export from one `REPEATABLE READ READ ONLY` snapshot (Q-BAK-1). A global hold and then per-blob pins, both under a lease, keep garbage collection away from a running backup's blobs (Q-BAK-2). Blobs go to a content-addressed pool that every backup of a target shares, incremental by digest, with mark-and-sweep retention (Q-BAK-3). A `backup_run` row with a partial unique index and a lease allows one target-writing run at a time (Q-BAK-4). A restore takes a new Valkey keyspace ID and lifts every registered revision column by 2^32 (Q-BAK-5). Backups use server-side encryption at MVP, and client-side encryption of the database files is P1 (Q-BAK-6). A restore goes into an empty installation; reusing an existing blob store is P1 (Q-BAK-7). A newer release restores a backup when its migrations contain every step of the backup (Q-BAK-8). An interrupted restore resumes on its own (Q-BAK-10). A run without progress for 30 minutes cancels itself (Q-BAK-11). The API and UI start no backup and show the `kubectl` command for a manual run (Q-API-10), and they list stored backups from the newest run that listed the target (Q-API-11). npm unpublishes are journaled, and replay withholds a restored version (Q-NPM-12). A replayed disable of a CI mapping also suspends every later enabled mapping of its tier (Q-CI-11). Liveness never reads readiness and fails only when one of trove's own loops stops making progress (Q-OPS-1). A single Valkey failover raises no alert; repeated failovers and replicas that disagree about the primary do (Q-OPS-15). Deleting trove's Valkey keys is always safe, and the installation-wide cache flush is P1 as R-OPS-047 (Q-OPS-16). trove's own backup create and restore, the platform layer and the revocation journal ship in the beta, built in a lane that starts after M1 (Q-ROAD-2). |
 | P1 | Q-HA-4, Q-AUTH-5, Q-AUTH-8, Q-AUTHZ-7, Q-AUTHZ-8 (same as Q-API-5 and Q-STOR-3), Q-STOR-5, Q-STOR-7, Q-STOR-8, Q-STOR-11, Q-OPS-5, Q-OPS-6, Q-OPS-8, Q-OPS-11, Q-OPS-17, Q-OPS-19…21, Q-NPM-3, Q-NPM-7, Q-ROAD-3 | M0 reserves `/v2/`, and the OCI routing itself is F4 (Q-HA-4). In M10 dormancy is on by default after 90 days (Q-AUTH-5). In M10 CI delegations stay independent of projects (Q-AUTHZ-7). In M6 the npm web-login poll is bound to the client's network (Q-AUTH-8). In M6 npm audit is forwarded only for names the remote holds (Q-NPM-3). In M6 the dependency rewrite touches HTTP(S) tarball URLs only (Q-NPM-7). In M7 a quota or capacity limit answers `507`, and the per-request size limit `413` (Q-STOR-7). In M8 an overwrite sends the previous file to the trash can (Q-STOR-5). In M8 a copy or move target is the exact destination (Q-STOR-8). In M8 a multi-request upload is one S3 multipart upload per session, with its offset, hash state and parts in PostgreSQL under a writer claim (Q-STOR-11). In M9 build records get their own page, `builds.md` with prefix `R-BLD` (Q-AUTHZ-8). In M9 CloudEvents types are `trove.<registry name>` (Q-OPS-5). In M9 login providers stay out of configuration documents (Q-OPS-6). In M9 managed objects are locked against API and UI changes (Q-OPS-8). In M9 webhook templates are bounded `text/template` (Q-OPS-11). In M9 a `webhook.deliver` claim counts its subscription's running deliveries under a row lock (Q-OPS-19), an unrecorded success leaves a tombstone row for the follow stream (Q-OPS-20), and the follow stream's position is `change_seq` (Q-OPS-21). In M11 the lock view shows PostgreSQL advisory locks only, and collapsed fetches are diagnosed through metrics and `Cache-Status` (Q-OPS-17). The format lane keeps the order on this page (Q-ROAD-3). |
 | P2 | Q-CI-5 | The `CI_JOB_TOKEN` fallback R-CI-022 is specified at P2 and is built only when a concrete population of pipelines needs it. |
 
@@ -738,7 +738,7 @@ needs it (Q-CI-5).
 **Goal.** M5 proves the failure-mode contract under real client load: node drains, PostgreSQL and
 Valkey failovers and the full failure-injection suite, each with zero failed client requests. It
 ships trove's own backup and restore with the revocation journal, and finishes the chart for
-production. Its result is the 1.0 candidate, which the owner reviews at the
+production. Its result is the the beta candidate, which the owner reviews at the
 [walkthrough](#owner-walkthrough).
 
 **Scope.**
@@ -778,7 +778,7 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   environment, among them the scale-out from three to six `web` replicas (P-16) and the latency
   with Valkey down (P-17). The reference load test also runs once with Valkey stopped and records
   upstream request rates and PostgreSQL load (R-HA-057).
-- **E5.4** A rolling upgrade from the M4 pre-release to the 1.0 candidate with the migration Job,
+- **E5.4** A rolling upgrade from the M4 release `v0.5.0` to the beta candidate `v0.6.0` with the migration Job,
   followed by `helm rollback`, shows zero failed iterations under R-HA-052's load (R-HA-020).
 - **E5.5** The values reference documents every chart value, and the values schema validates it
   (R-HA-031). Production example values render the PodDisruptionBudget, topology spreading,
@@ -790,10 +790,10 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   (R-OPS-045, R-OPS-046).
 - **E5.6** The coverage generator shows no uncovered MVP catalog entry. Every MVP requirement has at
   least one passing test that names it (Q-ROAD-4).
-- **E5.7** [docs/security/](../security/) describes the 1.0 mechanisms. Each H-item from the spec
-  pages that applies to 1.0 appears under its H number in the `What this does not cover` section of
+- **E5.7** [docs/security/](../security/) describes the the beta mechanisms. Each H-item from the spec
+  pages that applies to the beta appears under its H number in the `What this does not cover` section of
   the security page for its mechanism.
-- **E5.8** The release pipeline publishes the 1.0 candidate as a pre-release: the image to
+- **E5.8** The release pipeline publishes the beta candidate `v0.6.0`: the image to
   `ghcr.io/guided-traffic/trove` and the chart to `oci://ghcr.io/guided-traffic/charts/trove`, the
   GitHub Container Registry chosen in Q-HA-11. `helm install` by digest from there passes E2.1's
   smoke scenarios. Image signing, SBOM and provenance arrive with R-HA-047 (M11).
@@ -859,9 +859,9 @@ The plan waits for the owner at this one point, and it comes after the MVP miles
 the development agent builds M0 to M5 on its own. It decides every question that comes up on the
 way, and the owner reviews the result here instead of approving steps along the way.
 
-- **When.** M5's exit criteria pass on `main`, and the release pipeline has published the 1.0
+- **When.** M5's exit criteria pass on `main`, and the release pipeline has published the the beta
   candidate (E5.8).
-- **What.** The development agent guides the owner through the 1.0 candidate. It is installed by
+- **What.** The development agent guides the owner through the the beta candidate. It is installed by
   digest from its published chart on the dev profile (R-HA-051), with the repositories and data of
   the acceptance suites. The walk covers:
   - OIDC sign-in, users, groups, tokens and the policy editor;
@@ -879,8 +879,9 @@ way, and the owner reviews the result here instead of approving steps along the 
   the code together. When the owner overturns a choice, the question's block on its page records
   the owner's choice, and the ADR log adds an entry that supersedes the old one. An objection that
   moves a requirement to another priority also moves it to another milestone on this page. The
-  candidate is published as the beta release `1.0.0-beta.1` once the objections are worked off and
-  M5's exit criteria pass again. GA `1.0.0` follows when the beta feedback is worked off. The
+  candidate is published as the beta release `v0.7.0` once the objections are worked off and
+  M5's exit criteria pass again. Afterwards every completed phase ships the next `v0` minor; trove
+  stays on major version 0 until the owner decides otherwise. The
   owner's checklists for both steps are [BETA.md](../projektplan/BETA.md) and
   [FULL.md](../projektplan/FULL.md).
 - **Before the walkthrough.** If M5 exits before the walkthrough takes place, the development agent
@@ -889,25 +890,25 @@ way, and the owner reviews the result here instead of approving steps along the 
   requirement, so that objections and the format order ([Q-ROAD-3](#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget))
   are settled before P1 code depends on them.
 
-## After 1.0: P1
+## After the beta: P1
 
 P1 has two lanes, both starting at the beta release; fixes from beta feedback take precedence. The
-platform lane (M6 to M12) extends subsystems that 1.0 already has. The format lane (F0 to F7) adds formats through the frozen contract. Each lane ships 1.x
+platform lane (M6 to M12) extends subsystems that the beta already has. The format lane (F0 to F7) adds formats through the frozen contract. Each lane ships `v0`
 minor releases. M7 to M11 touch separate subsystems and can run in parallel. The order below is the
 sequence to follow if only one team is available. The revocation journal, which this page used to
-put first after 1.0, ships in 1.0 since Q-HA-9 made it MVP
-([Q-ROAD-2](#q-road-2--backup-and-restore-in-10)).
+put first after the beta, ships in the beta since Q-HA-9 made it MVP
+([Q-ROAD-2](#q-road-2--backup-and-restore-in-the-beta)).
 
 ### P1 platform milestones
 
 | Milestone | Scope | Exit criteria | Why at this position |
 |---|---|---|---|
-| **M6 · npm and NuGet completion** | R-NPM-014, R-NPM-018, R-NPM-020, R-NPM-021, R-NPM-023, R-NPM-028, R-NPM-034…039, R-NUGET-011, R-NUGET-021…025, R-NUGET-029, R-AUTH-034, R-AUTH-035, R-REPO-014…016, R-REPO-018, R-REPO-022, R-REPO-044, R-API-023, R-API-036, R-UI-023 | R-NPM-045's P1 scenarios (deprecate, web and legacy login, audit, search) join the gate and pass for every gated client. Symbols pushed in M3 are served through `nuget-all` once per-package `nuget-symbol-index` jobs on `worker` have indexed them, with a data migration that enqueues the backfill for symbol packages pushed before (Q-NUGET-11), and nightly through a remote from nuget.org's symbol server. A nested virtual repository that would form a cycle is refused. With pass-through mode on, `npm ci` adds no object to the bucket. | Serves 1.0's users at once and closes the open rows of the acceptance matrix. Small, because it reuses the M2 and M3 engines. |
+| **M6 · npm and NuGet completion** | R-NPM-014, R-NPM-018, R-NPM-020, R-NPM-021, R-NPM-023, R-NPM-028, R-NPM-034…039, R-NUGET-011, R-NUGET-021…025, R-NUGET-029, R-AUTH-034, R-AUTH-035, R-REPO-014…016, R-REPO-018, R-REPO-022, R-REPO-044, R-API-023, R-API-036, R-UI-023 | R-NPM-045's P1 scenarios (deprecate, web and legacy login, audit, search) join the gate and pass for every gated client. Symbols pushed in M3 are served through `nuget-all` once per-package `nuget-symbol-index` jobs on `worker` have indexed them, with a data migration that enqueues the backfill for symbol packages pushed before (Q-NUGET-11), and nightly through a remote from nuget.org's symbol server. A nested virtual repository that would form a cycle is refused. With pass-through mode on, `npm ci` adds no object to the bucket. | Serves the beta's users at once and closes the open rows of the acceptance matrix. Small, because it reuses the M2 and M3 engines. |
 | **M7 · Storage lifecycle and retention** | R-STOR-026…029, R-STOR-037…042, R-STOR-044, R-STOR-045, R-REPO-007, R-REPO-046, R-OPS-022, R-OPS-023, R-API-043 | A cleanup dry run over a repository with 10,000 versions lists exactly the versions the real run then deletes, and GC reclaims their blobs after the grace period. Remote-cache items unused past the configured period are removed and fetched again on request. The integrity scrub reports an object altered in the bucket out of band. A deploy beyond a repository cap answers `507` (Q-STOR-7) and leaves no orphaned object after the orphan sweep. | Remote caches and CI publishing grow storage without limit after go-live, so this is the first operational need. Upload sessions (M8) expire through collection runs and through their own age check on every request (R-STOR-011, R-STOR-025); the orphan sweep is only their backstop. |
 | **M8 · Content operations and search** | R-STOR-008…011, R-STOR-015, R-STOR-017, R-STOR-019…023, R-API-026…028, R-UI-012…015, R-OPS-034; the SRCH entries once the search page exists | A chunked upload session survives killing the replica that received the first chunk (R-STOR-011). Copying 1,000 files between repositories creates no new object and keeps every digest. A file restored from the trash can is byte-identical. Checksum-first deploy of a known digest succeeds without a body. R-API-028's search criteria pass. | Start with R-STOR-011, which unblocks F4 (OCI), and with R-STOR-008 and R-STOR-010, which unblock F7 (Maven). |
-| **M9 · Automation and integration** | R-OPS-029…032, R-API-044, R-OPS-033, R-OPS-035…044, R-API-041, R-UI-039, R-API-042, R-UI-040, R-AUTHZ-027, R-STOR-043; the BLD entries once the builds page exists | Applying the same configuration document twice yields zero changes on the second apply. Exporting an installation and applying the export to an empty one reproduces its repositories, policies and CI mappings. An npm publish event reaches a test receiver with a valid signature, succeeds by retry after three `503` answers, and every attempt shows in the delivery log. Deliveries to link-local addresses are refused (R-OPS-042). A build record from the reference pipeline links that job's npm and NuGet artifacts. | Operators can script the 1.0 API (INV-17) until then. Configuration documents, webhooks and builds are where they stop scripting it by hand. |
-| **M10 · Identity, access and CI breadth** | R-AUTH-019, R-AUTH-021, R-AUTH-025, R-AUTH-030, R-AUTH-031, R-AUTH-036, R-AUTH-039, R-AUTHZ-011, R-AUTHZ-012, R-AUTHZ-017, R-AUTHZ-020, R-AUTHZ-024…026, R-CI-023…027, R-NPM-022, R-API-034, R-API-046…048, R-UI-028, R-UI-032, R-UI-041 | A GitHub Actions job publishes an npm package through the exchange (R-CI-025). A generic issuer works against an issuer double (R-CI-026). From GitLab CI, without a stored token, `npm publish` (npm 11 and 12 rows, host-root route), `pnpm publish` (pnpm 11 and 12 rows) and `yarn npm publish` (Yarn 4 row), both through the route below the registry URL, publish natively through the exchange (R-NPM-022). A SCIM client provisions and deprovisions users and groups, and deprovisioning revokes their tokens. For 10,000 random requests, the effective-permission explainer returns the evaluator's decision. | Extends the access model that 1.0 proved. Projects ship without touching CI delegations, which stay independent of them in P1 (Q-AUTHZ-7, decided). |
-| **M11 · HA and deployment breadth** | R-HA-017, R-HA-026, R-HA-044, R-HA-046, R-HA-047, R-HA-053, R-HA-055, R-HA-062, R-STOR-032, R-STOR-034, R-REPO-031, R-REPO-034…037, R-OPS-012, R-OPS-024…027, R-OPS-047, R-BAK-025, R-BAK-027, R-API-045, R-UI-034, R-ARCH-029 | R-HA-052 passes, and so does R-HA-059's drain test for each pool, with a `web` pool for the package paths and a `worker` pool for the `maintenance` queue (R-HA-062). R-HA-038's criteria pass through a Gateway that the chart creates (R-HA-053). A restore with `--existing-blobs reuse` passes R-BAK-025's criteria, and a backup whose database files are encrypted to age recipients restores only with a matching identity (R-BAK-027). `POST /api/v1/system/caches/flush` drops the in-process and negative caches on every replica and deletes no Valkey key (R-OPS-047). Database credential rotation under load causes zero failed iterations. An air-gapped install from a private registry verifies image and chart signatures before installing. A dual-stack kind cluster passes the npm suite. R-HA-055's chart criteria pass. On a chart install with `contentOrigin.host` set to a second host name, R-ARCH-029's acceptance criteria pass: a logged-in browser that opens `evil.svg` from the UI host ends on the content host and sends it no trove cookie, and `npm ci` and `dotnet restore` against the UI host make no request to the content host. | Most 1.0 installations do not need these immediately. Signatures (R-HA-047) are the item most likely to be pulled forward. Further pools (R-HA-062) are a change of values on top of the `web` and `worker` split that 1.0 already deploys. The P1 backup options (R-BAK-025, R-BAK-027) extend the backup that 1.0 ships. The separate content origin (R-ARCH-029, chart side R-HA-055) is deployment-level hardening on top of the header defence that 1.0 already enforces in the core (R-ARCH-007). It is off by default and needs a second host name, certificate and edge route. It moves into an earlier milestone, or into 1.0, as soon as one of the revisit triggers of [Q-ARCH-10](../spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render) occurs. |
+| **M9 · Automation and integration** | R-OPS-029…032, R-API-044, R-OPS-033, R-OPS-035…044, R-API-041, R-UI-039, R-API-042, R-UI-040, R-AUTHZ-027, R-STOR-043; the BLD entries once the builds page exists | Applying the same configuration document twice yields zero changes on the second apply. Exporting an installation and applying the export to an empty one reproduces its repositories, policies and CI mappings. An npm publish event reaches a test receiver with a valid signature, succeeds by retry after three `503` answers, and every attempt shows in the delivery log. Deliveries to link-local addresses are refused (R-OPS-042). A build record from the reference pipeline links that job's npm and NuGet artifacts. | Operators can script the the beta API (INV-17) until then. Configuration documents, webhooks and builds are where they stop scripting it by hand. |
+| **M10 · Identity, access and CI breadth** | R-AUTH-019, R-AUTH-021, R-AUTH-025, R-AUTH-030, R-AUTH-031, R-AUTH-036, R-AUTH-039, R-AUTHZ-011, R-AUTHZ-012, R-AUTHZ-017, R-AUTHZ-020, R-AUTHZ-024…026, R-CI-023…027, R-NPM-022, R-API-034, R-API-046…048, R-UI-028, R-UI-032, R-UI-041 | A GitHub Actions job publishes an npm package through the exchange (R-CI-025). A generic issuer works against an issuer double (R-CI-026). From GitLab CI, without a stored token, `npm publish` (npm 11 and 12 rows, host-root route), `pnpm publish` (pnpm 11 and 12 rows) and `yarn npm publish` (Yarn 4 row), both through the route below the registry URL, publish natively through the exchange (R-NPM-022). A SCIM client provisions and deprovisions users and groups, and deprovisioning revokes their tokens. For 10,000 random requests, the effective-permission explainer returns the evaluator's decision. | Extends the access model that the beta proved. Projects ship without touching CI delegations, which stay independent of them in P1 (Q-AUTHZ-7, decided). |
+| **M11 · HA and deployment breadth** | R-HA-017, R-HA-026, R-HA-044, R-HA-046, R-HA-047, R-HA-053, R-HA-055, R-HA-062, R-STOR-032, R-STOR-034, R-REPO-031, R-REPO-034…037, R-OPS-012, R-OPS-024…027, R-OPS-047, R-BAK-025, R-BAK-027, R-API-045, R-UI-034, R-ARCH-029 | R-HA-052 passes, and so does R-HA-059's drain test for each pool, with a `web` pool for the package paths and a `worker` pool for the `maintenance` queue (R-HA-062). R-HA-038's criteria pass through a Gateway that the chart creates (R-HA-053). A restore with `--existing-blobs reuse` passes R-BAK-025's criteria, and a backup whose database files are encrypted to age recipients restores only with a matching identity (R-BAK-027). `POST /api/v1/system/caches/flush` drops the in-process and negative caches on every replica and deletes no Valkey key (R-OPS-047). Database credential rotation under load causes zero failed iterations. An air-gapped install from a private registry verifies image and chart signatures before installing. A dual-stack kind cluster passes the npm suite. R-HA-055's chart criteria pass. On a chart install with `contentOrigin.host` set to a second host name, R-ARCH-029's acceptance criteria pass: a logged-in browser that opens `evil.svg` from the UI host ends on the content host and sends it no trove cookie, and `npm ci` and `dotnet restore` against the UI host make no request to the content host. | Most the beta installations do not need these immediately. Signatures (R-HA-047) are the item most likely to be pulled forward. Further pools (R-HA-062) are a change of values on top of the `web` and `worker` split that the beta already deploys. The P1 backup options (R-BAK-025, R-BAK-027) extend the backup that the beta ships. The separate content origin (R-ARCH-029, chart side R-HA-055) is deployment-level hardening on top of the header defence that the beta already enforces in the core (R-ARCH-007). It is off by default and needs a second host name, certificate and edge route. It moves into an earlier milestone, or into the beta, as soon as one of the revisit triggers of [Q-ARCH-10](../spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render) occurs. |
 | **M12 · Upstream curation** | The 22 P1 curation entries (SEC-001, SEC-002, SEC-004, SEC-007…014, SEC-021…023, SEC-025…028, SEC-032, SEC-035…037); spec page first | A curated npm remote blocks a version flagged malicious in the risk data source, and serves the newest compliant version where the client allows a fallback. A dry-run policy only records its decisions. A waiver lets one version through. | The rubric's P1 list does not name curation, but the catalog marks these entries P1. Curation needs a spec page, an external risk data source and remotes in several ecosystems before it is worth building. Until then, R-NPM-012's release-age policy and R-REPO-023's namespace claims provide the cheapest protections. |
 
 ### P1 format expansion order
@@ -933,7 +934,7 @@ judged, not measured: no usage data from the owner's teams was available. The or
 ([Q-ROAD-3](#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget), option (a)). The owner
 can reorder it at the walkthrough, before any format-lane work starts.
 
-| Order | Format | P1 catalog entries | Closeness to what exists | Prerequisites beyond 1.0 | Format-specific exit criterion |
+| Order | Format | P1 catalog entries | Closeness to what exists | Prerequisites beyond the beta | Format-specific exit criterion |
 |---|---|---|---|---|---|
 | F0 | Ansible Galaxy (collections and roles) | 13, raised from P2 on 2026-10-29: the owner runs an Ansible Galaxy that trove replaces after the beta | Medium: a per-collection index and artifact files resemble npm's document and tarball split; publishing goes through an HTTP API with token authentication, which needs the Galaxy client's token header | none | `ansible-galaxy collection install` and `collection publish`, and `role install`, work through a virtual repository that merges an internal local repository with a remote of the public Galaxy; the content of the owner's existing Galaxy is imported into trove |
 | F1 | Generic: remote and virtual | 8 (local part in M1) | Closest: `/files/` exists, and a remote is the proxy engine without a metadata document. | none | A remote serves a 1 GiB upstream file to 10 concurrent clients with one upstream request. A `PUT` through a virtual repository lands in its deployment target. |
@@ -951,7 +952,7 @@ Lanes:
 - **Lane A** (small formats that follow known patterns and test how far the contract stretches):
   F1, then F2 and F3 in parallel.
 - **Lane B** (largest format, highest demand): F4, then F5. Its platform prerequisites begin at
-  1.0, inside M7 and M8.
+  the beta, inside M7 and M8.
 - **Lane C** (after Lane A frees capacity): F6, then F7 once M7 and M8 have delivered its storage
   prerequisites.
 
@@ -1050,7 +1051,7 @@ The page's sizes are small, medium and large.
 | Candidate | Catalog priority, size | Slot | Why |
 |---|---|---|---|
 | BEYOND-028 namespace claims against dependency confusion | P1, small | M2 (already MVP through R-REPO-023) | Protects local package names from the first remote repository on. |
-| BEYOND-030 per-tenant quotas and rate limits | P2, medium | Rate limits in M1 (R-API-016 lists it); quotas after M7 | Rate limits are needed to run 1.0. Tenant quotas need M7's storage accounting. |
+| BEYOND-030 per-tenant quotas and rate limits | P2, medium | Rate limits in M1 (R-API-016 lists it); quotas after M7 | Rate limits are needed to run the beta. Tenant quotas need M7's storage accounting. |
 | BEYOND-027 minimum release age for remote repositories | P1, medium | npm in M2 (R-NPM-012), then with each format from F2 | Holds back fresh upstream releases at little cost. Each format defines publish time differently, so a missing time must lead to an explicit policy decision. |
 | BEYOND-015 referrers through remote and virtual repositories | P1, medium | F4 | Without it, signatures and SBOMs attached to proxied images stay invisible. |
 | BEYOND-031 provider presets for further CI systems | P1, small | M10 | Data and validation on top of R-CI-026's generic issuer. |
@@ -1082,7 +1083,7 @@ NuGet repositories refuse raw deploys (R-API-025), so those tests have no other 
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Generic local class in M1, as MVP | `formats/generic.md` specifies the local class of PKG-GENERIC-001, with PKG-GENERIC-004 and PKG-GENERIC-005, as MVP requirements. Remote and virtual generic repositories stay P1 (F1). | The sixteen criteria keep their target. 1.0 users get a raw file store. The format has no metadata documents, so it is the smallest one. It is also the smallest protected surface that proves login, tokens, permissions and the upload path together. | One more spec page and one more format in M1, the largest milestone. It pulls three P1 catalog entries forward. |
+| (a) Generic local class in M1, as MVP | `formats/generic.md` specifies the local class of PKG-GENERIC-001, with PKG-GENERIC-004 and PKG-GENERIC-005, as MVP requirements. Remote and virtual generic repositories stay P1 (F1). | The sixteen criteria keep their target. The beta users get a raw file store. The format has no metadata documents, so it is the smallest one. It is also the smallest protected surface that proves login, tokens, permissions and the upload path together. | One more spec page and one more format in M1, the largest milestone. It pulls three P1 catalog entries forward. |
 | (b) Keep generic at P1 and rewrite the criteria | The sixteen criteria are rewritten against npm and NuGet repositories. | The MVP scope stays as the rubric sets it. | npm and NuGet refuse raw deploys, so these criteria lose their only target and would be dropped: the large-upload criterion (R-HA-039's 6 GiB upload), `Range`, the content headers for browser-renderable content (R-ARCH-007's `evil.svg`) and the edge-proxy criteria. |
 | (c) Test-only format | A format compiled only into test builds serves the tests. | No user-visible scope. | It proves behavior that no user receives, and the released binary differs from the tested one exactly on the paths under test. |
 
@@ -1107,16 +1108,16 @@ the sixteen criteria use and leave the rest to F1.
 - The `formats/generic.md` row of [Spec work before P1 implementation](#spec-work-before-p1-implementation).
 - The format-lane cell of [Milestones at a glance](#milestones-at-a-glance).
 
-### Q-ROAD-2 · Backup and restore in 1.0
+### Q-ROAD-2 · Backup and restore in the beta
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (a) to the new option (e). trove's own backup create and restore are MVP (INV-19), R-HA-023 and R-HA-025 are MVP (Q-HA-19), and the revocation journal R-HA-054 with R-AUTHZ-031's entries is MVP (Q-HA-9). The exception that put P1 requirements into M5 is gone, and the journal is no longer the first work after 1.0. The owner constraint excludes (b). The spec pages applied (c) and (d); (e) adds when the work starts, and (f) was added and rejected.
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (a) to the new option (e). trove's own backup create and restore are MVP (INV-19), R-HA-023 and R-HA-025 are MVP (Q-HA-19), and the revocation journal R-HA-054 with R-AUTHZ-031's entries is MVP (Q-HA-9). The exception that put P1 requirements into M5 is gone, and the journal is no longer the first work after the beta. The owner constraint excludes (b). The spec pages applied (c) and (d); (e) adds when the work starts, and (f) was added and rejected.
 
 R-HA-052 (MVP) runs two restore drills: the point-in-time drill of R-HA-025 and the drill that
 restores a trove backup through R-HA-060. Until 2026-10-28, R-HA-023 (platform backup) and
 R-HA-025 (restore procedure) were P1, following the catalog's P1 for OPS-033, and so was the
-revocation journal, so a restore in 1.0 would have brought back credentials revoked after the
+revocation journal, so a restore in the beta would have brought back credentials revoked after the
 restore point (H-37). Since 2026-10-28 the owner requires a configurable backup job that writes a
 consistent backup to S3 (INV-19), and the spec pages made every part of backup and restore MVP:
 the `R-BAK` page, R-HA-023, R-HA-025, R-HA-054, R-HA-060 and R-AUTHZ-031. What remains open is the
@@ -1126,20 +1127,20 @@ procedure) depends only on M0 and M1.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Schedule both in M5, label unchanged | R-HA-023 and R-HA-025 are built and drilled in M5. Their `Priority:` lines stay P1. | 1.0 ships a restore procedure that was run. No spec page changes. | Since 2026-10-28 the labels are MVP (Q-HA-19), and trove's own backup (INV-19) is not covered at all. Before that: the rule that every P1 requirement sits in M6 to M11 needed a named exception, and H-37 stayed live in 1.0. |
-| (b) Remove the restore drill from R-HA-052 for 1.0 | 1.0 ships without a documented restore. | Smaller M5. | Excluded since 2026-10-28: the owner requires the backup job. An HA release whose restore was never run is not ready for production either. R-HA-024's consistency guarantee and H-37's manual procedure would go untested. |
+| (a) Schedule both in M5, label unchanged | R-HA-023 and R-HA-025 are built and drilled in M5. Their `Priority:` lines stay P1. | The beta ships a restore procedure that was run. No spec page changes. | Since 2026-10-28 the labels are MVP (Q-HA-19), and trove's own backup (INV-19) is not covered at all. Before that: the rule that every P1 requirement sits in M6 to M11 needed a named exception, and H-37 stayed live in the beta. |
+| (b) Remove the restore drill from R-HA-052 for the beta | The beta ships without a documented restore. | Smaller M5. | Excluded since 2026-10-28: the owner requires the backup job. An HA release whose restore was never run is not ready for production either. R-HA-024's consistency guarantee and H-37's manual procedure would go untested. |
 | (c) Schedule both in M5 and raise them to MVP | As (a), and ha-and-helm.md changes both priority lines to MVP. | The priority label matches the release scope. | Covers only the platform layer and leaves trove's own backup and the journal out. Q-HA-19 applied the label change. |
-| (d) As (a), plus the revocation journal | R-HA-054 and R-AUTHZ-031 move into M5 as well. | H-37 is closed in 1.0. | Alone, it still leaves trove's own backup out. Before 2026-10-28 the journal looked like a new security subsystem in a hardening milestone. Now a restore refuses to run without it (R-BAK-020), so it is part of the backup. |
-| (e) Everything in 1.0, gated in M5, built from M1 | trove's own backup and restore (the `R-BAK` page, R-HA-060, R-API-050, R-UI-048, R-STOR-047, the format parts R-NPM-047 and R-NUGET-033), the platform layer (R-HA-023, R-HA-025) and the journal (R-HA-054, R-AUTHZ-031) gate in M5. Their work runs in a lane that starts after M1, in parallel with M2 to M4. M0 gives every table its export class (R-BAK-004). | Meets INV-19 and closes H-37 for both restore paths in 1.0. The lane keeps the backup off M5's critical path. Every table is classified when it is created, not afterwards. The drill gates on real npm, NuGet and CI data. | M5 carries a feature lane besides the hardening. The lane has to follow M2 to M4: each new table, revision column and journaled event of those milestones joins the backup in the same change. |
+| (d) As (a), plus the revocation journal | R-HA-054 and R-AUTHZ-031 move into M5 as well. | H-37 is closed in the beta. | Alone, it still leaves trove's own backup out. Before 2026-10-28 the journal looked like a new security subsystem in a hardening milestone. Now a restore refuses to run without it (R-BAK-020), so it is part of the backup. |
+| (e) Everything in the beta, gated in M5, built from M1 | trove's own backup and restore (the `R-BAK` page, R-HA-060, R-API-050, R-UI-048, R-STOR-047, the format parts R-NPM-047 and R-NUGET-033), the platform layer (R-HA-023, R-HA-025) and the journal (R-HA-054, R-AUTHZ-031) gate in M5. Their work runs in a lane that starts after M1, in parallel with M2 to M4. M0 gives every table its export class (R-BAK-004). | Meets INV-19 and closes H-37 for both restore paths in the beta. The lane keeps the backup off M5's critical path. Every table is classified when it is created, not afterwards. The drill gates on real npm, NuGet and CI data. | M5 carries a feature lane besides the hardening. The lane has to follow M2 to M4: each new table, revision column and journaled event of those milestones joins the backup in the same change. |
 | (f) Gate backup and restore in M3, the journal in M5 | Backup and restore ship with the second format, and the journal two milestones later. | An earlier pre-release has a backup. | A restore refuses to run without the journal (R-BAK-020), and the replay is what withholds unpublished npm versions and reserves NuGet version numbers (Q-NPM-12, Q-NUGET-10). Until M5 a restore would run only with `--skip-revocation-journal`, which reopens H-37. |
 
 **Choice:** (e) — trove's own backup create and restore, the platform layer and the revocation
 journal are MVP and gate in M5. Their work starts after M1 in its own lane, and M0 builds the table
 registry.
 
-**Rationale:** The owner constraint settles that backup and restore ship in 1.0, and the spec pages
+**Rationale:** The owner constraint settles that backup and restore ship in the beta, and the spec pages
 already made every part MVP, so only the timing was open. The drill needs npm and NuGet data and CI
-revocations, so M5 is the earliest gate at which it tests what 1.0 ships. (f) gates earlier but
+revocations, so M5 is the earliest gate at which it tests what the beta ships. (f) gates earlier but
 only on a restore that skips the journal, which is the weaker restore that the spec refuses by
 default. (a) and (c) leave out the backup the owner asked for. The lane removes (e)'s main cost:
 nothing in the snapshot, the pool, the hold or the restore waits for a format, and the format
@@ -1149,7 +1150,7 @@ in two cases:
 - If the lane falls behind, so that M5's other exit criteria pass while E5.11 and E5.12 do not, the
   lane's exit becomes a pre-release of its own between M4 and M5 rather than holding up the HA
   work.
-- If an installation of a pre-release needs a restore before 1.0, the lane's commands ship in the
+- If an installation of a pre-release needs a restore before the beta, the lane's commands ship in the
   next pre-release with the journal, never without it.
 
 **Applied in the roadmap:**
@@ -1163,7 +1164,7 @@ in two cases:
 - Finding 2 under [Starting point](#starting-point), the M5 row and the flowchart of
   [Milestones at a glance](#milestones-at-a-glance), and the backup paragraph under
   [Why this order](#why-this-order).
-- The single-team order in [After 1.0: P1](#after-10-p1) no longer puts the journal first.
+- The single-team order in [After the beta: P1](#after-the-beta-p1) no longer puts the journal first.
 
 Cross-page: [ha-and-helm.md Q-HA-19](../spec/ha-and-helm.md#q-ha-19--priority-of-the-platform-backup-layer-and-the-point-in-time-restore)
 raised R-HA-023 and R-HA-025 to MVP and starts from option (a) of this question, and

@@ -11,21 +11,25 @@ and `worker` roles, node drains without outage, and a backup job. Everything aft
 [FULL.md](FULL.md).
 
 The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, after the
-owner walkthrough, published as `1.0.0-beta.1`. Details, exit criteria and requirement IDs of
-every phase are in the roadmap section linked under each heading.
+owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
+section linked under each heading.
+
+**Versions:** trove stays on major version 0 until the owner decides otherwise. Every completed
+phase is released as the next minor version, starting with `v0.1.0`; fixes in between are patch
+releases. The beta release is `v0.7.0`.
 
 ## Where we are
 
-| Phase | Result | Status |
-|---|---|---|
-| [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | 🟢 |
-| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown | ⚪ |
-| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | ⚪ |
-| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual · pre-release 0.1 | ⚪ |
-| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual · pre-release 0.2 | ⚪ |
-| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets · pre-release 0.3 | ⚪ |
-| [6 · HA, backup, Helm](#phase-6--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore · beta candidate | ⚪ |
-| [7 · Walkthrough and beta](#phase-7--walkthrough-and-beta-release) | Owner review, objections fixed · **beta release** | ⚪ |
+| Phase | Result | Version | Status |
+|---|---|---|---|
+| [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
+| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown | `v0.1.0` | ⚪ |
+| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.2.0` | ⚪ |
+| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | `v0.3.0` | ⚪ |
+| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | `v0.4.0` | ⚪ |
+| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | `v0.5.0` | ⚪ |
+| [6 · HA, backup, Helm](#phase-6--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | `v0.6.0` | ⚪ |
+| [7 · Walkthrough and beta](#phase-7--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | `v0.7.0` | ⚪ |
 
 ## Testing rule for every registry
 
@@ -83,6 +87,9 @@ Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 - ⚪ Node drain under load without a failed request
 - ⚪ No state between requests: test profile with random distribution across replicas
 
+**Release**
+- ⚪ `v0.1.0`
+
 ## Phase 2 · Access core (M1)
 
 Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
@@ -114,6 +121,9 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - ⚪ Integration tests: login, tokens, permission evaluation, raw transfer
 - ⚪ E2E tests: browser journeys across replicas with random distribution
 
+**Release**
+- ⚪ `v0.2.0`
+
 ## Phase 3 · npm registry (M2)
 
 Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](../spec/formats/npm.md)
@@ -137,7 +147,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - ⚪ npm load joins the drain and failover tests
 
 **Release**
-- ⚪ Pre-release 0.1
+- ⚪ `v0.3.0`
 
 ## Phase 4 · NuGet (.NET) registry (M3)
 
@@ -160,7 +170,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - ⚪ NuGet load joins the drain and failover tests
 
 **Release**
-- ⚪ Pre-release 0.2
+- ⚪ `v0.4.0`
 
 ## Phase 5 · GitLab CI OIDC (M4)
 
@@ -174,7 +184,7 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
 - ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
 - ⚪ E2E tests against a GitLab test instance for npm and NuGet, with a `web` node drained during the run
-- ⚪ Pre-release 0.3
+- ⚪ `v0.5.0`
 
 ## Phase 6 · HA hardening, backup and Helm (M5)
 
@@ -196,7 +206,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
 - ⚪ Release pipeline: image and chart published to `ghcr.io/guided-traffic`
-- ⚪ Beta candidate published
+- ⚪ Beta candidate `v0.6.0` published
 
 ## Phase 7 · Walkthrough and beta release
 
@@ -211,7 +221,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 - ⚪ Objections from the walkthrough worked off
 - ⚪ All exit checks green again
 - ⚪ Beta documentation: installation guide, configuration reference, known limitations
-- ⚪ **Beta release `1.0.0-beta.1`**
+- ⚪ **Beta release `v0.7.0`**
 
 ---
 
