@@ -1798,6 +1798,29 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** none.
 
+### Q-EP-54 · The surface of the dev profile's endpoint `customers`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E0.16 introduced `customers` with `surface: [packages]`, which at the time was the only family with routes of its
+own. E1.14 needs raw files under exposure (R-EP-014: `GET /files/generic-local/releases/1.0/app.zip` on `customers`) and the
+listings of the management API under exposure (an administrator token bound to `customers` sees no more than the rules
+expose), so the endpoint must serve the families `files` and `api`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `[packages, files, api]` on `customers` | The dev endpoint serves all three families a customer endpoint can | One endpoint carries E0.16 and E1.14; E0.16's checks (every path answers the one `401 credentials_required` without a credential) are unchanged | The dev endpoint is no longer the minimal package-only endpoint |
+| (b) A third endpoint for E1.14 | A second further endpoint with its own host, certificates and Ingress | E0.16's endpoint stays minimal | Another certificate pair, Ingress and NetworkPolicy in the dev profile for a change of one list; the criteria name `customers` |
+| (c) Switch the surface during the test | `helm upgrade` in the test | No change to the profile | Two rollouts per run for a value the endpoint can simply carry |
+
+**Choice:** (a).
+
+**Rationale:** The criteria name the endpoint `customers`; a surface is a value, not a mechanism. The revisit condition is an
+E1.14 variant that needs an endpoint without `api`, which would be (b).
+
+**Applied in the spec:** none; [deploy/dev/values-dev.yaml](../../deploy/dev/values-dev.yaml) and
+[../developer/local-profile.md](../developer/local-profile.md#the-second-endpoint).
+
 ## What this does not cover
 
 ### H-57 · A further endpoint runs with every credential of a `web` replica

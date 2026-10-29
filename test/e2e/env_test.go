@@ -86,6 +86,8 @@ func TestMain(m *testing.M) {
 		os.Exit(2)
 	}
 	code := m.Run()
+	stopForwards()
+	restoreProfile()
 	stop()
 	os.Exit(code)
 }
@@ -440,11 +442,31 @@ type k6result struct {
 // 100 requests/s through the Ingress, and returns once the first responses are in.
 func startK6(t testing.TB, name string, d time.Duration) *k6run {
 	t.Helper()
+	return startK6Script(t, name, "load.js", d, k6Opts{rate: 100, prefix: "R "})
+}
+
+// k6Opts parameterizes startK6Script: the iterations per second, the console lines that show the load runs
+// (their prefix) and, for a script that needs a credential, a token that is handed over as the file /out/token
+// (never as an argument).
+type k6Opts struct {
+	rate   int
+	prefix string
+	token  string
+}
+
+// startK6Script runs a script of test/e2e/k6 the way startK6 runs load.js.
+func startK6Script(t testing.TB, name, scriptName string, d time.Duration, o k6Opts) *k6run {
+	t.Helper()
 	k := &k6run{name: name, container: fmt.Sprintf("trove-e2e-k6-%s-%d", name, os.Getpid()), dir: filepath.Join(cfg.out, "k6-"+name), done: make(chan error, 1)}
 	if err := os.MkdirAll(k.dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.Chmod(k.dir, 0o777)
+	if o.token != "" {
+		if err := os.WriteFile(filepath.Join(k.dir, "token"), []byte(o.token), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	logf, err := os.Create(filepath.Join(k.dir, "console.log"))
 	if err != nil {
 		t.Fatal(err)
@@ -453,7 +475,7 @@ func startK6(t testing.TB, name string, d time.Duration) *k6run {
 		"run", "--rm", "--name", k.container, "--network", "kind",
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"-v", filepath.Join(cfg.repo, "test/e2e/k6") + ":/scripts:ro", "-v", k.dir + ":/out",
-		"-e", "TARGET=" + cfg.k6Target, "-e", "HOST=" + cfg.host, "-e", "RATE=100", "-e", "DURATION=" + d.String(), "-e", "TIMEOUT=45s",
+		"-e", "TARGET=" + cfg.k6Target, "-e", "HOST=" + cfg.host, "-e", fmt.Sprintf("RATE=%d", o.rate), "-e", "DURATION=" + d.String(), "-e", "TIMEOUT=45s",
 	}
 	if cfg.k6HostsAddr != "" {
 		args = append(args, "-e", "HOSTS_ADDR="+cfg.k6HostsAddr)
@@ -461,7 +483,7 @@ func startK6(t testing.TB, name string, d time.Duration) *k6run {
 	if cfg.caFile != "" {
 		args = append(args, "-v", cfg.caFile+":/ca/ca.crt:ro", "-e", "SSL_CERT_FILE=/ca/ca.crt")
 	}
-	args = append(args, cfg.k6Image, "run", "--log-format", "raw", "--no-usage-report", "/scripts/load.js")
+	args = append(args, cfg.k6Image, "run", "--log-format", "raw", "--no-usage-report", "/scripts/"+scriptName)
 	k.cmd = exec.Command("docker", args...)
 	k.cmd.Stdout, k.cmd.Stderr = logf, logf
 	if err := k.cmd.Start(); err != nil {
@@ -472,7 +494,11 @@ func startK6(t testing.TB, name string, d time.Duration) *k6run {
 	t.Cleanup(func() { _ = exec.Command("docker", "kill", k.container).Run() })
 	waitFor(t, "k6 to send its first requests", 2*time.Minute, time.Second, func() bool {
 		b, _ := os.ReadFile(filepath.Join(k.dir, "console.log"))
-		return bytes.Count(b, []byte("\nR ")) > 150 || bytes.HasPrefix(b, []byte("R ")) && bytes.Count(b, []byte("\n")) > 150
+		first := 150
+		if o.rate < 50 {
+			first = 10 * o.rate
+		}
+		return bytes.Count(b, []byte("\n"+o.prefix)) > first || bytes.HasPrefix(b, []byte(o.prefix)) && bytes.Count(b, []byte("\n")) > first
 	})
 	return k
 }
@@ -572,6 +598,81 @@ func (r k6result) only200(t testing.TB) {
 	if d, _ := r.Summary["dropped_iterations"].(float64); d != 0 {
 		t.Errorf("k6 dropped %v iterations: the load fell behind its rate", d)
 	}
+}
+
+// transferResult is the outcome of transfer.js: every request is a line `T <ms> <op> <status> <replica> <ms> <path> <ok|bad>`.
+type transferResult struct {
+	Total    int
+	Status   map[string]int // "put 201", "get 200", ...
+	Bad      int            // downloads whose SHA-256 differs from the upload
+	Failures []string       // lines that are no success
+	MaxMS    int
+	Dropped  float64
+}
+
+var transferLine = regexp.MustCompile(`^T (\d+) (put|get) (\d+) (\S+) (\d+) (\S+) (ok|bad)$`)
+
+// stopTransfer ends the load with SIGINT and parses its lines. As in parseK6, a request cut by the harness's own
+// stop (status 0, "context canceled", in the last two seconds) is set aside.
+func (k *k6run) stopTransfer(t testing.TB) transferResult {
+	t.Helper()
+	_ = exec.Command("docker", "kill", "--signal=INT", k.container).Run()
+	select {
+	case <-k.done:
+	case <-time.After(2 * time.Minute):
+		t.Fatalf("k6 %s did not stop", k.name)
+	}
+	r := transferResult{Status: map[string]int{}}
+	f, err := os.Open(filepath.Join(k.dir, "console.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	type rec struct {
+		at     int64
+		line   string
+		status int
+		cancel bool
+	}
+	var recs []rec
+	var last int64
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		m := transferLine.FindStringSubmatch(sc.Text())
+		if m == nil {
+			continue
+		}
+		ms, _ := strconv.ParseInt(m[1], 10, 64)
+		status, _ := strconv.Atoi(m[3])
+		dur, _ := strconv.Atoi(m[5])
+		r.MaxMS = max(r.MaxMS, dur)
+		last = max(last, ms)
+		recs = append(recs, rec{ms, sc.Text(), status, status == 0 && strings.HasSuffix(m[4], ":context_canceled")})
+		if m[7] == "bad" {
+			r.Bad++
+		}
+	}
+	for _, c := range recs {
+		if c.cancel && c.at > last-2000 {
+			continue
+		}
+		m := transferLine.FindStringSubmatch(c.line)
+		r.Status[m[2]+" "+m[3]]++
+		r.Total++
+		ok := (m[2] == "put" && (c.status == 200 || c.status == 201)) || (m[2] == "get" && c.status == 200)
+		if !ok || m[7] == "bad" {
+			r.Failures = append(r.Failures, c.line)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(k.dir, "summary.json")); err == nil {
+		var s struct {
+			Dropped float64 `json:"dropped_iterations"`
+		}
+		_ = json.Unmarshal(b, &s)
+		r.Dropped = s.Dropped
+	}
+	t.Logf("k6 %s: %d transfer requests %v, %d with a wrong checksum, %d failures, max %d ms, dropped iterations %v", k.name, r.Total, r.Status, r.Bad, len(r.Failures), r.MaxMS, r.Dropped)
+	return r
 }
 
 func noteResult(t testing.TB, name string, v any) {

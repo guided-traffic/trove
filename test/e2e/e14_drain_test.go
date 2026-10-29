@@ -188,7 +188,7 @@ type probeJob struct {
 }
 
 func TestE14Drain(t *testing.T) {
-	t.Run("R-ARCH-024 R-HA-011 R-HA-059 E0.14 draining a node with a web and a worker pod under load: only 200, the jobs resume on the other worker from their cursor, no SIGKILL, nothing Pending for 60 s", func(t *testing.T) {
+	t.Run("R-ARCH-024 R-HA-011 R-HA-059 E0.14 E1.13 draining a node with a web and a worker pod under load, an upload and download loop on generic-local included: only 200, no failed transfer, the jobs resume on the other worker from their cursor, no SIGKILL, nothing Pending for 60 s", func(t *testing.T) {
 		const steps = 150
 		node := drainNode(t)
 		var onNode []pod
@@ -219,6 +219,9 @@ func TestE14Drain(t *testing.T) {
 		watch := startPodWatch(t, selTrove)
 		drv := startDriverLoad(t, "drain", 20*time.Minute)
 		k := startK6(t, "drain", 30*time.Minute)
+		// E1.13: an upload and download loop on generic-local runs through the drain as well (transfer.js: PUT, GET,
+		// SHA-256 compared), with the token of a service account that may write there.
+		kx := startK6Script(t, "drain-xfer", "transfer.js", 30*time.Minute, k6Opts{rate: 4, prefix: "T ", token: transferToken(t)})
 
 		// Probe jobs: enough that both workers carry some, so the drained one certainly runs a job.
 		var ids []string
@@ -283,9 +286,20 @@ func TestE14Drain(t *testing.T) {
 		driver(t, "stop")
 		ds := drv.wait(t)
 		res := k.stop(t)
-		noteResult(t, "e14-drain", map[string]any{"node": node, "drain_seconds": drainTook.Seconds(), "k6_status": res.Status, "driver": ds, "pending_pods": watch.pendFor, "moved_jobs": moved})
+		xres := kx.stopTransfer(t)
+		noteResult(t, "e14-drain", map[string]any{"node": node, "drain_seconds": drainTook.Seconds(), "k6_status": res.Status, "driver": ds, "pending_pods": watch.pendFor, "moved_jobs": moved, "transfers": xres.Status})
 
 		res.only200(t)
+		if len(xres.Failures) != 0 || xres.Bad != 0 || xres.Dropped != 0 {
+			first := xres.Failures
+			if len(first) > 5 {
+				first = first[:5]
+			}
+			t.Errorf("E1.13 the upload and download loop on generic-local failed during the drain: %d failures, %d wrong checksums, %v dropped iterations; first: %v", len(xres.Failures), xres.Bad, xres.Dropped, first)
+		}
+		if xres.Status["put 201"]+xres.Status["put 200"] < 100 || xres.Status["get 200"] < 100 {
+			t.Errorf("E1.13 the transfer loop made too few requests to say anything: %v", xres.Status)
+		}
 		if unc := strings.TrimSpace(kn(t, "get", "node", node, "-o", "jsonpath={.spec.unschedulable}")); unc == "true" {
 			t.Errorf("node %s is still cordoned", node)
 		}

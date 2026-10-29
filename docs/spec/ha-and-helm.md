@@ -5955,6 +5955,28 @@ Sentinel password: then the missing password becomes an error (a) for the produc
 **Applied in the spec:** [R-HA-056](#r-ha-056--valkey-with-sentinel-connection-and-supported-topologies) (the warnings of the
 connection bullet); the code is `warnWeakTrust` in [internal/cluster/valkey.go](../../internal/cluster/valkey.go).
 
+### Q-HA-64 · How the end-to-end tests of the access core hold Valkey down, reach a replica directly and get the login configuration into the dev profile
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E1.8, E1.11 and E1.14 test "with Valkey stopped" for the whole of a criterion, E1.8 tests per-address limits whose
+bucket every other test of the run shares (the address of the host behind the edge), and E1.1 needs the OIDC provider and the
+break-glass password in the dev values while the chart has no value for either.
+
+| Question | Options | Choice |
+|---|---|---|
+| Holding Valkey down for a criterion | (a) `valkey-outage.sh` with a duration; (b) a stop script and a start script, the test holds the outage; (c) a toxiproxy in front of Valkey | (b) `valkey-stop.sh` and `valkey-start.sh`, with `valkey-outage.sh` as stop, sleep, start. (a) cannot hold an outage for a criterion of unknown length; (c) is a new component in the profile |
+| The latency injection of R-ARCH-034 | (a) a proxy that delays; (b) `CLIENT PAUSE ... ALL` on the primary for 4 s | (b), through `valkey-cli.sh`. The calls neither succeed nor fail at once, which is what a late Valkey does; 4 s stays below the Sentinels' 5 s `down-after-milliseconds`, so no failover is provoked |
+| Per-address limits (R-AUTH-038) | (a) the edge address, with long waits between tests; (b) port-forwards to the web pods | (b) for the threshold tests: the replicas see 127.0.0.1, a bucket of its own, and the requests are sent to the three pods in turn, which is the criterion's "round robin over three replicas" without the edge in between |
+| Login configuration of the dev profile | (a) wait for chart values `secrets.oidc` and `secrets.breakGlass`; (b) `extraVolumes` and `extraVolumeMounts` with one projected volume | (b) in values-dev.yaml: the chart is not touched, and the paths in `config.auth` are those the chart's values will render |
+
+**Rationale:** Each choice adds no component to the profile and keeps the tests close to what an operator does. The revisit
+conditions: the chart gains the two secret values (then the projected volume goes), or a criterion needs a delay finer than
+`CLIENT PAUSE` (then a proxy).
+
+**Applied in the spec:** none; [../developer/local-profile.md](../developer/local-profile.md) and
+[../developer/e2e.md](../developer/e2e.md#m1-tests).
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants

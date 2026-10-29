@@ -87,7 +87,7 @@ require_cluster() {
     || die "the kind cluster '$CLUSTER' does not exist; run deploy/dev/up.sh (make dev-up)"
 }
 
-# render <manifest> substitutes the pinned images and ${NS} (the only variables the
+# render <manifest> substitutes the pinned images, ${NS} and ${EDGE_PORT} (the only variables the
 # manifests use) and prints the result.
 render() {
   sed \
@@ -97,6 +97,7 @@ render() {
     -e "s|\${DEV_CNPG_POSTGRES_IMAGE}|${DEV_CNPG_POSTGRES_IMAGE}|g" \
     -e "s|\${DEV_KEYCLOAK_IMAGE}|${DEV_KEYCLOAK_IMAGE}|g" \
     -e "s|\${NS}|${NS}|g" \
+    -e "s|\${EDGE_PORT}|${EDGE_PORT:-$DEV_HTTP_PORT}|g" \
     "$1"
 }
 

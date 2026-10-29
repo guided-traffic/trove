@@ -4889,6 +4889,28 @@ The development agent would revisit (c) if trove adds a route that serves packag
 
 **Applied in the spec:** R-ARCH-007 (the header list). R-STOR-017's directory index takes the same value.
 
+### Q-ARCH-76 · The pace of the download that a rollout restart must not break
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-024's second criterion runs `kubectl rollout restart deployment/trove-web` during
+`curl --limit-rate 20M` of a 400 MiB file (about 20 s). The rollout replaces the three web pods one after the other and takes
+more than a minute, so at 20 MB/s the serving pod is replaced during the transfer in about one run of three: the criterion
+passes without the drain having been exercised.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 20 MB/s as written | The criterion's number | Literal | Two runs in three do not touch the serving pod |
+| (b) 6 MB/s (about 70 s) | The transfer outlasts the rollout (about 50 s) and ends well inside the 110 s shutdown timeout of a drained pod; 4 MB/s (100 s) left 10 s of margin and a slow object store made the drain cut the transfer, correctly | Every run drains the serving pod while it transfers; the test asserts that it did | Not the number in the criterion |
+| (c) Repeat (a) until the serving pod is replaced | Retries | Literal pace | A flaky number of rounds, 20 s each plus a rollout |
+
+**Choice:** (b), with the assertion that the serving pod was drained before the transfer ended.
+
+**Rationale:** The intent of the criterion is that a restart does not break a transfer, which only a drained serving pod proves.
+The revisit condition is a rollout fast enough that 20 MB/s always overlaps it.
+
+**Applied in the spec:** none; [../developer/e2e.md](../developer/e2e.md#m1-tests).
+
 ## What this does not cover
 
 ### H-1 · Format code runs in-process without isolation

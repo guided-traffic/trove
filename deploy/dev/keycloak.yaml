@@ -167,6 +167,7 @@ spec:
               valueFrom: {secretKeyRef: {name: trove-keycloak, key: alice-password}}
             - name: KC_BOB_PASSWORD
               valueFrom: {secretKeyRef: {name: trove-keycloak, key: bob-password}}
+            - {name: KC_TROVE_BASE_URL, value: "https://localhost:${EDGE_PORT}"}   # the client's redirect and post-logout URIs follow the edge port of the cluster
           ports:
             - {name: https, containerPort: 8443}
             - {name: management, containerPort: 9000}

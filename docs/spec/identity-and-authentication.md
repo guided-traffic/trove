@@ -4731,6 +4731,32 @@ sees nothing to revisit here.
 
 **Applied in the spec:** R-AUTH-016, the user record.
 
+### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E1.1 and R-AUTH-042 need browser logins through the Ingress against the test IdP, 50 of them in one run, each
+possibly with its start, its IdP page and its callback on three different replicas, and the break-glass account disabled
+and enabled again (R-AUTH-014). The harness of the dev profile has Go, kubectl and k6, no browser.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Playwright | A real browser drives the IdP's page | The page is really rendered; one tool for E1.1 and R-UI-047 | A Node toolchain and browser binaries in the e2e job; 50 logins in a browser take minutes; the UI screens R-UI-047 uses are still being built |
+| (b) An HTTP client with a cookie jar | The Go test follows the redirects by hand, posts the IdP's login form (found by its form id) and keeps the cookies | No new tool; every redirect, the PKCE parameters, the cookies and the replica of each hop are visible to the test; fast | The IdP's page is parsed, not rendered, so a change of the IdP's theme can break it; it proves no JavaScript |
+| (c) A fake IdP | As in test/integration/login | Fully controlled | It is not Keycloak, and E1.1 names Keycloak |
+
+**Choice:** (b) for E1.1 and R-AUTH-042; (a) stays the tool of R-UI-047, whose journeys come with the screens
+(`TestE1_11Journeys` runs `web/e2e` when it exists).
+
+The break-glass account is disabled the way an operator does it, with `auth.break_glass.enabled: false`, delivered as the
+environment key `TROVE_AUTH_BREAK_GLASS_ENABLED` on the `web` Deployment (a rolling restart without a migration Job); the test
+removes the variable again, whatever happens.
+
+**Rationale:** The criteria are about what the replicas do with the flow, which (b) observes directly. The revisit
+condition is a Keycloak change of the form markup, or the first UI journey that needs the IdP's page rendered.
+
+**Applied in the spec:** none; [../developer/e2e.md](../developer/e2e.md#m1-tests) records the method.
+
 ## What this does not cover
 
 ### H-15 · Consent phishing of command-line browser login

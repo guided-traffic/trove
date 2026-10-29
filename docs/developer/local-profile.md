@@ -33,7 +33,7 @@ flowchart LR
 | CloudNativePG operator | namespace `cnpg-system` | operator only | `CNPG_CHART_VERSION`, `DEV_CNPG_OPERATOR_IMAGE` |
 | PostgreSQL 16 | namespace `trove` | CloudNativePG `Cluster` `trove-db`: 2 instances (primary and standby), synchronous replication with `dataDurability: preferred`, database and owner `trove`, TLS | `DEV_CNPG_POSTGRES_IMAGE` |
 | Valkey 9.1 | namespace `trove` | `Valkey` resource `trove-valkey` ([valkey.yaml](../../deploy/dev/valkey.yaml)): StatefulSet `trove-valkey` (2 pods) and `trove-valkey-sentinel` (3 pods), TLS only, `emptyDir`, PodDisruptionBudgets, one pod of each tier per zone. The Alpine image has every tool the operator's scripts need (checked against `RequiredImageTools` of the operator, 1.14.12) | `DEV_VALKEY_IMAGE` |
-| SeaweedFS | namespace `trove` | Deployment `trove-s3` (one `weed server`), HTTPS on `trove-s3:9000` with `trove-s3-tls`, buckets `trove-blobs` (versioning on), `trove-pg-archive`, `trove-backups` | `DEV_SEAWEEDFS_IMAGE`, `DEV_AWSCLI_IMAGE` |
+| SeaweedFS | namespace `trove` | Deployment `trove-s3` (one `weed server` on `emptyDir`, pinned to the control-plane node like the edge, because no test drains it and an eviction would lose every blob; memory limit 4Gi: two 500 MB uploads at once were OOM-killed at 1Gi in E1.13), HTTPS on `trove-s3:9000` with `trove-s3-tls`, buckets `trove-blobs` (versioning on), `trove-pg-archive`, `trove-backups` | `DEV_SEAWEEDFS_IMAGE`, `DEV_AWSCLI_IMAGE` |
 | Keycloak (test IdP) | namespace `trove` | Deployment `trove-keycloak` ([keycloak.yaml](../../deploy/dev/keycloak.yaml)), `start-dev` with a realm import, HTTPS only on `trove-keycloak:8443` with `trove-keycloak-tls`; realm `trove` with the users `alice` and `bob`, the groups `trove-team-web` and `trove-platform-admins`, the client `trove` (Q-AUTH-35, [test IdP](#the-test-idp)) | `DEV_KEYCLOAK_IMAGE` |
 | trove | namespace `trove` | Helm release `trove` with [values-dev.yaml](../../deploy/dev/values-dev.yaml): 2 `web`, 2 `worker` (grace period 60 s, so a drain test does not wait 300 s), migration Job, the chart's NetworkPolicies, `tls.enabled` with `trove-tls` and `reloadInterval: 2s`, the endpoint `customers` on `:8443`; `up.sh` adds the Docker `kind` network ranges as `networkPolicy.probeCIDRs` | image `guidedtraffic/trove:dev` (the default of `up.sh`, loaded into kind from the local Docker; `make image` builds it) |
 
@@ -61,7 +61,9 @@ selects are never touched.
 | `make dev-failover` | `failover.sh [instance]` | PostgreSQL switchover to the standby, waits until the old primary is a standby again |
 | `make dev-valkey-failover` | `valkey-failover.sh` | `SENTINEL FAILOVER trove-valkey`, waits until another pod is primary |
 | `make dev-valkey-kill` | `valkey-kill.sh` | force-deletes the Valkey primary pod, waits for a primary and a connected replica |
-| `make dev-valkey-outage DURATION=60s` | `valkey-outage.sh 60s` | stops the Valkey operator, scales Valkey and the Sentinels to 0 for the duration, scales them back and starts the operator (below) |
+| `make dev-valkey-outage DURATION=60s` | `valkey-outage.sh 60s` | `valkey-stop.sh`, the duration, `valkey-start.sh` (below) |
+| `make dev-valkey-stop`, `make dev-valkey-start` | `valkey-stop.sh`, `valkey-start.sh` | the two halves of the outage: stop the operator, scale Valkey and the Sentinels to 0 and wait for the pods to be gone; scale back, start the operator and wait for a primary. The e2e tests hold the outage for as long as a "Valkey stopped" criterion needs (E1.8, E1.11, E1.14) and start it again in their cleanup. `make dev-valkey-outage` is stop, sleep, start |
+| `deploy/dev/valkey-cli.sh <command...>` | `valkey-cli.sh` | runs `valkey-cli` against the current primary (found through the Sentinels, over TLS, the password read inside the pod): `FLUSHALL` for E1.11, `CLIENT PAUSE` for the latency injection of R-ARCH-034 (E1.8) |
 | `make dev-pg-kill` | `pg-kill.sh` | force-deletes the PostgreSQL primary pod, waits until the operator reports a healthy cluster |
 | `make dev-pg-stop DURATION=30s` | `pg-stop.sh 30s` | fences every instance of `trove-db` (`cnpg.io/fencedInstances`, PostgreSQL stops, pods and volumes stay), waits, removes the fence, waits for a healthy cluster |
 | `make dev-drain` | `drain.sh` | the E0.14 test: drains a node with a web and a worker pod under the k6 load and cursor-persisting jobs; `drain.sh <node>` is the drain alone, `drain.sh --pick` prints the node |
@@ -129,7 +131,7 @@ Generated or created in namespace `trove`; nothing in `up.sh` makes a random val
 | `trove-valkey-tls` | `tls.crt`, `tls.key`, `ca.crt` | the Valkey operator, through cert-manager (`unifiedCertificate: true`: one Secret for both tiers) | Valkey and Sentinels; chart: `secrets.valkeyCA` (`ca.crt`) |
 | `trove-s3` | `access-key-id` (`trove-dev`), `secret-access-key` (40 characters) | internal-secrets-operator | SeaweedFS and the bucket Job; chart: `secrets.s3` |
 | `trove-encryption-keys` | `dev.key`: 32 random bytes, **raw** (`iso.gtrfc.com/type: bytes`) | internal-secrets-operator | chart: `secrets.encryption`; the file name without `.key`, `dev`, is the key ID. The key ring accepts a 32-byte file as it is and base64 text of 32 bytes |
-| `trove-break-glass` | `password` (32 characters) | internal-secrets-operator | nothing yet: the chart has no break-glass value. It exists so the generator's output for it is in the profile |
+| `trove-break-glass` | `password` (32 characters, plaintext: at least 20 are required) | internal-secrets-operator | `auth.break_glass.password_file` of the dev values, through the projected volume `dev-auth` (below); the e2e tests read it for E1.1 and R-AUTH-042 |
 | `trove-dev-ca` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager (self-signed root, ten years) | the Issuer `trove-dev-ca` |
 | `trove-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | trove's listeners (`tls.secretName`) and HAProxy Ingress, which verifies it (`ingress.backendTLS.caSecret`) |
 | `trove-edge-tls` | `tls.crt`, `tls.key` | cert-manager | the edge's certificate for `localhost` |
@@ -157,7 +159,9 @@ A new cluster has a new CA; delete the old entry from your trust store when you 
 ### The second endpoint
 
 values-dev.yaml carries `endpoints.customers` ([endpoints.md](endpoints.md)): the listener `:8443`, the host
-`packages.trove.localhost` and the wildcard `*.packages.trove.localhost`, only the package routes, its own certificate
+`packages.trove.localhost` and the wildcard `*.packages.trove.localhost`, the surface `[packages, files, api]` (the raw
+files and the management API are there for the exposure criteria of E1.14, Q-EP-54; `ui` is not allowed on a further
+endpoint), service-account tokens bound to it and exposure by rules (the chart's defaults for a further endpoint), its own certificate
 pair and a wildcard pair (`tls.existingSecret`, `tls.extraSecrets`, chosen by SNI), and its own Ingress on the same
 HAProxy Ingress. HAProxy Ingress routes by `Host`, so a request with the default endpoint's host never reaches the
 endpoint through its Ingress; the `421` is tested on the endpoint's Service. `*.localhost` resolves to the loopback
@@ -266,7 +270,8 @@ neither the logout configuration nor users with groups, which is why the profile
 
 The issuer is the Service name, so trove's pods reach it directly and the issuer in the discovery document is the one
 trove is configured with. A browser on the host needs the name and a port-forward; the hosts entry needs administrator
-rights and is yours to add:
+rights and is yours to add. (The e2e tests need neither: their HTTP client dials the name through a port-forward of its
+own and verifies the certificate against the dev CA for that name, [e2e.md](e2e.md#m1-tests).)
 
 ```shell
 kubectl --context kind-trove -n trove port-forward svc/trove-keycloak 8443:8443
@@ -275,8 +280,12 @@ kubectl --context kind-trove -n trove port-forward svc/trove-keycloak 8443:8443
 kubectl --context kind-trove -n trove get secret trove-keycloak -o jsonpath='{.data.alice-password}' | base64 -d
 ```
 
-The provider entry trove needs, once the chart renders the `auth` keys and mounts the client secret (the chart has
-neither yet), with the dev CA in `proxy.outbound.tls.ca_files` so the outbound client trusts the IdP's certificate:
+The provider entry is part of values-dev.yaml. The chart has no values for the OIDC client secret and the break-glass
+password yet, so the three files the entry names (the client secret of `trove-keycloak`, the CA of `trove-keycloak-tls`,
+the password of `trove-break-glass`) are one projected volume, `extraVolumes` / `extraVolumeMounts`, under
+`/var/run/secrets/trove-dev/`. The dev CA is in `proxy.outbound.tls.ca_files`, so the outbound client trusts the IdP's
+certificate. The group rule maps the claim values `trove-team-web` and `trove-platform-admins` to the groups `team-web`
+and `platform-admins`, which `create_groups` creates on the first login:
 
 ```yaml
 auth:
@@ -286,16 +295,20 @@ auth:
         display_name: Keycloak (dev)                # example
         issuer: https://trove-keycloak.trove.svc:8443/realms/trove   # example
         client_id: trove                            # example
-        client_secret_file: /var/run/secrets/trove/oidc-keycloak/client-secret  # example: field client-secret
+        client_secret_file: /var/run/secrets/trove-dev/oidc-keycloak/client-secret  # example: field client-secret
         scopes: [openid, profile, email]            # default
         group_sync:
           rules:
             - match_regex: "trove-(.+)"             # example
               group: "$1"                           # example
+        create_groups: true                         # example: the groups of the rules are created on login
+break_glass:
+  password_file: /var/run/secrets/trove-dev/break-glass/password   # example: field password of trove-break-glass
 ```
 
-With another `TROVE_DEV_HTTP_PORT`, set `KC_TROVE_BASE_URL` on the Deployment to the base URL; the realm file takes
-its redirect and post-logout URIs from it at import.
+`up.sh` sets `KC_TROVE_BASE_URL` on the Deployment from the edge port of the cluster (`https://localhost:<port>`), and the
+realm file takes its redirect and post-logout URIs from it at import, so another `TROVE_DEV_HTTP_PORT` needs nothing
+else (a changed port restarts Keycloak once, which imports the realm again).
 
 ## Tools
 
@@ -345,16 +358,13 @@ Not verified here, or not configured:
 
 - The ACL user, the separate Sentinel credential and `maxmemory` of Valkey (deviations above); R-ARCH-031's ACL
   criterion is proven by the integration stack only.
-- The break-glass password has no consumer in the chart yet; the Secret exists. With the default
-  `auth.break_glass.enabled: true` and no `password_file`, a `web` replica starts and refuses the local login
-  (Q-AUTH-33).
+- The chart has no value for the break-glass password and the OIDC client secret; the dev values mount them as a projected
+  volume of `extraVolumes`. With the default `auth.break_glass.enabled: true` and no `password_file`, a `web` replica starts
+  and refuses the local login (Q-AUTH-33).
 - Valkey and the S3 gateway read their certificates at start: a cert-manager renewal reaches the Valkey pods through
   the operator's own rolling restart (ADR 0030 of the operator, not exercised here) and SeaweedFS at its next restart.
   trove re-reads the Valkey CA per handshake and the S3 CA per request.
 - The operators' amd64 images run under qemu on an arm64 host; their timing there says nothing about production.
 - WAL archiving to `trove-pg-archive` (point-in-time recovery is M5), the backup CronJob (the chart skeleton has
-  none), trove's login against the test IdP: the chart does not render the `auth` keys yet. The IdP itself was
-  verified against the running profile with an authorization-code flow (2026-10-29): the login form for `alice`, the
-  code redeemed with PKCE and `client_secret_basic`, the `groups` claim with both groups, RP-initiated logout to the
-  post-logout URI, and the login form again afterwards. How the e2e driver on the kind network reaches the issuer's
-  Service name is not set up.
+  none), the Playwright journeys of R-UI-047 (E1.11): the harness has no browser; the e2e tests drive the login with an HTTP
+  client ([e2e.md](e2e.md#m1-tests)), and `TestE1_11Journeys` runs the suite as soon as `web/e2e` exists.

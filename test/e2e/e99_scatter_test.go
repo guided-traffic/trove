@@ -4,8 +4,6 @@ package e2e
 
 import (
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,24 +16,6 @@ import (
 // records only 200, and the proof that requests really scatter. It returns the cluster to the default
 // profile afterwards (TROVE_E2E_SCATTER_RETURN=0 keeps the profile).
 func TestE99Scatter(t *testing.T) {
-	dev := os.Getenv("TROVE_E2E_DEV_DIR")
-	if dev == "" {
-		t.Fatal("TROVE_E2E_DEV_DIR is not set; run the suite through deploy/dev/e2e.sh")
-	}
-	upScript := filepath.Join(dev, "up.sh")
-	switchProfile := func(t *testing.T, profile string) {
-		t.Helper()
-		cmd := exec.Command(upScript)
-		cmd.Dir = cfg.repo
-		// The cluster name comes from the environment (TROVE_DEV_CLUSTER, as make dev-up got it):
-		// CI names one cluster per run, so a fixed name here would make up.sh create a second one.
-		cmd.Env = append(os.Environ(), "TROVE_PROFILE="+profile)
-		out, err := cmd.CombinedOutput()
-		_ = os.WriteFile(filepath.Join(cfg.out, "profile-"+profile+".log"), out, 0o644)
-		if err != nil {
-			t.Fatalf("up.sh with TROVE_PROFILE=%s: %v\n%s", profile, err, tail(string(out), 2000))
-		}
-	}
 	if os.Getenv("TROVE_E2E_SCATTER_RETURN") != "0" {
 		t.Cleanup(func() { switchProfile(t, "default") })
 	}

@@ -46,6 +46,15 @@ spec:
         app.kubernetes.io/name: trove-s3
         app.kubernetes.io/part-of: trove-dev
     spec:
+      # The object store is one pod with an emptyDir: evicting it loses every blob. It is not the system under test,
+      # so, like the edge (haproxy-values.yaml), it runs on the control-plane node, which no test drains (E0.14 with the
+      # transfer loop of E1.13 found a drained node that hosted it: "object not found" on every download after it).
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       automountServiceAccountToken: false
       enableServiceLinks: false
       securityContext:
@@ -108,8 +117,8 @@ spec:
             periodSeconds: 10
             failureThreshold: 6
           resources:
-            requests: {cpu: 100m, memory: 256Mi}
-            limits: {memory: 1Gi}
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {memory: 4Gi}   # E1.13: two 500 MB uploads at once were OOM-killed at 1Gi (measured)
           volumeMounts:
             - {name: data, mountPath: /data}
             - {name: conf, mountPath: /conf, readOnly: true}

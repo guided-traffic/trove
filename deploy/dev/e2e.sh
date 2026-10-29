@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end tests of the dev cluster (WP0.11): E0.3, E0.4, E0.6, E0.7, E0.11, E0.12, E0.13, E0.14, E0.15.
+# End-to-end tests of the dev cluster (WP0.11, WP1.x): E0.3, E0.4, E0.6, E0.7, E0.11 to E0.16 and, for the access core,
+# E1.1, E1.8, E1.11 (API part), E1.13 and E1.14.
 # The trove release must be installed (make dev-up). The suite is Go (test/e2e, build tag e2e); this
 # script prepares what it needs and runs it:
 #
@@ -11,16 +12,19 @@
 #      artifacts (k6 logs and summaries, pod watch, events, driver output) to .out/e2e/.
 #
 #   e2e.sh              every test except the profile switch of E0.11 (the default profile)
-#   e2e.sh push         the set CI runs on every change to main: E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, E0.15 and then E0.11
+#   e2e.sh push         the set CI runs on every change: E0.3, E0.4, E0.6, E0.7, E0.12, E0.14 (with the upload and download
+#                       loop of E1.13), E0.15, E0.16, the sign-in of E1.1, the exposure of E1.14, then E0.11
 #   e2e.sh full         everything, in the order of the milestone, ending with E0.11
-#   e2e.sh failover     E0.4, E0.6 and the E0.13 failover set (CI runs it nightly)
+#   e2e.sh failover     E0.4, E0.6 and the E0.13 failover set, with the long M1 tests: the limits of E1.8, the replica
+#                       scatter of E1.11, the 500 MB transfers of E1.13 (CI runs it on every change too, beside push)
+#   e2e.sh access       the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14 (they switch to the scatter profile and back)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
 # TROVE_E2E_OUT (artifact directory, default .out/e2e), TROVE_E2E_TIMEOUT (go test timeout, default 90m),
 # TROVE_E2E_DRIVER_BIN (a prebuilt linux driver binary instead of building one),
-# TROVE_E2E_SCATTER_RETURN=0 (leave the cluster in the scatter profile after E0.11).
+# TROVE_E2E_SCATTER_RETURN=0 (leave the cluster in the scatter profile after E0.11 and the M1 tests).
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -30,9 +34,10 @@ for tool in docker jq go helm kubectl; do command -v "$tool" >/dev/null 2>&1 || 
 set_name="${1:-default}"
 case "$set_name" in
   default) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16)' ;;
-  push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E99)' ;;
-  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E99)' ;;
-  failover) run='^Test(E04|E06|E13)' ;;
+  push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E1_01|E1_14|E99)' ;;
+  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)' ;;
+  failover) run='^Test(E04|E06|E13|E1_08|E1_11|E1_13)' ;;
+  access) run='^TestE1_' ;;
   drain) run='^TestE14' ;;
   *) run="$set_name" ;;
 esac

@@ -712,8 +712,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # The failure suite on a kind cluster: the push set (every change) and the failover set (E0.13,
-  # E0.4, E0.6: PostgreSQL switchover, kill and stop, Valkey failover, kill and outage under k6 load).
+  # The failure suite on a kind cluster: the push set (every change: the M0 checks, the drain with a transfer
+  # loop, the sign-in of E1.1 and the exposure of E1.14) and the failover set (E0.13, E0.4, E0.6: PostgreSQL
+  # switchover, kill and stop, Valkey failover, kill and outage under k6 load; and the long tests of the access core:
+  # E1.8 limits, E1.11 replica scatter, E1.13 500 MB transfers).
   # The legs run side by side on one Docker host, so each has its own cluster name and edge port.
   e2e:
     name: e2e on kind (${{ matrix.set }})

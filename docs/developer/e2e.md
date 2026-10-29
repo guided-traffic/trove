@@ -1,9 +1,11 @@
 # End-to-end tests on the dev cluster
 
 The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart part), E0.6, E0.7,
-E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md). It runs
+E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md), and the
+end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (API part), E1.13 and E1.14. It runs
 the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
-[R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12).
+[R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12); the M1 tests are
+[described below](#m1-tests).
 
 ## What has to be in your head first
 
@@ -20,6 +22,11 @@ the real release image on the [dev profile](local-profile.md), over TLS on every
   the last two seconds of the run, and reports their number in the log line. A connection error, a reset or any other
   status 0 stays a failure, wherever it happens. A request without a response is logged as `<code>:<text>` in the
   replica column.
+- **The M1 tests start from a fresh installation's own tools.** The administrator they seed with is made the way
+  [identity.md](identity.md#bootstrap-commands) says (`trove admin service-account create --admin`, `trove admin token
+  create` through `kubectl exec` into a worker pod); everything else is the management API. They run in the `scatter`
+  profile (three `web` replicas, every request to another one) and `TestMain` returns the cluster to the default profile at
+  the end.
 - **A failing test here is a finding.** When a criterion fails because of the product, the test stays red
   and [Findings of the suite](#findings-of-the-suite) says what was measured. No threshold is moved to make it pass.
 
@@ -30,6 +37,8 @@ deploy/dev/e2e.sh           what `make e2e` calls: builds the driver, starts its
 deploy/dev/drain.sh         E0.14 as a script (`make dev-drain`), and the drain alone for the test
 deploy/dev/pg-kill.sh       force-delete the PostgreSQL primary, wait for the recovery
 deploy/dev/pg-stop.sh       stop PostgreSQL for a time by fencing the CloudNativePG cluster
+deploy/dev/valkey-stop.sh   stop Valkey and the Sentinels until valkey-start.sh (the M1 tests hold the outage themselves)
+deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of E1.11, CLIENT PAUSE of E1.8)
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
   e03_cluster_test.go       E0.3, E0.7 (Pod Security, NetworkPolicy enforcement)
@@ -40,9 +49,18 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   e14_drain_test.go         E0.14
   e15_tls_test.go           E0.15: plaintext refused, the listener certificate renewed under load
   e16_endpoint_test.go      E0.16: the second endpoint `customers`
+  m1_env_test.go            the M1 harness: edge client with a cookie jar, bootstrap administrator, browser login
+                            against the test IdP, port-forwards to single pods, the Valkey outage, the scatter profile
+  e1_01_login_test.go       E1.1: sign-in with Keycloak, JIT user, groups, logout, break-glass
+  e1_08_ratelimit_test.go   E1.8: R-AUTH-038 thresholds, R-API-016 classes, R-ARCH-034 cluster-wide counting
+  e1_11_scatter_test.go     E1.11 (API part): list walks, Idempotency-Key, read after write, R-AUTH-042; the hook for the
+                            Playwright journeys of R-UI-047
+  e1_13_transfer_test.go    E1.13: curl -T during a rollout, downloads during a rollout and a pod deletion, GC on a worker
+  e1_14_exposure_test.go    E1.14: exposure rules on the endpoint `customers`, bound tokens, R-EP-015
   e99_scatter_test.go       E0.11, last because it switches the profile
   monitor_test.go           /healthz and /readyz of every replica, once a second
   k6/load.js                the load: 100 requests/s on /system/ping and /system/replicas
+  k6/transfer.js            the transfer loop of E1.13: PUT, GET and SHA-256 of 256 KiB bodies on generic-local
   cmd/driver/               the driver (main.go: connections, probe and job commands; load.go: the load loop)
   Dockerfile                the driver image: a static binary on the release image's base
 ```
@@ -52,10 +70,11 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
 ```shell
 make image VERSION=dev          # IMAGE defaults to guidedtraffic/trove:dev
 make dev-up                  # TROVE_DEV_HTTP_PORT=28080 make dev-up when 8080 is taken
-make e2e SET=push            # E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, then E0.11 (what CI runs on every push to main)
-make e2e SET=failover        # E0.4, E0.6 and the E0.13 failovers (CI runs it on every change too)
+make e2e SET=push            # E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, E0.15, E0.16, E1.1, E1.14, then E0.11 (CI, every change)
+make e2e SET=failover        # E0.4, E0.6, the E0.13 failovers and the long M1 tests E1.8, E1.11, E1.13 (CI, every change)
+make e2e SET=access          # the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14
 make e2e SET=full            # everything, in the order of the milestone
-make e2e SET=drain           # E0.14 only
+make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
 make e2e SET='^TestE06'      # any go test -run expression
 ```
 
@@ -135,6 +154,11 @@ the exit criterion.
 | E0.14 | `TestE14Drain` | see below |
 | E0.15 | `TestE15TLS` | see below |
 | E0.16 | `TestE16Endpoint` | see below |
+| E1.1 | `TestE1_01Login` | see [M1 tests](#m1-tests) |
+| E1.8 | `TestE1_08RateLimits` | see [M1 tests](#m1-tests) |
+| E1.11 | `TestE1_11Scatter`, `TestE1_11Journeys` | see [M1 tests](#m1-tests) |
+| E1.13 | `TestE1_13Transfers`, and the loop in `TestE14Drain` | see [M1 tests](#m1-tests) |
+| E1.14 | `TestE1_14Exposure` | see [M1 tests](#m1-tests) |
 
 ### E0.6: the two faults
 
@@ -231,6 +255,38 @@ edge pod (25 connection errors in the first measured run, with the previous cont
   default endpoint's host goes to the default backend.
 - `trove_http_requests_total` carries both `endpoint` values and `trove_endpoint_listener_up{endpoint="customers"}` is 1.
 
+## M1 tests
+
+The tests of the access core run in the `scatter` profile. `useScatter` switches to it once per process (`up.sh` with
+`TROVE_PROFILE=scatter`, three ready `web` pods) and `TestMain` switches back at the end, as `TestE99Scatter` does.
+Subtest names carry the requirement IDs and the criterion, as the M0 tests do.
+
+**The harness** ([m1_env_test.go](../../test/e2e/m1_env_test.go)):
+
+| Piece | What it does |
+|---|---|
+| `api` | an HTTP client of the edge that sends a new connection per request (so the scatter profile's round robin shows in `X-Trove-Replica`), with a Bearer token or a cookie jar and the CSRF header; `rt` routes names to the edge's published port, to a port-forward for the test IdP's Service name and, for the per-address tests, to the web pods in turn |
+| `adminToken` | `trove admin service-account create e2e-admin --admin` and `trove admin token create` through `kubectl exec` into a worker pod: the bootstrap of a fresh installation. The account stays between runs, every run mints a token and revokes those of earlier runs |
+| `browser.oidcLogin` | the authorization code flow with PKCE: GET `/auth/oidc/keycloak/start`, the redirects followed by hand, the IdP's login form (found by its form id) posted with the user's password from the Secret `trove-keycloak`, the callback, the redirect into the UI. The trace records every hop and the answers of the start and the callback, so a test sees on which replicas they ran. It is an HTTP client, not a browser ([Q-AUTH-79](../spec/identity-and-authentication.md#q-auth-79--how-the-end-to-end-tests-drive-the-browser-login-of-e11-and-disable-the-break-glass-account)) |
+| `podForwards` | a `kubectl port-forward` to every ready web pod; a client that sends its requests to them in turn reaches the three replicas without the edge, from the address 127.0.0.1, a bucket of its own for the per-address limits of R-AUTH-038. Every test that exceeds such a limit uses it, so the edge address (the host, which every other test shares) keeps its budget |
+| `withValkeyStopped` | `valkey-stop.sh`, the criterion, `valkey-start.sh` (also after a failure) |
+| `walkRetry` | a list read page by page; a 429 is waited out, because a walk with `limit=1` is more requests than the read class admits in a burst |
+
+**Pacing.** The limits are the product's defaults (`api.rate_limits` read 50/s burst 200 and write 10/s burst 50,
+`auth.rate_limit` 300 failures and 30 flow starts per minute and address). The dev profile raises only the anonymous class,
+which no M1 test uses: the read and write classes are tested with tokens, the anonymous class has its bound in
+`test/integration/api`. A test that spends a budget mints its own tokens; the 50 browser logins of R-AUTH-042 are paced at
+2.2 s so they stay under the flow-start limit of the host's address.
+
+| Criterion | Test | What it checks |
+|---|---|---|
+| E1.1 | `TestE1_01Login` | alice signs in through the Ingress with the code flow and PKCE (the authorization request carries `code_challenge_method=S256`, `state`, `nonce` and the redirect URI of the edge; the realm enforces S256, so a completed exchange proves the verifier); created just in time (`origin: jit`, deleted before the test so the creation is observable); groups `team-web` and `platform-admins` from the claim `groups` through the rule `trove-(.+)`, bob only `team-web`. Logout: the answer names the IdP's end-session endpoint with `id_token_hint`, `client_id` and the post-logout URI; the browser follows it; the cookie of the ended session is refused on every replica within `auth.revocation_bound`; a second sign-in in the same browser needs no password before the logout (the control) and asks for it again after (R-AUTH-013: the IdP session ended). Break-glass: wrong password `401`, the generated password `204`, `isAdmin` via `break-glass`; `TROVE_AUTH_BREAK_GLASS_ENABLED=false` on the web Deployment (R-AUTH-014: disabled): nine attempts over the three replicas get `403 local_login_disabled`, the earlier session `401 session_expired`; enabled again, the login works |
+| E1.8 | `TestE1_08RateLimits` | R-API-016: 400 reads with one token get `429` with `Retry-After`, `rate_limited` and the `RateLimit` fields of class `read` after the burst of 200, a second token is not slowed; the write class likewise at 50, and a token whose write budget is gone still reads. R-ARCH-034: 1000 requests with one token round robin over three replicas are admitted 200 times, not three bursts, and the same on one replica; with Valkey stopped the same bound holds (each replica's share, `trove_ratelimit_fallback{limiter="api_read"}` is 1 on all three), and sequential reads add no delay with the circuit open. The latency injection: `CLIENT PAUSE 4000 ALL` on the primary holds every check for `valkey.command_timeout`; exactly the 15 checks of `failure_threshold` 5 times three replicas are held, then thousands of fast requests. R-AUTH-038: 400 random well-formed tokens, Bearer and Basic alternating, are validated (401) 300 times and answer 429 after that, both kinds; a PAT used once before still works on all three replicas during the burst; 40 starts of the login flow get 429 from the 31st on; with Valkey stopped at most 300 validations and the 40 starts admit about 30 (each replica's share of 10), and `trove_ratelimit_fallback{limiter="auth.credential_failures"}` is 1 on each replica |
+| E1.11 | `TestE1_11Scatter` | every list operation (repositories, users, groups, service accounts, tokens, policies, role bindings, audit events, exposure rules, jobs) walked with `limit=1` returns what one page of 500 returns (read before and after, no duplicate, served by at least two replicas); an `Idempotency-Key` replayed 15 times is `201` with `Idempotency-Replayed: true`, the stored body and `Location`, from all three replicas, the same key with another body is `422 idempotency_key_reused` (R-API-051); a write on one replica is read back at once on the others, 24 times, and a new repository takes uploads on all three replicas at once (R-API-052). R-AUTH-042, in three modes (Valkey up with 50 browser logins, Valkey stopped for its whole duration with 25 and every pod `degraded: valkey`, and `FLUSHALL` at the lockout, after the revocation and in the middle of 25 logins): break-glass lockout (five wrong passwords one after another over the three replicas, the correct one `429 break_glass_locked` with `Retry-After` on each, still locked after `FLUSHALL`, unlock through the API; five at once lock it as well), PAT revocation (the token worked on all three replicas, then 401 on all three within the 2 s of `auth.revocation_bound`, and after `FLUSHALL` too), re-authentication (the session's `authenticated_at` set back two hours: `401 reauthentication_required` on any replica, the silent round trip `purpose=reauth` needs no password and rotates the session, the old cookie is dead), logout, and the browser logins on varying replicas |
+| E1.11 hook | `TestE1_11Journeys` | runs `npx playwright test` in `web/e2e` against the scatter profile when `web/e2e/playwright.config.ts` exists (the contract is in the test's comment); until then it skips and says so. The journeys of R-UI-047 arrive with the screens |
+| E1.13 | `TestE1_13Transfers` | R-HA-011: two loops of `curl -T` of 500 MB at 50 MB/s during `kubectl rollout restart deploy/trove-web`: none fails, uploads overlapped the rollout, and what arrived has the SHA-256 that was sent. R-ARCH-024, download 1: a 400 MiB file of `generic-local` is downloaded during a rollout restart and matches ([Q-ARCH-76](../spec/architecture.md#q-arch-76--the-pace-of-the-download-that-a-rollout-restart-must-not-break): at 6 MB/s, so that the serving pod is drained while it transfers, which the test asserts). Download 2: at 2 MB/s (200 s, longer than the grace period) with the serving pod deleted after 3 s: the bytes stop arriving about 110 s later (the shutdown timeout; the pod's log says `requests cut at the shutdown deadline`), curl ends with an error, `curl -C -` resumes with `206` from another replica and the SHA-256 matches. Download 1 is red in about half of the runs ([finding 5](#findings-of-the-suite)). R-HA-002: `POST /api/v1/system/tasks/gc/run` through a web pod is executed by a worker (the job's `replica`, and `job.ran_by` resolved through the replica table), and no job was ever run by a web replica. E0.14: `TestE14Drain` runs `k6/transfer.js` next to the ping load (4 iterations/s: PUT, GET, SHA-256 compared) and fails on any transfer that is not 200/201, a wrong checksum or a dropped iteration |
+| E1.14 | `TestE1_14Exposure` | on `customers` (through its own Ingress): without a rule nothing is exposed (`404`) and a write is `403 endpoint_read_only`, a rule with `packages` on a generic repository is `422 dimension_not_supported`; a rule `paths.include: ["releases/**"]` makes `releases/1.0/app.zip` downloadable with a service-account token bound to `customers` while `internal/x.bin` and several missing paths answer the same 404 (problem body without `instance` and `requestId`, same content type and cache control); the same token is `401 invalid_token` on the default endpoint; a PAT is `401 invalid_token` on `customers` with no query of the token table (`api_token` is locked `ACCESS EXCLUSIVE` for 14 s: 41 PATs are answered in milliseconds, while an unknown PAT on the default endpoint, the control, waits for the lock and ends `503` after the statement timeout; the statistics views are no evidence, an idle backend flushes its counters up to a minute late) and `trove_endpoint_credentials_refused_total{reason="token_type"}` +41; an unbound SAT is refused with `reason="token_binding"`; no credential and a valid session cookie are `401 credentials_required`; an administrator token bound to `customers` reads the exposed file, gets the 404 for the internal one, lists only `generic-local` among the repositories and no `internal` folder. The rule lifecycle (created, narrowed with a merge patch, deleted) is read on every replica through a port-forward to its endpoint listener within the bound of R-AUTHZ-028 (Valkey up and stopped), and each change is one audit event (`endpoint.exposure.created`, `.updated`, `.deleted`). R-EP-015: 400 reads with one token get `429` after the burst with `Retry-After` and the policy `endpoint:external`, a second bound token is not slowed, the same token is not held on the default endpoint; 1000 requests with one token over the three replicas are admitted at most burst plus decay, with Valkey stopped too, where `trove_ratelimit_fallback{limiter="endpoint_external"}` is 1 on every replica |
+
 ## Measured on the dev cluster
 
 Apple-silicon laptop (arm64), 20 CPUs, 16 GB for Docker, kind v0.32.0, edge on `https://localhost:28080`, the operators'
@@ -249,6 +305,23 @@ every connection.
 | E0.13, PostgreSQL stopped 30 s | 6991 requests, `200` 6145 and `503` 846 (503 only), 0 dropped; `/readyz` 503 on 10 to 15 one-second samples per pod; `/healthz` never; no restart |
 | E0.13, Valkey failover / kill / outage 60 s | only `200` (3391 / 4294 / 10495 requests), slowest request 21 ms, `/readyz` 200 on every replica throughout; the faults took 2 s / 10 s / 72 s |
 | E0.11 scatter | 60 sequential requests reached the three web replicas 20 times each; 100 requests/s through the edge, only `200` |
+
+The M1 tests, same machine, measured in `make e2e SET=access` and the re-runs that followed it: E1.1 128 s, E1.8 69 s, E1.11 343 s
+(with the 50 browser logins at 2.2 s, then 25 and 25 in the Valkey-stopped and FLUSHALL modes), E1.13 about 400 s (upload
+under a restart 65 s, download under a restart 80 to 170 s, cut download and resume 220 s), E1.14 80 s; `TestE14Drain` with
+the transfer loop 174 s. Numbers the tests print:
+
+| What | Result |
+|---|---|
+| E1.8, 1000 requests with one token over three replicas | `read` class: 200 admitted (burst 200) in 0.9 s, 66 to 73 per replica; one replica alone: 200; Valkey stopped: 325 in 2.7 s (each replica's share plus the decay), `trove_ratelimit_fallback{limiter="api_read"}` 1 on all three |
+| E1.8, `CLIENT PAUSE 4000 ALL` on the Valkey primary | 15 of 2975 requests held (400 ms or more), the first at +0.4 s and the last at +2.5 s: `failure_threshold` 5 times three replicas; 2847 fast requests after the last held one |
+| E1.8, 400 random well-formed tokens, Bearer and Basic alternating | 300 validated (401), 100 throttled (429), 50 of each kind; with Valkey stopped 300 validations in all and 40 starts of the login flow admit 30 |
+| E1.11, revocation of a PAT | last `200` 0 s (Valkey up) and 0.2 s (stopped) after the revocation answered, `401` on all three replicas |
+| E1.13, 500 MB at 50 MB/s during `kubectl rollout restart deploy/trove-web` | 8 uploads, 0 failed, 8 overlapped the rollout (48 s) |
+| E1.13, 400 MiB download | 6 MB/s during a rollout restart: the serving pod drained 25 s in, curl exit 0, SHA-256 matches. 2 MB/s with the serving pod deleted: the pod logs the cut and stops after 1 min 55 s, the resume is `206` from another replica, SHA-256 matches |
+| E1.14, rule lifecycle on each replica | created, narrowed and deleted rule visible on every replica within 10 ms to 1 s with Valkey, 0.1 to 1 s without (bounds 1 s and 2 s) |
+| E1.14, 1000 requests with one token on `customers` | 200 admitted with Valkey; 264 to 280 with Valkey stopped, `trove_ratelimit_fallback{limiter="endpoint_external"}` 1 on all three |
+| E0.14 with the transfer loop | 1362 transfer requests (681 PUT, 681 GET), 0 failures, 0 wrong checksums, 0 dropped iterations; k6 17190 pings, only `200` |
 
 The k6 load pre-allocates 2000 virtual users. A request that the server holds while it retries the database occupies
 one for up to `database.retry.max_elapsed`, and a user started on demand is slow (with TLS it includes a handshake),
@@ -311,6 +384,35 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    in [internal/app/version_check_test.go](../../internal/app/version_check_test.go)): the message names the version
    and the way out. CI and this page still pass `VERSION=dev`, which is now the default and no longer needed.
 
+5. **Open: the end of a download is lost when the replica that serves it exits right after its last response** (`TestE1_13Transfers`,
+   the download under a rollout restart; red in 4 of 8 runs). The 400 MiB file is downloaded at 6 MB/s through the edge while
+   `kubectl rollout restart` replaces the web pods; the serving pod gets SIGTERM 24 to 37 s in. In the runs whose pod logs
+   were kept (two passing, two failing) trove logged the request as `200` with `response_bytes` 419430400 after 64 s and
+   stopped 0.2 s (failing) or 0.5 s (passing) later. In the 4 failing runs curl had received 396 to 399 MiB, got nothing more,
+   and ended after 2 min 33 s to 2 min 34 s with `HTTP/2 stream 1 was not closed cleanly: PROTOCOL_ERROR` (exit 92), about
+   when the pod's grace period ended (the test writes the pod's log to `.out/e2e/e1-13-rollout-download-<pod>.log`). The reading that fits: the handler returned when the last bytes were in the
+   kernel's send queue, the slow reader (curl at 6 MB/s through HAProxy) had not taken them, the process exited and the pod's
+   network namespace went before they were delivered. It is not established whether that is trove's to prevent (wait for the
+   send queue to empty, or half-close and wait for the peer, before the process exits) or the edge's; R-ARCH-024's criterion
+   (`curl` exits 0 and the SHA-256 matches) is the test, and it stays red. The 400 MiB file is complete in the object store
+   and the resume (`curl -C -`) works. The same stall shows in the cut download: the replica logs `requests cut at the shutdown
+   deadline` and stops after 1 min 55 s, the last bytes reach curl at +2 min 3 s after the deletion, and curl hears of the end
+   at +3 min 20 s, 77 s later; the end of the cut transfer is only bounded by 5 minutes in the test.
+6. **Open: the access log's `principal`, `principal_type` and `auth_method` stay `anonymous` and `none` for authenticated
+   requests.** Seen in the `"log":"request"` line of a `GET /api/v1/auth/whoami` with a valid service-account token
+   (`status` 200, `principal":"anonymous"`) and of every `PUT /files/…` of E1.13. The stage authenticates (the answer
+   names the service account); the field is not filled. Not asserted by the suite, which reads the answers and the audit
+   events; the access log is a finding for E1.5's "appears in the log stream".
+7. **Fixed in the profile: the object store did not survive E1.13.** Two 500 MB uploads at once were OOM-killed at the
+   1 GiB limit of SeaweedFS (`OOMKilled`, exit 137; trove answered `504` and `500`), and the drain of E0.14 with the
+   transfer loop evicted the node that hosted it: every blob lives on its `emptyDir`, so every download after that was
+   `503 content_unavailable`. `deploy/dev/s3.yaml` now has a 4 GiB limit and runs on the control-plane node, like the
+   edge. A consequence for tests: the metadata of a blob outlives the store's data (an upload of bytes that already have
+   a blob row writes no object), so the bytes the M1 tests upload depend on the store instance (`storeNonce`, the UID of
+   its pod).
+8. **Fixed in the profile: the Keycloak client's redirect URI was `https://localhost:8080/…` whatever port the cluster
+   was created with.** `up.sh` now sets `KC_TROVE_BASE_URL` from the edge port.
+
 ## TLS in the suite
 
 The suite and the profile are TLS on every connection ([local-profile.md](local-profile.md)). What that meant for the
@@ -333,6 +435,10 @@ harness:
   [local-profile.md](local-profile.md#valkey-and-sentinel).
 
 ## Extension checklist
+
+- **A new M1 check.** Use `adminAPI` for the seed and `newSAToken` for a token of your own: the shared administrator
+  token has a read budget (R-API-016) that a list walk spends. A test that exceeds a per-address limit goes through
+  `podForwards`; one that needs Valkey down goes through `withValkeyStopped`.
 
 - **A new e2e check.** Put it in the file of its exit criterion, name the subtest `R-… E0.x …`, and fail
   with a message that says what was measured. Use `faultRun` for a fault under load.
