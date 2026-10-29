@@ -111,18 +111,3 @@ func TestUnsupportedVersion(t *testing.T) {
 		}
 	})
 }
-
-// TestValkey90 runs the API against a Valkey 9.0 server, the second supported
-// line, as a throwaway standalone container: switching the shared stack's line
-// would recreate it under the other tests.
-func TestValkey90(t *testing.T) {
-	t.Run("R-ARCH-031 the API works against Valkey 9.0 with the example ACL rule", func(t *testing.T) {
-		addr := throwaway(t, pinned(t, "VALKEY_90_IMAGE"), true)
-		c := newClient(t, standalone(t, addr))
-		waitAvailable(t, c)
-		if v := c.Status().Version; !strings.HasPrefix(v, "9.0.") {
-			t.Fatalf("version %q", v)
-		}
-		exerciseAPI(context.Background(), t, c)
-	})
-}

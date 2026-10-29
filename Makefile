@@ -258,20 +258,12 @@ s3-conformance: ## S3 conformance tests (R-STOR-035) against the MinIO of minio-
 coverage: ## Regenerate the requirement coverage checklist from the committed evidence record
 	go run ./internal/tools/coverage
 
-# Both Valkey lines run, because CI passes both integration reports to the
-# generator in one call (docs/developer/releasing.md, job coverage-evidence).
-COVERAGE_LINES := 9.0 9.1
-
 .PHONY: coverage-refresh
-coverage-refresh: test chart-test ## Recompute docs/coverage/implemented.txt from unit, chart and both integration lines
-	@for line in $(COVERAGE_LINES); do \
-	  TROVE_TEST_VALKEY_LINE=$$line $(MAKE) integration-up && \
-	  TROVE_TEST_VALKEY_LINE=$$line $(MAKE) test-integration && \
-	  cp .out/test-integration.json .out/test-integration-$$line.json || { $(MAKE) integration-down; exit 1; }; \
-	done
+coverage-refresh: test chart-test ## Recompute docs/coverage/implemented.txt from the unit, chart and integration reports
+	$(MAKE) integration-up
+	$(MAKE) test-integration || { $(MAKE) integration-down; exit 1; }
 	$(MAKE) integration-down
-	go run ./internal/tools/coverage -tests .out/test-unit.json .out/test-chart.json \
-	  .out/test-integration-9.0.json .out/test-integration-9.1.json
+	go run ./internal/tools/coverage -tests .out/test-unit.json .out/test-chart.json .out/test-integration.json
 
 # Merges the profiles of one run (unit and each integration line) into the combined coverage of
 # the repository: coverage.txt, summary.md for the job summary, and coverage.json, the badge.

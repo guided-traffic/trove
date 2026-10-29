@@ -5,8 +5,7 @@
 # release's "published" event starts build.yml (Release Docker & Helm). What each job runs and how to
 # reproduce it: docs/developer/releasing.md#ci.
 #
-# Linux jobs run on the repository variable LINUX_RUNNER when it is set (for example ubuntu-latest),
-# and on the organisation's self-hosted runners otherwise.
+# Every job runs on the organisation's self-hosted runners (runs-on: self-hosted).
 name: Test and Release
 
 on:
@@ -593,15 +592,10 @@ jobs:
           retention-days: 30
 
   integration:
-    name: integration (Valkey ${{ matrix.valkey }})
+    # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29).
+    name: integration (Valkey 9.1)
     runs-on: self-hosted
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        valkey: ["9.0", "9.1"]
-    env:
-      TROVE_TEST_VALKEY_LINE: ${{ matrix.valkey }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -640,7 +634,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-integration-${{ matrix.valkey }}
+          name: test-integration
           path: .out/test-integration.json
           if-no-files-found: warn
           retention-days: 14
@@ -649,8 +643,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: profile-integration-${{ matrix.valkey }}
-          path: .out/coverage/integration-${{ matrix.valkey }}.out
+          name: profile-integration
+          path: .out/coverage/integration-9.1.out
           if-no-files-found: warn
           retention-days: 14
 
@@ -956,7 +950,7 @@ jobs:
         run: |
           set -euo pipefail
           # A missing report would drop the requirements only that report proves, so it is an error.
-          for dir in test-unit test-chart test-integration-9.0 test-integration-9.1; do
+          for dir in test-unit test-chart test-integration; do
             if ! compgen -G ".out/reports/$dir/*.json" >/dev/null; then
               echo "::error::report artifact $dir is missing"
               exit 1
