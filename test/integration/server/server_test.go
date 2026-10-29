@@ -193,6 +193,117 @@ func TestReplicas(t *testing.T) {
 		}
 	})
 
+	t.Run("R-OPS-003 the replica registry lists the three replicas with their roles and nodes of state ready", func(t *testing.T) {
+		var items []replicaItem
+		waitFor(t, "three ready replicas", 20*time.Second, func() bool {
+			items = listReplicas(t, web)
+			ready := 0
+			for _, it := range items {
+				if it.State == "ready" && !it.Lost {
+					ready++
+				}
+			}
+			return ready == 3
+		})
+		roles := map[string]string{}
+		for _, it := range items {
+			if len(it.Roles) != 1 {
+				t.Errorf("%s roles = %v", it.Name, it.Roles)
+				continue
+			}
+			roles[it.Name] = it.Roles[0]
+		}
+		want := map[string]string{"trove-web-it": "web", "trove-worker-it": "worker", "trove-all-it": "all"}
+		for n, r := range want {
+			if roles[n] != r {
+				t.Errorf("roles = %v, want %s: %s", roles, n, r)
+			}
+		}
+		for _, it := range items {
+			if it.Checks["database"].Status != "pass" || it.Checks["invalidation"].Status != "pass" {
+				t.Errorf("%s checks = %v", it.Name, it.Checks)
+			}
+		}
+	})
+
+	t.Run("R-ARCH-001 and E0.6 exactly one worker-capable replica holds the scheduler lease, the web replica none", func(t *testing.T) {
+		var holders []string
+		waitFor(t, "a scheduler lease holder", 20*time.Second, func() bool {
+			holders = nil
+			for _, it := range listReplicas(t, web) {
+				for _, l := range it.Leases {
+					if l.Name == "scheduler" {
+						holders = append(holders, it.Name)
+					}
+				}
+			}
+			return len(holders) >= 1
+		})
+		if len(holders) != 1 || holders[0] == "trove-web-it" {
+			t.Fatalf("scheduler holders = %v", holders)
+		}
+		for _, it := range listReplicas(t, web) {
+			if it.Name == "trove-web-it" && len(it.Leases) != 0 {
+				t.Errorf("the web replica lists leases %v", it.Leases)
+			}
+		}
+	})
+
+	t.Run("R-ARCH-001 the web replica's instance UID never appears in job.locked_by, and the scheduled gc job runs on a worker-capable replica", func(t *testing.T) {
+		var webUID string
+		for _, it := range listReplicas(t, web) {
+			if it.Name == "trove-web-it" {
+				webUID = it.InstanceUID
+			}
+		}
+		if webUID == "" {
+			t.Fatal("no instance UID for the web replica")
+		}
+		// The first scheduler tick enqueues the latest slot of every task (R-ARCH-016).
+		var done int64
+		waitFor(t, "a succeeded gc job", 40*time.Second, func() bool {
+			if n := scalarInt(t, in, `SELECT count(*) FROM job WHERE locked_by = $1::uuid`, webUID); n != 0 {
+				t.Fatalf("the web replica holds %d jobs", n)
+			}
+			done = scalarInt(t, in, `SELECT count(*) FROM job WHERE kind = 'gc' AND state = 'succeeded'`)
+			return done > 0
+		})
+		claimed := func(r *replica) float64 { return metricValue(t, r, `trove_jobs_claimed_total{kind="gc"}`) }
+		if got := claimed(worker) + claimed(all); got < 1 {
+			t.Errorf("worker and all claimed %v gc jobs", got)
+		}
+		if got := claimed(web); got != 0 {
+			t.Errorf("the web replica claimed %v gc jobs", got)
+		}
+		if n := scalarInt(t, in, `SELECT count(*) FROM job WHERE task IS NOT NULL`); n < 1 {
+			t.Errorf("no job came from a scheduled task")
+		}
+	})
+
+	t.Run("R-OPS-003 a SIGKILLed replica is listed lost within system.heartbeat_stale_after", func(t *testing.T) {
+		victim := in.start(t, "web", "trove-kill-it")
+		waitFor(t, "the victim in the registry", 10*time.Second, func() bool {
+			for _, it := range listReplicas(t, web) {
+				if it.Name == "trove-kill-it" && it.State == "ready" {
+					return true
+				}
+			}
+			return false
+		})
+		killed := time.Now()
+		_ = victim.cmd.Process.Kill()
+		<-victim.exited
+		waitFor(t, "the victim listed lost", 3*time.Second+6*time.Second, func() bool {
+			for _, it := range listReplicas(t, web) {
+				if it.Name == "trove-kill-it" {
+					return it.Lost
+				}
+			}
+			return false
+		})
+		fmt.Printf("lost after %v (stale_after 3s)\n", time.Since(killed).Round(100*time.Millisecond))
+	})
+
 	t.Run("R-ARCH-031 the example ACL rule produces no denial for these replicas", func(t *testing.T) {
 		admin := valkeyAdmin(t)
 		entries, err := admin.Do(context.Background(), admin.B().Arbitrary("ACL", "LOG").Build()).ToArray()
@@ -315,6 +426,14 @@ func TestReplicas(t *testing.T) {
 		}
 	})
 
+	t.Run("R-OPS-003 a replica that stopped cleanly deleted its registry row", func(t *testing.T) {
+		for _, it := range listReplicas(t, all) {
+			if it.Name == "trove-web-it" {
+				t.Errorf("the stopped web replica is still listed: %+v", it)
+			}
+		}
+	})
+
 	t.Run("R-ARCH-024 the worker and all replicas stop cleanly on SIGTERM", func(t *testing.T) {
 		for _, r := range []*replica{worker, all} {
 			if err := r.term(t); err != nil {
@@ -366,3 +485,62 @@ func TestStartWithoutSchema(t *testing.T) {
 }
 
 var _ = http.StatusOK
+
+type replicaItem struct {
+	Name        string `json:"name"`
+	InstanceUID string `json:"instanceUid"`
+	Roles       []string
+	State       string
+	Lost        bool
+	Leases      []struct{ Name string }
+	Checks      map[string]struct{ Status string }
+}
+
+// listReplicas reads GET /api/v1/system/replicas from a client-serving replica.
+func listReplicas(t *testing.T, r *replica) []replicaItem {
+	t.Helper()
+	code, _, body := r.get(t, "/api/v1/system/replicas")
+	if code != 200 {
+		t.Fatalf("replicas %d %s", code, body)
+	}
+	var list struct{ Items []replicaItem }
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatal(err)
+	}
+	return list.Items
+}
+
+func waitFor(t *testing.T, what string, within time.Duration, cond func() bool) {
+	t.Helper()
+	for end := time.Now().Add(within); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		if cond() {
+			return
+		}
+	}
+	t.Fatalf("%s did not happen within %v", what, within)
+}
+
+func scalarInt(t *testing.T, in *install, sql string, args ...any) int64 {
+	t.Helper()
+	var n int64
+	if err := in.conn.QueryRow(context.Background(), sql, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+	return n
+}
+
+// metricValue returns the value of the series that starts with the given text
+// (name and labels), summed over matching lines; 0 when the series is absent.
+func metricValue(t *testing.T, r *replica, series string) float64 {
+	t.Helper()
+	_, body := opsGet(r.ops, "/metrics")
+	var sum float64
+	for _, line := range strings.Split(body, "\n") {
+		if rest, ok := strings.CutPrefix(line, series+" "); ok {
+			var v float64
+			fmt.Sscan(rest, &v)
+			sum += v
+		}
+	}
+	return sum
+}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -79,9 +80,73 @@ func databaseFacts(ctx context.Context, db *postgres.DB) *gen.DatabaseFacts {
 	return d
 }
 
-// localReplicas lists only this replica until the replica registry exists.
-// WIRING POINT: the jobs/replica-registry package implements v1.ReplicaLister
-// over the replica table; replace this.
+// replicaSource lists the replica registry (R-OPS-003) on the request pool. A
+// shell started without infrastructure (tests, the drain fixture) has no
+// registry and lists only itself.
+type replicaSource struct {
+	a *App
+}
+
+func (l replicaSource) Replicas(ctx context.Context) ([]gen.Replica, error) {
+	db := l.a.database()
+	if db == nil {
+		return localReplicas(l).Replicas(ctx)
+	}
+	infos, err := cluster.ListReplicas(ctx, db.Main(), l.a.cfg.System)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]gen.Replica, 0, len(infos))
+	for _, i := range infos {
+		out = append(out, replicaOf(i))
+	}
+	return out, nil
+}
+
+func replicaOf(i cluster.ReplicaInfo) gen.Replica {
+	r := gen.Replica{
+		Name: i.Name, InstanceUid: i.InstanceUID, Version: i.Version, Revision: i.Revision,
+		State: gen.ReplicaState(i.State), Lost: i.Lost, StartedAt: i.StartedAt.UTC(), HeartbeatAt: i.HeartbeatAt.UTC(),
+		Degraded: i.Degraded, Checks: map[string]gen.CheckResult{}, Roles: []gen.ReplicaRoles{},
+		Leases: []struct {
+			Name  string    `json:"name"`
+			Since time.Time `json:"since"`
+		}{},
+	}
+	if r.Degraded == nil {
+		r.Degraded = []string{}
+	}
+	for _, role := range i.Roles {
+		r.Roles = append(r.Roles, gen.ReplicaRoles(role))
+	}
+	if i.Node != "" {
+		r.Node = &i.Node
+	}
+	for name, c := range i.Checks {
+		cr := gen.CheckResult{Status: gen.CheckResultStatus(c.Status)}
+		if c.Reason != "" {
+			cr.Reason = &c.Reason
+		}
+		if c.ConfigError {
+			t := true
+			cr.ConfigError = &t
+		}
+		r.Checks[name] = cr
+	}
+	for _, ls := range i.Leases {
+		r.Leases = append(r.Leases, struct {
+			Name  string    `json:"name"`
+			Since time.Time `json:"since"`
+		}{ls.Name, ls.Since.UTC()})
+	}
+	var vk gen.ValkeyView
+	if len(i.Valkey) > 2 && json.Unmarshal(i.Valkey, &vk) == nil {
+		r.Valkey = &vk
+	}
+	return r
+}
+
+// localReplicas lists only this replica, for a shell without a registry.
 type localReplicas struct {
 	a *App
 }

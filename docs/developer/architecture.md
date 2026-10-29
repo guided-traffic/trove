@@ -81,19 +81,31 @@ reach PostgreSQL stays alive and unready.
 |---|---|
 | 1 configuration | `config.Load` in `serve.go` |
 | 2 logging, metrics, tracing; ops listener; readiness 503, liveness 200 | `Start` |
-| 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process) | `postgresComponent` |
-| 4 `audit_maintain_partitions()`, 6 object-store check | `WIRING POINT` in `bootstrap` |
-| 5 key ring | `secrets.Load` in `bootstrap` (a missing ring stops the process); `outbound.New` with its `Err()` as a first-readiness check |
-| 7 Valkey in the background, with `cluster.WithKeyspaceID` from `system_state.keyspace_id` (UUID without dashes) | `valkeyComponent`; registry row, first change poll, lease pool: `WIRING POINT` |
-| 8 caches, 9 job loops | `WIRING POINT` |
+| 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process) | `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
+| 4 `audit_maintain_partitions()` | `WIRING POINT` in `bootstrap` (the audit package does not exist yet) |
+| 5 key ring; `outbound.New` with its `Err()` as a first-readiness check | `bootstrap` |
+| 6 object store: `s3.NewFromFactory`, `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
+| 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `valkeyComponent`, `startCoordination` ([wire_coordination.go](../../internal/app/wire_coordination.go)) |
+| 8 snapshots and caches of the domain packages | `WIRING POINT` (register on `App.Caches()`) |
 | 9 client listener (`web`, `all`) | `startClient` |
 | 10 `startup` check passes | `bootstrap` sets the flag and refreshes the checks |
 
-Readiness: `startup`, `database`, `schema`, `outbound` gate; `valkey` is reported and holds back the first
-readiness only on a configuration error (Q-HA-13). Checks are cached and debounced
-(`health.failure_threshold`, `health.success_threshold`); probes never run a check. A loop registers with
-the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and `Stop()` when it ends on
-purpose.
+Before serving, `freezeRegistries` freezes the sealed columns, the revision columns and the table registry; the job
+registry ([wire_jobs.go](../../internal/app/wire_jobs.go)) is frozen where it is built: the kinds other packages put in
+`jobs.Default`, the coordination kinds, and `gc` / `gc-full` with their tasks (schedules from `maintenance.tasks`,
+fallback `*/30 * * * *` and `0 2 * * 0`, dedup key `gc`). It is a registry per replica, not `jobs.Default` itself, so
+several replicas in one test process do not collide.
+
+Readiness: `startup`, `database`, `schema`, `invalidation`, `outbound` gate; `objectStore` gates the first readiness only
+unless `health.require_object_store`; `valkey` is reported and holds back the first readiness only on a configuration
+error (Q-HA-13). Checks are cached and debounced (`health.failure_threshold`, `health.success_threshold`); probes never
+run a check. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
+`Stop()` when it ends on purpose.
+
+Metrics beyond the observability package: [wire_gauges.go](../../internal/app/wire_gauges.go) exports
+`trove_db_pool_connections`, `trove_db_pool_max_connections`, `trove_db_pool_empty_acquires_total` (read from the pools at
+scrape time) and the background gauge `trove_jobs_queued{kind}`. The remaining families of R-OPS-007 (acquire duration
+histogram, canceled acquires, inventory and backup gauges) are not exported yet.
 
 ## Shutdown
 
@@ -108,7 +120,8 @@ purpose.
 5. At the deadline the remaining requests are cut by closing their connections and counted in
    `trove_http_transfers_cut_total{direction}`. A request whose body arrived completely runs on for at
    most `httpserver.DefaultCommitGrace` (4 s).
-6. `Flush` then `Stop` in reverse start order (3 s budget), then the ops listener, then the tracer.
+6. `Flush` then `Stop` in reverse start order (3 s budget): job worker, then leases (in one component), replica row,
+   change log, signals, Valkey, pools; then the ops listener, then the tracer. `Registry.Drain` marks the row `draining` in step 1.
 
 ## Extending
 
@@ -135,7 +148,8 @@ compiles it and sends a real `SIGTERM` while a request is in flight. No release 
 - Authentication and authorization are stand-ins ([access.go](../../internal/app/access.go)): any
   presented credential is a 401, and `system.read` is held by nobody unless
   `system.bootstrap_anonymous_read: true`.
-- The replica list contains only the answering replica until the replica registry exists.
-- The object-store check, the audit partitions, the replica registry, the change-log poll, the job loops
-  and the caches are `WIRING POINT`s in `bootstrap`; the jobs, blob and cache packages add them.
+- The audit partitions (step 4), the key-ring canary and the cache snapshots (step 8) are `WIRING POINT`s in
+  `bootstrap`; their packages do not exist yet. The trash purge and the upload-session expiry that R-STOR-025 puts at the
+  start of a collection run are not part of the `gc` handler yet.
+- A shell started without infrastructure (`SkipInfrastructure`, the drain fixture) lists only itself as replica.
 - The UI locales are constants in [misc.go](../../internal/app/misc.go) until a `ui` configuration section exists.

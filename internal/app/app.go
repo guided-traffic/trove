@@ -13,9 +13,14 @@ import (
 	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/backup/tables"
+	"github.com/guided-traffic/trove/internal/blob"
+	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/observability/health"
 	"github.com/guided-traffic/trove/internal/outbound"
@@ -74,6 +79,11 @@ type App struct {
 	fatal     chan error
 	bootDone  chan struct{}
 	bootStop  context.CancelFunc
+	// bg tracks every goroutine the app starts itself (the check loop, the
+	// listeners' Serve, the gauge evaluator); Shutdown waits for them, so nothing
+	// logs after it returned. healthStop ends the check loop last of all.
+	bg         sync.WaitGroup
+	healthStop context.CancelFunc
 
 	mu    sync.Mutex
 	comps []Component // started, in start order
@@ -82,6 +92,14 @@ type App struct {
 	vk    *cluster.Valkey
 	ring  *secrets.KeyRing
 	out   *outbound.Factory
+
+	signals *cluster.Signals
+	changes *cluster.Changes
+	caches  *cache.Registry
+	leases  *cluster.Leases
+	queue   *jobs.Queue
+	blobs   *blob.Store
+	gc      *blob.Collector
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of
@@ -210,12 +228,21 @@ func (a *App) Start(ctx context.Context) error {
 		return err
 	}
 	a.ops = ops
+	a.bg.Add(2)
 	go func() {
+		defer a.bg.Done()
 		if err := ops.Serve(); err != nil {
 			a.fail(err)
 		}
 	}()
-	go a.health.Run(ctx)
+	// The check loop outlives the drain (probes keep answering) and ends after the
+	// listeners; it is not tied to the caller's context.
+	hctx, hcancel := context.WithCancel(context.WithoutCancel(ctx))
+	a.healthStop = hcancel
+	go func() {
+		defer a.bg.Done()
+		a.health.Run(hctx)
+	}()
 	a.log.Info("ops listener bound", "addr", ops.Addr().String())
 
 	bctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -268,32 +295,43 @@ func (a *App) bootstrap(ctx context.Context) error {
 		outbound.WithUpstreamLog(a.log), outbound.WithVersion(a.versionString()))
 	a.health.AddReadiness("outbound", func(context.Context) error { return a.out.Err() }, true)
 
-	// Steps 3, 4, 6, 7: the infrastructure.
+	// Steps 3 to 9: the infrastructure, in the order of docs/developer/coordination.md.
 	infra := !a.o.SkipInfrastructure && !fixtureBuild
 	if infra && a.sub.MainPool {
 		if err := a.startComponent(ctx, &postgresComponent{a: a}); err != nil {
 			return err
 		}
+		// WIRING POINT (step 4): audit_maintain_partitions() runs here once the
+		// audit package exists.
+		// Step 6: the object store.
+		if err := a.startBlob(ctx); err != nil {
+			return err
+		}
 	}
-	// WIRING POINT (steps 4 and 5): audit_maintain_partitions() and the key-ring
-	// canary run here once the audit package exists.
-	// WIRING POINT (step 6): the object-store check registers health check
-	// "objectStore" (first = !cfg.Health.RequireObjectStore) here, from the blob
-	// store package.
+	// Step 7: Valkey in the background, then signals, the change log, the
+	// replica registry and, on worker and all, the lease manager and the workers.
 	if infra && a.sub.Valkey {
 		if err := a.startComponent(ctx, &valkeyComponent{a: a}); err != nil {
 			return err
 		}
 	}
-	// WIRING POINT (step 7): first change-log poll, the replica registry row and
-	// heartbeat (replica registry package), and the lease pool on worker and all.
-	// WIRING POINT (step 8): load snapshots and initialise the registered caches.
-	// WIRING POINT (step 9, worker and all): start the job claim loop, the reaper
-	// and the scheduler (jobs package). Each is a Component with Drain, Settle,
-	// Quiesce and Stop, registered with startComponent.
-	secrets.Freeze()
+	if infra && a.sub.MainPool {
+		if err := a.startCoordination(ctx); err != nil {
+			return err
+		}
+	}
+	// WIRING POINT (step 8): load the snapshots of the domain packages and
+	// register their caches on a.caches.
+	a.freezeRegistries()
+	if infra && a.sub.MainPool {
+		a.registerGauges()
+	}
 	a.tele.metrics.DBGauges().SetLogger(a.log)
-	go a.tele.metrics.DBGauges().Run(ctx)
+	a.bg.Add(1)
+	go func() {
+		defer a.bg.Done()
+		a.tele.metrics.DBGauges().Run(ctx)
+	}()
 
 	// Step 9: the client listener.
 	if a.sub.ClientListener {
@@ -308,6 +346,15 @@ func (a *App) bootstrap(ctx context.Context) error {
 	close(a.startedCh)
 	a.log.Info("started", "ready", a.health.Ready())
 	return nil
+}
+
+// freezeRegistries closes every start-up registry before the replica serves:
+// sealed columns, revision columns and the table registry. The job registry is
+// frozen where it is built.
+func (a *App) freezeRegistries() {
+	secrets.Freeze()
+	meta.FreezeRevisionColumns()
+	tables.Freeze()
 }
 
 func (a *App) versionString() string { return buildVersion() }
@@ -336,7 +383,7 @@ func (a *App) startClient() error {
 		Document: doc, Identity: v1.Identity{Replica: a.id.Instance, Role: a.id.Role},
 		Ready: a.health.Ready, PublicVersion: cfg.System.PublicVersion,
 		Access:   bootstrapAccess{anonymousRead: cfg.System.BootstrapAnonymousRead},
-		Replicas: localReplicas{a: a}, Facts: configFacts{cfg: cfg, a: a},
+		Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
 	})
 	api.Register(router)
 
@@ -380,7 +427,9 @@ func (a *App) startClient() error {
 		return err
 	}
 	a.client = srv
+	a.bg.Add(1)
 	go func() {
+		defer a.bg.Done()
 		if err := srv.Serve(); err != nil {
 			a.fail(err)
 		}
@@ -407,9 +456,13 @@ func (a *App) abort() {
 	if a.bootStop != nil {
 		a.bootStop()
 	}
+	if a.healthStop != nil {
+		a.healthStop()
+	}
 	if a.ops != nil {
 		_ = a.ops.Close()
 	}
+	a.bg.Wait()
 }
 
 // Shutdown is the sequence of R-ARCH-024 for SIGTERM. ctx carries no deadline of
@@ -500,7 +553,28 @@ func (a *App) Shutdown(ctx context.Context) error {
 		_ = a.ops.Shutdown(octx)
 		ocancel()
 	}
+	// The check loop goes last: it waits for the checks that are running. The
+	// listeners and the gauge evaluator are done by now; wait for them too.
+	if a.healthStop != nil {
+		a.healthStop()
+	}
+	a.bg.Wait()
 	a.tele.shutdown(cctx)
 	a.log.Info("stopped")
 	return errors.Join(errsOut...)
 }
+
+// Blobs returns the blob store; nil in a shell without infrastructure.
+func (a *App) Blobs() *blob.Store { a.mu.Lock(); defer a.mu.Unlock(); return a.blobs }
+
+// Queue returns the job queue every role enqueues on; nil in a shell without infrastructure.
+func (a *App) Queue() *jobs.Queue { a.mu.Lock(); defer a.mu.Unlock(); return a.queue }
+
+// Caches returns the registry in-process caches register with.
+func (a *App) Caches() *cache.Registry { a.mu.Lock(); defer a.mu.Unlock(); return a.caches }
+
+// Changes returns the change log, for the writers of change areas.
+func (a *App) Changes() *cluster.Changes { a.mu.Lock(); defer a.mu.Unlock(); return a.changes }
+
+// Signals returns the signal path.
+func (a *App) Signals() *cluster.Signals { a.mu.Lock(); defer a.mu.Unlock(); return a.signals }

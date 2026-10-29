@@ -130,6 +130,12 @@ type Health struct {
 
 	draining atomic.Bool
 
+	// gate and wg track the goroutines that run checks. Close stops new ones and
+	// waits for the running ones, so nothing logs after Run has returned.
+	gate   sync.RWMutex
+	closed bool
+	wg     sync.WaitGroup
+
 	mu        sync.RWMutex
 	checks    []*check
 	loops     map[string]*loop
@@ -270,9 +276,14 @@ func (h *Health) Refresh(ctx context.Context) { h.runDue(ctx, true) }
 
 // Run is the check loop. It returns when ctx ends. It watches itself under the
 // name LoopChecks with a bound of three check intervals.
+//
+// When ctx ends, Run waits for the checks that are still running before it
+// returns (see Close): the check functions got a cancelled context, and none of
+// them runs, logs or records a result once Run is done.
 func (h *Health) Run(ctx context.Context) {
 	self := h.Loop(LoopChecks, 3*h.cfg.CheckInterval)
 	defer self.Stop()
+	defer h.Close()
 	h.runDue(ctx, true)
 	self.Beat()
 	t := time.NewTicker(h.tick())
@@ -286,6 +297,25 @@ func (h *Health) Run(ctx context.Context) {
 		}
 		h.runDue(ctx, false)
 		self.Beat()
+	}
+}
+
+// closeWait bounds how long Close waits for a check that ignores its context.
+func (h *Health) closeWait() time.Duration { return h.cfg.CheckTimeout + time.Second }
+
+// Close stops the registry from starting checks and waits for the running ones,
+// at most health.check_timeout plus one second: a check that ignores its context
+// cannot hold the shutdown. It is safe to call more than once; Run calls it.
+func (h *Health) Close() {
+	h.gate.Lock()
+	h.closed = true
+	h.gate.Unlock()
+	done := make(chan struct{})
+	go func() { h.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(h.closeWait()):
+		h.log.Warn("a readiness check did not stop in time")
 	}
 }
 
@@ -396,11 +426,23 @@ func (h *Health) runCheck(ctx context.Context, c *check) {
 	c.running = true
 	c.mu.Unlock()
 
+	h.gate.RLock()
+	if h.closed {
+		h.gate.RUnlock()
+		c.mu.Lock()
+		c.running = false
+		c.mu.Unlock()
+		return
+	}
+	h.wg.Add(1)
+	h.gate.RUnlock()
+
 	cctx, cancel := context.WithTimeout(ctx, h.cfg.CheckTimeout)
 	defer cancel()
 	start := time.Now()
 	done := make(chan error, 1)
 	go func() {
+		defer h.wg.Done()
 		err := callGuarded(cctx, c.fn)
 		c.mu.Lock()
 		c.running = false

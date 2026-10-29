@@ -412,3 +412,51 @@ func TestLiveness(t *testing.T) {
 		}
 	})
 }
+
+func TestRunWaitsForChecks(t *testing.T) {
+	t.Run("R-ARCH-024 Run returns only after a check that was running has finished, so nothing logs after it", func(t *testing.T) {
+		var logs bytes.Buffer // deliberately unsynchronised: a late write is a data race
+		log := slog.New(slog.NewJSONHandler(&logs, nil))
+		h := New(cfg(), WithLogger(log))
+		started := make(chan struct{})
+		var once sync.Once
+		h.AddReadiness("slow", func(ctx context.Context) error {
+			once.Do(func() { close(started) })
+			<-ctx.Done()
+			time.Sleep(60 * time.Millisecond) // finishes its work after the cancellation
+			log.Info("late write of a check")
+			return ctx.Err()
+		}, false)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { h.Run(ctx); close(done) }()
+		<-started
+		cancel()
+		<-done
+		if !strings.Contains(logs.String(), "late write of a check") {
+			t.Fatal("Run returned before the running check finished")
+		}
+		// Nothing starts after Run: a Refresh is a no-op.
+		before := logs.Len()
+		h.Refresh(context.Background())
+		if logs.Len() != before {
+			t.Fatal("a check ran after Run returned")
+		}
+	})
+
+	t.Run("R-ARCH-024 a check that ignores its context cannot hold Close longer than check_timeout plus a second", func(t *testing.T) {
+		c := cfg()
+		c.CheckTimeout = 100 * time.Millisecond
+		h := New(c)
+		release := make(chan struct{})
+		defer close(release)
+		h.AddReadiness("stuck", func(context.Context) error { <-release; return nil }, false)
+		go h.Refresh(context.Background())
+		time.Sleep(50 * time.Millisecond)
+		start := time.Now()
+		h.Close()
+		if d := time.Since(start); d > 3*time.Second {
+			t.Fatalf("Close took %v", d)
+		}
+	})
+}

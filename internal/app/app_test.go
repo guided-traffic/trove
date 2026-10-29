@@ -443,3 +443,35 @@ func TestStartupFailures(t *testing.T) {
 		}
 	})
 }
+
+// lateWriter fails the test if anything writes after seal.
+type lateWriter struct {
+	mu     sync.Mutex
+	sealed bool
+	late   int
+}
+
+func (w *lateWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.sealed {
+		w.late++
+	}
+	return len(p), nil
+}
+
+func (w *lateWriter) seal()      { w.mu.Lock(); w.sealed = true; w.mu.Unlock() }
+func (w *lateWriter) lates() int { w.mu.Lock(); defer w.mu.Unlock(); return w.late }
+
+func TestNothingOutlivesRun(t *testing.T) {
+	t.Run("R-ARCH-024 no goroutine of the app writes to the log after RunWith returned", func(t *testing.T) {
+		env := baseEnv(t, map[string]string{"TROVE_SECRETS_ENCRYPTION_KEY_FILES": `["/nonexistent/2026-10.key"]`})
+		w := &lateWriter{}
+		_ = RunWith(t.Context(), Options{Loaded: loadCfg(t, "web", env), Role: "web", Environ: env, LogWriter: w, SkipInfrastructure: true})
+		w.seal()
+		time.Sleep(800 * time.Millisecond) // several check intervals (200 ms)
+		if n := w.lates(); n != 0 {
+			t.Fatalf("%d log writes after RunWith returned", n)
+		}
+	})
+}

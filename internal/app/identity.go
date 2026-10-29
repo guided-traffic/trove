@@ -18,6 +18,8 @@ type Identity struct {
 	Role string
 	// Node is the Kubernetes node name (TROVE_NODE_NAME); empty outside Kubernetes.
 	Node string
+	// Pool is the pool name of a further split (TROVE_POOL_NAME); empty otherwise.
+	Pool string
 }
 
 // NewIdentity derives the identity from the environment. The instance name is
@@ -32,7 +34,7 @@ func NewIdentity(environ []string, role string) Identity {
 			env[k] = v
 		}
 	}
-	id := Identity{Role: role, Node: env["TROVE_NODE_NAME"], UID: randomUID()}
+	id := Identity{Role: role, Node: env["TROVE_NODE_NAME"], Pool: env["TROVE_POOL_NAME"], UID: randomUID()}
 	switch {
 	case env["TROVE_POD_NAME"] != "":
 		id.Instance = env["TROVE_POD_NAME"]

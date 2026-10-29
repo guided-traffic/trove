@@ -107,7 +107,9 @@ func newInstall(t *testing.T) *install {
 		"TROVE_SERVER_TRUSTED_PROXIES=[\"127.0.0.0/8\"]", "TROVE_SERVER_BASE_URL=http://trove.test",
 		"TROVE_SYSTEM_BOOTSTRAP_ANONYMOUS_READ=true",
 		"TROVE_HEALTH_CHECK_INTERVAL=300ms", "TROVE_HEALTH_CHECK_TIMEOUT=200ms", "TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY=1500ms",
-		"TROVE_SERVER_SHUTDOWN_TIMEOUT=10s", "TROVE_CONFIG_FILE=" + write(t, dir, "trove.yaml", ""),
+		"TROVE_SERVER_SHUTDOWN_TIMEOUT=10s", "TROVE_STORAGE_SPOOL_DIR=" + filepath.Join(dir, "spool"),
+		"TROVE_SYSTEM_HEARTBEAT_INTERVAL=1s", "TROVE_SYSTEM_HEARTBEAT_STALE_AFTER=3s",
+		"TROVE_JOBS_SCHEDULE_TICK=1s", "TROVE_JOBS_POLL_INTERVAL=1s", "TROVE_CONFIG_FILE=" + write(t, dir, "trove.yaml", ""),
 	}
 	return &install{env: env, db: name, conn: conn}
 }
