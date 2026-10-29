@@ -9,7 +9,7 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 97 of 577 spec requirements are implemented: a passing test names them and no
+**Status.** 98 of 577 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
@@ -3017,7 +3017,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-EP-002 (implemented) | Endpoint identity comes from the listener | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-004 (implemented) | TLS on endpoint listeners: certificates by SNI, wildcard certificates, reload | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-006 (implemented) | Host-root binding: the reserved mechanism | MVP | [endpoints.md](../spec/endpoints.md) |
-| R-EP-010 | Accepted credentials per endpoint | MVP | [endpoints.md](../spec/endpoints.md) |
+| R-EP-010 (implemented) | Accepted credentials per endpoint | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-012 | Exposure rules: model, validation and storage | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-014 | Exposure on raw files, listings and the management API | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-016 | Endpoint and exposure management API | MVP | [endpoints.md](../spec/endpoints.md) |
