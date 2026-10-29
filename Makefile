@@ -77,6 +77,7 @@ image-push: web ## Build the release image for IMAGE_PLATFORMS and push it with 
 		--label org.opencontainers.image.source=https://$(MODULE) \
 		--label org.opencontainers.image.revision=$(COMMIT) \
 		--label org.opencontainers.image.version=$(VERSION) \
+		--label org.opencontainers.image.licenses=Apache-2.0 \
 		$(addprefix -t ,$(IMAGE_TAGS)) \
 		--metadata-file .out/image-metadata.json \
 		-f Dockerfile bin
