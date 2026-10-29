@@ -101,7 +101,7 @@ they are real Go modules, so `go list` and the type loader run on them unchanged
 3. creates the buckets (`go run ./test/integration/cmd/seed`);
 4. writes `.dev/integration/env`.
 
-`TROVE_VALKEY_LINE=9.0` or `9.1` (default `9.1`) selects the Valkey line. Switching the line recreates
+`TROVE_TEST_VALKEY_LINE=9.0` or `9.1` (default `9.1`) selects the Valkey line. Switching the line recreates
 the stack, because Sentinel rewrote the configuration of the data nodes.
 
 | Service | Container | Host address | Notes |

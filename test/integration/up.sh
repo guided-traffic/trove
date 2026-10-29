@@ -3,7 +3,7 @@
 # and writes .dev/integration/env with the TROVE_TEST_* variables the tests read
 # (see test/integration/testenv). Safe to run again: running containers are kept.
 #
-#   TROVE_VALKEY_LINE=9.0|9.1   selects the Valkey line (default 9.1)
+#   TROVE_TEST_VALKEY_LINE=9.0|9.1   selects the Valkey line (default 9.1)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -14,11 +14,11 @@ set -a
 . tools/versions.env
 set +a
 
-line="${TROVE_VALKEY_LINE:-9.1}"
+line="${TROVE_TEST_VALKEY_LINE:-9.1}"
 case "$line" in
   9.0) VALKEY_IMAGE="$VALKEY_90_IMAGE" ;;
   9.1) VALKEY_IMAGE="$VALKEY_91_IMAGE" ;;
-  *) echo "TROVE_VALKEY_LINE must be 9.0 or 9.1 (got '$line')" >&2; exit 2 ;;
+  *) echo "TROVE_TEST_VALKEY_LINE must be 9.0 or 9.1 (got '$line')" >&2; exit 2 ;;
 esac
 
 state="$root/.dev/integration"

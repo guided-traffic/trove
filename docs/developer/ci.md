@@ -119,7 +119,7 @@ Run from the repository root. Each row is the command the job runs.
 | `coverage-evidence` | Needs the four reports; see [Keep the evidence record current](#keep-the-evidence-record-current) | Reports come from `make test`, `make chart-test` and both integration lines |
 | `chart` | `make chart-lint` and `make chart-test` | Needs helm at `HELM_VERSION` on `PATH` |
 | `image` | `make image IMAGE=trove:ci` | Runs for `linux/amd64` on the runner; a Mac builds `linux/arm64` unless `IMAGE_ARCH=amd64` is given |
-| `integration` | `make integration-up`, `make test-integration`, `make integration-down` | Needs Docker. Valkey line by `TROVE_VALKEY_LINE=9.0` or `9.1`. Changing the line recreates the stack |
+| `integration` | `make integration-up`, `make test-integration`, `make integration-down` | Needs Docker. Valkey line by `TROVE_TEST_VALKEY_LINE=9.0` or `9.1`. Changing the line recreates the stack |
 | `workflows` | `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`, then `actionlint -shellcheck=` from the repository root | CI disables shellcheck, which is not pinned |
 | `minio`, `aws-s3` | `.github/scripts/s3-conformance.sh <label>` with the `TROVE_TEST_S3_*` variables set | See [Nightly](#nightly-workflow) |
 
@@ -138,8 +138,8 @@ refresh is these commands:
 make test
 make chart-test
 for line in 9.0 9.1; do
-  TROVE_VALKEY_LINE=$line make integration-up
-  TROVE_VALKEY_LINE=$line make test-integration
+  TROVE_TEST_VALKEY_LINE=$line make integration-up
+  TROVE_TEST_VALKEY_LINE=$line make test-integration
   cp .out/test-integration.json ".out/test-integration-$line.json"
 done
 make integration-down

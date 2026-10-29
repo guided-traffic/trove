@@ -142,8 +142,8 @@ COVERAGE_LINES := 9.0 9.1
 .PHONY: coverage-refresh
 coverage-refresh: test chart-test ## Recompute docs/coverage/implemented.txt from unit, chart and both integration lines
 	@for line in $(COVERAGE_LINES); do \
-	  TROVE_VALKEY_LINE=$$line $(MAKE) integration-up && \
-	  TROVE_VALKEY_LINE=$$line $(MAKE) test-integration && \
+	  TROVE_TEST_VALKEY_LINE=$$line $(MAKE) integration-up && \
+	  TROVE_TEST_VALKEY_LINE=$$line $(MAKE) test-integration && \
 	  cp .out/test-integration.json .out/test-integration-$$line.json || { $(MAKE) integration-down; exit 1; }; \
 	done
 	$(MAKE) integration-down
