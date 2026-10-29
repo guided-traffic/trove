@@ -72,6 +72,13 @@ type Server struct {
 	// connection serves other streams, so its entry is the request, released after
 	// h2FlushWindow (CR2-2).
 	flushing map[any]struct{}
+	// phase is where the shutdown is; lingering holds the connections that closed
+	// while it was draining with bytes the peer has not acknowledged (linger.go).
+	phase     atomic.Int32
+	lingering map[*lingerConn]struct{}
+	// heldConns and heldBytes count what the shutdown held open (for the log).
+	heldConns, heldBytes int
+	heldSince            time.Time
 }
 
 // h2FlushWindow is how long a committing HTTP/2 request counts as flushing after
@@ -137,7 +144,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.CommitGrace == 0 {
 		cfg.CommitGrace = DefaultCommitGrace
 	}
-	s := &Server{cfg: cfg, active: map[*activeRequest]struct{}{}, flushing: map[any]struct{}{}}
+	s := &Server{cfg: cfg, active: map[*activeRequest]struct{}{}, flushing: map[any]struct{}{}, lingering: map[*lingerConn]struct{}{}}
 	s.srv = &http.Server{
 		Handler:           s.track(cfg.Handler),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
@@ -162,7 +169,7 @@ func (s *Server) Bind() error {
 	if err != nil {
 		return fmt.Errorf("%s listener: %w", s.cfg.Name, err)
 	}
-	s.ln = ln
+	s.ln = &lingerListener{Listener: ln, s: s}
 	return nil
 }
 
@@ -238,17 +245,37 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // from the one exit deadline of the process, so the grace cannot push the exit
 // past the kubelet's kill.
 func (s *Server) ShutdownBy(ctx context.Context, commitBy time.Time) error {
+	s.phase.Store(int32(phaseDraining))
 	err := s.srv.Shutdown(ctx)
 	if err == nil {
+		s.lingerOut(commitBy)
 		return nil
 	}
 	s.waitCommits(commitBy)
+	// From here every connection that closes is reset: the peer of a cut transfer
+	// learns of the end now, not when its own timeout fires.
+	s.phase.Store(int32(phaseCutting))
 	cut := s.cutAll()
 	_ = s.srv.Close()
+	s.lingerOut(commitBy)
 	if cut == 0 {
 		return nil
 	}
 	return fmt.Errorf("%s listener: %d request(s) cut: %w: %w", s.cfg.Name, cut, ErrCut, err)
+}
+
+// lingerOut waits until the peers have acknowledged the bytes of the connections
+// that closed with a send queue, at most until by, and resets the ones that did not.
+func (s *Server) lingerOut(by time.Time) {
+	reset := s.flushLingering(by)
+	s.mu.Lock()
+	conns, bytes, since := s.heldConns, s.heldBytes, s.heldSince
+	s.mu.Unlock()
+	if conns > 0 {
+		s.cfg.Log.Info("connections held open until the peer acknowledged their last bytes",
+			"listener", s.cfg.Name, "connections", conns, "unacknowledged_bytes", bytes,
+			"waited", time.Since(since).Round(time.Millisecond).String(), "reset", reset)
+	}
 }
 
 // Close closes the listener and every connection at once.

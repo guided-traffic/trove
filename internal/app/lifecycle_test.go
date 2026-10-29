@@ -136,7 +136,7 @@ func TestGracefulShutdown(t *testing.T) {
 		}
 		_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
 		if _, err := io.Copy(io.Discard, r); err == nil || !strings.Contains(err.Error(), "unexpected EOF") && !strings.Contains(err.Error(), "reset") {
-			t.Fatal("the cut transfer ended cleanly")
+			t.Fatalf("the cut transfer ended cleanly: %v", err)
 		}
 		fams, _ := h.app.tele.metrics.Registry().Gather()
 		var cut float64

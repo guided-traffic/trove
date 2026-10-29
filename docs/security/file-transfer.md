@@ -81,6 +81,9 @@ A whole body is verified against the blob's SHA-256 while it is streamed; the la
 released before the digest matched, and a mismatch cuts the connection (R-STOR-013). A range is served as stored and cannot be
 verified (H-11 in [storage.md](../spec/storage.md)). Only evidence about the object marks a blob `corrupt`; a transport error aborts
 the response and changes nothing. `Content-Length` is always declared, so a response that a shutdown deadline cut is detectable.
+A finished response is not left half delivered by an exiting replica either: a connection that closes during the shutdown with
+bytes the peer has not acknowledged is held until it has (at most the commit grace), and one that is cut or still overdue is reset,
+so the client never takes a truncated body for a complete one and learns of a cut at once (Q-ARCH-187).
 
 ## Buffers and restarts
 

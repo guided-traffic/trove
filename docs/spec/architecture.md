@@ -3102,6 +3102,13 @@ learns of the removal with a delay. The steps cover that delay first:
        another replica at once, instead of meeting `416` until the claim expires.
    - Each cut is counted in `trove_http_transfers_cut_total{direction}`. How long a single
      transfer may run without being cut is decided in Q-ARCH-18.
+   - A request that finishes before the deadline is not finished when its handler returns: its last
+     bytes may still sit in the replica's send queue, behind a slow reader. A connection that closes
+     during the shutdown with unacknowledged bytes stays open until the peer has acknowledged them,
+     at most until the end of the commit grace, because the sockets of an exited process die with
+     the pod's network namespace without a `FIN` or an `RST`. A connection that is cut at the
+     deadline, or still unacknowledged at that bound, is reset (`RST`), so that the peer learns of
+     the end at once and not at its own timeout (Q-ARCH-187).
 6. After the last request has finished, the write-only buffers of R-ARCH-032 are flushed before
    the pools close: download statistics, the `lastActivityAt` buffer
    ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012), the metadata
@@ -4931,6 +4938,33 @@ the pool (Q-ARCH-45); both counted in goroutines on the bootstrap context, which
 agent would revisit this if a limiter guards a resource shared across pools.
 
 **Applied in the spec:** R-ARCH-034 (the fallback bullet) reads "live replicas that serve the endpoint's pool".
+
+### Q-ARCH-187 · A connection is held until the peer has taken its last bytes, and a cut is a reset
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the download of E1.13 through the edge fails in about half of the runs when the serving pod is replaced. The replica
+logs a complete `200` and exits 0.2 to 0.5 s later; the client has 396 to 399 MiB and waits about 80 s for the rest. At the
+moment the handler returned, the replica's send queue held 2.8 MiB (measured through the shutdown log of the fix:
+2902082 unacknowledged bytes) which the edge, relaying at 6 MB/s, had not taken. `net/http` closes the connection when the
+handler is done; the kernel would go on sending, but the process exits and the pod's network namespace with it, and an orphaned
+socket dies there without a `FIN` or an `RST`. The edge neither gets the tail nor hears of the end. The same silence is why a
+download cut at the shutdown deadline is noticed by its client only after the edge's own timeout.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Hold the connection | A connection that closes during the shutdown with unacknowledged bytes (`SIOCOUTQ`) stays open until they are acknowledged or the commit bound passes; a cut or overdue connection is closed with `SO_LINGER 0` (`RST`) | Exact: waits for the one signal that matters, costs nothing when the queue is empty, bounded by the plan; the cut becomes visible at once | `SIOCOUTQ` is Linux only (elsewhere the old behaviour); the accepted conn is wrapped, which hides `ReadFrom` (no `sendfile`, unused: bodies come from the object store) |
+| (b) `CloseWrite` and read to EOF | Half-close, then read until the peer closes | Portable | An edge with keep-alive does not close; the wait is as long as its idle timeout, and TLS needs `close_notify` handling on top |
+| (c) A fixed sleep before exit | Wait a second or two | Trivial | Wrong for any queue larger than the sleep times the reader's speed |
+| (d) Change the edge | Shorter timeouts, no keep-alive to the backend | None for the lost tail: the bytes are gone before the edge can act | Moves the symptom, costs every request |
+
+**Choice:** (a).
+
+**Rationale:** The loss is in the replica's own exit, so the fix lies there. The bound is the commit bound of the shutdown plan
+(`planShutdown`), inside the margin that is already reserved. Revisit if a platform without `SIOCOUTQ` runs the pods, or if a
+reader that is slower than the margin allows must be served to the end (then the shutdown timeout, not this wait, is the knob).
+
+**Applied in the spec:** R-ARCH-024 step 5; [../developer/e2e.md](../developer/e2e.md#findings-of-the-suite) finding 5.
 
 ## What this does not cover
 

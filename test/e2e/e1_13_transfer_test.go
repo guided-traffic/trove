@@ -449,14 +449,14 @@ func TestE1_13Transfers(t *testing.T) {
 			t.Fatalf("the transfer was not cut (curl exit %d, %d bytes): it should outlast the 110 s shutdown timeout at 2 MB/s", c.exit, got)
 		}
 		// The cut is trove's: at the shutdown deadline (grace 120 s - drain delay 5 s - 5 s = 110 s after SIGTERM) the
-		// replica logs the request it cut and stops. The bytes stop arriving then. How long the client waits after
-		// that is the edge's: HAProxy tells it of a backend that vanished only when its own timeout fires (measured
-		// in e2e.md, "Findings of the suite"), so the end of curl is only bounded loosely.
+		// replica logs the request it cut and stops. The bytes stop arriving then, and the client is told at once:
+		// the replica resets the cut connection (Q-ARCH-187), so curl ends within seconds of the last bytes. Before
+		// that, the exit left the edge a silent backend and curl waited about 77 s for the edge's own timeout.
 		if g := lastGrowth.Load(); g == nil || g.Sub(killAt) < 100*time.Second || g.Sub(killAt) > 140*time.Second {
 			t.Errorf("the last bytes arrived at %v after the deletion, want about the shutdown timeout of 110 s", g)
 		}
-		if cutAfter > 5*time.Minute {
-			t.Errorf("curl ended %s after the deletion", cutAfter)
+		if g := lastGrowth.Load(); g != nil && c.end.Sub(*g) > 15*time.Second {
+			t.Errorf("curl ended %s after the last bytes arrived: the cut was not made known to the client", c.end.Sub(*g).Round(time.Second))
 		}
 		time.Sleep(time.Second) // kubectl logs -f ends with the pod; give it the last lines
 		if raw, _ := os.ReadFile(filepath.Join(cfg.out, "e1-13-cut-download-"+serving+".log")); !strings.Contains(string(raw), "requests cut at the shutdown deadline") {
