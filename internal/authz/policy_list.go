@@ -20,8 +20,11 @@ type ListFilter struct {
 	Repository string
 }
 
-func unprocessable(code, detail string) error {
-	return errs.E(errs.Unprocessable, code, detail)
+// unprocessable is the 422 of a filter value that names nothing: validation_failed
+// with the code of the problem in errors[] at the query parameter's name
+// (R-API-009).
+func unprocessable(param, code, detail string) error {
+	return problemError([]ProblemField{field("/"+param, code, detail)})
 }
 
 // Select keeps the policies of all that match the filter. A principal or a
@@ -33,12 +36,12 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 	if f.Principal != "" {
 		ref, err := ParseRef(f.Principal)
 		if err != nil {
-			return nil, unprocessable(errs.CodeUnknownPrincipal, err.Error())
+			return nil, unprocessable("principal", errs.CodeUnknownPrincipal, err.Error())
 		}
 		id, err := s.principalID(ctx, ref)
 		if err != nil {
 			if errors.Is(err, principal.ErrNotFound) {
-				return nil, unprocessable(errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", f.Principal))
+				return nil, unprocessable("principal", errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", f.Principal))
 			}
 			return nil, err
 		}
@@ -59,7 +62,7 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 		if err != nil {
 			var ee *errs.Error
 			if errors.As(err, &ee) && ee.Kind == errs.NotFound {
-				return nil, unprocessable(errs.CodeUnknownRepository, fmt.Sprintf("No repository %q exists.", f.Repository))
+				return nil, unprocessable("repository", errs.CodeUnknownRepository, fmt.Sprintf("No repository %q exists.", f.Repository))
 			}
 			return nil, err
 		}

@@ -30,8 +30,10 @@ type ServiceOptions struct {
 	Repositories repository.Reader
 	// Recorder records the policy and role events in the transaction of the write.
 	Recorder audit.Recorder
-	// KnownFormat reports whether the server knows a format (422 unknown_format);
-	// nil accepts the formats of the MVP: generic, npm and nuget.
+	// KnownFormat reports whether the server knows a format (422 unknown_format).
+	// The composition root passes the format registry (internal/formats), so a
+	// selector names only a format that is registered; nil accepts every name,
+	// which is for a caller that has no registry (a unit test).
 	KnownFormat func(string) bool
 }
 
@@ -48,7 +50,7 @@ func NewService(o ServiceOptions) *Service {
 		o.Recorder = audit.Nop{}
 	}
 	if o.KnownFormat == nil {
-		o.KnownFormat = func(f string) bool { return f == repository.FormatGeneric || f == "npm" || f == "nuget" }
+		o.KnownFormat = func(string) bool { return true }
 	}
 	return &Service{o: o}
 }
@@ -77,8 +79,9 @@ func field(pointer, code, detail string) ProblemField {
 	return ProblemField{Pointer: pointer, Code: code, Detail: detail}
 }
 
-// problemError turns validation problems into the 422 of R-AUTHZ-021. The code
-// of the answer is the code of the first problem.
+// problemError turns validation problems into the 422 of R-AUTHZ-021: the code
+// of the answer is validation_failed whatever the number of problems, and every
+// problem with its own code is in errors[] (R-API-009, Q-AUTHZ-60 ff.).
 func problemError(ps []ProblemField) error {
 	if len(ps) == 0 {
 		return nil
@@ -87,7 +90,11 @@ func problemError(ps []ProblemField) error {
 	for i, p := range ps {
 		fields[i] = errs.FieldError{Pointer: p.Pointer, Code: p.Code, Detail: p.Detail}
 	}
-	return errs.E(errs.Invalid, ps[0].Code, ps[0].Detail, errs.WithFields(fields...))
+	detail := ps[0].Detail
+	if len(ps) > 1 {
+		detail = fmt.Sprintf("%d fields are invalid.", len(ps))
+	}
+	return errs.E(errs.Invalid, errs.CodeValidation, detail, errs.WithFields(fields...))
 }
 
 // Validate checks a policy without storing it and reports what it would cover

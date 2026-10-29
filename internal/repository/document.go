@@ -153,14 +153,21 @@ func (s Settings) marshalConfig() ([]byte, error) {
 	return json.Marshal(s)
 }
 
+// invalidDocument is the 400 of a document that cannot be read: malformed_request
+// with the resource code invalid_document in errors[] (R-API-003, R-API-009,
+// Q-REPO-84). The management API reads the body before the domain does and
+// names the member by its pointer; this is the answer for a caller that hands the
+// domain a raw document.
 func invalidDocument(format string, a ...any) *errs.Error {
-	return errs.E(errs.Invalid, errs.CodeInvalidDocument, fmt.Sprintf(format, a...))
+	detail := fmt.Sprintf(format, a...)
+	return errs.E(errs.Invalid, errs.CodeInvalid, detail, errs.WithBadRequest(),
+		errs.WithFields(errs.FieldError{Pointer: "", Code: errs.CodeInvalidDocument, Detail: detail}))
 }
 
 // DecodeDocument reads a configuration document strictly: it must be one JSON
 // object, without an unknown or a duplicate member and without trailing data
 // (R-REPO-008: a configuration API that silently drops a misspelt setting leaves
-// the operator believing it is in effect). The error is 400 invalid_document.
+// the operator believing it is in effect). The error is 400 malformed_request.
 func DecodeDocument(raw []byte) (Document, error) {
 	var d Document
 	if err := decodeStrict(raw, &d); err != nil {

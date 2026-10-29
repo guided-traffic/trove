@@ -18,9 +18,10 @@ const (
 	bitManage
 )
 
-// allActions lists the actions in the alphabetical order the API stores and
-// returns them in (R-AUTHZ-001: "annotate", "deploy", "read").
-func allActions() []Action {
+// Actions lists the six repository actions of R-AUTHZ-006 in the alphabetical
+// order the API stores and returns them in (R-AUTHZ-001: "annotate", "deploy",
+// "read"). Every other list of the actions (a token scope, R-AUTH-024) is this one.
+func Actions() []Action {
 	return []Action{Annotate, Delete, Deploy, Manage, Overwrite, Read}
 }
 
@@ -54,7 +55,7 @@ func (s ActionSet) Contains(o ActionSet) bool { return s&o == o }
 // Strings returns the actions in alphabetical order.
 func (s ActionSet) Strings() []string {
 	var out []string
-	for _, a := range allActions() {
+	for _, a := range Actions() {
 		if s.Has(a) {
 			out = append(out, string(a))
 		}

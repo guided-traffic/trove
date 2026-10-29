@@ -497,7 +497,7 @@ func TestR_EP_016_EndpointAndExposureAPI(t *testing.T) {
 		if off := check(`{"repository":"generic-other","paths":["a"]}`); !strings.Contains(string(off.body), `"reason":"rule_disabled"`) {
 			t.Fatalf("a disabled rule: %s", off.body)
 		}
-		if bad := check(`{"repository":"generic-local","versions":["1.0.0"]}`); bad.status != 422 || bad.json(t)["code"] != errs.CodeDimensionNotSupported {
+		if bad := check(`{"repository":"generic-local","versions":["1.0.0"]}`); bad.status != 422 || bad.json(t)["code"] != errs.CodeValidation || !strings.Contains(string(bad.body), `"code":"`+errs.CodeDimensionNotSupported+`"`) {
 			t.Fatalf("versions on generic: %d %s", bad.status, bad.body)
 		}
 		if missing := check(`{"repository":"ghost"}`); missing.status != 404 {

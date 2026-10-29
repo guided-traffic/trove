@@ -200,10 +200,7 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 			Name: "bad", Resources: authz.Resources{Repositories: []string{"generic-local"}},
 			Entries: []authz.Entry{{Principal: "authenticated", Actions: []string{"read", "deploy"}}},
 		})
-		ee, ok := errs.As(err)
-		if !ok || ee.Status() != 422 || ee.Code != errs.CodeAuthenticatedWriteAction {
-			t.Fatalf("err = %v", err)
-		}
+		problem(t, err, 422, errs.CodeAuthenticatedWriteAction)
 		create(authz.PolicyInput{
 			Name: "everyone-reads-generic", Resources: authz.Resources{Repositories: []string{"@any-local:generic"}},
 			Entries: []authz.Entry{{Principal: "authenticated", Actions: []string{"read"}}},
@@ -226,16 +223,12 @@ func TestE1_3_AuthorizationAgainstPostgreSQL(t *testing.T) {
 			Name: "public-bad", Resources: authz.Resources{Repositories: []string{"@any-remote"}},
 			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
 		})
-		if ee, _ := errs.As(err); ee == nil || ee.Code != errs.CodeAnonymousDynamicSelector {
-			t.Fatalf("err = %v", err)
-		}
+		problem(t, err, 422, errs.CodeAnonymousDynamicSelector)
 		_, _, err = a.svc.Create(t.Context(), sub(alice), authz.PolicyInput{
 			Name: "public-write", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
 			Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read", "deploy"}}},
 		})
-		if ee, _ := errs.As(err); ee == nil || ee.Code != errs.CodeAnonymousWriteAction {
-			t.Fatalf("err = %v", err)
-		}
+		problem(t, err, 422, errs.CodeAnonymousWriteAction)
 		run([]itCase{{"anonymous access off: 401 although the policy grants", anon, read("npm-internal", "x", ""), authz.DenyUnauthenticated, authz.ReasonUnauthenticated, ""}})
 		e.anonymous.Store(true)
 		defer e.anonymous.Store(false)

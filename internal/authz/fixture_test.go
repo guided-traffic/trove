@@ -244,7 +244,7 @@ func newTestEngine(t testing.TB, f *fixture, mod func(*Options)) *Engine {
 	src.set(f.s)
 	o := Options{
 		Source: src, Changes: &fakeChanges{}, Config: testConfig(), RetryBudget: time.Second,
-		AnonymousAccess: func() bool { return false },
+		AnonymousAccess: func(context.Context) (bool, error) { return false, nil },
 	}
 	if mod != nil {
 		mod(&o)

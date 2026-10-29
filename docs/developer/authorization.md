@@ -120,13 +120,13 @@ pending (then whatever its epochs). A discarded build is counted (`trove_authz_i
 | Trigger | Where | Notes |
 |---|---|---|
 | `startup` | `Engine.Start` | A failing first build stops the start: a replica never serves without an index |
-| `poll` | `watchLoop` (every 50 ms) and `hintLoop` | The watcher compares `Changes.AreaState` with the label (memory only). `ApplyChange` (from the poll, a Valkey message or this replica's own commit) only raises a hint; the hint loop reads the epochs from the database through the coalesced reader and builds only if they differ from the label, so a forged or duplicated message costs at most one indexed query per 50 ms |
+| `poll` | `watchLoop` (every 50 ms) | The watcher compares `Changes.AreaState` with the label (memory only). The build is skipped when the index already matches the applied state |
+| `message` | `hintLoop` | `ApplyChange` (from the poll, a Valkey message or this replica's own commit) only raises a hint; the hint loop reads the epochs from the database through the coalesced reader and requests a build if they differ from the label, so a forged or duplicated message costs at most one indexed query per 50 ms. The build is skipped only when the index label equals the epochs the hint read, never because the applied state matches: a replica's own commit is applied by the poll later, and a `poll` build would keep the old grants until then (`TestR_AUTHZ_028_OwnWriteIsInForceWithoutWaitingForThePoll`) |
 | `flush` | `FlushArea` | The change log found a gap, an unknown payload version or an epoch that went backwards; the next build is installed whatever its epochs |
 | `safety` | `watchLoop` | A full rebuild after `authz.cache.safety_ttl`, jittered by 10 percent |
 | `min_epoch` | `waitForEpoch` | A request needs an epoch the installed index lacks |
 
-`message` exists as a label value but is never used: the change log hands a Valkey message and a poll to the listener in
-the same call.
+Pending triggers coalesce by strength (`triggerRank`): a flush beats a message, a message beats a poll.
 
 Builds are coalesced (`requestBuild`: one runs, one waits) and a failed build retries with a backoff of at most 2 s.
 
@@ -154,6 +154,12 @@ transaction's own) and reads it for `Trove-Authz-Epoch`; the audit event of the 
 carries the epoch.
 
 ### Pinning an index to a request
+
+Before it takes the index, `Decide` (and `Begin(ctx, sub, keys...)` for the keys it is given) calls `Engine.Know` for the
+repository of the request: a key the index lacks is looked up in the repository snapshot (which asks PostgreSQL and runs the
+change-log poll) and, when the repository exists, the index is caught up to the database's epochs (`CatchUp`), so a repository
+created through another replica is usable at once (R-API-052). The result of the lookup is not used, which keeps authorization
+before existence (R-AUTHZ-016). `Options.Repositories` is the reader; the files service and the repository API do not repeat it.
 
 `Decide` takes the installed index at the moment of the call. A request that decides several coordinates calls `Begin` once
 and `DecideOn(idx, …)` per coordinate, so that all of them see one index (R-AUTHZ-015 `index.ForRequest`).
@@ -255,11 +261,26 @@ context for it (Q-AUTHZ-71).
 endpoint's exposure alone: the repository list and read of a holder of `repositories:read-config` use it, since that caller
 needs no read grant but is bound by the ceiling (R-EP-014).
 
+The runtime anonymous switch is `Options.AnonymousAccess(ctx) (bool, error)`; the engine reads it once per request for an
+anonymous subject (`withAnonymous`, kept on the subject), with the request's context, and an error is 503 `authz_stale`, not
+401. `Engine.Holds` (interface `authz.Prober`; `v1.Holds` for an `Access`) answers "does the caller hold this permission?" without
+recording `authz.denied`: the rate limit's administrator exemption and the handlers that pick between two answers use it
+(`authz.ContentBypass`, `authz.SettingsRead`, ...); `Require` is for an operation that is refused.
+
+Writes of other areas that change grant-index inputs call hooks of this package in their own transaction
+([hooks.go](../../internal/authz/hooks.go)): `PrincipalHook` (`principal.AuthzHook`, given to the manager and the provisioner)
+before a principal row is deleted and after a rename, and `PolicyHook` (`repository.Hooks`) before a repository row is removed.
+Each notifies the area and raises the version of every policy whose representation changes (a principal in an entry, a key
+selector on the repository), so the ETag of the policy changes with it; a principal that nothing names moves nothing (R-AUTHZ-028,
+Q-AUTHZ-132). A new write that touches `authz_*` tables or their foreign keys belongs in the completeness test
+`TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch`.
+
 `wireAuthz` also builds the `authz.Service` when the identity and repository wiring ran (`a.m1.principals`,
 `a.m1.repositories`) and sets `a.m1.authzService`; `startClient` hands it and the engine to the handlers as `v1.AuthzServices`.
 `*authz.Service` is the `principal.AdminBinder` of `service-account create --admin` (R-AUTH-015, `BindAdmin`): the command that
 creates a service account with `--admin` builds its own manager and passes the service. The repository service is built with
-`authz.NewSettingsHook` in `wireRepository`.
+`authz.NewSettingsHook`, `NewExposureHook` and `NewPolicyHook` in `wireRepository`. Its `KnownFormat` is the format registry
+(`internal/formats`), so a policy selector names only a registered format.
 
 ## Management operations
 

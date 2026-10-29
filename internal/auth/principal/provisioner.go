@@ -19,6 +19,8 @@ type ProvisionerOptions struct {
 	// BreakGlassName is auth.break_glass.username, a reserved username.
 	BreakGlassName string
 	Metrics        *Metrics
+	// Authz is told of every renamed user; nil tells nobody.
+	Authz AuthzHook
 }
 
 // PGProvisioner implements [Provisioner] on PostgreSQL (R-AUTH-007, R-AUTH-008).
@@ -28,13 +30,14 @@ type PGProvisioner struct {
 	rec      audit.Recorder
 	reserved []string
 	metrics  *Metrics
+	authz    AuthzHook
 }
 
 var _ Provisioner = (*PGProvisioner)(nil)
 
 // NewProvisioner creates the provisioner.
 func NewProvisioner(o ProvisionerOptions) *PGProvisioner {
-	p := &PGProvisioner{db: o.DB, notify: o.Notifier, rec: o.Recorder, metrics: o.Metrics}
+	p := &PGProvisioner{db: o.DB, notify: o.Notifier, rec: o.Recorder, metrics: o.Metrics, authz: o.Authz}
 	if p.rec == nil {
 		p.rec = audit.Nop{}
 	}
@@ -242,6 +245,9 @@ func (p *PGProvisioner) rename(ctx context.Context, tx meta.Tx, qs *q.Queries, c
 			return false, err
 		}
 		if len(rows) > 0 {
+			if err := notifyAuthz(ctx, p.authz, tx, id); err != nil {
+				return false, err
+			}
 			if err := NotifyPrincipals(p.notify, tx, ChangePrincipal, id); err != nil {
 				return false, err
 			}

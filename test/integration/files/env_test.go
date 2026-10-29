@@ -532,26 +532,27 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		t.Fatalf("changes.Start: %v", err)
 	}
 
+	if r.reader, err = repository.NewReader(repository.ReaderOptions{
+		Runner: r.db, Catalog: catalog{}, Caches: caches, Poller: r.changes,
+		SafetyTTL: 5 * time.Minute, UnknownKeys: 10000, LookupWait: 5 * time.Second, Log: quiet,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	r.engine, err = authz.New(authz.Options{
-		Source: authz.NewPostgresSource(r.db, 10*time.Second), Changes: r.changes,
+		Repositories: r.reader,
+		Source:       authz.NewPostgresSource(r.db, 10*time.Second), Changes: r.changes,
 		Config: config.Authz{
 			HideExistence: true, Cache: config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: time.Hour},
 			Audit: config.AuthzAudit{Reads: config.AuthzReadsDenied},
 		},
 		EpochPollInterval: o.poll, RetryBudget: 5 * time.Second,
-		AnonymousAccess: e.anonymous.Load, Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
+		AnonymousAccess: func(context.Context) (bool, error) { return e.anonymous.Load(), nil }, Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := r.engine.Start(ctx); err != nil {
 		t.Fatalf("engine.Start: %v", err)
-	}
-	if r.reader, err = repository.NewReader(repository.ReaderOptions{
-		Runner: r.db, Catalog: catalog{}, Caches: caches, Poller: r.changes,
-		SafetyTTL: 5 * time.Minute, UnknownKeys: 10000, LookupWait: 5 * time.Second, Log: quiet,
-	}); err != nil {
-		t.Fatal(err)
 	}
 
 	reg := jobs.NewRegistry()
@@ -638,7 +639,7 @@ func (r *replica) serve(o replicaOpts) {
 		API: v1.Services{
 			Config: apiConfig(), Store: r.db, Queue: r.queue, Audit: r.rec,
 		},
-		Repositories: v1.RepositoryServices{Service: r.repos, Authz: r.engine, Reader: r.reader, AnonymousAccess: r.e.anonymous.Load},
+		Repositories: v1.RepositoryServices{Service: r.repos, Authz: r.engine, Reader: r.reader, AnonymousAccess: func(context.Context) (bool, error) { return r.e.anonymous.Load(), nil }},
 		Files:        r.files,
 	})
 	api.Register(router)

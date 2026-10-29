@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
@@ -38,6 +39,7 @@ func (f configFacts) Facts(ctx context.Context) (v1.Facts, error) {
 			Endpoint: c.Storage.S3.Endpoint, Bucket: c.Storage.S3.Bucket, Prefix: c.Storage.S3.Prefix, CredentialSource: src,
 		},
 		Tracing:     c.Tracing.Enabled,
+		Formats:     formatNames(),
 		MemoryLimit: int64(c.Runtime.MemoryLimitBytes),
 	}
 	if sf, ok := f.a.systemFacts(); ok {
@@ -59,6 +61,17 @@ func (f configFacts) Facts(ctx context.Context) (v1.Facts, error) {
 		out.Database = databaseFacts(ctx, db)
 	}
 	return out, nil
+}
+
+// formatNames lists the formats the format registry serves, sorted by ID: the
+// formats of GET /api/v1/system/version and /system/info (R-OPS-002, R-OPS-004).
+func formatNames() []string {
+	ds := formats.Descriptors()
+	out := make([]string, len(ds))
+	for i, d := range ds {
+		out[i] = string(d.ID)
+	}
+	return out
 }
 
 // factsDatabaseBudget bounds the database part of GET /system/info, which is

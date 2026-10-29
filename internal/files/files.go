@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
@@ -59,12 +60,6 @@ type WriteRecorder interface {
 	RecordAllowed(ctx context.Context, tx meta.Tx, sub authz.Subject, c authz.Coordinate, d authz.Decision) error
 }
 
-// CatchUpper is implemented by the decision point to bring its grant index up to
-// the state the change-log poll applied (authz.Engine.CatchUp).
-type CatchUpper interface {
-	CatchUp(ctx context.Context, repoKey string) error
-}
-
 // ActivitySink receives "this repository was used" (repository.Activity).
 type ActivitySink interface{ Touch(repoID string) }
 
@@ -96,7 +91,6 @@ type Service struct {
 	repos    repository.Reader
 	authz    authz.Authorizer
 	paths    PathDecider
-	catchUp  CatchUpper
 	writes   WriteRecorder
 	rec      audit.Recorder
 	jobs     JobEnqueuer
@@ -133,7 +127,6 @@ func New(o Options) (*Service, error) {
 		s.activity = o.Activity
 	}
 	s.paths, _ = o.Authz.(PathDecider)
-	s.catchUp, _ = o.Authz.(CatchUpper)
 	s.writes, _ = o.Authz.(WriteRecorder)
 	return s, nil
 }
@@ -148,53 +141,16 @@ type Caller struct {
 	Source   audit.Source
 }
 
-// actorID returns the actor's principal id when it is a uuid, "" otherwise (a
+// actorID returns the actor's principal id when it is one, "" otherwise (a
 // break-glass administrator has no row of the principal table).
-func (c Caller) actorID() string {
-	if isUUID(c.Actor.ID) {
-		return c.Actor.ID
-	}
-	return ""
-}
-
-func isUUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i := range len(s) {
-		switch ch := s[i]; {
-		case i == 8 || i == 13 || i == 18 || i == 23:
-			if ch != '-' {
-				return false
-			}
-		case ch >= '0' && ch <= '9', ch >= 'a' && ch <= 'f', ch >= 'A' && ch <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
+func (c Caller) actorID() string { return principal.IDOrEmpty(c.Actor.ID) }
 
 // decide asks the decision point for the actions on a path and returns the
 // decision for the caller to keep (RecordAllowed) or the error of its refusal.
 //
-// A key that the replica's snapshot does not hold is looked up first, so that a
-// repository created through another replica is known to the decision point as
-// soon as its creation has answered (R-ARCH-011 step 2, R-API-052): the lookup
-// finds the row in PostgreSQL and runs the change-log poll that brings the
-// repository into the grant index, which the decision then waits for. The result
-// is not used, because the decision answers (R-AUTHZ-016); only a lookup that
-// cannot finish in time, 503 with Retry-After, is returned.
+// A key the grant index does not hold yet is looked up and caught up by the
+// decision point itself (authz.Engine.Know, R-ARCH-011 step 2, R-API-052).
 func (s *Service) decide(ctx context.Context, c Caller, repo, path string, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
-	if _, err := s.repos.ByKey(ctx, repo); err != nil {
-		if e, ok := errs.As(err); ok && e.Kind == errs.Unavailable {
-			return authz.Decision{}, err
-		}
-	} else if s.catchUp != nil {
-		if err := s.catchUp.CatchUp(ctx, repo); err != nil {
-			return authz.Decision{}, err
-		}
-	}
 	d := s.authz.Decide(ctx, c.Subject, s.coordinate(c, repo, path, kind, actions...))
 	if !d.Allowed() {
 		return d, d.Err()

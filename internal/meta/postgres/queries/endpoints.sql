@@ -111,6 +111,10 @@ DELETE FROM endpoint_exposure_rule
    AND (sqlc.arg(expected)::bigint < 0 OR revision = sqlc.arg(expected)::bigint)
 RETURNING id::text AS id, revision;
 
+-- name: EndpointsLockRule :exec
+-- Locks the rule before its before-state is read (R-AUTHZ-031), as AuthzLockPolicy.
+SELECT 1 FROM endpoint_exposure_rule WHERE endpoint = sqlc.arg(endpoint)::text AND name = sqlc.arg(name)::text FOR UPDATE;
+
 -- name: EndpointsRuleRevision :many
 SELECT revision FROM endpoint_exposure_rule WHERE endpoint = sqlc.arg(endpoint)::text AND name = sqlc.arg(name)::text;
 

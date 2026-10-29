@@ -23,19 +23,18 @@ const (
 	EventRoleUnbound   = "authz.role.unbound"
 )
 
-// actorOf converts the subject to the actor of an audit event.
+// actorOf converts the subject to the actor of an audit event. The kind of a
+// principal is the string of its principal.Kind, which is also the kind of the
+// edge type (v1.ActorFrom), so both build the same actor.
 func actorOf(sub Subject) audit.Actor {
-	switch {
-	case sub.Anonymous:
-		return audit.Actor{Kind: "anonymous"}
-	case sub.Kind == principal.KindBreakGlass:
-		return audit.Actor{Kind: "break_glass", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
-	case sub.Kind == principal.KindServiceAccount:
-		return audit.Actor{Kind: "service_account", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
-	case sub.Kind == principal.KindCI:
-		return audit.Actor{Kind: "ci", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
+	if sub.Anonymous {
+		return audit.Actor{Kind: string(principal.KindAnonymous)}
 	}
-	return audit.Actor{Kind: "user", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
+	kind := string(sub.Kind)
+	if kind == "" { // a subject a test built by name only
+		kind = string(principal.KindUser)
+	}
+	return audit.Actor{Kind: kind, ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID, AuthMethod: sub.AuthMethod}
 }
 
 func credentialKind(sub Subject) string {

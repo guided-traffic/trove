@@ -146,7 +146,7 @@ How the pieces fit:
 
 [audit_source.go](../../internal/api/v1/audit_source.go) (`WithRequestSource`) wraps the recorder at the composition root
 (`startAudit` sets `a.m1.recorder` to the wrapper). An event recorded with a request context gets the client address, the trace
-ID and the endpoint when its producer left them empty, so a domain package never passes the request down (Q-OPS-49). The deduplication
+ID, user agent and the endpoint when its producer left them empty, so a domain package never passes the request down (Q-OPS-49). The source comes from `httpserver.SourceFrom(ctx)` (the chain keeps the User-Agent in `RequestInfo`); the actor of a request comes from `v1.ActorFrom(httpserver.Principal)`, which fills the token ID and the authentication method, and a principal ID in an actor passes `principal.IDOrEmpty` (Q-OPS-152). The deduplication
 of an anonymous refusal keys on that address, and the filter `traceId` finds an event by the `X-Request-Id` the client received.
 
 ## Partitions and retention

@@ -7,6 +7,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -49,6 +50,7 @@ func (a *App) wireAuthz(ctx context.Context) error {
 		EpochPollInterval: cfg.Cluster.EpochPollInterval,
 		RetryBudget:       cfg.Database.Retry.MaxElapsed,
 		AnonymousAccess:   a.m1.anonymousAccess,
+		Repositories:      a.m1.repositories,   // the lookup and catch-up of a repository the index lacks (R-API-052)
 		Ceiling:           a.exposureCeiling(), // the endpoints area (R-EP-013, wire_exposure.go)
 		Recorder:          a.m1.recorder,
 		Replica:           a.id.Instance,
@@ -70,6 +72,7 @@ func (a *App) wireAuthz(ctx context.Context) error {
 		}
 		svc := authz.NewService(authz.ServiceOptions{
 			DB: db, Changes: a.changes, Principals: a.m1.principals, Repositories: a.m1.repositories, Recorder: rec,
+			KnownFormat: func(name string) bool { _, ok := formats.Lookup(name); return ok },
 		})
 		a.mu.Lock()
 		a.m1.authzService = svc

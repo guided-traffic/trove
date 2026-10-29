@@ -349,7 +349,7 @@ func (s *Server) recordExport(r *http.Request, f audit.Filter, params map[string
 		return err
 	}
 	ev := audit.Event{
-		Type: audit.AuditExported, Actor: auditActor(r.Context()), Outcome: audit.Success,
+		Type: audit.AuditExported, Actor: ActorFrom(httpserver.PrincipalFrom(r.Context())), Outcome: audit.Success,
 		Source: auditSource(r), Details: details,
 	}
 	return s.o.API.Store.InTx(r.Context(), func(tx meta.Tx) error {

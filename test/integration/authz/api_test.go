@@ -69,8 +69,23 @@ func entry(principal string, actions ...string) map[string]any {
 	return map[string]any{"principal": principal, "actions": actions}
 }
 
+// wantStatus asserts the status and the code of an answer. A 422 names the
+// resource-specific code of a violation in errors[], the top-level code being
+// validation_failed (R-API-009); reserved_name and idempotency_key_reused are the
+// convention's own top-level codes.
 func wantStatus(t *testing.T, r stack.Response, status int, code string) {
 	t.Helper()
+	if status == 422 && code != "" && code != "validation_failed" && code != "reserved_name" && code != "idempotency_key_reused" {
+		list, _ := r.JSON(t)["errors"].([]any)
+		found := false
+		for _, e := range list {
+			found = found || e.(map[string]any)["code"] == code
+		}
+		if r.Status != 422 || r.Code() != "validation_failed" || !found {
+			t.Fatalf("answered %d %q, want 422 validation_failed with %q in errors[]\n%s", r.Status, r.Code(), code, r.Body)
+		}
+		return
+	}
 	if r.Status != status || (code != "" && r.Code() != code) {
 		t.Fatalf("answered %d %q, want %d %q\n%s", r.Status, r.Code(), status, code, r.Body)
 	}
@@ -205,9 +220,10 @@ func TestR_AUTHZ_021_ValidationAndPermissions(t *testing.T) {
 	f := newAPI(t, stack.Options{})
 	me := f.admin.Name
 
-	t.Run("R-AUTHZ-021 a rule that fails answers 422 with the first code and every problem", func(t *testing.T) {
+	t.Run("R-AUTHZ-021 a rule that fails answers 422 validation_failed with every problem in errors[]", func(t *testing.T) {
 		body := policyBody("bad", entry("user:ghost", "read"), entry("user:bob", "fly"))
 		r := f.cl.Do(me, "POST", policies, body)
+		wantStatus(t, r, 422, "validation_failed")
 		wantStatus(t, r, 422, "unknown_principal")
 		errs, _ := r.JSON(t)["errors"].([]any)
 		if len(errs) != 2 || errs[0].(map[string]any)["pointer"] != "/entries/0/principal" || errs[1].(map[string]any)["code"] != "invalid_action" {

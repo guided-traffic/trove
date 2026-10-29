@@ -420,7 +420,7 @@ func TestR_AUTH_018_GroupsAndMemberships(t *testing.T) {
 			t.Fatalf("%+v %v", g, err)
 		}
 		_, err = a.manager.CreateGroup(ctx, admin, principal.NewGroup{Name: "everyone"})
-		wantCode(t, err, 409, errs.CodeConflict)
+		wantCode(t, err, 409, errs.CodeAlreadyExists)
 		_, err = a.manager.CreateGroup(ctx, admin, principal.NewGroup{Name: "Bad Name"})
 		wantCode(t, err, 400, errs.CodeValidation)
 		// Auto-join gives a new user an auto membership, existing users none (R-AUTH-019).
@@ -571,7 +571,7 @@ func TestR_AUTH_016_DisableEnableDelete(t *testing.T) {
 	t.Run("create: duplicate 409, reserved 422 reserved_name, invalid 422, user edits", func(t *testing.T) {
 		u := a.user("dave")
 		_, err := a.manager.CreateUser(ctx, admin, principal.NewUser{Name: "dave"})
-		wantCode(t, err, 409, errs.CodeConflict)
+		wantCode(t, err, 409, errs.CodeAlreadyExists)
 		_, err = a.manager.CreateUser(ctx, admin, principal.NewUser{Name: "me"})
 		wantCode(t, err, 422, "reserved_name")
 		_, err = a.manager.CreateUser(ctx, admin, principal.NewUser{Name: "breakglass"})
@@ -635,7 +635,7 @@ func TestR_AUTH_020_ServiceAccounts(t *testing.T) {
 			wantCode(t, err, 400, errs.CodeValidation)
 		}
 		_, err := a.manager.CreateServiceAccount(ctx, admin, principal.NewServiceAccount{Name: "ci-bot"})
-		wantCode(t, err, 409, errs.CodeConflict)
+		wantCode(t, err, 409, errs.CodeAlreadyExists)
 	})
 	t.Run("admin needs a binder", func(t *testing.T) {
 		_, err := a.manager.CreateServiceAccount(ctx, admin, principal.NewServiceAccount{Name: "ops", Admin: true})

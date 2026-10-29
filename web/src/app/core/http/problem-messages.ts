@@ -65,8 +65,6 @@ export function describeProblem(error: ApiError): ProblemText {
     case 'internal':
       return known($localize`:@@problem.internal:Something went wrong on the server.`);
     // >>> M1 ui-a
-    case 'repository_exists':
-      return known($localize`:@@problem.repository_exists:A repository with this key exists, or is still being deleted.`);
     case 'repository_not_found':
       return known($localize`:@@problem.repository_not_found:This repository does not exist, or you may not see it.`);
     case 'repository_disabled':
@@ -81,7 +79,7 @@ export function describeProblem(error: ApiError): ProblemText {
       return known($localize`:@@problem.invalid_pattern:This pattern is not valid.`);
     case 'invalid_document':
       return known($localize`:@@problem.invalid_document:The document contains a member that is unknown or misspelt.`);
-    case 'immutable_field':
+    case 'immutable':
       return known($localize`:@@problem.immutable_field:This field cannot be changed after creation.`);
     case 'not_applicable':
       return known($localize`:@@problem.not_applicable:This setting does not apply to this class or format.`);

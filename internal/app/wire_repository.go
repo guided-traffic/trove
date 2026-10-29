@@ -66,8 +66,9 @@ func (a *App) wireRepository() error {
 		Runner: db, Catalog: formatCatalog{}, Recorder: rec, Notifier: changes,
 		DeleteBatch: a.cfg.Storage.Delete.BatchSize, Log: log,
 		// The authorization area records authz.settings.changed in the transaction of an update
-		// (R-AUTHZ-031) and endpoint.exposure.deleted for the rules a deletion takes with it (H-164).
-		Hooks: repository.MultiHooks(authz.NewSettingsHook(rec), authz.NewExposureHook(a.exposureService())),
+		// (R-AUTHZ-031) and endpoint.exposure.deleted for the rules a deletion takes with it (H-164);
+		// the policy hook moves the epoch and the policy versions the deletion changes (R-AUTHZ-028).
+		Hooks: repository.MultiHooks(authz.NewSettingsHook(rec), authz.NewExposureHook(a.exposureService()), authz.NewPolicyHook(changes)),
 	}
 	if queue != nil { // a nil *jobs.Queue in the interface would not be nil
 		opts.Jobs = queue

@@ -306,7 +306,10 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	f := exposureFixture()
 	reg := prometheus.NewRegistry()
 	e := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling(); o.Metrics = reg })
-	on := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling(); o.AnonymousAccess = func() bool { return true } })
+	on := newTestEngine(t, f, func(o *Options) {
+		o.Ceiling = exposureCeiling()
+		o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil }
+	})
 	n := 0
 	runAuthzCases(t, e, []authzCase{
 		{"R-EP-014 a SAT reads an exposed file on customers", botSub, onEP(read("generic-local", "", "releases/1.0/app.zip"), "customers"), Allow, ReasonAllowGrant, ""},

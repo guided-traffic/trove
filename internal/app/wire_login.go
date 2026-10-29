@@ -115,5 +115,5 @@ func clientAddrString(r *http.Request) string {
 
 // eventSource is the source of an audit event (R-AUTH-041).
 func eventSource(r *http.Request) audit.Source {
-	return audit.Source{ClientAddr: clientAddrString(r), UserAgent: r.UserAgent(), TraceID: httpserver.RequestID(r.Context())}
+	return httpserver.SourceFrom(r.Context())
 }

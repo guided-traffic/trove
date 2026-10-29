@@ -125,7 +125,12 @@ func (a *App) repositoryAPI() v1.RepositoryServices {
 	a.mu.Unlock()
 	return v1.RepositoryServices{
 		Service: svc, Authz: a.m1.authorizer, Reader: a.m1.repositories,
-		AnonymousAccess: func() bool { return a.m1.anonymousAccess != nil && a.m1.anonymousAccess() },
+		AnonymousAccess: func(ctx context.Context) (bool, error) {
+			if a.m1.anonymousAccess == nil {
+				return false, nil
+			}
+			return a.m1.anonymousAccess(ctx)
+		},
 	}
 }
 

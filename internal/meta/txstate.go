@@ -40,6 +40,39 @@ func (s *TxState) OnRollback(fn func()) {
 	s.mu.Unlock()
 }
 
+// HookMark is a position in the hooks of a transaction attempt.
+type HookMark struct{ before, after, rollback int }
+
+// Mark returns the current position of the hooks, for [TxState.Discard].
+func (s *TxState) Mark() HookMark {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return HookMark{len(s.before), len(s.after), len(s.rollback)}
+}
+
+// Discard forgets the Before and After hooks registered since the mark and runs
+// the OnRollback hooks registered since it: the work that registered them was
+// undone inside the transaction (a rollback to a savepoint), so it must neither
+// write at commit nor keep what it holds. The transaction goes on.
+func (s *TxState) Discard(m HookMark) {
+	s.mu.Lock()
+	var undo []func()
+	if len(s.before) > m.before {
+		s.before = s.before[:m.before]
+	}
+	if len(s.after) > m.after {
+		s.after = s.after[:m.after]
+	}
+	if len(s.rollback) > m.rollback {
+		undo = append(undo, s.rollback[m.rollback:]...)
+		s.rollback = s.rollback[:m.rollback]
+	}
+	s.mu.Unlock()
+	for _, fn := range undo {
+		fn()
+	}
+}
+
 // Value implements Tx.
 func (s *TxState) Value(key any) any {
 	s.mu.Lock()

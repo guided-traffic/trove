@@ -42,6 +42,20 @@ func problemOf(t testing.TB, res response, status int, code string) map[string]a
 	return m
 }
 
+// violation asserts the 422 of R-API-009: the top-level code is validation_failed
+// and the resource-specific code is one of errors[].code (Q-REPO-84).
+func violation(t testing.TB, res response, code string) {
+	t.Helper()
+	m := problemOf(t, res, 422, "validation_failed")
+	list, _ := m["errors"].([]any)
+	for _, e := range list {
+		if e.(map[string]any)["code"] == code {
+			return
+		}
+	}
+	t.Fatalf("errors %v hold no %q\n%s", m["errors"], code, res.body)
+}
+
 // TestRepositoryResourceContract points the contract tests of E1.6 at the repository
 // resource: pagination, ETag with If-Match, merge patch and idempotency keys, with
 // the requests spread over two replicas and every answer validated against the
@@ -66,7 +80,6 @@ func TestRepositoryResourceContract(t *testing.T) {
 		ClearMember: "description", ClearedValue: "",
 		ImmutableMember: "class", ImmutableValue: "remote",
 		OtherQuery: "class=local", Put: true,
-		MalformedCode: "invalid_document", ImmutableCode: "immutable_field",
 	})
 	t.Run("R-API-002 E1.6 the answers of the repository operations were validated against the document", func(t *testing.T) {
 		if missing := val.Uncovered("createRepository", "listRepositories", "getRepository", "updateRepository", "replaceRepository"); len(missing) > 0 {
@@ -147,7 +160,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 				t.Errorf("a generic local repository has no %s member (R-GENERIC-008)", k)
 			}
 		}
-		problemOf(t, a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic"}), 409, "repository_exists")
+		problemOf(t, a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-one", "class": "local", "format": "generic"}), 409, "already_exists")
 	})
 
 	t.Run("R-REPO-009 a repository created on A is usable on B at once (R-API-052)", func(t *testing.T) {
@@ -162,6 +175,29 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		}
 	})
 
+	t.Run("R-API-052 a repository created on A is usable on B through every items operation at once", func(t *testing.T) {
+		if res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "gen-items", "class": "local", "format": "generic"}); res.status != 201 {
+			t.Fatalf("%d %s", res.status, res.body)
+		}
+		if res := a.put("admin", "/files/gen-items/x.txt", "x"); res.status != 201 {
+			t.Fatalf("deploy on A: %d %s", res.status, res.body)
+		}
+		// Nothing else touched gen-items on B: the decision point itself brings
+		// the grant index up to the repository.
+		for _, path := range []string{
+			"/api/v1/repositories/gen-items/items?path=x.txt",
+			"/api/v1/repositories/gen-items/children",
+			"/api/v1/repositories/gen-items/stats?path=x.txt",
+		} {
+			if res := b.get("admin", path); res.status != 200 {
+				t.Errorf("GET %s on B: %d %s", path, res.status, res.body)
+			}
+		}
+		if res := b.do("admin", "DELETE", "/api/v1/repositories/gen-items/items?path=x.txt", nil); res.status != 204 && res.status != 200 && res.status != 202 {
+			t.Errorf("DELETE on B: %d %s", res.status, res.body)
+		}
+	})
+
 	t.Run("R-REPO-008 the validation reports unknown members, classes, formats, keys and several violations at once", func(t *testing.T) {
 		post := func(body map[string]any) response { return a.postJSON("admin", "/api/v1/repositories", body) }
 		base := func(extra map[string]any) map[string]any {
@@ -171,18 +207,18 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 			}
 			return m
 		}
-		m := problemOf(t, post(base(map[string]any{"excludePattern": []string{"x"}})), 400, "invalid_document")
+		m := problemOf(t, post(base(map[string]any{"excludePattern": []string{"x"}})), 400, "malformed_request")
 		if errs, _ := m["errors"].([]any); len(errs) == 0 || errs[0].(map[string]any)["pointer"] != "/excludePattern" {
 			t.Errorf("errors = %v", m["errors"])
 		}
-		problemOf(t, post(base(map[string]any{"generic": map[string]any{}})), 400, "invalid_document")
-		problemOf(t, post(base(map[string]any{"class": "remote"})), 422, "unsupported_class")
-		problemOf(t, post(base(map[string]any{"class": "virtual"})), 422, "unsupported_class")
-		problemOf(t, post(base(map[string]any{"format": "cobol"})), 422, "unknown_format")
-		problemOf(t, post(base(map[string]any{"layout": "maven-2"})), 422, "unsupported_layout")
+		problemOf(t, post(base(map[string]any{"generic": map[string]any{}})), 400, "malformed_request")
+		violation(t, post(base(map[string]any{"class": "remote"})), "unsupported_class")
+		violation(t, post(base(map[string]any{"class": "virtual"})), "unsupported_class")
+		violation(t, post(base(map[string]any{"format": "cobol"})), "unknown_format")
+		violation(t, post(base(map[string]any{"layout": "maven-2"})), "unsupported_layout")
 		problemOf(t, post(base(map[string]any{"key": "batch-create"})), 422, "reserved_name")
-		problemOf(t, post(base(map[string]any{"key": "Bad_Key"})), 422, "invalid_key")
-		problemOf(t, post(base(map[string]any{"local": map[string]any{"packageOwnership": "enforce"}})), 422, "not_applicable")
+		violation(t, post(base(map[string]any{"key": "Bad_Key"})), "invalid_key")
+		violation(t, post(base(map[string]any{"local": map[string]any{"packageOwnership": "enforce"}})), "not_applicable")
 		multi := problemOf(t, post(base(map[string]any{"key": "NOPE", "format": "cobol", "description": strings.Repeat("x", 2001)})), 422, "validation_failed")
 		if errs, _ := multi["errors"].([]any); len(errs) < 3 {
 			t.Errorf("one response must report every violation: %v", multi["errors"])
@@ -272,9 +308,9 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		if same.status != 200 || same.header.Get("ETag") != `"3"` {
 			t.Errorf("a patch that changes nothing writes nothing: %d %v", same.status, same.header)
 		}
-		problemOf(t, patch(a, `{"key":"other"}`, "If-Match", `"3"`), 422, "immutable_field")
-		problemOf(t, patch(a, `{"description":1}`, "If-Match", `"3"`), 400, "invalid_document")
-		problemOf(t, patch(a, `{"description":"`+strings.Repeat("x", 2001)+`"}`, "If-Match", `"3"`), 422, "out_of_range")
+		problemOf(t, patch(a, `{"key":"other"}`, "If-Match", `"3"`), 422, "validation_failed")
+		problemOf(t, patch(a, `{"description":1}`, "If-Match", `"3"`), 400, "malformed_request")
+		violation(t, patch(a, `{"description":"`+strings.Repeat("x", 2001)+`"}`, "If-Match", `"3"`), "out_of_range")
 	})
 
 	t.Run("R-REPO-011 PUT never creates a repository", func(t *testing.T) {

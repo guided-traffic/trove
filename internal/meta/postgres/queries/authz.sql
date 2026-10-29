@@ -97,6 +97,12 @@ DELETE FROM authz_policy
    AND (sqlc.arg(expected)::bigint < 0 OR version = sqlc.arg(expected)::bigint)
 RETURNING id::text AS id, version;
 
+-- name: AuthzLockPolicy :exec
+-- Locks the row before the before-state is read, so that the state the revocation
+-- journal records is the one the write replaces (R-AUTHZ-031): two blind writes
+-- (If-Match: *) run one after the other.
+SELECT 1 FROM authz_policy WHERE name = sqlc.arg(name)::text FOR UPDATE;
+
 -- name: AuthzPolicyVersion :many
 SELECT version FROM authz_policy WHERE name = sqlc.arg(name)::text;
 
@@ -149,3 +155,21 @@ SELECT auto_join FROM user_group WHERE principal_id = sqlc.arg(principal_id)::te
 SELECT (SELECT count(*) FROM authz_role_binding WHERE role = 'admin')::bigint AS admin_bindings,
        EXISTS (SELECT 1 FROM app_user u JOIN principal p ON p.id = u.principal_id
                 WHERE u.is_break_glass AND p.status = 'active') AS break_glass_active;
+
+-- name: AuthzTouchPoliciesOfPrincipal :many
+-- Moves the version of every policy whose entries name the principal, so that the
+-- ETag of the representation changes when the principal is renamed or deleted
+-- (R-AUTHZ-028); the principal's own rows are removed or renamed by the caller.
+UPDATE authz_policy SET version = version + 1
+ WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = sqlc.arg(principal_id)::text::uuid)
+RETURNING id::text AS id;
+
+-- name: AuthzPrincipalHasBinding :one
+SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = sqlc.arg(principal_id)::text::uuid);
+
+-- name: AuthzTouchPoliciesOfRepository :many
+-- Moves the version of every policy with a key selector on the repository, which
+-- goes with the repository row (R-AUTHZ-028).
+UPDATE authz_policy SET version = version + 1
+ WHERE id IN (SELECT policy_id FROM authz_policy_selector WHERE repository_id = sqlc.arg(repository_id)::bigint)
+RETURNING id::text AS id;

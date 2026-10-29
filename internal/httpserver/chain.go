@@ -93,6 +93,12 @@ type Chain struct {
 	// anonymous.
 	Authenticate func(*http.Request) (Principal, error)
 
+	// Preflight runs between stage 5 and the authentication of stage 6: it answers
+	// what a browser sends without credentials and that must not be refused for
+	// lacking them, the CORS preflight of an allowed origin (R-API-018), and passes
+	// every other request on. Nil means none.
+	Preflight func(http.Handler) http.Handler
+
 	// RateLimit is stage 7.
 	RateLimit func(http.Handler) http.Handler
 
@@ -113,6 +119,9 @@ func (c Chain) Handler() http.Handler {
 		h = c.RateLimit(h)
 	}
 	h = c.authStage(h)
+	if c.Preflight != nil {
+		h = c.Preflight(h)
+	}
 	h = c.addrStage(h)
 	h = c.inflightStage(h)
 	if c.AccessLog != nil {
@@ -231,6 +240,7 @@ func (c Chain) addrStage(next http.Handler) http.Handler {
 		} else {
 			info = RequestInfo{Peer: Peer(r), Client: Peer(r)}
 		}
+		info.UserAgent = r.UserAgent()
 		ctx := context.WithValue(r.Context(), keyInfo, info)
 		r = r.WithContext(ctx)
 		if c.Annotate != nil {

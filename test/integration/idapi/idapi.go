@@ -149,9 +149,9 @@ func Handler(t testing.TB, c Components) http.Handler {
 			Source: authz.NewPostgresSource(c.DB, 10*time.Second), Changes: c.Changes,
 			Config:            config.Authz{HideExistence: true, Cache: config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: time.Hour}},
 			EpochPollInterval: time.Second, RetryBudget: 5 * time.Second, Recorder: c.Recorder, Replica: c.Name, Log: slog.New(slog.DiscardHandler),
-			AnonymousAccess: func() bool {
-				eff, err := c.Settings.Effective(context.Background())
-				return err == nil && eff.AnonymousAccess
+			AnonymousAccess: func(ctx context.Context) (bool, error) {
+				eff, err := c.Settings.Effective(ctx)
+				return eff.AnonymousAccess, err
 			},
 		})
 		if err != nil {

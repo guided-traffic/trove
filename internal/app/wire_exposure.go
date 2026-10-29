@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sync/atomic"
-	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
@@ -13,7 +11,6 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/httpserver"
-	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // The wiring of the endpoints area (WP1.9): the exposure ceiling the decision
@@ -64,7 +61,7 @@ func (a *App) wireEndpoints(ctx context.Context) {
 		a.warnInertEndpoints(ctx)
 	}
 	if a.sub.ClientListener && a.m1.limiters != nil {
-		a.wireEndpointLimits(ctx, a.m1.limiters)
+		a.wireEndpointLimits(a.m1.limiters)
 	}
 }
 
@@ -88,10 +85,10 @@ func (a *App) warnInertEndpoints(ctx context.Context) {
 // wireEndpointLimits builds one cluster limiter per rate-limit class that an
 // endpoint of this process names (endpoint_<class>, R-EP-015) and the stage of
 // each such endpoint. While Valkey is unavailable the per-replica share divides
-// by the live replicas that serve this process's endpoints: the replicas of its
-// pool, read from the replica registry.
-func (a *App) wireEndpointLimits(ctx context.Context, ls *cluster.LimiterSet) {
-	share := a.startServingReplicaCount(ctx)
+// by the live replicas that serve this process's endpoints, the replicas of its
+// pool: the count the limiter set holds, shared with every other limiter of the
+// client listener (replicaCount).
+func (a *App) wireEndpointLimits(ls *cluster.LimiterSet) {
 	limiters := map[string]*cluster.Limiter{}
 	a.m1.endpointLimits = map[string]func(http.Handler) http.Handler{}
 	for _, rt := range a.eps {
@@ -105,58 +102,13 @@ func (a *App) wireEndpointLimits(ctx context.Context, ls *cluster.LimiterSet) {
 		}
 		lim := limiters[class]
 		if lim == nil {
-			lim = ls.NewLimiterShared(v1.EndpointLimiterName(class), cluster.ScopeCluster, l.RequestsPerSecond, l.Burst, share.Get)
+			lim = ls.NewLimiter(v1.EndpointLimiterName(class), cluster.ScopeCluster, l.RequestsPerSecond, l.Burst)
 			limiters[class] = lim
 		}
 		a.m1.endpointLimits[rt.cfg.Name] = v1.NewEndpointRateLimit(v1.EndpointRateLimitOptions{
 			Endpoint: rt.cfg.Name, Class: class, Limit: l, Limiter: lim,
 		})
 	}
-}
-
-// servingReplicas is the n of the endpoint classes' fallback share.
-type servingReplicas struct{ n atomic.Int32 }
-
-func (s *servingReplicas) Get() int { return max(1, int(s.n.Load())) }
-
-// startServingReplicaCount refreshes the number of live replicas that serve this
-// process's endpoints every heartbeat interval: web replicas of the same pool
-// and replicas of the role all (EndpointsCountServingReplicas). A failed read
-// keeps the last value; it is 1 until the first read.
-func (a *App) startServingReplicaCount(ctx context.Context) *servingReplicas {
-	s := &servingReplicas{}
-	db := a.database()
-	if db == nil {
-		return s
-	}
-	stale := a.cfg.System.HeartbeatStaleAfter.Seconds()
-	refresh := func() {
-		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		_ = db.Read(rctx, func(c q.DBTX) error {
-			n, err := q.New(c).EndpointsCountServingReplicas(rctx, q.EndpointsCountServingReplicasParams{StaleSecs: stale, Pool: a.id.Pool})
-			if err == nil {
-				s.n.Store(n)
-			}
-			return err
-		})
-	}
-	refresh()
-	a.bg.Add(1)
-	go func() {
-		defer a.bg.Done()
-		t := time.NewTicker(a.cfg.System.HeartbeatInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				refresh()
-			}
-		}
-	}()
-	return s
 }
 
 // endpointStage is stage 7 of an endpoint's chain (R-ARCH-005): it puts the
@@ -198,9 +150,7 @@ func (a *App) credentialRefused(rt *endpointRuntime) func(*http.Request, auth.Re
 		a.auditRecorder().Record(ctx, audit.Event{
 			Type: audit.EventTokenRejected, Outcome: audit.Failure, Reason: "endpoint_not_accepted",
 			Actor: audit.Actor{Kind: "anonymous"}, Endpoint: name,
-			Source: audit.Source{
-				ClientAddr: httpserver.InfoFrom(ctx).Client.String(), UserAgent: r.UserAgent(), TraceID: httpserver.RequestID(ctx),
-			},
+			Source:  httpserver.SourceFrom(ctx),
 			Subject: audit.Subject{Kind: "token", ID: f.TokenID},
 			Details: details,
 		})

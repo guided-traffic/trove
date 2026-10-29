@@ -33,26 +33,25 @@ func TestRepositoryBodies(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-REPO-008 R-API-003 an unknown member is 400 invalid_document with its pointer", func(t *testing.T) {
+	t.Run("R-REPO-008 R-API-003 an unknown member is 400 malformed_request with its pointer", func(t *testing.T) {
 		out, err := stripReadOnly([]byte(`{"key":"a-repo","class":"local","format":"generic","local":{"packageOwnrship":"enforce"}}`))
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = asInvalidDocument(StrictUnmarshal(out, &repository.Document{}))
+		err = StrictUnmarshal(out, &repository.Document{})
 		var e *errs.Error
-		if !errors.As(err, &e) || e.Code != errs.CodeInvalidDocument || e.Status() != 400 || len(e.Fields) != 1 || e.Fields[0].Pointer != "/local/packageOwnrship" {
+		if !errors.As(err, &e) || e.Code != errs.CodeInvalid || e.Status() != 400 || len(e.Fields) != 1 || e.Fields[0].Pointer != "/local/packageOwnrship" {
 			t.Fatalf("err = %#v", err)
 		}
 	})
-	t.Run("R-REPO-008 a duplicate member and a body that is not an object are 400 invalid_document", func(t *testing.T) {
+	t.Run("R-REPO-008 a duplicate member and a body that is not an object are 400 malformed_request", func(t *testing.T) {
 		for _, body := range []string{`{"key":"a","key":"b"}`, `[]`, `"x"`, `{"description":1}`} {
 			out, err := stripReadOnly([]byte(body))
 			if err == nil {
 				err = StrictUnmarshal(out, &repository.Document{})
 			}
-			err = asInvalidDocument(err)
 			var e *errs.Error
-			if !errors.As(err, &e) || e.Code != errs.CodeInvalidDocument || e.Status() != 400 {
+			if !errors.As(err, &e) || e.Code != errs.CodeInvalid || e.Status() != 400 {
 				t.Errorf("%s: %v", body, err)
 			}
 		}

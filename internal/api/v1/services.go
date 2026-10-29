@@ -7,10 +7,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"regexp"
-	"strings"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -79,46 +78,17 @@ func unavailable(what string) error {
 // "no"; any other error, such as an unavailable authorization state, is
 // returned.
 func (s *Server) holds(ctx context.Context, permission string) (bool, error) {
-	if s.o.Access == nil {
-		return false, nil
-	}
-	err := s.o.Access.Require(ctx, permission)
-	if err == nil {
-		return true, nil
-	}
-	if e, ok := errs.As(err); ok && (e.Kind == errs.Forbidden || e.Kind == errs.Unauthenticated) {
-		return false, nil
-	}
-	return false, err
+	return Holds(ctx, s.o.Access, permission)
 }
 
-func uuidPattern() *regexp.Regexp {
-	return regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-}
-
-// callerID returns the caller's principal ID when it is a UUID, "" otherwise
-// (anonymous, or a principal without a table row).
+// callerID returns the caller's principal ID when it is one, "" otherwise
+// (anonymous, or a principal without a table row such as the break-glass session).
 func callerID(ctx context.Context) string {
-	id := httpserver.PrincipalFrom(ctx).ID
-	if uuidPattern().MatchString(id) {
-		return strings.ToLower(id)
-	}
-	return ""
+	return principal.IDOrEmpty(httpserver.PrincipalFrom(ctx).ID)
 }
 
-// auditActor and auditSource describe the caller for an audit event.
-func auditActor(ctx context.Context) audit.Actor {
-	p := httpserver.PrincipalFrom(ctx)
-	return audit.Actor{Kind: string(p.Kind), ID: p.ID, Name: p.Name}
-}
-
-func auditSource(r *http.Request) audit.Source {
-	return audit.Source{
-		ClientAddr: httpserver.InfoFrom(r.Context()).Client.String(),
-		UserAgent:  r.UserAgent(),
-		TraceID:    httpserver.RequestID(r.Context()),
-	}
-}
+// auditSource describes where the request comes from for an audit event.
+func auditSource(r *http.Request) audit.Source { return httpserver.SourceFrom(r.Context()) }
 
 func (s *Server) recorder() audit.Recorder {
 	if s.o.API.Audit == nil {

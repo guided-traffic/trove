@@ -3,11 +3,23 @@ package v1
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
+
+// ActorFrom converts the caller into the actor of an audit event: kind, principal
+// ID, name, and the credential that proved it (token ID and method). Every
+// handler and every Caller of a domain call builds its actor here, so an event
+// names the credential whatever area records it (Q-OPS-49).
+func ActorFrom(p httpserver.Principal) audit.Actor {
+	return audit.Actor{
+		Kind: string(p.Kind), ID: p.ID, Name: p.Name,
+		TokenID: p.Credential.TokenID, AuthMethod: string(p.Credential.Method),
+	}
+}
 
 // SubjectFrom converts the caller the authentication stage stored into the
 // subject authorization evaluates. It is the one conversion between the edge
@@ -15,14 +27,15 @@ import (
 // asks authz a question builds its Subject here, so the two types cannot drift.
 func SubjectFrom(p httpserver.Principal) authz.Subject {
 	s := authz.Subject{
-		Anonymous: p.Anonymous,
-		Kind:      principal.Kind(p.Kind),
-		ID:        p.ID,
-		Name:      p.Name,
-		Mappings:  p.Mappings,
-		TokenID:   p.Credential.TokenID,
-		SessionID: p.Credential.SessionID,
-		MinEpoch:  p.MinEpoch,
+		Anonymous:  p.Anonymous,
+		Kind:       principal.Kind(p.Kind),
+		ID:         p.ID,
+		Name:       p.Name,
+		Mappings:   p.Mappings,
+		TokenID:    p.Credential.TokenID,
+		SessionID:  p.Credential.SessionID,
+		AuthMethod: string(p.Credential.Method),
+		MinEpoch:   p.MinEpoch,
 	}
 	for _, g := range p.Groups {
 		s.Groups = append(s.Groups, principal.GroupRef{ID: g.ID, Name: g.Name})
@@ -54,6 +67,19 @@ func (x authzAccess) Require(ctx context.Context, permission string) error {
 	return x.a.Require(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), permission)
 }
 
+// Holds implements [Prober]: the question of whether the caller holds a
+// permission, asked of an authorizer that can answer it without an audit event.
+func (x authzAccess) Holds(ctx context.Context, permission string) (bool, error) {
+	sub := SubjectFrom(httpserver.PrincipalFrom(ctx))
+	if p, ok := x.a.(authz.Prober); ok {
+		return p.Holds(ctx, sub, permission)
+	}
+	return Holds(ctx, requireOnly{x}, permission)
+}
+
+// requireOnly hides the Prober of an Access, so that Holds falls back to Require.
+type requireOnly struct{ Access }
+
 // RequireAction decides a repository action on the coordinate an operation's
 // declaration names, for the caller of the request (the action form of
 // x-trove-permission). The endpoint the request arrived on is part of the
@@ -65,4 +91,7 @@ func (x authzAccess) RequireAction(ctx context.Context, c authz.Coordinate) erro
 	return x.a.Decide(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), c).Err()
 }
 
-var _ ActionAccess = authzAccess{}
+var (
+	_ ActionAccess = authzAccess{}
+	_ Prober       = authzAccess{}
+)

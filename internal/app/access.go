@@ -27,6 +27,7 @@ type bridgeAccess struct {
 
 var (
 	_ v1.Access       = bridgeAccess{}
+	_ v1.Prober       = bridgeAccess{}
 	_ v1.ActionAccess = bridgeAccess{}
 )
 
@@ -56,13 +57,34 @@ func withRequestPath(ctx context.Context, path string) context.Context {
 	return context.WithValue(ctx, requestPathKey{}, path)
 }
 
-func (b bridgeAccess) Require(ctx context.Context, permission string) error {
+// bootstrapOpen reports whether the bridge opens the permission for this request.
+func (b bridgeAccess) bootstrapOpen(ctx context.Context, permission string) bool {
 	p := httpserver.PrincipalFrom(ctx)
 	path, _ := ctx.Value(requestPathKey{}).(string)
 	if p.Anonymous && b.anonymousRead && permission == v1.PermissionSystemRead && bootstrapPath(path) {
 		if ep := httpserver.EndpointFrom(ctx); ep != nil && ep.IsDefault() && ep.AnonymousAllowed() {
-			return nil
+			return true
 		}
+	}
+	return false
+}
+
+// Holds implements [v1.Prober]: Require as a question, without the audit event of
+// a refusal. Without a decision point nobody holds a permission.
+func (b bridgeAccess) Holds(ctx context.Context, permission string) (bool, error) {
+	if b.bootstrapOpen(ctx, permission) {
+		return true, nil
+	}
+	if b.inner == nil {
+		return false, nil
+	}
+	return v1.Holds(ctx, b.inner, permission)
+}
+
+func (b bridgeAccess) Require(ctx context.Context, permission string) error {
+	p := httpserver.PrincipalFrom(ctx)
+	if b.bootstrapOpen(ctx, permission) {
+		return nil
 	}
 	if b.inner == nil {
 		if p.Anonymous {

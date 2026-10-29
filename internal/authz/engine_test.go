@@ -29,7 +29,7 @@ func startedEngine(t *testing.T, f *fixture, mod func(*Options)) (*Engine, *fake
 	src.set(f.s)
 	ch := &fakeChanges{}
 	ch.poll(f.s.Label)
-	o := Options{Source: src, Changes: ch, Config: testConfig(), RetryBudget: 500 * time.Millisecond, AnonymousAccess: func() bool { return false }}
+	o := Options{Source: src, Changes: ch, Config: testConfig(), RetryBudget: 500 * time.Millisecond, AnonymousAccess: func(context.Context) (bool, error) { return false, nil }}
 	if mod != nil {
 		mod(&o)
 	}
@@ -110,7 +110,7 @@ func TestR_AUTHZ_028_IndexFollowsTheChangeLog(t *testing.T) {
 		low := *f
 		low.s.Label = label(4, 5, 1000)
 		src.set(low.s)
-		e.buildOnce(TriggerSafety)
+		e.buildOnce(TriggerSafety, Label{})
 		if e.Epoch() != 5 {
 			t.Fatalf("epoch = %d, a lower build was installed", e.Epoch())
 		}
@@ -490,6 +490,18 @@ func TestR_AUTHZ_029_DecisionAudit(t *testing.T) {
 			t.Fatalf("%+v", evs)
 		}
 	})
+	t.Run("R-AUTHZ-029 a capability probe records no denial and answers like Require", func(t *testing.T) {
+		e, rec := engine(nil)
+		if held, err := e.Holds(t.Context(), bobSub, "policies:write"); err != nil || held {
+			t.Fatalf("held = %v, err = %v", held, err)
+		}
+		if held, err := e.Holds(t.Context(), Subject{Anonymous: true}, "content:bypass"); err != nil || held {
+			t.Fatalf("anonymous held = %v, err = %v", held, err)
+		}
+		if evs := rec.list(); len(evs) != 0 {
+			t.Fatalf("a probe recorded %+v", evs)
+		}
+	})
 	t.Run("R-AUTHZ-029 a refused management operation is recorded", func(t *testing.T) {
 		e, rec := engine(nil)
 		if err := e.Require(t.Context(), bobSub, "policies:write"); err == nil {
@@ -507,7 +519,7 @@ func TestR_AUTHZ_016_ReadableFiltersListings(t *testing.T) {
 	f.policy(policyDef{name: "p", selectors: []string{"a-repo", "c-repo"}, entries: map[string][]string{idDevs: {"read"}}})
 	f.policy(policyDef{name: "anon", selectors: []string{"b-repo"}, entries: map[string][]string{AnonymousID: {"read"}}})
 	e := newTestEngine(t, f, nil)
-	on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func() bool { return true } })
+	on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 	keys := []string{"c-repo", "b-repo", "a-repo", "ghost"}
 	cases := []struct {
 		name string

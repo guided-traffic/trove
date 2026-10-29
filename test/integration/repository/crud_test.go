@@ -61,7 +61,7 @@ func TestCreateReadUpdate(t *testing.T) {
 	t.Run("R-REPO-009 a create is never an upsert", func(t *testing.T) {
 		before := epoch()
 		_, err := svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "generic-local")))
-		wantCode(t, err, 409, errs.CodeRepositoryExists)
+		wantCode(t, err, 409, errs.CodeAlreadyExists)
 		if epoch() != before || len(rep.rec.types()) != 1 {
 			t.Fatal("a refused create left an epoch or an event behind")
 		}
@@ -75,7 +75,7 @@ func TestCreateReadUpdate(t *testing.T) {
 			t.Fatalf("fields = %+v", ee.Fields)
 		}
 		_, err = svc.Create(ctx, caller, []byte(`{"key":"x1","class":"local","format":"generic","excludePattern":[]}`))
-		wantCode(t, err, 400, errs.CodeInvalidDocument)
+		wantCode(t, err, 400, errs.CodeInvalid)
 		_, err = svc.Create(ctx, caller, []byte(`{"key":"quick-setup","class":"local","format":"generic"}`))
 		wantCode(t, err, 422, "reserved_name")
 		if e.scalar(`SELECT count(*) FROM repositories`) != before {
@@ -138,7 +138,7 @@ func TestCreateReadUpdate(t *testing.T) {
 		for member, value := range map[string]string{"format": `"npm"`, "class": `"remote"`, "key": `"other"`} {
 			before := epoch()
 			_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"`+member+`":`+value+`}`))
-			ee := wantCode(t, err, 422, errs.CodeImmutableField)
+			ee := wantCode(t, err, 422, errs.CodeValidation)
 			if len(ee.Fields) != 1 || ee.Fields[0].Pointer != "/"+member {
 				t.Fatalf("%s: fields = %+v", member, ee.Fields)
 			}
@@ -183,7 +183,7 @@ func TestCreateReadUpdate(t *testing.T) {
 			t.Fatalf("fields = %+v", ee.Fields)
 		}
 		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"unknownSetting":1}`))
-		wantCode(t, err, 400, errs.CodeInvalidDocument)
+		wantCode(t, err, 400, errs.CodeInvalid)
 		after, _ := svc.Get(ctx, "generic-local")
 		if after.Repository.Version != cur.Repository.Version {
 			t.Fatal("a refused update moved the version")

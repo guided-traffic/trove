@@ -158,6 +158,9 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 		if err != nil {
 			return err
 		}
+		if err := qs.AuthzLockPolicy(ctx, name); err != nil {
+			return err
+		}
 		current, err := s.load(ctx, qs, name)
 		if err != nil {
 			return err
@@ -214,6 +217,9 @@ func (s *Service) Delete(ctx context.Context, actor Subject, name string, expect
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queriesOf(tx)
 		if err != nil {
+			return err
+		}
+		if err := qs.AuthzLockPolicy(ctx, name); err != nil {
 			return err
 		}
 		current, err := s.load(ctx, qs, name)

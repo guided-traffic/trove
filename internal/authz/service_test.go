@@ -67,7 +67,7 @@ func testService() *Service {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
-	return NewService(ServiceOptions{Principals: p, Repositories: repos})
+	return NewService(ServiceOptions{Principals: p, Repositories: repos, KnownFormat: func(f string) bool { return f == "generic" || f == "npm" || f == "nuget" }})
 }
 
 func input(sel string, entries ...Entry) PolicyInput {
@@ -133,10 +133,10 @@ func TestR_AUTHZ_021_PolicyValidation(t *testing.T) {
 		})
 	}
 
-	t.Run("R-AUTHZ-021 the answer is 422 and its code is the code of the first problem", func(t *testing.T) {
+	t.Run("R-AUTHZ-021 R-API-009 the answer is 422 validation_failed and every problem keeps its code in errors[]", func(t *testing.T) {
 		err := problemError([]ProblemField{field("/entries/0/actions", errs.CodeAuthenticatedWriteAction, "x"), field("/name", "invalid_name", "y")})
 		ee, _ := errs.As(err)
-		if ee == nil || ee.Status() != 422 || ee.Code != errs.CodeAuthenticatedWriteAction || len(ee.Fields) != 2 {
+		if ee == nil || ee.Status() != 422 || ee.Code != errs.CodeValidation || len(ee.Fields) != 2 || ee.Fields[0].Code != errs.CodeAuthenticatedWriteAction {
 			t.Fatalf("%#v", ee)
 		}
 	})
@@ -226,13 +226,13 @@ func TestR_AUTHZ_010_RoleBindingRules(t *testing.T) {
 				return
 			}
 			ee, ok := errs.As(err)
-			if !ok || ee.Code != tc.code || ee.Status() != 422 {
+			if !ok || ee.Code != errs.CodeValidation || len(ee.Fields) == 0 || ee.Fields[0].Code != tc.code || ee.Status() != 422 {
 				t.Fatalf("err = %v", err)
 			}
 		})
 	}
 	t.Run("R-AUTHZ-010 the capability table", func(t *testing.T) {
-		if len(RoleCapabilities(RoleAdmin)) != len(allCapabilities()) {
+		if len(RoleCapabilities(RoleAdmin)) != len(Capabilities()) {
 			t.Error("admin holds every capability")
 		}
 		for _, r := range Roles() {

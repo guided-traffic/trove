@@ -59,29 +59,6 @@ type Resource struct {
 	// not count as changing the other members when only it and the update time
 	// differ.
 	RevisionMember string
-	// MalformedCode is the problem code of a body with an unknown member; the
-	// default is malformed_request (R-API-003). A resource whose owning page names
-	// another code for it, such as invalid_document for a repository document
-	// (R-REPO-008), sets it; the status stays 400 and the pointer stays in errors[0].
-	MalformedCode string
-	// ImmutableCode is the problem code of a change to an immutable member; the
-	// default is validation_failed (R-API-013). The status stays 422 and the
-	// pointer stays in errors[0].
-	ImmutableCode string
-}
-
-func (r Resource) malformed() string {
-	if r.MalformedCode != "" {
-		return r.MalformedCode
-	}
-	return "malformed_request"
-}
-
-func (r Resource) immutable() string {
-	if r.ImmutableCode != "" {
-		return r.ImmutableCode
-	}
-	return "validation_failed"
 }
 
 type answer struct {
@@ -218,7 +195,7 @@ func (s *suite) testCreate(t *testing.T) {
 func (s *suite) testUnknownMember(t *testing.T) {
 	body := s.res.Create(s.next())
 	body["upsteamUrl"] = "x"
-	m := wantProblem(t, s.res.call(t, "POST", s.res.Collection, body), 400, s.res.malformed())
+	m := wantProblem(t, s.res.call(t, "POST", s.res.Collection, body), 400, "malformed_request")
 	errs, _ := m["errors"].([]any)
 	if len(errs) == 0 || errs[0].(map[string]any)["pointer"] != "/upsteamUrl" {
 		t.Fatalf("errors = %v", m["errors"])
@@ -365,11 +342,11 @@ func (s *suite) testMergePatch(t *testing.T) {
 		etag = a.header.Get("ETag")
 		assertUnchanged(t, before, a.json(t), res.ClearMember, res.RevisionMember)
 	}
-	wantProblem(t, patch(map[string]any{"upsteamUrl": 1}, etag), 400, res.malformed())
+	wantProblem(t, patch(map[string]any{"upsteamUrl": 1}, etag), 400, "malformed_request")
 	if res.ImmutableMember == "" {
 		return
 	}
-	m := wantProblem(t, patch(map[string]any{res.ImmutableMember: res.ImmutableValue}, etag), 422, res.immutable())
+	m := wantProblem(t, patch(map[string]any{res.ImmutableMember: res.ImmutableValue}, etag), 422, "validation_failed")
 	errs, _ := m["errors"].([]any)
 	if len(errs) == 0 || errs[0].(map[string]any)["pointer"] != "/"+res.ImmutableMember {
 		t.Fatalf("errors = %v", m["errors"])

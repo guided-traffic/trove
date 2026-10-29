@@ -3721,9 +3721,9 @@ paths:
       description: |
         Creates a repository from its configuration document (R-REPO-009). Omitted settings take
         their defaults. The document is validated in one pass and every violation is reported (`422`,
-        R-REPO-008); an unknown or duplicate member is `400 invalid_document` with its JSON pointer.
+        R-REPO-008); an unknown or duplicate member is `400 malformed_request` with its JSON pointer.
         Create is never an upsert: a key that is taken, also by a repository being deleted, answers
-        `409 repository_exists`. The configuration, the audit event and the change-log row are one
+        `409 already_exists`. The configuration, the audit event and the change-log row are one
         transaction, so the repository is usable on every replica as soon as this answers
         (R-API-052). The body of the answer is the stored document plus `warnings`.
       x-trove-permission:
@@ -3850,7 +3850,7 @@ paths:
         defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). A body
         obtained by `GET` can be sent back: the read-only members are ignored. `If-Match` is required
         (`428` without it, `412` with `currentEtag` when stale, `*` for a deliberate blind write). Key,
-        class and format cannot change (`422 immutable_field`). `PUT` never creates a repository.
+        class and format cannot change (`422 validation_failed`, field code `immutable`). `PUT` never creates a repository.
       x-trove-permission:
         permission: repositories:write-config
       x-trove-if-match: required
@@ -3906,7 +3906,7 @@ paths:
         Applies a JSON merge patch (RFC 7396, `application/merge-patch+json`) to the stored document
         (R-REPO-011): arrays are replaced as a whole, `null` removes an optional setting. `If-Match` is
         required. A patch that changes nothing writes nothing: same version, no event. Key, class and
-        format cannot change (`422 immutable_field`); a value equal to the stored one is ignored.
+        format cannot change (`422 validation_failed`, field code `immutable`); a value equal to the stored one is ignored.
       x-trove-permission:
         permission: repositories:write-config
       x-trove-if-match: required

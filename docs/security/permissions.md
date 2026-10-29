@@ -58,6 +58,14 @@ The index is rebuilt from a `REPEATABLE READ READ ONLY` snapshot labelled with t
 their `changed_at` values, so no build combines a policy's entries from one commit with its selectors from another, and an
 epoch number reused after a PostgreSQL failover that lost commits is told apart by `changed_at` and flushed.
 
+Every write that changes an input of the index moves the epoch of `authz` in its own transaction, also the writes of other areas:
+deleting or renaming a user, group or service account that a policy or role binding names, and deleting a repository that a policy
+selects by key, each call a hook of the authorization area (`authz.PrincipalHook`, `authz.PolicyHook`) that notifies the area and
+raises the version of the policies whose representation changed. Without it a deleted principal would keep its grants on the
+other replicas until the safety rebuild. A replica's own write starts a build of its own (trigger `message`) that is not skipped because
+the poll has not applied the write yet, so the writing replica enforces it at once. The before-state in the revocation journal is
+read under a row lock (`FOR UPDATE`), so two blind writes journal one after the other.
+
 | Situation | Bound |
 |---|---|
 | Replica whose change-log poll works | the next poll (`cluster.epoch_poll_interval`) plus one build; with Valkey typically about 100 ms plus one build |

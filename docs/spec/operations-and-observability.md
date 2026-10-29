@@ -5294,6 +5294,25 @@ default. The development agent would revisit (a) if another route takes a secret
 
 **Applied in the spec:** R-OPS-013 (rule 3).
 
+### Q-OPS-152 · One actor and one source for every audit event of a request
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-OPS-49 chose that the recorder completes the source of an event from the request. The actor was built five ways and some lacked the
+token ID and authentication method; the User-Agent was filled by hand in some places only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each producer builds both | As before | No shared code | Drift |
+| (b) One path (chosen) | `httpserver.SourceFrom(ctx)` (the chain carries the User-Agent in `RequestInfo`) feeds `completeSource` and every hand-built source; `v1.ActorFrom(httpserver.Principal)` sits next to `SubjectFrom`; `principal.IDOrEmpty` is the one rule for a principal ID in an actor. The three Caller types (`repository.Caller`, `principal.Caller`, `files.Caller`) stay, because each carries other inputs, and all take their actor from `ActorFrom`, so each carries the token ID and the method | One definition | Three Caller types remain |
+
+**Choice:** (b).
+
+**Rationale:** not mechanical to merge the Callers (role holders, subject and endpoint). The development agent would revisit this when the
+request-scoped handle of the architecture review is introduced.
+
+**Applied in the spec:** none (R-OPS-015 already names the fields).
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy

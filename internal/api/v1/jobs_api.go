@@ -12,6 +12,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -108,7 +109,7 @@ func jobSortKey(j gen.Job) []string {
 // visibleJobs says which jobs the caller may see: all with settings:read, else
 // the ones it started (R-API-015). ok is false for a caller that can see none.
 func (s *Server) visibleJobs(ctx context.Context) (createdBy string, ok bool, err error) {
-	all, err := s.holds(ctx, "settings:read")
+	all, err := s.holds(ctx, string(authz.SettingsRead))
 	if err != nil || all {
 		return "", err == nil, err
 	}
@@ -228,7 +229,7 @@ func (s *Server) readableJob(ctx context.Context, id string) (gen.Job, string, b
 	if err != nil || !found {
 		return gen.Job{}, "", false, err
 	}
-	all, err := s.holds(ctx, "settings:read")
+	all, err := s.holds(ctx, string(authz.SettingsRead))
 	if err != nil {
 		return gen.Job{}, "", false, err
 	}
@@ -293,7 +294,7 @@ func (s *Server) CancelJob(w http.ResponseWriter, r *http.Request, id openapi_ty
 // mayCancel is the rule of R-API-015: a caller with settings:write, or the one
 // who started the job. A reader who may see the job but not stop it gets 403.
 func (s *Server) mayCancel(ctx context.Context, createdBy string) error {
-	admin, err := s.holds(ctx, "settings:write")
+	admin, err := s.holds(ctx, string(authz.SettingsWrite))
 	if err != nil || admin {
 		return err
 	}
@@ -322,7 +323,7 @@ func (s *Server) cancel(ctx context.Context, r *http.Request, j gen.Job) error {
 			return nil
 		}
 		return s.recorder().RecordTx(ctx, tx, audit.Event{
-			Type: "system.job.cancelled", Actor: auditActor(ctx), Outcome: audit.Success, Source: auditSource(r),
+			Type: "system.job.cancelled", Actor: ActorFrom(httpserver.PrincipalFrom(ctx)), Outcome: audit.Success, Source: auditSource(r),
 			Subject: audit.Subject{Kind: "job", ID: j.Id.String(), Name: j.Kind}, Details: details,
 		})
 	})

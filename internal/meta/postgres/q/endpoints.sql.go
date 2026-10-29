@@ -458,6 +458,21 @@ func (q *Queries) EndpointsListRulesOfRepository(ctx context.Context, repoID int
 	return items, nil
 }
 
+const endpointsLockRule = `-- name: EndpointsLockRule :exec
+SELECT 1 FROM endpoint_exposure_rule WHERE endpoint = $1::text AND name = $2::text FOR UPDATE
+`
+
+type EndpointsLockRuleParams struct {
+	Endpoint string
+	Name     string
+}
+
+// Locks the rule before its before-state is read (R-AUTHZ-031), as AuthzLockPolicy.
+func (q *Queries) EndpointsLockRule(ctx context.Context, arg EndpointsLockRuleParams) error {
+	_, err := q.db.Exec(ctx, endpointsLockRule, arg.Endpoint, arg.Name)
+	return err
+}
+
 const endpointsLockRuleCount = `-- name: EndpointsLockRuleCount :one
 SELECT count(*)::bigint AS rules
   FROM (SELECT 1 FROM endpoint_exposure_rule WHERE endpoint = $1::text FOR UPDATE) locked

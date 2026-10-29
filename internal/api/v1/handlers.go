@@ -10,6 +10,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
@@ -19,7 +20,7 @@ import (
 // PermissionSystemRead is the capability that admits the installation facts and
 // the replica registry (R-API-038): settings:read of R-AUTHZ-010, called
 // system.read in M0.
-const PermissionSystemRead = "settings:read"
+const PermissionSystemRead = string(authz.SettingsRead)
 
 // Identity names the replica that answers.
 type Identity struct {
@@ -36,6 +37,34 @@ type Access interface {
 	// Require returns nil, or an *errs.Error: Unauthenticated for an anonymous
 	// caller who needs credentials, Forbidden for a caller without the permission.
 	Require(ctx context.Context, permission string) error
+}
+
+// Prober is the optional second method of an [Access]: Holds answers whether the
+// caller holds a permission without recording a refusal (authz.Prober). Use
+// [Holds] to ask any Access.
+type Prober interface {
+	Holds(ctx context.Context, permission string) (bool, error)
+}
+
+// Holds reports whether the caller holds a permission. A refusal (401, 403) is
+// "no"; any other error, such as an unavailable authorization state, is
+// returned. An Access with a [Prober] is asked without an audit event; one
+// without is asked with Require, which is all a stand-in has.
+func Holds(ctx context.Context, a Access, permission string) (bool, error) {
+	if a == nil {
+		return false, nil
+	}
+	if p, ok := a.(Prober); ok {
+		return p.Holds(ctx, permission)
+	}
+	err := a.Require(ctx, permission)
+	if err == nil {
+		return true, nil
+	}
+	if e, ok := errs.As(err); ok && (e.Kind == errs.Forbidden || e.Kind == errs.Unauthenticated) {
+		return false, nil
+	}
+	return false, err
 }
 
 // ReplicaLister lists the replica registry (R-OPS-003).
@@ -76,7 +105,7 @@ type Options struct {
 	Access        Access
 	Replicas      ReplicaLister
 	Facts         FactSource
-	// Formats is the list of served package formats; empty in M0.
+	// Formats is the list of served package formats, from the format registry.
 	Formats []string
 
 	// >>> M1 audit

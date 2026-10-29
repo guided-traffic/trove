@@ -399,7 +399,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	r.tokens = token.NewService(token.ServiceOptions{
 		DB: principal.Joinable{DB: r.db}, Notifier: r.changes, Recorder: r.recorder, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
 		Tokens: r.tokenCfg, Recent: recent, Metrics: metrics, Log: quiet,
-		Scope: token.ScopeOptions{SystemItem: func(s string) bool { return s == "identities:read" }},
+		Scope: token.ScopeOptions{Action: func(string) bool { return true }, SystemItem: func(s string) bool { return s == "identities:read" }},
 	})
 	r.manager = principal.NewManager(principal.ManagerOptions{DB: principal.Joinable{DB: r.db}, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass"})
 	r.provisioner = principal.NewProvisioner(principal.ProvisionerOptions{

@@ -20,7 +20,11 @@ func (e *Engine) PathsAllowed(ctx context.Context, sub Subject, base Coordinate,
 		return nil, refused.Err()
 	}
 	out := make([]bool, len(paths))
-	if sub.Anonymous && !e.anonymousOn() {
+	sub, refused = e.withAnonymous(ctx, sub)
+	if refused != nil {
+		return nil, refused.Err()
+	}
+	if sub.Anonymous && sub.anon != anonOn {
 		return out, Unauthenticated()
 	}
 	base.Actions, base.Package = []Action{a}, ""

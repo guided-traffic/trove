@@ -66,14 +66,14 @@ grant). A handler calls, after it has authorized:
 
 | Operation | Function | Notes |
 |---|---|---|
-| `POST /repositories` | `Create(ctx, caller, body)`, `CreateTx(ctx, tx, …)` | `409 repository_exists` also for a key being deleted; never an upsert; `CreateTx` runs in the transaction of an idempotency key |
+| `POST /repositories` | `Create(ctx, caller, body)`, `CreateTx(ctx, tx, …)` | `409 already_exists` also for a key being deleted; never an upsert; `CreateTx` runs in the transaction of an idempotency key |
 | `GET /repositories/{key}` | `Get(ctx, key)` | from PostgreSQL (R-API-052); `Document.WithoutAdminNotes`, `Document.ConsumerView` for the narrower views |
 | `PATCH` | `Patch(ctx, caller, key, pre, patch)` | RFC 7396 applied to the stored document; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
 | `PUT` | `Replace(ctx, caller, key, pre, body)` | omitted settings revert to defaults; an omitted `key`, `class` or `format` means "unchanged" |
 | `GET /repositories` | `List(ctx, filter)` | sorted by key, keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 |
 | `DELETE` | `Delete(ctx, caller, key, detach)`, `DeleteTx(ctx, tx, …, pre)` | `DeleteResult{JobID, JobState, Done}`: 202 with the job, or 204 for a repository without content; `pre` is the optional `If-Match` (412 on a stale version) |
 
-Errors are `*errs.Error`: `invalid_document` (400), the codes of R-REPO-008 (422, with `Fields`), `repository_exists`
+Errors are `*errs.Error`: `malformed_request` (400, field code `invalid_document` when no pointer is known), `validation_failed` (422, the codes of R-REPO-008 in `Fields`), `already_exists`
 (409), `repository_not_found` (404), `precondition_failed` (412, with `*StaleVersion` as the cause carrying the current
 version for `currentEtag`). An update that changes nothing writes nothing: same version, no event, no change row.
 `Hooks.OnDelete` runs in the transaction that removes the row, just before the row goes (the job's `finishDelete`, and
@@ -109,7 +109,7 @@ removed in the first transaction. `detach` has nothing to detach until virtual m
 
 The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `lifecycle`,
 `createdAt`, `updatedAt`, `lastActivityAt` and, on a write, `warnings`. The input drops those members before the strict decode, so a
-body obtained by GET can be sent back (Q-API-34). A body error is `400 invalid_document` with the pointer of the member (Q-REPO-21).
+body obtained by GET can be sent back (Q-API-34). A body error is `400 malformed_request` with the pointer of the member (Q-REPO-84).
 The ETag of the full view is `"<config_version>"`, of the consumer view `"<config_version>-consumer"`. A read of one repository adds the
 activity time while there is one, `"<config_version>.<microseconds>"` (`repositoryETag`), because `lastActivityAt` changes without a new
 version and a strong tag follows the representation; a write answers the plain tag and accepts both (`repositoryPrecondition` strips the

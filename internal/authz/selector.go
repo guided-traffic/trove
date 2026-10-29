@@ -103,6 +103,18 @@ func parseSelector(s string) (selector, error) {
 	return selector{kind: selKey, key: base}, nil
 }
 
+// ValidateSelector reports why a repository selector text is invalid, nil if it
+// is valid: a key, a key pattern, a class selector, each with the optional
+// format filter (R-AUTHZ-004). A token scope names its repositories with it
+// (R-AUTH-024).
+func ValidateSelector(s string) error {
+	if err := checkLength(s); err != nil {
+		return err
+	}
+	_, err := parseSelector(s)
+	return err
+}
+
 // dynamic reports whether the selector covers repositories created later.
 func (s selector) dynamic() bool { return s.kind != selKey }
 

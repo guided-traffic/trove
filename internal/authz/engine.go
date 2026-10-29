@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // Changes is the part of *cluster.Changes the engine uses (R-AUTHZ-028): the
@@ -50,13 +51,17 @@ type Options struct {
 	// confirmation of the index besides its own deadline (R-AUTHZ-028).
 	RetryBudget time.Duration
 	// AnonymousAccess reports whether anonymous access is on (R-AUTH-037); nil
-	// means off. It is read for every anonymous decision.
-	AnonymousAccess func() bool
+	// means off. It is read once per anonymous request, with the request's
+	// context; an error is a 503, not a "no".
+	AnonymousAccess func(ctx context.Context) (bool, error)
 	// Ceiling is the endpoint exposure (R-EP-013), evaluated on the index of the
 	// request; nil means none. The composition root passes an [ExposureCeiling]
 	// built from the configured endpoints; its endpoint names bound the label of
 	// the exposure metrics.
 	Ceiling Ceiling
+	// Repositories is the snapshot reader the decision point asks for a repository
+	// its index does not hold yet ([Engine.Know]); nil asks nobody.
+	Repositories repository.Reader
 	// Recorder records the audit events; nil discards them.
 	Recorder audit.Recorder
 	// Replica names this replica in audit details.
@@ -79,6 +84,7 @@ type Engine struct {
 	kick     chan struct{}
 	trigMu   sync.Mutex
 	trigger  string
+	hintRead Label // the epochs the pending message build was asked for
 	building atomic.Bool
 	flush    atomic.Bool
 	fails    atomic.Int32
@@ -229,9 +235,35 @@ func (e *Engine) FlushArea(area, _ string) {
 
 // requestBuild asks for a build. Requests coalesce: one build runs and one waits.
 func (e *Engine) requestBuild(trigger string) {
+	e.requestBuildHint(trigger, Label{})
+}
+
+// triggerRank orders the triggers of requests that coalesce into one build: the
+// pending build keeps the strongest. A poll build may be skipped when the index
+// matches the applied state, a message build when it matches the epochs it read,
+// the others never.
+func triggerRank(trigger string) int {
+	switch trigger {
+	case TriggerFlush:
+		return 3
+	case TriggerPoll:
+		return 1
+	case TriggerMessage:
+		return 2
+	default:
+		return 2
+	}
+}
+
+// requestBuildHint is requestBuild with the epochs a message build was asked
+// for; a later request of a stronger trigger replaces the pending one.
+func (e *Engine) requestBuildHint(trigger string, read Label) {
 	e.trigMu.Lock()
-	if e.trigger == "" || trigger == TriggerFlush {
+	if e.trigger == "" || triggerRank(trigger) > triggerRank(e.trigger) {
 		e.trigger = trigger
+	}
+	if trigger == TriggerMessage {
+		e.hintRead = read
 	}
 	e.trigMu.Unlock()
 	select {
@@ -240,12 +272,12 @@ func (e *Engine) requestBuild(trigger string) {
 	}
 }
 
-func (e *Engine) takeTrigger() string {
+func (e *Engine) takeTrigger() (string, Label) {
 	e.trigMu.Lock()
 	defer e.trigMu.Unlock()
 	t := e.trigger
 	e.trigger = ""
-	return t
+	return t, e.hintRead
 }
 
 // buildLoop runs the builds one after another.
@@ -257,20 +289,25 @@ func (e *Engine) buildLoop() {
 			return
 		case <-e.kick:
 		}
-		trig := e.takeTrigger()
+		trig, read := e.takeTrigger()
 		if trig == "" {
 			continue
 		}
-		e.buildOnce(trig)
+		e.buildOnce(trig, read)
 	}
 }
 
-// buildOnce is one build and its installation.
-func (e *Engine) buildOnce(trigger string) {
+// buildOnce is one build and its installation. read is the label a message build
+// was asked for.
+func (e *Engine) buildOnce(trigger string, read Label) {
 	e.building.Store(true)
 	defer e.building.Store(false)
-	if trigger == TriggerPoll && e.labelMatchesChanges(e.cur.Load()) && !e.flush.Load() {
+	switch {
+	case e.flush.Load():
+	case trigger == TriggerPoll && e.labelMatchesChanges(e.cur.Load()):
 		return // a request for a state that an earlier build already installed
+	case trigger == TriggerMessage && e.cur.Load() != nil && read.Equal(e.cur.Load().label):
+		return // the index is the state the database had when the message arrived
 	}
 	needFlush := e.flush.Swap(false)
 	start := time.Now()
@@ -420,7 +457,11 @@ func (e *Engine) hintLoop() {
 			continue // the watch loop and the next poll cover a failed read
 		}
 		if idx := e.cur.Load(); idx == nil || !l.Equal(idx.label) {
-			e.requestBuild(TriggerPoll)
+			// The build is the message's own: the poll has not applied this change yet
+			// (a replica's own commit is announced at once), so a poll build would
+			// find the index equal to the applied state and skip, while the index
+			// still lacks the write.
+			e.requestBuildHint(TriggerMessage, l)
 		}
 	}
 }

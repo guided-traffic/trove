@@ -16,24 +16,25 @@ const (
 	maxScopeGrants = 50
 	maxScopeBytes  = 16 << 10
 	maxEndpoints   = 16
-	maxPatternLen  = 512
 )
 
-// actions are the closed list of repository actions a scope may name
-// (R-AUTHZ-006). The authorization area applies them; the list here is the
-// validation of R-AUTH-024.
-var actions = [...]string{"read", "annotate", "deploy", "overwrite", "delete", "manage"}
-
 // ScopeOptions are the checks that need knowledge of other areas. A zero value
-// accepts no system item and any syntactically valid endpoint name.
+// accepts no action and no system item, and any syntactically valid endpoint
+// name. The composition root builds them from the authorization area's lists and
+// validators, so a scope is judged by the rules that apply it (R-AUTH-024).
 type ScopeOptions struct {
+	// Action reports whether a name is one of the repository actions of
+	// R-AUTHZ-006.
+	Action func(action string) bool
 	// SystemItem reports whether an item is a system capability of R-AUTHZ-010.
 	SystemItem func(item string) bool
 	// Endpoint reports whether an endpoint name is configured (R-EP-011); nil
 	// accepts every name of the endpoint-name syntax.
 	Endpoint func(name string) bool
-	// Pattern validates a repository, package or path pattern with the syntax of
-	// R-AUTHZ-005; nil only checks length and control characters.
+	// Pattern validates a repository selector ("repositories"), a package-name
+	// pattern ("packages") or a path pattern ("paths") with the syntax and the
+	// length limit of R-AUTHZ-004 and R-AUTHZ-005; nil only checks that the text is
+	// not empty and holds no control character.
 	Pattern func(dimension, pattern string) error
 }
 
@@ -116,7 +117,7 @@ func validateScope(s Scope, o ScopeOptions) error {
 			return invalidScope("grant %d names no action", i)
 		}
 		for _, a := range g.Actions {
-			if !slices.Contains(actions[:], a) {
+			if o.Action == nil || !o.Action(a) {
 				return invalidScope("unknown action %q", a)
 			}
 		}
@@ -149,7 +150,7 @@ func validateScope(s Scope, o ScopeOptions) error {
 }
 
 func checkPattern(o ScopeOptions, dimension, p string) error {
-	if p == "" || len(p) > maxPatternLen || strings.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	if p == "" || strings.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		return invalidScope("empty or invalid %s pattern", dimension)
 	}
 	if o.Pattern != nil {

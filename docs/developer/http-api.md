@@ -152,20 +152,24 @@ the epoch of the first answer (Q-API-44).
 `Idempotency.Do(w, r, body, IdempotentOp{Run: ...})` is the whole interface. Without the header it runs `Run` in a
 transaction of its own. With it:
 
-1. One transaction: `SET LOCAL lock_timeout` (1 s), `INSERT ... ON CONFLICT (principal_id, idem_key)`; a row past
+1. One transaction: `SET LOCAL lock_timeout` (1 s, for the claim only), `INSERT ... ON CONFLICT (principal_id, idem_key)`; a row past
    `expires_at` is recycled. The principal must be authenticated and have a UUID.
 2. Row inserted: `Run(ctx, tx)` does the change and returns an `Outcome`; the status, headers and body are stored in the
    same transaction, and the body is read back in the database's rendering so the first answer and every replay are
    byte-identical (Q-API-17).
-3. Row exists: a different method, route or body is 422 `idempotency_key_reused`; the stored outcome is replayed with
+3. The claim runs under a short `lock_timeout` that is restored to the session value right after the insert. The operation runs
+   behind a savepoint: a refusal (below 500) rolls back to it, drops the hooks the operation registered (`meta.TxState.Mark` and
+   `Discard`), stores the 4xx outcome on the claimed row and commits, so a duplicate that waited finds the stored answer
+   (Q-API-137).
+4. Row exists: a different method, route or body is 422 `idempotency_key_reused`; the stored outcome is replayed with
    `Idempotency-Replayed: true`.
-4. A duplicate that arrives while the first transaction is open blocks on the row for the lock timeout, then answers 409
+5. A duplicate that arrives while the first transaction is open blocks on the row for the lock timeout, then answers 409
    `idempotency_in_progress` with `Retry-After: 1`.
-5. `Run` returning an `*errs.Error` below 500 rolls the change back and stores the refusal in a second transaction (replayed
-   like any outcome); any other error rolls everything back and stores nothing.
-6. A response with a secret sets `Outcome.SecretID`: the body is sent to this client and never stored; a replay calls
+6. `Run` returning an `*errs.Error` below 500 is stored as above (replayed like any outcome); any other error rolls everything
+   back and stores nothing.
+7. A response with a secret sets `Outcome.SecretID`: the body is sent to this client and never stored; a replay calls
    `IdempotentOp.SecretReplay` (the identity area answers 409 `token_already_issued` with `tokenId`).
-7. A value that exists only after the commit hooks ran, such as the epoch of a write (`Trove-Authz-Epoch`, raised by the change
+8. A value that exists only after the commit hooks ran, such as the epoch of a write (`Trove-Authz-Epoch`, raised by the change
    log just before `COMMIT`), is set by `Outcome.Finish`. `Do` registers it as a `Before` hook after the ones `Run` registered, so
    it sees their results, and the stored outcome, and with it every replay, carries the value.
 
@@ -293,7 +297,10 @@ share one database and one Valkey.
 The chain's stage 7 is `v1.EdgeStage(CORS, rate limit)` built in [wire_api.go](../../internal/app/wire_api.go) and set as
 `a.m1.rateLimit`. Order: the security headers of R-API-017 on every `/api/v1/` answer (`Cache-Control: no-store` unless the
 handler sets another, `Content-Security-Policy`, `Referrer-Policy`; `X-Content-Type-Options` and `X-Request-Id` come from the
-chain), then CORS, then the limiter, so a preflight is answered before it counts.
+chain), then CORS, then the limiter, so a preflight is answered before it counts. The preflight of an allowed origin is
+answered earlier still, by `Chain.Preflight` (`v1.Preflight`, between the address stage and authentication): a browser sends
+it without credentials, and authentication would refuse it (R-API-018, Q-API-138). `CORS` keeps the same answer for a chain
+without that stage.
 
 The classes are `api_read`, `api_write` and `api_anonymous` ([ratelimit.go](../../internal/api/v1/ratelimit.go)); they apply to
 `/api/v1/` and `/files/` only. The mechanism is [the cluster limiter](valkey.md#rate-limit-counters). Every answer on a limited

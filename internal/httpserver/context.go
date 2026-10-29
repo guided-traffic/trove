@@ -26,6 +26,9 @@ type RequestInfo struct {
 	Peer netip.Addr
 	// Client is the address of the caller after the trusted-proxy rule.
 	Client netip.Addr
+	// UserAgent is the User-Agent header of the request, for the source of an audit
+	// event (R-OPS-015); the chain fills it where it resolves the client address.
+	UserAgent string
 	// BaseURL is the origin generated URLs are built from, without a trailing
 	// slash (R-OPS-005).
 	BaseURL string

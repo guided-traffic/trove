@@ -145,10 +145,8 @@ const (
 // reserved_name and out_of_range are registered by the authz and api areas; the
 // repository package names them as strings.
 const (
-	CodeRepositoryExists     = "repository_exists"
 	CodeRepositoryDisabled   = "repository_disabled"
 	CodeRepositoryReferenced = "repository_referenced"
-	CodeImmutableField       = "immutable_field"
 	CodeInvalidKey           = "invalid_key"
 	CodeInvalidMember        = "invalid_member"
 	CodeInvalidDocument      = "invalid_document"
@@ -300,10 +298,8 @@ var registry = []CodeInfo{
 	// <<< M1 authz
 	//
 	// >>> M1 repository
-	{CodeRepositoryExists, Conflict, "Repository exists", "A repository with this key exists or is still being deleted; keys stay taken until the deletion job completes."},
 	{CodeRepositoryDisabled, NotFound, "Repository disabled", "The repository is disabled and takes no part in resolution, download or deploy; the management API still works."},
 	{CodeRepositoryReferenced, Conflict, "Repository referenced", "Virtual repositories list this repository as a member or deploy target; delete with detach=true or remove the references first."},
-	{CodeImmutableField, Invalid, "Immutable field", "Key, class and format are fixed at creation; create a new repository instead."},
 	{CodeInvalidKey, Invalid, "Invalid repository key", "A key matches ^[a-z0-9][a-z0-9._-]{1,63}$, contains no \"..\" and does not end in a dot."},
 	{CodeInvalidMember, Invalid, "Invalid member", "A virtual repository member is missing, being deleted, of another format, duplicated or the repository itself."},
 	{CodeInvalidDocument, Invalid, "Invalid document", "The configuration document is not valid JSON of the expected shape, or it names a member that does not exist."},

@@ -159,17 +159,24 @@ func validateLocal(v *validation, info FormatInfo, d *Document, na func(pointer,
 	}
 }
 
-// err turns the violations into the error of a 422 response. A single violation
-// is reported under its own code (R-REPO-002: "answers 422 invalid_key"); several
-// are reported under validation_failed, each with its own code in errors[]
-// (R-API-009, R-REPO-008).
+// err turns the violations into the error of a 422 response (R-API-009, Q-REPO-84):
+// the top-level code is validation_failed whatever the number of violations, and
+// every violation, with its own code, is in errors[] (R-REPO-008). A reserved key
+// is the one exception, because R-API-004 defines reserved_name as the code of
+// that refusal.
 func (v *validation) err() error {
 	if len(v.fields) == 0 {
 		return nil
 	}
 	code, detail := errs.CodeValidation, strconv.Itoa(len(v.fields))+" fields are invalid."
 	if len(v.fields) == 1 {
-		code, detail = v.fields[0].Code, v.fields[0].Detail
+		detail = "1 field is invalid."
+	}
+	for _, f := range v.fields {
+		if f.Code == codeReservedName {
+			code, detail = codeReservedName, f.Detail
+			break
+		}
 	}
 	return errs.E(errs.Invalid, code, detail, errs.WithFields(v.fields...))
 }

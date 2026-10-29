@@ -186,12 +186,12 @@ type stored struct {
 	secretID string
 }
 
-// refused is returned by the transaction function to roll the change back
-// while the 4xx outcome is kept to be stored.
-type refused struct{ err *errs.Error }
-
-func (r refused) Error() string { return r.err.Error() }
-func (r refused) Unwrap() error { return r.err }
+// hookScope is what a transaction of internal/meta/postgres offers to undo the
+// hooks of work that was rolled back to a savepoint (meta.TxState).
+type hookScope interface {
+	Mark() meta.HookMark
+	Discard(meta.HookMark)
+}
 
 func (i *Idempotency) run(w http.ResponseWriter, r *http.Request, req idemRequest, op IdempotentOp) error {
 	ctx := r.Context()
@@ -199,14 +199,25 @@ func (i *Idempotency) run(w http.ResponseWriter, r *http.Request, req idemReques
 		out      Outcome
 		bodyText string
 		replay   *stored
+		refusal  *errs.Error
 	)
 	err := i.db.InTx(ctx, func(tx meta.Tx) error {
-		out, bodyText, replay = Outcome{}, "", nil
+		out, bodyText, replay, refusal = Outcome{}, "", nil, nil
 		ptx, ok := postgres.Unwrap(tx)
 		if !ok {
 			return errors.New("api: idempotency needs a transaction of internal/meta/postgres")
 		}
+		scope, ok := tx.(hookScope)
+		if !ok {
+			return errors.New("api: idempotency needs a transaction with hook marks")
+		}
 		qs := q.New(ptx)
+		// The short wait is for the claim only: a duplicate waits on the row of the
+		// first request, the operation itself runs under the session's own limit.
+		session, err := qs.CurrentLockTimeout(ctx)
+		if err != nil {
+			return err
+		}
 		if _, err := qs.SetLocalLockTimeout(ctx, strconv.FormatInt(i.wait.Milliseconds(), 10)); err != nil {
 			return err
 		}
@@ -217,15 +228,35 @@ func (i *Idempotency) run(w http.ResponseWriter, r *http.Request, req idemReques
 		if err != nil {
 			return err
 		}
+		if _, err := qs.SetLocalLockTimeout(ctx, session); err != nil {
+			return err
+		}
 		if len(claimed) == 0 {
 			replay, err = i.read(ctx, qs, req)
 			return err
 		}
+		// The operation runs behind a savepoint: a refusal rolls its change back,
+		// keeps the claimed row and stores the refusal on it in this transaction, so
+		// a concurrent duplicate that was waiting on the row finds the stored
+		// answer and does not run the operation again (R-API-014).
+		if err := qs.IdempotencySavepoint(ctx); err != nil {
+			return err
+		}
+		mark := scope.Mark()
 		out, err = op.Run(ctx, tx)
 		if err != nil {
-			if e, ok := errs.As(err); ok && e.Status() < 500 {
-				return refused{e}
+			e, ok := errs.As(err)
+			if !ok || e.Status() >= 500 {
+				return err
 			}
+			if err := qs.IdempotencyRollbackToSavepoint(ctx); err != nil {
+				return err
+			}
+			scope.Discard(mark)
+			refusal = e
+			return i.storeRefusal(ctx, qs, req, e)
+		}
+		if err := qs.IdempotencyReleaseSavepoint(ctx); err != nil {
 			return err
 		}
 		complete := func(ctx context.Context, tx meta.Tx) error {
@@ -248,16 +279,15 @@ func (i *Idempotency) run(w http.ResponseWriter, r *http.Request, req idemReques
 		tx.Before(complete)
 		return nil
 	})
-	var ref refused
 	switch {
-	case errors.As(err, &ref):
-		return i.storeRefusal(ctx, req, ref.err)
 	case postgres.IsLockTimeout(err):
 		return errs.E(errs.Conflict, errs.CodeIdempotencyInFlight,
 			"A request with this Idempotency-Key is still being processed; retry in a moment to receive its outcome.",
 			errs.WithRetryAfter(time.Second))
 	case err != nil:
 		return err
+	case refusal != nil:
+		return refusal
 	}
 	if replay != nil {
 		return i.writeReplay(w, req, replay, op)
@@ -322,30 +352,21 @@ func (i *Idempotency) writeReplay(w http.ResponseWriter, req idemRequest, s *sto
 	return nil
 }
 
-// storeRefusal stores a 4xx outcome in a transaction of its own and answers it.
-// The change was rolled back; only the refusal is kept, so a retry gets the same
-// answer.
-func (i *Idempotency) storeRefusal(ctx context.Context, req idemRequest, e *errs.Error) error {
+// storeRefusal stores a 4xx outcome on the claimed row, in the transaction that
+// claimed it: the change was rolled back to the savepoint and only the refusal is
+// kept, so a retry, and a duplicate that waited, get the same answer.
+func (i *Idempotency) storeRefusal(ctx context.Context, qs *q.Queries, req idemRequest, e *errs.Error) error {
 	p, _ := errs.ProblemOf(e, "", "")
 	b, err := json.Marshal(p)
 	if err != nil {
-		return e
+		return err
 	}
-	headers := map[string]string{"Content-Type": errs.ProblemContentType}
-	h, _ := json.Marshal(headers)
-	// The refusal is the answer whether or not it could be stored; only its
-	// replay is lost when the second transaction fails.
-	_ = i.db.InTx(ctx, func(tx meta.Tx) error {
-		ptx, ok := postgres.Unwrap(tx)
-		if !ok {
-			return errors.New("api: idempotency needs a transaction of internal/meta/postgres")
-		}
-		return q.New(ptx).StoreIdempotencyOutcome(ctx, q.StoreIdempotencyOutcomeParams{
-			PrincipalID: req.principal, IdemKey: req.key, Method: req.method, Route: req.route, RequestSha256: req.sum,
-			Status: int16(p.Status), Headers: string(h), Body: string(b), RetentionSecs: i.retention.Seconds(), //nolint:gosec // 400..499
-		})
+	h, _ := json.Marshal(map[string]string{"Content-Type": errs.ProblemContentType})
+	_, err = qs.CompleteIdempotencyKey(ctx, q.CompleteIdempotencyKeyParams{
+		PrincipalID: req.principal, IdemKey: req.key, Status: int16(p.Status), //nolint:gosec // 400..499
+		Headers: string(h), Body: string(b),
 	})
-	return e
+	return err
 }
 
 // withRequestID puts the current request's ID and path into a stored problem.

@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync/atomic"
-	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -24,51 +23,6 @@ import (
 // form the chain's stage 7 (R-API-016, R-API-017, R-API-018), and the services
 // of the system operations (jobs, tasks, key-ring status).
 
-// liveReplicas is the number n of live replicas of this replica's role that the
-// rate-limit fallback divides the budget by (R-ARCH-034). It is read from the
-// replica registry every heartbeat interval and is 1 until the first read.
-type liveReplicas struct{ n atomic.Int32 }
-
-func (l *liveReplicas) Get() int { return max(1, int(l.n.Load())) }
-
-// startLiveReplicaCount refreshes n in the background until ctx ends. A failed
-// read keeps the last value: the fallback must not depend on PostgreSQL either.
-func (a *App) startLiveReplicaCount(ctx context.Context) *liveReplicas {
-	l := &liveReplicas{}
-	db := a.database()
-	if db == nil {
-		return l
-	}
-	stale := a.cfg.System.HeartbeatStaleAfter.Seconds()
-	refresh := func() {
-		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		_ = db.Read(rctx, func(c q.DBTX) error {
-			n, err := q.New(c).CountLiveReplicas(rctx, q.CountLiveReplicasParams{StaleSecs: stale, Role: a.id.Role})
-			if err == nil {
-				l.n.Store(n)
-			}
-			return err
-		})
-	}
-	refresh()
-	a.bg.Add(1)
-	go func() {
-		defer a.bg.Done()
-		t := time.NewTicker(a.cfg.System.HeartbeatInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				refresh()
-			}
-		}
-	}()
-	return l
-}
-
 // limiterSet returns the replica's cluster limiter set (R-ARCH-034), built on the
 // first call: the identity stage registers its failure throttle on it before the
 // API adds the request limiters.
@@ -76,7 +30,10 @@ func (a *App) limiterSet(ctx context.Context) (*cluster.LimiterSet, error) {
 	if a.m1.limiters != nil {
 		return a.m1.limiters, nil
 	}
-	live := a.startLiveReplicaCount(ctx)
+	live, err := a.servingReplicas(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ls, err := cluster.NewLimiterSet(cluster.LimiterOptions{Valkey: a.valkey(), Registry: a.tele.metrics.Registry(), LiveReplicas: live.Get})
 	if err != nil {
 		return nil, err
@@ -125,13 +82,19 @@ func (a *App) wireAPI(ctx context.Context, infra bool) error {
 	var isAdmin func(*http.Request) bool
 	if a.m1.authorizer != nil {
 		access := a.access()
-		isAdmin = func(r *http.Request) bool { return access.Require(r.Context(), "content:bypass") == nil }
+		// A question, not an operation: a request of a caller without the capability
+		// is not a refusal and records no authz.denied (R-AUTHZ-029).
+		isAdmin = func(r *http.Request) bool {
+			ok, err := v1.Holds(r.Context(), access, string(authz.ContentBypass))
+			return err == nil && ok
+		}
 	}
 	limit, err := v1.NewRateLimit(v1.RateLimitOptions{Config: cfg.RateLimits, Limiters: ls, IsAdmin: isAdmin, Registry: reg})
 	if err != nil {
 		return err
 	}
 	a.m1.rateLimit = v1.EdgeStage(v1.CORS(cfg.CORS.AllowedOrigins), limit)
+	a.m1.preflight = v1.Preflight(cfg.CORS.AllowedOrigins)
 	return nil
 }
 

@@ -47,7 +47,7 @@ func (m *Manager) CreateServiceAccount(ctx context.Context, c Caller, in NewServ
 			return err
 		}
 		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeConflict, "A service account with this name exists.")
+			return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A service account with this name exists.")
 		}
 		if err := qs.IdentityInsertServiceAccount(ctx, q.IdentityInsertServiceAccountParams{ID: id, Description: in.Description}); err != nil {
 			return err
@@ -238,6 +238,9 @@ func (m *Manager) DeleteServiceAccount(ctx context.Context, c Caller, name strin
 		}
 		memberships, err := qs.IdentityCountMembershipsOfMember(ctx, id)
 		if err != nil {
+			return err
+		}
+		if err := notifyAuthz(ctx, m.authz, tx, id); err != nil {
 			return err
 		}
 		if _, err := qs.IdentityDeletePrincipal(ctx, id); err != nil {

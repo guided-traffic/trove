@@ -51,8 +51,9 @@ func (s roleSet) has(r Role) bool { return r.bit() != 0 && s&r.bit() == r.bit() 
 // capSet is a set of capabilities.
 type capSet uint32
 
-// allCapabilities lists the capabilities of R-AUTHZ-010 in a fixed order.
-func allCapabilities() []Capability {
+// Capabilities lists the capabilities of R-AUTHZ-010 in a fixed order. Every other
+// list of them (the system items of a token scope, R-AUTH-025) is this one.
+func Capabilities() []Capability {
 	return []Capability{
 		ContentBypass, IdentitiesRead, IdentitiesWrite, PoliciesRead, PoliciesWrite,
 		RolesRead, RolesWrite, CIRead, CIWrite, TokensRead, TokensRevoke,
@@ -63,7 +64,7 @@ func allCapabilities() []Capability {
 }
 
 func (c Capability) bit() capSet {
-	for i, x := range allCapabilities() {
+	for i, x := range Capabilities() {
 		if x == c {
 			return 1 << i
 		}
@@ -87,7 +88,7 @@ func (s capSet) has(c Capability) bool { return c.bit() != 0 && s&c.bit() == c.b
 // list returns the capabilities of the set in the table's order.
 func (s capSet) list() []Capability {
 	var out []Capability
-	for _, c := range allCapabilities() {
+	for _, c := range Capabilities() {
 		if s.has(c) {
 			out = append(out, c)
 		}
@@ -103,7 +104,7 @@ func roleCaps(r Role) capSet {
 	switch r {
 	case RoleAdmin:
 		var all capSet
-		for _, c := range allCapabilities() {
+		for _, c := range Capabilities() {
 			all |= c.bit()
 		}
 		return all

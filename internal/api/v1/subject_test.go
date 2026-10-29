@@ -34,3 +34,16 @@ func TestR_AUTHZ_002_SubjectFrom(t *testing.T) {
 		}
 	})
 }
+
+func TestQ_OPS_49_ActorFrom(t *testing.T) {
+	a := ActorFrom(httpserver.Principal{
+		Kind: httpserver.KindServiceAccount, ID: "id1", Name: "sa1",
+		Credential: httpserver.Credential{Method: httpserver.MethodBearer, TokenID: "t1"},
+	})
+	if a.Kind != "service_account" || a.ID != "id1" || a.Name != "sa1" || a.TokenID != "t1" || a.AuthMethod != "bearer" {
+		t.Fatalf("actor = %+v", a)
+	}
+	if got := ActorFrom(httpserver.AnonymousPrincipal()); got.Kind != "anonymous" || got.ID != "" {
+		t.Fatalf("anonymous actor = %+v", got)
+	}
+}

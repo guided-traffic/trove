@@ -55,8 +55,8 @@ func TestValidateKeys(t *testing.T) {
 			if got := fieldsOf(err)["/key"]; got != errs.CodeInvalidKey {
 				t.Fatalf("code = %q (%v), want invalid_key", got, err)
 			}
-			if e, _ := errs.As(err); e.Status() != 422 || e.Code != errs.CodeInvalidKey {
-				t.Fatalf("status %d code %q, want 422 invalid_key", e.Status(), e.Code)
+			if e, _ := errs.As(err); e.Status() != 422 || e.Code != errs.CodeValidation {
+				t.Fatalf("status %d code %q, want 422 validation_failed", e.Status(), e.Code)
 			}
 		})
 	}
@@ -92,13 +92,13 @@ func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
 func TestValidateClassAndFormat(t *testing.T) {
 	t.Run("R-REPO-001 a create with class federated is unsupported_class", func(t *testing.T) {
 		_, _, err := decodeValidate(t, `{"key":"x1","class":"federated","format":"generic"}`, true)
-		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeUnsupportedClass || e.Status() != 422 {
+		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeValidation || fieldsOf(err)["/class"] != errs.CodeUnsupportedClass || e.Status() != 422 {
 			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("R-REPO-003 an unknown format is unknown_format", func(t *testing.T) {
 		_, _, err := decodeValidate(t, `{"key":"x1","class":"local","format":"cobol"}`, true)
-		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeUnknownFormat || e.Status() != 422 {
+		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeValidation || fieldsOf(err)["/format"] != errs.CodeUnknownFormat || e.Status() != 422 {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -141,19 +141,19 @@ func TestValidateClassAndFormat(t *testing.T) {
 }
 
 func TestDocumentMembers(t *testing.T) {
-	t.Run("R-REPO-008 an unknown member is 400 invalid_document", func(t *testing.T) {
+	t.Run("R-REPO-008 an unknown member is 400 malformed_request", func(t *testing.T) {
 		_, err := DecodeDocument([]byte(`{"key":"x1","class":"local","format":"generic","excludePattern":["a"]}`))
-		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeInvalidDocument || e.Status() != 400 {
+		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeInvalid || e.Status() != 400 {
 			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("R-GENERIC-001 a generic member is an unknown member", func(t *testing.T) {
 		_, err := DecodeDocument([]byte(`{"key":"x1","class":"local","format":"generic","generic":{}}`))
-		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeInvalidDocument {
+		if e, _ := errs.As(err); e == nil || e.Code != errs.CodeInvalid {
 			t.Fatalf("err = %v", err)
 		}
 	})
-	t.Run("R-REPO-008 malformed JSON, wrong types, duplicates and trailing data are invalid_document", func(t *testing.T) {
+	t.Run("R-REPO-008 malformed JSON, wrong types, duplicates and trailing data are 400 malformed_request", func(t *testing.T) {
 		for name, body := range map[string]string{
 			"syntax":           `{"key":`,
 			"empty":            ``,
@@ -164,7 +164,7 @@ func TestDocumentMembers(t *testing.T) {
 			"trailing":         `{"key":"x1"} {}`,
 		} {
 			_, err := DecodeDocument([]byte(body))
-			if e, _ := errs.As(err); e == nil || e.Code != errs.CodeInvalidDocument || e.Status() != 400 {
+			if e, _ := errs.As(err); e == nil || e.Code != errs.CodeInvalid || e.Status() != 400 {
 				t.Errorf("%s: err = %v", name, err)
 			}
 		}

@@ -73,7 +73,7 @@ func targetOf(c Coordinate) string {
 // them are decided on one index (R-AUTHZ-015 `index.ForRequest`).
 func (e *Engine) Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
 	c = onEndpoint(ctx, c)
-	idx, refused := e.forRequest(ctx, sub)
+	idx, refused := e.begin(ctx, sub, c.Repository)
 	if refused != nil {
 		e.count(*refused, c)
 		e.audit(ctx, sub, c, *refused)
@@ -84,13 +84,28 @@ func (e *Engine) Decide(ctx context.Context, sub Subject, c Coordinate) Decision
 
 // Begin returns the index a request decides on, waiting for a confirmation or
 // for the epoch of Trove-Authz-Min-Epoch as R-AUTHZ-028 and R-AUTHZ-032 say. The
-// error is the refusal: 503 authz_stale or 412 authz_epoch_unknown.
-func (e *Engine) Begin(ctx context.Context, sub Subject) (*Index, error) {
-	idx, refused := e.forRequest(ctx, sub)
+// error is the refusal: 503 authz_stale or 412 authz_epoch_unknown. The keys are
+// the repositories the request is about: a key the index does not hold yet is
+// looked up and the index brought up to it before the index is taken
+// ([Engine.Know]).
+func (e *Engine) Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error) {
+	idx, refused := e.begin(ctx, sub, keys...)
 	if refused != nil {
 		return nil, refused.Err()
 	}
 	return idx, nil
+}
+
+// begin is the start of every decision: the repositories the request names are
+// known to the index (R-ARCH-011 step 2, R-API-052), then the index is taken.
+func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index, *Decision) {
+	for _, key := range keys {
+		if err := e.Know(ctx, key); err != nil {
+			d := Decision{Outcome: DenyStale, Reason: ReasonStale}
+			return nil, &d
+		}
+	}
+	return e.forRequest(ctx, sub)
 }
 
 // DecideOn decides a coordinate on the index Begin returned. Requests in flight
@@ -98,6 +113,12 @@ func (e *Engine) Begin(ctx context.Context, sub Subject) (*Index, error) {
 // changes the decisions of one request (R-AUTHZ-028).
 func (e *Engine) DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
 	c = onEndpoint(ctx, c)
+	sub, refused := e.withAnonymous(ctx, sub)
+	if refused != nil {
+		e.count(*refused, c)
+		e.audit(ctx, sub, c, *refused)
+		return *refused
+	}
 	start := time.Now()
 	d := e.evaluate(idx, sub, c)
 	e.m.eval.Observe(time.Since(start).Seconds())
@@ -121,7 +142,30 @@ func (e *Engine) count(d Decision, c Coordinate) {
 	}
 }
 
-func (e *Engine) anonymousOn() bool { return e.o.AnonymousAccess != nil && e.o.AnonymousAccess() }
+// withAnonymous reads the runtime switch of R-AUTH-037 for an anonymous subject,
+// once for the request, with the request's context and deadline, and keeps the
+// answer on the returned subject; a subject that is not anonymous, or whose switch
+// was read already, comes back as it is. A switch that cannot be read is no "off":
+// the answer is 503 like every other state the decision point cannot confirm.
+func (e *Engine) withAnonymous(ctx context.Context, sub Subject) (Subject, *Decision) {
+	if !sub.Anonymous || sub.anon != anonUnknown {
+		return sub, nil
+	}
+	sub.anon = anonOff
+	if e.o.AnonymousAccess == nil {
+		return sub, nil
+	}
+	on, err := e.o.AnonymousAccess(ctx)
+	if err != nil {
+		e.log.Warn("authz: the anonymous access switch could not be read", "err", err)
+		d := Decision{Outcome: DenyStale, Reason: ReasonStale}
+		return sub, &d
+	}
+	if on {
+		sub.anon = anonOn
+	}
+	return sub, nil
+}
 
 // evalState is what one decision derives once from the subject.
 type evalState struct {
@@ -289,7 +333,7 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 	deny := func(o Outcome, reason string, missing Action) Decision {
 		return Decision{Outcome: o, Reason: reason, Missing: missing, Target: targetOf(c), Epoch: epoch}
 	}
-	if sub.Anonymous && !e.anonymousOn() {
+	if sub.Anonymous && sub.anon != anonOn {
 		return deny(DenyUnauthenticated, ReasonUnauthenticated, "")
 	}
 	actions := c.Actions
@@ -461,7 +505,11 @@ func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]st
 	if refused != nil {
 		return nil, refused.Err()
 	}
-	if sub.Anonymous && !e.anonymousOn() {
+	sub, refused = e.withAnonymous(ctx, sub)
+	if refused != nil {
+		return nil, refused.Err()
+	}
+	if sub.Anonymous && sub.anon != anonOn {
 		return nil, nil
 	}
 	endpoint := EndpointOf(ctx)
@@ -504,6 +552,20 @@ func (e *Engine) Require(ctx context.Context, sub Subject, permission string) er
 		}
 	}
 	return d.Err()
+}
+
+// Holds reports whether the subject holds a permission, as [Engine.Require]
+// would decide it, but as a question and not as a request for an operation: it
+// records no authz.denied event and counts no denial, because nothing was refused
+// (R-AUTHZ-029). A handler that only chooses between two answers, and the rate
+// limit that exempts administrators, use it. An error is a refusal to decide (503,
+// 412), not a "no". *Engine implements [Prober].
+func (e *Engine) Holds(ctx context.Context, sub Subject, permission string) (bool, error) {
+	idx, refused := e.forRequest(ctx, sub)
+	if refused != nil {
+		return false, refused.Err()
+	}
+	return e.requireOn(idx, sub, permission).Outcome == Allow, nil
 }
 
 func (e *Engine) requireOn(idx *Index, sub Subject, permission string) Decision {
@@ -565,7 +627,7 @@ func (e *Engine) Check(ctx context.Context, sub Subject, items []CheckItem) ([]b
 	out := make([]bool, len(items))
 	for i, it := range items {
 		if !it.Action.Valid() {
-			return nil, 0, errs.E(errs.Invalid, errs.CodeInvalidAction, fmt.Sprintf("%q is not a repository action.", it.Action),
+			return nil, 0, errs.E(errs.Invalid, errs.CodeValidation, fmt.Sprintf("%q is not a repository action.", it.Action),
 				errs.WithFields(errs.FieldError{Pointer: fmt.Sprintf("/checks/%d/action", i), Code: errs.CodeInvalidAction, Detail: "not one of the six actions"}))
 		}
 		kind := KindMetadata

@@ -137,6 +137,7 @@ func TestQ_OPS_49_RequestSourceIsAddedToEvents(t *testing.T) {
 	h := httpserver.Chain{Router: router, Resolver: res}.Handler()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.RemoteAddr = "10.1.2.3:5555"
+	req.Header.Set("User-Agent", "trove-cli/1")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
@@ -145,7 +146,7 @@ func TestQ_OPS_49_RequestSourceIsAddedToEvents(t *testing.T) {
 		if trace == "" || len(inner.events) != 3 {
 			t.Fatalf("trace %q, %d events", trace, len(inner.events))
 		}
-		if got := inner.events[0].Source; got.ClientAddr != "10.1.2.3" || got.TraceID != trace {
+		if got := inner.events[0].Source; got.ClientAddr != "10.1.2.3" || got.TraceID != trace || got.UserAgent != "trove-cli/1" {
 			t.Errorf("%+v", got)
 		}
 		if got := inner.events[1].Source; got.ClientAddr != "10.1.2.3" || got.UserAgent != "curl" {

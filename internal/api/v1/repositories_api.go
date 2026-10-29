@@ -41,13 +41,13 @@ type RepositoryServices struct {
 	// created through another replica is usable at once (R-ARCH-011 step 2).
 	Reader repository.Reader
 	// AnonymousAccess is the runtime switch of R-AUTH-037. An anonymous caller is
-	// answered 401 while it is off. Nil means no gate here (a unit test without a
-	// decision point).
-	AnonymousAccess func() bool
+	// answered 401 while it is off, and 503 when the switch cannot be read. Nil
+	// means no gate here (a unit test without a decision point).
+	AnonymousAccess func(ctx context.Context) (bool, error)
 }
 
 // capabilityReadConfig is the capability of reading configuration (R-AUTHZ-010).
-const capabilityReadConfig = "repositories:read-config"
+const capabilityReadConfig = string(authz.RepositoriesRead)
 
 // consumerView is the view part of the ETag of a read by a caller without
 // repositories:read-config (R-API-012): the representation depends on the view.
@@ -63,7 +63,14 @@ func (s *Server) repositoryService() (*repository.Service, error) {
 // anonymousGate answers 401 for an anonymous caller while anonymous access is off.
 func (s *Server) anonymousGate(ctx context.Context) error {
 	gate := s.o.Repositories.AnonymousAccess
-	if httpserver.PrincipalFrom(ctx).Anonymous && gate != nil && !gate() {
+	if !httpserver.PrincipalFrom(ctx).Anonymous || gate == nil {
+		return nil
+	}
+	on, err := gate(ctx)
+	if err != nil {
+		return errs.E(errs.Unavailable, errs.CodeUnavailable, "The authentication settings could not be read.", errs.WithRetryAfter(time.Second), errs.WithCause(err))
+	}
+	if !on {
 		return authz.Unauthenticated()
 	}
 	return nil
@@ -71,7 +78,7 @@ func (s *Server) anonymousGate(ctx context.Context) error {
 
 // repositoryCaller is the actor and the origin of a write, for the audit event.
 func repositoryCaller(r *http.Request) repository.Caller {
-	return repository.Caller{Actor: auditActor(r.Context()), Source: auditSource(r)}
+	return repository.Caller{Actor: ActorFrom(httpserver.PrincipalFrom(r.Context())), Source: auditSource(r)}
 }
 
 // repositoryRep is the representation of a repository: the configuration document
@@ -180,22 +187,12 @@ func stripReadOnly(body []byte) ([]byte, error) {
 	}
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(body, &m); err != nil {
-		return nil, asInvalidDocument(malformed("", "type", "the body must be a JSON object", err))
+		return nil, malformed("", "type", "the body must be a JSON object", err)
 	}
 	for _, k := range readOnlyMembers() {
 		delete(m, k)
 	}
 	return json.Marshal(m)
-}
-
-// asInvalidDocument gives the body errors of a repository document their code of
-// R-REPO-008: 400 invalid_document, with the pointer of the member.
-func asInvalidDocument(err error) error {
-	e, ok := errs.As(err)
-	if !ok || e.Code != errs.CodeInvalid || len(e.Fields) == 0 {
-		return err
-	}
-	return errs.E(errs.Invalid, errs.CodeInvalidDocument, e.Detail, errs.WithBadRequest(), errs.WithFields(e.Fields...))
 }
 
 // documentBody reads the configuration document of a create or a replace
@@ -208,10 +205,10 @@ func (s *Server) documentBody(w http.ResponseWriter, r *http.Request) (raw, doc 
 	}
 	doc, err = stripReadOnly(raw)
 	if err != nil {
-		return nil, nil, asInvalidDocument(err)
+		return nil, nil, err
 	}
 	if err := StrictUnmarshal(doc, &repository.Document{}); err != nil {
-		return nil, nil, asInvalidDocument(err)
+		return nil, nil, err
 	}
 	return raw, doc, nil
 }
@@ -221,16 +218,16 @@ func (s *Server) documentBody(w http.ResponseWriter, r *http.Request) (raw, doc 
 func (s *Server) patchBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	raw, err := ReadMergePatch(w, r, int64(s.o.API.Config.MaxConfigurationBodyBytes))
 	if err != nil {
-		return nil, asInvalidDocument(err)
+		return nil, err
 	}
 	doc, err := stripReadOnly(raw)
 	if err != nil {
-		return nil, asInvalidDocument(err)
+		return nil, err
 	}
 	var probe any
 	if json.Unmarshal(doc, &probe) == nil {
 		if p, ok := unknownMember(probe, reflect.TypeFor[repository.Document](), ""); ok {
-			return nil, asInvalidDocument(malformed(p, "unknown", "the member is not part of the resource", nil))
+			return nil, malformed(p, "unknown", "the member is not part of the resource", nil)
 		}
 	}
 	return doc, nil
@@ -282,31 +279,6 @@ func withoutActivity(p Precondition) Precondition {
 
 func repositoryURL(r *http.Request, key string) string {
 	return strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/") + "/api/v1/repositories/" + key
-}
-
-// knowRepository looks a key up that the replica's snapshot does not hold and
-// brings the grant index up to the repository, before the decision, so that a
-// repository created through another replica is usable at once (R-ARCH-011 step 2,
-// R-API-052). The result of the lookup is not used, because the decision answers
-// (R-AUTHZ-016); only a lookup or a catch-up that cannot finish in time is
-// returned.
-func (s *Server) knowRepository(ctx context.Context, key string) error {
-	rd := s.o.Repositories.Reader
-	if rd == nil {
-		return nil
-	}
-	if _, err := rd.ByKey(ctx, key); err != nil {
-		if e, ok := errs.As(err); ok && e.Kind == errs.Unavailable {
-			return err
-		}
-		return nil
-	}
-	if cu, ok := s.o.Repositories.Authz.(interface {
-		CatchUp(ctx context.Context, repoKey string) error
-	}); ok {
-		return cu.CatchUp(ctx, key)
-	}
-	return nil
 }
 
 // ListFormats implements GET /api/v1/formats (R-REPO-003).
@@ -565,14 +537,11 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 		return
 	}
 	if !cfg {
-		// Authorization first, then the lookup: a repository the caller may not read
-		// is answered before anyone asks whether it exists.
+		// Authorization first, then the lookup: the decision point looks an unknown key
+		// up itself (authz.Engine.Know) and answers before the result is used, so a
+		// repository the caller may not read is answered like a missing one.
 		if s.o.Repositories.Authz == nil {
 			httpserver.Problem(w, r, unavailable("The authorization state"))
-			return
-		}
-		if err := s.knowRepository(ctx, key); err != nil {
-			httpserver.Problem(w, r, err)
 			return
 		}
 		c := authz.Coordinate{Repository: key, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}

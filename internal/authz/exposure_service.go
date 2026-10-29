@@ -552,6 +552,9 @@ func (s *ExposureService) Replace(ctx context.Context, actor Subject, endpoint, 
 		if err := s.writableEndpoint(ctx, qs, endpoint); err != nil {
 			return err
 		}
+		if err := qs.EndpointsLockRule(ctx, q.EndpointsLockRuleParams{Endpoint: endpoint, Name: name}); err != nil {
+			return err
+		}
 		current, err := s.load(ctx, qs, endpoint, name)
 		if err != nil {
 			return err
@@ -612,6 +615,9 @@ func (s *ExposureService) Delete(ctx context.Context, actor Subject, endpoint, n
 			return err
 		}
 		if _, err := s.requireEndpoint(ctx, qs, endpoint); err != nil {
+			return err
+		}
+		if err := qs.EndpointsLockRule(ctx, q.EndpointsLockRuleParams{Endpoint: endpoint, Name: name}); err != nil {
 			return err
 		}
 		current, err := s.load(ctx, qs, endpoint, name)

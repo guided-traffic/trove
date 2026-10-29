@@ -44,7 +44,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 |---|---|
 | `principal.go` | The contract: `Store`, `Principal`, `Kind`, `Status`, `LoginClaims`, `Provisioner` |
 | `store.go` | `PGStore`: `ByID`, `ByName`, `Groups` over the cache `auth_principals` |
-| `manager.go`, `groups.go`, `serviceaccounts.go` | `Manager`: users, groups and memberships, service accounts (R-AUTH-016, R-AUTH-018, R-AUTH-020); `Caller.RoleHolders` is the `roles:write` check the API sets |
+| `manager.go`, `groups.go`, `serviceaccounts.go` | `Manager`: users, groups and memberships, service accounts (R-AUTH-016, R-AUTH-018, R-AUTH-020); `Caller.RoleHolders` is the `roles:write` check the API sets; `AuthzHook` (optional, `authz.PrincipalHook` in the wiring) is told of every deleted or renamed principal in the same transaction (R-AUTHZ-028); a duplicate create is `409 already_exists` |
 | `guards.go` | `guardRoleHolder` (a principal that holds a system role, or a group that carries one, is changed only with `roles:write`, Q-AUTHZ-69) and `LastAdminGuard` (`last_admin` over active holders, locked on the `admin` binding rows; authz uses it in `UnbindRole`, Q-AUTHZ-70) |
 | `provisioner.go` | `PGProvisioner.SignIn`: just-in-time user, identity link, rename, group sync (R-AUTH-007, R-AUTH-008) |
 | `change.go` | The payload of the change area `auth` and its notify helpers |
@@ -57,7 +57,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 |---|---|
 | `token.go` | The contract: `Type`, `Scope`, `Info`, `Validator`, the `Err*` values |
 | `format.go` | Generate, `Check` (syntax step), `Hash`, `Hint` (R-AUTH-022) |
-| `scope.go` | `ParseScope` (validation, limits), `Marshal`, `Within` (the derivation rule) |
+| `scope.go` | `ParseScope` (validation, limits), `Marshal`, `Within` (the derivation rule). `ScopeOptions` carries the cross-area checks (actions, system items, endpoints and the three pattern dimensions); `app.TokenScopeOptions` fills them from `authz.Actions()`, `authz.Capabilities()` and the authz validators (Q-AUTH-151) |
 | `lifetime.go` | `resolveLifetime` (R-AUTH-026) |
 | `service.go` | `Service`: `Create`, `Get`, `List`, the record types; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
 | `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade |

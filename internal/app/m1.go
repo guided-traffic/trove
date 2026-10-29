@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -37,9 +38,15 @@ type m1Wiring struct {
 	// >>> M1 api
 	// rateLimit is stage 7 of the chain (R-ARCH-005, R-API-016); nil: none.
 	rateLimit func(http.Handler) http.Handler
+	// preflight answers the CORS preflight of an allowed origin before the
+	// authentication stage (R-API-018); nil: none.
+	preflight func(http.Handler) http.Handler
 	// limiters is the replica's cluster limiter set (R-ARCH-034), built once by
 	// limiterSet; the identity stage takes its failure throttle from it.
 	limiters *cluster.LimiterSet
+	// replicas is the count n of the pool's live replicas that every limiter of
+	// the client listener divides its fallback share by (replicaCount).
+	replicas *replicaCount
 	// <<< M1 api
 
 	// >>> M1 identity
@@ -88,7 +95,7 @@ type m1Wiring struct {
 	// anonymousAccess is the runtime switch of R-AUTH-037 (YAML ceiling and
 	// auth_settings.anonymous_access); the identity area sets it before the authz
 	// wiring runs. Nil means anonymous access is off.
-	anonymousAccess func() bool
+	anonymousAccess func(ctx context.Context) (bool, error)
 	// <<< M1 authz
 
 	// >>> M1 repository

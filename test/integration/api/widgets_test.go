@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -74,6 +75,8 @@ type widgetAPI struct {
 	// failNext makes the next create fail with an internal error after it claimed
 	// the idempotency key (the rollback test).
 	failNext bool
+	// runs counts the executions of a create's operation.
+	runs atomic.Int64
 }
 
 func newWidgetAPI(db *postgres.DB, idem *v1.Idempotency, cfg config.API) *widgetAPI {
@@ -241,6 +244,7 @@ func (a *widgetAPI) create(w http.ResponseWriter, r *http.Request) {
 	}
 	err = a.idem.Do(w, r, body, v1.IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (v1.Outcome, error) {
 		ptx, _ := postgres.Unwrap(tx)
+		a.runs.Add(1)
 		if strings.HasPrefix(in.Name, "hold-") && a.hold != nil {
 			a.entered <- struct{}{}
 			<-a.hold

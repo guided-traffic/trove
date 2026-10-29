@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -51,8 +52,9 @@ func TestPathHelpers(t *testing.T) {
 		}
 	})
 	t.Run("R-STOR-007 an actor id is used only when it is a uuid", func(t *testing.T) {
-		if !isUUID("0198a000-0000-7000-8000-000000000001") || isUUID("admin") || isUUID("") || isUUID("0198a000-0000-7000-8000-00000000000g") {
-			t.Error("isUUID")
+		id := func(s string) string { return Caller{Actor: audit.Actor{ID: s}}.actorID() }
+		if id("0198a000-0000-7000-8000-000000000001") == "" || id("admin") != "" || id("") != "" || id("0198a000-0000-7000-8000-00000000000g") != "" {
+			t.Error("actorID")
 		}
 	})
 }

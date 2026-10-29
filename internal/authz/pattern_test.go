@@ -190,8 +190,8 @@ func TestR_AUTHZ_001_Presets(t *testing.T) {
 		})
 	}
 	t.Run("R-AUTHZ-001 no action implies another", func(t *testing.T) {
-		for _, a := range allActions() {
-			for _, b := range allActions() {
+		for _, a := range Actions() {
+			for _, b := range Actions() {
 				if a != b && SetOf(a).Has(b) {
 					t.Errorf("%s implies %s", a, b)
 				}

@@ -94,7 +94,7 @@ func (s *Server) identityReady(w http.ResponseWriter, r *http.Request) bool {
 func (s *Server) caller(r *http.Request) principal.Caller {
 	p := httpserver.PrincipalFrom(r.Context())
 	return principal.Caller{
-		Actor:  audit.Actor{Kind: string(p.Kind), ID: p.ID, Name: p.Name, TokenID: p.Credential.TokenID, AuthMethod: string(p.Credential.Method)},
+		Actor:  ActorFrom(p),
 		Source: auditSource(r),
 		RoleHolders: func(ctx context.Context) error {
 			if s.o.Access == nil {

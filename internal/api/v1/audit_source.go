@@ -36,13 +36,15 @@ func (r requestRecorder) Record(ctx context.Context, ev audit.Event) {
 }
 
 func completeSource(ctx context.Context, ev audit.Event) audit.Event {
+	from := httpserver.SourceFrom(ctx)
 	if ev.Source.ClientAddr == "" {
-		if c := httpserver.InfoFrom(ctx).Client; c.IsValid() {
-			ev.Source.ClientAddr = c.String()
-		}
+		ev.Source.ClientAddr = from.ClientAddr
+	}
+	if ev.Source.UserAgent == "" {
+		ev.Source.UserAgent = from.UserAgent
 	}
 	if ev.Source.TraceID == "" {
-		ev.Source.TraceID = httpserver.RequestID(ctx)
+		ev.Source.TraceID = from.TraceID
 	}
 	if ev.Endpoint == "" {
 		if ep := httpserver.EndpointFrom(ctx); ep != nil {

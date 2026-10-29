@@ -36,6 +36,23 @@ type AdminBinder interface {
 	BindAdmin(ctx context.Context, tx meta.Tx, principalID, grantedBy string) error
 }
 
+// AuthzHook lets the authorization area follow a deleted or renamed principal in
+// the transaction of the change (R-AUTHZ-028): the principal's policy entries and
+// role bindings are inputs of the grant index and go with the row, and the
+// representation of every policy that names it shows its name. The authorization
+// area implements it; OnPrincipalChanged is called before the delete, while the
+// entries still exist, and after a rename. Nil in the options calls nothing.
+type AuthzHook interface {
+	OnPrincipalChanged(ctx context.Context, tx meta.Tx, principalID string) error
+}
+
+func notifyAuthz(ctx context.Context, h AuthzHook, tx meta.Tx, principalID string) error {
+	if h == nil {
+		return nil
+	}
+	return h.OnPrincipalChanged(ctx, tx, principalID)
+}
+
 // ErrAdminBinding is returned when a service account is created with Admin and
 // no [AdminBinder] is wired.
 var ErrAdminBinding = errors.New("principal: administrator role binding is not available")
@@ -51,6 +68,8 @@ type ManagerOptions struct {
 	BreakGlassName string
 	// Admin binds the administrator role; nil disables the Admin option.
 	Admin AdminBinder
+	// Authz is told of every deleted and renamed principal; nil tells nobody.
+	Authz AuthzHook
 }
 
 // Manager is the write side of the principal table: users, groups, memberships
@@ -64,11 +83,12 @@ type Manager struct {
 	rec      audit.Recorder
 	reserved []string
 	admin    AdminBinder
+	authz    AuthzHook
 }
 
 // NewManager creates the manager.
 func NewManager(o ManagerOptions) *Manager {
-	m := &Manager{db: o.DB, notify: o.Notifier, rec: o.Recorder, admin: o.Admin}
+	m := &Manager{db: o.DB, notify: o.Notifier, rec: o.Recorder, admin: o.Admin, authz: o.Authz}
 	if m.rec == nil {
 		m.rec = audit.Nop{}
 	}
@@ -189,7 +209,7 @@ func (m *Manager) CreateUser(ctx context.Context, c Caller, in NewUser) (User, e
 			return err
 		}
 		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeConflict, "A user with this name exists.")
+			return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A user with this name exists.")
 		}
 		if err := qs.IdentityInsertUser(ctx, q.IdentityInsertUserParams{
 			ID: id, Email: in.Email, EmailVerified: in.EmailVerified, DisplayName: in.DisplayName, Origin: origin,
@@ -638,6 +658,9 @@ func (m *Manager) DeleteUser(ctx context.Context, c Caller, name string) error {
 		}
 		idents, err := qs.IdentityUserIdentities(ctx, id)
 		if err != nil {
+			return err
+		}
+		if err := notifyAuthz(ctx, m.authz, tx, id); err != nil {
 			return err
 		}
 		if _, err := qs.IdentityDeletePrincipal(ctx, id); err != nil {

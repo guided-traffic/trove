@@ -45,21 +45,6 @@ UPDATE api_idempotency_keys
  WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND idem_key = sqlc.arg(idem_key)::text
 RETURNING COALESCE(response_body::text, '')::text AS response_body;
 
--- name: StoreIdempotencyOutcome :exec
--- Stores a 4xx outcome in a transaction of its own, after the transaction of the
--- change was rolled back (R-API-014: stored 4xx outcomes are replayed too).
-INSERT INTO api_idempotency_keys (principal_id, idem_key, method, route, request_sha256, response_status,
-                                  response_headers, response_body, expires_at)
-VALUES (sqlc.arg(principal_id)::text::uuid, sqlc.arg(idem_key)::text, sqlc.arg(method)::text, sqlc.arg(route)::text,
-        sqlc.arg(request_sha256)::bytea, sqlc.arg(status)::smallint, sqlc.arg(headers)::text::jsonb,
-        sqlc.arg(body)::text::jsonb, now() + make_interval(secs => sqlc.arg(retention_secs)::float8))
-ON CONFLICT (principal_id, idem_key) DO UPDATE
-   SET method = EXCLUDED.method, route = EXCLUDED.route, request_sha256 = EXCLUDED.request_sha256,
-       response_status = EXCLUDED.response_status, response_headers = EXCLUDED.response_headers,
-       response_body = EXCLUDED.response_body, secret_issued_id = NULL,
-       created_at = now(), expires_at = EXCLUDED.expires_at
- WHERE api_idempotency_keys.expires_at <= now();
-
 -- name: DeleteExpiredIdempotencyKeys :execrows
 -- The hourly task idempotency-cleanup (R-API-014).
 DELETE FROM api_idempotency_keys WHERE expires_at <= now();
@@ -126,10 +111,20 @@ INSERT INTO secret_key_canary (key_id, ciphertext)
 VALUES (sqlc.arg(key_id)::text, sqlc.arg(ciphertext)::text)
 ON CONFLICT (key_id) DO NOTHING;
 
--- name: CountLiveReplicas :one
--- The n of the rate-limit fallback (R-ARCH-034): replicas whose heartbeat is not
--- stale and that run the role (a replica with role all counts for web and worker).
-SELECT count(*)::int AS live
-  FROM replica
- WHERE heartbeat_at >= now() - make_interval(secs => sqlc.arg(stale_secs)::float8)
-   AND (sqlc.arg(role)::text = ANY(roles) OR 'all' = ANY(roles));
+
+-- name: CurrentLockTimeout :one
+-- The lock_timeout of the session, to restore it after the short wait of an
+-- idempotent request on the row of the first one (R-API-014).
+SELECT current_setting('lock_timeout')::text AS lock_timeout;
+
+-- name: IdempotencySavepoint :exec
+-- The operation of an idempotent request runs behind this savepoint, so that a
+-- refusal rolls back the change but keeps the claimed key row in the same
+-- transaction (R-API-014).
+SAVEPOINT idempotent_operation;
+
+-- name: IdempotencyRollbackToSavepoint :exec
+ROLLBACK TO SAVEPOINT idempotent_operation;
+
+-- name: IdempotencyReleaseSavepoint :exec
+RELEASE SAVEPOINT idempotent_operation;

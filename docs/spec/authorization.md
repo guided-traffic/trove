@@ -3212,6 +3212,63 @@ network jitter hides; (b) removes the cache. The development agent would revisit
 
 **Applied in the spec:** R-AUTHZ-016, the hiding rule.
 
+### Q-AUTHZ-132 · Identity and repository writes that change grant-index inputs call an authz-owned hook
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-028 requires every write to an input of the grant index to move the authz epoch. Deleting or renaming a principal, and
+deleting a repository, change the index (rows go with the foreign keys; policy representations show names) without that.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The identity and repository areas notify `authz` themselves | They know the tables | No hook | Two more owners of the area's payload and of the policy versions |
+| (b) An authz-owned hook called in their transactions (chosen) | `authz.PrincipalHook` (`principal.AuthzHook`) before the delete and after a rename; `authz.PolicyHook` (`repository.Hooks`) before a repository row is removed. Each raises the version of every policy it changes and notifies the area | One owner; the ETag of a policy changes when its representation does | A hook interface in `internal/auth/principal` |
+
+**Choice:** (b). A principal that no policy entry and no role binding names moves nothing.
+
+**Rationale:** the policy version is the ETag of the representation (R-AUTHZ-021). The development agent would revisit this if
+projects (R-AUTHZ-026) add more tables that name principals.
+
+**Applied in the spec:** R-AUTHZ-028's completeness test covers identity and repository writes (`TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch`).
+
+### Q-AUTHZ-133 · The decision point looks an unknown repository up itself
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A repository created through another replica is not in the grant index of this one until the change log delivered it
+(R-API-052). The lookup and catch-up existed twice (files service, repository API) and was missing from the shared action step.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each caller looks up | As before | No new dependency | Missing for getItem, deleteItem, listChildren, getItemStats |
+| (b) `authz.Engine` holds the `repository.Reader` (chosen) | `Decide` and `Begin(ctx, sub, keys...)` call `Know` for a key the index lacks: the snapshot lookup, then the catch-up to the database's epochs; the result is not used, so authorization stays before existence | One place; both copies are gone | The engine depends on the reader |
+
+**Choice:** (b).
+
+**Rationale:** a decision that must see the repository should not depend on the caller remembering. The development agent would
+revisit this when the engine and the reader share a request-scoped handle (architecture review item 5).
+
+**Applied in the spec:** none (R-ARCH-011 step 2 and R-API-052 are met by it).
+
+### Q-AUTHZ-134 · A change message starts a build of its own, a capability probe records nothing, the anonymous switch is read once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Three smaller decisions of the decision point. (1) The hint of a change message (this replica's own commit included) requested a
+`poll` build, which is skipped when the index equals the applied state; the poll applies a replica's own write only later, so the
+writer kept the old grants. (2) The rate-limit exemption of administrators and the handlers that choose between two answers called
+`Require`, which records `authz.denied` for a caller who was not refused anything. (3) The anonymous switch was read per coordinate
+with `context.Background()` and an error became 401.
+
+**Choice:** (1) the hint requests a `message` build that is skipped only when the index label equals the epochs the hint read;
+(2) `Engine.Holds` / `v1.Holds` answer without an audit event, with `authz.ContentBypass`; (3) `Options.AnonymousAccess` takes the
+request's context and is read once per request, an error is 503 `authz_stale`.
+
+**Rationale:** each follows from R-AUTHZ-028, R-AUTHZ-029 and R-AUTH-037 as written. The development agent would revisit (2) if a
+probe must be counted.
+
+**Applied in the spec:** the `message` trigger of `trove_authz_index_rebuilds_total` is used as R-OPS-008 lists it.
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

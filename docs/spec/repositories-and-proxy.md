@@ -70,7 +70,7 @@ Priority: **MVP** · Covers: REPO-001, REPO-002, REPO-016
 
 - Every repository MUST have exactly one class, `local`, `remote` or `virtual` (INV-5), and exactly
   one format from the format catalog (R-REPO-003). Class, format and key are fixed at creation. An
-  update that changes any of them MUST be refused with 422 `immutable_field`; there is no class
+  update that changes any of them MUST be refused with 422 `validation_failed` with `immutable` in `errors[]`; there is no class
   conversion and no rename (rename is create, copy per [storage.md](storage.md), delete).
 - A local repository stores what clients deploy. A remote repository stores what it fetched from its
   single upstream (R-REPO-024). A virtual repository stores no content and answers through its
@@ -115,8 +115,8 @@ included, that its author never saw (R-REPO-023).
 Acceptance criteria:
 
 - `POST /api/v1/repositories` with `{"key":"npm-local","class":"local","format":"npm"}` returns
-  201; a following `PATCH` with `{"format":"nuget"}` returns 422 `immutable_field` at `/format`.
-- A create with `"class":"federated"` returns 422 `unsupported_class`.
+  201; a following `PATCH` with `{"format":"nuget"}` returns 422 `validation_failed` with `immutable` in `errors[]` at `/format`.
+- A create with `"class":"federated"` returns 422 `validation_failed` with `unsupported_class` in `errors[]`.
 - `curl -X PUT --data-binary @notes.txt -H "Authorization: Bearer $TROVE_TOKEN"
   https://trove.example.com/files/npm-local/notes.txt` returns 422 `not_a_package`.
 
@@ -126,7 +126,7 @@ Priority: **MVP** · Covers: REPO-004, REPO-005
 - A key MUST match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5: 2 to 64 characters, lower case, so it is
   valid for container formats too), MUST NOT contain `..` and MUST NOT end in `.` (trailing dots
   are stripped by some reverse proxies and Windows clients). Keys are unique across all classes.
-  Violations answer 422 `invalid_key`.
+  Violations answer 422 `validation_failed` with `invalid_key` in `errors[]`.
 - No suffix is reserved. The cache view of a remote repository is addressed with `~cache`
   (R-REPO-032); `~` cannot occur in a key, so the cache address never collides with a key and remote
   keys keep the full 64 characters.
@@ -153,7 +153,7 @@ Priority: **MVP** · Covers: REPO-004, REPO-005
 Acceptance criteria:
 
 - Creating repositories with the keys `Npm`, `a`, `-x`, `a..b`, `x.` and `npm~cache` each returns
-  422 `invalid_key`; `npm-local` and `a1` are accepted.
+  422 `validation_failed` with `invalid_key` in `errors[]`; `npm-local` and `a1` are accepted.
 - Creating a repository with the key `batch-create` or `quick-setup` returns 422 `reserved_name`.
 - With remote `npm-remote` in place, `GET /api/npm/npm-remote~cache/lodash` reaches the cache view,
   and creating a repository named `npm-remote-cache` succeeds.
@@ -215,7 +215,7 @@ Acceptance criteria:
 
 - `curl -s https://trove.example.com/api/v1/formats` lists `npm` and `nuget`, each with the
   classes `local`, `remote` and `virtual`.
-- Creating a repository with `"format":"cobol"` returns 422 `unknown_format`.
+- Creating a repository with `"format":"cobol"` returns 422 `validation_failed` with `unknown_format` in `errors[]`.
 
 ### R-REPO-004 · Configuration document and common settings
 Priority: **MVP** · Covers: REPO-010, REPO-016, REPO-017, REPO-028, RMT-030
@@ -243,7 +243,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `npm`, `nuget`, … | Format settings, under a member named after the format | see owner | format page |
 
 - A class section that does not match the class (for example `virtual` on a local repository)
-  answers 422 `not_applicable`.
+  answers 422 `validation_failed` with `not_applicable` in `errors[]`.
 - Pin rules, namespace claims, extra hosts and upstream credentials are generic members of this
   page (`virtual.pinning`, the claims API, `remote.extraHosts`, `remote.authMode`,
   `remote.username`, `remote.password`) for every format (Q-REPO-5). A format section MUST NOT
@@ -327,7 +327,7 @@ Priority: **MVP** · Covers: REPO-012, REPO-046, REPO-047
   code in the format plug-in, not configuration: it defines the canonical path scheme and derives
   module information (package name, version, file role) from a canonical path.
 - The `layout` member is read-only and equals the format's layout. A create that names another
-  layout answers 422 `unsupported_layout`.
+  layout answers 422 `validation_failed` with `unsupported_layout` in `errors[]`.
 - Module information MUST be recorded on items (the package and version rows of
   [storage.md](storage.md)), because the package view, cleanup and latest-version resolution need
   it.
@@ -338,7 +338,7 @@ Priority: **MVP** · Covers: REPO-012, REPO-046, REPO-047
 Acceptance criteria:
 
 - `GET /api/v1/repositories/nuget-local` returns `"layout":"nuget"`; a create with
-  `"layout":"maven-2"` for an npm repository returns 422 `unsupported_layout`.
+  `"layout":"maven-2"` for an npm repository returns 422 `validation_failed` with `unsupported_layout` in `errors[]`.
 - After `npm publish` of `@acme/util@1.4.0`, the tarball item belongs to package `@acme/util`,
   version `1.4.0`.
 
@@ -364,7 +364,7 @@ plug-in's version-group hook decides what a group is.
 - Removals by caps go to the trash can when it is enabled ([R-STOR-022](storage.md)), for
   snapshots and tags alike, and are audited like any delete. When a tag is removed, its kept
   revisions go with it.
-- A cap the format does not support answers 422 `not_applicable`.
+- A cap the format does not support answers 422 `validation_failed` with `not_applicable` in `errors[]`.
 - A variant cap of 1 is refused with 422 `out_of_range`: an in-flight multi-file deploy would remove
   its own siblings.
 - The container API version and the legacy manifest switch of REPO-027 belong to the container
@@ -374,7 +374,7 @@ Acceptance criteria:
 
 - `PATCH` with `{"local":{"caps":{"maxVariantsPerGroup":1}}}` returns 422 `out_of_range`; with `5`
   it is stored and read back.
-- On an npm repository, `maxTagsPerImage: 3` returns 422 `not_applicable`.
+- On an npm repository, `maxTagsPerImage: 3` returns 422 `validation_failed` with `not_applicable` in `errors[]`.
 - With the container format and `maxTagsPerImage: 3` on `docker-local`, pushing `latest`, `t1`,
   `t2`, re-pushing `latest`, then pushing `t3` removes `t1`, not `latest`, and `t1` is in the trash
   can ([R-STOR-044](storage.md)).
@@ -421,16 +421,16 @@ Priority: **MVP** · Covers: REPO-053, REPO-054, RMT-002
 
 The server MUST validate every create and update against all rules below in one pass and report
 every violation (JSON pointer, code, message) in one 422 response. Malformed JSON and unknown
-members answer 400 `invalid_document`: a configuration API that silently drops a misspelt setting
+members answer 400 `malformed_request`: a configuration API that silently drops a misspelt setting
 leaves the operator believing it is in effect.
 
 | Rule | Code |
 |---|---|
 | Key syntax (R-REPO-002), project prefix for project administrators | `invalid_key` |
 | Key is a reserved name (R-REPO-002) | `reserved_name` |
-| Key taken, also by a repository being deleted | `repository_exists` (409) |
+| Key taken, also by a repository being deleted | `already_exists` (409) |
 | Class or format unknown, or the format does not support the class | `unsupported_class`, `unknown_format` |
-| Class, format or key changed on update | `immutable_field` |
+| Class, format or key changed on update | `immutable` |
 | Pattern syntax or limits (R-REPO-005); claim or pin-rule pattern outside the forms R-REPO-023 admits | `invalid_pattern` |
 | Member missing, being deleted, of another format, duplicated, or the virtual repository itself | `invalid_member` |
 | Nesting cycle or depth over the limit (R-REPO-018) | `virtual_cycle`, `virtual_too_deep` |
@@ -455,7 +455,7 @@ Acceptance criteria:
   returns one 422 response with two `invalid_member` entries.
 - A create with `"remote":{"url":"https://user:pw@registry.example.com/"}` returns 422
   `invalid_upstream_url`.
-- A create with the misspelt member `"excludePattern"` returns 400 `invalid_document`.
+- A create with the misspelt member `"excludePattern"` returns 400 `malformed_request`.
 
 ### R-REPO-009 · Create a repository
 Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
@@ -464,7 +464,7 @@ Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
 |---|---|
 | Request | `POST /api/v1/repositories`, body: the configuration document; omitted settings take their defaults, format defaults included |
 | Success | 201, `Location: /api/v1/repositories/<key>`, `ETag: "<config_version>"`, body: the stored document as R-REPO-010 returns it, plus `warnings` |
-| Errors | 400 `invalid_document`; 401; 403; 409 `repository_exists`; 422 (R-REPO-008) |
+| Errors | 400 `malformed_request`; 401; 403; 409 `already_exists`; 422 (R-REPO-008) |
 | Permission | `repositories:write-config`; or project administrator of a project with `manageRepositories`, for keys `<projectKey>-…`, which are assigned to that project ([R-AUTHZ-026](authorization.md)) |
 
 - Create is never an upsert. Configuration, relational rows, sealed secrets and the audit event are
@@ -493,7 +493,7 @@ Acceptance criteria:
   --data @npm-remote.json https://trove.example.com/api/v1/repositories` returns 201, and a `GET`
   of the `Location` shows `metadataTtlSeconds: 7200` and `notFoundTtlSeconds: 1800` from the npm
   format defaults.
-- Repeating the call returns 409 `repository_exists`.
+- Repeating the call returns 409 `already_exists`.
 - The same call with a token lacking `repositories:write-config` returns 403 and creates nothing.
 
 ### R-REPO-010 · Read a repository configuration
@@ -752,7 +752,7 @@ Priority: **MVP** · Covers: REPO-033
 | `effectiveMembers` | R-REPO-018, read-only | — | — |
 
 - Members MUST be of the virtual repository's format. In the MVP they are local or remote
-  repositories; virtual members arrive with R-REPO-018 and are refused with 422 `invalid_member`
+  repositories; virtual members arrive with R-REPO-018 and are refused with 422 `validation_failed` with `invalid_member` in `errors[]`
   until then.
 - Members and their order can change without touching client configuration; a change takes effect
   on all replicas within 2 seconds and drops the repository's merged-metadata cache (R-REPO-020).
@@ -994,7 +994,7 @@ Priority: **P1** · Covers: REPO-018, RMT-037
   container format page MUST define how priority interacts with tag resolution before it declares
   the capability.
 - `priorityMember: true` on a virtual repository, or on a repository whose format lacks the
-  capability, answers 422 `not_applicable`.
+  capability, answers 422 `validation_failed` with `not_applicable` in `errors[]`.
 
 Acceptance criteria:
 
@@ -2509,7 +2509,7 @@ Priority: **P1** · Covers: RMT-017
   offline modes apply; uncached artifacts are unavailable while the upstream cannot be asked.
 - Artifact requests are not collapsed across clients (nothing is shared afterwards), and no items are
   created, so browsing, properties, copy and cleanup do not apply to them.
-- A format whose plug-in requires stored artifacts refuses the setting with 422 `not_applicable`.
+- A format whose plug-in requires stored artifacts refuses the setting with 422 `validation_failed` with `not_applicable` in `errors[]`.
 - Use case: a replica group next to another trove instance that already caches the upstream.
 
 Acceptance criteria:
@@ -3326,7 +3326,7 @@ response; R-API-009 shows a 422 whose `code` is `validation_failed` and whose `e
 | (a) Always `validation_failed`, the specific code only in `errors[]` | One top-level code | Matches the example of R-API-009 | The acceptance criteria that say "422 `invalid_key`" would need a lookup into `errors[]` |
 | (b) A single violation under its own code, several under `validation_failed` (chosen) | `errors[]` always lists every violation with its code; the top-level `code` is the violation's own when there is exactly one | Both readings hold: a client matching on `invalid_key` or `immutable_field` sees it at the top, a client iterating `errors[]` sees every violation | The top-level code depends on how many violations there are |
 
-**Choice:** (b).
+**Choice:** (b). Superseded by [Q-REPO-84](#q-repo-84--a-violation-answers-422-validation_failed-a-body-error-400-malformed_request): the top-level code is `validation_failed` whatever the number of violations.
 
 **Rationale:** The acceptance criteria of this page read as top-level codes, and a client that created
 one key wrongly wants exactly that. The development agent would revisit this if the API area settles on
@@ -3493,7 +3493,7 @@ R-REPO-008 says 400 `invalid_document` for malformed JSON and unknown members; R
 | (a) `malformed_request` for every body | The conventions of the API own the error | One code for every resource | R-REPO-008 and the acceptance criteria of R-GENERIC-001 name `invalid_document` |
 | (b) `invalid_document` with the pointer (chosen) | The repository document keeps its code and gains the pointer of the convention | Both pages are right: the status is 400, the code is the one the repository page documents, and `errors[0].pointer` names the member | The contract tests of the conventions need the code as a parameter (`apitest.Resource.MalformedCode`) |
 
-**Choice:** (b). A change to key, class or format answers 422 `immutable_field` (R-REPO-008), not the generic `validation_failed` (`apitest.Resource.ImmutableCode`).
+**Choice:** (b). Superseded by [Q-REPO-84](#q-repo-84--a-violation-answers-422-validation_failed-a-body-error-400-malformed_request): the body error is 400 `malformed_request` with the pointer, and the repository code is not a top-level code any more.
 
 **Rationale:** The code is what a client of the configuration API matches on. The development agent would revisit this if the conventions page makes the code of a body error uniform.
 
@@ -3532,6 +3532,30 @@ R-REPO-012 asks for a write at most once per minute per repository and replica a
 **Rationale:** "At most once per minute" is a ceiling the requirement fixes, so a tunable would only offer values that break it. The development agent would revisit this if an installation needs a lower write rate.
 
 **Applied in the spec:** R-REPO-012 reads unchanged; [docs/developer/repositories.md](../developer/repositories.md) names the constant.
+
+### Q-REPO-84 · A violation answers 422 validation_failed, a body error 400 malformed_request
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-009 fixes the top-level code of a 422 as `validation_failed` and of an unreadable or unknown-member body as
+`malformed_request`; the repository page had its own top-level codes for a single violation (Q-REPO-12), for a misspelt member
+(Q-REPO-21) and for a taken key (`repository_exists`), while the identity and policy areas used `conflict` and the code of the first
+problem. Codes are a stable contract (R-ARCH-025), so one rule must hold for every resource.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The page keeps its codes | Q-REPO-12 and Q-REPO-21 stay | The criteria read as before | A client needs one rule per resource; the contract tests carry overrides (`apitest.Resource.MalformedCode`, `ImmutableCode`) |
+| (b) R-API-009 everywhere (chosen) | 409 `already_exists`; 422 `validation_failed` with every violation, each with its own code, in `errors[]`; 400 `malformed_request` with the pointer of the member; `reserved_name` stays the top-level code of a reserved key, because R-API-004 defines it so | One rule; the overrides are gone | The criteria of this page read "422 `validation_failed` with `invalid_key` in `errors[]`" |
+
+**Choice:** (b). The codes `repository_exists` and `immutable_field` are removed from the registry; a change to an immutable member
+is the field code `immutable` of R-API-013. `invalid_document` stays as the field code of a document that the domain cannot read
+at all (no pointer is known).
+
+**Rationale:** a client that matches the top-level code of every 422 on one value, and the field codes in `errors[]`, needs no
+resource-specific knowledge. The development agent would revisit this if clients need the specific code without reading `errors[]`.
+
+**Applied in the spec:** the acceptance criteria and the code table of R-REPO-002, R-REPO-003, R-REPO-008, R-REPO-009, R-REPO-010
+and R-REPO-011 of this page; Q-REPO-12 and Q-REPO-21 are marked superseded; R-API-009 ([Q-API-136](api-and-ui.md#q-api-136--one-rule-for-the-top-level-code-of-an-error)).
 
 ## What this does not cover
 

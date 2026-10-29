@@ -56,7 +56,7 @@ func (e *env) apiHandler(name string, db *postgres.DB, changes *cluster.Changes,
 	joinable := principal.Joinable{DB: db}
 	tokens := token.NewService(token.ServiceOptions{
 		DB: joinable, Notifier: changes, Recorder: e.audit, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
-		Tokens: tokenCfg, Metrics: metrics, Log: quiet, Scope: token.ScopeOptions{SystemItem: func(string) bool { return true }},
+		Tokens: tokenCfg, Metrics: metrics, Log: quiet, Scope: token.ScopeOptions{Action: func(string) bool { return true }, SystemItem: func(string) bool { return true }},
 	})
 	manager := principal.NewManager(principal.ManagerOptions{DB: joinable, Notifier: changes, Recorder: e.audit, BreakGlassName: authCfg.BreakGlass.Username})
 	stage := auth.New(auth.Options{

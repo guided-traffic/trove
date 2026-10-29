@@ -45,6 +45,17 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 // else is "not found" without a database round trip.
 func IsID(s string) bool { return uuidPattern.MatchString(s) }
 
+// IDOrEmpty returns s when it is a principal ID and "" otherwise. It is the one
+// rule for the principal ID of an audit actor in a created_by or updated_by
+// column: a break-glass session, an admin command and an anonymous caller have no
+// row of the principal table.
+func IDOrEmpty(s string) string {
+	if IsID(s) {
+		return s
+	}
+	return ""
+}
+
 // The name rules of the principal kinds. They are the CHECK constraints of
 // migration 00007 (R-AUTH-007, R-AUTH-018, R-AUTH-020); the application
 // validates first and answers with the specified 4xx.

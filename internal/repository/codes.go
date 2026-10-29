@@ -10,4 +10,7 @@ const (
 	codeReservedName   = "reserved_name"
 	codeOutOfRange     = "out_of_range"
 	codeInvalidValue   = "invalid_value"
+	// codeImmutable is the code of R-API-013 for a change to a member that is fixed
+	// at creation; it is the field code, the answer is validation_failed.
+	codeImmutable = "immutable"
 )

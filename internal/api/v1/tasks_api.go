@@ -216,7 +216,7 @@ func (s *Server) enqueueTask(ctx context.Context, r *http.Request, tx meta.Tx, t
 	}
 	details, _ := json.Marshal(map[string]any{"task": t.Name, "jobId": res.Job.ID, "args": json.RawMessage(orEmptyObject(args))})
 	if err := s.recorder().RecordTx(ctx, tx, audit.Event{
-		Type: "system.task_triggered", Actor: auditActor(ctx), Outcome: audit.Success, Source: auditSource(r),
+		Type: "system.task_triggered", Actor: ActorFrom(httpserver.PrincipalFrom(ctx)), Outcome: audit.Success, Source: auditSource(r),
 		Subject: audit.Subject{Kind: "task", ID: t.Name, Name: t.Name}, Details: details,
 	}); err != nil {
 		return Outcome{}, err

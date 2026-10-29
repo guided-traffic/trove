@@ -195,8 +195,8 @@ request ─► stage 7: authz.WithEndpoint ─► Decide / Readable ─► ceili
 ## Rate-limit class (R-EP-015)
 
 One cluster limiter per class that an endpoint of the process names, `endpoint_<class>` with hyphens as underscores
-(`EndpointLimiterName`, Q-EP-22), built with `LimiterSet.NewLimiterShared`: while Valkey cannot be used, the per-replica
-share divides by `startServingReplicaCount`, the live replicas of this replica's pool (web replicas with the same
+(`EndpointLimiterName`, Q-EP-22), built with `LimiterSet.NewLimiter`: while Valkey cannot be used, the per-replica
+share divides by `replicaCount` (replica_count.go; the one count of every limiter of the client listener), the live replicas of this replica's pool (web replicas with the same
 `TROVE_POOL_NAME`, and replicas of the role `all`), refreshed every heartbeat. The bucket is
 `<endpoint>\x00token:<id>` (or the principal, or `addr:<client>` for an anonymous request and for `key: address`), so two
 endpoints of one class have separate budgets. Every answer of a limited endpoint carries `RateLimit-Policy` and

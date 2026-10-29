@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -143,16 +143,9 @@ type Caller struct {
 	Source audit.Source
 }
 
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
 // principalID returns the actor id when it is a uuid and "" otherwise (a break-glass
 // or admin-cli actor has none).
-func (c Caller) principalID() string {
-	if uuidRe.MatchString(c.Actor.ID) {
-		return c.Actor.ID
-	}
-	return ""
-}
+func (c Caller) principalID() string { return principal.IDOrEmpty(c.Actor.ID) }
 
 // Stored is a repository as the management API returns it: the read model, the
 // full document and the warnings of the write that produced it.
@@ -181,7 +174,7 @@ func stale(current int64) error { return errs.Stale("The repository", current) }
 
 // Create implements R-REPO-009: validate, then write the row, the audit event and
 // the change-log row in one transaction. Create is never an upsert: a key that is
-// taken, also by a repository being deleted, answers 409 repository_exists.
+// taken, also by a repository being deleted, answers 409 already_exists.
 func (s *Service) Create(ctx context.Context, c Caller, body []byte) (Stored, error) {
 	var out Stored
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
@@ -223,8 +216,8 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byt
 		return Stored{}, err
 	}
 	if len(rows) == 0 {
-		return Stored{}, errs.E(errs.Conflict, errs.CodeRepositoryExists,
-			"a repository with the key "+strconv.Quote(d.Key)+" exists or is being deleted")
+		return Stored{}, errs.E(errs.Conflict, errs.CodeAlreadyExists,
+			"A repository with the key "+strconv.Quote(d.Key)+" exists or is still being deleted; a key stays taken until the deletion job completes.")
 	}
 	out, err := s.stored(rows[0], v.warnings)
 	if err != nil {
@@ -254,7 +247,7 @@ func (s *Service) Get(ctx context.Context, key string) (Stored, error) {
 
 // Replace implements PUT of R-REPO-011: the body is a complete document and
 // omitted settings revert to their defaults. Key, class and format must equal the
-// stored ones (422 immutable_field otherwise).
+// stored ones (422 validation_failed with the field code immutable otherwise).
 func (s *Service) Replace(ctx context.Context, c Caller, key string, pre Precondition, body []byte) (Stored, error) {
 	return s.update(ctx, c, key, pre, func(Document) (Document, error) { return DecodeDocument(body) })
 }
@@ -355,7 +348,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 }
 
 // checkUpdate puts the stored identity back into the new document, collecting
-// immutable_field violations for the members the caller changed, and validates
+// immutable violations for the members the caller changed, and validates
 // the rest in the same pass (R-REPO-008).
 func (s *Service) checkUpdate(cur, nd Document) (Document, *validation) {
 	var imm []errs.FieldError
@@ -365,7 +358,7 @@ func (s *Service) checkUpdate(cur, nd Document) (Document, *validation) {
 	}{{"/key", nd.Key, cur.Key}, {"/class", string(nd.Class), string(cur.Class)}, {"/format", nd.Format, cur.Format}} {
 		if f.got != "" && f.got != f.want { // an omitted identity member means "unchanged"
 			imm = append(imm, errs.FieldError{
-				Pointer: f.ptr, Code: errs.CodeImmutableField,
+				Pointer: f.ptr, Code: codeImmutable,
 				Detail: "key, class and format are fixed at creation",
 			})
 		}

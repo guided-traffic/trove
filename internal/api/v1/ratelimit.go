@@ -163,11 +163,14 @@ func EdgeStage(cors func(http.Handler) http.Handler, limit func(http.Handler) ht
 func apiHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAPIPath(r.URL.Path) {
-			h := w.Header()
-			h.Set("Cache-Control", "no-store")
-			h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
-			h.Set("Referrer-Policy", "no-referrer")
+			setAPIHeaders(w.Header())
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func setAPIHeaders(h http.Header) {
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+	h.Set("Referrer-Policy", "no-referrer")
 }

@@ -27,8 +27,8 @@ CORS is off until `api.cors.allowed_origins` lists exact origins (scheme, host, 
 wildcard, a path or another scheme). It then applies to requests that carry an `Authorization` header: the preflight is
 answered for a listed origin, and the actual answer names the origin and exposes the headers of R-API-018.
 `Access-Control-Allow-Credentials` is never sent, so the session cookie is not usable cross-origin, and a request without
-`Authorization` gets no CORS header at all. The stage runs before the limiter, so a preflight does not use up budget and a
-flood of preflights is not a way around the limits. Code: [cors.go](../../internal/api/v1/cors.go).
+`Authorization` gets no CORS header at all. The preflight of an allowed origin is answered before authentication and before the limiter (Q-API-138), so a preflight
+does not use up budget; the other requests of that origin are authenticated as any other. Code: [cors.go](../../internal/api/v1/cors.go).
 
 ## Response headers
 
@@ -87,3 +87,10 @@ Dormant today: no M1 operation returns a secret. It becomes live with the first 
 idempotent operation sets `Outcome.SecretID` to keep its body out of the table; if it forgets, the secret is stored in
 plaintext JSON in `api_idempotency_keys` for the retention period. The check for it is a review item and the E1.2 database
 dump scan, not code in `Idempotency.Do`.
+
+### H-273 · A preflight is answered without authentication and is not counted by the rate limits
+
+Live today when `api.cors.allowed_origins` is not empty, for every allowed origin on every API path. The answer is constant and carries
+no data, and it opens nothing else; what is not bounded is the number of preflights a client sends, which only the in-flight limit of
+the listener stops. What makes it real: an allowed origin, or a script that sets the `Origin` header, sending preflights in a loop. Nothing in the
+rate-limit classes counts them; an operator who needs a bound sets one at the ingress.

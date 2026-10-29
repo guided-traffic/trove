@@ -1332,7 +1332,7 @@ API (administrator unless stated; read operations also accept the system scope
 | `GET /api/v1/users?q=&status=&origin=&group=&admin=&limit=&cursor=` | — | Page of users (paging per [api-and-ui.md](api-and-ui.md)) | 200 |
 | `GET /api/v1/users/{username}` | — | User record (below) | 200, 404 |
 | `GET /api/v1/users/me` | — | Own record; any authenticated user | 200, 401 |
-| `POST /api/v1/users` | `{"username", "email", "displayName", "identities": [{"provider": "corp", "subject": null}]}` | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409, 422 `reserved_name` (reserved username, R-AUTH-007) |
+| `POST /api/v1/users` | `{"username", "email", "displayName", "identities": [{"provider": "corp", "subject": null}]}` | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409 `already_exists`, 422 `reserved_name` (reserved username, R-AUTH-007) |
 | `PATCH /api/v1/users/{username}` | Any of `displayName`, `email` (the IdP overwrites both at the next login), `identities` | User | 200, 400, 404, 412, 428 |
 | `POST /api/v1/users/{username}/disable` | `{"reason": "…", "revokeTokens": true}` | — | 204, 404, 409 (break-glass) |
 | `POST /api/v1/users/{username}/enable` | — | — | 204, 404 |
@@ -4756,6 +4756,24 @@ removes the variable again, whatever happens.
 condition is a Keycloak change of the form markup, or the first UI journey that needs the IdP's page rendered.
 
 **Applied in the spec:** none; [../developer/e2e.md](../developer/e2e.md#m1-tests) records the method.
+
+### Q-AUTH-151 · Token scope patterns are validated by the authorization validators
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-024 says a malformed scope answers 400 `invalid_scope`. The scope validation checked only length and control characters, so a
+malformed repository selector, package pattern or path pattern was stored and admitted nothing, silently.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A pattern grammar in the token package | Its own copy | No dependency on authz | A second grammar |
+| (b) The validators of `internal/authz`, wired by the composition root (chosen) | `ScopeOptions.Pattern` calls `authz.ValidateSelector`, `ValidatePackagePattern`, `ValidatePathPattern`; `ScopeOptions.Action` and the system items come from `authz.Actions()` and `authz.Capabilities()`; the length limit is the one of R-AUTHZ-005 | One grammar, one list, one limit | A scope option that must be wired |
+
+**Choice:** (b). A duplicate create of a user, group or service account answers 409 `already_exists` (Q-API-136).
+
+**Rationale:** the rules that apply a scope judge it. The development agent would revisit this if token scopes get a syntax of their own.
+
+**Applied in the spec:** none (R-AUTH-024 and R-AUTH-025 already say it).
 
 ## What this does not cover
 

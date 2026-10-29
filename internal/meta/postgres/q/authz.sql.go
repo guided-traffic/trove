@@ -650,6 +650,18 @@ func (q *Queries) AuthzListPolicies(ctx context.Context) ([]AuthzListPoliciesRow
 	return items, nil
 }
 
+const authzLockPolicy = `-- name: AuthzLockPolicy :exec
+SELECT 1 FROM authz_policy WHERE name = $1::text FOR UPDATE
+`
+
+// Locks the row before the before-state is read, so that the state the revocation
+// journal records is the one the write replaces (R-AUTHZ-031): two blind writes
+// (If-Match: *) run one after the other.
+func (q *Queries) AuthzLockPolicy(ctx context.Context, name string) error {
+	_, err := q.db.Exec(ctx, authzLockPolicy, name)
+	return err
+}
+
 const authzPolicyEntries = `-- name: AuthzPolicyEntries :many
 SELECT e.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, e.actions
   FROM authz_policy_entry e
@@ -786,6 +798,74 @@ func (q *Queries) AuthzPolicyVersion(ctx context.Context, name string) ([]int64,
 			return nil, err
 		}
 		items = append(items, version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzPrincipalHasBinding = `-- name: AuthzPrincipalHasBinding :one
+SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = $1::text::uuid)
+`
+
+func (q *Queries) AuthzPrincipalHasBinding(ctx context.Context, principalID string) (bool, error) {
+	row := q.db.QueryRow(ctx, authzPrincipalHasBinding, principalID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const authzTouchPoliciesOfPrincipal = `-- name: AuthzTouchPoliciesOfPrincipal :many
+UPDATE authz_policy SET version = version + 1
+ WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = $1::text::uuid)
+RETURNING id::text AS id
+`
+
+// Moves the version of every policy whose entries name the principal, so that the
+// ETag of the representation changes when the principal is renamed or deleted
+// (R-AUTHZ-028); the principal's own rows are removed or renamed by the caller.
+func (q *Queries) AuthzTouchPoliciesOfPrincipal(ctx context.Context, principalID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, authzTouchPoliciesOfPrincipal, principalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzTouchPoliciesOfRepository = `-- name: AuthzTouchPoliciesOfRepository :many
+UPDATE authz_policy SET version = version + 1
+ WHERE id IN (SELECT policy_id FROM authz_policy_selector WHERE repository_id = $1::bigint)
+RETURNING id::text AS id
+`
+
+// Moves the version of every policy with a key selector on the repository, which
+// goes with the repository row (R-AUTHZ-028).
+func (q *Queries) AuthzTouchPoliciesOfRepository(ctx context.Context, repositoryID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, authzTouchPoliciesOfRepository, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

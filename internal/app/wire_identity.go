@@ -20,35 +20,37 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 )
 
-// systemScopeItems are the system capabilities a token scope may name
-// (R-AUTH-025: the capability names of R-AUTHZ-010).
-func systemScopeItems() map[string]bool {
-	caps := []authz.Capability{
-		authz.ContentBypass, authz.IdentitiesRead, authz.IdentitiesWrite, authz.PoliciesRead, authz.PoliciesWrite,
-		authz.RolesRead, authz.RolesWrite, authz.CIRead, authz.CIWrite, authz.TokensRead, authz.TokensRevoke,
-		authz.RepositoriesRead, authz.RepositoriesWrite, authz.ProjectsRead, authz.ProjectsWrite, authz.WebhooksRead,
-		authz.WebhooksWrite, authz.SettingsRead, authz.SettingsWrite, authz.SecuritySettingsWrite, authz.AuditRead,
-		authz.EndpointsRead, authz.EndpointsWrite,
-	}
-	out := make(map[string]bool, len(caps))
-	for _, c := range caps {
-		out[string(c)] = true
-	}
-	return out
-}
-
 // TokenScopeOptions are the cross-area checks of token scope validation
-// (R-AUTH-024): the system capabilities and the configured endpoint names. The
-// administration commands that mint tokens use them too.
+// (R-AUTH-024): the actions and system capabilities of the authorization area,
+// its validators for the three pattern dimensions, and the configured endpoint
+// names. The administration commands that mint tokens use them too.
 func TokenScopeOptions(cfg *config.Config) token.ScopeOptions {
-	items := systemScopeItems()
+	items := map[string]bool{}
+	for _, c := range authz.Capabilities() {
+		items[string(c)] = true
+	}
+	acts := map[string]bool{}
+	for _, a := range authz.Actions() {
+		acts[string(a)] = true
+	}
 	endpoints := map[string]bool{}
 	for _, n := range endpointNames(cfg) {
 		endpoints[n] = true
 	}
 	return token.ScopeOptions{
+		Action:     func(s string) bool { return acts[s] },
 		SystemItem: func(s string) bool { return items[s] },
 		Endpoint:   func(n string) bool { return endpoints[n] },
+		Pattern: func(dimension, p string) error {
+			switch dimension {
+			case "repositories":
+				return authz.ValidateSelector(p)
+			case "packages":
+				return authz.ValidatePackagePattern(p)
+			default:
+				return authz.ValidatePathPattern(p)
+			}
+		},
 	}
 }
 
@@ -101,9 +103,11 @@ func (a *App) wireIdentity() error {
 		Scope: TokenScopeOptions(a.cfg),
 	})
 	breakGlass := cfg.BreakGlass.Username // reserved: no OIDC login and no user can take the name (R-AUTH-007)
-	manager := principal.NewManager(principal.ManagerOptions{DB: joinable, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass})
+	manager := principal.NewManager(principal.ManagerOptions{
+		DB: joinable, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Authz: authz.NewPrincipalHook(changes),
+	})
 	provisioner := principal.NewProvisioner(principal.ProvisionerOptions{
-		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Metrics: metrics,
+		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Metrics: metrics, Authz: authz.NewPrincipalHook(changes),
 	})
 
 	limiter := a.m1.failureLimiter
@@ -129,9 +133,9 @@ func (a *App) wireIdentity() error {
 	a.m1.tokens, a.m1.authSettings, a.m1.authenticator = tokens, settings, stage
 	// The decision point reads the runtime anonymous switch (R-AUTH-037) from the
 	// same cached settings row the stage reads.
-	a.m1.anonymousAccess = func() bool {
-		eff, err := settings.Effective(context.Background())
-		return err == nil && eff.AnonymousAccess
+	a.m1.anonymousAccess = func(ctx context.Context) (bool, error) {
+		eff, err := settings.Effective(ctx)
+		return eff.AnonymousAccess, err
 	}
 	a.mu.Unlock()
 	return nil

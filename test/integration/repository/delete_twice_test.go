@@ -30,7 +30,7 @@ func TestDeleteTwice(t *testing.T) {
 			t.Fatalf("Get = %+v, %v", got.Repository, err)
 		}
 		_, err = web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed")))
-		wantCode(t, err, 409, errs.CodeRepositoryExists)
+		wantCode(t, err, 409, errs.CodeAlreadyExists)
 		if r, err := web.reader.ByKey(ctx, "doomed"); err != nil || r.Lifecycle != repository.Deleting {
 			t.Fatalf("ByKey = %+v, %v", r, err)
 		}

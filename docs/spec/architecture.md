@@ -2641,10 +2641,12 @@ The owning pages define the limit classes, their bucket keys and their values
   = the configured value and a window of one minute, or `auth.cli_login.ttl` for wrong device
   codes; the first and the last use the count-only form.
 - **Fallback.** While Valkey is unavailable, a cluster-scoped limiter answers from an in-memory token
-  bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`. `n` is the number of live replicas of
-  the replica's role in the replica registry, at least 1, refreshed with the heartbeat; a limiter
-  that guards what only some replicas serve counts those instead
-  (`LimiterSet.NewLimiterShared`, [Q-ARCH-45](#q-arch-45--a-limiter-may-divide-its-fallback-share-by-its-own-count)). The
+  bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`. `n` is the number of live replicas that
+  serve the client endpoints of the replica's pool in the replica registry, at least 1, refreshed
+  with the heartbeat by one component that every limiter of the client listener shares
+  ([Q-ARCH-147](#q-arch-147--one-replica-count-per-pool-for-every-limiter-of-the-client-listener));
+  a limiter may still count its own set (`LimiterSet.NewLimiterShared`,
+  [Q-ARCH-45](#q-arch-45--a-limiter-may-divide-its-fallback-share-by-its-own-count)). The
   cluster-wide budget thus stays close to the configured one. This is the per-replica degradation
   INV-12 names; `trove_ratelimit_fallback{limiter}` is 1 while it lasts.
 - A limiter never fails a request because Valkey failed, and its check waits at most
@@ -4910,6 +4912,25 @@ passes without the drain having been exercised.
 The revisit condition is a rollout fast enough that 20 MB/s always overlaps it.
 
 **Applied in the spec:** none; [../developer/e2e.md](../developer/e2e.md#m1-tests).
+
+### Q-ARCH-147 · One replica count per pool for every limiter of the client listener
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The failure throttle and the API limits divided their fallback share by the live replicas of the role, the endpoint classes by those of
+the pool (Q-ARCH-45); both counted in goroutines on the bootstrap context, which ended first at shutdown.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two counters | As before | No change | Two denominators for one listener |
+| (b) One component (chosen) | `replicaCount` counts the pool's serving replicas once per heartbeat interval, is a `Component`, and stops with the others; every limiter of the set uses it | One n | `NewLimiterShared` is no longer used by the composition root |
+
+**Choice:** (b).
+
+**Rationale:** a client request is answered by a replica of the pool, so the pool is the denominator for all of them. The development
+agent would revisit this if a limiter guards a resource shared across pools.
+
+**Applied in the spec:** R-ARCH-034 (the fallback bullet) reads "live replicas that serve the endpoint's pool".
 
 ## What this does not cover
 

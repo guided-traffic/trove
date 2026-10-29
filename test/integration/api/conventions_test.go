@@ -246,6 +246,41 @@ func TestIdempotentCreate(t *testing.T) {
 		}
 	})
 
+	t.Run("R-API-014 a concurrent duplicate of a refused request does not run the operation again", func(t *testing.T) {
+		send(t, newWebCluster(nodes[0]), "POST", "/api/v1/widgets", map[string]any{"name": "hold-taken"})
+		nodes[0].widgets.hold, nodes[0].widgets.entered = make(chan struct{}), make(chan struct{}, 1)
+		before := nodes[0].widgets.runs.Load() + nodes[1].widgets.runs.Load()
+		h := append(append([]string{}, caller...), "Idempotency-Key", "k-refused-dup")
+		body := map[string]any{"name": "hold-taken"}
+		firstDone := make(chan answer, 1)
+		go func() { firstDone <- send(t, newWebCluster(nodes[0]), "POST", "/api/v1/widgets", body, h...) }()
+		select {
+		case <-nodes[0].widgets.entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the first request did not start")
+		}
+		second := make(chan answer, 1)
+		go func() { second <- send(t, newWebCluster(nodes[1]), "POST", "/api/v1/widgets", body, h...) }()
+		time.Sleep(300 * time.Millisecond) // the duplicate waits on the claimed row
+		close(nodes[0].widgets.hold)
+		first := <-firstDone
+		dup := <-second
+		if first.status != 409 || first.code(t) != "already_exists" {
+			t.Fatalf("the first request: %d %s", first.status, first.body)
+		}
+		// The duplicate either timed out on the lock (409 in progress) or found the
+		// stored refusal; it never ran the operation.
+		if dup.status != 409 || (dup.code(t) != "already_exists" && dup.code(t) != "idempotency_in_progress") {
+			t.Fatalf("the duplicate: %d %s", dup.status, dup.body)
+		}
+		if ran := nodes[0].widgets.runs.Load() + nodes[1].widgets.runs.Load() - before; ran != 1 {
+			t.Fatalf("the operation ran %d times, want 1", ran)
+		}
+		if again := send(t, newWebCluster(nodes[2]), "POST", "/api/v1/widgets", body, h...); again.status != 409 || again.header.Get("Idempotency-Replayed") != "true" {
+			t.Fatalf("the replay: %d replayed=%q", again.status, again.header.Get("Idempotency-Replayed"))
+		}
+	})
+
 	t.Run("R-API-014 the cleanup task deletes expired keys", func(t *testing.T) {
 		e.exec("INSERT INTO trove.api_idempotency_keys (principal_id, idem_key, method, route, request_sha256, response_status, expires_at) VALUES ($1, 'old', 'POST', 'x', decode(repeat('00', 32), 'hex'), 201, now() - interval '1 hour')", uuidV4())
 		worker := e.newNode("worker-1", nodeOpts{role: "worker"})

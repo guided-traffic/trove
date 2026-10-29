@@ -23,9 +23,22 @@ func (e *env) authzChanges() int64 {
 	return e.number("SELECT count(*) FROM cluster_change WHERE area = 'authz'")
 }
 
+// problem asserts the status and code of an error. A 422 names the resource
+// specific code of a violation in errors[]; its top-level code is validation_failed
+// (R-API-009).
 func problem(t *testing.T, err error, status int, code string) {
 	t.Helper()
 	ee, ok := errs.As(err)
+	if ok && status == 422 && code != errs.CodeValidation {
+		found := false
+		for _, f := range ee.Fields {
+			found = found || f.Code == code
+		}
+		if ee.Status() != 422 || ee.Code != errs.CodeValidation || !found {
+			t.Fatalf("err = %v, want 422 validation_failed with %s in errors[]", err, code)
+		}
+		return
+	}
 	if !ok || ee.Status() != status || ee.Code != code {
 		t.Fatalf("err = %v, want %d %s", err, status, code)
 	}

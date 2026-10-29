@@ -85,10 +85,24 @@ type Subject struct {
 	// TokenID and SessionID identify the credential for audit.
 	TokenID   string
 	SessionID string
+	// AuthMethod is how the credential was presented (session, bearer, basic,
+	// api_key), for the actor of an audit event; empty when unknown.
+	AuthMethod string
+	// anon is the runtime switch of R-AUTH-037 as the decision point read it for
+	// this request; it is set by the engine only.
+	anon anonState
 	// MinEpoch is the value of the Trove-Authz-Min-Epoch header (R-AUTHZ-032); zero
 	// when absent.
 	MinEpoch int64
 }
+
+type anonState uint8
+
+const (
+	anonUnknown anonState = iota
+	anonOff
+	anonOn
+)
 
 // Coordinate is the authorization view of the request descriptor (R-REPO-003).
 type Coordinate struct {
@@ -174,4 +188,12 @@ type Authorizer interface {
 	// (R-API-008). It runs before any lookup, so it does not depend on whether
 	// the addressed object exists.
 	Require(ctx context.Context, sub Subject, permission string) error
+}
+
+// Prober answers whether a subject holds a permission without recording a denial:
+// the question of a handler that chooses between two answers and of the rate
+// limit that exempts administrators (R-AUTHZ-029: only a refusal of an operation
+// is audited). *Engine implements it next to [Authorizer].
+type Prober interface {
+	Holds(ctx context.Context, sub Subject, permission string) (bool, error)
 }

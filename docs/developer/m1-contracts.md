@@ -187,7 +187,7 @@ constant. The list is the starting set from the spec pages; an owner adds more i
 | `identity` | `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict` |
 | `login` | `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating` |
 | `authz` | `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `authenticated_write_action`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `virtual_action_not_applicable` |
-| `repository` | `repository_exists`, `repository_disabled`, `repository_referenced`, `immutable_field`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unknown_format`, `unsupported_class`, `batch_too_large`, `not_a_package`, `no_deploy_target` |
+| `repository` | `repository_disabled`, `repository_referenced`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unknown_format`, `unsupported_class`, `batch_too_large`, `not_a_package`, `no_deploy_target` |
 | `files` | `invalid_path`, and the codes of R-STOR-007, R-STOR-012, R-STOR-013, R-STOR-016, R-STOR-018 |
 | `endpoints` | `endpoint_read_only`, and the codes of R-EP-012 to R-EP-017 (exposure rule validation) |
 

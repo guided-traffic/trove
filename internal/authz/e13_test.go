@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -72,7 +73,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 	t.Run("R-AUTHZ-001 R-AUTHZ-016 deny by default on a fresh installation", func(t *testing.T) {
 		f := newFixture().repo("generic-local", "local", "generic", "").repo("files-internal", "local", "generic", "").repo("npm-internal", "local", "npm", "")
 		off := newTestEngine(t, f, nil)
-		on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func() bool { return true } })
+		on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 		subjects := []struct {
 			name string
 			sub  Subject
@@ -280,7 +281,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f := newFixture().repo("npm-public", "local", "npm", "").repo("npm-private", "local", "npm", "").repo("strict", "local", "npm", `{"requireAuthentication":true}`)
 		f.policy(policyDef{name: "public", selectors: []string{"npm-public", "strict"}, entries: map[string][]string{AnonymousID: {"read"}}})
 		off := newTestEngine(t, f, nil)
-		on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func() bool { return true } })
+		on := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 		runAuthzCases(t, off, []authzCase{
 			{"anonymous access off refuses a granted read with 401", anonSub, read("npm-public", "left-pad", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
 			{"anonymous access off refuses a publish with 401", anonSub, write("npm-public", "x", "", Deploy), DenyUnauthenticated, ReasonUnauthenticated, ""},
@@ -304,7 +305,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.policy(policyDef{name: "team-web-publish", selectors: []string{"npm-internal"}, pkgInc: []string{"@web/*"}, entries: map[string][]string{idWeb: {"annotate", "deploy", "read"}}})
 		f.policy(policyDef{name: "anon-partial", selectors: []string{"npm-all", "npmjs"}, entries: map[string][]string{AnonymousID: {"read"}}})
 		f.policy(policyDef{name: "virtual-deploy", selectors: []string{"@any-virtual"}, entries: map[string][]string{idBob: {"deploy", "manage"}}})
-		e := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func() bool { return true } })
+		e := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 		off := newTestEngine(t, f, nil)
 		readOnlyTok := tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any"}, Actions: []string{"read"}}}})
 		runAuthzCases(t, e, []authzCase{
@@ -328,7 +329,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f2 := newFixture().repo("npm-internal", "local", "npm", "").repo("npmjs", "remote", "npm", "").
 			repo("npm-all", "virtual", "npm", `{"virtual":{"members":["npm-internal","npmjs"]}}`)
 		f2.policy(policyDef{name: "anon-all", selectors: []string{"npm-all", "npm-internal", "npmjs"}, entries: map[string][]string{AnonymousID: {"read"}}})
-		e2 := newTestEngine(t, f2, func(o *Options) { o.AnonymousAccess = func() bool { return true } })
+		e2 := newTestEngine(t, f2, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 		runAuthzCases(t, e2, []authzCase{
 			{"anonymous reads a virtual repository when it reads the virtual repository and every member", anonSub, read("npm-all", "left-pad", ""), Allow, "", ""},
 		}, &n)

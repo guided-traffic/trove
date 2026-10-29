@@ -459,7 +459,7 @@ func (a *App) startClient() error {
 		router := httpserver.NewEndpointRouter(rt.ep)
 		api := v1.New(v1.Options{
 			Document: doc, Identity: v1.Identity{Replica: a.id.Instance, Role: a.id.Role},
-			Ready: a.health.Serving, PublicVersion: cfg.System.PublicVersion,
+			Ready: a.health.Serving, PublicVersion: cfg.System.PublicVersion, Formats: formatNames(),
 			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
 			API: a.apiServices(),

@@ -47,25 +47,17 @@ func (q *Queries) CompleteIdempotencyKey(ctx context.Context, arg CompleteIdempo
 	return response_body, err
 }
 
-const countLiveReplicas = `-- name: CountLiveReplicas :one
-SELECT count(*)::int AS live
-  FROM replica
- WHERE heartbeat_at >= now() - make_interval(secs => $1::float8)
-   AND ($2::text = ANY(roles) OR 'all' = ANY(roles))
+const currentLockTimeout = `-- name: CurrentLockTimeout :one
+SELECT current_setting('lock_timeout')::text AS lock_timeout
 `
 
-type CountLiveReplicasParams struct {
-	StaleSecs float64
-	Role      string
-}
-
-// The n of the rate-limit fallback (R-ARCH-034): replicas whose heartbeat is not
-// stale and that run the role (a replica with role all counts for web and worker).
-func (q *Queries) CountLiveReplicas(ctx context.Context, arg CountLiveReplicasParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countLiveReplicas, arg.StaleSecs, arg.Role)
-	var live int32
-	err := row.Scan(&live)
-	return live, err
+// The lock_timeout of the session, to restore it after the short wait of an
+// idempotent request on the row of the first one (R-API-014).
+func (q *Queries) CurrentLockTimeout(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, currentLockTimeout)
+	var lock_timeout string
+	err := row.Scan(&lock_timeout)
+	return lock_timeout, err
 }
 
 const deleteExpiredIdempotencyKeys = `-- name: DeleteExpiredIdempotencyKeys :execrows
@@ -199,6 +191,36 @@ func (q *Queries) GetJobView(ctx context.Context, id string) ([]GetJobViewRow, e
 		return nil, err
 	}
 	return items, nil
+}
+
+const idempotencyReleaseSavepoint = `-- name: IdempotencyReleaseSavepoint :exec
+RELEASE SAVEPOINT idempotent_operation
+`
+
+func (q *Queries) IdempotencyReleaseSavepoint(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, idempotencyReleaseSavepoint)
+	return err
+}
+
+const idempotencyRollbackToSavepoint = `-- name: IdempotencyRollbackToSavepoint :exec
+ROLLBACK TO SAVEPOINT idempotent_operation
+`
+
+func (q *Queries) IdempotencyRollbackToSavepoint(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, idempotencyRollbackToSavepoint)
+	return err
+}
+
+const idempotencySavepoint = `-- name: IdempotencySavepoint :exec
+SAVEPOINT idempotent_operation
+`
+
+// The operation of an idempotent request runs behind this savepoint, so that a
+// refusal rolls back the change but keeps the claimed key row in the same
+// transaction (R-API-014).
+func (q *Queries) IdempotencySavepoint(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, idempotencySavepoint)
+	return err
 }
 
 const insertIdempotencyKey = `-- name: InsertIdempotencyKey :many
@@ -577,47 +599,4 @@ func (q *Queries) SetLocalLockTimeout(ctx context.Context, millis string) (strin
 	var lock_timeout string
 	err := row.Scan(&lock_timeout)
 	return lock_timeout, err
-}
-
-const storeIdempotencyOutcome = `-- name: StoreIdempotencyOutcome :exec
-INSERT INTO api_idempotency_keys (principal_id, idem_key, method, route, request_sha256, response_status,
-                                  response_headers, response_body, expires_at)
-VALUES ($1::text::uuid, $2::text, $3::text, $4::text,
-        $5::bytea, $6::smallint, $7::text::jsonb,
-        $8::text::jsonb, now() + make_interval(secs => $9::float8))
-ON CONFLICT (principal_id, idem_key) DO UPDATE
-   SET method = EXCLUDED.method, route = EXCLUDED.route, request_sha256 = EXCLUDED.request_sha256,
-       response_status = EXCLUDED.response_status, response_headers = EXCLUDED.response_headers,
-       response_body = EXCLUDED.response_body, secret_issued_id = NULL,
-       created_at = now(), expires_at = EXCLUDED.expires_at
- WHERE api_idempotency_keys.expires_at <= now()
-`
-
-type StoreIdempotencyOutcomeParams struct {
-	PrincipalID   string
-	IdemKey       string
-	Method        string
-	Route         string
-	RequestSha256 []byte
-	Status        int16
-	Headers       string
-	Body          string
-	RetentionSecs float64
-}
-
-// Stores a 4xx outcome in a transaction of its own, after the transaction of the
-// change was rolled back (R-API-014: stored 4xx outcomes are replayed too).
-func (q *Queries) StoreIdempotencyOutcome(ctx context.Context, arg StoreIdempotencyOutcomeParams) error {
-	_, err := q.db.Exec(ctx, storeIdempotencyOutcome,
-		arg.PrincipalID,
-		arg.IdemKey,
-		arg.Method,
-		arg.Route,
-		arg.RequestSha256,
-		arg.Status,
-		arg.Headers,
-		arg.Body,
-		arg.RetentionSecs,
-	)
-	return err
 }

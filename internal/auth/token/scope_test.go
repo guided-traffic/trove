@@ -1,6 +1,7 @@
 package token
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,9 @@ import (
 )
 
 func TestR_AUTH_024_ParseScope(t *testing.T) {
-	opts := ScopeOptions{SystemItem: func(s string) bool { return s == "identities:read" }, Endpoint: func(n string) bool { return n == "default" || n == "customers" }}
+	opts := ScopeOptions{Action: func(a string) bool {
+		return slices.Contains([]string{"read", "annotate", "deploy", "overwrite", "delete", "manage"}, a)
+	}, SystemItem: func(s string) bool { return s == "identities:read" }, Endpoint: func(n string) bool { return n == "default" || n == "customers" }}
 	ok := map[string]string{
 		"R-AUTH-024 the default":                  ``,
 		"R-AUTH-024 inherit":                      `{"inherit": true}`,
@@ -58,7 +61,7 @@ func TestR_AUTH_024_ParseScope(t *testing.T) {
 
 func TestR_AUTH_024_MarshalRoundTrip(t *testing.T) {
 	doc := `{"inherit":false,"admin":false,"repositories":[{"repositories":["npm-local"],"packages":{"include":["@acme/*"]},"actions":["read"]}],"system":[]}`
-	s, err := ParseScope([]byte(doc), ScopeOptions{})
+	s, err := ParseScope([]byte(doc), ScopeOptions{Action: func(string) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -75,7 +75,7 @@ func (m *Manager) CreateGroup(ctx context.Context, c Caller, in NewGroup) (Group
 			return err
 		}
 		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeConflict, "A group with this name exists.")
+			return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A group with this name exists.")
 		}
 		if err := qs.IdentityInsertGroup(ctx, q.IdentityInsertGroupParams{ID: id, Description: in.Description, AutoJoin: in.AutoJoin, Origin: origin}); err != nil {
 			return err
@@ -240,10 +240,13 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 				return err
 			}
 			if len(renamed) == 0 {
-				return errs.E(errs.Conflict, errs.CodeConflict, "A group with this name exists.")
+				return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A group with this name exists.")
 			}
 			final = *p.Name
 			fields = append(fields, "name")
+			if err := notifyAuthz(ctx, m.authz, tx, g.ID); err != nil {
+				return err
+			}
 			if err := NotifyPrincipals(m.notify, tx, ChangeGroup, g.ID); err != nil {
 				return err
 			}
@@ -284,6 +287,9 @@ func (m *Manager) DeleteGroup(ctx context.Context, c Caller, name string) error 
 		}
 		var last LastAdminGuard
 		if err := last.Arm(ctx, qs, g.ID); err != nil {
+			return err
+		}
+		if err := notifyAuthz(ctx, m.authz, tx, g.ID); err != nil {
 			return err
 		}
 		if _, err := qs.IdentityDeletePrincipal(ctx, g.ID); err != nil {

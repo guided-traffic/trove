@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
@@ -25,11 +24,8 @@ func CallerFrom(r *http.Request) files.Caller {
 	p := httpserver.PrincipalFrom(ctx)
 	c := files.Caller{
 		Subject: SubjectFrom(p),
-		Actor: audit.Actor{
-			Kind: string(p.Kind), ID: p.ID, Name: p.Name,
-			TokenID: p.Credential.TokenID, AuthMethod: string(p.Credential.Method),
-		},
-		Source: auditSource(r),
+		Actor:   ActorFrom(p),
+		Source:  auditSource(r),
 	}
 	if ep := httpserver.EndpointFrom(ctx); ep != nil {
 		c.Endpoint = ep.Name()

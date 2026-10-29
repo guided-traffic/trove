@@ -466,7 +466,7 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 			Audit: config.AuthzAudit{Reads: o.Reads},
 		},
 		Audit: o.Audit, EpochPollInterval: o.Poll, RetryBudget: 5 * time.Second,
-		Recorder: rec, Replica: name, Log: quiet(), Metrics: r.reg,
+		Recorder: rec, Replica: name, Log: quiet(), Metrics: r.reg, Repositories: repositories{e},
 	})
 	if err != nil {
 		t.Fatal(err)

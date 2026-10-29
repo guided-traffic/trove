@@ -439,14 +439,14 @@ R-UI-045); API text stays English.
 | 404 | `not_found` | Target missing, or hidden (R-API-008) |
 | 405 | `method_not_allowed` | Wrong method, or the action does not apply to the repository class |
 | 406 | `not_acceptable` | No acceptable representation |
-| 409 | `already_exists` | Create with an existing key or name |
+| 409 | `already_exists` | Create with an existing key or name, for every resource (users, groups, service accounts, repositories, policies, rules) |
 | 409 | `conflict` | State conflict; owning pages define specific codes (`project_not_empty`, `last_admin`, …) |
 | 409 | `idempotency_in_progress`, `token_already_issued` | R-API-014 |
 | 412 | `precondition_failed` | `If-Match` does not match; extension `currentEtag` |
 | 412 | `authz_epoch_unknown` | `Trove-Authz-Min-Epoch` names an authorization epoch the database has not reached, for example because a PostgreSQL failover lost the commit that returned it (R-API-052, R-AUTHZ-032); the client drops that epoch and re-reads the object it changed |
 | 413 | `payload_too_large` | R-API-017 |
 | 415 | `unsupported_media_type` | Wrong `Content-Type` |
-| 422 | `validation_failed` | Semantically invalid input; `errors[]` lists the fields |
+| 422 | `validation_failed` | Semantically invalid input; `errors[]` lists every violation with its own code and pointer, and the top-level code is `validation_failed` whatever the number of violations (Q-API-136) |
 | 422 | `idempotency_key_reused` | R-API-014 |
 | 422 | `reserved_name` | A create uses a name reserved by a route (R-API-004) |
 | 428 | `precondition_required` | `If-Match` required (R-API-012) |
@@ -5086,6 +5086,67 @@ revision tag.
 The development agent would revisit it if another resource gets a volatile member; then the suffix becomes a shared helper.
 
 **Applied in the spec:** R-API-012.
+
+### Q-API-136 · One rule for the top-level code of an error
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Four areas answered a duplicate create with three codes (`already_exists`, `conflict`, `repository_exists`) and a 422 under the
+code of its first or only violation; the contract tests carried overrides for the repository resource.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per-area codes | Each page documents its own | Specific at the top | One client rule per resource |
+| (b) The convention's codes (chosen) | Duplicate create: 409 `already_exists`. A 422 with fields: `validation_failed`. A body that cannot be read or names an unknown member: 400 `malformed_request` with the pointer. Resource-specific codes live in `errors[].code` | One rule | The specific code is one level down |
+
+**Choice:** (b), with `reserved_name` (R-API-004) as the one top-level 422 code besides `validation_failed`, and `idempotency_key_reused`
+(R-API-014). The query filters of the policy list that name nothing (`unknown_principal`, `unknown_repository`) answer 422
+`validation_failed` with the parameter name as the pointer.
+
+**Rationale:** codes are a stable contract (R-ARCH-025); a client matching on the top-level code needs no knowledge of the
+resource. The development agent would revisit this if a client needs the specific code at the top.
+
+**Applied in the spec:** the 409 and 422 rows of R-API-009; [Q-REPO-84](repositories-and-proxy.md#q-repo-84--a-violation-answers-422-validation_failed-a-body-error-400-malformed_request);
+the codes of the policy and role-binding operations (R-AUTHZ-021, R-AUTHZ-022, R-AUTHZ-023) read as codes in `errors[]`.
+
+### Q-API-137 · A refused idempotent request is stored in the transaction that claimed the key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-014 stores a 4xx outcome so that a retry gets the same answer. The refusal was stored in a second transaction after the first
+rolled back, so a concurrent duplicate that waited on the claimed row could claim it and run the operation again.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second transaction (as before) | Roll back, then store | No savepoint | A waiting duplicate re-executes |
+| (b) A savepoint around the operation (chosen) | A refusal rolls back to the savepoint, drops the hooks the operation registered (`meta.TxState.Discard`), stores the refusal on the claimed row and commits | The duplicate finds the stored answer | A refusal now commits a transaction |
+
+**Choice:** (b). The short lock wait of the claim (`lock_timeout`) is restored to the session value right after the claim, so the
+operation does not run under it.
+
+**Rationale:** the claim and the answer become one commit. The development agent would revisit this if an operation needs the
+transaction to fail as a whole.
+
+**Applied in the spec:** none (R-API-014 already says a stored 4xx outcome is replayed).
+
+### Q-API-138 · A CORS preflight is answered before authentication
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A browser sends a preflight without credentials. The preflight stage sat after authentication (stage 7), so an endpoint that
+refuses anonymous requests answered 401 and every cross-origin call failed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep it in stage 7 | As before | One stage | R-API-018 cannot hold |
+| (b) A preflight stage between stage 5 and 6 (chosen) | `Chain.Preflight` answers the preflight of an allowed origin on an API path with 204 and passes everything else on | Opens nothing else; the actual request is authenticated | The preflight is not counted by the rate limits, only by the in-flight limit |
+
+**Choice:** (b).
+
+**Rationale:** the answer is constant and carries no data. The development agent would revisit this if preflights need a limit of
+their own.
+
+**Applied in the spec:** none (R-API-018 already requires the preflight to be answered).
 
 ## What this does not cover
 
