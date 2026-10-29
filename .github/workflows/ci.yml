@@ -1,0 +1,388 @@
+# Per-change pipeline. Every job calls a Makefile target or a command that is
+# documented in docs/developer/ci.md. Tool pins come from tools/versions.env
+# (through the Makefile, or through .github/actions/load-pins), Go from go.mod,
+# Node from web/.nvmrc, Angular from web/package-lock.json.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  versions:
+    name: versions (E0.2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      # The Makefile compares every helm, kubectl and kind it finds on PATH with its pin, so the
+      # runner image's own copies must not be the ones that are checked.
+      - name: Install the pinned helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install the pinned kubectl
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+      - name: Install the pinned kind
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Show the Go and Node versions in the log
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          go version
+          node --version
+          helm version --short
+          kubectl version --client
+          kind version
+      - name: Node.js matches web/.nvmrc
+        run: |
+          set -euo pipefail
+          want="v$(tr -d '[:space:]' < web/.nvmrc)"
+          have="$(node --version)"
+          if [ "$have" != "$want" ]; then
+            echo "::error::node $have is on PATH, web/.nvmrc pins $want"
+            exit 1
+          fi
+      - name: One version per tool (go, sqlc, oapi-codegen, dev tools)
+        run: make versions-check
+
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Name the Go toolchain for the lint cache key
+        run: echo "CI_GO_VERSION=$(go env GOVERSION)" >> "$GITHUB_ENV"
+      # The Makefile builds .bin/golangci-lint-<pin>-<go version>. The name carries both inputs,
+      # so the key does too, and the binary is platform-specific.
+      - name: Restore the golangci-lint build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .bin
+          key: golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.CI_GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+      - name: make lint
+        run: make lint
+
+  unit:
+    name: unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: make test
+        run: make test
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-unit
+          path: .out/test-unit.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  generate:
+    name: generate (E0.1)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: make generate-check
+        run: make generate-check
+
+  build-no-node:
+    name: build without Node.js (E0.1)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build with Node.js off PATH and check the binary
+        run: |
+          set -euo pipefail
+          # The runner image puts Node.js on PATH. Drop every PATH entry that holds a Node.js
+          # executable, then check that no Node.js executable resolves and that the build tools
+          # survived the trimming.
+          trimmed=""
+          IFS=: read -r -a dirs <<< "$PATH"
+          for d in "${dirs[@]}"; do
+            [ -n "$d" ] || continue
+            if [ -e "$d/node" ] || [ -e "$d/npm" ] || [ -e "$d/npx" ] || [ -e "$d/corepack" ]; then
+              echo "dropping $d from PATH (it holds a Node.js executable)"
+              continue
+            fi
+            trimmed="${trimmed:+$trimmed:}$d"
+          done
+          export PATH="$trimmed"
+          for tool in node npm npx corepack; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "::error::$tool still resolves to $(command -v "$tool")"
+              exit 1
+            fi
+          done
+          for tool in go make git file; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::error::$tool is not on the trimmed PATH"
+              exit 1
+            fi
+          done
+          go version
+          make build
+          desc="$(file bin/trove)"
+          echo "$desc"
+          case "$desc" in
+            *"statically linked"*) ;;
+            *) echo "::error::bin/trove is not statically linked"; exit 1 ;;
+          esac
+          if ! go version -m bin/trove | grep -q 'CGO_ENABLED=0'; then
+            echo "::error::bin/trove was not built with CGO_ENABLED=0"
+            exit 1
+          fi
+
+  web:
+    name: web (Angular)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # npm ci installs exactly package-lock.json and fails when package.json and the lockfile
+      # disagree (E0.2: the Angular packages must match the lockfile).
+      - name: npm ci
+        run: npm ci
+      - name: Lint (ESLint and the R-UI-046 rules)
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Build and embed into internal/webui
+        run: npm run build:embed
+
+  coverage:
+    name: coverage generator (links and rules)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Rules and the committed pages
+        run: go run ./internal/tools/coverage -check
+      - name: Relative links and anchors
+        run: go run ./internal/tools/coverage -links
+
+  # The evidence record: implemented.txt must equal what the test reports of this run imply.
+  # It runs on every change, so a stale file fails the pull request, not main. To refresh the
+  # file, run `make coverage-refresh` (see docs/developer/ci.md).
+  coverage-evidence:
+    name: coverage evidence (implemented.txt)
+    needs: [unit, integration, chart]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Download the test reports of this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: test-*
+          path: .out/reports
+      - name: Every expected report is present
+        run: |
+          set -euo pipefail
+          # A missing report would drop the requirements only that report proves, so it is an error.
+          for dir in test-unit test-chart test-integration-9.0 test-integration-9.1; do
+            if ! compgen -G ".out/reports/$dir/*.json" >/dev/null; then
+              echo "::error::report artifact $dir is missing"
+              exit 1
+            fi
+          done
+          ls -l .out/reports/*/*.json
+      - name: Rules, and implemented.txt against the reports
+        run: go run ./internal/tools/coverage -check -tests .out/reports/*/*.json
+
+  chart:
+    name: chart (E0.7)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the pinned helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install the pinned kubectl
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+      - name: Check the installed versions against the pins
+        run: |
+          set -euo pipefail
+          test "$(helm version --template '{{.Version}}')" = "$HELM_VERSION"
+          kubectl version --client -o json | grep -q "\"gitVersion\": \"$KUBECTL_VERSION\""
+      - name: make chart-lint
+        run: make chart-lint
+      - name: make chart-test
+        run: make chart-test
+      - name: Upload the chart render report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-chart
+          path: .out/test-chart.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  image:
+    name: image (no push in M0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: make image
+        run: make image IMAGE=trove:ci
+      - name: The image runs as the non-root UID of R-HA-033
+        run: |
+          set -euo pipefail
+          user="$(docker image inspect trove:ci --format '{{.Config.User}}')"
+          echo "user: $user"
+          test "$user" = "65532:65532"
+
+  integration:
+    name: integration (Valkey ${{ matrix.valkey }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        valkey: ["9.0", "9.1"]
+    env:
+      TROVE_VALKEY_LINE: ${{ matrix.valkey }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: make integration-up
+        run: make integration-up
+      - name: make test-integration
+        run: make test-integration
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-integration-${{ matrix.valkey }}
+          path: .out/test-integration.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Container logs (failure only)
+        if: failure()
+        run: |
+          docker compose -f test/integration/compose.yaml ps -a || true
+          for c in $(docker ps -a --filter "name=trove-it-" --format '{{.Names}}'); do
+            echo "::group::logs of $c"
+            docker logs --timestamps "$c" 2>&1 | tail -n 300 || true
+            echo "::endgroup::"
+          done
+      - name: make integration-down
+        if: always()
+        run: make integration-down
+
+  workflows:
+    name: workflow files (actionlint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install actionlint at the pin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # shellcheck is not pinned, so its findings are not gated here; the runner image's copy
+      # would make the result depend on the image. See docs/developer/ci.md.
+      - name: actionlint
+        run: actionlint -shellcheck=

@@ -1,0 +1,201 @@
+# Checks too slow or too privileged for every change. The S3 conformance tests of
+# R-STOR-035 run here against MinIO, built from source at MINIO_COMMIT
+# (tools/versions.env), and against AWS S3, which is reported as SKIPPED until the
+# owner configures an AWS account and a CI role (R-HA-051, E0.5). See
+# docs/developer/ci.md.
+name: nightly
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  minio:
+    name: MinIO conformance (source build at the pinned commit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MINIO_REPO: https://github.com/minio/minio
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Fetch MinIO at the pinned commit and build it
+        run: |
+          set -euo pipefail
+          if ! [[ "${MINIO_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::MINIO_COMMIT in tools/versions.env is missing or is not a full 40-character commit SHA"
+            exit 1
+          fi
+          src="$RUNNER_TEMP/minio-src"
+          mkdir -p "$src" "$RUNNER_TEMP/bin"
+          cd "$src"
+          git init -q
+          git remote add origin "$MINIO_REPO"
+          git fetch -q --depth 1 origin "$MINIO_COMMIT"
+          git checkout -q --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$MINIO_COMMIT"
+          go build -trimpath -o "$RUNNER_TEMP/bin/minio" .
+          "$RUNNER_TEMP/bin/minio" --version
+      - name: Start MinIO and create the buckets
+        run: |
+          set -euo pipefail
+          data="$RUNNER_TEMP/minio-data"
+          mkdir -p "$data" "$GITHUB_WORKSPACE/.out"
+          user="trove-nightly"
+          pass="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+          echo "::add-mask::$pass"
+          MINIO_ROOT_USER="$user" MINIO_ROOT_PASSWORD="$pass" \
+            "$RUNNER_TEMP/bin/minio" server "$data" \
+            --address 127.0.0.1:9000 --console-address 127.0.0.1:9001 \
+            > "$GITHUB_WORKSPACE/.out/minio.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/minio.pid"
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null
+          {
+            echo "TROVE_TEST_S3_ENDPOINT=http://127.0.0.1:9000"
+            echo "TROVE_TEST_S3_REGION=us-east-1"
+            echo "TROVE_TEST_S3_ACCESS_KEY=$user"
+            echo "TROVE_TEST_S3_SECRET_KEY=$pass"
+            echo "TROVE_TEST_S3_BUCKET_BLOBS=trove-blobs"
+            echo "TROVE_TEST_S3_BUCKET_BACKUPS=trove-backups"
+            echo "TROVE_TEST_S3_FORCE_PATH_STYLE=true"
+          } > "$RUNNER_TEMP/minio.env"
+          set -a
+          . "$RUNNER_TEMP/minio.env"
+          set +a
+          go run ./test/integration/cmd/seed
+      - name: S3 conformance against MinIO (R-STOR-035)
+        run: |
+          set -euo pipefail
+          set -a
+          . "$RUNNER_TEMP/minio.env"
+          set +a
+          .github/scripts/s3-conformance.sh "MinIO at ${MINIO_COMMIT:0:12}"
+      - name: Stop MinIO
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/minio.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/minio.pid")" 2>/dev/null || true
+          fi
+      - name: Upload the MinIO server log (failure only)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: minio-server-log
+          path: .out/minio.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  aws-gate:
+    name: AWS S3 gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      configured: ${{ steps.gate.outputs.configured }}
+    steps:
+      # A job-level if cannot read secrets, so this gate decides whether the AWS job runs.
+      # When the secret is absent the AWS job is reported as Skipped (grey, not green), and this
+      # gate writes the explicit SKIPPED summary.
+      - id: gate
+        env:
+          AWS_CI_ROLE_ARN: ${{ secrets.AWS_CI_ROLE_ARN }}
+        run: |
+          if [ -n "$AWS_CI_ROLE_ARN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          echo "::notice title=AWS S3 conformance skipped::no AWS account configured (secret AWS_CI_ROLE_ARN is absent)"
+          {
+            echo "## AWS S3 conformance: SKIPPED"
+            echo ""
+            echo "No AWS account is configured for this repository: the secret \`AWS_CI_ROLE_ARN\` is absent."
+            echo "The job \`AWS S3 conformance\` did not run. This run holds no AWS result, and none is reported as passed."
+            echo "R-HA-051 and E0.5 keep AWS S3 listed as skipped until the owner provides an account and a CI role."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  aws-s3:
+    name: AWS S3 conformance
+    needs: aws-gate
+    if: needs.aws-gate.outputs.configured == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Check the repository variables
+        env:
+          AWS_CI_REGION: ${{ vars.AWS_CI_REGION }}
+          AWS_CI_BUCKET_BLOBS: ${{ vars.AWS_CI_BUCKET_BLOBS }}
+          AWS_CI_BUCKET_BACKUPS: ${{ vars.AWS_CI_BUCKET_BACKUPS }}
+        run: |
+          set -euo pipefail
+          for v in AWS_CI_REGION AWS_CI_BUCKET_BLOBS AWS_CI_BUCKET_BACKUPS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::repository variable $v is not set"
+              exit 1
+            fi
+          done
+      - name: Assume the CI role through OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_CI_REGION }}
+          mask-aws-account-id: true
+      - name: Write the test environment
+        env:
+          AWS_CI_REGION: ${{ vars.AWS_CI_REGION }}
+          AWS_CI_BUCKET_BLOBS: ${{ vars.AWS_CI_BUCKET_BLOBS }}
+          AWS_CI_BUCKET_BACKUPS: ${{ vars.AWS_CI_BUCKET_BACKUPS }}
+        run: |
+          set -euo pipefail
+          # The test accessors of test/integration/testenv read a static key pair and have no
+          # field for a session token. Temporary OIDC credentials carry one, so the job stops
+          # here with a clear message until the accessors can pass it (docs/developer/ci.md).
+          if [ -n "${AWS_SESSION_TOKEN:-}" ]; then
+            echo "::error::the assumed role yields a session token, which testenv cannot pass yet (see docs/developer/ci.md)"
+            exit 1
+          fi
+          {
+            echo "TROVE_TEST_S3_ENDPOINT=https://s3.${AWS_CI_REGION}.amazonaws.com"
+            echo "TROVE_TEST_S3_REGION=${AWS_CI_REGION}"
+            echo "TROVE_TEST_S3_ACCESS_KEY=${AWS_ACCESS_KEY_ID}"
+            echo "TROVE_TEST_S3_SECRET_KEY=${AWS_SECRET_ACCESS_KEY}"
+            echo "TROVE_TEST_S3_BUCKET_BLOBS=${AWS_CI_BUCKET_BLOBS}"
+            echo "TROVE_TEST_S3_BUCKET_BACKUPS=${AWS_CI_BUCKET_BACKUPS}"
+            echo "TROVE_TEST_S3_FORCE_PATH_STYLE=false"
+          } > "$RUNNER_TEMP/aws.env"
+      - name: S3 conformance against AWS S3 (R-STOR-035)
+        env:
+          AWS_CI_REGION: ${{ vars.AWS_CI_REGION }}
+        run: |
+          set -euo pipefail
+          set -a
+          . "$RUNNER_TEMP/aws.env"
+          set +a
+          .github/scripts/s3-conformance.sh "AWS S3 in ${AWS_CI_REGION}"

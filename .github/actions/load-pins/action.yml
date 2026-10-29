@@ -1,0 +1,19 @@
+# Appends tools/versions.env to $GITHUB_ENV, so that workflow steps read each pin
+# from the one file the Makefile includes (E0.2, R-HA-051). Run after actions/checkout.
+name: Load tool pins
+description: Append tools/versions.env to GITHUB_ENV
+runs:
+  using: composite
+  steps:
+    - name: Append the pins to GITHUB_ENV
+      shell: bash
+      run: |
+        set -euo pipefail
+        pins="$GITHUB_WORKSPACE/tools/versions.env"
+        # Only comments, blank lines and KEY=value lines without spaces are allowed, so a
+        # malformed line cannot inject a second variable through GITHUB_ENV.
+        if grep -vE '^(#.*|[[:space:]]*|[A-Z0-9_]+=[^[:space:]]*)$' "$pins"; then
+          echo "::error file=tools/versions.env::lines above are not KEY=value" >&2
+          exit 1
+        fi
+        grep -E '^[A-Z0-9_]+=' "$pins" >> "$GITHUB_ENV"
