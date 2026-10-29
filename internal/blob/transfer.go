@@ -153,7 +153,7 @@ launch:
 	if err != nil {
 		return err
 	}
-	if info.Size != sp.Size {
+	if info.Size >= 0 && info.Size != sp.Size { // -1: the store did not say
 		// The completed object is not what was sent. It is not deleted here: a
 		// concurrent uploader may have written the right bytes to the same key.
 		return fmt.Errorf("object %s has %d bytes after the multipart upload, expected %d", key, info.Size, sp.Size)

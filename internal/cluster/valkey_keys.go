@@ -17,8 +17,9 @@ const MaxValueSize = 1024
 // A key is <key_prefix><keyspace>:<mechanism>:v<version>[:<part>...], a channel
 // the same without expiry (R-ARCH-030). The only way to obtain a [Key] is a
 // [KeyFamily], and a family exists only with an expiry, so a key without one
-// cannot be written through the API: the write methods of [Valkey] take a Key
-// and take the expiry from it.
+// cannot be written: the write methods of [Valkey] take a Key and take the
+// expiry from it. Families are registered, and keys formed, inside this
+// package only (Q-ARCH-16, see valkey_ops.go).
 
 var (
 	mechanismPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)*$`)
@@ -49,11 +50,11 @@ type ChannelFamily struct {
 	version   int
 }
 
-// RegisterKeyFamily registers a key family. It is meant for package
+// registerKeyFamily registers a key family. It is meant for package
 // initialisation of the owning mechanism and panics on a programming error: an
 // invalid or duplicate mechanism name, a version below 1, or a maxTTL that is
 // not positive (every key expires, R-ARCH-030).
-func RegisterKeyFamily(mechanism string, version int, maxTTL time.Duration) *KeyFamily {
+func registerKeyFamily(mechanism string, version int, maxTTL time.Duration) *KeyFamily {
 	checkFamily(mechanism, version)
 	if maxTTL <= 0 {
 		panic(fmt.Sprintf("cluster: key family %q needs a positive expiry: every key expires", mechanism))
@@ -66,9 +67,9 @@ func RegisterKeyFamily(mechanism string, version int, maxTTL time.Duration) *Key
 	return f
 }
 
-// RegisterChannelFamily registers a Pub/Sub channel family, with the same
-// panics as [RegisterKeyFamily] except the expiry, which channels do not have.
-func RegisterChannelFamily(mechanism string, version int) *ChannelFamily {
+// registerChannelFamily registers a Pub/Sub channel family, with the same
+// panics as registerKeyFamily except the expiry, which channels do not have.
+func registerChannelFamily(mechanism string, version int) *ChannelFamily {
 	checkFamily(mechanism, version)
 	families.mu.Lock()
 	defer families.mu.Unlock()
@@ -100,24 +101,24 @@ func checkUnique(mechanism string, version int) {
 	}
 }
 
-// FamilyInfo describes a registered family for documentation and tests.
-type FamilyInfo struct {
+// familyInfo describes a registered family for documentation and tests.
+type familyInfo struct {
 	Mechanism string
 	Version   int
 	// MaxTTL is zero for a channel family.
 	MaxTTL time.Duration
 }
 
-// Families lists every registered family, sorted by name.
-func Families() []FamilyInfo {
+// registeredFamilies lists every registered family, sorted by name.
+func registeredFamilies() []familyInfo {
 	families.mu.Lock()
 	defer families.mu.Unlock()
-	out := make([]FamilyInfo, 0, len(families.keys)+len(families.channels))
+	out := make([]familyInfo, 0, len(families.keys)+len(families.channels))
 	for _, f := range families.keys {
-		out = append(out, FamilyInfo{f.mechanism, f.version, f.maxTTL})
+		out = append(out, familyInfo{f.mechanism, f.version, f.maxTTL})
 	}
 	for _, f := range families.channels {
-		out = append(out, FamilyInfo{f.mechanism, f.version, 0})
+		out = append(out, familyInfo{f.mechanism, f.version, 0})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return famID(out[i].Mechanism, out[i].Version) < famID(out[j].Mechanism, out[j].Version)
@@ -198,17 +199,20 @@ func join(prefix, mechanism string, version int, parts []string) string {
 	return b.String()
 }
 
-// Key forms a key of the family with the family's longest expiry. The parts
-// are identifiers or hashes, never raw names (R-ARCH-030).
-func (v *Valkey) Key(f *KeyFamily, parts ...string) (Key, error) {
-	return v.KeyTTL(f, f.maxTTL, parts...)
-}
-
-// KeyTTL forms a key whose expiry is ttl, which must be positive and at most
-// the family's longest expiry.
-func (v *Valkey) KeyTTL(f *KeyFamily, ttl time.Duration, parts ...string) (Key, error) {
+// formKey forms a key of the family with the family's longest expiry. The
+// parts are identifiers or hashes, never raw names (R-ARCH-030).
+func (v *Valkey) formKey(f *KeyFamily, parts ...string) (Key, error) {
 	if f == nil {
 		return Key{}, errors.New("cluster: nil key family")
+	}
+	return v.formKeyTTL(f, f.maxTTL, parts...)
+}
+
+// formKeyTTL forms a key whose expiry is ttl, which must be positive and at
+// most the family's longest expiry.
+func (v *Valkey) formKeyTTL(f *KeyFamily, ttl time.Duration, parts ...string) (Key, error) {
+	if f == nil || f.mechanism == "" {
+		return Key{}, errors.New("cluster: key family not registered")
 	}
 	if ttl <= 0 || ttl > f.maxTTL {
 		return Key{}, fmt.Errorf("cluster: expiry %s of family %s must be positive and at most %s", ttl, famID(f.mechanism, f.version), f.maxTTL)
@@ -223,10 +227,10 @@ func (v *Valkey) KeyTTL(f *KeyFamily, ttl time.Duration, parts ...string) (Key, 
 	return Key{name: join(p, f.mechanism, f.version, parts), ttl: ttl}, nil
 }
 
-// Channel forms a channel name of the family.
-func (v *Valkey) Channel(f *ChannelFamily, parts ...string) (Channel, error) {
-	if f == nil {
-		return Channel{}, errors.New("cluster: nil channel family")
+// channel forms a channel name of the family.
+func (v *Valkey) channel(f *ChannelFamily, parts ...string) (Channel, error) {
+	if f == nil || f.mechanism == "" {
+		return Channel{}, errors.New("cluster: channel family not registered")
 	}
 	if err := checkParts(parts); err != nil {
 		return Channel{}, err

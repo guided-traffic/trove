@@ -7,7 +7,8 @@ The contract is [api/openapi.yaml](../../api/openapi.yaml) (OpenAPI 3.1, R-API-0
 ## Workflow
 
 1. Edit `api/openapi.yaml`. Every operation needs `operationId` (lowerCamelCase verb + noun), `tags`,
-   `x-trove-permission`, and at least one problem response (`$ref` to the shared responses).
+   `x-trove-permission` in a form the authorization step enforces (see below), and at least one problem
+   response (`$ref` to the shared responses).
 2. `go generate ./internal/api/...` (or `make generate`) does two things: it copies the document to
    `internal/api/v1/openapi.yaml`, which the binary embeds (`go:embed` cannot reach `../`), and it runs
    `go tool oapi-codegen -config cfg.yaml` (pinned by the `tool` directive of `go.mod`, models and
@@ -15,7 +16,8 @@ The contract is [api/openapi.yaml](../../api/openapi.yaml) (OpenAPI 3.1, R-API-0
 3. Implement the new method of `gen.ServerInterface` in `handlers.go`. An operation without a handler does
    not compile.
 4. Run the tests. `TestDocument` fails on a stale embedded copy, an operation without a declaration, and
-   a route that is registered but not documented (or the reverse).
+   a route that is registered but not documented (or the reverse); `TestAuthorizationStep` sends an anonymous
+   request to every operation of the document and fails unless each non-public one answers 401.
 
 `go generate` output is committed; `make generate-check` fails on a diff.
 
@@ -26,14 +28,26 @@ The contract is [api/openapi.yaml](../../api/openapi.yaml) (OpenAPI 3.1, R-API-0
 | Paths | Full path in the document (`/api/v1/system/ping`), so the generated ServeMux pattern is `GET /api/v1/system/ping` |
 | Errors | `httpserver.Problem(w, r, err)` with an `*errs.Error`; never write an error body by hand. The wire members are those of `errs.Problem`: `type`, `title`, `status`, `detail`, `instance`, `code`, `requestId`, `errors` |
 | JSON | `writeJSON` in `handlers.go`: `application/json; charset=utf-8`, UTC times with `Z`, empty collections as `[]`, "no value" as `null` |
-| Caller | `httpserver.PrincipalFrom(ctx)`; permissions through the `Access` interface, never by reading headers |
+| Caller | `httpserver.PrincipalFrom(ctx)`; never read credentials from headers |
+| Permission check | done before the handler by the authorization step of [authorize.go](../../internal/api/v1/authorize.go), from the operation's declaration; a handler adds a check only where the decision depends on the request body (R-API-008) |
 | Base URL | `httpserver.InfoFrom(ctx).BaseURL`, never `Host` |
-| Authorization table | `Document.Operations()` maps the route pattern to the declarations; the shared authorization step of R-API-008 will look up `r.Pattern` there |
-| Registration | `Server.Register(router)` registers through `httpserver.Router`; the composition root then calls `Document.CheckRoutes(router.Patterns())` |
+| Authorization table | `Document.Operations()` maps the route pattern to the declarations, each decoded into an `Operation.Requirement` at load |
+| Registration | `Server.Register(router)` registers through `httpserver.Router` behind `authorizingMux`, which wraps every handler in the check of the operation its pattern names; the composition root then calls `Document.CheckRoutes(router.Patterns())` |
 
-`x-trove-permission` values in M0: `{public: true}` (ping, the document, the problem catalog),
-`{authenticated: true, publicSwitch: system.public_version}` (version) and `{permission: system.read}`
-(info, replicas). R-API-008 defines the full grammar.
+`x-trove-permission` forms the step enforces in M0, and nothing else (`LoadDocument` refuses any other form,
+so start-up stops before an operation can run with a declaration nobody checks):
+
+| Declaration | Check | M0 operations |
+|---|---|---|
+| `{public: true}` | none | ping, the document, the problem catalog |
+| `{authenticated: true}` | anonymous → 401 with `WWW-Authenticate: Bearer` | — |
+| `{authenticated: true, publicSwitch: system.public_version}` | as above, unless the switch is on (`Options.PublicVersion`); the switch names are fixed in `publicSwitches()` | version |
+| `{permission: <name>}` | `Options.Access.Require(ctx, name)`: 401 for an anonymous caller who needs credentials, 403 without the permission; with `Access` nil: 401 anonymous, 403 otherwise | info, replicas (`system.read`) |
+
+A route whose pattern has no operation in the document is denied to everyone with 403 (and `CheckRoutes`
+stops start-up for it). The binding of path parameters runs after the check. R-API-008 defines the full
+grammar; the M1 forms (repository actions, roles, system scope items) get their parser case and their
+check in `authorize.go` together.
 
 ## Operations in M0
 

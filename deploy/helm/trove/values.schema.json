@@ -1197,6 +1197,52 @@
     },
     "extraObjects": {
       "type": "array"
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ingress": {
+          "type": "object",
+          "properties": {
+            "http": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "ops": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "probeCIDRs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

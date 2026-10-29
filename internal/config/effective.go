@@ -20,7 +20,10 @@ type Entry struct {
 
 // Effective returns every key with its value and source, sorted by key path.
 // Secret values are replaced by Redacted when set; the path of a secret file is
-// not a secret and is shown.
+// not a secret and is shown. User information in any URL-shaped value has its
+// password (or, without one, the whole user information) replaced by Redacted:
+// URL keys refuse user information at load, and this is the second line for a
+// key that does not.
 func (l *Loaded) Effective() []Entry {
 	root := l.root
 	out := make([]Entry, 0, len(l.Schema.Keys))
@@ -34,7 +37,7 @@ func (l *Loaded) Effective() []Entry {
 				e.Value = ""
 			}
 		} else {
-			e.Value = displayValue(v)
+			e.Value = redactDisplay(displayValue(v))
 		}
 		out = append(out, e)
 	}

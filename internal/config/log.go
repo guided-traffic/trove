@@ -10,6 +10,7 @@ type Log struct {
 	Levels              map[string]string `yaml:"levels" default:"{}" doc:"Per-component level, e.g. {\"proxy\":\"debug\"}."`
 	AddSource           bool              `yaml:"add_source" default:"false"`
 	RingBufferRecords   int               `yaml:"ring_buffer_records" default:"5000" validate:"min=0"`
+	RingBufferBytes     ByteSize          `yaml:"ring_buffer_bytes" default:"8MiB" validate:"min=0" doc:"Upper bound of the bytes the ring buffer holds; the oldest records go first. A record above 16 KiB is kept as a stub."`
 	OverrideMaxDuration time.Duration     `yaml:"override_max_duration" default:"24h" validate:"min=1m"`
 	Request             LogRequest        `yaml:"request"`
 	Upstream            LogUpstream       `yaml:"upstream"`

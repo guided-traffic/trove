@@ -60,7 +60,13 @@ func (s *Store) Commit(ctx context.Context, sp *Spooled, link LinkFunc) (CommitR
 	if attempts < 1 {
 		attempts = 1
 	}
-	deadline := s.cfg.Upload.CommitDeadline
+	// How long after its own object write a commit may insert the row of an
+	// object no row announced: the commit deadline, and never more than half of
+	// delete_settle. A collector that dropped a row between our write and our
+	// insert may have deleted the key we wrote after the write; its drop
+	// happens delete_settle after that delete, so an insert inside half of it
+	// cannot follow such a drop (R-STOR-005, R-STOR-024).
+	window := min(s.cfg.Upload.CommitDeadline, s.cfg.GC.DeleteSettle/2)
 
 	fail := func(err error) (CommitResult, error) {
 		if putDone || res.Wrote {
@@ -74,7 +80,7 @@ func (s *Store) Commit(ctx context.Context, sp *Spooled, link LinkFunc) (CommitR
 		if err := ctx.Err(); err != nil {
 			return fail(err)
 		}
-		canInsert := putDone && s.now().Sub(putAt) <= deadline
+		canInsert := putDone && s.now().Sub(putAt) <= window
 		act, inserted, err := s.commitRound(ctx, sp, link, canInsert)
 		if err != nil {
 			return fail(err)
@@ -94,9 +100,8 @@ func (s *Store) Commit(ctx context.Context, sp *Spooled, link LinkFunc) (CommitR
 				return fail(err)
 			}
 			res.Wrote = true
-			if err := s.db.Tx(ctx, func(tx meta.Tx) error {
-				_, err := tx.Exec(ctx, sqlMarkOK, sp.SHA256.Bytes())
-				return err
+			if err := s.db.InTx(ctx, func(tx meta.Tx) error {
+				return s.rows.MarkOK(ctx, tx, sp.SHA256)
 			}); err != nil {
 				return fail(err)
 			}
@@ -116,10 +121,9 @@ func (s *Store) Commit(ctx context.Context, sp *Spooled, link LinkFunc) (CommitR
 
 // commitRound is one pass of the protocol's loop body in one transaction.
 func (s *Store) commitRound(ctx context.Context, sp *Spooled, link LinkFunc, canInsert bool) (act action, inserted bool, err error) {
-	err = s.db.Tx(ctx, func(tx meta.Tx) error {
+	err = s.db.InTx(ctx, func(tx meta.Tx) error {
 		act, inserted = actDone, false // the function may run again
-		var state, status string
-		found, err := queryOne(ctx, tx, sqlLockShare, []any{sp.SHA256.Bytes()}, &state, &status)
+		state, status, found, err := s.rows.LockShare(ctx, tx, sp.SHA256)
 		if err != nil {
 			return err
 		}
@@ -129,11 +133,11 @@ func (s *Store) commitRound(ctx context.Context, sp *Spooled, link LinkFunc, can
 				act = actPut
 				return errRollback
 			}
-			n, err := tx.Exec(ctx, sqlInsertBlob, sp.SHA256.Bytes(), sp.SHA1[:], sp.MD5[:], sp.SHA512[:], sp.Size)
+			won, err := s.rows.InsertLive(ctx, tx, sp)
 			if err != nil {
 				return err
 			}
-			if n == 0 { // a concurrent uploader won; read again
+			if !won { // a concurrent uploader won; read again
 				act = actRetry
 				return errRollback
 			}
@@ -171,10 +175,9 @@ func (s *Store) waitGone(ctx context.Context, d Digest) error {
 	deadline := s.now().Add(s.cfg.Upload.BlobWaitTimeout)
 	for {
 		var exists bool
-		if err := s.db.Tx(ctx, func(tx meta.Tx) error {
-			var one int
+		if err := s.db.InTx(ctx, func(tx meta.Tx) error {
 			var err error
-			exists, err = queryOne(ctx, tx, sqlBlobExists, []any{d.Bytes()}, &one)
+			exists, err = s.rows.Exists(ctx, tx, d)
 			return err
 		}); err != nil {
 			return err
@@ -203,9 +206,8 @@ func (s *Store) waitGone(ctx context.Context, d Digest) error {
 func (s *Store) enqueueAfterFailure(ctx context.Context, d Digest) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	if err := s.db.Tx(ctx, func(tx meta.Tx) error {
-		_, err := tx.Exec(ctx, sqlEnqueue, d.Bytes())
-		return err
+	if err := s.db.InTx(ctx, func(tx meta.Tx) error {
+		return s.rows.Enqueue(ctx, tx, d)
 	}); err != nil {
 		s.log.Warn("could not queue a digest for collection after a failed commit", "sha256", d.Hex(), "error", err)
 	}
@@ -215,18 +217,10 @@ func (s *Store) enqueueAfterFailure(ctx context.Context, d Digest) {
 func (s *Store) Lookup(ctx context.Context, d Digest) (Row, error) {
 	var r Row
 	var found bool
-	err := s.db.Tx(ctx, func(tx meta.Tx) error {
-		var sha256, sha1, md5, sha512 []byte
+	err := s.db.InTx(ctx, func(tx meta.Tx) error {
 		var err error
-		found, err = queryOne(ctx, tx, sqlRow, []any{d.Bytes()}, &sha256, &sha1, &md5, &sha512, &r.Size, &r.State, &r.ContentStatus, &r.CreatedAt)
-		if err != nil || !found {
-			return err
-		}
-		copy(r.SHA256[:], sha256)
-		copy(r.SHA1[:], sha1)
-		copy(r.MD5[:], md5)
-		copy(r.SHA512[:], sha512)
-		return nil
+		r, found, err = s.rows.Row(ctx, tx, d)
+		return err
 	})
 	if err != nil {
 		return Row{}, err

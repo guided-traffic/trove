@@ -167,17 +167,23 @@ UPDATE job
    SET state = 'succeeded', result = NULLIF($1::text, '')::jsonb, error = NULL,
        locked_by = NULL, locked_until = NULL, finished_at = now()
  WHERE id = $2::text::uuid AND locked_by = $3::text::uuid
-   AND state IN ('running', 'cancelling')
+   AND attempt = $4::int AND state IN ('running', 'cancelling')
 `
 
 type CompleteJobParams struct {
 	Result   string
 	ID       string
 	LockedBy string
+	Attempt  int32
 }
 
 func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error) {
-	result, err := q.db.Exec(ctx, completeJob, arg.Result, arg.ID, arg.LockedBy)
+	result, err := q.db.Exec(ctx, completeJob,
+		arg.Result,
+		arg.ID,
+		arg.LockedBy,
+		arg.Attempt,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -228,17 +234,23 @@ UPDATE job
    SET state = 'cancelled', error = NULLIF($1::text, '')::jsonb,
        locked_by = NULL, locked_until = NULL, finished_at = now()
  WHERE id = $2::text::uuid AND locked_by = $3::text::uuid
-   AND state IN ('running', 'cancelling')
+   AND attempt = $4::int AND state IN ('running', 'cancelling')
 `
 
 type EndJobCancelledParams struct {
 	Error    string
 	ID       string
 	LockedBy string
+	Attempt  int32
 }
 
 func (q *Queries) EndJobCancelled(ctx context.Context, arg EndJobCancelledParams) (int64, error) {
-	result, err := q.db.Exec(ctx, endJobCancelled, arg.Error, arg.ID, arg.LockedBy)
+	result, err := q.db.Exec(ctx, endJobCancelled,
+		arg.Error,
+		arg.ID,
+		arg.LockedBy,
+		arg.Attempt,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -255,7 +267,7 @@ WITH cur AS (
                 ELSE 'queued' END AS outcome
       FROM job j
      WHERE j.id = $3::text::uuid AND j.locked_by = $4::text::uuid
-       AND j.state IN ('running', 'cancelling')
+       AND j.attempt = $5::int AND j.state IN ('running', 'cancelling')
        FOR UPDATE
 )
 UPDATE job
@@ -277,6 +289,7 @@ type FailOrRetryJobParams struct {
 	Permanent bool
 	ID        string
 	LockedBy  string
+	Attempt   int32
 }
 
 type FailOrRetryJobRow struct {
@@ -294,6 +307,7 @@ func (q *Queries) FailOrRetryJob(ctx context.Context, arg FailOrRetryJobParams) 
 		arg.Permanent,
 		arg.ID,
 		arg.LockedBy,
+		arg.Attempt,
 	)
 	if err != nil {
 		return nil, err
@@ -478,14 +492,18 @@ func (q *Queries) GetJob(ctx context.Context, id string) ([]Job, error) {
 }
 
 const heartbeatJobs = `-- name: HeartbeatJobs :many
-UPDATE job
+UPDATE job j
    SET locked_until = now() + make_interval(secs => $1::float8)
- WHERE locked_by = $2::text::uuid AND state IN ('running', 'cancelling')
-RETURNING id, state
+  FROM generate_series(1, cardinality($2::text[])) AS g(i)
+ WHERE j.id = ($2::text[])[g.i]::uuid AND j.attempt = ($3::int[])[g.i]
+   AND j.locked_by = $4::text::uuid AND j.state IN ('running', 'cancelling')
+RETURNING j.id, j.state
 `
 
 type HeartbeatJobsParams struct {
 	LeaseSecs float64
+	Ids       []string
+	Attempts  []int32
 	LockedBy  string
 }
 
@@ -494,11 +512,20 @@ type HeartbeatJobsRow struct {
 	State string
 }
 
-// One statement extends every job of the replica (R-ARCH-016). The rows that
-// come back are the jobs it still owns; a running job missing from them was
-// lost, and one in state cancelling was cancelled.
+// One statement extends the jobs the replica is running (R-ARCH-016): ids[i] is
+// a job it runs and attempts[i] the attempt it claimed. A row is extended only
+// while it is still that attempt, owned by the replica; rows the replica holds
+// but does not run (a claim whose result never arrived) are not extended and
+// expire to the reaper. The rows that come back are the jobs it still owns; a
+// listed job missing from them was lost, and one in state cancelling was
+// cancelled.
 func (q *Queries) HeartbeatJobs(ctx context.Context, arg HeartbeatJobsParams) ([]HeartbeatJobsRow, error) {
-	rows, err := q.db.Query(ctx, heartbeatJobs, arg.LeaseSecs, arg.LockedBy)
+	rows, err := q.db.Query(ctx, heartbeatJobs,
+		arg.LeaseSecs,
+		arg.Ids,
+		arg.Attempts,
+		arg.LockedBy,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +726,7 @@ WITH cur AS (
                 ELSE 'queued' END AS outcome
       FROM job j
      WHERE j.id = $1::text::uuid AND j.locked_by = $2::text::uuid
-       AND j.state IN ('running', 'cancelling')
+       AND j.attempt = $3::int AND j.state IN ('running', 'cancelling')
        FOR UPDATE
 )
 UPDATE job
@@ -717,13 +744,14 @@ RETURNING job.state
 type ReleaseJobParams struct {
 	ID       string
 	LockedBy string
+	Attempt  int32
 }
 
 // Release on shutdown (R-ARCH-016): the job returns to queued without counting
 // the interrupted attempt, keeping its checkpoint. A job in cancelling ends
 // cancelled instead.
 func (q *Queries) ReleaseJob(ctx context.Context, arg ReleaseJobParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, releaseJob, arg.ID, arg.LockedBy)
+	rows, err := q.db.Query(ctx, releaseJob, arg.ID, arg.LockedBy, arg.Attempt)
 	if err != nil {
 		return nil, err
 	}
@@ -745,17 +773,23 @@ func (q *Queries) ReleaseJob(ctx context.Context, arg ReleaseJobParams) ([]strin
 const saveJobCheckpoint = `-- name: SaveJobCheckpoint :execrows
 UPDATE job SET checkpoint = $1::text::jsonb
  WHERE id = $2::text::uuid AND locked_by = $3::text::uuid
-   AND state IN ('running', 'cancelling')
+   AND attempt = $4::int AND state IN ('running', 'cancelling')
 `
 
 type SaveJobCheckpointParams struct {
 	Checkpoint string
 	ID         string
 	LockedBy   string
+	Attempt    int32
 }
 
 func (q *Queries) SaveJobCheckpoint(ctx context.Context, arg SaveJobCheckpointParams) (int64, error) {
-	result, err := q.db.Exec(ctx, saveJobCheckpoint, arg.Checkpoint, arg.ID, arg.LockedBy)
+	result, err := q.db.Exec(ctx, saveJobCheckpoint,
+		arg.Checkpoint,
+		arg.ID,
+		arg.LockedBy,
+		arg.Attempt,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -766,7 +800,7 @@ const saveJobProgress = `-- name: SaveJobProgress :execrows
 UPDATE job SET progress_done = $1::bigint, progress_total = NULLIF($2::bigint, 0),
                progress_unit = NULLIF($3::text, '')
  WHERE id = $4::text::uuid AND locked_by = $5::text::uuid
-   AND state IN ('running', 'cancelling')
+   AND attempt = $6::int AND state IN ('running', 'cancelling')
 `
 
 type SaveJobProgressParams struct {
@@ -775,6 +809,7 @@ type SaveJobProgressParams struct {
 	Unit     string
 	ID       string
 	LockedBy string
+	Attempt  int32
 }
 
 func (q *Queries) SaveJobProgress(ctx context.Context, arg SaveJobProgressParams) (int64, error) {
@@ -784,6 +819,7 @@ func (q *Queries) SaveJobProgress(ctx context.Context, arg SaveJobProgressParams
 		arg.Unit,
 		arg.ID,
 		arg.LockedBy,
+		arg.Attempt,
 	)
 	if err != nil {
 		return 0, err

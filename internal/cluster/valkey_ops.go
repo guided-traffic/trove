@@ -13,6 +13,14 @@ import (
 // list). Every call carries valkey.command_timeout, passes the circuit breaker,
 // and returns [ErrUnavailable] without network I/O while Valkey cannot be used.
 // There is no way to write a key without an expiry: a [Key] carries its own.
+//
+// They are unexported (Q-ARCH-16): what Valkey holds is never served and never
+// a positive authorization decision, and the way to keep it so is that no
+// package outside internal/cluster can read or write a Valkey key at all. Other
+// packages get typed mechanisms (signals, change messages, and later flight
+// locks and negative caches) whose code lives here. The integration tests reach
+// the raw commands through valkey_integration.go, which only the integration
+// build tag compiles.
 
 // exec runs fn against the current client under the breaker and the command
 // timeout.
@@ -65,20 +73,20 @@ func checkSize(values ...string) error {
 
 func validKey(k Key) error {
 	if k.name == "" || k.ttl <= 0 {
-		return errors.New("cluster: invalid key: form keys with Valkey.Key")
+		return errors.New("cluster: invalid key: form keys with Valkey.formKey")
 	}
 	return nil
 }
 
-// Ping checks that the primary answers.
-func (v *Valkey) Ping(ctx context.Context) error {
+// ping checks that the primary answers.
+func (v *Valkey) ping(ctx context.Context) error {
 	return v.exec(ctx, "ping", func(ctx context.Context, c valkey.Client) error {
 		return c.Do(ctx, c.B().Ping().Build()).Error()
 	})
 }
 
-// Get returns the value of k; found is false when the key does not exist.
-func (v *Valkey) Get(ctx context.Context, k Key) (value string, found bool, err error) {
+// get returns the value of k; found is false when the key does not exist.
+func (v *Valkey) get(ctx context.Context, k Key) (value string, found bool, err error) {
 	if err := validKey(k); err != nil {
 		return "", false, err
 	}
@@ -96,8 +104,8 @@ func (v *Valkey) Get(ctx context.Context, k Key) (value string, found bool, err 
 	return value, found, err
 }
 
-// Set writes value under k with k's expiry.
-func (v *Valkey) Set(ctx context.Context, k Key, value string) error {
+// set writes value under k with k's expiry.
+func (v *Valkey) set(ctx context.Context, k Key, value string) error {
 	if err := validKey(k); err != nil {
 		return err
 	}
@@ -109,9 +117,9 @@ func (v *Valkey) Set(ctx context.Context, k Key, value string) error {
 	})
 }
 
-// SetNX writes value under k with k's expiry only if the key does not exist; ok
+// setNX writes value under k with k's expiry only if the key does not exist; ok
 // reports whether it wrote.
-func (v *Valkey) SetNX(ctx context.Context, k Key, value string) (ok bool, err error) {
+func (v *Valkey) setNX(ctx context.Context, k Key, value string) (ok bool, err error) {
 	if err := validKey(k); err != nil {
 		return false, err
 	}
@@ -129,10 +137,10 @@ func (v *Valkey) SetNX(ctx context.Context, k Key, value string) (ok bool, err e
 	return ok, err
 }
 
-// SetIfEq replaces the value of k with value and renews k's expiry, only if the
+// setIfEq replaces the value of k with value and renews k's expiry, only if the
 // current value is old; ok reports whether it replaced. It is the extension of
 // a lock held with value old.
-func (v *Valkey) SetIfEq(ctx context.Context, k Key, old, value string) (ok bool, err error) {
+func (v *Valkey) setIfEq(ctx context.Context, k Key, old, value string) (ok bool, err error) {
 	if err := validKey(k); err != nil {
 		return false, err
 	}
@@ -150,10 +158,10 @@ func (v *Valkey) SetIfEq(ctx context.Context, k Key, old, value string) (ok bool
 	return ok, err
 }
 
-// DelIfEq deletes k only if its value is value; deleted reports whether it did.
+// delIfEq deletes k only if its value is value; deleted reports whether it did.
 // It is the release of a lock and the removal of a malformed value; the ACL
 // user has no DEL (R-ARCH-031).
-func (v *Valkey) DelIfEq(ctx context.Context, k Key, value string) (deleted bool, err error) {
+func (v *Valkey) delIfEq(ctx context.Context, k Key, value string) (deleted bool, err error) {
 	if err := validKey(k); err != nil {
 		return false, err
 	}
@@ -171,10 +179,12 @@ func (v *Valkey) DelIfEq(ctx context.Context, k Key, value string) (deleted bool
 	return deleted, err
 }
 
-// Incr increments the counter k and returns its new value. The first increment
+// incr increments the counter k and returns its new value. The first increment
 // of a key sets k's expiry; later ones leave it, so a counter cannot be kept
-// alive by traffic (R-ARCH-034). INCR and EXPIRE run in one MULTI/EXEC.
-func (v *Valkey) Incr(ctx context.Context, k Key) (n int64, err error) {
+// alive by traffic (the rule of R-ARCH-030 that the rate-limit counters of
+// R-ARCH-034 will rely on; no limiter exists yet). INCR and EXPIRE run in one
+// MULTI/EXEC.
+func (v *Valkey) incr(ctx context.Context, k Key) (n int64, err error) {
 	if err := validKey(k); err != nil {
 		return 0, err
 	}
@@ -207,11 +217,11 @@ func ceilSeconds(d time.Duration) int64 {
 	return int64((d + time.Second - 1) / time.Second)
 }
 
-// Publish sends msg on channel ch. Delivery is at most once: a subscriber that
+// publish sends msg on channel ch. Delivery is at most once: a subscriber that
 // is not connected misses it, and correctness never depends on it (Q-ARCH-15).
-func (v *Valkey) Publish(ctx context.Context, ch Channel, msg string) error {
+func (v *Valkey) publish(ctx context.Context, ch Channel, msg string) error {
 	if ch.name == "" {
-		return errors.New("cluster: invalid channel: form channels with Valkey.Channel")
+		return errors.New("cluster: invalid channel: form channels with Valkey.channel")
 	}
 	if err := checkSize(msg); err != nil {
 		return err

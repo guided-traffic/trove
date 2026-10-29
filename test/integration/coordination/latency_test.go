@@ -131,7 +131,7 @@ func TestChangePropagation(t *testing.T) {
 				cfg.Set(key, "old")
 				time.Sleep(time.Duration(rand.Int64N(int64(mode.spread))))
 				t0 := time.Now()
-				err := a.db.Tx(context.Background(), func(tx meta.Tx) error {
+				err := a.db.InTx(context.Background(), func(tx meta.Tx) error {
 					return a.changes.Notify(tx, "cache", 1, map[string]string{"key": key})
 				})
 				if err != nil {
@@ -190,7 +190,7 @@ func TestLateKeyspace(t *testing.T) {
 		// The subscription is retried by the poll loop, whose interval here is 5 s.
 		waitFor(t, "the change messages to be subscribed", 15*time.Second, func() bool {
 			held.Set("k", "old")
-			if err := a.db.Tx(context.Background(), func(tx meta.Tx) error { return a.changes.Notify(tx, "cache", 1, map[string]string{"x": "y"}) }); err != nil {
+			if err := a.db.InTx(context.Background(), func(tx meta.Tx) error { return a.changes.Notify(tx, "cache", 1, map[string]string{"x": "y"}) }); err != nil {
 				t.Fatal(err)
 			}
 			time.Sleep(150 * time.Millisecond)

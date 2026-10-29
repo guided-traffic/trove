@@ -166,6 +166,66 @@ func TestServerShutdown(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-024 BeginCommit lets a download-shaped request run on for the commit grace", func(t *testing.T) {
+		entered := make(chan struct{})
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			BeginCommit(r.Context()) // no request body at all: only the marker says "committing"
+			close(entered)
+			time.Sleep(400 * time.Millisecond)
+			w.WriteHeader(204)
+		})
+		s, addr := start(t, ServerConfig{Handler: h, CommitGrace: 2 * time.Second})
+		got := make(chan int, 1)
+		go func() {
+			resp, err := http.Get("http://" + addr + "/")
+			if err != nil {
+				got <- -1
+				return
+			}
+			resp.Body.Close()
+			got <- resp.StatusCode
+		}()
+		<-entered
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		if err := s.Shutdown(ctx); err != nil {
+			t.Fatalf("Shutdown = %v: the committing request must not be cut", err)
+		}
+		if code := <-got; code != 204 {
+			t.Fatalf("status = %d", code)
+		}
+	})
+
+	t.Run("R-ARCH-024 BeginCommit outside a request does nothing", func(t *testing.T) {
+		BeginCommit(t.Context())
+	})
+
+	t.Run("R-ARCH-024 the commit grace never reaches past the absolute bound of ShutdownBy", func(t *testing.T) {
+		entered := make(chan struct{})
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			BeginCommit(r.Context())
+			close(entered)
+			time.Sleep(5 * time.Second)
+		})
+		s, addr := start(t, ServerConfig{Handler: h, CommitGrace: 10 * time.Second})
+		go func() {
+			if resp, err := http.Get("http://" + addr + "/"); err == nil {
+				resp.Body.Close()
+			}
+		}()
+		<-entered
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		begin := time.Now()
+		err := s.ShutdownBy(ctx, time.Now().Add(300*time.Millisecond))
+		if !errors.Is(err, ErrCut) {
+			t.Fatalf("ShutdownBy = %v, want ErrCut", err)
+		}
+		if took := time.Since(begin); took > 2*time.Second {
+			t.Fatalf("took %v: the 10 s CommitGrace outran the bound of 300 ms", took)
+		}
+	})
+
 	t.Run("Q-ARCH-18 an upload whose body is still arriving is cut at the deadline", func(t *testing.T) {
 		var dir atomic.Value
 		entered := make(chan struct{})

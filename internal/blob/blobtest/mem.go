@@ -42,6 +42,9 @@ type Store struct {
 	MinPartSize int
 	// Now is the clock of LastModified and upload initiation.
 	Now func() time.Time
+	// UnknownSize makes Get report ObjectInfo.Size -1, as a response without
+	// Content-Length does.
+	UnknownSize bool
 
 	mu      sync.Mutex
 	objects map[string]*object
@@ -287,6 +290,9 @@ func (s *Store) Get(_ context.Context, key string, rng *blob.ByteRange) (io.Read
 		return nil, blob.ObjectInfo{}, blob.ErrNotFound
 	}
 	info := blob.ObjectInfo{Key: key, Size: int64(len(o.data)), ETag: etag(o.data), LastModified: o.modified}
+	if s.UnknownSize {
+		info.Size = -1
+	}
 	data := o.data
 	if rng != nil {
 		if rng.Offset >= int64(len(data)) {

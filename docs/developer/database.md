@@ -2,7 +2,7 @@
 
 PostgreSQL access lives in [internal/meta/postgres](../../internal/meta/postgres/) (the only package with
 `internal/cluster` that imports the driver, R-ARCH-002). [internal/meta](../../internal/meta/) is the
-driver-free leaf the rest of the code sees: `meta.Tx`, `meta.Runner` and the revision-column registry.
+driver-free leaf the rest of the code sees: `meta.Tx`, `meta.Runner`, `meta.TxState` and the revision-column registry.
 [internal/backup/tables](../../internal/backup/tables/) is the table registry of R-BAK-004.
 
 ## Connection classes
@@ -36,16 +36,28 @@ The connection string carries neither.
 
 ## Transactions and retry
 
-- `DB.InTx(ctx, func(pgx.Tx) error)` is the contract form (for sqlc: `q.New(tx)`). `DB.Tx(ctx, func(meta.Tx) error)`
-  is the `meta.Runner` form with hooks: `Before` hooks run last inside the transaction (change-log writes,
-  R-ARCH-018), `After` hooks once COMMIT succeeded. `RequestTx` adds `statement_timeout` via `set_config(..., true)`.
+- `DB.InTx(ctx, func(meta.Tx) error)` is `meta.Runner` (`var _ meta.Runner = (*DB)(nil)`) and the one form
+  callers use. `meta.Tx` is opaque (R-ARCH-008: formats never run SQL): it has `Before` (runs last inside the
+  transaction; change-log writes, R-ARCH-018), `After` (once COMMIT succeeded), `OnRollback` (once when the attempt
+  ends without a commit: failed body, failed `Before` hook, failed COMMIT) and a per-attempt value slot
+  (`Value`/`SetValue`, a retried attempt starts empty). Hooks and slot are `meta.TxState`, which the unit-test
+  fakes embed too (`RunBefore`, `RunAfter`, `RunRollback`).
+- Stores reach SQL only through `postgres.Unwrap(tx)` (the pgx transaction) and sqlc (`q.New(ptx)`), as
+  `internal/jobs` and `internal/blob` do. `DB.InPgxTx(ctx, func(pgx.Tx) error)` is the hook-less pgx form for this
+  package and the retry tests. `DB.Tx` is an old name of `InTx` that stays only until the coordination integration
+  tests and the e2e driver use `InTx`. `RequestTx` adds `statement_timeout` via `set_config(..., true)`.
+- The one place SQL text is assembled is [blobrefs.go](../../internal/meta/postgres/blobrefs.go): the collector's
+  reference check and full-sweep anti-join are built from the foreign keys to `blobs` read from the catalog
+  (R-STOR-024 rule 3), every identifier quoted with `pgx.Identifier`, no value in the text. `postgres.LoadBlobRefs`
+  reads the catalog once; the collector does that once per batch.
 - READ COMMITTED. SQLSTATE 40001 and 40P01 repeat the function up to three times. Failover errors (08xxx except
   08P01, 57P01-03, 25006, 53300, closed or refused connections) repeat with exponential backoff until
   `retry.max_elapsed` and then become `errs.Unavailable` (`database_unavailable`, 503). A connection that proved
   wrong is destroyed, not returned to the pool. A COMMIT that loses its connection has an unknown outcome and is
   never repeated. `fn` must therefore be safe to run again.
 - `Ready(ctx)` is the `database` readiness check: `SELECT NOT pg_is_in_recovery()` on the control connection.
-  `CheckSchema(ctx, version)` is the `schema` check (below). `Stats()` feeds the pool metrics.
+  `CheckSchema(ctx, version)` is the `schema` check (below) and reads on the control connection; `SchemaState`
+  (GET /system/info) reads on the main pool, so a request never needs the control connection. `Stats()` feeds the pool metrics.
 
 ## Connection budget
 
@@ -78,6 +90,9 @@ with header comments:
 4. Never edit an applied file (checksum). Backfills are background data migrations, not migration steps.
 5. Contract steps ship one minor after the release that stopped using the object, with `requires-app`.
 6. Static queries for the new tables go to `queries/*.sql`, then `make generate`.
+7. `trove migrate up` checks the migrated schema against the table registry of its own binary
+   (`postgres.VerifyTableRegistry`, exit 3 naming the table); [cmd/trove/registry.go](../../cmd/trove/registry.go)
+   links every package that owns tables. A new owning package is added there.
 
 `sqlc` reads the migration files as its schema. `job_state` is created inside a `DO` block on purpose: sqlc
 then maps it to a Go string instead of generating enum helpers that import `database/sql/driver` (forbidden,
@@ -96,6 +111,20 @@ Lock timeouts (55P03) retry `migrate.ddl_lock_retries` times. Exit codes: 0, 1 e
 Not implemented yet: the audit-policy write and `audit_maintain_partitions()` (no audit tables), the
 `database.backup_role` grants and the grants check (no backup tables), the restore mode of the runner (M5), and
 the CI check against the latest release's files (no release yet).
+
+### Privileges of the runtime role
+
+Migration 00001 grants `trove_app` (when that role exists) SELECT, INSERT, UPDATE, DELETE on every later table.
+Migration 00005 revokes INSERT, UPDATE, DELETE, TRUNCATE on `schema_migration` and `schema_state` again, so a SQL
+injection cannot raise `applied` or lower `compat_floor`. `system_state` stays writable on purpose: the runtime sets
+`deletions_paused_at` and later keys of its own (restore markers are written by restore and migrate). The runtime
+preflight (`checkBookkeeping`) refuses a login that can write the bookkeeping once step 5 is applied (a later GRANT
+or a restored dump re-opened it), unless it owns the tables or is a superuser. The integration test creates the
+cluster-wide role `trove_app` and never drops it.
+
+TLS: `database.ssl_mode: require` without `ssl_root_cert_file` needs `allow_insecure` (it encrypts but accepts any
+certificate); `verify-ca` without a CA file is refused (`config.Database.TLSProblem`, used by the load and by
+`Open`).
 
 ### Compatibility gate
 

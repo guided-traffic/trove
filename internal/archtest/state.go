@@ -9,22 +9,30 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// stateAllowed lists the trees where a package-level variable of map, slice,
+// statePackages lists the packages where a package-level variable of map, slice,
 // pointer or sync.Map type is permitted (R-ARCH-032): the caches and the
 // cluster state, the observability primitives, and the registries that are
 // filled once at start-up and frozen: formats, jobs, errs, secrets, the
-// revision registry of meta and the table registry of backup.
-func stateAllowed() []string {
-	// Tooling and tests are not part of a replica's request path.
-	return append(stateTrees(), "internal/archtest", "internal/tools", "test", "tools", "perf", "web", "deploy")
-}
-
-func stateTrees() []string {
+// revision registry of meta and the table registry of backup. The match is the
+// exact package, never its subtree: a subpackage such as internal/meta/postgres
+// or a format package has to earn its own row.
+func statePackages() []string {
 	return []string{
 		"internal/cache", "internal/cluster", "internal/observability",
 		"internal/formats", "internal/jobs", "internal/errs", "internal/secrets",
 		"internal/meta", "internal/backup/tables",
 	}
+}
+
+// stateExempt reports whether the package at rel may hold such variables. Tooling
+// and tests are not part of a replica's request path and are exempt as trees.
+func stateExempt(r string) bool {
+	for _, p := range statePackages() {
+		if r == p {
+			return true
+		}
+	}
+	return underAny(r, []string{"internal/archtest", "internal/tools", "test", "tools", "perf", "web", "deploy"})
 }
 
 // LoadTyped loads every package of the module in dir with syntax and type
@@ -59,7 +67,7 @@ func CheckPackageState(module string, pkgs []*packages.Package) []Violation {
 	var out []Violation
 	for _, p := range pkgs {
 		r := rel(module, p.PkgPath)
-		if p.Types == nil || underAny(r, stateAllowed()) {
+		if p.Types == nil || stateExempt(r) {
 			continue
 		}
 		for _, f := range p.Syntax {
@@ -91,7 +99,7 @@ func CheckPackageState(module string, pkgs []*packages.Package) []Violation {
 								Rule:   "R-ARCH-032",
 								From:   fmt.Sprintf("%s:%d", file, pos.Line),
 								To:     name.Name,
-								Detail: fmt.Sprintf("package-level variable of %s type %s; allowed only in %s", kind, obj.Type(), strings.Join(stateTrees(), ", ")),
+								Detail: fmt.Sprintf("package-level variable of %s type %s; allowed only in %s", kind, obj.Type(), strings.Join(statePackages(), ", ")),
 							})
 						}
 					}

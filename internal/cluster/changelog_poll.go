@@ -14,6 +14,8 @@ import (
 // second query for the rows. It runs on the control connection with a deadline
 // below the watchdog bound.
 func (c *Changes) pollOnce(ctx context.Context) error {
+	c.pollMu.Lock()
+	defer c.pollMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, c.pollTimeout())
 	defer cancel()
 	start := time.Now()
@@ -54,28 +56,31 @@ func (c *Changes) pollOnce(ctx context.Context) error {
 	return nil
 }
 
-// reconcile brings one area up to the epoch the database reports.
+// reconcile brings one area up to the epoch the database reports. It holds no
+// lock across the queries or the listener calls: a listener may call
+// [Changes.AreaState] (st.mu only guards the pair that call reads, set), and the
+// poll never blocks a reader of it behind the database. The poll is the only
+// writer of an area's state; pollOnce serialises its callers.
 func (c *Changes) reconcile(ctx context.Context, qs *q.Queries, st *areaState, epoch int64, changedAt time.Time) error {
 	area := st.meta.Name
-	st.mu.Lock()
-	defer st.mu.Unlock()
 
 	if !st.known {
 		// The first poll: a replica starts from the current epoch. Nothing is
 		// cached yet that an earlier change could have made stale.
 		st.known = true
-		st.applied.Store(epoch)
-		st.at = changedAt
+		st.set(epoch, changedAt)
 		return nil
 	}
 	applied := st.applied.Load()
+	st.mu.Lock()
+	at := st.at
+	st.mu.Unlock()
 	resync := func(reason string) {
 		// Take the database's current epoch as the starting point, even when it
 		// is lower, so later changes are not skipped as already applied.
 		c.log.Warn("change area flushed", "area", area, "reason", reason, "applied_epoch", applied, "database_epoch", epoch)
 		c.flushArea(area, reason)
-		st.applied.Store(epoch)
-		st.at = changedAt
+		st.set(epoch, changedAt)
 	}
 
 	switch {
@@ -83,7 +88,7 @@ func (c *Changes) reconcile(ctx context.Context, qs *q.Queries, st *areaState, e
 		resync(FlushEpochRegressed)
 		return nil
 	case epoch == applied:
-		if !changedAt.Equal(st.at) {
+		if !changedAt.Equal(at) {
 			resync(FlushEpochRegressed) // a reused epoch: later writes raised it to the same number
 		}
 		return nil
@@ -104,7 +109,7 @@ func (c *Changes) reconcile(ctx context.Context, qs *q.Queries, st *areaState, e
 		case len(rows) == 0 || rows[0].Epoch != applied:
 			resync(FlushChangeLogGap)
 			return nil
-		case !rows[0].CreatedAt.Time.Equal(st.at):
+		case !rows[0].CreatedAt.Time.Equal(at):
 			resync(FlushEpochRegressed)
 			return nil
 		}
@@ -122,8 +127,7 @@ func (c *Changes) reconcile(ctx context.Context, qs *q.Queries, st *areaState, e
 		}
 		c.applyChange(area, v, p)
 		c.m.applied.WithLabelValues(area, sourcePoll).Inc()
-		st.applied.Store(r.Epoch)
-		st.at = r.CreatedAt.Time
+		st.set(r.Epoch, r.CreatedAt.Time)
 	}
 	return nil
 }

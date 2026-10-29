@@ -21,7 +21,7 @@ const EnvConfigFile = "TROVE_CONFIG_FILE"
 
 // Source says where a value came from.
 type Source struct {
-	Kind   string // "default", "file", "env", "flag" or "secret-file"
+	Kind   string // "default", "file", "env", "flag", "derived" or "secret-file"
 	Detail string // variable name, flag name or secret file path
 }
 
@@ -123,6 +123,9 @@ func loadInto(root any, opts Options) (*Loaded, error) {
 	l.resolveSecrets()
 	if len(l.issues) == 0 {
 		l.validate()
+	}
+	if len(l.issues) == 0 {
+		l.finalize()
 	}
 	if len(l.issues) > 0 {
 		return nil, &Error{Issues: l.issues}

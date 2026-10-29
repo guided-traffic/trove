@@ -93,6 +93,22 @@ func TestMigrateCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("R-BAK-004 trove migrate up fails naming a table that no package of the binary registered, and passes again once it is gone", func(t *testing.T) {
+		if _, err := admin.Exec(context.Background(), `CREATE TABLE trove.rogue_table (id bigint PRIMARY KEY)`); err != nil {
+			t.Fatal(err)
+		}
+		code, _, stderr := runTrove(t, bin, env, "migrate", "up", "--config", cfgFile)
+		if code != 3 || !strings.Contains(stderr, "rogue_table") || !strings.Contains(stderr, "R-BAK-004") {
+			t.Fatalf("exit %d stderr %s", code, stderr)
+		}
+		if _, err := admin.Exec(context.Background(), `DROP TABLE trove.rogue_table`); err != nil {
+			t.Fatal(err)
+		}
+		if code, _, stderr := runTrove(t, bin, env, "migrate", "up", "--config", cfgFile); code != 0 {
+			t.Fatalf("after the drop: exit %d stderr %s", code, stderr)
+		}
+	})
+
 	t.Run("R-HA-019 a half-restored database makes trove migrate up exit 3", func(t *testing.T) {
 		if _, err := admin.Exec(context.Background(), `INSERT INTO trove.system_state (key, value) VALUES ('restore_in_progress', '"20261028T020000Z-7f3a"')`); err != nil {
 			t.Fatal(err)

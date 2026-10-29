@@ -148,7 +148,7 @@ func TestSignals(t *testing.T) {
 		if _, err := s.Subscribe(context.Background(), "jobs", func(p []string, _ bool) { got <- p }); err != nil {
 			t.Fatal(err)
 		}
-		ch, _ := bus.Channel(sigChannels, "jobs")
+		ch, _ := bus.channel(sigChannels, "jobs")
 		for _, h := range bus.handlers[ch.name] {
 			h(Message{Payload: "not json"})
 			h(Message{Payload: `{"p":["maintenance"]}`})
@@ -193,6 +193,7 @@ func TestNotify(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		c.sql = fakeChangeSQL{}
 		l := &recordingListener{}
 		c.AddListener(l)
 		return c, l, reg

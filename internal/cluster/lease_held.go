@@ -26,7 +26,6 @@ type Held struct {
 	conn   *pgxpool.Conn
 	ctx    context.Context
 	cancel context.CancelCauseFunc
-	token  int64
 	since  time.Time
 	valid  atomic.Bool
 	done   chan struct{}
@@ -37,11 +36,6 @@ type Held struct {
 // Context ends when the lease is lost or released. Work that holds the lease
 // stops when it ends.
 func (h *Held) Context() context.Context { return h.ctx }
-
-// Token is the fencing token: it grows with every acquisition of any lease of
-// the cluster, so of two tokens of one lease the higher belongs to the later
-// holder. A holder includes it in writes that outlive its session.
-func (h *Held) Token() int64 { return h.token }
 
 // Since is when this replica acquired the lease (its own clock; for display).
 func (h *Held) Since() time.Time { return h.since }

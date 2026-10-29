@@ -139,6 +139,32 @@ func TestCheckConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("R-HA-015 require without a root certificate file needs allow_insecure", func(t *testing.T) {
+		c := c
+		c.SSLMode, c.SSLRootCertFile = "require", ""
+		if err := checkConfig(c); err == nil || !strings.Contains(err.Error(), "ssl_root_cert_file") {
+			t.Fatalf("err = %v", err)
+		}
+		c.SSLRootCertFile = "/etc/ssl/db-ca.pem"
+		if err := checkConfig(c); err != nil {
+			t.Fatalf("with a CA file: %v", err)
+		}
+		c.SSLRootCertFile, c.AllowInsecure = "", true
+		if err := checkConfig(c); err != nil {
+			t.Fatalf("with allow_insecure: %v", err)
+		}
+	})
+	t.Run("R-HA-015 verify-ca without a root certificate file is refused, also with allow_insecure", func(t *testing.T) {
+		c := c
+		c.SSLMode, c.SSLRootCertFile, c.AllowInsecure = "verify-ca", "", true
+		if err := checkConfig(c); err == nil || !strings.Contains(err.Error(), "ssl_root_cert_file") {
+			t.Fatalf("err = %v", err)
+		}
+		c.SSLRootCertFile = "/etc/ssl/db-ca.pem"
+		if err := checkConfig(c); err != nil {
+			t.Fatalf("with a CA file: %v", err)
+		}
+	})
 	t.Run("R-HA-058 a transaction-mode pooler needs a session host", func(t *testing.T) {
 		c := c
 		c.Pooler.Mode = "transaction"

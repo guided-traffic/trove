@@ -323,3 +323,39 @@ func (q *Queries) UpsertSchemaState(ctx context.Context, arg UpsertSchemaStatePa
 	_, err := q.db.Exec(ctx, upsertSchemaState, arg.Applied, arg.CompatFloor)
 	return err
 }
+
+const writableBookkeeping = `-- name: WritableBookkeeping :many
+SELECT c.relname::text AS name
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = $1
+   AND c.relname IN ('schema_migration', 'schema_state')
+   AND NOT pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE')
+   AND (   pg_catalog.has_table_privilege(c.oid, 'INSERT')
+        OR pg_catalog.has_table_privilege(c.oid, 'UPDATE')
+        OR pg_catalog.has_table_privilege(c.oid, 'DELETE')
+        OR pg_catalog.has_table_privilege(c.oid, 'TRUNCATE'))
+ ORDER BY c.relname
+`
+
+// The bookkeeping tables of the schema that the current role can change without
+// owning them (neither owner nor member of the owning role).
+func (q *Queries) WritableBookkeeping(ctx context.Context, nspname string) ([]string, error) {
+	rows, err := q.db.Query(ctx, writableBookkeeping, nspname)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

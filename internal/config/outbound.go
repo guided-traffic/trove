@@ -26,8 +26,15 @@ type OutboundTLS struct {
 }
 
 // OutboundAddressPolicy is the egress address policy, checked at connect time.
+// Independent of the lists, internal/outbound refuses zoned IPv6 addresses,
+// checks IPv4-mapped addresses as IPv4 and checks addresses of the NAT64 prefix
+// 64:ff9b::/96 as the IPv4 address they translate to as well. The default deny
+// list holds loopback, unspecified, link-local (with 169.254.169.254), the IPv6
+// metadata address of one cloud, the metadata addresses of two others
+// (100.100.100.200, 168.63.129.16), the deprecated IPv4-compatible range ::/96,
+// multicast and broadcast.
 type OutboundAddressPolicy struct {
-	DenyCIDRs  []string `yaml:"deny_cidrs" default:"[\"127.0.0.0/8\",\"::1/128\",\"0.0.0.0/8\",\"::/128\",\"169.254.0.0/16\",\"fe80::/10\",\"fd00:ec2::254/128\",\"224.0.0.0/4\",\"ff00::/8\",\"255.255.255.255/32\"]"`
+	DenyCIDRs  []string `yaml:"deny_cidrs" default:"[\"127.0.0.0/8\",\"::1/128\",\"0.0.0.0/8\",\"::/128\",\"::/96\",\"169.254.0.0/16\",\"fe80::/10\",\"fd00:ec2::254/128\",\"100.100.100.200/32\",\"168.63.129.16/32\",\"224.0.0.0/4\",\"ff00::/8\",\"255.255.255.255/32\"]"`
 	AllowCIDRs []string `yaml:"allow_cidrs" default:"[]"`
 }
 

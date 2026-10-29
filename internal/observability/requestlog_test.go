@@ -3,10 +3,15 @@ package observability
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/guided-traffic/trove/internal/config"
 )
 
 func serve(t *testing.T, h http.Handler, r *http.Request) *httptest.ResponseRecorder {
@@ -146,6 +151,120 @@ func TestRequestInfoNilSafe(t *testing.T) {
 		ri.SetPrincipal("a", "user", "1")
 		if RequestInfoFrom(context.Background()) != nil {
 			t.Error("unexpected info")
+		}
+	})
+}
+
+// schemaDefault returns the text of a key's default from internal/config.
+func schemaDefault(t *testing.T, path string) string {
+	t.Helper()
+	for _, k := range config.MustDescribe().Keys {
+		if k.Path == path {
+			return k.Default
+		}
+	}
+	t.Fatalf("no key %s", path)
+	return ""
+}
+
+func TestRequestLogBounds(t *testing.T) {
+	t.Run("R-OPS-010 user_agent and path are cut at their limits and say so", func(t *testing.T) {
+		var buf bytes.Buffer
+		lg := NewLogging(testLogCfg(), &buf)
+		h := RequestLog(lg.Logger(), NewMetrics("web"))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		req := httptest.NewRequest(http.MethodGet, "/x/"+strings.Repeat("p", 10_000)+"?token=SECRETVAL", nil)
+		req.Header.Set("User-Agent", "npm/10 "+strings.Repeat("é", 2000))
+		serve(t, h, req)
+		rec := decode(t, lines(&buf)[0])
+		ua, path := rec["user_agent"].(string), rec["path"].(string)
+		if len(ua) > MaxUserAgent+len(TruncatedMarker) || !strings.HasSuffix(ua, TruncatedMarker) || !strings.HasPrefix(ua, "npm/10 é") || !utf8.ValidString(ua) {
+			t.Errorf("user_agent: %d bytes, %q…", len(ua), ua[:min(40, len(ua))])
+		}
+		if len(path) > MaxPath+len(TruncatedMarker) || !strings.HasSuffix(path, TruncatedMarker) || !strings.HasPrefix(path, "/x/ppp") {
+			t.Errorf("path: %d bytes", len(path))
+		}
+		short := httptest.NewRequest(http.MethodGet, "/short?token=SECRETVAL", nil)
+		short.Header.Set("User-Agent", "pip/24")
+		buf.Reset()
+		serve(t, h, short)
+		rec = decode(t, lines(&buf)[0])
+		if rec["user_agent"] != "pip/24" || strings.Contains(rec["path"].(string), "SECRETVAL") || strings.Contains(rec["path"].(string), TruncatedMarker) {
+			t.Errorf("short fields changed: %v", rec)
+		}
+	})
+
+	t.Run("R-OPS-010 a secret near the end of a long field is scrubbed before the cut", func(t *testing.T) {
+		got := clipField(strings.Repeat("a", 500)+" https://bob:hunter2hunter2@up.example/", MaxUserAgent, defaultScrubber)
+		if strings.Contains(got, "hunter2") || strings.Contains(got, "bob:hunt") {
+			t.Errorf("fragment of the secret kept: %q", got[480:])
+		}
+	})
+
+	t.Run("R-OPS-009 R-OPS-010 5000 requests with a 60 KiB 0xFF User-Agent keep the ring under its byte bound", func(t *testing.T) {
+		maxBytes, err := config.ParseByteSize(schemaDefault(t, "log.ring_buffer_bytes"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := testLogCfg()
+		cfg.RingBufferRecords, cfg.RingBufferBytes = 5000, maxBytes
+		lg := NewLogging(cfg, io.Discard)
+		h := RequestLog(lg.Logger(), NewMetrics("web"))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		ua := string(bytes.Repeat([]byte{0xFF}, 60<<10))
+		for range 5000 {
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			req.Header.Set("User-Agent", ua)
+			serve(t, h, req)
+		}
+		ring := lg.Ring()
+		if ring.Bytes() > int64(maxBytes) || ring.Len() == 0 {
+			t.Fatalf("ring holds %d bytes in %d records, bound %d", ring.Bytes(), ring.Len(), maxBytes)
+		}
+		var total int64
+		for _, r := range ring.Records() {
+			total += int64(len(r))
+			if rec := decode(t, r); len(rec["user_agent"].(string)) > MaxUserAgent+len(TruncatedMarker) {
+				t.Fatalf("user_agent of %d bytes in the ring", len(rec["user_agent"].(string)))
+			}
+		}
+		if total > int64(maxBytes) {
+			t.Fatalf("records sum to %d bytes, bound %d", total, maxBytes)
+		}
+	})
+}
+
+func TestRingBounds(t *testing.T) {
+	t.Run("R-OPS-009 the ring evicts the oldest records when the byte bound is reached", func(t *testing.T) {
+		r := NewRing(100, 100)
+		for i := range 10 {
+			_, _ = fmt.Fprintf(r, "{\"n\":%d,\"pad\":\"%s\"}\n", i, strings.Repeat("x", 10))
+		}
+		if r.Bytes() > 100 || r.Len() != 3 {
+			t.Fatalf("%d bytes in %d records", r.Bytes(), r.Len())
+		}
+		if got := r.Records(); decode(t, got[0])["n"] != float64(7) || decode(t, got[2])["n"] != float64(9) {
+			t.Errorf("kept %v", got)
+		}
+	})
+
+	t.Run("R-OPS-009 an oversized record is kept as a valid JSON stub that names its size", func(t *testing.T) {
+		r := NewRing(10, 1<<20)
+		big := `{"msg":"huge","detail":"` + strings.Repeat("\x01", 100_000) + `"}` + "\n"
+		_, _ = r.Write([]byte(big))
+		recs := r.Records()
+		if len(recs) != 1 || len(recs[0]) > MaxRingRecord {
+			t.Fatalf("%d records, first %d bytes", len(recs), len(recs[0]))
+		}
+		stub := decode(t, recs[0])
+		if stub["ring_truncated"] != true || stub["original_bytes"] != float64(len(big)) || !strings.HasPrefix(stub["head"].(string), `{"msg":"huge"`) {
+			t.Errorf("stub = %v", stub)
+		}
+	})
+
+	t.Run("R-OPS-009 ring_buffer_bytes 0 keeps nothing", func(t *testing.T) {
+		r := NewRing(10, 0)
+		_, _ = r.Write([]byte("{}\n"))
+		if r.Len() != 0 {
+			t.Error("kept a record")
 		}
 	})
 }

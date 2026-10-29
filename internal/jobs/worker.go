@@ -91,7 +91,6 @@ type Worker struct {
 	mu       sync.Mutex
 	running  map[string]*runningJob
 	perQueue map[string]int
-	results  map[string]string
 
 	draining  atomic.Bool
 	wake      chan struct{}
@@ -110,6 +109,8 @@ type runningJob struct {
 	// extension was sent plus the lease duration. Replica clocks are never
 	// compared with the database's, only measured.
 	validUntil time.Time
+	// result is what the handler set with Run.SetResult; guarded by Worker.mu.
+	result string
 }
 
 // NewWorker creates a worker. A role that does not run workers gets
@@ -137,7 +138,7 @@ func NewWorker(o WorkerOptions) (*Worker, error) {
 	w := &Worker{
 		o: o, log: o.Log.With("component", "jobs"), m: m,
 		slots: map[string]int{}, running: map[string]*runningJob{}, perQueue: map[string]int{},
-		results: map[string]string{}, wake: make(chan struct{}, 1),
+		wake: make(chan struct{}, 1),
 	}
 	w.q = NewQueue(QueueOptions{DB: o.Main, Registry: o.Registry, Signals: o.Signals, Log: o.Log})
 	return w, nil
@@ -370,9 +371,9 @@ func (w *Worker) start(j Job, claimSent time.Time) {
 	go w.execute(ctx, rj)
 }
 
-func (w *Worker) setResult(id, result string) {
+func (w *Worker) setResult(rj *runningJob, result string) {
 	w.mu.Lock()
-	w.results[id] = result
+	rj.result = result
 	w.mu.Unlock()
 }
 
@@ -387,7 +388,7 @@ func (w *Worker) execute(ctx context.Context, rj *runningJob) {
 		ctx, stop = context.WithTimeoutCause(ctx, spec.Timeout, ErrTimeout)
 		defer stop()
 	}
-	run := &Run{Job: j, w: w}
+	run := &Run{Job: j, w: w, rj: rj}
 	call := func(ctx context.Context) (err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -403,35 +404,83 @@ func (w *Worker) execute(ctx context.Context, rj *runningJob) {
 		err = call(ctx)
 	}
 	cause := context.Cause(ctx)
-	w.settle(j, err, cause, time.Since(started))
+	w.settle(rj, err, cause, time.Since(started))
 
-	w.mu.Lock()
-	delete(w.running, j.ID)
-	delete(w.results, j.ID)
-	w.perQueue[j.Queue]--
-	w.mu.Unlock()
+	w.forget(rj)
 	w.m.running.WithLabelValues(j.Kind).Dec()
 	w.kick() // a freed slot may take the next queued job at once
 }
 
+// forget removes a finished run from the books. The entry in w.running is
+// deleted only if it is still this run's: a job released and claimed again by
+// this worker while the settle ran has a new entry, which stays.
+func (w *Worker) forget(rj *runningJob) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.running[rj.job.ID] == rj {
+		delete(w.running, rj.job.ID)
+	}
+	w.perQueue[rj.job.Queue]--
+}
+
+// The settle writes retry on a failed statement: a few attempts with a short
+// backoff, inside the settle's own deadline.
+const (
+	settleAttempts = 4
+	settleBackoff  = 250 * time.Millisecond
+)
+
+// writeWithRetry runs one settle write, retrying a failed statement (not a
+// write that matched no row, which is a verdict) up to settleAttempts times. It
+// returns the last error when it gives up; the caller logs what the failure
+// costs.
+func (w *Worker) writeWithRetry(ctx context.Context, log *slog.Logger, what string, write func() error) error {
+	var err error
+	backoff := settleBackoff
+	for attempt := 1; attempt <= settleAttempts; attempt++ {
+		if err = write(); err == nil {
+			return nil
+		}
+		if attempt == settleAttempts {
+			break
+		}
+		log.Warn("job write failed; retrying", "write", what, "attempt", attempt, "of", settleAttempts, "error", err)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w (retries cut short: %w)", err, ctx.Err())
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return err
+}
+
 // settle writes the end of an attempt with a fresh context: the handler's is
-// cancelled on a release. Every write names the worker as the owner, so a worker
-// that lost the job writes nothing.
-func (w *Worker) settle(j Job, err error, cause error, took time.Duration) {
+// cancelled on a release. Every write names the worker and the attempt as the
+// owner, so a worker that lost the job, or ran an older attempt of it, writes
+// nothing. A failed write is retried a few times; when it still fails the lease
+// is left to expire and the reaper returns the job.
+func (w *Worker) settle(rj *runningJob, err error, cause error, took time.Duration) {
+	j := rj.job
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(w.root), 15*time.Second)
 	defer cancel()
 	qs := q.New(w.o.Main)
 	outcome := OutcomeSucceeded
 	log := w.log.With("job", j.ID, "kind", j.Kind, "attempt", j.Attempt)
+	attempt := int32(j.Attempt) //nolint:gosec // attempts are small
 
 	switch {
 	case err == nil:
 		w.mu.Lock()
-		result := w.results[j.ID]
+		result := rj.result
 		w.mu.Unlock()
-		n, e := qs.CompleteJob(ctx, q.CompleteJobParams{Result: result, ID: j.ID, LockedBy: w.o.UID})
+		var n int64
+		e := w.writeWithRetry(ctx, log, "complete", func() (e error) {
+			n, e = qs.CompleteJob(ctx, q.CompleteJobParams{Result: result, ID: j.ID, LockedBy: w.o.UID, Attempt: attempt})
+			return e
+		})
 		if e != nil {
-			log.Error("job completion not written; the lease will expire and the job run again", "error", e)
+			log.Error("job completion not written after retries; giving up, the lease will expire and the job run again", "error", e)
 		} else if n == 0 {
 			outcome = OutcomeLost
 			log.Warn("job finished but this worker no longer owns it")
@@ -441,14 +490,22 @@ func (w *Worker) settle(j Job, err error, cause error, took time.Duration) {
 		log.Warn("job stopped: the lease was lost", "error", err)
 	case errors.Is(cause, ErrCancelRequested):
 		outcome = OutcomeCancelled
-		if _, e := qs.EndJobCancelled(ctx, q.EndJobCancelledParams{Error: `{"code":"cancelled"}`, ID: j.ID, LockedBy: w.o.UID}); e != nil {
-			log.Error("job cancellation not written", "error", e)
+		e := w.writeWithRetry(ctx, log, "cancel", func() error {
+			_, e := qs.EndJobCancelled(ctx, q.EndJobCancelledParams{Error: `{"code":"cancelled"}`, ID: j.ID, LockedBy: w.o.UID, Attempt: attempt})
+			return e
+		})
+		if e != nil {
+			log.Error("job cancellation not written after retries; giving up, the lease will expire", "error", e)
 		}
 	case errors.Is(cause, ErrReleased):
 		outcome = OutcomeReleased
-		states, e := qs.ReleaseJob(ctx, q.ReleaseJobParams{ID: j.ID, LockedBy: w.o.UID})
+		var states []string
+		e := w.writeWithRetry(ctx, log, "release", func() (e error) {
+			states, e = qs.ReleaseJob(ctx, q.ReleaseJobParams{ID: j.ID, LockedBy: w.o.UID, Attempt: attempt})
+			return e
+		})
 		if e != nil {
-			log.Error("job not released; the lease will expire", "error", e)
+			log.Error("job not released after retries; giving up, the lease will expire and the reaper returns it", "error", e)
 		} else if len(states) == 1 && states[0] == StateCancelled {
 			outcome = OutcomeCancelled
 		}
@@ -458,10 +515,14 @@ func (w *Worker) settle(j Job, err error, cause error, took time.Duration) {
 			code = "job_timeout"
 		}
 		body, _ := json.Marshal(map[string]any{"code": code, "detail": truncate(err.Error(), 2000), "attempt": j.Attempt})
-		rows, e := qs.FailOrRetryJob(ctx, q.FailOrRetryJobParams{Error: string(body), Permanent: perm, ID: j.ID, LockedBy: w.o.UID})
+		var rows []q.FailOrRetryJobRow
+		e := w.writeWithRetry(ctx, log, "fail", func() (e error) {
+			rows, e = qs.FailOrRetryJob(ctx, q.FailOrRetryJobParams{Error: string(body), Permanent: perm, ID: j.ID, LockedBy: w.o.UID, Attempt: attempt})
+			return e
+		})
 		switch {
 		case e != nil:
-			log.Error("job failure not written; the lease will expire", "error", e)
+			log.Error("job failure not written after retries; giving up, the lease will expire", "error", e)
 			outcome = OutcomeFailed
 		case len(rows) == 0:
 			outcome = OutcomeLost
@@ -484,10 +545,11 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// heartbeatLoop extends the leases of all running jobs with one statement per
-// jobs.heartbeat_interval, on the control connection (R-ARCH-016). A job the
-// statement no longer returns was lost; one in state cancelling was cancelled. A
-// failing extension cancels a handler only once its lease could have run out.
+// heartbeatLoop extends the leases of the jobs this worker runs with one
+// statement per jobs.heartbeat_interval, on the control connection (R-ARCH-016).
+// A listed job the statement no longer returns was lost; one in state cancelling
+// was cancelled. A failing extension cancels a handler only once its lease could
+// have run out.
 func (w *Worker) heartbeatLoop() {
 	defer w.loops.Done()
 	t := time.NewTicker(w.o.Config.HeartbeatInterval)
@@ -502,28 +564,43 @@ func (w *Worker) heartbeatLoop() {
 	}
 }
 
+// heartbeat extends and judges exactly the runs it snapshots under w.mu: a job
+// claimed while the statement is in flight is not in the snapshot, so it is
+// neither extended nor judged lost by this beat, and a row this worker holds
+// without running it (a claim whose result never arrived) is never extended: it
+// expires and the reaper returns it.
 func (w *Worker) heartbeat() {
 	w.mu.Lock()
-	n := len(w.running)
+	snap := make(map[string]*runningJob, len(w.running))
+	ids := make([]string, 0, len(w.running))
+	attempts := make([]int32, 0, len(w.running))
+	for id, rj := range w.running {
+		snap[id] = rj
+		ids = append(ids, id)
+		attempts = append(attempts, int32(rj.job.Attempt)) //nolint:gosec // attempts are small
+	}
 	w.mu.Unlock()
-	if n == 0 {
+	if len(ids) == 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(w.root, w.callTimeout())
 	defer cancel()
 	sent := time.Now()
 	rows, err := q.New(w.o.Control).HeartbeatJobs(ctx, q.HeartbeatJobsParams{
-		LockedBy: w.o.UID, LeaseSecs: w.o.Config.LeaseDuration.Seconds(),
+		LockedBy: w.o.UID, LeaseSecs: w.o.Config.LeaseDuration.Seconds(), Ids: ids, Attempts: attempts,
 	})
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// A run that settled while the statement ran, or was replaced by a new
+	// claim of the same job, is not judged by this answer.
+	current := func(id string, rj *runningJob) bool { return w.running[id] == rj }
 	if err != nil {
 		if w.root.Err() != nil {
 			return
 		}
 		w.log.Warn("job heartbeat failed", "error", err)
-		for _, rj := range w.running {
-			if time.Until(rj.validUntil) < w.o.Config.HeartbeatInterval {
+		for id, rj := range snap {
+			if current(id, rj) && time.Until(rj.validUntil) < w.o.Config.HeartbeatInterval {
 				rj.cancel(ErrLeaseLost)
 			}
 		}
@@ -533,7 +610,10 @@ func (w *Worker) heartbeat() {
 	for _, r := range rows {
 		owned[r.ID.String()] = r.State
 	}
-	for id, rj := range w.running {
+	for id, rj := range snap {
+		if !current(id, rj) {
+			continue
+		}
 		state, ok := owned[id]
 		switch {
 		case !ok:

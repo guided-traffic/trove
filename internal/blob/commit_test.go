@@ -34,7 +34,7 @@ func newFixture(t *testing.T, mutate func(*config.Storage), opts ...blob.Option)
 	mem := blobtest.New()
 	mem.MinPartSize = 0
 	db := newFakeDB()
-	opts = append([]blob.Option{blob.WithWaitPoll(5 * time.Millisecond)}, opts...)
+	opts = append([]blob.Option{blob.WithWaitPoll(5 * time.Millisecond), blob.WithRows(db)}, opts...)
 	s, err := blob.New(cfg, mem, db, opts...)
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +213,37 @@ func TestCommitProtocol(t *testing.T) {
 		}
 		if f.mem.Count("put") != 2 || !res.Inserted {
 			t.Fatalf("puts=%d res=%+v", f.mem.Count("put"), res)
+		}
+	})
+	t.Run("R-STOR-005 the row of an object is inserted only within half of delete_settle after the write", func(t *testing.T) {
+		// delete_settle is 30 s in the default configuration, so the window is 15 s:
+		// a collector that dropped a row between our write and our insert deleted the
+		// key we wrote at least delete_settle before the drop, which is out of reach
+		// of an insert inside the window.
+		for _, tc := range []struct {
+			name    string
+			elapsed time.Duration
+			puts    int
+		}{
+			{"inside", 10 * time.Second, 1},
+			{"outside", 20 * time.Second, 2},
+		} {
+			var calls atomic.Int32
+			base := time.Now()
+			clock := func() time.Time {
+				if calls.Add(1) <= 1 {
+					return base
+				}
+				return base.Add(tc.elapsed)
+			}
+			f := newFixture(t, nil, blob.WithClock(clock))
+			res, err := f.store.Commit(context.Background(), f.ingest(t, content(10, 40)), noLink)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.mem.Count("put") != tc.puts || !res.Inserted {
+				t.Errorf("%s: puts=%d res=%+v, want %d puts", tc.name, f.mem.Count("put"), res, tc.puts)
+			}
 		}
 	})
 	t.Run("R-STOR-036 an object store outage fails the commit with 503 and leaves no row", func(t *testing.T) {

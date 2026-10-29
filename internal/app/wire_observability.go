@@ -32,7 +32,6 @@ func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, err
 	t.passing = t.metrics.NewGaugeVec("trove_health_check_passing", "1 while the readiness check passes, 0 while it fails.", "name")
 	var err error
 	t.tracer, err = observability.Tracing(cfg.Tracing,
-		observability.WithTrustedProxies(cfg.Server.TrustedProxies),
 		observability.WithTraceResource(id.Instance, id.Role, buildinfo.Get().Version),
 		observability.WithTraceMetrics(t.metrics),
 		observability.WithTraceLogger(t.log),

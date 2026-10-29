@@ -72,6 +72,32 @@ func TestDownloadVerification(t *testing.T) {
 			t.Fatalf("err=%v status=%s", err, f.db.rows[sp.SHA256].status)
 		}
 	})
+	t.Run("R-STOR-013 an unknown object size is not damage: the digest at the end of the body decides", func(t *testing.T) {
+		f, sp, damaged := setup(t, nil)
+		f.mem.UnknownSize = true
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		if got := readAll(t, r); !bytes.Equal(got, data) {
+			t.Fatal("the download differs")
+		}
+		if f.db.rows[sp.SHA256].status != "ok" || damaged.Load() != 0 {
+			t.Fatalf("status %s, damaged hook %d", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+		// A body that is damaged is still caught, by its digest.
+		bad := bytes.Clone(data)
+		bad[10] ^= 0xff
+		f.mem.Set(f.store.Key(sp.SHA256), bad, f.mem.Now())
+		r, err = f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.ReadAll(r); !errors.Is(err, blob.ErrCorrupt) {
+			t.Fatalf("read error: %v", err)
+		}
+		r.Close()
+	})
 	t.Run("R-STOR-013 a transport error aborts the download but leaves the status alone", func(t *testing.T) {
 		f, sp, damaged := setup(t, nil)
 		boom := errors.New("connection reset by peer")

@@ -5,8 +5,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-
-	"github.com/guided-traffic/trove/internal/config"
 )
 
 // RedactedValue replaces every secret in logs, spans and error texts (R-OPS-013).
@@ -67,7 +65,6 @@ type Scrubber struct {
 	bearer   *regexp.Regexp
 	basic    *regexp.Regexp
 	userinfo *regexp.Regexp
-	userOnly *regexp.Regexp
 	cliPoll  *regexp.Regexp
 	query    *regexp.Regexp
 }
@@ -81,11 +78,16 @@ func DefaultQueryParams() []string {
 // parameters in addition to the fixed patterns.
 func NewScrubber(queryParams []string) *Scrubber {
 	s := &Scrubber{
-		token:    regexp.MustCompile(`trv_([a-z]{2,8})_[0-9A-Za-z_\-]+`),
-		bearer:   regexp.MustCompile(`(?i)\bBearer\s+[^\s",;]+`),
-		basic:    regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9+/=_\-]{8,}`),
-		userinfo: regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)([^/\s:@"']+):[^/\s@"']*@`),
-		userOnly: regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)[^/\s:@"']+@`),
+		token:  regexp.MustCompile(`trv_([a-z]{2,8})_[0-9A-Za-z_\-]+`),
+		bearer: regexp.MustCompile(`(?i)\bBearer\s+[^\s",;]+`),
+		basic:  regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9+/=_\-]{8,}`),
+		// The user information of a URL runs from "//" to the last "@" before
+		// the authority ends (the first "/", "?", "#", "<", ">" or whitespace).
+		// The class is greedy, so a password with an unencoded "@", a "'" or
+		// a quote (as in the %q-quoted text of a URL parse error) is redacted
+		// whole. Text that merely continues after a URL without a path, up to
+		// a later "@", is redacted too: the rule errs towards hiding.
+		userinfo: regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)([^/?#\s<>]*)@`),
 		cliPoll:  regexp.MustCompile(`(/auth/cli/)[^/?#\s"']+`),
 	}
 	if len(queryParams) > 0 {
@@ -117,8 +119,7 @@ func (s *Scrubber) String(in string) string {
 		out = s.basic.ReplaceAllString(out, "Basic "+RedactedValue)
 	}
 	if strings.Contains(out, "@") {
-		out = s.userinfo.ReplaceAllString(out, "${1}${2}:"+RedactedValue+"@")
-		out = s.userOnly.ReplaceAllString(out, "${1}"+RedactedValue+"@")
+		out = s.userinfo.ReplaceAllStringFunc(out, s.redactUserinfo)
 	}
 	if strings.Contains(out, "/auth/cli/") {
 		out = s.cliPoll.ReplaceAllString(out, "${1}"+RedactedValue)
@@ -127,6 +128,20 @@ func (s *Scrubber) String(in string) string {
 		out = s.query.ReplaceAllString(out, "${1}="+RedactedValue)
 	}
 	return out
+}
+
+// redactUserinfo rewrites one match of the userinfo pattern: "user:secret@"
+// keeps the user name, a bare "secret@" (a token in the user field) keeps
+// nothing.
+func (s *Scrubber) redactUserinfo(m string) string {
+	sub := s.userinfo.FindStringSubmatch(m)
+	if len(sub) != 3 {
+		return m
+	}
+	if user, _, ok := strings.Cut(sub[2], ":"); ok {
+		return sub[1] + user + ":" + RedactedValue + "@"
+	}
+	return sub[1] + RedactedValue + "@"
 }
 
 // URL renders u without user information and with redacted query parameters,
@@ -150,13 +165,3 @@ func (s *Scrubber) Error(err error) string {
 
 // ScrubError returns the scrubbed text of err with the default parameter list.
 func ScrubError(err error) string { return defaultScrubber.Error(err) }
-
-// isConfigSecret reports whether v is a configuration secret. config.Secret holds its value in an exported field, so a JSON
-// encoder would otherwise print it.
-func isConfigSecret(v any) bool {
-	switch v.(type) {
-	case config.Secret, *config.Secret:
-		return true
-	}
-	return false
-}

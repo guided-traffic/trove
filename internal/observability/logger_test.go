@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +15,17 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 )
 
+type stringerVal string
+
+func (s stringerVal) String() string { return string(s) }
+
+type nilError struct{}
+
+func (*nilError) Error() string { panic("Error called on a nil receiver") }
+
 func testLogCfg() config.Log {
 	return config.Log{
-		Format: "json", Level: "info", RingBufferRecords: 3, OverrideMaxDuration: time.Hour,
+		Format: "json", Level: "info", RingBufferRecords: 3, RingBufferBytes: config.MiB, OverrideMaxDuration: time.Hour,
 		Request: config.LogRequest{RedactQueryParams: DefaultQueryParams()},
 	}
 }
@@ -121,7 +131,7 @@ func TestLogRecord(t *testing.T) {
 
 	t.Run("R-OPS-009 trace_id and span_id come from the context", func(t *testing.T) {
 		var buf bytes.Buffer
-		tr, err := Tracing(config.Tracing{}, WithTrustedProxies(nil))
+		tr, err := Tracing(config.Tracing{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -309,6 +319,69 @@ func TestRedaction(t *testing.T) {
 		NewLogger(cfg, &buf).Info("x", "password", "pw-xyz", "u", "trv_pat_AAAABBBBCCCC")
 		if strings.Contains(buf.String(), "pw-xyz") || strings.Contains(buf.String(), "AAAABBBB") {
 			t.Errorf("leak: %s", buf.String())
+		}
+	})
+
+	t.Run("R-OPS-013 user information is redacted up to the last @, with quotes and unencoded @ in the password", func(t *testing.T) {
+		for in, leak := range map[string]string{
+			"https://svc:pa'ss'word@registry.example/npm/":   "ss'word",
+			"https://svc:p@ss@w0rd@registry.example/npm/":    "w0rd",
+			"https://svc:p@ss@w0rd@registry.example?x=1":     "w0rd",
+			`parse "http://svc:pa\"ssw0rd@registry.example"`: "ssw0rd",
+			"git+ssh://bot@corp:tok3n@git.example:org/repo":  "tok3n",
+		} {
+			out := scrub(t, "detail", in)
+			if strings.Contains(out, leak) || !strings.Contains(out, RedactedValue+"@") {
+				t.Errorf("%s: %s", in, out)
+			}
+		}
+		if out := scrub(t, "detail", "https://svc:p@ss@registry.example/npm/@scope/pkg"); !strings.Contains(out, "svc:[REDACTED]@registry.example/npm/@scope/pkg") {
+			t.Errorf("an @ in the path must not widen the match: %s", out)
+		}
+		if out := scrub(t, "detail", "see https://registry.example/x and mail ops@example.org"); strings.Contains(out, RedactedValue) {
+			t.Errorf("a URL without user information is redacted: %s", out)
+		}
+	})
+
+	t.Run("R-OPS-013 values of kind Any are scrubbed: Stringer, URL, header, map, slice, struct", func(t *testing.T) {
+		u, _ := url.Parse("https://svc:urlpw123@up.example/p?token=qtok123&v=1")
+		h := http.Header{"Authorization": {"Bearer hdrtok123"}, "Cookie": {"sid=cookie123"}, "X-Api-Key": {"key123"}, "Accept": {"application/json"}}
+		type upstream struct {
+			Name     string
+			URL      string
+			Password string
+		}
+		for name, val := range map[string]any{
+			"stringer": stringerVal("fetch https://svc:strpw123@up.example/ failed"),
+			"url":      u,
+			"urlvalue": *u,
+			"header":   h,
+			"map":      map[string]any{"endpoint": "https://svc:mappw123@up.example/", "client_secret": "mapsecret123", "n": 12345678901234567},
+			"slice":    []any{"Bearer slicetok123", map[string]string{"api_key": "slicekey123"}},
+			"strings":  []string{"trv_pat_STRINGSLICE123"},
+			"struct":   upstream{Name: "npm", URL: "https://svc:structpw123@up.example/", Password: "structpw456"},
+			"ptr":      &upstream{Name: "npm", Password: "ptrpw789"},
+		} {
+			out := scrub(t, "value", val)
+			for _, leak := range []string{"urlpw123", "qtok123", "strpw123", "hdrtok123", "cookie123", "key123", "mappw123", "mapsecret123", "slicetok123", "slicekey123", "STRINGSLICE123", "structpw123", "structpw456", "ptrpw789"} {
+				if strings.Contains(out, leak) {
+					t.Errorf("%s: %q leaked: %s", name, leak, out)
+				}
+			}
+			if !strings.Contains(out, RedactedValue) {
+				t.Errorf("%s: no marker: %s", name, out)
+			}
+		}
+		out := scrub(t, "value", map[string]any{"n": int64(12345678901234567), "accept": "application/json"})
+		if !strings.Contains(out, `"n":12345678901234567`) || !strings.Contains(out, `"accept":"application/json"`) {
+			t.Errorf("harmless content changed: %s", out)
+		}
+		if out := scrub(t, "value", h); !strings.Contains(out, "application/json") {
+			t.Errorf("a harmless header lost its value: %s", out)
+		}
+		var nilErr *nilError
+		if out := scrub(t, "err", nilErr); !strings.Contains(out, `"err":null`) {
+			t.Errorf("typed nil error: %s", out)
 		}
 	})
 

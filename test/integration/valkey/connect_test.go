@@ -14,7 +14,7 @@ import (
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
-var connFamily = cluster.RegisterKeyFamily("itest:conn", 1, 60*time.Second)
+var connFamily = cluster.RegisterTestKeyFamily("itest:conn", 1, 60*time.Second)
 
 func TestConnect(t *testing.T) {
 	v := testenv.ValkeyConfig(t)

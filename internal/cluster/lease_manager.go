@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -177,7 +176,6 @@ func (l *Leases) Stop(ctx context.Context) error {
 type HeldInfo struct {
 	Name  string    `json:"name"`
 	Since time.Time `json:"since"`
-	Token int64     `json:"-"`
 }
 
 // Held lists the leases this replica holds now.
@@ -187,7 +185,7 @@ func (l *Leases) Held() []HeldInfo {
 	out := make([]HeldInfo, 0, len(l.held))
 	for id, h := range l.held {
 		if h.Valid() {
-			out = append(out, HeldInfo{Name: id.name, Since: h.since, Token: h.token})
+			out = append(out, HeldInfo{Name: id.name, Since: h.since})
 		}
 	}
 	return out
@@ -209,7 +207,7 @@ func (l *Leases) run(h *holder) {
 				l.log.Warn("lease not acquired", "lease", h.id.name, "error", err)
 			}
 		case held != nil:
-			l.log.Info("lease acquired", "lease", h.id.name, "token", held.token)
+			l.log.Info("lease acquired", "lease", h.id.name)
 			l.runWork(h, held)
 		}
 		l.mu.Lock()
@@ -232,9 +230,8 @@ func (l *Leases) runWork(h *holder, held *Held) {
 }
 
 // acquire tries the lease once. It returns nil, nil when another replica holds
-// it. The token is the xid8 of the statement that followed the lock: xid8 grows
-// with every transaction of the cluster, so a later holder always has a higher
-// token than an earlier one.
+// it. There is no fencing token: writes of the holder run on the lease's own
+// session (R-HA-006), so a holder that lost the lock cannot write.
 func (l *Leases) acquire(ctx context.Context, id LeaseID) (*Held, error) {
 	actx, cancel := context.WithTimeout(ctx, callTimeout(l.o.WatchdogTimeout))
 	defer cancel()
@@ -252,18 +249,8 @@ func (l *Leases) acquire(ctx context.Context, id LeaseID) (*Held, error) {
 		conn.Release()
 		return nil, nil
 	}
-	var tok string
-	if err := conn.QueryRow(actx, "SELECT pg_current_xact_id()::text").Scan(&tok); err != nil {
-		destroy()
-		return nil, err
-	}
-	token, err := strconv.ParseInt(tok, 10, 64)
-	if err != nil {
-		destroy()
-		return nil, fmt.Errorf("fencing token %q: %w", tok, err)
-	}
 	hctx, hcancel := context.WithCancelCause(ctx)
-	h := &Held{ID: id, l: l, conn: conn, ctx: hctx, cancel: hcancel, token: token, since: time.Now().UTC(), done: make(chan struct{})}
+	h := &Held{ID: id, l: l, conn: conn, ctx: hctx, cancel: hcancel, since: time.Now().UTC(), done: make(chan struct{})}
 	h.valid.Store(true)
 	l.mu.Lock()
 	l.held[id] = h
@@ -286,7 +273,7 @@ func (l *Leases) finish(h *Held) {
 	l.mu.Unlock()
 	l.m.held.WithLabelValues(h.ID.name).Set(0)
 	close(h.done)
-	l.log.Info("lease released", "lease", h.ID.name, "token", h.token)
+	l.log.Info("lease released", "lease", h.ID.name)
 }
 
 // lose marks a lease lost: the holder's context ends, the loss is counted and
@@ -297,7 +284,7 @@ func (l *Leases) lose(h *Held, cause error) {
 	}
 	h.cancel(fmt.Errorf("%w: %w", ErrLeaseLost, cause))
 	l.m.lost.WithLabelValues(h.ID.name).Inc()
-	l.log.Warn("lease lost", "lease", h.ID.name, "token", h.token, "error", cause)
+	l.log.Warn("lease lost", "lease", h.ID.name, "error", cause)
 	go h.destroy()
 }
 

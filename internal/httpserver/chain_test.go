@@ -440,3 +440,17 @@ func TestOps(t *testing.T) {
 		}
 	})
 }
+
+func TestNoSniff(t *testing.T) {
+	t.Run("R-ARCH-005 every response carries X-Content-Type-Options: nosniff, handler, problem, 404 and panic alike", func(t *testing.T) {
+		router := newTestRouter("GET /ok", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{}")) })
+		router.Handle("GET /boom", http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("x") }))
+		for _, p := range []string{"/ok", "/boom", "/missing"} {
+			w := httptest.NewRecorder()
+			Chain{Router: router}.Handler().ServeHTTP(w, httptest.NewRequest("GET", p, nil))
+			if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("%s: X-Content-Type-Options = %q", p, got)
+			}
+		}
+	})
+}

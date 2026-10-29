@@ -90,6 +90,9 @@ func newPG(tb testing.TB) *pgEnv {
 	}); err != nil {
 		tb.Fatalf("migrate: %v", err)
 	}
+	if testenv.PgPooled(tb) {
+		cfg = testenv.ThroughPgBouncer(tb, cfg, user, maint)
+	}
 	db, err := postgres.Open(ctx, cfg, "it-blob", "web", quiet)
 	if err != nil {
 		tb.Fatalf("open: %v", err)
@@ -140,7 +143,11 @@ func (p *pgEnv) state(tb testing.TB, d blob.Digest) (state, status string, ok bo
 // link returns the LinkFunc that adds a file item at path referencing the blob.
 func (p *pgEnv) link(path string, sp *blob.Spooled) blob.LinkFunc {
 	return func(ctx context.Context, tx meta.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size)
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			return errors.New("not a transaction of internal/meta/postgres")
+		}
+		_, err := ptx.Exec(ctx, `INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size)
 			VALUES ($1, $2, '', 'file', $3, $4)`, p.repo, path, sp.SHA256.Bytes(), sp.Size)
 		return err
 	}

@@ -15,14 +15,54 @@ type Resolver struct {
 	trusted    []netip.Prefix
 	baseURL    string
 	additional map[string]string // normalised origin -> origin
+	header     ForwardedHeader
+}
+
+// ForwardedHeader names the one header family the edge rewrites
+// (server.forwarded_header). The resolver reads that family and never the other:
+// a client can write both, and only one of them is the edge's own.
+type ForwardedHeader string
+
+// The values of server.forwarded_header.
+const (
+	// HeaderXForwardedFor reads X-Forwarded-For, X-Forwarded-Proto, -Host and -Port.
+	HeaderXForwardedFor ForwardedHeader = "x-forwarded-for"
+	// HeaderForwarded reads the Forwarded header of RFC 7239.
+	HeaderForwarded ForwardedHeader = "forwarded"
+)
+
+// ResolverOption configures NewResolver.
+type ResolverOption func(*Resolver) error
+
+// WithForwardedHeader selects the header family; the default is X-Forwarded-For.
+func WithForwardedHeader(h ForwardedHeader) ResolverOption {
+	return func(r *Resolver) error {
+		switch h {
+		case HeaderXForwardedFor, HeaderForwarded:
+			r.header = h
+			return nil
+		case "":
+			return nil
+		}
+		return fmt.Errorf("forwarded header %q is neither %q nor %q", h, HeaderXForwardedFor, HeaderForwarded)
+	}
 }
 
 // NewResolver parses server.trusted_proxies (addresses or CIDRs), server.base_url
 // and server.additional_base_urls. baseURL may be empty (development only).
-func NewResolver(trustedProxies []string, baseURL string, additionalBaseURLs []string) (*Resolver, error) {
-	r := &Resolver{additional: map[string]string{}}
+func NewResolver(trustedProxies []string, baseURL string, additionalBaseURLs []string, opts ...ResolverOption) (*Resolver, error) {
+	r := &Resolver{additional: map[string]string{}, header: HeaderXForwardedFor}
+	for _, o := range opts {
+		if err := o(r); err != nil {
+			return nil, err
+		}
+	}
 	for _, s := range trustedProxies {
 		if p, err := netip.ParsePrefix(s); err == nil {
+			// A prefix that covers every address would trust every peer.
+			if p.Bits() == 0 {
+				return nil, fmt.Errorf("trusted proxy %q covers every address; list the edge's own addresses", s)
+			}
 			r.trusted = append(r.trusted, p.Masked())
 			continue
 		}
@@ -99,8 +139,10 @@ func Peer(req *http.Request) netip.Addr {
 // Resolve computes the RequestInfo of a request.
 //
 // The client address is the peer, unless the peer is a trusted proxy. Then it is
-// the right-most address of Forwarded: for=… (RFC 7239), or of X-Forwarded-For
-// when Forwarded has none, that is not itself a trusted proxy. Entries that are
+// the right-most address of the one header family server.forwarded_header names
+// (X-Forwarded-For, or Forwarded: for=… of RFC 7239) that is not itself a
+// trusted proxy. The other family is never read, not even as a fallback: the
+// edge rewrites one of them, and a client can send both. Entries that are
 // not addresses ("unknown", obfuscated identifiers) cannot be attributed: the
 // walk stops there and the peer stays the client, so a trusted proxy's address
 // is never replaced by something a client wrote. A chain made only of trusted
@@ -116,7 +158,7 @@ func (r *Resolver) Resolve(req *http.Request) RequestInfo {
 	trusted := peer.IsValid() && r.isTrusted(peer)
 
 	if trusted {
-		if chain := forwardedFor(req.Header); len(chain) > 0 {
+		if chain := r.forwardedFor(req.Header); len(chain) > 0 {
 			info.Client = r.walk(chain, peer)
 		}
 	}
@@ -125,7 +167,7 @@ func (r *Resolver) Resolve(req *http.Request) RequestInfo {
 	case r.baseURL != "":
 		info.BaseURL, info.BaseURLSource = r.baseURL, "config"
 		if trusted {
-			if o, ok := forwardedOrigin(req.Header); ok {
+			if o, ok := r.forwardedOrigin(req.Header); ok {
 				if n, ok := r.additional[o]; ok {
 					info.BaseURL = n
 				} else if o == r.baseURL {
@@ -141,7 +183,7 @@ func (r *Resolver) Resolve(req *http.Request) RequestInfo {
 		host := req.Host
 		info.BaseURL, info.BaseURLSource = originOf(scheme, host), "request"
 		if trusted {
-			if o, ok := forwardedOrigin(req.Header); ok {
+			if o, ok := r.forwardedOrigin(req.Header); ok {
 				if n, ok := r.additional[o]; ok {
 					info.BaseURL, info.BaseURLSource = n, "config"
 				}
@@ -188,16 +230,15 @@ func parseNode(s string) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
-// forwardedFor returns the for= nodes of Forwarded, or, when that header has
-// none, the entries of X-Forwarded-For, left to right.
-func forwardedFor(h http.Header) []string {
+// forwardedFor returns the entries of the selected header, left to right.
+func (r *Resolver) forwardedFor(h http.Header) []string {
 	var out []string
-	for _, el := range forwardedElements(h) {
-		if v, ok := el["for"]; ok {
-			out = append(out, v)
+	if r.header == HeaderForwarded {
+		for _, el := range forwardedElements(h) {
+			if v, ok := el["for"]; ok {
+				out = append(out, v)
+			}
 		}
-	}
-	if len(out) > 0 {
 		return out
 	}
 	for _, line := range h.Values("X-Forwarded-For") {
@@ -258,17 +299,17 @@ func unquote(s string) string {
 }
 
 // forwardedOrigin returns the origin the right-most trusted hop reports, from
-// Forwarded proto/host or from X-Forwarded-Proto, -Host and -Port.
-func forwardedOrigin(h http.Header) (string, bool) {
+// Forwarded proto/host or from X-Forwarded-Proto, -Host and -Port, whichever
+// family is selected; the other family is ignored.
+func (r *Resolver) forwardedOrigin(h http.Header) (string, bool) {
 	var proto, host string
-	if els := forwardedElements(h); len(els) > 0 {
-		last := els[len(els)-1]
-		proto, host = last["proto"], last["host"]
-	}
-	if proto == "" {
+	if r.header == HeaderForwarded {
+		if els := forwardedElements(h); len(els) > 0 {
+			last := els[len(els)-1]
+			proto, host = last["proto"], last["host"]
+		}
+	} else {
 		proto = lastValue(h, "X-Forwarded-Proto")
-	}
-	if host == "" {
 		host = lastValue(h, "X-Forwarded-Host")
 		if port := lastValue(h, "X-Forwarded-Port"); host != "" && port != "" {
 			if _, _, err := net.SplitHostPort(host); err != nil {

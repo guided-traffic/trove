@@ -143,3 +143,38 @@ func TestReplicaLostWithDefaults(t *testing.T) {
 		}
 	})
 }
+
+// TestReplicaListLostLeases: the registry lists a lease for the live holder
+// only; the stale row of a lost replica names none.
+func TestReplicaListLostLeases(t *testing.T) {
+	e := newEnv(t)
+	sys := defaultSystem()
+	holder := e.newReplica("ll-holder", replicaOpts{role: "worker", sys: sys, noWorker: true})
+	stale := e.newReplica("ll-stale", replicaOpts{role: "worker", sys: sys, noWorker: true})
+	holder.leases.Hold(itLease, func(ctx context.Context, h *cluster.Held) { <-ctx.Done() })
+
+	t.Run("R-OPS-003 the leases of a lost replica are not listed", func(t *testing.T) {
+		stale.registry.StopHeartbeat() // a killed process: the row stays, with the leases it last wrote
+		e.exec(`UPDATE replica SET leases = '[{"name":"it_singleton","since":"2026-01-01T00:00:00Z"}]' WHERE name = 'll-stale'`)
+		waitFor(t, "ll-stale turning lost", 8*time.Second, func() bool { return e.list(holder, sys)["ll-stale"].Lost })
+		waitFor(t, "the live holder listing the lease", 5*time.Second, func() bool {
+			r := e.list(holder, sys)["ll-holder"]
+			return len(r.Leases) == 1 && r.Leases[0].Name == "it_singleton"
+		})
+		got := e.list(holder, sys)
+		if n := len(got["ll-stale"].Leases); n != 0 {
+			t.Fatalf("the lost replica lists %d lease(s): %+v", n, got["ll-stale"].Leases)
+		}
+		holders := 0
+		for _, r := range got {
+			for _, l := range r.Leases {
+				if l.Name == "it_singleton" {
+					holders++
+				}
+			}
+		}
+		if holders != 1 {
+			t.Fatalf("%d rows list the lease, want 1", holders)
+		}
+	})
+}

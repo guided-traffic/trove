@@ -63,9 +63,13 @@ func WithFreeBytes(f func(dir string) (uint64, error)) SpoolOption {
 	return func(s *Spool) { s.free = f }
 }
 
-// NewSpool prepares the spool directory and deletes every file in it: no spool
-// file survives its request, so whatever a crashed process left is garbage
-// (R-STOR-004 step 6).
+// NewSpool prepares the spool directory and deletes the spool files a crashed
+// process left in it: no spool file survives its request (R-STOR-004 step 6).
+// It deletes only what the spool itself creates, regular files named by a UUID.
+// A directory that holds anything else (a misconfigured storage.spool.dir such
+// as a data directory or a home directory) is refused with an error naming the
+// entry, before anything is deleted. The one tolerated entry is lost+found, the
+// directory a freshly formatted volume carries.
 func NewSpool(cfg config.StorageSpool, opts ...SpoolOption) (*Spool, error) {
 	s := &Spool{
 		dir: cfg.Dir, max: int64(cfg.MaxBytes), minFree: int64(cfg.MinFreeBytes),
@@ -85,12 +89,50 @@ func NewSpool(cfg config.StorageSpool, opts ...SpoolOption) (*Spool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("spool directory: %w", err)
 	}
+	var stale []string
 	for _, e := range entries {
-		if err := os.RemoveAll(filepath.Join(s.dir, e.Name())); err != nil {
+		path := filepath.Join(s.dir, e.Name())
+		switch {
+		case e.Name() == "lost+found" && e.IsDir():
+		case e.Type().IsRegular() && isSpoolName(e.Name()):
+			stale = append(stale, path)
+		default:
+			return nil, fmt.Errorf("spool directory %s holds %s, which is not a spool file; "+
+				"storage.spool.dir must be a directory of its own and is emptied at start", s.dir, path)
+		}
+	}
+	for _, path := range stale {
+		if err := os.Remove(path); err != nil {
 			return nil, fmt.Errorf("clean spool directory: %w", err)
 		}
 	}
 	return s, nil
+}
+
+// isSpoolName reports a name create generates: a lower-case version 4 UUID.
+func isSpoolName(name string) bool {
+	if len(name) != 36 {
+		return false
+	}
+	for i, c := range []byte(name) {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if c != '-' {
+				return false
+			}
+		case i == 14:
+			if c != '4' {
+				return false
+			}
+		case i == 19:
+			if c != '8' && c != '9' && c != 'a' && c != 'b' {
+				return false
+			}
+		case (c < '0' || c > '9') && (c < 'a' || c > 'f'):
+			return false
+		}
+	}
+	return true
 }
 
 // Dir is the spool directory.

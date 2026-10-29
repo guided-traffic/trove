@@ -214,6 +214,28 @@ func TestErrorMapping(t *testing.T) {
 			t.Fatalf("delete: %v", err)
 		}
 	})
+	t.Run("R-STOR-013 a response without Content-Length has an unknown size, not size 0", func(t *testing.T) {
+		e := newEnv(t, nil)
+		e.fake.fail = func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method != http.MethodGet {
+				return false
+			}
+			_, _ = w.Write([]byte("hello"))
+			w.(http.Flusher).Flush() // chunked: the response carries no Content-Length
+			return true
+		}
+		body, info, err := e.client.Get(context.Background(), "k", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer body.Close()
+		if info.Size != -1 {
+			t.Fatalf("Size = %d, want -1 (unknown)", info.Size)
+		}
+		if got, _ := io.ReadAll(body); string(got) != "hello" {
+			t.Fatalf("body %q", got)
+		}
+	})
 	t.Run("R-STOR-035 AccessDenied and NoSuchBucket are configuration errors, not transient", func(t *testing.T) {
 		for _, c := range []struct {
 			status int
@@ -413,6 +435,13 @@ func TestConfiguration(t *testing.T) {
 		cfg := base(t)
 		cfg.CAFile = "/etc/ssl/private-ca.pem"
 		if _, err := s3.NewFromFactory(context.Background(), cfg, hc()); err == nil || !strings.Contains(err.Error(), "proxy.outbound.tls.ca_files") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("R-STOR-033 a proxy credentials file is refused until the outbound layer can send it, not ignored", func(t *testing.T) {
+		cfg := base(t)
+		cfg.HTTP.ProxyCredentialsFile = "/etc/trove/proxy-credentials"
+		if _, err := s3.NewFromFactory(context.Background(), cfg, hc()); err == nil || !strings.Contains(err.Error(), "proxy_credentials_file") {
 			t.Fatalf("got %v", err)
 		}
 	})

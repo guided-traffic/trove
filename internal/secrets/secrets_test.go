@@ -60,7 +60,7 @@ func TestSealOpen(t *testing.T) {
 
 	t.Run("R-ARCH-021 seal and open round trip with the v1 envelope", func(t *testing.T) {
 		r := ring(t, "2026-10", "2026-10")
-		sealed, err := r.Seal(col, "row-1", []byte("hunter2"))
+		sealed, err := r.Seal(col, Row("row-1"), []byte("hunter2"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,11 +70,11 @@ func TestSealOpen(t *testing.T) {
 		if strings.Contains(sealed, "hunter2") || strings.Contains(sealed, base64.StdEncoding.EncodeToString([]byte("hunter2"))) {
 			t.Error("plaintext in envelope")
 		}
-		pt, err := r.Open(col, "row-1", sealed)
+		pt, err := r.Open(col, Row("row-1"), sealed)
 		if err != nil || string(pt) != "hunter2" {
 			t.Errorf("open = %q, %v", pt, err)
 		}
-		again, _ := r.Seal(col, "row-1", []byte("hunter2"))
+		again, _ := r.Seal(col, Row("row-1"), []byte("hunter2"))
 		if again == sealed {
 			t.Error("nonce reused: two seals of the same value are identical")
 		}
@@ -82,11 +82,11 @@ func TestSealOpen(t *testing.T) {
 
 	t.Run("R-ARCH-021 empty plaintext round trips", func(t *testing.T) {
 		r := ring(t, "k1", "k1")
-		s, err := r.Seal(col, "r", nil)
+		s, err := r.Seal(col, Row("r"), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pt, err := r.Open(col, "r", s)
+		pt, err := r.Open(col, Row("r"), s)
 		if err != nil || len(pt) != 0 {
 			t.Errorf("%q %v", pt, err)
 		}
@@ -94,36 +94,36 @@ func TestSealOpen(t *testing.T) {
 
 	t.Run("R-ARCH-021 a value sealed for one row does not open for another row or column", func(t *testing.T) {
 		r := ring(t, "k1", "k1")
-		sealed, _ := r.Seal(col, "row-1", []byte("pw"))
-		if _, err := r.Open(col, "row-2", sealed); !errors.Is(err, ErrAuthentication) {
+		sealed, _ := r.Seal(col, Row("row-1"), []byte("pw"))
+		if _, err := r.Open(col, Row("row-2"), sealed); !errors.Is(err, ErrAuthentication) {
 			t.Errorf("other row: %v", err)
 		}
-		if _, err := r.Open(other, "row-1", sealed); !errors.Is(err, ErrAuthentication) {
+		if _, err := r.Open(other, Row("row-1"), sealed); !errors.Is(err, ErrAuthentication) {
 			t.Errorf("other column: %v", err)
 		}
 	})
 
 	t.Run("R-ARCH-021 tampered ciphertext fails authentication", func(t *testing.T) {
 		r := ring(t, "k1", "k1")
-		sealed, _ := r.Seal(col, "row-1", []byte("pw"))
+		sealed, _ := r.Seal(col, Row("row-1"), []byte("pw"))
 		i := strings.LastIndex(sealed, ":") + 1
 		raw, _ := base64.StdEncoding.DecodeString(sealed[i:])
 		raw[len(raw)-1] ^= 0x01
 		bad := sealed[:i] + base64.StdEncoding.EncodeToString(raw)
-		if _, err := r.Open(col, "row-1", bad); !errors.Is(err, ErrAuthentication) {
+		if _, err := r.Open(col, Row("row-1"), bad); !errors.Is(err, ErrAuthentication) {
 			t.Errorf("tampered: %v", err)
 		}
 	})
 
 	t.Run("R-ARCH-021 an envelope that names another key ID fails", func(t *testing.T) {
 		r := ring(t, "k1", "k1", "k2")
-		sealed, _ := r.Seal(col, "row-1", []byte("pw"))
+		sealed, _ := r.Seal(col, Row("row-1"), []byte("pw"))
 		swapped := strings.Replace(sealed, "v1:k1:", "v1:k2:", 1)
-		if _, err := r.Open(col, "row-1", swapped); !errors.Is(err, ErrAuthentication) {
+		if _, err := r.Open(col, Row("row-1"), swapped); !errors.Is(err, ErrAuthentication) {
 			t.Errorf("wrong key: %v", err)
 		}
 		unknown := strings.Replace(sealed, "v1:k1:", "v1:zz:", 1)
-		err := func() error { _, err := r.Open(col, "row-1", unknown); return err }()
+		err := func() error { _, err := r.Open(col, Row("row-1"), unknown); return err }()
 		if !errors.Is(err, ErrUnknownKey) || !strings.Contains(err.Error(), `"zz"`) {
 			t.Errorf("unknown key: %v", err)
 		}
@@ -132,7 +132,7 @@ func TestSealOpen(t *testing.T) {
 	t.Run("R-ARCH-021 malformed envelopes are rejected without panics", func(t *testing.T) {
 		r := ring(t, "k1", "k1")
 		for _, bad := range []string{"", "plain", "v2:k1:AAAA", "v1::AAAA", "v1:k1:!!!", "v1:k1:", "v1:k1:AAAA"} {
-			if _, err := r.Open(col, "r", bad); err == nil {
+			if _, err := r.Open(col, Row("r"), bad); err == nil {
 				t.Errorf("%q accepted", bad)
 			}
 		}
@@ -140,10 +140,10 @@ func TestSealOpen(t *testing.T) {
 
 	t.Run("R-ARCH-021 an unregistered column cannot be sealed or opened", func(t *testing.T) {
 		r := ring(t, "k1", "k1")
-		if _, err := r.Seal(Column{}, "r", []byte("x")); !errors.Is(err, ErrUnregistered) {
+		if _, err := r.Seal(Column{}, Row("r"), []byte("x")); !errors.Is(err, ErrUnregistered) {
 			t.Errorf("zero column: %v", err)
 		}
-		if _, err := r.Seal(Column{table: "t", pk: "id", column: "c"}, "r", []byte("x")); !errors.Is(err, ErrUnregistered) {
+		if _, err := r.Seal(Column{table: "t", pk: "id", column: "c"}, Row("r"), []byte("x")); !errors.Is(err, ErrUnregistered) {
 			t.Errorf("forged column: %v", err)
 		}
 	})
@@ -162,14 +162,14 @@ func TestRotation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sealedOld, _ := oldRing.Seal(col, "r1", []byte("pw"))
+		sealedOld, _ := oldRing.Seal(col, Row("r1"), []byte("pw"))
 
 		// step 1: new key appended, active unchanged
 		step1, err := Load(config.Secrets{EncryptionKeyFiles: []string{oldF, newF}, ActiveKeyID: "2026-10"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s, _ := step1.Seal(col, "r1", []byte("pw")); !strings.HasPrefix(s, "v1:2026-10:") {
+		if s, _ := step1.Seal(col, Row("r1"), []byte("pw")); !strings.HasPrefix(s, "v1:2026-10:") {
 			t.Errorf("step 1 sealed with %q", s[:12])
 		}
 		// step 2: new key active
@@ -177,31 +177,31 @@ func TestRotation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sealedNew, _ := step2.Seal(col, "r1", []byte("pw"))
+		sealedNew, _ := step2.Seal(col, Row("r1"), []byte("pw"))
 		if !strings.HasPrefix(sealedNew, "v1:2027-04:") {
 			t.Errorf("step 2 sealed with %q", sealedNew[:12])
 		}
 		// old and new replicas side by side: both open both values
 		for name, rg := range map[string]*KeyRing{"step1 replica": step1, "step2 replica": step2} {
 			for _, v := range []string{sealedOld, sealedNew} {
-				if pt, err := rg.Open(col, "r1", v); err != nil || string(pt) != "pw" {
+				if pt, err := rg.Open(col, Row("r1"), v); err != nil || string(pt) != "pw" {
 					t.Errorf("%s: %v", name, err)
 				}
 			}
 		}
 		// an old-ring replica (without the new key) cannot open the new value
-		if _, err := oldRing.Open(col, "r1", sealedNew); !errors.Is(err, ErrUnknownKey) {
+		if _, err := oldRing.Open(col, Row("r1"), sealedNew); !errors.Is(err, ErrUnknownKey) {
 			t.Errorf("old ring: %v", err)
 		}
 		// step 3: reseal moves values to the active key, idempotently
-		moved, changed, err := step2.Reseal(col, "r1", sealedOld)
+		moved, changed, err := step2.Reseal(col, Row("r1"), sealedOld)
 		if err != nil || !changed || !strings.HasPrefix(moved, "v1:2027-04:") {
 			t.Fatalf("reseal: %q %v %v", moved, changed, err)
 		}
-		if pt, _ := step2.Open(col, "r1", moved); string(pt) != "pw" {
+		if pt, _ := step2.Open(col, Row("r1"), moved); string(pt) != "pw" {
 			t.Error("resealed value does not open")
 		}
-		same, changed, _ := step2.Reseal(col, "r1", moved)
+		same, changed, _ := step2.Reseal(col, Row("r1"), moved)
 		if changed || same != moved {
 			t.Error("reseal is not idempotent")
 		}
@@ -210,10 +210,10 @@ func TestRotation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := step4.Open(col, "r1", moved); err != nil {
+		if _, err := step4.Open(col, Row("r1"), moved); err != nil {
 			t.Error(err)
 		}
-		if _, err := step4.Open(col, "r1", sealedOld); !errors.Is(err, ErrUnknownKey) {
+		if _, err := step4.Open(col, Row("r1"), sealedOld); !errors.Is(err, ErrUnknownKey) {
 			t.Errorf("retired key: %v", err)
 		}
 	})
@@ -241,12 +241,12 @@ func TestRotation(t *testing.T) {
 		files := []string{writeKey(t, dir, "k1", 1), writeKey(t, dir, "k2", 90)}
 		a, _ := Load(config.Secrets{EncryptionKeyFiles: files, ActiveKeyID: "k2"})
 		b, _ := Load(config.Secrets{EncryptionKeyFiles: files, ActiveKeyID: "k1"})
-		sa, _ := a.Seal(col, "r", []byte("from-a"))
-		sb, _ := b.Seal(col, "r", []byte("from-b"))
-		if pt, err := b.Open(col, "r", sa); err != nil || string(pt) != "from-a" {
+		sa, _ := a.Seal(col, Row("r"), []byte("from-a"))
+		sb, _ := b.Seal(col, Row("r"), []byte("from-b"))
+		if pt, err := b.Open(col, Row("r"), sa); err != nil || string(pt) != "from-a" {
 			t.Errorf("b opens a: %v", err)
 		}
-		if pt, err := a.Open(col, "r", sb); err != nil || string(pt) != "from-b" {
+		if pt, err := a.Open(col, Row("r"), sb); err != nil || string(pt) != "from-b" {
 			t.Errorf("a opens b: %v", err)
 		}
 	})
@@ -426,4 +426,63 @@ func mustPanic(t *testing.T, name string, f func()) {
 		}
 	}()
 	f()
+}
+
+func TestCompositeRowKeys(t *testing.T) {
+	resetRegistry(t)
+	col := Register("repository_credentials", "repository_id,name", "password")
+	single := Register("webhooks", "id", "secret")
+	r := ring(t, "k1", "k1")
+
+	t.Run("R-ARCH-021 a composite row key round trips with one part per primary key column", func(t *testing.T) {
+		sealed, err := r.Seal(col, Row("0190-repo", "upstream"), []byte("pw"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pt, err := r.Open(col, Row("0190-repo", "upstream"), sealed); err != nil || string(pt) != "pw" {
+			t.Fatalf("open = %q, %v", pt, err)
+		}
+		if got := col.PrimaryKeyColumns(); len(got) != 2 || got[0] != "repository_id" || got[1] != "name" {
+			t.Errorf("PrimaryKeyColumns = %v", got)
+		}
+	})
+
+	t.Run("R-ARCH-021 parts that join to the same text are different rows", func(t *testing.T) {
+		for _, pair := range [][2]RowKey{
+			{Row("a:b", "c"), Row("a", "b:c")},
+			{Row("ab", "c"), Row("a", "bc")},
+			{Row("a", ""), Row("", "a")},
+			{Row("a\x00b", "c"), Row("a", "b\x00c")},
+		} {
+			sealed, err := r.Seal(col, pair[0], []byte("pw"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.Open(col, pair[1], sealed); !errors.Is(err, ErrAuthentication) {
+				t.Errorf("sealed for %s, opened for %s: %v", pair[0], pair[1], err)
+			}
+		}
+		if string(aad(col, Row("a:b", "c"))) == string(aad(col, Row("a", "b:c"))) {
+			t.Error("two row keys share one AAD")
+		}
+	})
+
+	t.Run("R-ARCH-021 a row key with the wrong number of parts is refused before any crypto", func(t *testing.T) {
+		if _, err := r.Seal(col, Row("only-one"), []byte("pw")); !errors.Is(err, ErrRowKey) {
+			t.Errorf("seal with 1 of 2 parts: %v", err)
+		}
+		sealed, _ := r.Seal(single, Row("w1"), []byte("pw"))
+		if _, err := r.Open(single, Row("w1", "extra"), sealed); !errors.Is(err, ErrRowKey) {
+			t.Errorf("open with 2 of 1 parts: %v", err)
+		}
+		if _, err := r.Seal(single, Row(), []byte("pw")); !errors.Is(err, ErrRowKey) {
+			t.Errorf("seal without parts: %v", err)
+		}
+	})
+
+	t.Run("R-ARCH-021 Register refuses names that are not lower-case identifiers", func(t *testing.T) {
+		mustPanic(t, "comma at the end", func() { Register("t1", "id,", "c") })
+		mustPanic(t, "quoted", func() { Register(`t"1`, "id", "c") })
+		mustPanic(t, "upper case", func() { Register("T1", "id", "c") })
+	})
 }

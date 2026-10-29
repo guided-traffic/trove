@@ -123,6 +123,10 @@ func (c Chain) recoverStage(next http.Handler) http.Handler {
 		r.Pattern = c.Router.Pattern(r)
 
 		ww := &writer{ResponseWriter: w}
+		// Set once for every response of the listener, before any stage can write:
+		// an API body, a problem or a package file must never be sniffed into
+		// another content type.
+		ww.Header().Set("X-Content-Type-Options", "nosniff")
 		if c.Draining != nil && c.Draining() && r.ProtoMajor == 1 {
 			ww.Header().Set("Connection", "close")
 		}

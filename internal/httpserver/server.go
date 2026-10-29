@@ -62,12 +62,54 @@ type Server struct {
 
 	mu     sync.Mutex
 	active map[*activeRequest]struct{}
+	// flushing holds the connections whose committing request has returned from
+	// its handler but whose response net/http has not yet written: the connection
+	// turns idle or closes once it has. Cutting before that would lose the answer
+	// of a commit that went through.
+	flushing map[net.Conn]struct{}
 }
 
 // activeRequest is one request between its first and its last byte.
 type activeRequest struct {
 	hasBody  bool
 	bodyDone atomic.Bool
+	// committing is set by BeginCommit: the handler announced that it stores or
+	// commits now.
+	committing atomic.Bool
+}
+
+// inCommit reports whether the request is past the point where cutting it
+// would leave the client unsure of the outcome: the handler said so through
+// BeginCommit, or, as the fallback, the whole body has arrived.
+func (a *activeRequest) inCommit() bool {
+	return a.committing.Load() || (a.hasBody && a.bodyDone.Load())
+}
+
+type (
+	ctxKeyActive struct{}
+	ctxKeyConn   struct{}
+)
+
+// connState drops a connection from the flushing set once its response is out.
+func (s *Server) connState(c net.Conn, st http.ConnState) {
+	switch st {
+	case http.StateIdle, http.StateClosed, http.StateHijacked:
+		s.mu.Lock()
+		delete(s.flushing, c)
+		s.mu.Unlock()
+	}
+}
+
+// BeginCommit marks the request of ctx as committing: from now on the shutdown
+// lets it run past the deadline for the commit grace instead of cutting it
+// (R-ARCH-024 step 5). A handler calls it right before the step that must not be
+// interrupted, such as the metadata commit of an upload. Without the call the
+// arrival of the complete request body is the signal. Outside a request it does
+// nothing.
+func BeginCommit(ctx context.Context) {
+	if a, ok := ctx.Value(ctxKeyActive{}).(*activeRequest); ok {
+		a.committing.Store(true)
+	}
 }
 
 func (a *activeRequest) direction() string {
@@ -85,13 +127,17 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.CommitGrace == 0 {
 		cfg.CommitGrace = DefaultCommitGrace
 	}
-	s := &Server{cfg: cfg, active: map[*activeRequest]struct{}{}}
+	s := &Server{cfg: cfg, active: map[*activeRequest]struct{}{}, flushing: map[net.Conn]struct{}{}}
 	s.srv = &http.Server{
 		Handler:           s.track(cfg.Handler),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		IdleTimeout:       cfg.IdleTimeout,
 		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(cfg.Log.Handler(), slog.LevelWarn),
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, ctxKeyConn{}, c)
+		},
+		ConnState: s.connState,
 	}
 	if cfg.TLS != nil && (cfg.TLS.CertFile != "" || cfg.TLS.KeyFile != "") {
 		tc, err := tlsConfig(*cfg.TLS)
@@ -158,15 +204,29 @@ var ErrCut = errors.New("requests cut at the shutdown deadline")
 // Shutdown stops accepting, closes idle connections, sends GOAWAY on HTTP/2 and
 // waits for in-flight requests until ctx ends. At the deadline it cuts what is
 // still running by closing the connections (Q-ARCH-18), with one exception: a
-// request whose body has arrived completely runs on for at most CommitGrace. The
+// request that is committing (BeginCommit, or whose body has arrived completely)
+// runs on for at most CommitGrace and never past the commitBy of ShutdownBy. The
 // cut requests are counted through OnTransferCut. The error is nil when
 // everything finished in time.
 func (s *Server) Shutdown(ctx context.Context) error {
+	by := time.Now().Add(s.cfg.CommitGrace)
+	if d, ok := ctx.Deadline(); ok {
+		by = d.Add(s.cfg.CommitGrace)
+	}
+	return s.ShutdownBy(ctx, by)
+}
+
+// ShutdownBy is Shutdown with an absolute bound for the commit grace: requests
+// that are committing at the deadline of ctx run on until commitBy at most, and
+// never longer than CommitGrace after the deadline. The caller derives commitBy
+// from the one exit deadline of the process, so the grace cannot push the exit
+// past the kubelet's kill.
+func (s *Server) ShutdownBy(ctx context.Context, commitBy time.Time) error {
 	err := s.srv.Shutdown(ctx)
 	if err == nil {
 		return nil
 	}
-	s.waitCommits()
+	s.waitCommits(commitBy)
 	cut := s.cutAll()
 	_ = s.srv.Close()
 	if cut == 0 {
@@ -178,9 +238,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Close closes the listener and every connection at once.
 func (s *Server) Close() error { return s.srv.Close() }
 
-// waitCommits gives requests that have read their whole body up to CommitGrace.
-func (s *Server) waitCommits() {
+// waitCommits gives committing requests until the earlier of commitBy and
+// CommitGrace from now.
+func (s *Server) waitCommits(commitBy time.Time) {
 	deadline := time.Now().Add(s.cfg.CommitGrace)
+	if commitBy.Before(deadline) {
+		deadline = commitBy
+	}
 	for time.Now().Before(deadline) {
 		if !s.anyCommitting() {
 			return
@@ -193,11 +257,11 @@ func (s *Server) anyCommitting() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for a := range s.active {
-		if a.hasBody && a.bodyDone.Load() {
+		if a.inCommit() {
 			return true
 		}
 	}
-	return false
+	return len(s.flushing) > 0
 }
 
 // cutAll counts the requests that are about to be cut.
@@ -217,11 +281,15 @@ func (s *Server) cutAll() int {
 func (s *Server) track(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a := &activeRequest{hasBody: r.Body != nil && r.Body != http.NoBody && r.ContentLength != 0}
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyActive{}, a))
 		s.mu.Lock()
 		s.active[a] = struct{}{}
 		s.mu.Unlock()
 		defer func() {
 			s.mu.Lock()
+			if c, ok := r.Context().Value(ctxKeyConn{}).(net.Conn); ok && a.inCommit() {
+				s.flushing[c] = struct{}{}
+			}
 			delete(s.active, a)
 			s.mu.Unlock()
 		}()

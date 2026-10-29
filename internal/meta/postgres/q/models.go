@@ -5,6 +5,8 @@
 package q
 
 import (
+	"time"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -16,7 +18,7 @@ type Blob struct {
 	Size            int64
 	State           string
 	ContentStatus   string
-	CreatedAt       pgtype.Timestamptz
+	CreatedAt       time.Time
 	StateChangedAt  pgtype.Timestamptz
 	ObjectDeletedAt pgtype.Timestamptz
 	CheckedAt       pgtype.Timestamptz
@@ -25,7 +27,7 @@ type Blob struct {
 
 type BlobGcQueue struct {
 	Sha256     []byte
-	EnqueuedAt pgtype.Timestamptz
+	EnqueuedAt time.Time
 }
 
 type ClusterChange struct {

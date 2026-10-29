@@ -17,7 +17,8 @@ of being silently ignored.
 |---|---|
 | `web` and `worker` Deployments, always both (R-HA-002) | autoscaling (HPA), `web.pools`, `worker.pools` (R-HA-062) |
 | client Service `<fullname>` and ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | Gateway API HTTPRoute (R-HA-038), `contentOrigin` |
-| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | NetworkPolicy (R-HA-042), ServiceMonitor, PrometheusRule |
+| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | NetworkPolicy egress and the egress example (R-HA-042), ServiceMonitor, PrometheusRule |
+| NetworkPolicy ingress for `web`, `worker` and the migration Job (R-HA-042) | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring, downward-API variables (R-HA-030) | `secrets.oidc`, `secrets.breakGlass`, `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
@@ -56,6 +57,7 @@ deploy/helm/trove/
     ├── deployments.yaml    <fullname>-web and <fullname>-worker
     ├── services.yaml       <fullname> and <fullname>-ops
     ├── pdb.yaml            one PodDisruptionBudget per Deployment
+    ├── networkpolicy.yaml  ingress policies for web, worker and the migration Job
     ├── configmap.yaml      <fullname>-config (trove.yaml)
     ├── serviceaccount.yaml
     ├── migrate.yaml        hook ConfigMap, hook ServiceAccount and the migration Job
@@ -85,6 +87,7 @@ deploy/helm/trove/
 | ConfigMap | `<fullname>-config` | `trove.yaml`, mounted at `/etc/trove/trove.yaml` |
 | ServiceAccount | `<fullname>` | `automountServiceAccountToken: false` |
 | PodDisruptionBudget | `<fullname>-web`, `<fullname>-worker` | `maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow` |
+| NetworkPolicy | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` (hook) | `networkPolicy.enabled`, ingress only, see [Network policy](#network-policy) |
 | ConfigMap, ServiceAccount (hook, weight -10) | `<fullname>-migrate` | same `trove.yaml` as `<fullname>-config` |
 | Job (hook, weight 0) | `<fullname>-migrate` | `trove migrate up`; `backoffLimit` 2, deadline 1800 s, TTL 86400 s |
 | Ingress | `<fullname>` | `ingress.enabled`; one rule per host, path `/`, `Prefix`, backend `<fullname>:http` |
@@ -150,7 +153,7 @@ never as an environment variable. A mount exists only in the pods that read it.
 | `secrets.database` | `username`, `password` | `/var/run/secrets/trove/database/` | `database.username_file`, `database.password_file` | all (the Job uses `secrets.databaseMigration` when set) |
 | `secrets.databaseCA` | `ca.crt` | `/var/run/secrets/trove/database-ca/` | `database.ssl_root_cert_file` | all |
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/database-client/` | `database.ssl_cert_file`, `database.ssl_key_file` | all |
-| `secrets.encryption` | the names in `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered), `secrets.active_key_id` (first entry without `.key`) | all, the same Secret (R-HA-027) |
+| `secrets.encryption` | the names in `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered), `secrets.active_key_id` (first entry without `.key`) | `web`, `worker`, the same Secret (R-HA-027); the migration Job never mounts it (R-HA-030) |
 | `secrets.s3` (`source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `..._secret_access_key_file` | `web`, `worker` |
 | `secrets.valkey` | `username` (omit with `usernameKey: ""`), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` | `web`, `worker` |
 | `secrets.valkeySentinel` | `username` (default: none), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` | `web`, `worker` |
@@ -161,6 +164,30 @@ never as an environment variable. A mount exists only in the pods that read it.
 The file *names* inside a mount are fixed (`username`, `password`, `ca.crt`, …); the Secret's key
 names are the values (`usernameKey`, `passwordKey`, …). The encryption keys are the exception:
 file name equals Secret key, because the file name without `.key` is the key ID (R-ARCH-021).
+
+## Network policy
+
+`networkPolicy.enabled` (default `true`, R-HA-042) renders three policies that select the pods by their
+component labels. They restrict **ingress only**; the `egress` block of R-HA-042 (DNS, PostgreSQL, Valkey,
+object storage, the `NOTES.txt` hint and `examples/egress.yaml`) is not implemented, so the pods' egress is
+unrestricted. `values.schema.json` has no `networkPolicy.egress` key yet.
+
+| Policy | Admits |
+|---|---|
+| `<fullname>-web` | TCP 8080 from `networkPolicy.ingress.http.from` (empty = from anywhere, so any ingress controller works wherever it runs); TCP 8081 only from `networkPolicy.ingress.ops.from` (default: namespace `monitoring`) and `networkPolicy.probeCIDRs` |
+| `<fullname>-worker` | TCP 8081 as above; a worker listens on no client port |
+| `<fullname>-migrate` | nothing; `ingress: []` |
+
+With neither an `ops.from` peer nor a `probeCIDRs` entry, the 8081 rule is left out rather than rendered with an
+empty `from`, which Kubernetes reads as "from anywhere". Most CNIs exempt kubelet probes from policies; where one does
+not, put the node CIDRs in `probeCIDRs`. Verified by render tests only (`TestNetworkPolicy`); that a CNI enforces
+the policy and still passes the probes is not tested here. The policy for the Valkey and Sentinel pods
+belongs to whoever runs Valkey (R-HA-042).
+
+`config.server.trusted_proxies` stays empty by default. The values example names the addresses of the ingress
+controller pods, never the pod CIDR: every pod in the cluster could otherwise set `X-Forwarded-For` and be taken
+for any client. `config.server.forwarded_header` names the one header the edge rewrites (see
+[architecture.md](architecture.md#client-address-and-base-url)).
 
 ## Validation
 
@@ -220,7 +247,11 @@ is where the coverage generator reads the IDs from.
 | `R-HA-030` | file mount, `checksum/config`; Secrets read-only with items, mode 0440, no `subPath`, never in the environment; per-pod scoping; the config paths match the mounts; the environment set; service links off |
 | `R-HA-033` | every pod and container of every set satisfies the restricted Pod Security Standard; UID 65532 |
 | `R-HA-034`, `R-ARCH-024` | probes as the table of R-HA-034; ports; no `preStop` |
-| `R-HA-011` | grace period and its environment variable |
+| `R-HA-011` (`TestChart`) | the chart half: grace period per role, its environment variable, above the drain delay |
+| `R-HA-011` (`TestShutdownBudgetDerivation`) | builds the binary and runs `trove admin config validate` over the rendered file and environment of `web` and `worker`: `server.shutdown_timeout` equals grace - drain - 5 s and its source is `derived` |
+| `R-HA-042` | the three ingress policies: ports, peers, selectors that match the pods, no `from` meaning "anywhere" on 8081, `enabled: false` renders none |
+| `R-HA-030` (`TestMigrationJobSecrets`) | the migration Job mounts no key ring; `web` and `worker` do |
+| `R-ARCH-006` (`TestTrustedProxiesExample`) | the `trusted_proxies` example is no pod-wide range and the default list is empty |
 | `R-HA-035`, `R-HA-036` | spool `sizeLimit` and budget; `GOMAXPROCS` rule; default resources |
 | `R-HA-032` | PDB, spread, tolerations, default replica counts and rolling update |
 | `R-HA-037`, `R-ARCH-032` | `sessionAffinity: None` everywhere, no affinity annotations, Ingress path `/` and `Prefix`, `ingress.path` fails naming `path` |

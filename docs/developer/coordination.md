@@ -28,7 +28,7 @@ this page covers what is built on it.
 | `internal/jobs/tables.go` | Registers the `job` table (class `data`, R-BAK-004) |
 | `internal/cluster/areas.go` | Area registry: `RegisterArea`, `LookupArea`, `Areas` |
 | `internal/cluster/locks.go` | Lock categories, `RegisterLease`, `LeaseScheduler`, `LockConfigObject` |
-| `internal/cluster/lease_manager.go`, `lease_held.go` | `Leases` (hold loops, check loop), `Held` (fenced writes), fencing tokens |
+| `internal/cluster/lease_manager.go`, `lease_held.go` | `Leases` (hold loops, check loop), `Held` (writes on the lease's session) |
 | `internal/cluster/lease_watch.go` | `Watchdog`, `WatchLoop`, `CallTimeout`: the liveness hooks of the loops |
 | `internal/cluster/changelog.go` | `Changes`: start, stop, freshness, listeners, Valkey messages |
 | `internal/cluster/changelog_notify.go` | `Changes.Notify`: the two statements of R-ARCH-018 step 1, the post-commit publish |
@@ -96,7 +96,7 @@ but `worker` and `all`, so a `web` replica's instance ID never reaches `job.lock
 4. Enqueue in the transaction of the change that causes the job:
 
    ```go
-   err := db.Tx(ctx, func(tx meta.Tx) error {
+   err := db.InTx(ctx, func(tx meta.Tx) error {
        // ... the change ...
        res, err := queue.Enqueue(ctx, tx, jobs.EnqueueSpec{Kind: "index_rebuild", DedupKey: "index:" + repoID, Args: args})
        // res.Created == false: a job with the key exists, res.Job is that job (the API answers 409)
@@ -141,17 +141,26 @@ descending ranges, `a/n` on a single value, `@every`, `@reboot`, `TZ=` and `CRON
 |---|---|---|
 | Claim | `Worker.claim`, query `ClaimJobs` | One statement for all queues with a free slot (`jobs.workers.*`), `FOR UPDATE SKIP LOCKED`, only kinds this replica registered and queues with slots, jobs whose dedup key is not held by a running job. Only while `Ready()` and not draining (Q-OPS-12). |
 | Wake-up | signal area `jobs` | `Enqueue` publishes after commit; the claim loop also waits at most `jobs.poll_interval` |
-| Heartbeat | `Worker.heartbeat`, control connection | One `UPDATE` per `jobs.heartbeat_interval` for all of the replica's jobs. A running job missing from the result gets `ErrLeaseLost`; one in `cancelling` gets `ErrCancelRequested`. A failing heartbeat cancels a handler only when `jobs.lease_duration` since the last confirmed extension is nearly used up, measured as a duration on the replica's monotonic clock. |
+| Heartbeat | `Worker.heartbeat`, control connection | One `UPDATE` per `jobs.heartbeat_interval` for the runs in `Worker.running`, snapshotted under `w.mu`: `WHERE locked_by = uid AND id = ANY(ids) AND attempt = the claimed attempt`. Only snapshot runs are judged: one missing from the result gets `ErrLeaseLost`, one in `cancelling` gets `ErrCancelRequested`. A job claimed while the statement is in flight is not in the snapshot, so it is neither extended nor judged by that beat. A row the replica holds without running it (a claim whose answer never arrived) is not extended: it expires and the reaper returns it. A failing heartbeat cancels a handler only when `jobs.lease_duration` since the last confirmed extension is nearly used up, measured as a duration on the replica's monotonic clock. |
 | Reaper | `Worker.Reap`, every `jobs.schedule_tick` on every worker | `locked_until < now()` on the database's clock: `queued` with backoff, `failed` when attempts are used up, `cancelled` for `cancelling` |
 | Retention | same pass | Finished jobs older than `jobs.retention`, except the job of each task's latest slot |
 | Release | `Worker.Quiesce`, then `settle` | `UPDATE … attempt = attempt - 1` back to `queued`; `cancelling` ends `cancelled` |
+
+Every write that settles or annotates a run (complete, cancel, release, fail, checkpoint, progress, heartbeat) names the owner as `locked_by = uid AND attempt = the
+claimed attempt`, so a worker that lost the job, or an older run of it, writes nothing. `Worker.running` is keyed by job ID; a finishing run removes its entry only
+if it is still its own (a released job the same worker claims again has a new entry), and the result a handler sets lives on the run, not in a map keyed by ID.
+The settle writes (complete, cancel, release, fail) are retried four times with 250 ms doubling backoff inside the settle's 15 s deadline; when they still fail
+the log says the write was given up and the lease is left to expire, which the reaper turns into a retry (the attempt counts).
 
 `attempt` counts claims. A release subtracts the interrupted claim, so a drain costs a job its progress since the last checkpoint and nothing else.
 A coalesced job that would return to `queued` while another waits ends `cancelled` with `error.code = superseded`.
 
 Liveness: the loops are watched as `jobs.claim`, `jobs.reaper`, `jobs.scheduler` (while the lease is held), `cluster.leases`, `cluster.changes`,
 `cluster.signals` and `cluster.registry`. Each call carries a deadline of `min(health.watchdog_timeout / 2, 10 s)` (`cluster.CallTimeout`), and the claim
-loop records progress when the replica is unready or every slot is busy.
+loop records progress when the replica is unready or every slot is busy. A loop that records progress once per iteration needs its cadence below
+`health.watchdog_timeout`: configuration validation rejects `jobs.poll_interval`, `jobs.schedule_tick`, `cluster.epoch_poll_interval`,
+`database.lease_check_interval` and `system.heartbeat_interval` at or above it, naming both keys (`Config.validateWatchedLoops` in `internal/config/cluster.go`, called
+from the root `Config.Validate`). The rule is the interval alone; an iteration also spends up to one call deadline, so keep real values well below the bound.
 
 ### Scheduler
 
@@ -183,8 +192,9 @@ one-argument form, an ad-hoc first argument, category 2, or the shared form outs
    (`pg_locks` lists the lock as granted to this backend) and fails with `cluster.ErrNotHeld` after the loss.
 4. Work must restart from a persisted cursor; the next run starts fresh.
 
-`Held.Token()` is the fencing token: the `xid8` of the statement that followed the lock. It grows with every transaction of the cluster, so of
-two tokens of one lease the higher is the later holder. The loss of a lease (failed `SELECT 1` of the check loop every `database.lease_check_interval`, or a
+There is no fencing token. Fencing is "the singleton's writes run on the lease's own session" (R-HA-006): a holder that lost the lock has
+no session to write on, and `Tx` proves the lock with `pg_locks` before the first statement. (An `xid8` token was removed: it is not
+monotonic across an asynchronous failover and nothing consumed it.) The loss of a lease (failed `SELECT 1` of the check loop every `database.lease_check_interval`, or a
 failing statement on a closed connection) cancels `Held.Context()`, counts `trove_lease_lost_total{task}`, and destroys the connection. The holder loop retries
 every `cluster.lease_retry_interval`. `Leases.Release(ctx, id)` unlocks at once and stops retrying (the scheduler lease at drain); `Leases.Stop` unlocks all.
 
@@ -200,7 +210,9 @@ every `cluster.lease_retry_interval`. `Leases.Release(ctx, id)` unlocks at once 
 ### How to add a change area
 
 1. A migration (expand) inserts the area's `cluster_epoch` row, in the release that ships the area. `Notify` on an area without a row fails; the poll logs a warning.
-2. `cluster.RegisterArea(cluster.Area{Name: "authz", Owner: "R-AUTHZ-028", Class: cluster.ChangeArea, PayloadVersion: 1})` at initialisation. Name `^[a-z][a-z0-9_]{1,31}$`.
+2. Add `cluster.RegisterArea(cluster.Area{Name: "authz", Owner: "R-AUTHZ-028", Class: cluster.ChangeArea, PayloadVersion: 1})` to the `init` of `internal/cluster/areas.go`, the only
+   place that calls it (`TestAreasAreDeclaredCentrally` fails on any other file). Name `^[a-z][a-z0-9_]{1,31}$`. `TestChangeAreasAreSeeded` (integration) fails when a registered change
+   area has no `cluster_epoch` row after the migrations.
 3. Write: `changes.Notify(tx, "authz", 1, payload)` inside the writing transaction (a `meta.Tx` of `db.Tx`). The payload is JSON under 1 KiB, never a secret
    (`cluster.ErrPayloadTooLarge` otherwise; send a coarse flush entry instead). The epoch update and the change row run last, just before `COMMIT`; several areas in one
    transaction are updated in name order. After commit the writer applies its own invalidation and publishes the message.
@@ -210,7 +222,9 @@ every `cluster.lease_retry_interval`. `Leases.Release(ctx, id)` unlocks at once 
 
 The poll (`changelog_poll.go`) applies rows in epoch order and flushes the area (`FlushArea`, reason in parentheses) when the row at the last applied epoch is
 missing (`change_log_gap`), a row has a higher payload version (`unknown_payload`), or the history differs: the epoch is lower, equal with another `changed_at`, or the row at the
-applied epoch has another `created_at` (`epoch_regressed`). After a flush it takes the database's epoch as its starting point.
+applied epoch has another `created_at` (`epoch_regressed`). After a flush it takes the database's epoch as its starting point. The poll holds no lock across a
+query or a listener call: `areaState.mu` only makes (applied epoch, `changed_at`) one pair for `Changes.AreaState`, so a listener may call `AreaState` from `ApplyChange`
+or `FlushArea`. One poll runs at a time (`pollMu`).
 
 ### Caches
 
@@ -245,7 +259,7 @@ A cache with `MaxBytes` needs `Weigh`. Metrics: `trove_cache_requests_total{cach
 `system.heartbeat_interval` with the snapshot from `RegistryOptions.Snapshot` (state, checks, Valkey view) and `RegistryOptions.Leases`. `Drain` writes `draining`; `Stop` deletes the row;
 `StopHeartbeat` leaves it (fault injection). The heartbeat is an upsert, so a row removed by the prune or a restore comes back.
 
-`cluster.ListReplicas(ctx, db, cfg.System)` reads the table; `Lost` is `heartbeat_at < now() - system.heartbeat_stale_after` on PostgreSQL's clock. `PruneReplicas` and `jobs.KindReplicaRegistryPrune`
+`cluster.ListReplicas(ctx, db, cfg.System)` reads the table on the request pool (`DB.Main`; there is no `Registry.List`); a lost replica lists no leases, so a lease name appears on one live row only. `Lost` is `heartbeat_at < now() - system.heartbeat_stale_after` on PostgreSQL's clock. `PruneReplicas` and `jobs.KindReplicaRegistryPrune`
 delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its own type; `internal/cluster` imports no edge package.
 
 ## Bounds P-13 and P-14
@@ -271,11 +285,13 @@ go test -tags integration -race ./test/integration/coordination/...
 
 | File | Covers |
 |---|---|
-| `leases_test.go` | one holder across two workers, web holds no lease connection, session termination, fencing, tokens, explicit release |
+| `leases_test.go` | one holder across two workers, web holds no lease connection, session termination, fencing, explicit release |
 | `jobs_test.go` | web never in `locked_by`, exclusive and coalesce keys, backoff, attempts, reaper, lost lease, cancel, readiness gate, unknown kinds |
 | `latency_test.go` | P-13, P-14 |
 | `changes_test.go` | epoch order, regression, reused epoch, gap, unknown payload, prune, `PollNow`, the fill rule against the log |
-| `registry_test.go` | registration, heartbeat, lost, replacement, draining, prune; `TestReplicaLostWithDefaults` waits 30 s with the shipped values |
+| `heartbeat_test.go` | the heartbeat judges and extends only the runs of its worker: a job claimed while a heartbeat is in flight, a row held without a run |
+| `areas_test.go` | every registered change area has its `cluster_epoch` row after the migrations |
+| `registry_test.go` | registration, heartbeat, lost (no leases listed), replacement, draining, prune; `TestReplicaLostWithDefaults` waits 30 s with the shipped values |
 | `scheduler_test.go` | one scheduler, no duplicate slot across a hand-over, retention exception, postponed slot, drain releases the lease |
 | `drain_test.go` | E0.14 on two replicas: cursor every 100 ms, graceful shutdown, resume with `attempt` unchanged |
 | `watchdog_test.go` | claim held by `pg_sleep` past the watchdog bound |

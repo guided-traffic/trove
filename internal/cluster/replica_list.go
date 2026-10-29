@@ -42,7 +42,9 @@ type ReplicaInfo struct {
 // ListReplicas reads the registry. Lost is decided by PostgreSQL's clock:
 // heartbeat_at older than system.heartbeat_stale_after (R-HA-003). Replica
 // clocks are never compared. It is the read side behind the ReplicaLister of
-// the API; it needs no Registry, so every role can serve it.
+// the API; it needs no Registry, so every role can serve it, and it reads on
+// the request pool (the caller passes DB.Main). The leases of a lost replica
+// are not listed.
 func ListReplicas(ctx context.Context, db q.DBTX, sys config.System) ([]ReplicaInfo, error) {
 	rows, err := q.New(db).ListReplicas(ctx, sys.HeartbeatStaleAfter.Seconds())
 	if err != nil {
@@ -72,17 +74,15 @@ func ListReplicas(ctx context.Context, db q.DBTX, sys config.System) ([]ReplicaI
 		if ri.Degraded == nil {
 			ri.Degraded = []string{}
 		}
-		if ri.Leases == nil {
+		if ri.Leases == nil || ri.Lost {
+			// A lost replica holds nothing any more: its session ended with the
+			// process, and the lock may already belong to another replica, which
+			// must not share the lease name with a stale row.
 			ri.Leases = []ReplicaLease{}
 		}
 		out = append(out, ri)
 	}
 	return out, nil
-}
-
-// List reads the registry through the replica's control connection.
-func (r *Registry) List(ctx context.Context) ([]ReplicaInfo, error) {
-	return ListReplicas(ctx, r.o.DB, r.o.Config)
 }
 
 // PruneReplicas is the body of the replica-registry-prune task (R-OPS-003): it

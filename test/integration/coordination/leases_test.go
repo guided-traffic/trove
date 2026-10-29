@@ -5,7 +5,6 @@ package coordination
 import (
 	"context"
 	"errors"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,14 +24,14 @@ type holdLog struct {
 
 type hold struct {
 	replica string
-	token   int64
+	seq     int64 // acquisition order in this test, not a property of the lease
 	held    *cluster.Held
 }
 
 func (l *holdLog) work(replica string) func(ctx context.Context, h *cluster.Held) {
 	return func(ctx context.Context, h *cluster.Held) {
 		l.mu.Lock()
-		l.holders = append(l.holders, &hold{replica: replica, token: h.Token(), held: h})
+		l.holders = append(l.holders, &hold{replica: replica, seq: int64(len(l.holders) + 1), held: h})
 		l.mu.Unlock()
 		<-ctx.Done()
 	}
@@ -78,7 +77,7 @@ func (e *env) lockSessions() []int64 {
 
 func TestLeases(t *testing.T) {
 	e := newEnv(t)
-	e.exec(`CREATE TABLE trove.coord_fence (replica text, token bigint)`)
+	e.exec(`CREATE TABLE trove.coord_fence (replica text, seq bigint)`)
 	log := &holdLog{}
 	workers := map[string]*replica{}
 	for _, name := range []string{"lease-a", "lease-b"} {
@@ -153,7 +152,7 @@ func TestLeases(t *testing.T) {
 		first := log.valid()[0]
 		write := func(h *hold) error {
 			return h.held.Tx(context.Background(), func(db q.DBTX) error {
-				_, err := db.Exec(context.Background(), "INSERT INTO coord_fence (replica, token) VALUES ($1, $2)", h.replica, h.token)
+				_, err := db.Exec(context.Background(), "INSERT INTO coord_fence (replica, seq) VALUES ($1, $2)", h.replica, h.seq)
 				return err
 			})
 		}
@@ -176,7 +175,7 @@ func TestLeases(t *testing.T) {
 		if err := write(first); err == nil {
 			t.Fatal("R-HA-006: the old holder committed a write after its session ended")
 		}
-		if n := e.scalar(`SELECT count(*) FROM coord_fence WHERE replica = $1 AND token = $2`, first.replica, first.token); n != 1 {
+		if n := e.scalar(`SELECT count(*) FROM coord_fence WHERE replica = $1 AND seq = $2`, first.replica, first.seq); n != 1 {
 			t.Fatalf("the old holder's rows = %d, want only the write before the loss", n)
 		}
 		select {
@@ -187,7 +186,7 @@ func TestLeases(t *testing.T) {
 
 		waitFor(t, "a new holder", 5*time.Second, func() bool {
 			for _, h := range log.valid() {
-				if h.token != first.token {
+				if h.seq != first.seq {
 					return true
 				}
 			}
@@ -198,8 +197,8 @@ func TestLeases(t *testing.T) {
 			t.Errorf("the lease moved after %s", took)
 		}
 		second := log.valid()[0]
-		if second.token <= first.token {
-			t.Fatalf("fencing token %d is not above the previous holder's %d", second.token, first.token)
+		if second.seq <= first.seq {
+			t.Fatalf("holder %d is not a later acquisition than %d", second.seq, first.seq)
 		}
 		if err := write(second); err != nil {
 			t.Fatalf("the new holder's write: %v", err)
@@ -239,27 +238,13 @@ func TestLeases(t *testing.T) {
 		waitFor(t, "the lock to be gone", 3*time.Second, func() bool { return len(e.lockSessions()) == 0 })
 	})
 
-	t.Run("R-HA-006 at no instant did two sessions hold the lease, and tokens only grow", func(t *testing.T) {
+	t.Run("R-HA-006 at no instant did two sessions hold the lease", func(t *testing.T) {
 		if n := maxLocks.Load(); n > 1 {
 			t.Fatalf("pg_locks showed %d holders at once", n)
 		}
 		all := log.all()
 		if len(all) < 3 {
 			t.Fatalf("only %d acquisitions happened", len(all))
-		}
-		tokens := make([]int64, 0, len(all))
-		for _, h := range all {
-			tokens = append(tokens, h.token)
-		}
-		if !sort.SliceIsSorted(tokens, func(i, j int) bool { return tokens[i] < tokens[j] }) {
-			t.Fatalf("fencing tokens did not grow with the acquisitions: %v", tokens)
-		}
-		seen := map[int64]bool{}
-		for _, tok := range tokens {
-			if seen[tok] {
-				t.Fatalf("token %d was issued twice", tok)
-			}
-			seen[tok] = true
 		}
 	})
 }

@@ -29,14 +29,21 @@ import (
 	"github.com/guided-traffic/trove/internal/observability"
 )
 
+// defaultCfg is proxy.outbound with the defaults of internal/config, so the
+// tests check the policy an installation gets without configuring anything.
 func defaultCfg() config.Outbound {
-	return config.Outbound{
-		TLS: config.OutboundTLS{UseSystemRoots: true, MinVersion: "1.2"},
-		AddressPolicy: config.OutboundAddressPolicy{DenyCIDRs: []string{
-			"127.0.0.0/8", "::1/128", "0.0.0.0/8", "::/128", "169.254.0.0/16", "fe80::/10",
-			"fd00:ec2::254/128", "224.0.0.0/4", "ff00::/8", "255.255.255.255/32",
-		}},
+	c := config.Outbound{TLS: config.OutboundTLS{UseSystemRoots: true, MinVersion: "1.2"}}
+	for _, k := range config.MustDescribe().Keys {
+		if k.Path == "proxy.outbound.address_policy.deny_cidrs" {
+			if err := json.Unmarshal([]byte(k.Default), &c.AddressPolicy.DenyCIDRs); err != nil {
+				panic(err)
+			}
+		}
 	}
+	if len(c.AddressPolicy.DenyCIDRs) == 0 {
+		panic("proxy.outbound.address_policy.deny_cidrs has no default")
+	}
+	return c
 }
 
 func allowLoopback() config.Outbound {
@@ -181,6 +188,36 @@ func TestEgressPolicy(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-022 a GET to an IPv6 loopback server through a zoned literal is refused", func(t *testing.T) {
+		ln, err := net.Listen("tcp6", "[::1]:0")
+		if err != nil {
+			t.Fatalf("this test needs IPv6 loopback on the host: %v", err)
+		}
+		var seen atomic.Int32
+		v6 := &httptest.Server{Listener: ln, Config: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen.Add(1) }), ReadHeaderTimeout: time.Second}}
+		v6.Start()
+		defer v6.Close()
+		_, p6, _ := net.SplitHostPort(ln.Addr().String())
+		// The unzoned form is refused by ::1/128; the zoned form must be too.
+		for _, u := range []string{"http://[::1]:" + p6 + "/", "http://[::1%251]:" + p6 + "/", "http://[::1%25lo0]:" + p6 + "/", "http://[::1%25lo]:" + p6 + "/"} {
+			if err := getErr(t, New(defaultCfg()).Client(PurposeRemote), u); !errors.Is(err, ErrEgressDenied) {
+				t.Errorf("%s: err = %v", u, err)
+			}
+		}
+		// Behind an outbound proxy, trove's own check of the target refuses it.
+		proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen.Add(1) }))
+		defer proxy.Close()
+		pu, _ := url.Parse(proxy.URL)
+		cfg := defaultCfg()
+		cfg.AddressPolicy.AllowCIDRs = []string{"127.0.0.0/8"} // the proxy itself listens on 127.0.0.1
+		if err := getErr(t, New(cfg).Client(PurposeRemote, WithProxyURL(pu)), "http://[::1%251]:"+p6+"/"); !errors.Is(err, ErrEgressDenied) {
+			t.Errorf("through the proxy: err = %v", err)
+		}
+		if seen.Load() != 0 {
+			t.Errorf("%d requests reached a server", seen.Load())
+		}
+	})
+
 	t.Run("R-ARCH-022 an IPv4-mapped IPv6 loopback is refused", func(t *testing.T) {
 		err := getErr(t, New(defaultCfg()).Client(PurposeRemote), "http://[::ffff:127.0.0.1]:"+port+"/")
 		if !errors.Is(err, ErrEgressDenied) {
@@ -205,7 +242,7 @@ func TestEgressPolicy(t *testing.T) {
 
 	t.Run("R-ARCH-022 private ranges are permitted by default", func(t *testing.T) {
 		f := New(defaultCfg())
-		for _, a := range []string{"10.20.0.5", "192.168.1.1", "172.16.0.1", "100.64.0.1", "fd12::1", "93.184.216.34"} {
+		for _, a := range []string{"10.20.0.5", "192.168.1.1", "172.16.0.1", "100.64.0.1", "fd12::1", "93.184.216.34", "2001:db8::1", "64:ff9b::5db8:d822"} {
 			if err := f.CheckAddr(netip.MustParseAddr(a)); err != nil {
 				t.Errorf("%s: %v", a, err)
 			}
@@ -214,6 +251,54 @@ func TestEgressPolicy(t *testing.T) {
 			if err := f.CheckAddr(netip.MustParseAddr(a)); !errors.Is(err, ErrEgressDenied) {
 				t.Errorf("%s: %v", a, err)
 			}
+		}
+	})
+
+	t.Run("R-ARCH-022 zoned IPv6 addresses are refused, also where allow_cidrs holds the unzoned form", func(t *testing.T) {
+		cfg := defaultCfg()
+		cfg.AddressPolicy.AllowCIDRs = []string{"::/0"}
+		for name, f := range map[string]*Factory{"default": New(defaultCfg()), "allow everything": New(cfg)} {
+			for _, a := range []string{"::1%1", "::%1", "fd00:ec2::254%eth0", "fe80::1%eth0", "2001:db8::1%eth0"} {
+				err := f.CheckAddr(netip.MustParseAddr(a))
+				var ed *EgressDeniedError
+				if !errors.Is(err, ErrEgressDenied) || !errors.As(err, &ed) || ed.Rule != ruleZoned {
+					t.Errorf("%s: %s: %v", name, a, err)
+				}
+			}
+		}
+	})
+
+	t.Run("R-ARCH-022 the Control hook refuses a zoned literal before connecting", func(t *testing.T) {
+		p := New(defaultCfg()).policy
+		for _, addr := range []string{"[::1%1]:443", "[::%1]:80", "[fd00:ec2::254%eth0]:80", "[fe80::1%eth0]:80"} {
+			if err := p.control(nil)("tcp6", addr, nil); !errors.Is(err, ErrEgressDenied) {
+				t.Errorf("%s: %v", addr, err)
+			}
+		}
+	})
+
+	t.Run("R-ARCH-022 the default deny list holds the further metadata and IPv4-compatible ranges", func(t *testing.T) {
+		f := New(defaultCfg())
+		for _, a := range []string{"100.100.100.200", "168.63.129.16", "::127.0.0.1", "::a9fe:a9fe", "::ffff:100.100.100.200"} {
+			if err := f.CheckAddr(netip.MustParseAddr(a)); !errors.Is(err, ErrEgressDenied) {
+				t.Errorf("%s: %v", a, err)
+			}
+		}
+	})
+
+	t.Run("R-ARCH-022 a NAT64 address is checked as the IPv4 address it reaches", func(t *testing.T) {
+		f := New(defaultCfg())
+		for _, a := range []string{"64:ff9b::a9fe:a9fe", "64:ff9b::7f00:1", "64:ff9b::6464:64c8", "64:ff9b::a83f:8110"} {
+			err := f.CheckAddr(netip.MustParseAddr(a))
+			var ed *EgressDeniedError
+			if !errors.As(err, &ed) || !strings.Contains(ed.Rule, "NAT64") {
+				t.Errorf("%s: %v", a, err)
+			}
+		}
+		cfg := defaultCfg()
+		cfg.AddressPolicy.AllowCIDRs = []string{"64:ff9b::a9fe:a9fe/128"}
+		if err := New(cfg).CheckAddr(netip.MustParseAddr("64:ff9b::a9fe:a9fe")); err != nil {
+			t.Errorf("an explicit allow of the NAT64 address is not honoured: %v", err)
 		}
 	})
 

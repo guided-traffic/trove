@@ -237,22 +237,67 @@ func TestSpoolFiles(t *testing.T) {
 	})
 	t.Run("R-STOR-004 a replica starts with an empty spool directory", func(t *testing.T) {
 		dir := t.TempDir()
-		for _, n := range []string{"leftover-1", "leftover-2"} {
+		for _, n := range []string{"3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "0a1b2c3d-0000-4000-b000-000000000001"} {
 			if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := os.MkdirAll(filepath.Join(dir, "nested", "deeper"), 0o700); err != nil {
+		// The directory a freshly formatted volume carries is left alone.
+		if err := os.Mkdir(filepath.Join(dir, "lost+found"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		cfg := testStorage(t, dir)
 		if _, err := NewSpool(cfg.Spool); err != nil {
 			t.Fatal(err)
 		}
-		if f := files(t, dir); len(f) != 0 {
-			t.Fatalf("left over: %v", f)
+		if f := files(t, dir); len(f) != 1 || f[0] != "lost+found" {
+			t.Fatalf("left over: %v, want only lost+found", f)
 		}
 	})
+	t.Run("R-STOR-004 a spool directory with other content is refused and nothing in it is deleted", func(t *testing.T) {
+		for name, mk := range map[string]func(dir string) string{
+			"a file of another name": func(dir string) string { return mustWrite(t, filepath.Join(dir, "important.db")) },
+			"a directory":            func(dir string) string { return mustMkdir(t, filepath.Join(dir, "data")) },
+			"an upper-case UUID": func(dir string) string {
+				return mustWrite(t, filepath.Join(dir, "3F1C2D4E-5A6B-4C7D-8E9F-0A1B2C3D4E5F"))
+			},
+			"a UUID that is not v4": func(dir string) string {
+				return mustWrite(t, filepath.Join(dir, "3f1c2d4e-5a6b-1c7d-8e9f-0a1b2c3d4e5f"))
+			},
+			"a directory named as UUID": func(dir string) string {
+				return mustMkdir(t, filepath.Join(dir, "3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f"))
+			},
+		} {
+			dir := t.TempDir()
+			stale := mustWrite(t, filepath.Join(dir, "0a1b2c3d-0000-4000-b000-000000000001"))
+			other := mk(dir)
+			_, err := NewSpool(testStorage(t, dir).Spool)
+			if err == nil || !strings.Contains(err.Error(), other) {
+				t.Errorf("%s: err = %v, want one naming %s", name, err, other)
+			}
+			for _, p := range []string{stale, other} {
+				if _, serr := os.Lstat(p); serr != nil {
+					t.Errorf("%s: %s was deleted: %v", name, p, serr)
+				}
+			}
+		}
+	})
+}
+
+func mustWrite(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func mustMkdir(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestSpoolCleanupOnEveryErrorPath(t *testing.T) {

@@ -80,8 +80,11 @@ func (g *Guard) settle(probe bool, err error) {
 	if probe {
 		g.probing = false
 	}
-	if err != nil && errors.Is(err, context.Canceled) {
-		return // the caller gave up: no evidence either way
+	if err != nil && (errors.Is(err, context.Canceled) || (errors.Is(err, context.DeadlineExceeded) && !IsTransient(err))) {
+		// The caller gave up or its deadline ended the call: no evidence either
+		// way. A deadline that ended a call inside the transport arrives as a
+		// transient StoreError and counts.
+		return
 	}
 	if err == nil || !IsTransient(err) {
 		// The store answered; a 404 or another 4xx is an answer too.

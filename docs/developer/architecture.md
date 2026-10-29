@@ -18,6 +18,8 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | File in `internal/app` | Content |
 |---|---|
 | [app.go](../../internal/app/app.go) | `Options`, `Run`, `RunWith`, `New`, `Start`, `bootstrap`, `Shutdown` |
+| [shutdown.go](../../internal/app/shutdown.go) | `shutdownBudget` and `planShutdown`: the absolute times of every shutdown phase |
+| [warnings.go](../../internal/app/warnings.go) | The standing configuration warnings (unset `server.base_url`, `system.bootstrap_anonymous_read`): at start and every hour |
 | [component.go](../../internal/app/component.go) | `Component` and the optional shutdown phases `Drainer`, `Settler`, `Quiescer`, `Flusher` |
 | [roles.go](../../internal/app/roles.go) | `SubsystemsFor(role)`: the table of R-ARCH-001 as data |
 | [identity.go](../../internal/app/identity.go) | Instance name (`TROVE_POD_NAME`, `POD_NAME`, `HOSTNAME` in Kubernetes, else `hostname-pid`), random instance UID, node name |
@@ -67,10 +69,21 @@ below `/v2/`, no wildcard first segment, R-HA-041). A violation stops start-up a
 
 [clientaddr.go](../../internal/httpserver/clientaddr.go) is the only place that reads `Forwarded`,
 `X-Forwarded-*` and `Host` (R-ARCH-006). The client is the TCP peer unless the peer lies in
-`server.trusted_proxies`; then it is the right-most address of `Forwarded: for=` (or `X-Forwarded-For`)
-that is not itself trusted. An entry that is not an address stops the walk and leaves the proxy as the
-client. Forwarded scheme and host change the base URL only from a trusted peer and only when the origin is
-one of `server.additional_base_urls`. Handlers read `httpserver.InfoFrom(ctx)`.
+`server.trusted_proxies`; then it is the right-most address of the forwarding header that is not itself
+trusted. An entry that is not an address stops the walk and leaves the proxy as the client.
+
+`server.forwarded_header` (`x-forwarded-for` # default, or `forwarded`) names the **one** header family
+the edge rewrites. The resolver reads that family for the client address, the scheme and the host, and
+**never falls back to the other**: a client can send both, and the edge appends its observation to
+only one, so a fallback (or a preference for the other) lets a client choose its own address. The
+`forwarded` family is `Forwarded: for=`, `proto=`, `host=` of RFC 7239; the `x-forwarded-for` family is
+`X-Forwarded-For`, `-Proto`, `-Host`, `-Port`. A prefix that covers every address (`0.0.0.0/0`, `::/0`) is
+refused in `server.trusted_proxies`, by the config loader and again by `NewResolver`. Forwarded scheme and
+host change the base URL only from a trusted peer and only when the origin is one of
+`server.additional_base_urls` (or `server.base_url` itself). Handlers read `httpserver.InfoFrom(ctx)`.
+
+Every response of both listeners carries `X-Content-Type-Options: nosniff`, set once by the outermost
+stage of the chain ([chain.go](../../internal/httpserver/chain.go)).
 
 ## Start-up
 
@@ -81,7 +94,7 @@ reach PostgreSQL stays alive and unready.
 |---|---|
 | 1 configuration | `config.Load` in `serve.go` |
 | 2 logging, metrics, tracing; ops listener; readiness 503, liveness 200 | `Start` |
-| 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process) | `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
+| 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process; the component closes the pools it opened on every error or cancel return, because `startComponent` records a component only after `Start` succeeded) | `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
 | 4 `audit_maintain_partitions()` | `WIRING POINT` in `bootstrap` (the audit package does not exist yet) |
 | 5 key ring; `outbound.New` with its `Err()` as a first-readiness check | `bootstrap` |
 | 6 object store: `s3.NewFromFactory`, `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
@@ -89,6 +102,12 @@ reach PostgreSQL stays alive and unready.
 | 8 snapshots and caches of the domain packages | `WIRING POINT` (register on `App.Caches()`) |
 | 9 client listener (`web`, `all`) | `startClient` |
 | 10 `startup` check passes | `bootstrap` sets the flag and refreshes the checks |
+
+At start, and again every hour while the replica runs, `standingWarnings` logs at WARN level: `server.base_url`
+unset on a replica with a client listener (R-OPS-005: URLs then come from the request's `Host`), and
+`system.bootstrap_anonymous_read: true`. The config loader refuses the latter together with an https
+`server.base_url` whose host is not `localhost`, `127.0.0.1` or `::1`
+([finalize.go](../../internal/config/finalize.go)).
 
 Before serving, `freezeRegistries` freezes the sealed columns, the revision columns and the table registry; the job
 registry ([wire_jobs.go](../../internal/app/wire_jobs.go)) is frozen where it is built: the kinds other packages put in
@@ -98,7 +117,10 @@ several replicas in one test process do not collide.
 
 Readiness: `startup`, `database`, `schema`, `invalidation`, `outbound` gate; `objectStore` gates the first readiness only
 unless `health.require_object_store`; `valkey` is reported and holds back the first readiness only on a configuration
-error (Q-HA-13). Checks are cached and debounced (`health.failure_threshold`, `health.success_threshold`); probes never
+error (Q-HA-13). `/readyz?verbose=1` shows Valkey only through the fixed reason codes `connecting`,
+`no_sentinel`, `timeout`, `auth_failed`, `circuit_open`, `probe_failed`, `unsupported`, `config_error`
+([wire_valkey.go](../../internal/app/wire_valkey.go), `valkeyReasonCode`); the free text with addresses
+stays in the log and in the authenticated replica list. Checks are cached and debounced (`health.failure_threshold`, `health.success_threshold`); probes never
 run a check. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
 `Stop()` when it ends on purpose.
 
@@ -109,19 +131,44 @@ histogram, canceled acquires, inventory and backup gauges) are not exported yet.
 
 ## Shutdown
 
-`App.Shutdown` (R-ARCH-024):
+`App.Shutdown` (R-ARCH-024). `server.shutdown_timeout` is derived by the config loader when it is
+unset (`0s`): `runtime.termination_grace_period - health.shutdown_drain_delay - 5 s` (R-HA-011), or
+25 s when the grace period is unknown. The chart passes the grace period as
+`TROVE_RUNTIME_TERMINATION_GRACE_PERIOD`, so a worker with 300 s and a 15 s drain gets 280 s. The source of the
+value shows as `derived` in `trove admin config validate`. An explicit value that does not fit
+(`drain + timeout + 5 s > grace`), or a grace period that leaves less than 1 s, is a start-up error
+([finalize.go](../../internal/config/finalize.go)).
+
+All phases work against one plan, computed once at the start of `Shutdown`
+([shutdown.go](../../internal/app/shutdown.go), `planShutdown`). The times are absolute, so a phase that
+runs long shortens the ones after it and never moves the end:
+
+```text
+start ──drain──▶ QuiesceAt ─────▶ ServerBy ──commit grace──▶ CommitBy ──▶ CloseBy ──ops──▶ ExitBy < start + grace
+        (web only)  ServerBy-5 s   start+drain+timeout    ≤ 3 s          flush+stop   0.5 s   ServerBy + 5 s - 0.5 s
+```
 
 1. `SetDraining`: `/readyz` turns 503 at once, `Drain` of every component (a worker stops claiming).
 2. `web`/`all`: keep serving for `health.shutdown_drain_delay`; responses carry `Connection: close`.
    `worker`: no delay.
-3. `Server.Shutdown` with `server.shutdown_timeout`: the listener closes, in-flight requests finish;
-   `Settle` of every component runs alongside.
-4. `shutdown_timeout - 5 s`: `Quiesce` cancels what still runs.
-5. At the deadline the remaining requests are cut by closing their connections and counted in
-   `trove_http_transfers_cut_total{direction}`. A request whose body arrived completely runs on for at
-   most `httpserver.DefaultCommitGrace` (4 s).
-6. `Flush` then `Stop` in reverse start order (3 s budget): job worker, then leases (in one component), replica row,
-   change log, signals, Valkey, pools; then the ops listener, then the tracer. `Registry.Drain` marks the row `draining` in step 1.
+3. `Server.ShutdownBy` until `ServerBy`: the listener closes, in-flight requests finish; `Settle` of
+   every component runs alongside.
+4. `QuiesceAt` (`ServerBy - 5 s`): `Quiesce` cancels what still runs.
+5. At `ServerBy` the remaining requests are cut by closing their connections and counted in
+   `trove_http_transfers_cut_total{direction}`, with one exception: a request that is **committing** runs
+   on until `CommitBy`. A handler marks itself with `httpserver.BeginCommit(ctx)` right before the step
+   that must not be interrupted; the arrival of the complete request body is the fallback signal. The cut waits for the answer, not only the handler: a committing request whose handler has returned keeps its connection in a flushing set until `net/http` has written the response (`ConnState` idle or closed), so a commit that went through is never reported to the client as a broken connection. The
+   grace is `min(4 s, margin - close reserve - ops reserve - slack)`, i.e. 3 s with the default 5 s margin
+   (the spec text says 4 s: the margin cannot carry 4 s plus the close budget).
+6. `Flush` (reverse start order), then `Stop`: **signals first** (pending signals are published before the
+   leases go), then job worker and leases, replica row, change log, Valkey, pools; until `CloseBy`. A component
+   that ignores its context is abandoned 250 ms after `CloseBy` and reported (`close phase overran`).
+   Then the ops listener and the tracer until `ExitBy`. Waiting for background goroutines is bounded by
+   `ExitBy` too. `Registry.Drain` marks the row `draining` in step 1.
+
+The budget constants (`defaultBudget`: margin 5 s from `config.ShutdownMargin`, slack 0.5 s, close reserve
+1 s, ops reserve 0.5 s) are a struct on the `App` so tests scale them down
+(`R-HA-011 a worker with the derived timeout quiesces its jobs ...`).
 
 ## Extending
 

@@ -78,7 +78,7 @@ func TestValkeyClient(t *testing.T) {
 		if st.Available || !strings.Contains(st.DegradedReason, "no Sentinel reachable (0 of 2)") {
 			t.Fatalf("status = %+v", st)
 		}
-		if _, _, err := v.Get(t.Context(), mustKey(t, v)); !errors.Is(err, ErrUnavailable) {
+		if _, _, err := v.get(t.Context(), mustKey(t, v)); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("Get = %v, want ErrUnavailable", err)
 		}
 	})
@@ -91,7 +91,7 @@ func TestValkeyClient(t *testing.T) {
 			t.Fatalf("status = %+v", st)
 		}
 		k := mustKey(t, v)
-		if err := v.Set(t.Context(), k, "v"); err != nil {
+		if err := v.set(t.Context(), k, "v"); err != nil {
 			t.Fatal(err)
 		}
 		var found bool
@@ -118,7 +118,7 @@ func TestValkeyClient(t *testing.T) {
 		if v.StartupError() != nil {
 			t.Fatalf("an unsupported version is degraded, not a startup error: %v", v.StartupError())
 		}
-		if err := v.Set(t.Context(), mustKey(t, v), "v"); !errors.Is(err, ErrUnavailable) {
+		if err := v.set(t.Context(), mustKey(t, v), "v"); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("Set = %v, want ErrUnavailable", err)
 		}
 		time.Sleep(500 * time.Millisecond) // several probe intervals
@@ -203,14 +203,14 @@ func TestValkeyClient(t *testing.T) {
 		if v.Available() || v.Status().DegradedReason != "client closed" {
 			t.Fatalf("status = %+v", v.Status())
 		}
-		if _, err := v.Subscribe(t.Context(), Channel{name: "c"}, func(Message) {}); err == nil {
+		if _, err := v.subscribe(t.Context(), Channel{name: "c"}, func(Message) {}); err == nil {
 			t.Fatal("Subscribe on a closed client")
 		}
 	})
 	t.Run("R-ARCH-031 a subscription made while Valkey is down is accepted and ends with its context", func(t *testing.T) {
 		v, _ := newTestValkey(t, sentinelCfg("127.0.0.1:1"))
 		ctx, cancel := context.WithCancel(t.Context())
-		if _, err := v.Subscribe(ctx, Channel{name: "trove:x:sig:v1:jobs"}, func(Message) {}); err != nil {
+		if _, err := v.subscribe(ctx, Channel{name: "trove:x:sig:v1:jobs"}, func(Message) {}); err != nil {
 			t.Fatal(err)
 		}
 		if n := len(v.ps.wanted()); n != 1 {
@@ -218,7 +218,7 @@ func TestValkeyClient(t *testing.T) {
 		}
 		cancel()
 		eventually(t, "removal on context end", time.Second, func() bool { return len(v.ps.wanted()) == 0 })
-		if _, err := v.Subscribe(t.Context(), Channel{}, func(Message) {}); err == nil {
+		if _, err := v.subscribe(t.Context(), Channel{}, func(Message) {}); err == nil {
 			t.Error("zero Channel accepted")
 		}
 	})
@@ -257,7 +257,7 @@ func TestValkeyBreakerIntegration(t *testing.T) {
 		eventually(t, "connection", 5*time.Second, func() bool { return v.Status().Version != "" })
 		k := mustKey(t, v)
 		for range cfg.CircuitBreaker.FailureThreshold {
-			if _, _, err := v.Get(t.Context(), k); err == nil || errors.Is(err, ErrUnavailable) {
+			if _, _, err := v.get(t.Context(), k); err == nil || errors.Is(err, ErrUnavailable) {
 				t.Fatalf("Get = %v, want the server's OOM error", err)
 			}
 		}
@@ -268,7 +268,7 @@ func TestValkeyBreakerIntegration(t *testing.T) {
 			t.Fatalf("trove_valkey_circuit_open = %v", got)
 		}
 		before := gets.Load()
-		if _, _, err := v.Get(t.Context(), k); !errors.Is(err, ErrUnavailable) {
+		if _, _, err := v.get(t.Context(), k); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("Get with the circuit open = %v, want ErrUnavailable", err)
 		}
 		if gets.Load() != before {
@@ -280,7 +280,7 @@ func TestValkeyBreakerIntegration(t *testing.T) {
 
 		sick.Store(false)
 		time.Sleep(cfg.CircuitBreaker.OpenDuration + 100*time.Millisecond)
-		if _, _, err := v.Get(t.Context(), k); err != nil {
+		if _, _, err := v.get(t.Context(), k); err != nil {
 			t.Fatalf("probe after open_duration: %v", err)
 		}
 		eventually(t, "recovery", time.Second, v.Available)
@@ -343,14 +343,14 @@ func TestCredentials(t *testing.T) {
 
 func mustKey(t *testing.T, v *Valkey) Key {
 	t.Helper()
-	k, err := v.Key(testFamily, "k1")
+	k, err := v.formKey(testFamily, "k1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return k
 }
 
-var testFamily = RegisterKeyFamily("testclient", 1, 2*time.Minute)
+var testFamily = registerKeyFamily("testclient", 1, 2*time.Minute)
 
 // gaugeValue reads one series of a family from the registry: the series whose
 // first label value is label, or the only series when label is empty.

@@ -310,7 +310,9 @@ func TestListeners(t *testing.T) {
 }
 
 func TestEndToEndHeaders(t *testing.T) {
-	h := start(t, "web", map[string]string{"TROVE_SERVER_TRUSTED_PROXIES": `["127.0.0.0/8"]`})
+	// The trace context of a caller counts only from tracing.trusted_peers, never from the
+	// trusted proxies (S6); the test client is a trusted peer here.
+	h := start(t, "web", map[string]string{"TROVE_SERVER_TRUSTED_PROXIES": `["127.0.0.0/8"]`, "TROVE_TRACING_TRUSTED_PEERS": `["127.0.0.0/8"]`})
 	t.Run("E0.10 a request with traceparent keeps its trace ID in X-Request-Id and the request log", func(t *testing.T) {
 		const tid = "4bf92f3577b34da6a3ce929d0e0e4736"
 		code, hdr, _ := get(t, h.client+"/api/v1/system/ping", "traceparent", "00-"+tid+"-00f067aa0ba902b7-01", "X-Forwarded-For", "198.51.100.4")
@@ -366,7 +368,9 @@ func TestEndToEndHeaders(t *testing.T) {
 }
 
 func TestBootstrapAccess(t *testing.T) {
-	h := start(t, "web", map[string]string{"TROVE_SYSTEM_BOOTSTRAP_ANONYMOUS_READ": "true", "TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": "0s"})
+	// Anonymous read is refused behind an https base URL (S10); the bootstrap tests run on a local one.
+	local := "http://localhost:8080"
+	h := start(t, "web", map[string]string{"TROVE_SYSTEM_BOOTSTRAP_ANONYMOUS_READ": "true", "TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": "0s", "TROVE_SERVER_BASE_URL": local})
 	t.Run("R-API-038 replicas lists this replica with its role and state", func(t *testing.T) {
 		code, _, body := get(t, h.client+"/api/v1/system/replicas")
 		if code != 200 {
@@ -381,7 +385,7 @@ func TestBootstrapAccess(t *testing.T) {
 		}
 	})
 	t.Run("R-API-038 a replica started with role all lists roles [all]", func(t *testing.T) {
-		all := start(t, "all", map[string]string{"TROVE_SYSTEM_BOOTSTRAP_ANONYMOUS_READ": "true"})
+		all := start(t, "all", map[string]string{"TROVE_SYSTEM_BOOTSTRAP_ANONYMOUS_READ": "true", "TROVE_SERVER_BASE_URL": local})
 		_, _, body := get(t, all.client+"/api/v1/system/replicas")
 		if !strings.Contains(body, `"roles":["all"]`) {
 			t.Fatalf("%s", body)

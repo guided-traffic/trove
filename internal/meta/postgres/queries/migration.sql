@@ -65,3 +65,18 @@ SELECT c.relname::text AS name
 SELECT pg_catalog.pg_has_role(current_user, nspowner, 'USAGE')::boolean AS accessible
   FROM pg_catalog.pg_namespace
  WHERE nspname = $1;
+
+-- name: WritableBookkeeping :many
+-- The bookkeeping tables of the schema that the current role can change without
+-- owning them (neither owner nor member of the owning role).
+SELECT c.relname::text AS name
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = $1
+   AND c.relname IN ('schema_migration', 'schema_state')
+   AND NOT pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE')
+   AND (   pg_catalog.has_table_privilege(c.oid, 'INSERT')
+        OR pg_catalog.has_table_privilege(c.oid, 'UPDATE')
+        OR pg_catalog.has_table_privilege(c.oid, 'DELETE')
+        OR pg_catalog.has_table_privilege(c.oid, 'TRUNCATE'))
+ ORDER BY c.relname;

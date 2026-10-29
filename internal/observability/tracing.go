@@ -28,19 +28,12 @@ const tracerName = "github.com/guided-traffic/trove"
 type TracingOption func(*tracingOptions)
 
 type tracingOptions struct {
-	trusted  []string
 	instance string
 	role     string
 	version  string
 	metrics  *Metrics
 	log      *slog.Logger
 	exporter sdktrace.SpanExporter
-}
-
-// WithTrustedProxies sets the peers (addresses or CIDRs, server.trusted_proxies)
-// whose incoming traceparent is continued under incoming_context trusted_proxies.
-func WithTrustedProxies(cidrs []string) TracingOption {
-	return func(o *tracingOptions) { o.trusted = cidrs }
 }
 
 // WithTraceResource sets service.instance.id, trove.role and service.version.
@@ -79,10 +72,10 @@ func Tracing(cfg config.Tracing, opts ...TracingOption) (*Tracer, error) {
 		f(&o)
 	}
 	t := &Tracer{cfg: cfg, scrub: defaultScrubber}
-	for _, c := range o.trusted {
+	for _, c := range cfg.TrustedPeers {
 		p, err := parsePrefix(c)
 		if err != nil {
-			return nil, fmt.Errorf("tracing: trusted proxy %q: %w", c, err)
+			return nil, fmt.Errorf("tracing.trusted_peers: %q: %w", c, err)
 		}
 		t.trusted = append(t.trusted, p)
 	}
@@ -159,7 +152,8 @@ func (t *Tracer) Shutdown(ctx context.Context) error {
 // ForceFlush exports the queued spans now.
 func (t *Tracer) ForceFlush(ctx context.Context) error { return t.provider.ForceFlush(ctx) }
 
-// peerTrusted reports whether the TCP peer of r is in server.trusted_proxies.
+// peerTrusted reports whether the TCP peer of r is in tracing.trusted_peers.
+// It reads the peer of the connection, never a forwarded header.
 func (t *Tracer) peerTrusted(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -178,7 +172,9 @@ func (t *Tracer) peerTrusted(r *http.Request) bool {
 	return false
 }
 
-// continues applies tracing.incoming_context to one request.
+// continues applies tracing.incoming_context to one request. trusted_peers
+// (the default, and what an unset value means) continues only from a peer in
+// tracing.trusted_peers; with that list empty, nothing is continued.
 func (t *Tracer) continues(r *http.Request) bool {
 	switch t.cfg.IncomingContext {
 	case "all":
@@ -246,8 +242,8 @@ func (t *Tracer) Middleware() func(http.Handler) http.Handler {
 			}
 			startOpts = append(startOpts, trace.WithAttributes(
 				attribute.String("http.request.method", r.Method),
-				attribute.String("url.path", r.URL.Path),
-				attribute.String("user_agent.original", t.scrub.String(r.UserAgent())),
+				attribute.String("url.path", clipField(r.URL.Path, MaxPath, t.scrub)),
+				attribute.String("user_agent.original", clipField(r.UserAgent(), MaxUserAgent, t.scrub)),
 				attribute.String("network.peer.address", peerHost(r.RemoteAddr)),
 			))
 			ctx, span := t.tracer.Start(ctx, r.Method, startOpts...)

@@ -50,6 +50,45 @@ func TestGuardBreaker(t *testing.T) {
 			t.Fatalf("trove_storage_s3_circuit_open = %v", v)
 		}
 	})
+	t.Run("R-STOR-033 a call that only hit the caller's deadline is no answer: it neither closes nor opens the circuit", func(t *testing.T) {
+		now = time.Now()
+		g, mem, _ := newGuard(t)
+		mem.SetFault(fail5xx)
+		for i := 0; i < 5; i++ {
+			_ = head(g)
+		}
+		if !g.Open() {
+			t.Fatal("five transient failures should open the circuit")
+		}
+		now = now.Add(11 * time.Second)
+		mem.SetFault(func(string, string) error { return context.DeadlineExceeded })
+		if err := head(g); !errors.Is(err, context.DeadlineExceeded) { // the probe
+			t.Fatalf("probe: %v", err)
+		}
+		if !g.Open() {
+			t.Error("a probe that ended on the caller's deadline closed the circuit")
+		}
+		// And in the closed state it does not count toward the threshold.
+		g2, mem2, _ := newGuard(t)
+		mem2.SetFault(func(string, string) error { return context.DeadlineExceeded })
+		for i := 0; i < 20; i++ {
+			_ = head(g2)
+		}
+		if g2.Open() {
+			t.Error("caller deadlines opened the circuit")
+		}
+		// A deadline inside the transport arrives as a transient store error and counts.
+		g3, mem3, _ := newGuard(t)
+		mem3.SetFault(func(op, _ string) error {
+			return &blob.StoreError{Op: op, Kind: blob.KindTransient, Err: context.DeadlineExceeded}
+		})
+		for i := 0; i < 5; i++ {
+			_ = head(g3)
+		}
+		if !g3.Open() {
+			t.Error("transport timeouts must count as failures")
+		}
+	})
 	t.Run("R-STOR-033 404 and other 4xx answers do not count as failures", func(t *testing.T) {
 		now = time.Now()
 		g, mem, _ := newGuard(t)

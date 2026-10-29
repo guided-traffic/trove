@@ -39,7 +39,7 @@ type ValkeySentinel struct {
 // ValkeyTLS configures transport security towards Valkey and the Sentinels.
 type ValkeyTLS struct {
 	Mode       string `yaml:"mode" default:"verify-full" validate:"oneof=verify-full|verify-ca|disable"`
-	CAFile     string `yaml:"ca_file" default:"" doc:"Empty means system roots plus the trusted CA bundle."`
+	CAFile     string `yaml:"ca_file" default:"" doc:"Empty means the system roots (verify-full only); required with verify-ca."`
 	CertFile   string `yaml:"cert_file" default:""`
 	KeyFile    string `yaml:"key_file" default:"" secret:"file"`
 	ServerName string `yaml:"server_name" default:"" doc:"Empty means the host name of each address."`
@@ -67,6 +67,11 @@ func (v *Valkey) Validate(r *Report) {
 	}
 	if v.TLS.Mode == "disable" && !v.AllowInsecure {
 		r.Add("tls.mode", "disable requires valkey.allow_insecure: true")
+	}
+	if v.TLS.Mode == "verify-ca" && v.TLS.CAFile == "" {
+		// verify-ca skips the host name; with the system roots on top, any
+		// certificate a public CA issued for any name would be accepted.
+		r.Add("tls.ca_file", "is required with tls.mode verify-ca: without it the system roots verify the chain and no host name is checked; set the CA of the Valkey servers or use verify-full")
 	}
 	if (v.TLS.CertFile == "") != (v.TLS.KeyFile == "") {
 		r.Add("tls", "cert_file and key_file must be set together")

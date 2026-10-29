@@ -90,13 +90,36 @@ type DatabasePreflight struct {
 	ExpectedWorkerReplicas int    `yaml:"expected_worker_replicas" default:"0" validate:"min=0" doc:"Set by the chart on the migration Job."`
 }
 
-// Validate checks the cross-field rules of the section.
-func (d *Database) Validate(r *Report) {
+// TLSProblem names what is unsafe about the TLS settings, or returns "". The
+// rule: a mode that does not encrypt, or does not check the server's
+// certificate against a CA we trust, needs allow_insecure; verify-ca without a CA
+// file is refused outright, because libpq would check against the system roots
+// without checking the host name. Without a root certificate file, require
+// accepts any certificate and so hands the password (the server asks for it in
+// the clear inside the session) to whoever answers.
+func (d *Database) TLSProblem() string {
 	switch d.SSLMode {
 	case "disable", "allow", "prefer":
 		if !d.AllowInsecure {
-			r.Add("ssl_mode", "%s requires database.allow_insecure: true", d.SSLMode)
+			return d.SSLMode + " requires database.allow_insecure: true"
 		}
+	case "require":
+		if d.SSLRootCertFile == "" && !d.AllowInsecure {
+			return "require does not check the server's certificate without ssl_root_cert_file; " +
+				"set ssl_root_cert_file (and prefer verify-full) or database.allow_insecure: true"
+		}
+	case "verify-ca":
+		if d.SSLRootCertFile == "" {
+			return "verify-ca needs ssl_root_cert_file: without it the system roots are used and the host name is not checked; use verify-full"
+		}
+	}
+	return ""
+}
+
+// Validate checks the cross-field rules of the section.
+func (d *Database) Validate(r *Report) {
+	if msg := d.TLSProblem(); msg != "" {
+		r.Add("ssl_mode", "%s", msg)
 	}
 	if d.Pool.MinConns > d.Pool.MaxConns {
 		r.Add("pool.min_conns", "must not exceed pool.max_conns")

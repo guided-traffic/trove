@@ -4,8 +4,50 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+// Field limits of the request record (R-OPS-010). The values come from the
+// client; without a bound, a 60 KiB User-Agent made every record and every
+// ring-buffer slot 60 KiB (and six times that as escaped JSON).
+const (
+	MaxUserAgent = 512
+	MaxPath      = 2 << 10
+	maxMethod    = 32
+	// TruncatedMarker ends a field that was cut.
+	TruncatedMarker = "…[truncated]"
+)
+
+// clipField bounds client-supplied text for a log record or a span: invalid
+// UTF-8 is replaced (a run by one U+FFFD), secrets are scrubbed, and text above
+// max bytes is cut at a rune boundary and ends in TruncatedMarker. The text is
+// scrubbed before the cut so that a secret is never cut into a fragment the
+// patterns no longer recognise; to bound the work for a huge header, only the
+// first 8×max bytes are scrubbed, and a secret would have to start in the kept
+// part and be longer than 7×max to lose its redaction.
+func clipField(s string, maxBytes int, scrub *Scrubber) string {
+	precut := len(s) > 8*maxBytes
+	if precut {
+		s = s[:8*maxBytes]
+	}
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if scrub != nil {
+		s = scrub.String(s)
+	}
+	if len(s) <= maxBytes {
+		if precut {
+			return s + TruncatedMarker
+		}
+		return s
+	}
+	end := maxBytes
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + TruncatedMarker
+}
 
 // RequestOption configures RequestLog.
 type RequestOption func(*requestOptions)
@@ -103,14 +145,14 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 				slog.String("listener", o.listener),
 				slog.String("remote_addr", remote),
 				slog.String("peer_addr", peer),
-				slog.String("method", r.Method),
-				slog.String("path", o.scrub.String(r.URL.RequestURI())),
+				slog.String("method", clipField(r.Method, maxMethod, nil)),
+				slog.String("path", clipField(r.URL.RequestURI(), MaxPath, o.scrub)),
 				slog.String("handler", handler),
 				slog.Int("status", status),
 				slog.Int64("request_bytes", recv),
 				slog.Int64("response_bytes", rec.bytes),
 				slog.Float64("duration_ms", float64(dur.Microseconds())/1000),
-				slog.String("user_agent", r.UserAgent()),
+				slog.String("user_agent", clipField(r.UserAgent(), MaxUserAgent, o.scrub)),
 				slog.String("principal", principal),
 				slog.String("principal_type", ptype),
 				nullable("principal_id", facts.principalID),

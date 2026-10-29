@@ -19,6 +19,7 @@ type Store struct {
 	cfg       config.Storage
 	objects   ObjectStore
 	db        DB
+	rows      blobRows
 	spool     *Spool
 	log       *slog.Logger
 	metrics   *Metrics
@@ -61,7 +62,7 @@ func New(cfg config.Storage, objects ObjectStore, db DB, opts ...Option) (*Store
 		return nil, errors.New("blob store needs an object store and a database")
 	}
 	s := &Store{
-		cfg: cfg, objects: objects, db: db, log: slog.Default(), now: time.Now, wait: 250 * time.Millisecond,
+		cfg: cfg, objects: objects, db: db, rows: pgRows{}, log: slog.Default(), now: time.Now, wait: 250 * time.Millisecond,
 	}
 	for _, o := range opts {
 		o(s)

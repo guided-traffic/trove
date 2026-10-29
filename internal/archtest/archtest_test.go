@@ -97,6 +97,93 @@ func TestLayers(t *testing.T) {
 	})
 }
 
+func TestFormatImportAllowlist(t *testing.T) {
+	cases := []struct {
+		name string
+		pkg  Package
+		bad  []string // targets that must be named
+	}{
+		{
+			"a format importing the object store, the job queue, the cache registry and meta is named",
+			pkg("internal/formats/npm", "internal/blob", "internal/jobs", "internal/cache", "internal/meta", "internal/backup/tables"),
+			[]string{"internal/blob", "internal/jobs", "internal/cache", "internal/meta", "internal/backup/tables"},
+		},
+		{
+			"a format importing a sibling format is named",
+			pkg("internal/formats/nuget", "internal/formats/npm"),
+			[]string{"internal/formats/npm"},
+		},
+		{
+			"a format importing the HTTP server shell or the management API is named",
+			pkg("internal/formats/npm", "internal/httpserver", "internal/api/v1"),
+			[]string{"internal/httpserver", "internal/api/v1"},
+		},
+		{
+			"a format importing the composition root is named",
+			pkg("internal/formats/npm", "internal/app"),
+			[]string{"internal/app"},
+		},
+		{
+			"the contract package importing a concrete format is named",
+			pkg("internal/formats", "internal/formats/npm"),
+			[]string{"internal/formats/npm"},
+		},
+		{
+			"a package that did not exist when the rule was written is refused by default",
+			pkg("internal/formats/npm", "internal/newthing"),
+			[]string{"internal/newthing"},
+		},
+	}
+	for _, c := range cases {
+		t.Run("R-ARCH-008 "+c.name, func(t *testing.T) {
+			vs := CheckModuleImportBans(mod, []Package{c.pkg})
+			for _, b := range c.bad {
+				wantEdge(t, vs, "R-ARCH-008", c.pkg.Rel, b)
+			}
+			if len(vs) != len(c.bad) {
+				t.Fatalf("want exactly %v, got %v", c.bad, Strings(vs))
+			}
+		})
+	}
+	t.Run("R-ARCH-008 the contract, errs, config, observability, standard library and the format's own subpackages pass", func(t *testing.T) {
+		wantClean(t, CheckModuleImportBans(mod, []Package{
+			pkg("internal/formats/npm", "internal/formats", "internal/errs", "internal/config", "internal/observability", "internal/formats/npm/parse", "net/http", "github.com/prometheus/client_golang/prometheus"),
+			pkg("internal/formats/npm/parse", "internal/errs", "internal/formats/npm"),
+			pkg("internal/formats", "internal/errs", "internal/config"),
+			pkg("internal/proxy", "internal/blob", "internal/jobs", "internal/meta"),
+		}))
+	})
+	t.Run("R-ARCH-008 the fixture module: infrastructure, object store and sibling imports are named, own subpackage and contract are not", func(t *testing.T) {
+		module, pkgs, err := ListPackages(fixtureDir(t, "layers"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		vs := CheckModuleImportBans(module, pkgs)
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/meta/postgres")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/npm", "internal/blob")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/nuget", "internal/formats/npm")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats", "internal/blob")
+		if len(vs) != 4 {
+			t.Fatalf("want 4 violations, got %v", Strings(vs))
+		}
+	})
+}
+
+func TestStateExemption(t *testing.T) {
+	t.Run("R-ARCH-032 the exemption is the exact package, not its subtree", func(t *testing.T) {
+		for _, ok := range []string{"internal/formats", "internal/meta", "internal/backup/tables", "internal/jobs", "internal/errs", "internal/secrets", "internal/cache", "internal/cluster", "internal/observability", "test/integration/coordination", "internal/archtest"} {
+			if !stateExempt(ok) {
+				t.Errorf("%s must be exempt", ok)
+			}
+		}
+		for _, bad := range []string{"internal/formats/npm", "internal/meta/postgres", "internal/meta/postgres/q", "internal/meta/postgres/listq", "internal/backup", "internal/backup/tables/x", "internal/jobs/x", "internal/cluster/x", "internal/observability/health", "internal/cache/lru"} {
+			if stateExempt(bad) {
+				t.Errorf("%s must not be exempt", bad)
+			}
+		}
+	})
+}
+
 func TestImportBans(t *testing.T) {
 	t.Run("R-ARCH-002 pgx outside meta/postgres and cluster names the edge", func(t *testing.T) {
 		vs := CheckImportBans([]Package{pkg("internal/repository", "github.com/jackc/pgx/v5/pgxpool")})
@@ -297,6 +384,14 @@ func TestRealTree(t *testing.T) {
 		}
 		wantClean(t, vs)
 	})
+	t.Run("R-ARCH-018 no LISTEN or NOTIFY, no change-log write outside internal/cluster, no session-level SQL, no assembled SQL", func(t *testing.T) {
+		root, _, _ := realTree(t)
+		vs, err := CheckSQLSources(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantClean(t, vs)
+	})
 	t.Run("R-ARCH-032 no package-level map, slice, pointer or sync.Map outside the allowed packages", func(t *testing.T) {
 		root, module, _ := realTree(t)
 		pkgs, err := LoadTyped(root)
@@ -304,5 +399,102 @@ func TestRealTree(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantClean(t, CheckPackageState(module, pkgs))
+	})
+}
+
+// hasViolation reports whether a violation of rule names file (prefix) and the offending text.
+func hasViolation(vs []Violation, rule, file, offence string) bool {
+	for _, v := range vs {
+		if v.Rule == rule && strings.HasPrefix(v.From, file) && strings.Contains(v.To, offence) {
+			return strings.Contains(v.String(), file) && strings.Contains(v.String(), offence)
+		}
+	}
+	return false
+}
+
+func TestSQLSourceRules(t *testing.T) {
+	vs, err := CheckSQLSources(fixtureDir(t, "sqlsrc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	must := func(t *testing.T, rule, file, offence string) {
+		t.Helper()
+		if !hasViolation(vs, rule, file, offence) {
+			t.Errorf("no %s violation naming %s and %q in:\n%s", rule, file, offence, strings.Join(Strings(vs), "\n"))
+		}
+	}
+	mustNot := func(t *testing.T, file string) {
+		t.Helper()
+		for _, v := range vs {
+			if strings.HasPrefix(v.From, file) {
+				t.Errorf("unexpected violation %s", v)
+			}
+		}
+	}
+
+	t.Run("R-ARCH-018 LISTEN, NOTIFY and pg_notify are named in Go and in sqlc files, and so is WaitForNotification", func(t *testing.T) {
+		must(t, "R-ARCH-018", "internal/proxy/listen.go", "LISTEN trove_changes")
+		must(t, "R-ARCH-018", "internal/proxy/listen.go", "pg_notify")
+		must(t, "R-ARCH-018", "internal/proxy/listen.go", "WaitForNotification")
+		must(t, "R-ARCH-018", "internal/proxy/notify.sql", "NOTIFY trove_changes")
+	})
+	t.Run("R-ARCH-018 a write to cluster_epoch or cluster_change outside internal/cluster is named", func(t *testing.T) {
+		must(t, "R-ARCH-018", "internal/repository/epoch.go", "UPDATE cluster_epoch")
+		must(t, "R-ARCH-018", "internal/repository/epoch.go", "DELETE FROM cluster_change")
+	})
+	t.Run("R-ARCH-018 calling a generated statement that writes the change log from outside internal/cluster is named", func(t *testing.T) {
+		must(t, "R-ARCH-018", "internal/repository/bump.go", "BumpEpoch")
+	})
+	t.Run("R-ARCH-018 internal/cluster, its sqlc files and migrations may write the change log", func(t *testing.T) {
+		mustNot(t, "internal/cluster/")
+		mustNot(t, "internal/meta/postgres/queries/cluster.sql")
+		mustNot(t, "internal/meta/postgres/q/cluster.sql.go")
+		mustNot(t, "internal/meta/postgres/migrations/")
+	})
+	t.Run("R-ARCH-019 session-level SET, RESET and set_config(false) are named, SET LOCAL and UPDATE ... SET are not", func(t *testing.T) {
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "SET statement_timeout =")
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "SET search_path TO")
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "RESET ALL")
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "set_config('app.x', '1', false)")
+		for _, v := range vs {
+			if strings.HasPrefix(v.From, "internal/proxy/session.go") && (strings.Contains(v.To, "SET LOCAL") || strings.Contains(v.To, "UPDATE") || strings.Contains(v.To, "set up") || strings.Contains(v.To, "set valkey")) {
+				t.Errorf("fine statement flagged: %s", v)
+			}
+		}
+	})
+	t.Run("R-ARCH-019 CREATE TEMP, WITH HOLD and a non-default isolation level are named", func(t *testing.T) {
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "CREATE TEMP")
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "WITH HOLD")
+		must(t, "R-ARCH-019", "internal/proxy/session.go", "ISOLATION LEVEL SERIALIZABLE")
+		must(t, "R-ARCH-019", "internal/proxy/iso.go", "pgx.RepeatableRead")
+		for _, v := range vs {
+			if strings.HasPrefix(v.From, "internal/proxy/session.go") && strings.Contains(v.To, "READ COMMITTED") {
+				t.Errorf("READ COMMITTED flagged: %s", v)
+			}
+		}
+	})
+	t.Run("R-ARCH-019 the backup snapshot may run at REPEATABLE READ and migrations may use session statements", func(t *testing.T) {
+		mustNot(t, "internal/backup/")
+		mustNot(t, "internal/meta/postgres/migrations/")
+	})
+	t.Run("R-ARCH-019 SQL built by Sprintf, Fprintf or concatenation is named outside listq and the catalog exception", func(t *testing.T) {
+		must(t, "R-ARCH-019", "internal/proxy/build.go", "fmt.Fprintf")
+		must(t, "R-ARCH-019", "internal/proxy/build.go", "fmt.Sprintf")
+		must(t, "R-ARCH-019", "internal/proxy/build.go", "+")
+		must(t, "R-ARCH-019", "internal/meta/postgres/other.go", "fmt.Sprintf")
+		mustNot(t, "internal/meta/postgres/listq/")
+		mustNot(t, "internal/meta/postgres/blobrefs.go")
+	})
+	t.Run("R-ARCH-019 constant SQL and ordinary messages are not assembly", func(t *testing.T) {
+		n := 0
+		for _, v := range vs {
+			if strings.HasPrefix(v.From, "internal/proxy/build.go") {
+				n++
+			}
+		}
+		// Fprintf, Sprintf and the concatenation: three, not the constant or the message.
+		if n != 3 {
+			t.Errorf("internal/proxy/build.go has %d violations, want 3", n)
+		}
 	})
 }

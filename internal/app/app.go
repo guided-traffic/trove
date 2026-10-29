@@ -30,17 +30,6 @@ import (
 
 var errUnavailable = errors.New("unavailable")
 
-const (
-	// quiesceMargin is how long before the shutdown deadline running work is
-	// cancelled and released (R-ARCH-024 step 4).
-	quiesceMargin = 5 * time.Second
-	// closeBudget bounds the flush and the close of the pools after the last
-	// request (step 6). It lies inside the 5 s margin of the pod's grace period.
-	closeBudget = 3 * time.Second
-	// opsShutdownTimeout bounds the stop of the ops listener, which stays up until the end.
-	opsShutdownTimeout = time.Second
-)
-
 // Options configure a replica.
 type Options struct {
 	Loaded *config.Loaded
@@ -66,6 +55,10 @@ type App struct {
 	sub  Subsystems
 	log  *slog.Logger
 	tele *telemetry
+	// budget splits the margin after the server phase (shutdown.go); tests scale it.
+	budget shutdownBudget
+	// warnInterval overrides warnEvery in tests.
+	warnInterval time.Duration
 
 	health    *health.Health
 	startedAt time.Time
@@ -147,7 +140,7 @@ func New(o Options) (*App, error) {
 		return nil, err
 	}
 	a := &App{
-		o: o, cfg: cfg, id: id, sub: sub, log: tele.log, tele: tele,
+		o: o, cfg: cfg, id: id, sub: sub, log: tele.log, tele: tele, budget: defaultBudget(),
 		startedCh: make(chan struct{}), fatal: make(chan error, 1), bootDone: make(chan struct{}),
 	}
 	a.health = health.New(cfg.Health,
@@ -207,7 +200,7 @@ func (a *App) Start(ctx context.Context) error {
 	if a.id.Role == "all" {
 		a.log.Warn("process.role is all: this role exists for local development only", "role", "all")
 	}
-	a.warnShutdownBudget()
+	a.standingWarnings()
 
 	// Step 2: the ops listener, readiness 503, liveness 200.
 	a.health.AddReadiness("startup", func(context.Context) error {
@@ -243,6 +236,11 @@ func (a *App) Start(ctx context.Context) error {
 		defer a.bg.Done()
 		a.health.Run(hctx)
 	}()
+	a.bg.Add(1)
+	go func() {
+		defer a.bg.Done()
+		a.warnLoop(hctx, a.warnEvery())
+	}()
 	a.log.Info("ops listener bound", "addr", ops.Addr().String())
 
 	bctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -260,21 +258,6 @@ func (a *App) fail(err error) {
 	select {
 	case a.fatal <- err:
 	default:
-	}
-}
-
-// warnShutdownBudget warns when the shutdown budget cannot fit the pod's grace
-// period (R-ARCH-024): drain delay + shutdown timeout + 5 s must stay below it.
-func (a *App) warnShutdownBudget() {
-	grace := a.cfg.Runtime.TerminationGracePeriod
-	if grace <= 0 {
-		return
-	}
-	need := a.cfg.Health.ShutdownDrainDelay + a.cfg.Server.ShutdownTimeout + quiesceMargin
-	if need > grace {
-		a.log.Warn("the shutdown budget exceeds the termination grace period; the kubelet would kill the process mid-drain",
-			"drain_delay", a.cfg.Health.ShutdownDrainDelay.String(), "shutdown_timeout", a.cfg.Server.ShutdownTimeout.String(),
-			"termination_grace_period", grace.String())
 	}
 }
 
@@ -407,7 +390,8 @@ func (a *App) startClient() error {
 	}
 	a.router = router
 
-	resolver, err := httpserver.NewResolver(cfg.Server.TrustedProxies, cfg.Server.BaseURL, cfg.Server.AdditionalBaseURLs)
+	resolver, err := httpserver.NewResolver(cfg.Server.TrustedProxies, cfg.Server.BaseURL, cfg.Server.AdditionalBaseURLs,
+		httpserver.WithForwardedHeader(httpserver.ForwardedHeader(cfg.Server.ForwardedHeader)))
 	if err != nil {
 		return err
 	}
@@ -467,9 +451,14 @@ func (a *App) abort() {
 
 // Shutdown is the sequence of R-ARCH-024 for SIGTERM. ctx carries no deadline of
 // its own; the budget comes from health.shutdown_drain_delay and
-// server.shutdown_timeout.
+// server.shutdown_timeout, which the configuration keeps inside the pod's grace
+// period (R-HA-011). Every phase works against one absolute plan (planShutdown):
+// the server phase ends at start + drain + timeout, and the commit grace, the
+// flush and close of the components and the ops listener share the margin after
+// it, so the process exits before the kubelet's SIGKILL whatever a phase does.
 func (a *App) Shutdown(ctx context.Context) error {
 	var errsOut []error
+	start := time.Now()
 	a.log.Info("shutting down")
 	if a.bootStop != nil {
 		a.bootStop()
@@ -489,19 +478,21 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	// Step 2: a web replica keeps serving for the drain delay; workers have no
 	// Service routing to them and skip it.
+	var drain time.Duration
 	if a.client != nil {
-		if d := a.cfg.Health.ShutdownDrainDelay; d > 0 {
-			a.log.Info("draining", "delay", d.String())
-			sleep(ctx, d)
-		}
+		drain = a.cfg.Health.ShutdownDrainDelay
+	}
+	plan := planShutdown(start, drain, a.cfg.Server.ShutdownTimeout, a.budget)
+	if drain > 0 {
+		a.log.Info("draining", "delay", drain.String())
+		sleep(ctx, drain)
 	}
 
 	// Steps 3 and 4: stop accepting, let in-flight requests and running work
 	// finish until the deadline; cancel what still runs 5 s before it.
-	timeout := a.cfg.Server.ShutdownTimeout
-	sctx, cancel := context.WithTimeout(ctx, timeout)
+	sctx, cancel := context.WithDeadline(ctx, plan.ServerBy)
 	defer cancel()
-	quiesce := time.AfterFunc(max(timeout-quiesceMargin, 0), func() {
+	quiesce := time.AfterFunc(time.Until(plan.QuiesceAt), func() {
 		for i := len(comps) - 1; i >= 0; i-- {
 			if q, ok := comps[i].(Quiescer); ok {
 				q.Quiesce(sctx)
@@ -514,7 +505,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := a.client.Shutdown(sctx); err != nil {
+			if err := a.client.ShutdownBy(sctx, plan.CommitBy); err != nil {
 				a.log.Warn("client listener", "error", err)
 			}
 		}()
@@ -532,36 +523,79 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	wg.Wait()
 
-	// Step 6: flush the buffers, then stop the components in reverse start order
-	// (leases, registry row, pools), then the ops listener, last.
-	cctx, ccancel := context.WithTimeout(ctx, closeBudget)
+	// Step 6: flush the buffers, then stop the components (signals first, then
+	// reverse start order: leases, registry row, change log, Valkey, pools), then
+	// the ops listener, last. A component that ignores its context is abandoned
+	// shortly after the close deadline, so the exit deadline holds.
+	cctx, ccancel := context.WithDeadline(ctx, plan.CloseBy)
 	defer ccancel()
+	closed := make(chan []error, 1)
+	go func() { closed <- a.closeComponents(cctx, comps) }()
+	select {
+	case e := <-closed:
+		errsOut = append(errsOut, e...)
+	case <-time.After(time.Until(plan.CloseBy.Add(a.budget.Abandon))):
+		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline")
+		errsOut = append(errsOut, errors.New("close phase overran its deadline"))
+	}
+	octx, ocancel := context.WithDeadline(ctx, plan.ExitBy)
+	defer ocancel()
+	if a.ops != nil {
+		_ = a.ops.Shutdown(octx)
+	}
+	// The check loop goes last: it waits for the checks that are running. The
+	// listeners and the gauge evaluator are done by now; wait for them too, but
+	// not past the exit deadline.
+	if a.healthStop != nil {
+		a.healthStop()
+	}
+	bgDone := make(chan struct{})
+	go func() { a.bg.Wait(); close(bgDone) }()
+	select {
+	case <-bgDone:
+	case <-octx.Done():
+		a.log.Warn("background goroutines still running at the exit deadline")
+	}
+	a.tele.shutdown(octx)
+	a.log.Info("stopped", "took", time.Since(start).Round(time.Millisecond).String())
+	return errors.Join(errsOut...)
+}
+
+// closeComponents flushes, then stops, every component. Signals stop first: the
+// pending signals are published before the leases are released (R-ARCH-024 step 6).
+func (a *App) closeComponents(ctx context.Context, comps []Component) []error {
+	var errsOut []error
 	for i := len(comps) - 1; i >= 0; i-- {
 		if f, ok := comps[i].(Flusher); ok {
-			if err := f.Flush(cctx); err != nil {
+			if err := f.Flush(ctx); err != nil {
 				errsOut = append(errsOut, fmt.Errorf("flush %s: %w", comps[i].Name(), err))
 			}
 		}
 	}
-	for i := len(comps) - 1; i >= 0; i-- {
-		if err := comps[i].Stop(cctx); err != nil {
-			errsOut = append(errsOut, fmt.Errorf("stop %s: %w", comps[i].Name(), err))
+	for _, c := range stopOrder(comps) {
+		if err := c.Stop(ctx); err != nil {
+			errsOut = append(errsOut, fmt.Errorf("stop %s: %w", c.Name(), err))
 		}
 	}
-	if a.ops != nil {
-		octx, ocancel := context.WithTimeout(ctx, opsShutdownTimeout)
-		_ = a.ops.Shutdown(octx)
-		ocancel()
+	return errsOut
+}
+
+// stopFirst marks a component that stops before the others, whatever its start
+// position (signals).
+type stopFirst interface{ stopsFirst() }
+
+// stopOrder is the reverse start order, with the components that stop first in
+// front.
+func stopOrder(comps []Component) []Component {
+	var first, rest []Component
+	for i := len(comps) - 1; i >= 0; i-- {
+		if _, ok := comps[i].(stopFirst); ok {
+			first = append(first, comps[i])
+		} else {
+			rest = append(rest, comps[i])
+		}
 	}
-	// The check loop goes last: it waits for the checks that are running. The
-	// listeners and the gauge evaluator are done by now; wait for them too.
-	if a.healthStop != nil {
-		a.healthStop()
-	}
-	a.bg.Wait()
-	a.tele.shutdown(cctx)
-	a.log.Info("stopped")
-	return errors.Join(errsOut...)
+	return append(first, rest...)
 }
 
 // Blobs returns the blob store; nil in a shell without infrastructure.

@@ -20,6 +20,12 @@ func (c closer) Name() string                { return c.name }
 func (c closer) Start(context.Context) error { return nil }
 func (c closer) Stop(context.Context) error  { c.close(); return nil }
 
+// firstCloser is a closer that stops before every other component: the signals
+// publish what is pending before the leases are released (R-ARCH-024 step 6).
+type firstCloser struct{ closer }
+
+func (firstCloser) stopsFirst() {}
+
 // startCoordination wires signals, the change log, the cache registry and the
 // replica registry, in the order of docs/developer/coordination.md (R-ARCH-024
 // step 7): signals and changes first, caches before the first poll, the
@@ -38,7 +44,7 @@ func (a *App) startCoordination(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.startComponent(ctx, closer{name: "signals", close: signals.Close}); err != nil {
+	if err := a.startComponent(ctx, firstCloser{closer{name: "signals", close: signals.Close}}); err != nil {
 		return err
 	}
 

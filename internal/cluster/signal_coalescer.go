@@ -122,10 +122,10 @@ func (s *Signals) Subscribe(ctx context.Context, area string, h SignalHandler) (
 	s.mu.Unlock()
 
 	if first && s.bus != nil {
-		ch, err := s.bus.Channel(sigChannels, area)
+		ch, err := s.bus.channel(sigChannels, area)
 		if err == nil {
 			var c func()
-			c, err = s.bus.Subscribe(ctx, ch, func(m Message) { s.receive(area, m.Payload) })
+			c, err = s.bus.subscribe(ctx, ch, func(m Message) { s.receive(area, m.Payload) })
 			if err == nil {
 				s.mu.Lock()
 				a.cancel = c
@@ -244,7 +244,7 @@ func (s *Signals) flush(a *signalArea) {
 		s.log.Warn("signal not published", "area", a.name, "error", err)
 		return
 	}
-	ch, err := s.bus.Channel(sigChannels, a.name)
+	ch, err := s.bus.channel(sigChannels, a.name)
 	if err != nil {
 		s.log.Warn("signal not published", "area", a.name, "error", err)
 		return
@@ -254,7 +254,7 @@ func (s *Signals) flush(a *signalArea) {
 		defer s.wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if err := s.bus.Publish(ctx, ch, body); err != nil {
+		if err := s.bus.publish(ctx, ch, body); err != nil {
 			s.m.dropped.WithLabelValues(a.name).Inc()
 			s.bus.CountDegraded(MechanismSignal)
 			return

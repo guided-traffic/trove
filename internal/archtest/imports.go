@@ -1,5 +1,7 @@
 package archtest
 
+import "strings"
+
 // importBan forbids an import everywhere except in the listed packages.
 type importBan struct {
 	rule      string
@@ -62,44 +64,74 @@ func CheckImportBans(pkgs []Package) []Violation {
 	return out
 }
 
-// moduleImportBan forbids a package tree from importing module-internal trees.
-type moduleImportBan struct {
-	rule      string
-	from      []string
-	forbidden []string // module-relative prefixes
-	why       string
+// formatAllowed is what a format package may import from this module (R-ARCH-008,
+// R-ARCH-009): the format contract (internal/formats itself), its own tree, the
+// error kinds, the configuration types it reads, and the observability
+// primitives. Everything else a format needs comes through Host. The match is the
+// exact package, so a sibling format, the object store, the job queue, the cache
+// registry, the SQL transaction type and the infrastructure are all refused.
+//
+// A format that needs a table registered for backup (internal/backup/tables) or a
+// revision column (internal/meta) gets that row added here, with the requirement
+// that justifies it.
+func formatAllowed() []string {
+	return []string{"internal/formats", "internal/errs", "internal/config", "internal/observability"}
 }
 
-func moduleImportBans() []moduleImportBan {
-	return []moduleImportBan{
-		{
-			rule:      "R-ARCH-008",
-			from:      []string{"internal/formats"},
-			forbidden: []string{"internal/meta/postgres", "internal/blob/s3", "internal/cluster", "internal/outbound", "internal/secrets"},
-			why:       "format packages reach the core only through Host and import no infrastructure",
-		},
+// formatRoot is the tree of the format plug-ins and their contract.
+const formatRoot = "internal/formats"
+
+// formatSelf returns the tree of the format package rel ("internal/formats/npm"
+// for "internal/formats/npm/parse"), or the contract itself.
+func formatSelf(rel string) string {
+	rest := strings.TrimPrefix(rel, formatRoot+"/")
+	if rest == rel {
+		return formatRoot
 	}
+	id, _, _ := strings.Cut(rest, "/")
+	return formatRoot + "/" + id
 }
 
-// CheckModuleImportBans checks bans between trees of this module, such as the
-// formats importing infrastructure.
+// CheckModuleImportBans implements the format import rule of R-ARCH-008 as an
+// allowlist: a package of the formats tree imports from this module only the
+// packages of formatAllowed and its own subpackages. Any other edge, including a
+// package that did not exist when the rule was written, is a violation that names
+// the edge.
 func CheckModuleImportBans(module string, pkgs []Package) []Violation {
 	var out []Violation
 	for _, p := range pkgs {
-		for _, ban := range moduleImportBans() {
-			if !underAny(p.Rel, ban.from) {
+		if !under(p.Rel, formatRoot) {
+			continue
+		}
+		self := formatSelf(p.Rel)
+		allowed := formatAllowed()
+		for _, imp := range p.Imports {
+			target := rel(module, imp)
+			if target == imp { // not a package of this module
 				continue
 			}
-			for _, imp := range p.Imports {
-				target := rel(module, imp)
-				if target != imp && underAny(target, ban.forbidden) {
-					out = append(out, Violation{Rule: ban.rule, From: p.Rel, To: target, Detail: ban.why})
-				}
+			// The contract package has no tree of its own to import from.
+			own := under(target, self) && (self != formatRoot || target == formatRoot)
+			if inList(target, allowed) || own {
+				continue
 			}
+			out = append(out, Violation{
+				Rule: "R-ARCH-008", From: p.Rel, To: target,
+				Detail: "a format reaches the core only through Host; it may import the format contract, errs, config types and observability primitives, and nothing else",
+			})
 		}
 	}
 	sortViolations(out)
 	return out
+}
+
+func inList(s string, list []string) bool {
+	for _, x := range list {
+		if s == x {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckStorageValkey implements the import half of R-STOR-046: nothing below

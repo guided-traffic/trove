@@ -10,6 +10,7 @@ package chart_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -920,7 +921,7 @@ func TestChart(t *testing.T) {
 		})
 	})
 
-	t.Run("R-HA-011 the grace period reaches the process and exceeds the drain delay", func(t *testing.T) {
+	t.Run("R-HA-011 the chart sets the grace period per role, passes it to the process and keeps it above the drain delay", func(t *testing.T) {
 		_, docs := render(t, required())
 		for role, want := range map[string]struct {
 			seconds int
@@ -1299,6 +1300,72 @@ func TestRenderedConfigurationPassesTheBinary(t *testing.T) {
 	})
 }
 
+// pod env as the binary sees it: literal values, the downward API as "test".
+func podEnviron(pod any) []string {
+	env := []string{"PATH=" + os.Getenv("PATH")}
+	for n, e := range envByName(pod) {
+		switch {
+		case !strings.HasPrefix(n, "TROVE_"):
+		case at(e, "value") != nil:
+			env = append(env, n+"="+str(e, "value"))
+		case n == "TROVE_RUNTIME_MEMORY_LIMIT_BYTES":
+			env = append(env, n+"=1073741824")
+		default:
+			env = append(env, n+"=test")
+		}
+	}
+	return env
+}
+
+func TestShutdownBudgetDerivation(t *testing.T) {
+	// R-HA-011: the chart passes the grace period; the binary derives
+	// server.shutdown_timeout = grace - health.shutdown_drain_delay - 5 s from it. This runs the
+	// real binary over the rendered file and environment, so neither half can drift.
+	cases := []struct {
+		name    string
+		sets    []string
+		web     string
+		worker  string
+		sources string
+	}{
+		{"chart defaults: web 120 s / worker 300 s, drain 5 s", nil, "1m50s", "4m50s", "derived"},
+		{"drain 15 s, worker 300 s", []string{"config.health.shutdown_drain_delay=15s"}, "1m40s", "4m40s", "derived"},
+		{"web 45 s with drain 30 s leaves the 10 s the chart rule guarantees", []string{"web.terminationGracePeriodSeconds=45", "config.health.shutdown_drain_delay=30s"}, "10s", "4m25s", "derived"},
+	}
+	bin := trove(t)
+	for _, c := range cases {
+		t.Run("R-HA-011 the binary derives server.shutdown_timeout from the rendered grace period: "+c.name, func(t *testing.T) {
+			_, docs := render(t, required(), c.sets...)
+			cfgPath := filepath.Join(t.TempDir(), "trove.yaml")
+			if err := os.WriteFile(cfgPath, []byte(str(find(docs, "ConfigMap", "trove-config"), "data", "trove.yaml")), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for role, want := range map[string]string{"web": c.web, "worker": c.worker} {
+				pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
+				cmd := exec.Command(bin, "admin", "config", "validate", "--config", cfgPath, "--format", "json")
+				cmd.Env = podEnviron(pod)
+				out, err := cmd.Output()
+				if err != nil {
+					t.Fatalf("%s: trove admin config validate: %v", role, err)
+				}
+				var res struct {
+					Values map[string]struct {
+						Value  any    `json:"value"`
+						Source string `json:"source"`
+					} `json:"values"`
+				}
+				if err := json.Unmarshal(out, &res); err != nil {
+					t.Fatalf("%s: %v\n%s", role, err, out)
+				}
+				got := res.Values["server.shutdown_timeout"]
+				if got.Value != want || got.Source != c.sources {
+					t.Errorf("%s: server.shutdown_timeout = %v (%s), want %s (%s)", role, got.Value, got.Source, want, c.sources)
+				}
+			}
+		})
+	}
+}
+
 func equalMaps(a, b any) bool {
 	am, ok1 := a.(map[string]any)
 	bm, ok2 := b.(map[string]any)
@@ -1311,4 +1378,199 @@ func equalMaps(a, b any) bool {
 		}
 	}
 	return true
+}
+
+// portsOf returns the ports one ingress rule admits, and its from peers.
+func portsOf(rule any) (ports []int, from []any, hasFrom bool) {
+	for _, p := range list(rule, "ports") {
+		if n, ok := at(p, "port").(int); ok {
+			ports = append(ports, n)
+		}
+	}
+	f, has := at(rule, "from").([]any)
+	return ports, f, has
+}
+
+func TestNetworkPolicy(t *testing.T) {
+	t.Run("R-HA-042 web admits 8080 from anywhere and 8081 only from the monitoring namespace, worker admits 8081 only", func(t *testing.T) {
+		eachSet(t, func(t *testing.T, _ string, _ string, docs []doc) {
+			web := find(docs, "NetworkPolicy", "trove-web")
+			worker := find(docs, "NetworkPolicy", "trove-worker")
+			if web == nil || worker == nil {
+				t.Fatal("NetworkPolicy trove-web or trove-worker not rendered")
+			}
+			if got := list(web, "spec", "policyTypes"); len(got) != 1 || got[0] != "Ingress" {
+				t.Errorf("web policyTypes = %v, want [Ingress] only (egress is not rendered)", got)
+			}
+			rules := list(web, "spec", "ingress")
+			if len(rules) != 2 {
+				t.Fatalf("web has %d ingress rules, want 2 (8080 and 8081)", len(rules))
+			}
+			p0, f0, has0 := portsOf(rules[0])
+			if len(p0) != 1 || p0[0] != 8080 || has0 {
+				t.Errorf("web rule 1 = ports %v from %v (has from: %v), want 8080 from anywhere", p0, f0, has0)
+			}
+			p1, f1, has1 := portsOf(rules[1])
+			if len(p1) != 1 || p1[0] != 8081 || !has1 || len(f1) != 1 ||
+				str(f1[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "monitoring" {
+				t.Errorf("web rule 2 = ports %v from %v, want 8081 from the monitoring namespace only", p1, f1)
+			}
+			wr := list(worker, "spec", "ingress")
+			if len(wr) != 1 {
+				t.Fatalf("worker has %d ingress rules, want 1", len(wr))
+			}
+			if p, _, has := portsOf(wr[0]); len(p) != 1 || p[0] != 8081 || !has {
+				t.Errorf("worker rule = ports %v (has from: %v), want 8081 from named peers only", p, has)
+			}
+		})
+	})
+
+	t.Run("R-HA-042 every policy selects the pods of its component and no others", func(t *testing.T) {
+		_, docs := render(t, required())
+		for _, c := range []struct{ policy, kind, workload string }{
+			{"trove-web", "Deployment", "trove-web"},
+			{"trove-worker", "Deployment", "trove-worker"},
+			{"trove-migrate", "Job", "trove-migrate"},
+		} {
+			sel, _ := at(find(docs, "NetworkPolicy", c.policy), "spec", "podSelector", "matchLabels").(map[string]any)
+			labels, _ := at(find(docs, c.kind, c.workload), "spec", "template", "metadata", "labels").(map[string]any)
+			if len(sel) == 0 {
+				t.Errorf("%s selects every pod in the namespace", c.policy)
+			}
+			for k, v := range sel {
+				if labels[k] != v {
+					t.Errorf("%s selects %s=%v, but the pods of %s carry %v", c.policy, k, v, c.workload, labels[k])
+				}
+			}
+		}
+		// web and worker must not select each other's pods.
+		web, _ := at(find(docs, "NetworkPolicy", "trove-web"), "spec", "podSelector", "matchLabels").(map[string]any)
+		worker, _ := at(find(docs, "NetworkPolicy", "trove-worker"), "spec", "podSelector", "matchLabels").(map[string]any)
+		if web["app.kubernetes.io/component"] == worker["app.kubernetes.io/component"] {
+			t.Error("web and worker policies select the same component")
+		}
+	})
+
+	t.Run("R-HA-042 the migration Job accepts no ingress at all", func(t *testing.T) {
+		_, docs := render(t, required())
+		p := find(docs, "NetworkPolicy", "trove-migrate")
+		if p == nil {
+			t.Fatal("NetworkPolicy trove-migrate not rendered")
+		}
+		if got := list(p, "spec", "policyTypes"); len(got) != 1 || got[0] != "Ingress" {
+			t.Errorf("policyTypes = %v", got)
+		}
+		if r := list(p, "spec", "ingress"); len(r) != 0 {
+			t.Errorf("migrate ingress = %v, want none", r)
+		}
+		if !strings.Contains(str(p, "metadata", "annotations", "helm.sh/hook"), "pre-install") {
+			t.Error("the migrate policy is not a hook resource like the Job it guards")
+		}
+	})
+
+	t.Run("R-HA-042 http.from, ops.from and probeCIDRs are honoured, and empty ops peers close 8081", func(t *testing.T) {
+		// os.MkdirTemp: helm -f splits a path at commas, and t.TempDir carries the test name.
+		dir, err := os.MkdirTemp("", "np-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		vals := filepath.Join(dir, "np.yaml")
+		if err := os.WriteFile(vals, []byte(`networkPolicy:
+  ingress:
+    http:
+      from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik}}
+    ops:
+      from:
+        - podSelector: {matchLabels: {app: prometheus}}
+  probeCIDRs: ["10.0.0.0/16"]
+`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, docs := render(t, append(required(), vals))
+		rules := list(find(docs, "NetworkPolicy", "trove-web"), "spec", "ingress")
+		_, f0, has0 := portsOf(rules[0])
+		if !has0 || len(f0) != 1 || str(f0[0], "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name") != "traefik" {
+			t.Errorf("8080 from = %v, want the traefik namespace", f0)
+		}
+		_, f1, _ := portsOf(rules[1])
+		if len(f1) != 2 || str(f1[0], "podSelector", "matchLabels", "app") != "prometheus" || str(f1[1], "ipBlock", "cidr") != "10.0.0.0/16" {
+			t.Errorf("8081 from = %v, want the prometheus pods and the probe CIDR", f1)
+		}
+
+		_, docs = render(t, required(), "networkPolicy.ingress.ops.from=null")
+		for _, role := range []string{"web", "worker"} {
+			for _, r := range list(find(docs, "NetworkPolicy", "trove-"+role), "spec", "ingress") {
+				if p, _, _ := portsOf(r); len(p) == 1 && p[0] == 8081 {
+					t.Errorf("%s still admits 8081 although no peer is listed; an empty from would mean from anywhere", role)
+				}
+			}
+		}
+	})
+
+	t.Run("R-HA-042 networkPolicy.enabled=false renders no policy", func(t *testing.T) {
+		_, docs := render(t, required(), "networkPolicy.enabled=false")
+		if n := len(ofKind(docs, "NetworkPolicy")); n != 0 {
+			t.Errorf("%d NetworkPolicy objects rendered with the policy disabled", n)
+		}
+	})
+}
+
+func TestMigrationJobSecrets(t *testing.T) {
+	t.Run("R-HA-030 the migration Job mounts no encryption key ring, the replicas do", func(t *testing.T) {
+		eachSet(t, func(t *testing.T, _ string, out string, docs []doc) {
+			job := find(docs, "Job", "trove-migrate")
+			if job == nil {
+				return // migrations.mode disabled
+			}
+			pod := at(job, "spec", "template", "spec")
+			for _, v := range list(pod, "volumes") {
+				if strings.Contains(str(v, "name"), "encryption") || str(v, "secret", "secretName") != "" && strings.Contains(str(v, "secret", "secretName"), "encryption") {
+					t.Errorf("the migration Job mounts the key ring volume %q", str(v, "name"))
+				}
+			}
+			for _, m := range list(pod, "containers", "0", "volumeMounts") {
+				if strings.Contains(str(m, "mountPath"), "/encryption") {
+					t.Errorf("the migration Job mounts %s", str(m, "mountPath"))
+				}
+			}
+			for _, role := range []string{"web", "worker"} {
+				found := false
+				for _, m := range list(at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec"), "containers", "0", "volumeMounts") {
+					found = found || str(m, "mountPath") == "/var/run/secrets/trove/encryption"
+				}
+				if !found {
+					t.Errorf("trove-%s lost its key ring mount", role)
+				}
+			}
+		})
+	})
+}
+
+func TestTrustedProxiesExample(t *testing.T) {
+	t.Run("R-ARCH-006 the values example names edge addresses, never a pod CIDR, and the chart ships no trusted proxy by default", func(t *testing.T) {
+		raw, err := os.ReadFile(filepath.Join(chartDir, "values.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if !strings.Contains(line, "trusted_proxies:") {
+				continue
+			}
+			if strings.Contains(line, "10.244.0.0/16") || strings.Contains(line, "/0") {
+				t.Errorf("trusted_proxies example is a pod-wide range: %s", strings.TrimSpace(line))
+			}
+		}
+		var vals doc
+		if err := yaml.Unmarshal(raw, &vals); err != nil {
+			t.Fatal(err)
+		}
+		if got := list(vals, "config", "server", "trusted_proxies"); len(got) != 0 {
+			t.Errorf("default trusted_proxies = %v, want none", got)
+		}
+		if str(vals, "config", "server", "forwarded_header") != "x-forwarded-for" {
+			t.Errorf("default forwarded_header = %q", str(vals, "config", "server", "forwarded_header"))
+		}
+	})
 }

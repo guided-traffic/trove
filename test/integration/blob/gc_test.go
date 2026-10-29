@@ -477,3 +477,57 @@ func TestGCJobHandler(t *testing.T) {
 		}
 	})
 }
+
+// Two runs that read the same stale deleting row must not both delete its
+// object: the second would delete an object an uploader re-created in between.
+func TestGCTakeoverIsExclusive(t *testing.T) {
+	ctx := context.Background()
+	t.Run("R-STOR-024 a run that read a stale row but lost the takeover deletes nothing, so an object re-created meanwhile survives", func(t *testing.T) {
+		e := newS3(t, "gctakeover")
+		p := newPG(t)
+		r1 := newReplica(t, e, p, nil)
+		r2 := newReplica(t, e, p, nil)
+		up := newReplica(t, e, p, nil)
+
+		d, data := garbage(t, up, "t/a.bin")
+		// A collector claimed the row and died: the object is still there and the
+		// row is older than handover_delay.
+		p.exec(t, "UPDATE blobs SET state = 'deleting', state_changed_at = now() - interval '1 hour' WHERE sha256 = $1", d.Bytes())
+		p.exec(t, "DELETE FROM blob_gc_queue WHERE sha256 = $1", d.Bytes())
+
+		reached, proceed := make(chan struct{}), make(chan struct{})
+		r1.coll.Fault = func(point string) error {
+			if point == "finish:delete" {
+				close(reached)
+				<-proceed
+			}
+			return nil
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, err := r1.coll.Run(ctx, blob.RunOptions{Mode: blob.GCIncremental})
+			done <- err
+		}()
+		<-reached // r1 has read the stale row and not yet taken it over
+
+		run(t, r2, blob.RunOptions{Mode: blob.GCIncremental}) // takes it over, deletes, drops the row
+		if !gone(t, e, p, d) {
+			t.Fatal("setup: the second run did not finish the row")
+		}
+		// An uploader writes the same content again: a new object and a new row.
+		if _, _, err := up.upload(ctx, "t/b.bin", data); err != nil {
+			t.Fatal(err)
+		}
+
+		close(proceed)
+		if err := <-done; err != nil {
+			t.Fatalf("first run: %v", err)
+		}
+		if state, _, ok := p.state(t, d); !ok || state != "live" {
+			t.Fatalf("the re-created row is %q (present %v)", state, ok)
+		}
+		if !objectExists(t, e, e.prefix, d) {
+			t.Fatal("the first run deleted the object an uploader re-created")
+		}
+	})
+}

@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
 // ErrPayloadTooLarge is returned by Notify for a payload that would not fit into
@@ -21,7 +21,8 @@ var ErrPayloadTooLarge = errors.New("cluster: change payload exceeds the 1 KiB l
 const maxPayload = MaxValueSize - 96
 
 // The two statements of R-ARCH-018 step 1. They run on the writer's
-// transaction, last, so the area's row is held for the commit only.
+// transaction, last, so the area's row is held for the commit only. They are
+// the only writes to cluster_epoch and cluster_change in the module (R-ARCH-018).
 const (
 	sqlBumpEpoch    = `UPDATE cluster_epoch SET epoch = epoch + 1, changed_at = now() WHERE area = $1 RETURNING epoch`
 	sqlInsertChange = `INSERT INTO cluster_change (area, epoch, payload) VALUES ($1, $2, $3::text::jsonb)`
@@ -34,71 +35,44 @@ type note struct {
 	epoch   int64
 }
 
-// pendingNotes tracks the notifications of open transactions. meta.Tx has no
-// per-transaction slot, so the notifications of one transaction are found by its
-// identity. The entry is removed by the transaction's After hook; the entry of a
-// rolled-back transaction (whose hooks never run) is swept after a minute.
-type pendingNotes struct {
-	mu sync.Mutex
-	by map[meta.Tx]*txNotes
+// changeSQL runs the two statements on a transaction of the PostgreSQL store.
+// pgChangeSQL is the implementation; the unit tests of Notify substitute a
+// simulation, because a meta.Tx cannot run SQL.
+type changeSQL interface {
+	bumpEpoch(ctx context.Context, tx meta.Tx, area string) (int64, error)
+	insertChange(ctx context.Context, tx meta.Tx, area string, epoch int64, body string) error
 }
 
-type txNotes struct {
-	notes   []note
-	created time.Time
-}
+type pgChangeSQL struct{}
 
-func (p *pendingNotes) init() { p.by = map[meta.Tx]*txNotes{} }
-
-// add records a note and reports whether it is the first of its transaction.
-func (p *pendingNotes) add(tx meta.Tx, n note) (first bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	now := time.Now()
-	if len(p.by) > 64 {
-		for k, v := range p.by {
-			if now.Sub(v.created) > time.Minute {
-				delete(p.by, k)
-			}
-		}
+func (pgChangeSQL) bumpEpoch(ctx context.Context, tx meta.Tx, area string) (int64, error) {
+	ptx, ok := postgres.Unwrap(tx)
+	if !ok {
+		return 0, errors.New("the transaction does not come from the PostgreSQL store")
 	}
-	t := p.by[tx]
-	if t == nil {
-		t = &txNotes{created: now}
-		p.by[tx] = t
-		first = true
-	}
-	t.notes = append(t.notes, n)
-	return first
+	var epoch int64
+	err := ptx.QueryRow(ctx, sqlBumpEpoch, area).Scan(&epoch)
+	return epoch, err
 }
 
-func (p *pendingNotes) take(tx meta.Tx) []note {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	t := p.by[tx]
-	delete(p.by, tx)
-	if t == nil {
-		return nil
+func (pgChangeSQL) insertChange(ctx context.Context, tx meta.Tx, area string, epoch int64, body string) error {
+	ptx, ok := postgres.Unwrap(tx)
+	if !ok {
+		return errors.New("the transaction does not come from the PostgreSQL store")
 	}
-	return t.notes
+	_, err := ptx.Exec(ctx, sqlInsertChange, area, epoch, body)
+	return err
 }
 
-func (p *pendingNotes) peek(tx meta.Tx) []note {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if t := p.by[tx]; t != nil {
-		return append([]note(nil), t.notes...)
-	}
-	return nil
-}
+// notesKey is the key of the per-transaction slot that holds a transaction's
+// notes.
+type notesKey struct{}
 
-func (p *pendingNotes) setEpochs(tx meta.Tx, ns []note) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if t := p.by[tx]; t != nil {
-		t.notes = ns
-	}
-}
+// txNotes are the notes of one transaction attempt. They live in the attempt's
+// value slot and in the closures of its two hooks, so they end with the attempt
+// whether it commits or rolls back: nothing is kept anywhere else, and nothing
+// has to be swept.
+type txNotes struct{ notes []note }
 
 // Notify attaches a change of a change area to the writing transaction
 // (R-ARCH-018 step 1). Just before COMMIT, whatever point of the transaction
@@ -126,40 +100,43 @@ func (c *Changes) Notify(tx meta.Tx, area string, version int, payload any) erro
 	if len(raw) > maxPayload {
 		return ErrPayloadTooLarge
 	}
-	if c.pend.add(tx, note{area: area, version: version, payload: raw}) {
-		tx.Before(func(ctx context.Context, tx meta.Tx) error { return c.writeNotes(ctx, tx) })
-		tx.After(func() { c.afterCommit(tx) })
+	t, _ := tx.Value(notesKey{}).(*txNotes)
+	if t == nil {
+		t = &txNotes{}
+		tx.SetValue(notesKey{}, t)
+		tx.Before(func(ctx context.Context, tx meta.Tx) error { return c.writeNotes(ctx, tx, t) })
+		tx.After(func() { c.afterCommit(t) })
 	}
+	t.notes = append(t.notes, note{area: area, version: version, payload: raw})
 	return nil
 }
 
 // writeNotes is the Before hook: the two statements per note, areas in name
 // order.
-func (c *Changes) writeNotes(ctx context.Context, tx meta.Tx) error {
-	ns := c.pend.peek(tx)
-	sort.SliceStable(ns, func(i, j int) bool { return ns[i].area < ns[j].area })
-	for i := range ns {
-		var epoch int64
-		if err := tx.QueryRow(ctx, sqlBumpEpoch, ns[i].area).Scan(&epoch); err != nil {
-			return fmt.Errorf("cluster: raising the epoch of area %q (is its cluster_epoch row seeded by a migration?): %w", ns[i].area, err)
+func (c *Changes) writeNotes(ctx context.Context, tx meta.Tx, t *txNotes) error {
+	sort.SliceStable(t.notes, func(i, j int) bool { return t.notes[i].area < t.notes[j].area })
+	for i := range t.notes {
+		n := &t.notes[i]
+		epoch, err := c.sql.bumpEpoch(ctx, tx, n.area)
+		if err != nil {
+			return fmt.Errorf("cluster: raising the epoch of area %q (is its cluster_epoch row seeded by a migration?): %w", n.area, err)
 		}
-		body, err := json.Marshal(changeRow{V: ns[i].version, P: ns[i].payload})
+		body, err := json.Marshal(changeRow{V: n.version, P: n.payload})
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, sqlInsertChange, ns[i].area, epoch, string(body)); err != nil {
-			return fmt.Errorf("cluster: writing the change of area %q: %w", ns[i].area, err)
+		if err := c.sql.insertChange(ctx, tx, n.area, epoch, string(body)); err != nil {
+			return fmt.Errorf("cluster: writing the change of area %q: %w", n.area, err)
 		}
-		ns[i].epoch = epoch
+		n.epoch = epoch
 	}
-	c.pend.setEpochs(tx, ns)
 	return nil
 }
 
 // afterCommit applies the writer's own invalidation and queues the Valkey
 // messages. It must not block: it runs on the request that committed.
-func (c *Changes) afterCommit(tx meta.Tx) {
-	for _, n := range c.pend.take(tx) {
+func (c *Changes) afterCommit(t *txNotes) {
+	for _, n := range t.notes {
 		c.applyChange(n.area, n.version, n.payload)
 		c.m.applied.WithLabelValues(n.area, sourceLocal).Inc()
 		msg, err := json.Marshal(wireChange{A: n.area, E: n.epoch, V: n.version, P: n.payload})
@@ -201,14 +178,14 @@ func (c *Changes) publish(ctx context.Context, it pubItem) {
 		}
 		return
 	}
-	ch, err := bus.Channel(invChannels)
+	ch, err := bus.channel(invChannels)
 	if err != nil {
 		c.m.dropped.WithLabelValues(area).Inc()
 		return
 	}
 	pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := bus.Publish(pctx, ch, msg); err != nil {
+	if err := bus.publish(pctx, ch, msg); err != nil {
 		c.m.dropped.WithLabelValues(area).Inc()
 		bus.CountDegraded(MechanismChangeMessage)
 		return

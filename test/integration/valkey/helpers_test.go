@@ -96,9 +96,13 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// client is a cluster.Valkey under test with its log, registry and instance name.
+// client is a cluster.Valkey under test with its log, registry and instance
+// name. The raw commands come from cluster.Raw, which only the integration
+// build tag compiles: outside internal/cluster no code can read or write a
+// Valkey key (Q-ARCH-16).
 type client struct {
 	*cluster.Valkey
+	cluster.IntegrationRaw
 	Instance string
 	Log      *syncBuffer
 	Reg      *prometheus.Registry
@@ -117,6 +121,7 @@ func newClientIn(t *testing.T, cfg config.Valkey, ks string) *client {
 	if err != nil {
 		t.Fatalf("NewValkey: %v", err)
 	}
+	c.IntegrationRaw = cluster.Raw(c.Valkey)
 	t.Cleanup(c.Close)
 	return c
 }

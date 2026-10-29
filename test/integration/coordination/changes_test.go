@@ -63,7 +63,7 @@ func (f *flushLog) changed(payload string) bool {
 
 func (rep *replica) notify(payload map[string]any) {
 	rep.t.Helper()
-	err := rep.db.Tx(context.Background(), func(tx meta.Tx) error {
+	err := rep.db.InTx(context.Background(), func(tx meta.Tx) error {
 		return rep.changes.Notify(tx, "cache", 1, payload)
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func TestChangeLog(t *testing.T) {
 	})
 
 	t.Run("R-ARCH-018 a rolled-back writer leaves neither a row nor an epoch", func(t *testing.T) {
-		err := a.db.Tx(context.Background(), func(tx meta.Tx) error {
+		err := a.db.InTx(context.Background(), func(tx meta.Tx) error {
 			if err := a.changes.Notify(tx, "cache", 1, map[string]any{"n": 99}); err != nil {
 				return err
 			}

@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func loadStorage(t *testing.T, file, role string, cmd Command) error {
@@ -72,4 +73,53 @@ func TestStorageConnectionRules(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStorageHoldBackAndSettle(t *testing.T) {
+	t.Run("R-STOR-013 a download hold-back below 1 KiB is refused", func(t *testing.T) {
+		for _, v := range []string{"0", "1023B"} {
+			if err := loadStorage(t, "storage:\n  download:\n    hold_back: "+v+"\n", "web", CommandServe); !hasIssue(err, "storage.download.hold_back") {
+				t.Errorf("hold_back %s: %v", v, err)
+			}
+		}
+		if err := loadStorage(t, "storage:\n  download:\n    hold_back: 1KiB\n", "web", CommandServe); hasIssue(err, "storage.download.hold_back") {
+			t.Errorf("1KiB: %v", err)
+		}
+	})
+	t.Run("R-STOR-024 delete_settle below one second is refused", func(t *testing.T) {
+		if err := loadStorage(t, "storage:\n  gc:\n    delete_settle: 0s\n", "worker", CommandServe); !hasIssue(err, "storage.gc.delete_settle") {
+			t.Errorf("0s: %v", err)
+		}
+	})
+}
+
+func TestStorageCoupling(t *testing.T) {
+	check := func(lease, settle, handover time.Duration) []string {
+		var c Config
+		c.Jobs.LeaseDuration = lease
+		c.Storage.GC.DeleteSettle, c.Storage.GC.HandoverDelay = settle, handover
+		var issues []Issue
+		c.validateStorageCoupling(&Report{issues: &issues})
+		out := make([]string, len(issues))
+		for i, is := range issues {
+			out[i] = is.Message
+		}
+		return out
+	}
+	t.Run("R-STOR-024 the shipped defaults are accepted", func(t *testing.T) {
+		if got := check(60*time.Second, 30*time.Second, 10*time.Minute); len(got) != 0 {
+			t.Fatalf("issues: %v", got)
+		}
+	})
+	t.Run("R-STOR-024 handover_delay not above lease_duration plus twice delete_settle is refused naming the keys", func(t *testing.T) {
+		for _, handover := range []time.Duration{2 * time.Minute, 90 * time.Second} { // equal to and below 60 s + 2 x 30 s ... 120 s
+			got := check(60*time.Second, 30*time.Second, handover)
+			if len(got) != 1 || !strings.Contains(got[0], "storage.gc.handover_delay") || !strings.Contains(got[0], "jobs.lease_duration") {
+				t.Errorf("handover %s: issues = %v", handover, got)
+			}
+		}
+		if got := check(60*time.Second, 30*time.Second, 121*time.Second); len(got) != 0 {
+			t.Errorf("one second above the bound: %v", got)
+		}
+	})
 }

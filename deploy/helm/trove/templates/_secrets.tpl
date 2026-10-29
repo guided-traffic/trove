@@ -19,12 +19,13 @@ Secrets never become environment variables.
 {{- if $s.databaseClientCert.existingSecret -}}
 {{- $out = append $out (dict "name" "database-client" "secret" $s.databaseClientCert.existingSecret "path" "/var/run/secrets/trove/database-client" "items" (list (dict "key" $s.databaseClientCert.certKey "path" "tls.crt") (dict "key" $s.databaseClientCert.keyKey "path" "tls.key"))) -}}
 {{- end -}}
+{{- if eq .scope "runtime" -}}
+{{- /* The key ring is mounted into replicas only: the migration Job never seals or opens a value (R-HA-030). */ -}}
 {{- $encItems := list -}}
 {{- range $s.encryption.keys -}}
 {{- $encItems = append $encItems (dict "key" . "path" .) -}}
 {{- end -}}
 {{- $out = append $out (dict "name" "encryption" "secret" $s.encryption.existingSecret "path" "/var/run/secrets/trove/encryption" "items" $encItems) -}}
-{{- if eq .scope "runtime" -}}
 {{- if eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "s3" "secret" $s.s3.existingSecret "path" "/var/run/secrets/trove/s3" "items" (list (dict "key" $s.s3.accessKeyIdKey "path" "access-key-id") (dict "key" $s.s3.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}

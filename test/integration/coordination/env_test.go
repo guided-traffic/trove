@@ -144,6 +144,9 @@ func newEnv(t *testing.T) *env {
 	}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	if testenv.PgPooled(t) {
+		cfg = testenv.ThroughPgBouncer(t, cfg, st.user, maint)
+	}
 	return &env{t: t, st: st, db: name, cfg: cfg, admin: st.admin(t, name), ks: randHex(8), vcfg: valkeyConfig(t)}
 }
 

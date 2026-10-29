@@ -23,9 +23,11 @@ type Identity struct {
 	Role    string // web, worker or all
 }
 
-// Access decides whether the caller holds a permission. The authentication
-// stage of the chain has already turned credentials into a principal; the
-// identity packages replace the M0 implementation in the composition root.
+// Access decides whether the caller holds a permission. The authorization step
+// (authorize.go) calls it before the handler of every operation declared
+// {permission: <name>}. The authentication stage of the chain has already
+// turned credentials into a principal; the identity packages replace the M0
+// implementation in the composition root.
 type Access interface {
 	// Require returns nil, or an *errs.Error: Unauthenticated for an anonymous
 	// caller who needs credentials, Forbidden for a caller without the permission.
@@ -83,11 +85,13 @@ var _ gen.ServerInterface = (*Server)(nil)
 // New returns the handlers.
 func New(o Options) *Server { return &Server{o: o} }
 
-// Register mounts the operations on the router. The caller then runs
-// Document.CheckRoutes over Router.Patterns() once every route is registered.
+// Register mounts the operations on the router, each behind the authorization
+// step of its x-trove-permission declaration (authorize.go). The caller then
+// runs Document.CheckRoutes over Router.Patterns() once every route is
+// registered.
 func (s *Server) Register(r *httpserver.Router) {
 	gen.HandlerWithOptions(s, gen.StdHTTPServerOptions{
-		BaseRouter:       r,
+		BaseRouter:       authorizingMux{r: r, s: s},
 		ErrorHandlerFunc: bindError,
 	})
 }
@@ -125,13 +129,10 @@ func (s *Server) GetPing(w http.ResponseWriter, _ *http.Request) {
 	writeText(w, http.StatusOK, "OK")
 }
 
-// GetVersion implements GET /api/v1/system/version (R-OPS-002, Q-OPS-3).
+// GetVersion implements GET /api/v1/system/version (R-OPS-002, Q-OPS-3). Its
+// declaration (authenticated, public with system.public_version) is enforced
+// before it runs.
 func (s *Server) GetVersion(w http.ResponseWriter, r *http.Request) {
-	if !s.o.PublicVersion && httpserver.PrincipalFrom(r.Context()).Anonymous {
-		httpserver.Problem(w, r, errs.E(errs.Unauthenticated, errs.CodeUnauthenticated,
-			"This endpoint requires an authenticated caller.", errs.WithChallenge("Bearer")))
-		return
-	}
 	writeJSON(w, r, http.StatusOK, s.version())
 }
 
@@ -144,13 +145,10 @@ func (s *Server) version() gen.Version {
 	return gen.Version{Version: bi.Version, Revision: bi.Commit, BuildTime: bi.Date, GoVersion: bi.GoVersion, Formats: formats}
 }
 
-// GetSystemInfo implements GET /api/v1/system/info (R-OPS-004).
+// GetSystemInfo implements GET /api/v1/system/info (R-OPS-004); system.read is
+// enforced before it runs.
 func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if err := s.o.Access.Require(ctx, PermissionSystemRead); err != nil {
-		httpserver.Problem(w, r, err)
-		return
-	}
 	facts, err := s.o.Facts.Facts(ctx)
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.systemInfo"))
@@ -228,12 +226,9 @@ func Summarise(replicas []gen.Replica) gen.ReplicaSummary {
 	return sum
 }
 
-// ListReplicas implements GET /api/v1/system/replicas (R-OPS-003).
+// ListReplicas implements GET /api/v1/system/replicas (R-OPS-003); system.read
+// is enforced before it runs.
 func (s *Server) ListReplicas(w http.ResponseWriter, r *http.Request) {
-	if err := s.o.Access.Require(r.Context(), PermissionSystemRead); err != nil {
-		httpserver.Problem(w, r, err)
-		return
-	}
 	items, err := s.o.Replicas.Replicas(r.Context())
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.listReplicas"))

@@ -36,13 +36,19 @@ var _ blob.ObjectStore = (*Client)(nil)
 // NewFromFactory builds a client whose HTTP goes through the outbound factory
 // with the purpose objectstore and the timeouts of storage.s3.http.
 //
-// Two settings of storage.s3.http need options the factory does not have yet
-// (max_connections, tls_handshake_timeout, idle_conn_timeout use its defaults)
-// and storage.s3.ca_file needs a per-client trust store; a ca_file is refused
-// rather than ignored: add the CA to proxy.outbound.tls.ca_files.
+// Three settings of storage.s3.http need options the factory does not have yet
+// (max_connections, tls_handshake_timeout, idle_conn_timeout use its defaults),
+// storage.s3.ca_file needs a per-client trust store and
+// storage.s3.http.proxy_credentials_file needs a credential the proxy hook can
+// re-read; a ca_file and a proxy_credentials_file are refused rather than
+// ignored: add the CA to proxy.outbound.tls.ca_files, and until the outbound
+// layer takes a proxy credential, use a proxy that authenticates by address.
 func NewFromFactory(ctx context.Context, cfg config.StorageS3, f *outbound.Factory) (*Client, error) {
 	if cfg.CAFile != "" {
 		return nil, errors.New("storage.s3.ca_file is not supported yet: add the CA to proxy.outbound.tls.ca_files")
+	}
+	if cfg.HTTP.ProxyCredentialsFile != "" {
+		return nil, errors.New("storage.s3.http.proxy_credentials_file is not supported yet: the outbound layer cannot send a proxy credential read from a file; use a proxy that authenticates by source address")
 	}
 	opts := []outbound.ClientOption{
 		outbound.WithConnectTimeout(cfg.HTTP.DialTimeout),
@@ -243,13 +249,22 @@ func (c *Client) AbortMultipart(ctx context.Context, key, uploadID string) error
 	return err
 }
 
+// sizeOf is the size a response announced; a response without Content-Length
+// has an unknown size (-1), not an empty object.
+func sizeOf(contentLength *int64) int64 {
+	if contentLength == nil {
+		return -1
+	}
+	return *contentLength
+}
+
 // Head implements blob.ObjectStore.
 func (c *Client) Head(ctx context.Context, key string) (blob.ObjectInfo, error) {
 	out, err := c.api.HeadObject(ctx, &awss3.HeadObjectInput{Bucket: &c.bucket, Key: &key})
 	if err != nil {
 		return blob.ObjectInfo{}, mapError(ctx, "HeadObject", key, err)
 	}
-	return blob.ObjectInfo{Key: key, Size: aws.ToInt64(out.ContentLength), ETag: aws.ToString(out.ETag), LastModified: aws.ToTime(out.LastModified)}, nil
+	return blob.ObjectInfo{Key: key, Size: sizeOf(out.ContentLength), ETag: aws.ToString(out.ETag), LastModified: aws.ToTime(out.LastModified)}, nil
 }
 
 // Get implements blob.ObjectStore.
@@ -268,12 +283,14 @@ func (c *Client) Get(ctx context.Context, key string, rng *blob.ByteRange) (io.R
 		cancel()
 		return nil, blob.ObjectInfo{}, mapError(ctx, "GetObject", key, err)
 	}
-	info := blob.ObjectInfo{Key: key, ETag: aws.ToString(out.ETag), LastModified: aws.ToTime(out.LastModified)}
+	info := blob.ObjectInfo{Key: key, Size: -1, ETag: aws.ToString(out.ETag), LastModified: aws.ToTime(out.LastModified)}
 	if rng == nil {
-		info.Size = aws.ToInt64(out.ContentLength)
+		info.Size = sizeOf(out.ContentLength)
 	} else if cr := aws.ToString(out.ContentRange); cr != "" {
 		if i := strings.LastIndexByte(cr, '/'); i >= 0 {
-			info.Size, _ = strconv.ParseInt(cr[i+1:], 10, 64)
+			if n, err := strconv.ParseInt(cr[i+1:], 10, 64); err == nil {
+				info.Size = n
+			}
 		}
 	}
 	w := newIdle(c.idle, cancel)

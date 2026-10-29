@@ -18,6 +18,10 @@ func tlsConfig(cfg config.ValkeyTLS) (*tls.Config, error) {
 	if cfg.Mode == "disable" {
 		return nil, nil
 	}
+	if cfg.Mode == "verify-ca" && cfg.CAFile == "" {
+		// The configuration check refuses this too; the client does not rely on it.
+		return nil, errors.New("valkey.tls.mode verify-ca needs valkey.tls.ca_file: with the system roots and no host name check any publicly issued certificate would pass")
+	}
 	roots, err := rootPool(cfg.CAFile)
 	if err != nil {
 		return nil, err
@@ -64,7 +68,8 @@ func tlsConfig(cfg config.ValkeyTLS) (*tls.Config, error) {
 	}
 }
 
-// rootPool returns the CA pool: the file if set, the system roots otherwise.
+// rootPool returns the CA pool: the file if set, the system roots otherwise
+// (verify-full only; tlsConfig refuses verify-ca without a file).
 func rootPool(caFile string) (*x509.CertPool, error) {
 	if caFile == "" {
 		pool, err := x509.SystemCertPool()

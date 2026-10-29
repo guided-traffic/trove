@@ -40,8 +40,12 @@ proxyLog := logging.Component("proxy")  // log=app, component=proxy, level from 
 - **Messages are constants.** Variable data goes into attributes.
 - **Component levels** (R-OPS-012) are one `slog.LevelVar` per component. `Logging.SetOverride` /
   `ClearOverride` change them without a restart; the API that stores the override and propagates it is M1 work.
-- **Ring buffer.** `logging.Ring().Records()` returns the last `log.ring_buffer_records` records, already
-  redacted, for support bundles.
+- **Ring buffer.** `logging.Ring().Records()` returns the last records, already redacted, for support
+  bundles. It is bounded twice: by `log.ring_buffer_records` (5000) and by `log.ring_buffer_bytes` (8 MiB);
+  the oldest records go first when either bound is reached, and either bound at 0 keeps nothing. A record
+  above 16 KiB (`observability.MaxRingRecord`) is stored as the valid JSON line
+  `{"ring_truncated":true,"original_bytes":N,"head":"<first 2 KiB>"}`; standard output still gets the whole
+  record. `Ring().Bytes()` reports what the ring holds.
 
 ### Redaction (R-OPS-013)
 
@@ -51,6 +55,8 @@ Applied by the handler to every record, in every format, including the ring buff
 |---|---|
 | attribute keys containing `password`, `secret`, `token`, `authorization`, `cookie`, `api_key`, `apikey`, `private_key`, `credential` (case-insensitive) get the value `[REDACTED]`; `token_id` and `token_type` are exempt | `SensitiveKey` |
 | `trv_<type>_<body>` becomes `trv_<type>_[REDACTED]`; `Bearer x`, `Basic x`, URL user information, query parameters of `log.request.redact_query_params`, the segment after `/auth/cli/` | `Scrubber.String`, applied to `msg` and every string attribute and error text |
+| URL user information runs from `scheme://` to the **last** `@` before the authority ends (`/`, `?`, `#`, `<`, `>`, whitespace), so a password with an unencoded `@`, a `'` or a `"` is redacted whole; `user:secret@` keeps the user name, a bare `token@` keeps nothing. The rule errs towards hiding: text that follows a path-less URL up to a later `@` is redacted too | `Scrubber.String` |
+| values of kind `Any`: an `error`, a `fmt.Stringer` and a `*url.URL`/`url.URL` are logged as their scrubbed text (URLs through `Scrubber.URL`, without user information); an `http.Header` keeps its names, values of sensitive headers (`SensitiveKey` of the name with `-` read as `_`: `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, …) become `[REDACTED]`, the others are scrubbed; anything else (maps, slices, structs, pointers) is encoded as JSON, decoded again (numbers kept exact), and every string is scrubbed and every value under a sensitive key redacted; a typed nil is `null` | `Logging.scrubAny` |
 | `observability.Secret` and `config.Secret` print `[REDACTED]` through slog, `fmt` and JSON | `Secret`, `replaceAttr` |
 
 Rules for code:
@@ -125,6 +131,13 @@ aggregate with `max`, not `sum`.
 `log.request.ops_listener`), `WithRemoteAddr(func)`, `WithRequestScrubber`. Absent values are JSON `null`,
 an unknown request length is `-1`.
 
+The fields that come from the client are bounded (R-OPS-010): `user_agent` at 512 bytes
+(`observability.MaxUserAgent`), `path` at 2 KiB (`MaxPath`), `method` at 32 bytes. A cut field ends in
+`…[truncated]` (`TruncatedMarker`). Invalid UTF-8 is replaced first (a run of bad bytes by one U+FFFD), and
+the text is scrubbed before the cut, so a secret is never cut into a fragment the patterns no longer match;
+to bound the work for a huge header only the first 8 × limit bytes are scrubbed. The server span's
+`url.path` and `user_agent.original` get the same treatment.
+
 Handlers tell the middleware what only they know through the request context:
 
 ```go
@@ -147,7 +160,7 @@ then the application.
 | Question | Answer |
 |---|---|
 | Where does `X-Request-Id` come from? | the trace ID of the server span, set before the handler runs |
-| Incoming `traceparent`? | continued per `tracing.incoming_context`: `trusted_proxies` (peer in `WithTrustedProxies(server.trusted_proxies)`), `all`, `none`. Otherwise a new trace starts and the incoming context becomes a span link. A malformed header is ignored. |
+| Incoming `traceparent`? | continued per `tracing.incoming_context`: `trusted_peers` (default; the TCP peer is in `tracing.trusted_peers`, default empty), `all`, `none`. Otherwise a new trace starts and the incoming context becomes a span link. A malformed header is ignored. `server.trusted_proxies` grants no trace trust: the edge passes the client's own `traceparent` through, so trusting it would let every client choose its `X-Request-Id` and the trace ID of its audit events. There is no option that passes `server.trusted_proxies` to the tracer. |
 | Get the ID in code | `observability.RequestID(ctx)`, `SpanID(ctx)`, `Sampled(ctx)` |
 | Start a span for a job or call | `tracer.Start(ctx, name, kind, attrs...)`; outbound calls get theirs from the outbound client |
 | Export | `tracing.enabled: true`: OTLP over `http/protobuf` or `grpc`; unset trove keys fall back to `OTEL_EXPORTER_OTLP_*`; resource attributes from `WithTraceResource` plus `OTEL_RESOURCE_ATTRIBUTES` |
@@ -173,7 +186,7 @@ The factory (`outbound.New(cfg.Proxy.Outbound, opts...)`; call `Err()` at start-
 |---|---|
 | trust store | system roots (if enabled) plus `proxy.outbound.tls.ca_files`; no switch turns verification off; read at start-up (reload within 60 s, R-REPO-035, is P1 and not built) |
 | minimum TLS | `proxy.outbound.tls.min_version` |
-| egress policy | `deny_cidrs` / `allow_cidrs` checked in the dialer's `Control` hook after resolution; IPv4-mapped IPv6 is unmapped first; applies to every purpose except `objectstore`; a refusal is `errors.Is(err, outbound.ErrEgressDenied)` |
+| egress policy | `deny_cidrs` / `allow_cidrs` checked in the dialer's `Control` hook after resolution, and behind a proxy on the resolved target; applies to every purpose except `objectstore`; a refusal is `errors.Is(err, outbound.ErrEgressDenied)`. Before the lists: a zoned IPv6 address (`fe80::1%eth0`, `::1%1`) is refused whatever `allow_cidrs` says (a zone scopes an address to an interface of this host, and `netip.Prefix.Contains` is false for every zoned address, so it would pass every rule unchecked); IPv4-mapped IPv6 is unmapped; an address of the NAT64 prefix `64:ff9b::/96` is also checked as the IPv4 address it translates to (`64:ff9b::a9fe:a9fe` is refused like `169.254.169.254`; an explicit allow of the IPv6 address wins). Default deny list: `127.0.0.0/8`, `::1/128`, `0.0.0.0/8`, `::/128`, `::/96`, `169.254.0.0/16`, `fe80::/10`, `fd00:ec2::254/128`, `100.100.100.200/32`, `168.63.129.16/32`, `224.0.0.0/4`, `ff00::/8`, `255.255.255.255/32` |
 | proxy | `WithProxyURL(url, bypass...)`, or `proxy.outbound.proxy_from_environment`; behind a proxy trove resolves and checks the target itself first (the proxy's own connection is unchecked, H-6) |
 | timeouts | connect 10 s, TLS handshake 10 s, response headers 30 s; overall 30 s for `oidc_discovery`, `jwks`, `webhook`, none for `remote` and `objectstore`; `WithSocketTimeout` maps a remote's socket timeout |
 | redirects | at most 5 hops (`WithMaxRedirects`), `https` to `http` refused, `WithRedirectCheck` for format rules |

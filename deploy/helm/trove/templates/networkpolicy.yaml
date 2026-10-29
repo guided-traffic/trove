@@ -1,0 +1,77 @@
+{{- /*
+Network policies (R-HA-042), ingress only. Egress policy (networkPolicy.egress) is not rendered
+yet; the pods' egress stays unrestricted and docs/developer/helm-chart.md says so.
+
+web:     8080 from networkPolicy.ingress.http.from (empty = from anywhere, so any ingress controller
+         works), 8081 only from networkPolicy.ingress.ops.from and networkPolicy.probeCIDRs.
+worker:  8081 only; a worker listens on no client port (R-HA-001).
+migrate: no ingress at all; the Job accepts no connection.
+Replicas do not talk to each other, so nothing else is admitted.
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $ops := list }}
+{{- range $np.ingress.ops.from }}{{ $ops = append $ops . }}{{- end }}
+{{- range $np.probeCIDRs }}{{ $ops = append $ops (dict "ipBlock" (dict "cidr" .)) }}{{- end }}
+{{- range $role := list "web" "worker" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "trove.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "trove.labels" (dict "root" $ "component" $role) | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "trove.selectorLabels" (dict "root" $ "component" $role) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  {{- if or (eq $role "web") $ops }}
+  ingress:
+    {{- else }}
+  ingress: []
+  {{- end }}
+    {{- if eq $role "web" }}
+    - ports:
+        - protocol: TCP
+          port: 8080
+      {{- with $np.ingress.http.from }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- /* No peer at all closes 8081 for everyone: an empty "from" would mean from anywhere. */}}
+    {{- if $ops }}
+    - ports:
+        - protocol: TCP
+          port: 8081
+      from:
+        {{- toYaml $ops | nindent 8 }}
+    {{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "trove.fullname" . }}-migrate
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "migrate") | nindent 4 }}
+  {{- if eq .Values.migrations.mode "hook" }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "trove.selectorLabels" (dict "root" . "component" "migrate") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress: []
+{{- end }}

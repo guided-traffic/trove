@@ -62,27 +62,33 @@ UPDATE job
 RETURNING job.*;
 
 -- name: HeartbeatJobs :many
--- One statement extends every job of the replica (R-ARCH-016). The rows that
--- come back are the jobs it still owns; a running job missing from them was
--- lost, and one in state cancelling was cancelled.
-UPDATE job
+-- One statement extends the jobs the replica is running (R-ARCH-016): ids[i] is
+-- a job it runs and attempts[i] the attempt it claimed. A row is extended only
+-- while it is still that attempt, owned by the replica; rows the replica holds
+-- but does not run (a claim whose result never arrived) are not extended and
+-- expire to the reaper. The rows that come back are the jobs it still owns; a
+-- listed job missing from them was lost, and one in state cancelling was
+-- cancelled.
+UPDATE job j
    SET locked_until = now() + make_interval(secs => sqlc.arg(lease_secs)::float8)
- WHERE locked_by = sqlc.arg(locked_by)::text::uuid AND state IN ('running', 'cancelling')
-RETURNING id, state;
+  FROM generate_series(1, cardinality(sqlc.arg(ids)::text[])) AS g(i)
+ WHERE j.id = (sqlc.arg(ids)::text[])[g.i]::uuid AND j.attempt = (sqlc.arg(attempts)::int[])[g.i]
+   AND j.locked_by = sqlc.arg(locked_by)::text::uuid AND j.state IN ('running', 'cancelling')
+RETURNING j.id, j.state;
 
 -- name: CompleteJob :execrows
 UPDATE job
    SET state = 'succeeded', result = NULLIF(sqlc.arg(result)::text, '')::jsonb, error = NULL,
        locked_by = NULL, locked_until = NULL, finished_at = now()
  WHERE id = sqlc.arg(id)::text::uuid AND locked_by = sqlc.arg(locked_by)::text::uuid
-   AND state IN ('running', 'cancelling');
+   AND attempt = sqlc.arg(attempt)::int AND state IN ('running', 'cancelling');
 
 -- name: EndJobCancelled :execrows
 UPDATE job
    SET state = 'cancelled', error = NULLIF(sqlc.arg(error)::text, '')::jsonb,
        locked_by = NULL, locked_until = NULL, finished_at = now()
  WHERE id = sqlc.arg(id)::text::uuid AND locked_by = sqlc.arg(locked_by)::text::uuid
-   AND state IN ('running', 'cancelling');
+   AND attempt = sqlc.arg(attempt)::int AND state IN ('running', 'cancelling');
 
 -- name: FailOrRetryJob :many
 -- A handler failed. The job ends failed when the error is permanent or the
@@ -98,7 +104,7 @@ WITH cur AS (
                 ELSE 'queued' END AS outcome
       FROM job j
      WHERE j.id = sqlc.arg(id)::text::uuid AND j.locked_by = sqlc.arg(locked_by)::text::uuid
-       AND j.state IN ('running', 'cancelling')
+       AND j.attempt = sqlc.arg(attempt)::int AND j.state IN ('running', 'cancelling')
        FOR UPDATE
 )
 UPDATE job
@@ -127,7 +133,7 @@ WITH cur AS (
                 ELSE 'queued' END AS outcome
       FROM job j
      WHERE j.id = sqlc.arg(id)::text::uuid AND j.locked_by = sqlc.arg(locked_by)::text::uuid
-       AND j.state IN ('running', 'cancelling')
+       AND j.attempt = sqlc.arg(attempt)::int AND j.state IN ('running', 'cancelling')
        FOR UPDATE
 )
 UPDATE job
@@ -187,13 +193,13 @@ RETURNING *;
 -- name: SaveJobCheckpoint :execrows
 UPDATE job SET checkpoint = sqlc.arg(checkpoint)::text::jsonb
  WHERE id = sqlc.arg(id)::text::uuid AND locked_by = sqlc.arg(locked_by)::text::uuid
-   AND state IN ('running', 'cancelling');
+   AND attempt = sqlc.arg(attempt)::int AND state IN ('running', 'cancelling');
 
 -- name: SaveJobProgress :execrows
 UPDATE job SET progress_done = sqlc.arg(done)::bigint, progress_total = NULLIF(sqlc.arg(total)::bigint, 0),
                progress_unit = NULLIF(sqlc.arg(unit)::text, '')
  WHERE id = sqlc.arg(id)::text::uuid AND locked_by = sqlc.arg(locked_by)::text::uuid
-   AND state IN ('running', 'cancelling');
+   AND attempt = sqlc.arg(attempt)::int AND state IN ('running', 'cancelling');
 
 -- name: DeleteFinishedJobs :execrows
 -- Retention (R-ARCH-016): finished jobs older than jobs.retention, except the

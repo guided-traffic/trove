@@ -1,11 +1,16 @@
 package observability
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,7 +67,8 @@ func NewLogger(cfg config.Log, w io.Writer, opts ...LogOption) *slog.Logger {
 }
 
 // NewLogging builds the logging state. Every record goes to w and, after
-// redaction, into the ring buffer of cfg.RingBufferRecords records.
+// redaction, into the ring buffer bounded by cfg.RingBufferRecords records and
+// cfg.RingBufferBytes bytes.
 func NewLogging(cfg config.Log, w io.Writer, opts ...LogOption) *Logging {
 	var o logOptions
 	for _, f := range opts {
@@ -77,7 +83,7 @@ func NewLogging(cfg config.Log, w io.Writer, opts ...LogOption) *Logging {
 	}
 	l := &Logging{
 		cfg:    cfg,
-		ring:   NewRing(cfg.RingBufferRecords),
+		ring:   NewRing(cfg.RingBufferRecords, int64(cfg.RingBufferBytes)),
 		scrub:  NewScrubber(params),
 		levels: map[string]*slog.LevelVar{},
 		def:    new(slog.LevelVar),
@@ -288,20 +294,105 @@ func (l *Logging) replaceAttr(groups []string, a slog.Attr) slog.Attr {
 	case slog.KindString:
 		return slog.String(a.Key, l.scrub.String(v.String()))
 	case slog.KindAny:
-		switch x := v.Any().(type) {
-		case error:
-			return slog.String(a.Key, l.scrub.String(x.Error()))
-		case fmt.Stringer:
-			if isConfigSecret(x) {
-				return slog.String(a.Key, RedactedValue)
-			}
-		default:
-			if isConfigSecret(x) {
-				return slog.String(a.Key, RedactedValue)
+		return slog.Attr{Key: a.Key, Value: l.scrubAny(v.Any())}
+	}
+	return a
+}
+
+// scrubAny applies R-OPS-013 to a value of kind Any, whatever its type: an
+// error, a fmt.Stringer and a URL become their scrubbed text; an http.Header
+// keeps its names, with the values of sensitive headers redacted and the others
+// scrubbed; anything else (maps, slices, structs) is encoded as JSON, decoded
+// again, and every string in it is scrubbed and every value under a sensitive
+// key redacted. Nothing of kind Any reaches the output unscrubbed.
+func (l *Logging) scrubAny(x any) slog.Value {
+	if isNil(x) {
+		return slog.AnyValue(nil)
+	}
+	switch t := x.(type) {
+	case config.Secret, *config.Secret:
+		return slog.StringValue(RedactedValue)
+	case *url.URL:
+		return slog.StringValue(l.scrub.URL(t))
+	case url.URL:
+		return slog.StringValue(l.scrub.URL(&t))
+	case http.Header:
+		return slog.AnyValue(l.scrubHeader(t))
+	case error:
+		return slog.StringValue(l.scrub.String(t.Error()))
+	case fmt.Stringer:
+		return slog.StringValue(l.scrub.String(t.String()))
+	case []string:
+		out := make([]string, len(t))
+		for i, s := range t {
+			out[i] = l.scrub.String(s)
+		}
+		return slog.AnyValue(out)
+	}
+	b, err := json.Marshal(x)
+	if err != nil {
+		return slog.StringValue(l.scrub.String(fmt.Sprintf("%+v", x)))
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var tree any
+	if err := dec.Decode(&tree); err != nil {
+		return slog.StringValue(l.scrub.String(string(b)))
+	}
+	return slog.AnyValue(l.scrubTree(tree))
+}
+
+// scrubTree scrubs a decoded JSON value in place.
+func (l *Logging) scrubTree(v any) any {
+	switch t := v.(type) {
+	case string:
+		return l.scrub.String(t)
+	case []any:
+		for i := range t {
+			t[i] = l.scrubTree(t[i])
+		}
+	case map[string]any:
+		for k, x := range t {
+			if SensitiveKey(k) {
+				t[k] = RedactedValue
+			} else {
+				t[k] = l.scrubTree(x)
 			}
 		}
 	}
-	return a
+	return v
+}
+
+// scrubHeader copies h with the values of sensitive headers (Authorization,
+// Cookie, X-Api-Key, …: SensitiveKey of the name with "-" read as "_")
+// redacted and every other value scrubbed.
+func (l *Logging) scrubHeader(h http.Header) map[string][]string {
+	out := make(map[string][]string, len(h))
+	for name, vs := range h {
+		if SensitiveKey(strings.ReplaceAll(name, "-", "_")) {
+			out[name] = []string{RedactedValue}
+			continue
+		}
+		c := make([]string, len(vs))
+		for i, s := range vs {
+			c[i] = l.scrub.String(s)
+		}
+		out[name] = c
+	}
+	return out
+}
+
+// isNil reports a nil interface or a nil pointer, map, slice or function inside
+// one, so that a typed nil error is logged as null instead of panicking in Error.
+func isNil(x any) bool {
+	if x == nil {
+		return true
+	}
+	switch rv := reflect.ValueOf(x); rv.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Interface, reflect.Chan:
+		return rv.IsNil()
+	}
+	return false
 }
 
 // compHandler wraps the output handler with the per-component level, the log

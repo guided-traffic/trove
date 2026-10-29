@@ -48,6 +48,9 @@ func (db *DB) preflight(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := checkBookkeeping(ctx, conn, db.cfg.Schema, info); err != nil {
+		return err
+	}
 	owner, err := q.New(conn).SchemaOwnedBy(ctx, db.cfg.Schema)
 	switch {
 	case err == nil && owner == info.RoleName:
@@ -68,6 +71,48 @@ func (db *DB) preflight(ctx context.Context) error {
 		return checkRoleDefaults(ctx, mc, db.cfg, "request")
 	}
 	return nil
+}
+
+// bookkeepingRevokeStep is the migration that takes the write privileges on
+// schema_migration and schema_state away from the runtime role.
+const bookkeepingRevokeStep = 5
+
+// checkBookkeeping refuses a runtime role that can write the migration
+// bookkeeping although the migration that revoked it has been applied: a later
+// GRANT (or a restored dump) re-opened it, and with it the compatibility gate
+// and the checksums of R-HA-018 can be rewritten by the application. A
+// superuser or the owner of the tables is not a runtime role in this sense and
+// is skipped (the owner case is warned about by preflight); so is a database
+// that has not reached the step, which a pre-upgrade Job is about to migrate.
+func checkBookkeeping(ctx context.Context, db q.DBTX, schema string, info q.ServerInfoRow) error {
+	if info.IsSuperuser {
+		return nil
+	}
+	qs := q.New(db)
+	found, err := qs.TableExists(ctx, "schema_migration")
+	if err != nil || !found {
+		return err
+	}
+	steps, err := qs.ListAppliedSteps(ctx)
+	if err != nil {
+		return err
+	}
+	applied := false
+	for _, s := range steps {
+		if int(s.Version) == bookkeepingRevokeStep {
+			applied = true
+		}
+	}
+	if !applied {
+		return nil
+	}
+	writable, err := qs.WritableBookkeeping(ctx, schema)
+	if err != nil || len(writable) == 0 {
+		return err
+	}
+	return fmt.Errorf("the database role %q can write %s, which only the migration role may (migration %05d revoked it); "+
+		"revoke it again: REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON %s FROM %s",
+		info.RoleName, strings.Join(writable, " and "), bookkeepingRevokeStep, strings.Join(writable, ", "), info.RoleName)
 }
 
 // checkRoleDefaults verifies, on a pooled connection, that the four session

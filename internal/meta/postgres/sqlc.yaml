@@ -14,6 +14,12 @@ sql:
         # interfaces, which no trove package imports (R-ARCH-026). Plain strings
         # carry the values; the CHECK of the type keeps them valid.
         overrides:
+          # The blob store reads and writes these as plain times: its package may
+          # not import the driver types (R-ARCH-002).
+          - column: "blob_gc_queue.enqueued_at"
+            go_type: "time.Time"
+          - column: "blobs.created_at"
+            go_type: "time.Time"
           - db_type: "job_state"
             go_type: "string"
           - db_type: "job_state"

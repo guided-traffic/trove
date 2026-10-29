@@ -153,7 +153,7 @@ type StorageSidecars struct {
 type StorageDownload struct {
 	BufferSize ByteSize `yaml:"buffer_size" default:"256KiB" validate:"min=4KiB"`
 	Verify     bool     `yaml:"verify" default:"true"`
-	HoldBack   ByteSize `yaml:"hold_back" default:"64KiB" validate:"min=0"`
+	HoldBack   ByteSize `yaml:"hold_back" default:"64KiB" validate:"min=1KiB" doc:"Tail withheld until the digest matched; 0 would release corrupted bytes before the check (R-STOR-013)."`
 }
 
 // StorageStats batches download statistics (R-STOR-015).
@@ -181,7 +181,7 @@ type StorageUsage struct {
 // StorageGC configures blob garbage collection (R-STOR-024).
 type StorageGC struct {
 	GracePeriod       time.Duration `yaml:"grace_period" default:"24h" validate:"min=0s"`
-	DeleteSettle      time.Duration `yaml:"delete_settle" default:"30s" validate:"min=0s"`
+	DeleteSettle      time.Duration `yaml:"delete_settle" default:"30s" validate:"min=1s" doc:"Also bounds, as half of it, how long after its object write an upload may insert the blob row (R-STOR-005)."`
 	HandoverDelay     time.Duration `yaml:"handover_delay" default:"10m" validate:"min=0s"`
 	BatchSize         int           `yaml:"batch_size" default:"1000" validate:"min=1"`
 	BatchDelete       bool          `yaml:"batch_delete" default:"true" doc:"False for stores without DeleteObjects."`
@@ -227,6 +227,22 @@ func (s *Storage) Validate(r *Report) {
 	}
 }
 
+// validateStorageCoupling checks the rules that bind the garbage collector to the
+// job lease (R-STOR-024): a run that stops answering is taken over by another
+// only after jobs.lease_duration, and the rows it left must not be taken over
+// before every delete it sent has surely landed or been refused, which is
+// delete_settle after the hand-over rule's cut-off. handover_delay not above
+// lease_duration plus twice delete_settle would let a successor finish rows
+// while the previous run may still be deleting. Config.Validate (finalize.go)
+// calls it.
+func (c *Config) validateStorageCoupling(r *Report) {
+	need := c.Jobs.LeaseDuration + 2*c.Storage.GC.DeleteSettle
+	if c.Storage.GC.HandoverDelay <= need {
+		r.Add("storage.gc.handover_delay", "(%s) must exceed jobs.lease_duration (%s) plus 2 times storage.gc.delete_settle (%s) = %s (R-STOR-024)",
+			c.Storage.GC.HandoverDelay, c.Jobs.LeaseDuration, c.Storage.GC.DeleteSettle, need)
+	}
+}
+
 // ValidateFor requires the blob bucket where a replica serves and checks the
 // spool against the largest upload on the roles that accept uploads.
 func (s *Storage) ValidateFor(cmd Command, r *Report) {
@@ -266,11 +282,15 @@ func (s *Storage) validateS3Connection(r *Report) {
 			}
 		}
 	}
+	rejectUserinfo(r, "s3.endpoint", s.S3.Endpoint, "storage.s3.credentials.access_key_id_file")
+	rejectUserinfo(r, "s3.credentials.sts_endpoint", s.S3.Credentials.STSEndpoint, "")
+	rejectUserinfo(r, "s3.presign.endpoint", s.S3.Presign.Endpoint, "")
+	rejectUserinfo(r, "s3.http.proxy_url", s.S3.HTTP.ProxyURL, "storage.s3.http.proxy_credentials_file")
 	if e := s.S3.Endpoint; e != "" {
 		u, err := url.Parse(e)
 		switch {
 		case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http"):
-			r.Add("s3.endpoint", "must be an absolute https URL (is %q)", e)
+			r.Add("s3.endpoint", "must be an absolute https URL (is %q)", redactUserinfo(e))
 		case u.Scheme == "http" && !s.S3.AllowInsecureEndpoint:
 			r.Add("s3.endpoint", "uses http: set s3.allow_insecure_endpoint to allow it")
 		}

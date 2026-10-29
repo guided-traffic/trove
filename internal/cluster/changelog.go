@@ -90,17 +90,27 @@ type Changes struct {
 	lastStart time.Time // start of the last successful poll
 	lastEnd   time.Time // end of the last successful poll
 
-	pend pendingNotes
+	pollMu sync.Mutex // one poll at a time
+
+	sql changeSQL // the statements of Notify; see changelog_notify.go
 }
 
 type areaState struct {
 	meta Area
 	// applied is the last applied epoch; only the poll advances it.
 	applied atomic.Int64
-	mu      sync.Mutex
-	at      time.Time // changed_at of the epoch applied last
-	known   bool      // false until the first poll set the starting point
-	missing bool      // logged once: no cluster_epoch row
+	mu      sync.Mutex // guards at, and makes (applied, at) one pair for AreaState; never held across a query or a listener call
+	at      time.Time  // changed_at of the epoch applied last
+	known   bool       // poll goroutine only: false until the first poll set the starting point
+	missing bool       // poll goroutine only: logged once, no cluster_epoch row
+}
+
+// set records the epoch and changed_at the poll applied last.
+func (st *areaState) set(epoch int64, at time.Time) {
+	st.mu.Lock()
+	st.applied.Store(epoch)
+	st.at = at
+	st.mu.Unlock()
 }
 
 type changeMetrics struct {
@@ -135,7 +145,7 @@ func NewChanges(o ChangesOptions) (*Changes, error) {
 		o: o, log: log, m: m, areas: map[string]*areaState{},
 		kick: make(chan struct{}, 1), msgq: make(chan Message, maxMessageBacklog), pubq: make(chan pubItem, maxMessageBacklog),
 	}
-	c.pend.init()
+	c.sql = pgChangeSQL{}
 	for _, a := range Areas(ChangeArea) {
 		c.areas[a.Name] = &areaState{meta: a}
 	}
@@ -272,10 +282,10 @@ func (c *Changes) trySubscribe() {
 	if c.o.Bus == nil || c.subscribed || c.closed.Load() {
 		return
 	}
-	ch, err := c.o.Bus.Channel(invChannels)
+	ch, err := c.o.Bus.channel(invChannels)
 	if err == nil {
 		var cancel func()
-		if cancel, err = c.o.Bus.Subscribe(c.lctx, ch, c.onMessage); err == nil {
+		if cancel, err = c.o.Bus.subscribe(c.lctx, ch, c.onMessage); err == nil {
 			c.subs = append(c.subs, cancel)
 			c.subscribed = true
 			return

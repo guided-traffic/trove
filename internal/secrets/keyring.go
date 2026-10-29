@@ -39,6 +39,9 @@ var (
 	ErrAuthentication = errors.New("sealed value failed authentication (wrong key, tampered value, or moved to another row or column)")
 	// ErrUnregistered marks a column that is not in the sealed-column registry.
 	ErrUnregistered = errors.New("column is not registered as a sealed column")
+	// ErrRowKey marks a row key whose part count differs from the column's
+	// primary key columns.
+	ErrRowKey = errors.New("row key does not match the primary key of the column")
 )
 
 func keyIDPattern() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`) }
@@ -144,31 +147,62 @@ func (r *KeyRing) LogValue() slog.Value {
 	return slog.GroupValue(slog.String("active_key_id", r.active), slog.Any("key_ids", r.order))
 }
 
-// aad binds a ciphertext to its table, row and column, so a database writer
-// cannot move it to another row. The parts are length-prefixed to keep the
-// encoding unambiguous.
-func aad(c Column, rowKey string) []byte {
+// RowKey is the primary key value of the row a sealed value belongs to: one
+// part per primary key column of the Column, in the registered order.
+type RowKey struct{ parts []string }
+
+// Row builds a RowKey from the primary key values of a row, in the order of
+// Column.PrimaryKeyColumns. For a one-column key that is Row(id).
+func Row(parts ...string) RowKey { return RowKey{parts: append([]string(nil), parts...)} }
+
+// String renders the parts for error texts; it is not the AAD encoding.
+func (k RowKey) String() string { return "(" + strings.Join(k.parts, ", ") + ")" }
+
+// checkRow requires one part per primary key column of c.
+func checkRow(c Column, row RowKey) error {
+	if want := len(c.PrimaryKeyColumns()); len(row.parts) != want {
+		return fmt.Errorf("%w: %s has a primary key of %d column(s) (%s), the row key has %d part(s)",
+			ErrRowKey, c, want, c.pk, len(row.parts))
+	}
+	return nil
+}
+
+// aad binds a ciphertext to its table, column and row, so a database writer
+// cannot move it to another row or column. Every element is length-prefixed
+// and the row key carries its part count, so no two different (table, column,
+// row) triples encode alike: ("a:b") and ("a", "b") are different rows.
+func aad(c Column, row RowKey) []byte {
 	var b bytes.Buffer
-	for _, p := range []string{"trove/sealed/v1", c.table, rowKey, c.column} {
+	put := func(n uint64) {
 		var l [binary.MaxVarintLen64]byte
-		n := binary.PutUvarint(l[:], uint64(len(p)))
-		b.Write(l[:n])
+		b.Write(l[:binary.PutUvarint(l[:], n)])
+	}
+	for _, p := range []string{"trove/sealed/v1", c.table, c.column} {
+		put(uint64(len(p)))
+		b.WriteString(p)
+	}
+	put(uint64(len(row.parts)))
+	for _, p := range row.parts {
+		put(uint64(len(p)))
 		b.WriteString(p)
 	}
 	return b.Bytes()
 }
 
-// Seal encrypts plaintext for the row identified by rowKey of the column under
-// the active key and returns the envelope v1:<key id>:<base64(nonce‖ciphertext‖tag)>.
-// rowKey is the row's primary key value; for a composite key, the caller joins
-// the parts in a fixed order.
-func (r *KeyRing) Seal(c Column, rowKey string, plaintext []byte) (string, error) {
-	return r.sealWith(r.active, c, rowKey, plaintext)
+// Seal encrypts plaintext for the row of the column under the active key and
+// returns the envelope v1:<key id>:<base64(nonce‖ciphertext‖tag)>. row holds
+// the row's primary key values (Row(id), or Row(repositoryID, name) for a
+// composite key).
+func (r *KeyRing) Seal(c Column, row RowKey, plaintext []byte) (string, error) {
+	return r.sealWith(r.active, c, row, plaintext)
 }
 
-func (r *KeyRing) sealWith(keyID string, c Column, rowKey string, plaintext []byte) (string, error) {
+func (r *KeyRing) sealWith(keyID string, c Column, row RowKey, plaintext []byte) (string, error) {
 	if !registered(c) {
 		return "", fmt.Errorf("%w: %s", ErrUnregistered, c)
+	}
+	if err := checkRow(c, row); err != nil {
+		return "", err
 	}
 	gcm, ok := r.aeads[keyID]
 	if !ok {
@@ -178,16 +212,19 @@ func (r *KeyRing) sealWith(keyID string, c Column, rowKey string, plaintext []by
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("secrets: nonce: %w", err)
 	}
-	out := gcm.Seal(nonce, nonce, plaintext, aad(c, rowKey))
+	out := gcm.Seal(nonce, nonce, plaintext, aad(c, row))
 	return envelopeVersion + ":" + keyID + ":" + base64.StdEncoding.EncodeToString(out), nil
 }
 
 // Open decrypts an envelope with the key its key ID names. It fails with
-// ErrMalformed, ErrUnknownKey or ErrAuthentication, and with ErrUnregistered
-// for a column outside the registry.
-func (r *KeyRing) Open(c Column, rowKey, sealed string) ([]byte, error) {
+// ErrMalformed, ErrUnknownKey or ErrAuthentication, with ErrUnregistered for a
+// column outside the registry and ErrRowKey for a row key of the wrong arity.
+func (r *KeyRing) Open(c Column, row RowKey, sealed string) ([]byte, error) {
 	if !registered(c) {
 		return nil, fmt.Errorf("%w: %s", ErrUnregistered, c)
+	}
+	if err := checkRow(c, row); err != nil {
+		return nil, err
 	}
 	keyID, payload, err := parse(sealed)
 	if err != nil {
@@ -201,7 +238,7 @@ func (r *KeyRing) Open(c Column, rowKey, sealed string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: too short", ErrMalformed)
 	}
 	nonce, ct := payload[:gcm.NonceSize()], payload[gcm.NonceSize():]
-	pt, err := gcm.Open(nil, nonce, ct, aad(c, rowKey))
+	pt, err := gcm.Open(nil, nonce, ct, aad(c, row))
 	if err != nil {
 		return nil, ErrAuthentication
 	}
@@ -245,7 +282,7 @@ func (r *KeyRing) NeedsReseal(sealed string) (bool, error) {
 // Reseal opens a value and seals it under the active key. It returns the new
 // envelope and whether anything changed; a value already under the active key
 // is returned as is, which makes the re-encryption job idempotent.
-func (r *KeyRing) Reseal(c Column, rowKey, sealed string) (string, bool, error) {
+func (r *KeyRing) Reseal(c Column, row RowKey, sealed string) (string, bool, error) {
 	need, err := r.NeedsReseal(sealed)
 	if err != nil {
 		return "", false, err
@@ -253,11 +290,11 @@ func (r *KeyRing) Reseal(c Column, rowKey, sealed string) (string, bool, error) 
 	if !need {
 		return sealed, false, nil
 	}
-	pt, err := r.Open(c, rowKey, sealed)
+	pt, err := r.Open(c, row, sealed)
 	if err != nil {
 		return "", false, err
 	}
-	out, err := r.Seal(c, rowKey, pt)
+	out, err := r.Seal(c, row, pt)
 	return out, err == nil, err
 }
 
@@ -283,12 +320,12 @@ func CanaryColumn() Column { return canaryColumn() }
 // SealCanary seals the known canary plaintext under the named key, for the row
 // secret_key_canary(key_id = keyID).
 func (r *KeyRing) SealCanary(keyID string) (string, error) {
-	return r.sealWith(keyID, canaryColumn(), keyID, []byte(canaryPlain))
+	return r.sealWith(keyID, canaryColumn(), Row(keyID), []byte(canaryPlain))
 }
 
 // CheckCanary opens the canary row of keyID and compares it to the known text.
 func (r *KeyRing) CheckCanary(keyID, sealed string) error {
-	pt, err := r.Open(canaryColumn(), keyID, sealed)
+	pt, err := r.Open(canaryColumn(), Row(keyID), sealed)
 	if err != nil {
 		return fmt.Errorf("canary of key %q: %w", keyID, err)
 	}

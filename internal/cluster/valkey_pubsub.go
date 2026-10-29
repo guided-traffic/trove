@@ -54,13 +54,13 @@ func (p *pubsub) poke() {
 
 func (p *pubsub) isSubscribed() bool { return p.subscribed.Load() }
 
-// Subscribe registers h for ch and returns the function that removes it. The
+// subscribe registers h for ch and returns the function that removes it. The
 // registration is local and never fails because Valkey is down: the Pub/Sub
 // connection subscribes when it can, and subscribes again after every primary
 // change. ctx ends the subscription as well.
-func (v *Valkey) Subscribe(ctx context.Context, ch Channel, h Handler) (cancel func(), err error) {
+func (v *Valkey) subscribe(ctx context.Context, ch Channel, h Handler) (cancel func(), err error) {
 	if ch.name == "" {
-		return nil, errors.New("cluster: invalid channel: form channels with Valkey.Channel")
+		return nil, errors.New("cluster: invalid channel: form channels with Valkey.channel")
 	}
 	if h == nil {
 		return nil, errors.New("cluster: nil handler")

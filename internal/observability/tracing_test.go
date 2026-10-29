@@ -27,7 +27,7 @@ const (
 func tracedStack(t *testing.T, cfg config.Tracing, buf *bytes.Buffer, opts ...TracingOption) (http.Handler, *Tracer, *tracetest.InMemoryExporter) {
 	t.Helper()
 	exp := tracetest.NewInMemoryExporter()
-	all := append([]TracingOption{WithSpanExporter(exp), WithTrustedProxies([]string{"10.0.0.0/8"})}, opts...)
+	all := append([]TracingOption{WithSpanExporter(exp)}, opts...)
 	tr, err := Tracing(cfg, all...)
 	if err != nil {
 		t.Fatal(err)
@@ -51,9 +51,9 @@ func reqFrom(peer, traceparent string) *http.Request {
 }
 
 func TestTraceContext(t *testing.T) {
-	cfgSampled := config.Tracing{Enabled: true, SampleRatio: 1, IncomingContext: "trusted_proxies", QueueSize: 16}
+	cfgSampled := config.Tracing{Enabled: true, SampleRatio: 1, IncomingContext: "trusted_peers", TrustedPeers: []string{"10.0.0.0/8"}, QueueSize: 16}
 
-	t.Run("R-OPS-018 incoming traceparent from a trusted proxy keeps the trace ID in log and X-Request-Id", func(t *testing.T) {
+	t.Run("R-OPS-018 incoming traceparent from a trusted peer keeps the trace ID in log and X-Request-Id", func(t *testing.T) {
 		var buf bytes.Buffer
 		h, _, _ := tracedStack(t, cfgSampled, &buf)
 		w := serve(t, h, reqFrom("10.1.1.1", incomingTP))
@@ -70,7 +70,7 @@ func TestTraceContext(t *testing.T) {
 		}
 	})
 
-	t.Run("R-OPS-018 a client outside the trusted proxies gets a new trace and a span link", func(t *testing.T) {
+	t.Run("R-OPS-018 a client outside the trusted peers gets a new trace and a span link", func(t *testing.T) {
 		var buf bytes.Buffer
 		h, tr, exp := tracedStack(t, cfgSampled, &buf)
 		w := serve(t, h, reqFrom("203.0.113.9", incomingTP))
@@ -84,6 +84,27 @@ func TestTraceContext(t *testing.T) {
 		spans := exp.GetSpans()
 		if len(spans) != 1 || len(spans[0].Links) != 1 || spans[0].Links[0].SpanContext.TraceID().String() != incomingTrace {
 			t.Fatalf("spans = %+v", spans)
+		}
+	})
+
+	t.Run("R-OPS-018 with trusted_peers empty, the default, every request starts a new trace, also from the edge", func(t *testing.T) {
+		var buf bytes.Buffer
+		def := cfgSampled
+		def.TrustedPeers = nil
+		// The edge proxy (10.1.1.1) is in server.trusted_proxies, which Tracing
+		// does not read: the client's traceparent, which the edge passes
+		// through, must not become trusted by it.
+		h, tr, exp := tracedStack(t, def, &buf)
+		for _, peer := range []string{"10.1.1.1", "127.0.0.1", "203.0.113.9"} {
+			if got := serve(t, h, reqFrom(peer, incomingTP)).Header().Get("X-Request-Id"); got == incomingTrace || len(got) != 32 {
+				t.Errorf("%s: trace ID %q", peer, got)
+			}
+		}
+		_ = tr.ForceFlush(context.Background())
+		for _, sp := range exp.GetSpans() {
+			if len(sp.Links) != 1 || sp.Links[0].SpanContext.TraceID().String() != incomingTrace {
+				t.Errorf("incoming context not kept as a link: %+v", sp.Links)
+			}
 		}
 	})
 
@@ -248,8 +269,8 @@ func TestTracingConfigErrors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "headers_file") {
 			t.Errorf("err = %v", err)
 		}
-		if _, err := Tracing(config.Tracing{}, WithTrustedProxies([]string{"nonsense"})); err == nil {
-			t.Error("bad trusted proxy accepted")
+		if _, err := Tracing(config.Tracing{TrustedPeers: []string{"nonsense"}}); err == nil || !strings.Contains(err.Error(), "trusted_peers") {
+			t.Errorf("bad trusted peer: err = %v", err)
 		}
 	})
 }

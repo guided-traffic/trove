@@ -29,6 +29,23 @@ func PostgresDSN(tb testing.TB) string { return Get(tb, "TROVE_TEST_PG_DSN") }
 // PgBouncerDSN is the DSN through PgBouncer in transaction mode.
 func PgBouncerDSN(tb testing.TB) string { return Get(tb, "TROVE_TEST_PG_PGBOUNCER_DSN") }
 
+// PgPooled reports whether the suites that support it should open their main
+// PostgreSQL pool through PgBouncer in transaction mode instead of direct
+// (TROVE_TEST_PG_POOLED=1). The stores must work in both: a transaction-mode
+// pooler is a supported deployment (R-ARCH-019, R-HA-058), so CI runs the blob
+// and coordination suites once each way.
+func PgPooled(tb testing.TB) bool {
+	tb.Helper()
+	switch strings.ToLower(os.Getenv("TROVE_TEST_PG_POOLED")) {
+	case "", "0", "false", "no":
+		return false
+	case "1", "true", "yes":
+		return true
+	}
+	tb.Fatalf("TROVE_TEST_PG_POOLED must be 1 or 0, got %q", os.Getenv("TROVE_TEST_PG_POOLED"))
+	return false
+}
+
 // ValkeyLine is the Valkey line under test, "9.0" or "9.1".
 func ValkeyLine(tb testing.TB) string { return Get(tb, "TROVE_TEST_VALKEY_LINE") }
 

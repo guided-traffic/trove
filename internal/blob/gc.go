@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"math"
 	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // GCMode selects the candidates of a run (R-STOR-025).
@@ -113,53 +115,15 @@ func NewCollector(cfg config.StorageGC, prefix string, objects ObjectStore, db D
 	return c
 }
 
-const (
-	sqlPaused = `SELECT 1 FROM system_state WHERE key = 'deletions_paused_at' AND value <> 'null'::jsonb`
-
-	sqlRefTables = `SELECT c.conrelid::regclass::text, quote_ident(a.attname)
-		FROM pg_catalog.pg_constraint c
-		JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-		WHERE c.contype = 'f' AND c.confrelid = 'blobs'::regclass AND cardinality(c.conkey) = 1`
-
-	sqlLockUpdate = `SELECT state, size FROM blobs WHERE sha256 = $1 FOR UPDATE`
-
-	sqlClaim = `UPDATE blobs SET state = 'deleting', state_changed_at = now() WHERE sha256 = $1`
-
-	sqlDequeue = `DELETE FROM blob_gc_queue WHERE sha256 = $1 AND enqueued_at = $2`
-
-	sqlQueueCandidates = `SELECT sha256, enqueued_at FROM blob_gc_queue
-		WHERE enqueued_at < now() - make_interval(secs => $1::float8) AND sha256 > $2
-		ORDER BY sha256 LIMIT $3`
-
-	sqlRecordDeleted = `UPDATE blobs SET object_deleted_at = now()
-		WHERE sha256 = ANY($1) AND state = 'deleting' AND object_deleted_at IS NULL RETURNING size`
-
-	sqlDropRows = `DELETE FROM blobs
-		WHERE sha256 = ANY($1) AND state = 'deleting'
-		  AND object_deleted_at < now() - make_interval(secs => $2::float8)`
-
-	sqlEligible = `SELECT sha256, size, object_deleted_at IS NOT NULL FROM blobs
-		WHERE state = 'deleting' AND (
-		      (object_deleted_at IS NULL AND state_changed_at < now() - make_interval(secs => $1::float8))
-		   OR (object_deleted_at IS NOT NULL AND object_deleted_at < now() - make_interval(secs => $2::float8)))
-		ORDER BY state_changed_at LIMIT $3`
-
-	sqlSoon = `SELECT count(*) FROM blobs
-		WHERE state = 'deleting' AND (object_deleted_at IS NOT NULL
-		   OR state_changed_at < now() - make_interval(secs => $1::float8))`
-
-	sqlHandOver = `UPDATE blobs SET state_changed_at = now() - make_interval(secs => $2::float8)
-		WHERE sha256 = ANY($1) AND state = 'deleting' AND object_deleted_at IS NULL`
-
-	sqlDeletingCount = `SELECT count(*) FROM blobs WHERE state = 'deleting'`
-)
-
 func (c *Collector) defaultPaused(ctx context.Context) (bool, error) {
 	var paused bool
-	err := c.db.Tx(ctx, func(tx meta.Tx) error {
-		var one int
-		var err error
-		paused, err = queryOne(ctx, tx, sqlPaused, nil, &one)
+	err := c.db.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.DeletionsPaused(ctx)
+		paused = len(rows) > 0
 		return err
 	})
 	return paused, err
@@ -294,38 +258,41 @@ func (r *run) candidates(ctx context.Context) error {
 // nextBatch reads the next candidates after a digest.
 func (r *run) nextBatch(ctx context.Context, after []byte) ([]candidate, error) {
 	grace := r.c.cfg.GracePeriod.Seconds()
-	limit := r.c.cfg.BatchSize
+	limit := int32(min(r.c.cfg.BatchSize, math.MaxInt32)) //nolint:gosec // bounded by the min
 	var out []candidate
-	err := r.c.db.Tx(ctx, func(tx meta.Tx) error {
+	err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
 		out = out[:0]
-		var (
-			rows meta.Rows
-			err  error
-		)
 		if r.opts.Mode == GCFull {
-			var refs []refTable
-			if refs, err = referencingTables(ctx, tx); err != nil {
+			refs, err := postgres.LoadBlobRefs(ctx, tx)
+			if err != nil {
 				return err
 			}
-			rows, err = tx.Query(ctx, fullSweepSQL(refs), grace, after, limit)
-		} else {
-			rows, err = tx.Query(ctx, sqlQueueCandidates, grace, after, limit)
+			cs, err := refs.FullSweep(ctx, tx, grace, after, limit)
+			if err != nil {
+				return err
+			}
+			for _, c := range cs {
+				var d Digest
+				copy(d[:], c.SHA256)
+				out = append(out, candidate{digest: d, seen: c.EnqueuedAt})
+			}
+			return nil
 		}
+		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var sha []byte
-			var seen *time.Time
-			if err := rows.Scan(&sha, &seen); err != nil {
-				return err
-			}
-			var d Digest
-			copy(d[:], sha)
-			out = append(out, candidate{digest: d, seen: seen})
+		rows, err := qs.BlobQueueCandidates(ctx, q.BlobQueueCandidatesParams{GraceSecs: grace, After: after, Batch: limit})
+		if err != nil {
+			return err
 		}
-		return rows.Err()
+		for _, row := range rows {
+			var d Digest
+			copy(d[:], row.Sha256)
+			seen := row.EnqueuedAt
+			out = append(out, candidate{digest: d, seen: &seen})
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read gc candidates: %w", err)
@@ -333,83 +300,35 @@ func (r *run) nextBatch(ctx context.Context, after []byte) ([]candidate, error) 
 	return out, nil
 }
 
-type refTable struct{ table, column string }
-
-// referencingTables reads, in the caller's transaction, every table with a
-// foreign key to blobs (R-STOR-024 rule 3), so that a table a newer release
-// added is honoured by an older binary.
-func referencingTables(ctx context.Context, tx meta.Tx) ([]refTable, error) {
-	rows, err := tx.Query(ctx, sqlRefTables)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []refTable
-	for rows.Next() {
-		var t refTable
-		if err := rows.Scan(&t.table, &t.column); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
-}
-
-func fullSweepSQL(refs []refTable) string {
-	var b strings.Builder
-	b.WriteString(`SELECT b.sha256, q.enqueued_at FROM blobs b
-		LEFT JOIN blob_gc_queue q ON q.sha256 = b.sha256
-		WHERE b.state = 'live'
-		  AND b.created_at < now() - make_interval(secs => $1::float8)
-		  AND b.sha256 > $2
-		  AND (q.enqueued_at IS NULL OR q.enqueued_at < now() - make_interval(secs => $1::float8))`)
-	for _, t := range refs {
-		// The names come from the catalog, quoted by the server.
-		fmt.Fprintf(&b, "\n\t\t  AND NOT EXISTS (SELECT 1 FROM %s r WHERE r.%s = b.sha256)", t.table, t.column)
-	}
-	b.WriteString("\n\t\tORDER BY b.sha256 LIMIT $3")
-	return b.String()
-}
-
-// referenced is step (2): a separate statement, after the lock was granted, so
-// that under READ COMMITTED it takes a snapshot that sees every reference
-// committed before the lock.
-func referenced(ctx context.Context, tx meta.Tx, d Digest) (bool, error) {
-	refs, err := referencingTables(ctx, tx)
-	if err != nil {
-		return false, err
-	}
-	if len(refs) == 0 {
-		return false, nil
-	}
-	var b strings.Builder
-	b.WriteString("SELECT ")
-	for i, t := range refs {
-		if i > 0 {
-			b.WriteString(" OR ")
-		}
-		fmt.Fprintf(&b, "EXISTS (SELECT 1 FROM %s WHERE %s = $1)", t.table, t.column)
-	}
-	var found bool
-	if _, err := queryOne(ctx, tx, b.String(), []any{d.Bytes()}, &found); err != nil {
-		return false, err
-	}
-	return found, nil
+// loadRefs reads the referencing columns of blobs from the catalog. A batch
+// reads them once and uses them for all its candidates (R-STOR-024 rule 3).
+func (r *run) loadRefs(ctx context.Context) (*postgres.BlobRefs, error) {
+	var refs *postgres.BlobRefs
+	err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		refs, err = postgres.LoadBlobRefs(ctx, tx)
+		return err
+	})
+	return refs, err
 }
 
 // process handles one batch: dry-run accounting, or claim each candidate and
 // delete the objects of the claimed ones.
 func (r *run) process(ctx context.Context, batch []candidate) error {
 	r.res.Candidates += len(batch)
+	refs, err := r.loadRefs(ctx)
+	if err != nil {
+		return fmt.Errorf("read the tables that reference blobs: %w", err)
+	}
 	if r.opts.DryRun {
-		return r.dryRun(ctx, batch)
+		return r.dryRun(ctx, batch, refs)
 	}
 	var claimed []Digest
 	for _, cand := range batch {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		out, size, start, err := r.claim(ctx, cand)
+		out, size, start, err := r.claim(ctx, cand, refs)
 		if err != nil {
 			return err
 		}
@@ -426,21 +345,25 @@ func (r *run) process(ctx context.Context, batch []candidate) error {
 	return r.deleteObjects(ctx, claimed)
 }
 
-func (r *run) dryRun(ctx context.Context, batch []candidate) error {
+func (r *run) dryRun(ctx context.Context, batch []candidate, refs *postgres.BlobRefs) error {
 	for _, cand := range batch {
 		var ref, live bool
 		var size int64
-		err := r.c.db.Tx(ctx, func(tx meta.Tx) error {
-			var state string
-			found, err := queryOne(ctx, tx, `SELECT state, size FROM blobs WHERE sha256 = $1`, []any{cand.digest.Bytes()}, &state, &size)
+		err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
+			qs, err := queries(tx)
 			if err != nil {
 				return err
 			}
-			live = found && state == "live"
+			rows, err := qs.BlobStateSize(ctx, cand.digest.Bytes())
+			if err != nil {
+				return err
+			}
+			live = len(rows) > 0 && rows[0].State == "live"
 			if !live {
 				return nil
 			}
-			ref, err = referenced(ctx, tx, cand.digest)
+			size = rows[0].Size
+			ref, err = refs.Referenced(ctx, tx, cand.digest.Bytes())
 			return err
 		})
 		if err != nil {
@@ -457,17 +380,20 @@ func (r *run) dryRun(ctx context.Context, batch []candidate) error {
 }
 
 // claim is steps (1) to (3) for one candidate in one transaction.
-func (r *run) claim(ctx context.Context, cand candidate) (out claimResult, size int64, start time.Time, err error) {
+func (r *run) claim(ctx context.Context, cand candidate, refs *postgres.BlobRefs) (out claimResult, size int64, start time.Time, err error) {
 	if err := r.fault("claim:before"); err != nil {
 		return 0, 0, time.Time{}, err
 	}
 	// The reading is no later than the transaction's start, which step (3)
 	// stores as state_changed_at.
 	start = r.c.now()
-	err = r.c.db.Tx(ctx, func(tx meta.Tx) error {
+	err = r.c.db.InTx(ctx, func(tx meta.Tx) error {
 		out = outKept
-		var state string
-		found, err := queryOne(ctx, tx, sqlLockUpdate, []any{cand.digest.Bytes()}, &state, &size)
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.LockBlobUpdate(ctx, cand.digest.Bytes())
 		if err != nil {
 			return err
 		}
@@ -475,14 +401,17 @@ func (r *run) claim(ctx context.Context, cand candidate) (out claimResult, size 
 			return err
 		}
 		dequeue := func() error {
-			_, err := tx.Exec(ctx, sqlDequeue, cand.digest.Bytes(), cand.seen)
-			return err
+			if cand.seen == nil {
+				return nil // a full sweep found the digest in no queue
+			}
+			return qs.DequeueBlob(ctx, q.DequeueBlobParams{Sha256: cand.digest.Bytes(), EnqueuedAt: *cand.seen})
 		}
-		if !found || state != "live" {
+		if len(rows) == 0 || rows[0].State != "live" {
 			out = outGone
 			return dequeue()
 		}
-		ref, err := referenced(ctx, tx, cand.digest)
+		size = rows[0].Size
+		ref, err := refs.Referenced(ctx, tx, cand.digest.Bytes())
 		if err != nil {
 			return err
 		}
@@ -502,7 +431,7 @@ func (r *run) claim(ctx context.Context, cand candidate) (out claimResult, size 
 				return nil
 			}
 		}
-		if _, err := tx.Exec(ctx, sqlClaim, cand.digest.Bytes()); err != nil {
+		if err := qs.ClaimBlob(ctx, cand.digest.Bytes()); err != nil {
 			return err
 		}
 		out = outClaimed
@@ -582,21 +511,20 @@ func (r *run) record(ctx context.Context) error {
 
 func (c *Collector) recordDeleted(ctx context.Context, digests []Digest) (int64, error) {
 	var total int64
-	err := c.db.Tx(ctx, func(tx meta.Tx) error {
+	err := c.db.InTx(ctx, func(tx meta.Tx) error {
 		total = 0
-		rows, err := tx.Query(ctx, sqlRecordDeleted, digestBytes(digests))
+		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var size int64
-			if err := rows.Scan(&size); err != nil {
-				return err
-			}
+		sizes, err := qs.RecordBlobsDeleted(ctx, digestBytes(digests))
+		if err != nil {
+			return err
+		}
+		for _, size := range sizes {
 			total += size
 		}
-		return rows.Err()
+		return nil
 	})
 	return total, err
 }
@@ -696,7 +624,10 @@ func (r *run) finishRows(ctx context.Context) error {
 }
 
 // finishEligible does one pass over eligible rows and returns how many it
-// changed.
+// changed. A row whose delete settled is dropped (step 6). A row nobody finished
+// within handover_delay is taken over with a compare-and-set claim, so that two
+// runs that read the same row cannot both delete its object, and is then
+// finished under the same hand-over deadline as a row this run claimed itself.
 func (r *run) finishEligible(ctx context.Context) (int, error) {
 	if p, err := r.paused(ctx); err != nil || p {
 		r.res.Paused = p
@@ -708,29 +639,30 @@ func (r *run) finishEligible(ctx context.Context) (int, error) {
 		deleted bool
 	}
 	var rows []row
-	err := r.c.db.Tx(ctx, func(tx meta.Tx) error {
+	err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
 		rows = rows[:0]
-		rs, err := tx.Query(ctx, sqlEligible, r.c.cfg.HandoverDelay.Seconds(), r.c.cfg.DeleteSettle.Seconds(), r.c.cfg.BatchSize)
+		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		defer rs.Close()
-		for rs.Next() {
-			var sha []byte
-			var x row
-			if err := rs.Scan(&sha, &x.size, &x.deleted); err != nil {
-				return err
-			}
-			copy(x.d[:], sha)
-			rows = append(rows, x)
+		rs, err := qs.EligibleBlobs(ctx, q.EligibleBlobsParams{
+			HandoverSecs: r.c.cfg.HandoverDelay.Seconds(), SettleSecs: r.c.cfg.DeleteSettle.Seconds(),
+			Batch: int32(min(r.c.cfg.BatchSize, math.MaxInt32)), //nolint:gosec // bounded by the min
+		})
+		if err != nil {
+			return err
 		}
-		return rs.Err()
+		for _, x := range rs {
+			e := row{size: x.Size, deleted: x.ObjectDeleted}
+			copy(e.d[:], x.Sha256)
+			rows = append(rows, e)
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
 	var toDelete, toDrop []Digest
-	sizes := map[Digest]int64{}
 	for _, x := range rows {
 		if _, mine := r.claimed[x.d]; mine {
 			continue
@@ -739,7 +671,6 @@ func (r *run) finishEligible(ctx context.Context) (int, error) {
 			toDrop = append(toDrop, x.d)
 		} else {
 			toDelete = append(toDelete, x.d)
-			sizes[x.d] = x.size
 		}
 	}
 	changed := 0
@@ -747,18 +678,14 @@ func (r *run) finishEligible(ctx context.Context) (int, error) {
 		if err := r.fault("finish:delete"); err != nil {
 			return changed, err
 		}
-		done, derr := r.c.removeObjects(ctx, toDelete, &r.res)
-		r.pending = append(r.pending, done...)
-		for _, d := range done {
-			r.claimed[d] = claim{size: sizes[d]} // so record() clears it
-		}
-		if derr != nil {
-			return changed, derr
-		}
-		if err := r.record(ctx); err != nil {
+		taken, err := r.takeOver(ctx, toDelete)
+		if err != nil {
 			return changed, err
 		}
-		changed += len(done)
+		if err := r.deleteObjects(ctx, taken); err != nil {
+			return changed, err
+		}
+		changed += len(taken)
 	}
 	if len(toDrop) > 0 {
 		if err := r.drop(ctx, toDrop); err != nil {
@@ -769,14 +696,54 @@ func (r *run) finishEligible(ctx context.Context) (int, error) {
 	return changed, nil
 }
 
+// takeOver claims rows another run left, with a compare-and-set that renews
+// their state_changed_at, and registers the ones this run won as its own claims.
+// The clock reading before the transaction is the start of the hand-over rule,
+// as for a claim.
+func (r *run) takeOver(ctx context.Context, digests []Digest) ([]Digest, error) {
+	start := r.c.now()
+	var taken []Digest
+	err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
+		taken = taken[:0]
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.TakeOverBlobs(ctx, q.TakeOverBlobsParams{
+			Digests: digestBytes(digests), HandoverSecs: r.c.cfg.HandoverDelay.Seconds(),
+		})
+		if err != nil {
+			return err
+		}
+		for _, x := range rows {
+			var d Digest
+			copy(d[:], x.Sha256)
+			taken = append(taken, d)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Sizes are only needed for the result, which record() takes from the
+	// database; a taken row is registered with the reading before the claim.
+	for _, d := range taken {
+		r.claimed[d] = claim{start: start}
+	}
+	return taken, nil
+}
+
 // drop is step (6).
 func (r *run) drop(ctx context.Context, digests []Digest) error {
 	if err := r.fault("drop:before"); err != nil {
 		return err
 	}
-	return r.c.db.Tx(ctx, func(tx meta.Tx) error {
-		_, err := tx.Exec(ctx, sqlDropRows, digestBytes(digests), r.c.cfg.DeleteSettle.Seconds())
-		return err
+	return r.c.db.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		return qs.DropBlobRows(ctx, q.DropBlobRowsParams{Digests: digestBytes(digests), SettleSecs: r.c.cfg.DeleteSettle.Seconds()})
 	})
 }
 
@@ -791,9 +758,13 @@ func (r *run) settle(ctx context.Context) error {
 		if _, err := r.finishEligible(ctx); err != nil || r.res.Paused {
 			return err
 		}
-		var soon int
-		err := r.c.db.Tx(ctx, func(tx meta.Tx) error {
-			_, err := queryOne(ctx, tx, sqlSoon, []any{(r.c.cfg.HandoverDelay - r.c.cfg.DeleteSettle).Seconds()}, &soon)
+		var soon int64
+		err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
+			qs, err := queries(tx)
+			if err != nil {
+				return err
+			}
+			soon, err = qs.CountDeletingSoon(ctx, (r.c.cfg.HandoverDelay - r.c.cfg.DeleteSettle).Seconds())
 			return err
 		})
 		if err != nil {
@@ -826,18 +797,25 @@ func (r *run) finalize(ctx context.Context) {
 			left = append(left, d)
 		}
 		back := (r.c.cfg.HandoverDelay - r.c.cfg.DeleteSettle).Seconds()
-		err := r.c.db.Tx(fctx, func(tx meta.Tx) error {
-			_, err := tx.Exec(fctx, sqlHandOver, digestBytes(left), back)
-			return err
+		err := r.c.db.InTx(fctx, func(tx meta.Tx) error {
+			qs, err := queries(tx)
+			if err != nil {
+				return err
+			}
+			return qs.HandOverBlobs(fctx, q.HandOverBlobsParams{Digests: digestBytes(left), BackSecs: back})
 		})
 		if err != nil {
 			r.c.log.Warn("could not hand claimed rows over; they wait for handover_delay", "rows", len(left), "error", err)
 		}
 	}
-	var deleting int
-	_ = r.c.db.Tx(fctx, func(tx meta.Tx) error {
-		_, err := queryOne(fctx, tx, sqlDeletingCount, nil, &deleting)
+	var deleting int64
+	_ = r.c.db.InTx(fctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		deleting, err = qs.CountDeletingBlobs(fctx)
 		return err
 	})
-	r.c.metrics.setDeleting(deleting)
+	r.c.metrics.setDeleting(int(deleting))
 }

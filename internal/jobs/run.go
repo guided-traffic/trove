@@ -12,7 +12,8 @@ import (
 // Run.Job as claimed; Checkpoint is the state the previous attempt persisted.
 type Run struct {
 	Job
-	w *Worker
+	w  *Worker
+	rj *runningJob
 }
 
 // DB is the main pool, for the handler's own statements.
@@ -41,7 +42,7 @@ func (r *Run) SaveCheckpoint(ctx context.Context, v any) error {
 		return fmt.Errorf("jobs: checkpoint of %s: %w", r.ID, err)
 	}
 	n, err := q.New(r.w.o.Main).SaveJobCheckpoint(ctx, q.SaveJobCheckpointParams{
-		Checkpoint: string(b), ID: r.ID, LockedBy: r.w.o.UID,
+		Checkpoint: string(b), ID: r.ID, LockedBy: r.w.o.UID, Attempt: int32(r.Attempt), //nolint:gosec // attempts are small
 	})
 	if err != nil {
 		return err
@@ -55,7 +56,7 @@ func (r *Run) SaveCheckpoint(ctx context.Context, v any) error {
 // SaveProgress records progress for the job API. total 0 means unknown.
 func (r *Run) SaveProgress(ctx context.Context, done, total int64, unit string) error {
 	n, err := q.New(r.w.o.Main).SaveJobProgress(ctx, q.SaveJobProgressParams{
-		Done: done, Total: total, Unit: unit, ID: r.ID, LockedBy: r.w.o.UID,
+		Done: done, Total: total, Unit: unit, ID: r.ID, LockedBy: r.w.o.UID, Attempt: int32(r.Attempt), //nolint:gosec // attempts are small
 	})
 	if err != nil {
 		return err
@@ -72,6 +73,6 @@ func (r *Run) SetResult(v any) error {
 	if err != nil {
 		return fmt.Errorf("jobs: result of %s: %w", r.ID, err)
 	}
-	r.w.setResult(r.ID, string(b))
+	r.w.setResult(r.rj, string(b))
 	return nil
 }

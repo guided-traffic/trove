@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -296,6 +297,16 @@ func TestOpenPreflight(t *testing.T) {
 	})
 }
 
+// unwrapTx is the pgx transaction behind a meta.Tx, for tests that run SQL on it.
+func unwrapTx(t testing.TB, tx meta.Tx) pgx.Tx {
+	t.Helper()
+	ptx, ok := postgres.Unwrap(tx)
+	if !ok {
+		t.Fatal("not a transaction of internal/meta/postgres")
+	}
+	return ptx
+}
+
 func TestInTx(t *testing.T) {
 	st := getStack(t)
 	cfg, _, admin := migrated(t, st)
@@ -309,7 +320,7 @@ func TestInTx(t *testing.T) {
 
 	t.Run("R-ARCH-019 InTx retries a serialization failure and runs the transaction again from scratch", func(t *testing.T) {
 		attempts := 0
-		err := db.InTx(ctx, func(tx pgx.Tx) error {
+		err := db.InPgxTx(ctx, func(tx pgx.Tx) error {
 			attempts++
 			if _, err := tx.Exec(ctx, `INSERT INTO trove.system_state (key, value) VALUES ('t_retry', to_jsonb($1::int))`, attempts); err != nil {
 				return err
@@ -329,7 +340,7 @@ func TestInTx(t *testing.T) {
 
 	t.Run("R-ARCH-019 InTx retries a deadlock error up to three times and returns the error", func(t *testing.T) {
 		attempts := 0
-		err := db.InTx(ctx, func(tx pgx.Tx) error { attempts++; return raise(ctx, tx, "40P01") })
+		err := db.InPgxTx(ctx, func(tx pgx.Tx) error { attempts++; return raise(ctx, tx, "40P01") })
 		var pe *pgconn.PgError
 		if attempts != 4 || !asPg(err, &pe) || pe.Code != "40P01" {
 			t.Fatalf("attempts = %d, err = %v", attempts, err)
@@ -338,7 +349,7 @@ func TestInTx(t *testing.T) {
 
 	t.Run("R-ARCH-019 InTx does not retry other errors", func(t *testing.T) {
 		attempts := 0
-		err := db.InTx(ctx, func(tx pgx.Tx) error {
+		err := db.InPgxTx(ctx, func(tx pgx.Tx) error {
 			attempts++
 			_, err := tx.Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('Bad Key', 'raw', 'local')`)
 			return err
@@ -351,7 +362,7 @@ func TestInTx(t *testing.T) {
 
 	t.Run("R-ARCH-019 transactions run at READ COMMITTED", func(t *testing.T) {
 		var level string
-		if err := db.InTx(ctx, func(tx pgx.Tx) error {
+		if err := db.InPgxTx(ctx, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, "SHOW transaction_isolation").Scan(&level)
 		}); err != nil || level != "read committed" {
 			t.Fatalf("level = %q, err = %v", level, err)
@@ -360,20 +371,20 @@ func TestInTx(t *testing.T) {
 
 	t.Run("R-ARCH-018 Before hooks run last inside the transaction, After hooks run once after the commit", func(t *testing.T) {
 		var order []string
-		err := db.Tx(ctx, func(tx meta.Tx) error {
+		err := db.InTx(ctx, func(tx meta.Tx) error {
 			tx.After(func() { order = append(order, "after") })
 			tx.Before(func(ctx context.Context, tx meta.Tx) error {
 				order = append(order, "before")
 				// The hook sees the transaction's own uncommitted write.
 				var n int
-				if err := tx.QueryRow(ctx, `SELECT count(*) FROM trove.repositories WHERE key = 'hooked'`).Scan(&n); err != nil || n != 1 {
+				if err := unwrapTx(t, tx).QueryRow(ctx, `SELECT count(*) FROM trove.repositories WHERE key = 'hooked'`).Scan(&n); err != nil || n != 1 {
 					return fmt.Errorf("before hook: n = %d: %w", n, err)
 				}
-				_, err := tx.Exec(ctx, `UPDATE trove.cluster_epoch SET epoch = epoch + 1, changed_at = now() WHERE area = 'cache'`)
+				_, err := unwrapTx(t, tx).Exec(ctx, `UPDATE trove.cluster_epoch SET epoch = epoch + 1, changed_at = now() WHERE area = 'cache'`)
 				return err
 			})
 			order = append(order, "body")
-			_, err := tx.Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('hooked', 'raw', 'local')`)
+			_, err := unwrapTx(t, tx).Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('hooked', 'raw', 'local')`)
 			return err
 		})
 		if err != nil || strings.Join(order, ",") != "body,before,after" {
@@ -387,10 +398,10 @@ func TestInTx(t *testing.T) {
 	t.Run("R-ARCH-018 a failing Before hook rolls back and After hooks do not run", func(t *testing.T) {
 		after := false
 		boom := errors.New("hook failed")
-		err := db.Tx(ctx, func(tx meta.Tx) error {
+		err := db.InTx(ctx, func(tx meta.Tx) error {
 			tx.After(func() { after = true })
 			tx.Before(func(context.Context, meta.Tx) error { return boom })
-			_, err := tx.Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('rolled-back', 'raw', 'local')`)
+			_, err := unwrapTx(t, tx).Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('rolled-back', 'raw', 'local')`)
 			return err
 		})
 		if !errors.Is(err, boom) || after {
@@ -403,11 +414,11 @@ func TestInTx(t *testing.T) {
 
 	t.Run("R-ARCH-019 a retried Tx registers its hooks again and the failed attempt's After hooks never run", func(t *testing.T) {
 		attempts, afters := 0, 0
-		err := db.Tx(ctx, func(tx meta.Tx) error {
+		err := db.InTx(ctx, func(tx meta.Tx) error {
 			attempts++
 			tx.After(func() { afters++ })
 			if attempts == 1 {
-				_, err := tx.Exec(ctx, `DO $$ BEGIN RAISE EXCEPTION 'x' USING ERRCODE = '40001'; END $$`)
+				_, err := unwrapTx(t, tx).Exec(ctx, `DO $$ BEGIN RAISE EXCEPTION 'x' USING ERRCODE = '40001'; END $$`)
 				return err
 			}
 			return nil
@@ -417,9 +428,90 @@ func TestInTx(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-019 OnRollback runs after a failed attempt and a failed Before hook, never after a commit, and the slot starts empty each attempt", func(t *testing.T) {
+		type key struct{}
+		var rolled, committed, seenSlot int
+		attempts := 0
+		err := db.InTx(ctx, func(tx meta.Tx) error {
+			attempts++
+			if tx.Value(key{}) != nil {
+				seenSlot++
+			}
+			tx.SetValue(key{}, attempts)
+			tx.OnRollback(func() { rolled++ })
+			tx.After(func() { committed++ })
+			if attempts == 1 {
+				_, err := unwrapTx(t, tx).Exec(ctx, `DO $$ BEGIN RAISE EXCEPTION 'x' USING ERRCODE = '40001'; END $$`)
+				return err
+			}
+			return nil
+		})
+		if err != nil || attempts != 2 || rolled != 1 || committed != 1 || seenSlot != 0 {
+			t.Fatalf("attempts %d rolled %d committed %d slot-leaks %d err %v", attempts, rolled, committed, seenSlot, err)
+		}
+
+		rolled = 0
+		boom := errors.New("hook failed")
+		err = db.InTx(ctx, func(tx meta.Tx) error {
+			tx.OnRollback(func() { rolled++ })
+			tx.Before(func(context.Context, meta.Tx) error { return boom })
+			return nil
+		})
+		if !errors.Is(err, boom) || rolled != 1 {
+			t.Fatalf("failed Before hook: rolled %d err %v", rolled, err)
+		}
+
+		rolled = 0
+		err = db.InTx(ctx, func(tx meta.Tx) error {
+			tx.OnRollback(func() { rolled++ })
+			return boom
+		})
+		if !errors.Is(err, boom) || rolled != 1 {
+			t.Fatalf("failed body: rolled %d err %v", rolled, err)
+		}
+
+		rolled = 0
+		if err := db.InTx(ctx, func(tx meta.Tx) error { tx.OnRollback(func() { rolled++ }); return nil }); err != nil || rolled != 0 {
+			t.Fatalf("committed: rolled %d err %v", rolled, err)
+		}
+	})
+
+	t.Run("R-ARCH-008 a meta.Tx offers no way to run SQL: only hooks and the value slot", func(t *testing.T) {
+		var names []string
+		typ := reflect.TypeFor[meta.Tx]()
+		for i := range typ.NumMethod() {
+			names = append(names, typ.Method(i).Name)
+		}
+		if got, want := strings.Join(names, ","), "After,Before,OnRollback,SetValue,Value"; got != want {
+			t.Fatalf("meta.Tx methods = %s, want %s", got, want)
+		}
+		_ = db.InTx(ctx, func(tx meta.Tx) error {
+			for _, forbidden := range []string{"Exec", "Query", "QueryRow", "Begin", "Commit", "Rollback"} {
+				if _, ok := reflect.TypeOf(tx).MethodByName(forbidden); ok {
+					t.Errorf("the transaction handed to callers has %s", forbidden)
+				}
+			}
+			return nil
+		})
+	})
+
+	t.Run("R-ARCH-019 the control connection is not needed by a request path: SchemaState reads on the main pool", func(t *testing.T) {
+		held, err := db.Control(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer held.Release()
+		sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		st, err := db.SchemaState(sctx)
+		if err != nil || st.Applied != postgres.RequiredSchema() {
+			t.Fatalf("SchemaState with the control connection held: %+v, %v", st, err)
+		}
+	})
+
 	t.Run("R-ARCH-019 RequestTx sets the request-path statement timeout; a query past it is unavailable", func(t *testing.T) {
 		err := db.RequestTx(ctx, 300*time.Millisecond, func(tx meta.Tx) error {
-			_, err := tx.Exec(ctx, "SELECT pg_sleep(5)")
+			_, err := unwrapTx(t, tx).Exec(ctx, "SELECT pg_sleep(5)")
 			return err
 		})
 		if err == nil || !postgres.IsUnavailable(err) {
@@ -430,7 +522,7 @@ func TestInTx(t *testing.T) {
 	t.Run("R-ARCH-019 a cancelled context returns its error and releases the connection", func(t *testing.T) {
 		cctx, cancel := context.WithCancel(ctx)
 		cancel()
-		if err := db.InTx(cctx, func(pgx.Tx) error { return nil }); err == nil {
+		if err := db.InPgxTx(cctx, func(pgx.Tx) error { return nil }); err == nil {
 			t.Fatal("expected an error")
 		}
 		if db.Stats().Main.Acquired != 0 {
@@ -449,7 +541,7 @@ func TestFailoverRetry(t *testing.T) {
 
 	t.Run("R-HA-015 a transaction whose connection is terminated mid-statement runs again on a new connection", func(t *testing.T) {
 		var attempts atomic.Int32
-		err := db.InTx(ctx, func(tx pgx.Tx) error {
+		err := db.InPgxTx(ctx, func(tx pgx.Tx) error {
 			n := attempts.Add(1)
 			if n == 1 {
 				var pid int32
@@ -475,7 +567,7 @@ func TestFailoverRetry(t *testing.T) {
 		// Every attempt is cut again, so the retry must end by itself.
 		count := 0
 		start := time.Now()
-		err := d2.InTx(ctx, func(tx pgx.Tx) error {
+		err := d2.InPgxTx(ctx, func(tx pgx.Tx) error {
 			count++
 			var pid int32
 			if err := tx.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
@@ -580,7 +672,7 @@ func TestTransactionPooler(t *testing.T) {
 		}
 		// The role defaults reach pooled connections.
 		var path, name string
-		if err := db.InTx(ctxT(t, 10*time.Second), func(tx pgx.Tx) error {
+		if err := db.InPgxTx(ctxT(t, 10*time.Second), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(context.Background(), "SELECT current_setting('search_path')").Scan(&path); err != nil {
 				return err
 			}
@@ -605,7 +697,7 @@ func TestTransactionPooler(t *testing.T) {
 			go func(g int) {
 				defer wg.Done()
 				for i := 0; i < 40; i++ {
-					err := db.InTx(ctxT(t, 30*time.Second), func(tx pgx.Tx) error {
+					err := db.InPgxTx(ctxT(t, 30*time.Second), func(tx pgx.Tx) error {
 						ctx := context.Background()
 						if _, err := tx.Exec(ctx, "SET LOCAL statement_timeout = '10s'"); err != nil {
 							return err
@@ -638,7 +730,7 @@ func TestTransactionPooler(t *testing.T) {
 		}
 		// SET LOCAL did not leak into the next transaction on the shared server connection.
 		var timeout string
-		if err := db.InTx(ctxT(t, 10*time.Second), func(tx pgx.Tx) error {
+		if err := db.InPgxTx(ctxT(t, 10*time.Second), func(tx pgx.Tx) error {
 			return tx.QueryRow(context.Background(), "SHOW statement_timeout").Scan(&timeout)
 		}); err != nil || timeout != "30s" {
 			t.Fatalf("statement_timeout = %q, err = %v", timeout, err)

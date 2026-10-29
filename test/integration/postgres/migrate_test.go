@@ -202,10 +202,10 @@ func TestMigrateFailure(t *testing.T) {
 		cfg, _, admin := migrated(t, st)
 		before := scalar[int](t, admin, "SELECT applied FROM trove.schema_state")
 		bad := stepsWith(t, map[string]string{
-			"00005_fails_on_purpose.sql": "-- trove:phase expand\nCREATE TABLE trove.left_behind (id int);\nSELECT 1 / 0;\n",
+			"00006_fails_on_purpose.sql": "-- trove:phase expand\nCREATE TABLE trove.left_behind (id int);\nSELECT 1 / 0;\n",
 		})
 		res, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(bad))
-		if err == nil || !strings.Contains(err.Error(), "00005_fails_on_purpose") || !strings.Contains(err.Error(), "division by zero") {
+		if err == nil || !strings.Contains(err.Error(), "00006_fails_on_purpose") || !strings.Contains(err.Error(), "division by zero") {
 			t.Fatalf("err = %v", err)
 		}
 		var ref *postgres.Refusal
@@ -218,7 +218,7 @@ func TestMigrateFailure(t *testing.T) {
 		if scalar[bool](t, admin, "SELECT to_regclass('trove.left_behind') IS NOT NULL") {
 			t.Fatal("the failed step's table survived")
 		}
-		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.schema_migration WHERE version = 5"); n != 0 {
+		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.schema_migration WHERE version = 6"); n != 0 {
 			t.Fatal("the failed step left a schema_migration row")
 		}
 		if after := scalar[int](t, admin, "SELECT applied FROM trove.schema_state"); after != before {
@@ -237,7 +237,7 @@ func TestMigrateFailure(t *testing.T) {
 			t.Fatal(err)
 		}
 		slow := stepsWith(t, map[string]string{
-			"00005_slow.sql": "-- trove:phase expand\nCREATE TABLE trove.killed_step (id int);\nSELECT pg_sleep(30);\n",
+			"00006_slow.sql": "-- trove:phase expand\nCREATE TABLE trove.killed_step (id int);\nSELECT pg_sleep(30);\n",
 		})
 		errc := make(chan error, 1)
 		go func() {
@@ -260,12 +260,12 @@ func TestMigrateFailure(t *testing.T) {
 			t.Fatal("a killed runner must report an error")
 		}
 		if scalar[bool](t, admin, "SELECT to_regclass('trove.killed_step') IS NOT NULL") ||
-			scalar[int](t, admin, "SELECT count(*) FROM trove.schema_migration WHERE version = 5") != 0 {
+			scalar[int](t, admin, "SELECT count(*) FROM trove.schema_migration WHERE version = 6") != 0 {
 			t.Fatal("the killed step left traces")
 		}
 		// The next run applies the step.
 		fixed := stepsWith(t, map[string]string{
-			"00005_slow.sql": "-- trove:phase expand\nCREATE TABLE trove.killed_step (id int);\n",
+			"00006_slow.sql": "-- trove:phase expand\nCREATE TABLE trove.killed_step (id int);\n",
 		})
 		res, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(fixed))
 		if err != nil || len(res.Applied) != 1 {
@@ -278,7 +278,7 @@ func TestMigrateFailure(t *testing.T) {
 		steps, _ := postgres.EmbeddedSteps()
 		edited := stepsWith(t, map[string]string{
 			steps[1].Name + ".sql": steps[1].SQL + "\n-- edited after it was applied\n",
-			"00005_new.sql":        "-- trove:phase expand\nCREATE TABLE trove.would_apply (id int);\n",
+			"00006_new.sql":        "-- trove:phase expand\nCREATE TABLE trove.would_apply (id int);\n",
 		})
 		_, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(edited))
 		if err == nil || !strings.Contains(err.Error(), steps[1].Name+".sql") || !strings.Contains(err.Error(), "checksum") {
@@ -314,7 +314,7 @@ func TestMigrateNoTransactionStep(t *testing.T) {
 			t.Fatalf("invalid indexes = %d", n)
 		}
 		steps := stepsWith(t, map[string]string{
-			"00005_index.sql": "-- trove:phase expand\n-- trove:no-transaction\nCREATE INDEX CONCURRENTLY repositories_format_idx ON trove.repositories (format);\n",
+			"00006_index.sql": "-- trove:phase expand\n-- trove:no-transaction\nCREATE INDEX CONCURRENTLY repositories_format_idx ON trove.repositories (format);\n",
 		})
 		res, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(steps))
 		if err != nil || len(res.Applied) != 1 {
@@ -323,7 +323,7 @@ func TestMigrateNoTransactionStep(t *testing.T) {
 		if n := scalar[int](t, admin, "SELECT count(*) FROM pg_index WHERE NOT indisvalid"); n != 0 {
 			t.Fatalf("invalid indexes after the step = %d", n)
 		}
-		if scalar[bool](t, admin, "SELECT transactional FROM trove.schema_migration WHERE version = 5") {
+		if scalar[bool](t, admin, "SELECT transactional FROM trove.schema_migration WHERE version = 6") {
 			t.Fatal("the step must be recorded as non-transactional")
 		}
 	})
@@ -347,7 +347,7 @@ func TestMigrateDDLLockRetry(t *testing.T) {
 		}
 		_ = name
 		steps := stepsWith(t, map[string]string{
-			"00005_alter.sql": "-- trove:phase expand\nALTER TABLE trove.repositories ADD COLUMN note text;\n",
+			"00006_alter.sql": "-- trove:phase expand\nALTER TABLE trove.repositories ADD COLUMN note text;\n",
 		})
 		// Release the table after the second attempt timed out.
 		released := make(chan struct{})
@@ -375,8 +375,8 @@ func TestContractGuard(t *testing.T) {
 	st := getStack(t)
 	contract := func(t *testing.T) map[string]string {
 		return map[string]string{
-			"00005_scratch.sql":      "-- trove:phase expand\nCREATE TABLE trove.scratch (id int);\n",
-			"00006_drop_scratch.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.4.0\nDROP TABLE trove.scratch;\n",
+			"00006_scratch.sql":      "-- trove:phase expand\nCREATE TABLE trove.scratch (id int);\n",
+			"00007_drop_scratch.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.4.0\nDROP TABLE trove.scratch;\n",
 		}
 	}
 	addReplica := func(t *testing.T, admin *pgx.Conn, name, version string, age time.Duration) {
@@ -402,7 +402,7 @@ func TestContractGuard(t *testing.T) {
 			!strings.Contains(err.Error(), "one minor release at a time") || !strings.Contains(err.Error(), "downtime") {
 			t.Fatalf("the refusal must name the replica and both ways forward: %v", err)
 		}
-		if len(ref.Replicas) != 1 || ref.Step != "00006_drop_scratch" {
+		if len(ref.Replicas) != 1 || ref.Step != "00007_drop_scratch" {
 			t.Fatalf("refusal = %+v", ref)
 		}
 		// Nothing was applied, not even the expand step before the contract step.
@@ -426,12 +426,12 @@ func TestContractGuard(t *testing.T) {
 		if got := scalar[string](t, admin, "SELECT compat_floor FROM trove.schema_state"); got != "0.4.0" {
 			t.Fatalf("compat_floor = %q", got)
 		}
-		if got := scalar[string](t, admin, "SELECT requires_app FROM trove.schema_migration WHERE version = 6"); got != "0.4.0" {
+		if got := scalar[string](t, admin, "SELECT requires_app FROM trove.schema_migration WHERE version = 7"); got != "0.4.0" {
 			t.Fatalf("requires_app = %q", got)
 		}
-		// requiredSchema counts expand steps only: the binary with these files needs 5.
+		// requiredSchema counts expand steps only: the binary with these files needs 6.
 		steps, _ := postgres.ParseSteps(stepsWith(t, contract(t)))
-		if len(steps) != 6 {
+		if len(steps) != 7 {
 			t.Fatalf("steps = %d", len(steps))
 		}
 		rep, err := postgres.Status(ctxT(t, 30*time.Second), cfg, func() postgres.MigrateOptions { o := opts(stepsWith(t, contract(t))); o.Version = "0.3.9"; return o }())
@@ -442,7 +442,7 @@ func TestContractGuard(t *testing.T) {
 			t.Fatalf("an N-2 binary must be refused: %+v", rep)
 		}
 		rep, err = postgres.Status(ctxT(t, 30*time.Second), cfg, func() postgres.MigrateOptions { o := opts(stepsWith(t, contract(t))); o.Version = "0.4.0"; return o }())
-		if err != nil || !rep.Servable || rep.Binary.RequiredSchema != 5 {
+		if err != nil || !rep.Servable || rep.Binary.RequiredSchema != 6 {
 			t.Fatalf("0.4.0 must serve: %+v, %v", rep, err)
 		}
 	})
@@ -462,7 +462,7 @@ func TestHalfRestored(t *testing.T) {
 		if _, err := admin.Exec(context.Background(), `INSERT INTO trove.system_state (key, value) VALUES ('restore_in_progress', '"20261028T020000Z-7f3a"')`); err != nil {
 			t.Fatal(err)
 		}
-		extra := stepsWith(t, map[string]string{"00005_new.sql": "-- trove:phase expand\nCREATE TABLE trove.must_not_exist (id int);\n"})
+		extra := stepsWith(t, map[string]string{"00006_new.sql": "-- trove:phase expand\nCREATE TABLE trove.must_not_exist (id int);\n"})
 		_, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(extra))
 		var ref *postgres.Refusal
 		if !errors.As(err, &ref) || ref.ExitCode() != 3 || ref.BackupID != "20261028T020000Z-7f3a" || !strings.Contains(err.Error(), "20261028T020000Z-7f3a") {

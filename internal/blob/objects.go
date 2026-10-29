@@ -84,7 +84,10 @@ type Checksum struct {
 
 // ObjectInfo describes a stored object.
 type ObjectInfo struct {
-	Key          string
+	Key string
+	// Size is the object's size in bytes, or -1 when the store's answer did not
+	// say (a response without Content-Length). Callers must not read -1 as an
+	// empty or a damaged object.
 	Size         int64
 	ETag         string
 	LastModified time.Time

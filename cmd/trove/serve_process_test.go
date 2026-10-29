@@ -173,6 +173,45 @@ func TestServeProcess(t *testing.T) {
 		}
 	})
 
+	t.Run("R-HA-011 the derived shutdown timeout bounds the drain: a request that never finishes is cut and the process exits before the grace period", func(t *testing.T) {
+		// grace 8 s, drain 0.7 s -> server.shutdown_timeout 2.3 s (grace - drain - 5 s).
+		p := startProc(t, bin, "web", "TROVE_RUNTIME_TERMINATION_GRACE_PERIOD=8s", "TROVE_SERVER_SHUTDOWN_TIMEOUT=0s")
+		conn, err := net.Dial("tcp", p.client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		fmt.Fprint(conn, "GET /test-fixture/hold?for=1h HTTP/1.1\r\nHost: x\r\n\r\n")
+		resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if line, _ := bufio.NewReader(resp.Body).ReadString('\n'); line != "started\n" {
+			t.Fatalf("first line %q", line)
+		}
+		begin := time.Now()
+		if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-p.exited:
+			took := time.Since(begin)
+			if err != nil {
+				t.Fatalf("exit: %v\n%s", err, p.out.String())
+			}
+			// drain 0.7 s + timeout 2.3 s = 3.0 s; the cut request leaves nothing to wait for after that.
+			if took < 2800*time.Millisecond {
+				t.Errorf("exited after %s: the request was cut before the derived timeout of 3.0 s", took)
+			}
+			if took >= 8*time.Second {
+				t.Errorf("exited after %s, not before the grace period of 8 s", took)
+			}
+		case <-time.After(12 * time.Second):
+			t.Fatalf("process did not exit\n%s", p.out.String())
+		}
+	})
+
 	t.Run("R-ARCH-001 --role worker opens no client socket and still serves the ops listener", func(t *testing.T) {
 		p := startProc(t, bin, "worker")
 		if c, err := net.DialTimeout("tcp", p.client, 300*time.Millisecond); err == nil {

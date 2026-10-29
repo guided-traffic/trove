@@ -20,7 +20,7 @@ session-level advisory lock (R-STOR-046, enforced by [internal/archtest](../../i
 | [guard.go](../../internal/blob/guard.go) | `Guard`: circuit breaker and request metrics around any `ObjectStore` |
 | [gc.go](../../internal/blob/gc.go), [gcjob.go](../../internal/blob/gcjob.go) | `Collector` (per-blob protocol, hand-over, pause, hold, fault hook) and the job adapter |
 | [conformance.go](../../internal/blob/conformance.go) | startup check, conformance checks, `AwaitStartupCheck` |
-| [sql.go](../../internal/blob/sql.go), [tables.go](../../internal/blob/tables.go), [metrics.go](../../internal/blob/metrics.go), [errors.go](../../internal/blob/errors.go) | statements, export-class registration, metric families, `errs` mapping |
+| [sql.go](../../internal/blob/sql.go), [tables.go](../../internal/blob/tables.go), [metrics.go](../../internal/blob/metrics.go), [errors.go](../../internal/blob/errors.go) | the `DB` interface, the `blobRows` seam and its sqlc implementation, export-class registration, metric families, `errs` mapping |
 | [s3/client.go](../../internal/blob/s3/client.go) | `s3.Client` (the `ObjectStore`), `NewFromFactory` |
 | [s3/credentials.go](../../internal/blob/s3/credentials.go) | credential sources of R-STOR-031, SDK configuration |
 | [s3/errors.go](../../internal/blob/s3/errors.go), [s3/idle.go](../../internal/blob/s3/idle.go) | SDK error classification; stall detection |
@@ -49,7 +49,9 @@ Store.Ingest(body, IngestOptions) ─▶ *Spooled ─▶ Store.Commit(spooled, l
   to a new file, mode `0600`, named by a random UUID, in `storage.spool.dir`.
 - After the body: byte count against `Content-Length` (`400`, `ErrLengthMismatch`), declared digests (`409`,
   `ErrDigestMismatch`, `Expected` carries SHA-256, SHA-512, SHA-1, MD5).
-- `NewSpool` deletes everything in the spool directory at start. `Spooled.Close` removes the file and returns the
+- `NewSpool` deletes only what the spool creates (regular files named by a v4 UUID) at start and refuses to start if
+  the directory holds anything else (the error names the entry; `lost+found` of a fresh volume is tolerated), so a
+  misconfigured `storage.spool.dir` cannot wipe a data directory. `Spooled.Close` removes the file and returns the
   budget; it is idempotent, and `Ingest` closes its own result on every error path. The caller closes after `Commit`.
 - The free-space probe is `statfs` (`spool_unix.go`); on a platform without it the `min_free_bytes` check is skipped.
 
@@ -58,9 +60,16 @@ All errors are `*errs.Error` values with the sentinel as cause (`errors.Is(err, 
 ## Commit protocol (R-STOR-005)
 
 `Store.Commit(ctx, spooled, link)` runs the loop of the specification; `link` runs in the transaction that holds the
-row's `FOR SHARE` lock and adds the reference (item insert, hooks). The statements are plain strings in
-[sql.go](../../internal/blob/sql.go) run through `meta.Tx`: this package may not import pgx, which `q.New(pgx.Tx)` would
-need. `Store` needs only `DB.Tx(ctx, func(meta.Tx) error)`, which `*postgres.DB` has.
+row's `FOR SHARE` lock and adds the reference (item insert, hooks). The statements are sqlc queries in
+[queries/blob.sql](../../internal/meta/postgres/queries/blob.sql), run on the transaction behind `meta.Tx`
+(`postgres.Unwrap` + `q.New`, [sql.go](../../internal/blob/sql.go)); `meta.Tx` itself cannot run SQL. `Store` needs
+only `DB.InTx(ctx, func(meta.Tx) error)`, which `*postgres.DB` has. The commit and download paths reach the table
+through the small `blobRows` interface so that the unit tests can simulate it (`WithRows` in `export_test.go`); the
+collector has no such seam.
+
+The row is inserted for an object no row announced only within `min(commit_deadline, delete_settle / 2)` of the end
+of the object write. Longer ago, a collector may have deleted the key and dropped a row we never saw, so the
+object is written again. `delete_settle` therefore has a minimum of 1 s.
 
 | Row state seen | Action |
 |---|---|
@@ -113,7 +122,8 @@ Gaps against the specification, all visible at construction (nothing is silently
 
 - `storage.s3.ca_file`: `NewFromFactory` refuses it. Add the CA to `proxy.outbound.tls.ca_files` until
   `internal/outbound` has a per-client trust option.
-- `http.max_connections`, `tls_handshake_timeout`, `idle_conn_timeout`, `proxy_credentials_file`: the outbound factory has
+- `storage.s3.http.proxy_credentials_file`: `NewFromFactory` refuses it. `outbound.WithProxyURL` sends only the user information of the proxy URL, which the configuration forbids (R-OPS-013: URL keys carry no credentials), and a file read once would not follow a rotation. Use a proxy that authenticates by source address until the outbound layer takes a re-read proxy credential.
+- `http.max_connections`, `tls_handshake_timeout`, `idle_conn_timeout`: the outbound factory has
   no options for them, so its defaults apply (`proxy_url` and `no_proxy` as host patterns are passed through; CIDR
   patterns in `no_proxy` are not).
 - `trove_storage_s3_requests_total` counts calls of the `ObjectStore` interface, not the SDK's retry attempts.
@@ -134,10 +144,13 @@ status. `WithDamageHook` is where the audit event hangs. A range is returned as 
 
 1. reads the deletion pause (`system_state` key `deletions_paused_at`; see below) and ends with `paused: true` if set;
 2. finishes `deleting` rows left by earlier runs: step (6) once `delete_settle` has passed since the delete, steps
-   (4) to (6) for a row nobody finished within `handover_delay`;
+   (4) to (6) for a row nobody finished within `handover_delay`. Such a row is taken over with a compare-and-set
+   (`UPDATE … SET state_changed_at = now() … RETURNING`), so of two runs that read it one takes it and the other
+   finds it fresh; the winner deletes under the same hand-over deadline as for its own claims;
 3. reads candidates in keyset batches of `batch_size` (incremental: `blob_gc_queue` entries older than `grace_period`;
    full: live blobs older than the grace period, anti-joined against every table with a foreign key to `blobs`, read
-   from `pg_constraint`, resuming after `Cursor`) and runs the per-blob protocol, one transaction each: `FOR UPDATE`,
+   from `pg_constraint` once per batch, resuming after `Cursor`; a table added by a migration during one batch is
+   seen from the next batch on) and runs the per-blob protocol, one transaction each: `FOR UPDATE`,
    then a separate reference-check statement, then `UPDATE … 'deleting'` and the queue delete guarded by `$seen`;
 4. deletes the claimed objects (`DeleteObjects` when `batch_delete`, else `delete_concurrency` parallel `DeleteObject`)
    only while less than `handover_delay − delete_settle` has passed on the collector's own clock since the reading
@@ -210,5 +223,12 @@ not an error there; the credential test uses a wrong secret key instead.
 | integration | [test/integration/blob](../../test/integration/blob/) | SeaweedFS conformance; the 100-upload race through four replicas; the race with deletes and collection; the collector killed or cancelled at random points; the drain; hand-over; `AS001`; a table added by a newer release; pause, hold, dry run; checkpoint resume; the job handler; verification of a corrupted object |
 
 `make test` runs the unit tier, `make test-integration` the integration tier (`TROVE_TEST_BLOB_RACE_SECONDS` stretches the race test from 15 s to a soak run). The
-unit fake database (`fakedb_test.go`) simulates only the statements the commit protocol uses; the real locking
+unit fake (`fakedb_test.go`) simulates only the table operations the commit protocol and the download path use; the real locking
 behavior is what the integration tier checks, with the collector's reference check mutated away to see the tests fail.
+
+`TROVE_TEST_PG_POOLED=1` runs the blob and the coordination integration suites with the main pool through PgBouncer in transaction mode
+(`testenv.PgPooled`; the role defaults of R-HA-014 are set by `testenv.ThroughPgBouncer`). CI should run the suite once each way.
+
+An object-store response without `Content-Length` has `ObjectInfo.Size == -1` (unknown), never 0: the early size check
+of a download is skipped and the digest at the end of the body decides. A caller's own deadline ending a store call
+(`context.DeadlineExceeded` that is not a transient `StoreError`) is no answer for the circuit breaker.

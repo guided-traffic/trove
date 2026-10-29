@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
@@ -72,6 +73,11 @@ func migrateCmd(args []string, s streams) error {
 	default:
 		res, err := postgres.Migrate(ctx, cfg.Database, opts)
 		if err != nil {
+			return refusalExit(err)
+		}
+		// The registry check needs the migrated catalog and the registrations of
+		// every package that owns a table: registry.go links them.
+		if err := postgres.VerifyTableRegistry(ctx, cfg.Database, opts, tables.Default()); err != nil {
 			return refusalExit(err)
 		}
 		log.Info("migrate finished", "applied", len(res.Applied), "schema_applied", res.SchemaApplied,

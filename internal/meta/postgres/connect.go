@@ -97,11 +97,8 @@ func checkConfig(c config.Database) error {
 	if !schemaName.MatchString(c.Schema) {
 		return fmt.Errorf("database.schema %q is not a plain lower-case identifier", c.Schema)
 	}
-	switch c.SSLMode {
-	case "disable", "allow", "prefer":
-		if !c.AllowInsecure {
-			return fmt.Errorf("database.ssl_mode %s requires database.allow_insecure: true", c.SSLMode)
-		}
+	if msg := c.TLSProblem(); msg != "" {
+		return fmt.Errorf("database.ssl_mode: %s", msg)
 	}
 	if c.Pooler.Mode == "transaction" && c.SessionHost == "" {
 		return errors.New("database.session_host is required with database.pooler.mode transaction: session work would land on the pooler")

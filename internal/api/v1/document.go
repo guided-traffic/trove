@@ -28,6 +28,8 @@ type Operation struct {
 	Pattern string // the ServeMux pattern, for example "GET /api/v1/system/ping"
 	// Permission is the value of x-trove-permission, decoded.
 	Permission map[string]any
+	// Requirement is Permission in the form the authorization step enforces.
+	Requirement Requirement
 }
 
 // Document is the parsed OpenAPI document.
@@ -43,8 +45,9 @@ func httpMethods() []string {
 
 // LoadDocument parses a document and builds the table of operations keyed by
 // route pattern. Every operation must carry an operationId and an
-// x-trove-permission declaration: no operation can run without a declared
-// permission (R-API-002).
+// x-trove-permission declaration in a form the authorization step enforces: no
+// operation can run without a declared and enforced permission (R-API-002,
+// R-API-008).
 func LoadDocument(raw []byte) (*Document, error) {
 	d := &Document{ops: map[string]Operation{}}
 	if err := yaml.Unmarshal(raw, &d.root); err != nil {
@@ -73,10 +76,15 @@ func LoadDocument(raw []byte) (*Document, error) {
 				problems = append(problems, fmt.Errorf("%s has no operationId", pattern))
 			}
 			perm, _ := op["x-trove-permission"].(map[string]any)
+			var req Requirement
 			if len(perm) == 0 {
 				problems = append(problems, fmt.Errorf("%s (%s) has no x-trove-permission declaration", pattern, id))
+			} else if r, err := parseRequirement(perm); err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-permission: %w", pattern, id, err))
+			} else {
+				req = r
 			}
-			d.ops[pattern] = Operation{ID: id, Pattern: pattern, Permission: perm}
+			d.ops[pattern] = Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req}
 		}
 	}
 	if err := errors.Join(problems...); err != nil {

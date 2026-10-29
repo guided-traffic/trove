@@ -21,8 +21,17 @@ type postgresComponent struct {
 
 func (c *postgresComponent) Name() string { return "postgres" }
 
-func (c *postgresComponent) Start(ctx context.Context) error {
+func (c *postgresComponent) Start(ctx context.Context) (err error) {
 	a := c.a
+	// startComponent records a component only after Start succeeded, so Stop
+	// never runs for one that failed: close the pools here on every return that
+	// follows a successful Open (a floor error, a cancelled context).
+	defer func() {
+		if err != nil && c.db != nil {
+			c.db.Close()
+			c.db = nil
+		}
+	}()
 	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
 		db, err := postgres.Open(ctx, a.cfg.Database, a.id.Instance, a.id.Role, a.log.With("component", "postgres"))
 		if err == nil {

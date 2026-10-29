@@ -13,9 +13,9 @@ import (
 )
 
 var (
-	kvFamily   = cluster.RegisterKeyFamily("itest:kv", 1, 60*time.Second)
-	ctrFamily  = cluster.RegisterKeyFamily("itest:ctr", 1, 90*time.Second)
-	chanFamily = cluster.RegisterChannelFamily("itest:chan", 1)
+	kvFamily   = cluster.RegisterTestKeyFamily("itest:kv", 1, 60*time.Second)
+	ctrFamily  = cluster.RegisterTestKeyFamily("itest:ctr", 1, 90*time.Second)
+	chanFamily = cluster.RegisterTestChannelFamily("itest:chan", 1)
 )
 
 // exerciseAPI runs every write method of the client once, as the least-privilege
@@ -108,7 +108,7 @@ func TestKeys(t *testing.T) {
 			t.Fatalf("SetIfEq did not renew the expiry: %s then %s", before, after)
 		}
 	})
-	t.Run("R-ARCH-034 Incr sets the expiry once and traffic does not extend it", func(t *testing.T) {
+	t.Run("R-ARCH-030 every key expires: a counter gets its expiry with the first increment and later ones do not extend it", func(t *testing.T) {
 		k, _ := c.KeyTTL(ctrFamily, 30*time.Second, "win", randHex(4))
 		if _, err := c.Incr(ctx, k); err != nil {
 			t.Fatal(err)

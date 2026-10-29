@@ -122,7 +122,8 @@ worker:
 config:
   server:                               # operations-and-observability.md R-OPS-005
     base_url: ""                        # required; example: https://trove.example.com
-    trusted_proxies: []                 # default (proposed); example: ["10.244.0.0/16"] (ingress controller pod CIDR)
+    trusted_proxies: []                 # default (proposed): no proxy is trusted, the TCP peer is the client; example: ["10.244.3.17", "10.244.5.9"] (the addresses of the ingress controller pods, never the whole pod CIDR; a prefix of length 0 is refused)
+    forwarded_header: x-forwarded-for   # default: the one header the edge rewrites, x-forwarded-for | forwarded; the other is never read
   health:                               # operations-and-observability.md R-OPS-001
     shutdown_drain_delay: 5s            # default (proposed); must exceed the edge's endpoint removal time (R-HA-059)
   log:
@@ -198,6 +199,19 @@ secrets:
   metricsToken:
     existingSecret: ""                  # default (proposed); needed with config.metrics.auth static
     key: token                          # default (proposed)
+
+# ── Network policy (R-HA-042; ingress only, egress is not rendered yet) ─────
+networkPolicy:
+  enabled: true                         # default (proposed): web and worker accept only the listed peers; the migration Job accepts nothing
+  ingress:
+    http:
+      from: []                          # default (proposed): empty = port 8080 from anywhere, so the ingress controller works wherever it runs; example: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik}}}]
+    ops:
+      from:                             # default (proposed): port 8081 (probes, metrics) only from the monitoring namespace and probeCIDRs
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+  probeCIDRs: []                        # default (proposed): most CNIs exempt kubelet probes; where one does not, list the node CIDRs; example: ["10.0.0.0/16"]
 
 # ── Pod identity and security ──────────────────────────────────────────────
 serviceAccount:

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -37,6 +38,9 @@ func TestStartupErrors(t *testing.T) {
 		if !strings.Contains(c.Log.String(), `no Sentinel knows the primary name`) || !strings.Contains(c.Log.String(), "trvoe") {
 			t.Fatalf("the cause is not logged:\n%s", c.Log.String())
 		}
+		if code := c.Status().ReasonCode; code != cluster.ReasonConfigError {
+			t.Fatalf("R-OPS-001 reason code = %q, want config_error", code)
+		}
 	})
 	t.Run("R-HA-056 a wrong password is a startup error and the log names WRONGPASS, not the password", func(t *testing.T) {
 		cfg := stackConfig(t, 2*time.Second)
@@ -54,6 +58,9 @@ func TestStartupErrors(t *testing.T) {
 			if strings.Contains(logs, secret) {
 				t.Fatalf("the log contains a password:\n%s", logs)
 			}
+		}
+		if code := c.Status().ReasonCode; code != cluster.ReasonAuthFailed {
+			t.Fatalf("R-OPS-001 reason code = %q, want auth_failed", code)
 		}
 	})
 	t.Run("R-HA-056 a wrong Sentinel password is a startup error", func(t *testing.T) {
@@ -89,6 +96,9 @@ func TestStartupErrors(t *testing.T) {
 		}
 		if r := c.Status().DegradedReason; !strings.Contains(r, "no Sentinel reachable") {
 			t.Fatalf("degraded reason = %q", r)
+		}
+		if code := c.Status().ReasonCode; code != cluster.ReasonNoSentinel {
+			t.Fatalf("R-OPS-001 reason code = %q, want no_sentinel", code)
 		}
 		if got := metric(t, c.Reg, "trove_valkey_available", ""); got != 0 {
 			t.Fatalf("trove_valkey_available = %v", got)

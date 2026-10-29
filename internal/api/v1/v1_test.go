@@ -477,3 +477,136 @@ func TestRouteTable(t *testing.T) {
 		}
 	})
 }
+
+// recordingFacts and recordingReplicas fail the test when a handler behind a
+// denied check runs.
+type recordingFacts struct{ t *testing.T }
+
+func (f recordingFacts) Facts(context.Context) (Facts, error) {
+	f.t.Error("a handler ran although its permission check denied the caller")
+	return Facts{}, nil
+}
+
+type recordingReplicas struct{ t *testing.T }
+
+func (f recordingReplicas) Replicas(context.Context) ([]gen.Replica, error) {
+	f.t.Error("a handler ran although its permission check denied the caller")
+	return nil, nil
+}
+
+// pathOf turns a route pattern into a request: "GET /api/v1/problems/{code}" →
+// GET /api/v1/problems/x.
+func pathOf(pattern string) (method, path string) {
+	method, path, _ = strings.Cut(pattern, " ")
+	for {
+		i, j := strings.Index(path, "{"), strings.Index(path, "}")
+		if i < 0 || j < i {
+			return method, path
+		}
+		path = path[:i] + "x" + path[j+1:]
+	}
+}
+
+func TestAuthorizationStep(t *testing.T) {
+	doc, err := LoadDocument(EmbeddedYAML())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("R-API-008 an anonymous caller gets 401 on every operation that is not public, before the handler runs", func(t *testing.T) {
+		// bootstrapLike answers as the M0 access of the composition root does
+		// with system.bootstrap_anonymous_read off.
+		s := newSetup(t, func(o *Options) {
+			o.Access, o.Facts, o.Replicas, o.PublicVersion = bootstrapLike{}, recordingFacts{t}, recordingReplicas{t}, false
+		}, nil)
+		ops := doc.Operations()
+		if len(ops) == 0 {
+			t.Fatal("no operations")
+		}
+		for pattern, op := range ops {
+			method, path := pathOf(pattern)
+			w := httptest.NewRecorder()
+			s.handler.ServeHTTP(w, httptest.NewRequest(method, path, nil))
+			if op.Requirement.Public {
+				if w.Code == http.StatusUnauthorized || w.Code == http.StatusForbidden {
+					t.Errorf("%s (%s) is public but answered %d", pattern, op.ID, w.Code)
+				}
+				continue
+			}
+			if w.Code != http.StatusUnauthorized || w.Header().Get("Content-Type") != errs.ProblemContentType || w.Header().Get("WWW-Authenticate") != "Bearer" {
+				t.Errorf("%s (%s, %s): %d %s challenge %q", pattern, op.ID, op.Requirement, w.Code, w.Header().Get("Content-Type"), w.Header().Get("WWW-Authenticate"))
+			}
+		}
+	})
+
+	t.Run("R-API-008 every declaration of the document is in an enforced form", func(t *testing.T) {
+		for pattern, op := range doc.Operations() {
+			q := op.Requirement
+			n := 0
+			for _, set := range []bool{q.Public, q.Authenticated, q.Permission != ""} {
+				if set {
+					n++
+				}
+			}
+			if n != 1 {
+				t.Errorf("%s: requirement %+v", pattern, q)
+			}
+		}
+	})
+
+	t.Run("R-API-008 an operation missing from the table is denied to everyone", func(t *testing.T) {
+		d, _ := LoadDocument(EmbeddedYAML())
+		delete(d.ops, "GET /api/v1/system/ping")
+		router := httpserver.NewClientRouter()
+		New(Options{Document: d, Access: allowAll{}, Ready: func() bool { return true }}).Register(router)
+		res, _ := httpserver.NewResolver(nil, "https://trove.example.com", nil)
+		h := httpserver.Chain{Router: router, Resolver: res, Authenticate: authed, Replica: "r"}.Handler()
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/system/ping", nil))
+		if w.Code != http.StatusForbidden || w.Body.String() == "OK" {
+			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+		if err := d.CheckRoutes(router.Patterns()); err == nil {
+			t.Error("CheckRoutes accepted the undeclared route")
+		}
+	})
+
+	t.Run("R-API-008 the permission check runs with the declared permission name", func(t *testing.T) {
+		var asked []string
+		s := newSetup(t, func(o *Options) {
+			o.Access = accessFunc(func(_ context.Context, p string) error { asked = append(asked, p); return nil })
+		}, authed)
+		s.get("/api/v1/system/info")
+		s.get("/api/v1/system/replicas")
+		s.get("/api/v1/system/ping")
+		if len(asked) != 2 || asked[0] != PermissionSystemRead || asked[1] != PermissionSystemRead {
+			t.Fatalf("Access.Require calls = %v", asked)
+		}
+	})
+
+	t.Run("R-API-002 a declaration in a form the step does not enforce is refused at load", func(t *testing.T) {
+		for _, form := range []string{"role: admin", "public: false", "permission: \"\"", "authenticated: true\n        publicSwitch: system.anything", "public: true\n        permission: system.read"} {
+			raw := strings.Replace(string(EmbeddedYAML()), "      x-trove-permission:\n        permission: system.read\n      responses:\n        \"200\":\n          description: The installation facts.",
+				"      x-trove-permission:\n        "+form+"\n      responses:\n        \"200\":\n          description: The installation facts.", 1)
+			if raw == string(EmbeddedYAML()) {
+				t.Fatal("test setup: replacement did not apply")
+			}
+			if _, err := LoadDocument([]byte(raw)); err == nil || !strings.Contains(err.Error(), "getSystemInfo") {
+				t.Errorf("%q: err = %v", form, err)
+			}
+		}
+	})
+}
+
+type bootstrapLike struct{}
+
+func (bootstrapLike) Require(ctx context.Context, _ string) error {
+	if httpserver.PrincipalFrom(ctx).Anonymous {
+		return errs.E(errs.Unauthenticated, errs.CodeUnauthenticated, "This endpoint requires an authenticated caller.", errs.WithChallenge("Bearer"))
+	}
+	return nil
+}
+
+type accessFunc func(ctx context.Context, permission string) error
+
+func (f accessFunc) Require(ctx context.Context, permission string) error { return f(ctx, permission) }

@@ -2,11 +2,13 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
 // The advisory-lock categories of R-ARCH-017. Every advisory lock uses the
@@ -45,7 +47,11 @@ func LockConfigObject(ctx context.Context, tx meta.Tx, object int32) error {
 	if object != ConfigVirtualMembership && object != ConfigDocuments {
 		return fmt.Errorf("cluster: %d is not a registered configuration lock object", object)
 	}
-	_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1::int, $2::int)", LockConfig, object)
+	ptx, ok := postgres.Unwrap(tx)
+	if !ok {
+		return errors.New("cluster: the transaction does not come from the PostgreSQL store")
+	}
+	_, err := ptx.Exec(ctx, "SELECT pg_advisory_xact_lock($1::int, $2::int)", LockConfig, object)
 	return err
 }
 
@@ -92,7 +98,7 @@ func RegisterLease(name string, number int32) LeaseID {
 	return id
 }
 
-// Leases lists the registered leases by number.
+// RegisteredLeases lists the registered leases by number.
 func RegisteredLeases() []LeaseID {
 	leaseIDs.mu.Lock()
 	defer leaseIDs.mu.Unlock()

@@ -53,13 +53,13 @@ type Valkey struct {
 	client      valkey.Client
 	primary     string
 	version     string
-	unsupported string // reason; empty when the server is supported or not yet known
-	connectErr  string // last failed connection attempt, for the status
+	unsupported string     // reason; empty when the server is supported or not yet known
+	connectErr  string     // last failed connection attempt, for the status
+	connectCode ReasonCode // its code
 	startupErr  error
 	probeFailed string // reason of the last failed probe, empty when it passed
 	sentinels   int    // Sentinels that answered the last probe of all of them
 	lastAvail   bool
-	lastReason  string
 	evaluated   bool
 	closed      bool
 	hooks       []func(PrimaryChange)
@@ -81,8 +81,13 @@ type ValkeyStatus struct {
 	// Version is the server version from HELLO; empty before the first
 	// connection.
 	Version string
-	// DegradedReason names why Available is false; empty when it is true.
+	// DegradedReason names why Available is false, in free text that can carry
+	// addresses and server replies; empty when it is true. It belongs in the
+	// log and the authenticated replica list, never on the ops listener.
 	DegradedReason string
+	// ReasonCode is DegradedReason in the fixed vocabulary of [ReasonCodes];
+	// ReasonNone when Available is true. /readyz?verbose=1 shows this.
+	ReasonCode ReasonCode
 	// Mode is "sentinel" or "standalone".
 	Mode string
 	// SentinelsConfigured and SentinelsReachable count the configured Sentinels
@@ -157,6 +162,7 @@ func NewValkey(ctx context.Context, cfg config.Valkey, instance, role string, lo
 		creds: creds, dataTLS: dataTLS, sentinelTLS: sentinelTLS,
 		sentinelResolver: &net.Resolver{},
 	}
+	v.warnWeakTrust()
 	v.br = newBreaker(cfg.CircuitBreaker.FailureThreshold, cfg.CircuitBreaker.OpenDuration, nil, func(open bool) {
 		if open {
 			v.m.circuitOpen.Set(1)
@@ -223,19 +229,40 @@ func checkValkeyConfig(cfg config.Valkey, instance string) error {
 	return nil
 }
 
+// warnWeakTrust logs, once at start, the Sentinel-mode settings that let
+// whoever reaches a Sentinel steer this replica to a server of their choosing:
+// a Sentinel without authentication can be told to name another primary, and
+// with the system roots that primary passes verification with any publicly
+// issued certificate for the name it is given. The configuration has no switch
+// that makes them errors (H-item of the Valkey security page), so they are
+// warnings.
+func (v *Valkey) warnWeakTrust() {
+	if v.cfg.Mode != "sentinel" {
+		return
+	}
+	if v.cfg.Sentinel.PasswordFile == "" {
+		v.log.Warn("valkey sentinel authentication is not configured: anyone who reaches a Sentinel can name another primary",
+			"fix", "set valkey.sentinel.password_file (and username_file) and require a password on the Sentinels")
+	}
+	if v.cfg.TLS.Mode != "disable" && v.cfg.TLS.CAFile == "" {
+		v.log.Warn("valkey TLS verifies against the system roots: a primary named by a Sentinel passes with any publicly issued certificate",
+			"fix", "set valkey.tls.ca_file to the CA of the Valkey servers")
+	}
+}
+
 // Available reports whether calls reach Valkey. While it is false, every call
 // returns [ErrUnavailable] and the caller runs its fallback.
 func (v *Valkey) Available() bool {
-	avail, _ := v.compute()
+	avail, _, _ := v.compute()
 	return avail
 }
 
 // Status returns a snapshot of the client.
 func (v *Valkey) Status() ValkeyStatus {
-	avail, reason := v.compute()
+	avail, code, reason := v.compute()
 	v.mu.RLock()
 	st := ValkeyStatus{
-		Available: avail, Primary: v.primary, Version: v.version, DegradedReason: reason,
+		Available: avail, Primary: v.primary, Version: v.version, DegradedReason: reason, ReasonCode: code,
 		Mode: v.cfg.Mode, SentinelsConfigured: len(v.cfg.Sentinel.Addresses), SentinelsReachable: v.sentinels,
 	}
 	v.mu.RUnlock()
@@ -307,35 +334,36 @@ func (v *Valkey) current() valkey.Client {
 	return v.client
 }
 
-// compute derives availability and its reason from the state.
-func (v *Valkey) compute() (bool, string) {
+// compute derives availability, its reason code and its reason text from the
+// state.
+func (v *Valkey) compute() (bool, ReasonCode, string) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	switch {
 	case v.closed:
-		return false, "client closed"
+		return false, ReasonClosed, "client closed"
 	case v.client == nil:
 		if v.connectErr != "" {
-			return false, "not connected: " + v.connectErr
+			return false, v.connectCode, "not connected: " + v.connectErr
 		}
-		return false, "connecting"
+		return false, ReasonConnecting, "connecting"
 	case v.unsupported != "":
-		return false, v.unsupported
+		return false, ReasonUnsupported, v.unsupported
 	case v.br.isOpen():
-		return false, "circuit open"
+		return false, ReasonCircuitOpen, "circuit open"
 	case v.probeFailed != "":
-		return false, "probe failed: " + v.probeFailed
+		return false, ReasonProbeFailed, "probe failed: " + v.probeFailed
 	}
-	return true, ""
+	return true, ReasonNone, ""
 }
 
 // reevaluate publishes availability: the gauge always, a log record on every
 // transition (R-ARCH-031: WARN when it turns degraded, INFO when it recovers).
 func (v *Valkey) reevaluate() {
-	avail, reason := v.compute()
+	avail, code, reason := v.compute()
 	v.mu.Lock()
 	changed := !v.evaluated || avail != v.lastAvail
-	v.evaluated, v.lastAvail, v.lastReason = true, avail, reason
+	v.evaluated, v.lastAvail = true, avail
 	v.mu.Unlock()
 	if avail {
 		v.m.available.Set(1)
@@ -348,7 +376,7 @@ func (v *Valkey) reevaluate() {
 	if avail {
 		v.log.Info("valkey available")
 	} else {
-		v.log.Warn("valkey degraded", "reason", reason)
+		v.log.Warn("valkey degraded", "reason_code", string(code), "reason", reason)
 	}
 }
 
@@ -440,7 +468,7 @@ func (v *Valkey) attempt() bool {
 		return false
 	}
 	v.client = c
-	v.connectErr = ""
+	v.connectErr, v.connectCode = "", ReasonNone
 	v.startupErr = nil
 	v.primary = primaryAddr(c)
 	v.mu.Unlock()
@@ -465,9 +493,10 @@ func (v *Valkey) connectFailed(err error) {
 	v.m.errors.WithLabelValues(string(kindLabel(kind))).Inc()
 
 	text := describeConnectError(cause, probes)
+	code := connectReason(isConfig, kind, probes)
 	v.mu.Lock()
 	changed := v.connectErr != text
-	v.connectErr = text
+	v.connectErr, v.connectCode = text, code
 	if isConfig {
 		v.startupErr = fmt.Errorf("valkey configuration error: %w", cause)
 	} else {
@@ -561,10 +590,10 @@ func (v *Valkey) probe() {
 		return
 	}
 	var err error
-	if key, kerr := v.Key(probeFamily, v.instance); kerr == nil {
-		err = v.Set(v.ctx, key, "1")
+	if key, kerr := v.formKey(probeFamily, v.instance); kerr == nil {
+		err = v.set(v.ctx, key, "1")
 	} else {
-		err = v.Ping(v.ctx)
+		err = v.ping(v.ctx)
 	}
 	v.mu.Lock()
 	if err != nil {
@@ -584,7 +613,7 @@ func (v *Valkey) isUnsupported() bool {
 
 // probeFamily is the health probe key of R-ARCH-030. Every probe write sets
 // its 30 s expiry.
-var probeFamily = RegisterKeyFamily("probe", 1, 30*time.Second)
+var probeFamily = registerKeyFamily("probe", 1, 30*time.Second)
 
 // checkVersion reads the server and version from HELLO and records the
 // decision. A transport error is returned; an unsupported server is a state.

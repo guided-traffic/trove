@@ -108,6 +108,13 @@ func TestWriteProblem(t *testing.T) {
 			t.Fatalf("type %q instance %q", p.Type, p.Instance)
 		}
 	})
+	t.Run("R-ARCH-023 every problem carries X-Content-Type-Options nosniff", func(t *testing.T) {
+		for _, err := range []error{E(NotFound, CodeNotFound, "x"), errors.New("plain"), E(Unavailable, CodeUnavailable, "x")} {
+			if rec, _, _ := render(err); rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+				t.Errorf("%v: X-Content-Type-Options = %q", err, rec.Header().Get("X-Content-Type-Options"))
+			}
+		}
+	})
 	t.Run("R-ARCH-023 a plain error becomes internal and hides its cause", func(t *testing.T) {
 		rec, p, logs := render(errors.New("pq: password authentication failed for user trove"))
 		if rec.Code != 500 || p.Code != "internal" {

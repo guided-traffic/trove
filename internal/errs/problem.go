@@ -76,6 +76,10 @@ func Write(w http.ResponseWriter, r *http.Request, err error, requestID string, 
 	p, e := ProblemOf(err, requestID, instance)
 	h := w.Header()
 	h.Set("Content-Type", ProblemContentType)
+	// A problem body echoes request data (the path in instance, field names);
+	// nosniff keeps a browser from reading it as anything but JSON. The chain
+	// sets it for every answer; a problem written outside the chain has it too.
+	h.Set("X-Content-Type-Options", "nosniff")
 	switch e.Kind {
 	case Unauthenticated:
 		if e.Challenge != "" {

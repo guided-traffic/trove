@@ -38,7 +38,7 @@ func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (
 	if o.Range != nil || !s.cfg.Download.Verify {
 		return body, nil
 	}
-	if info.Size != size {
+	if info.Size >= 0 && info.Size != size { // -1: the response did not say; the digest check at the end decides
 		_ = body.Close()
 		s.markDamaged(ctx, d, "corrupt")
 		return nil, fmt.Errorf("%w: the object has %d bytes, the blob row says %d", ErrCorrupt, info.Size, size)
@@ -56,17 +56,17 @@ func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (
 func (s *Store) markDamaged(ctx context.Context, d Digest, status string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	var changed int64
-	err := s.db.Tx(ctx, func(tx meta.Tx) error {
+	var changed bool
+	err := s.db.InTx(ctx, func(tx meta.Tx) error {
 		var err error
-		changed, err = tx.Exec(ctx, sqlMarkDamaged, d.Bytes(), status)
+		changed, err = s.rows.MarkDamaged(ctx, tx, d, status)
 		return err
 	})
 	if err != nil {
 		s.log.Error("could not mark a blob damaged", "sha256", d.Hex(), "status", status, "error", err)
 		return
 	}
-	if changed > 0 {
+	if changed {
 		s.metrics.damage(status)
 		s.log.Error("stored object failed verification", "sha256", d.Hex(), "status", status)
 		if s.onDamage != nil {

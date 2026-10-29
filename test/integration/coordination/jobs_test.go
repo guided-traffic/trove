@@ -43,7 +43,7 @@ func (r *recorder) of(id string) []run {
 // enqueueTx enqueues in a transaction of the replica, as a request handler does.
 func (rep *replica) enqueueTx(ctx context.Context, spec jobs.EnqueueSpec) (jobs.Result, error) {
 	var res jobs.Result
-	err := rep.db.Tx(ctx, func(tx meta.Tx) error {
+	err := rep.db.InTx(ctx, func(tx meta.Tx) error {
 		var err error
 		res, err = rep.queue.Enqueue(ctx, tx, spec)
 		return err
@@ -239,7 +239,7 @@ func TestJobs(t *testing.T) {
 
 	t.Run("R-ARCH-016 an enqueue that is rolled back leaves no job and no wake-up", func(t *testing.T) {
 		before := e.scalar(`SELECT count(*) FROM job`)
-		err := web.db.Tx(ctx, func(tx meta.Tx) error {
+		err := web.db.InTx(ctx, func(tx meta.Tx) error {
 			if _, err := web.queue.Enqueue(ctx, tx, jobs.EnqueueSpec{Kind: "it.quick"}); err != nil {
 				return err
 			}

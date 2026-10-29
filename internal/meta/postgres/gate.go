@@ -52,10 +52,18 @@ func Gate(st SchemaState, required int, version string) error {
 	return nil
 }
 
-// SchemaState reads schema_state on the control connection. A database without
-// the table or the row counts as applied 0.
+// SchemaState reads schema_state on the request pool, for callers on a request
+// path such as GET /system/info: a request must never queue behind the loops
+// that hold the control connection, and the control connection must not be
+// spent on a client's rate. A database without the table or the row counts as
+// applied 0.
 func (db *DB) SchemaState(ctx context.Context) (SchemaState, error) {
-	qs := q.New(db.control)
+	return readSchemaState(ctx, db.main)
+}
+
+// readSchemaState reads schema_state through any pool or connection.
+func readSchemaState(ctx context.Context, conn q.DBTX) (SchemaState, error) {
+	qs := q.New(conn)
 	found, err := qs.TableExists(ctx, "schema_state")
 	if err != nil || !found {
 		return SchemaState{CompatFloor: zeroVersion}, err
@@ -71,9 +79,10 @@ func (db *DB) SchemaState(ctx context.Context) (SchemaState, error) {
 }
 
 // CheckSchema is the `schema` readiness check (R-OPS-001): Gate applied to the
-// database and this binary's embedded requiredSchema.
+// database and this binary's embedded requiredSchema. It reads on the control
+// connection, like the other checks readiness depends on.
 func (db *DB) CheckSchema(ctx context.Context, version string) error {
-	st, err := db.SchemaState(ctx)
+	st, err := readSchemaState(ctx, db.control)
 	if err != nil {
 		return err
 	}

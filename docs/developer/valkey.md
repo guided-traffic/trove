@@ -4,15 +4,19 @@ The Valkey client lives in [`internal/cluster`](../../internal/cluster) (files `
 
 Valkey is never the only copy of anything. A caller treats every error of the client, `ErrUnavailable` or not, as "run the fallback".
 
+Nothing outside `internal/cluster` reads or writes a Valkey key (Q-ARCH-16: nothing served and no positive authorization decision comes from Valkey). The raw commands, the key-family registration and key forming are unexported; other packages get typed mechanisms whose code lives in this package (in M0: the signals and the change messages of `signal_*.go` and `changelog*.go`). The `Bus` interface of [`signal_bus.go`](../../internal/cluster/signal_bus.go) that the change log and the signals use has only unexported methods (`publish`, `subscribe`, `channel`), so no other package can implement or call it; `RegisterChannelFamily` is likewise unexported. `TestValkeySurface` pins the exported method set of `*Valkey` and bans the exported family registrations from the untagged build. `/readyz?verbose=1` shows `string(ValkeyStatus.ReasonCode)` (`valkeyCheck` in [`wire_valkey.go`](../../internal/app/wire_valkey.go)); a start-up error keeps the code of the failed connection, so a rejected credential reads `auth_failed` while the first readiness stays held back.
+
 ## Files
 
 | File | Responsibility |
 |---|---|
 | [`doc.go`](../../internal/cluster/doc.go) | Package documentation |
-| [`valkey.go`](../../internal/cluster/valkey.go) | `NewValkey`, lifecycle, `Available`/`Status`/`StartupError`, connect loop, monitor (primary changes, health probe), version check |
-| [`valkey_ops.go`](../../internal/cluster/valkey_ops.go) | The commands trove needs (`Get`, `Set`, `SetNX`, `SetIfEq`, `DelIfEq`, `Incr`, `Publish`, `Ping`) behind breaker and command timeout |
-| [`valkey_keys.go`](../../internal/cluster/valkey_keys.go) | Key and channel family registry, `Key`/`Channel` types, keyspace |
-| [`valkey_pubsub.go`](../../internal/cluster/valkey_pubsub.go) | `Subscribe`, the one Pub/Sub connection and its resubscription |
+| [`valkey.go`](../../internal/cluster/valkey.go) | `NewValkey`, lifecycle, `Available`/`Status`/`StartupError`, connect loop, monitor (primary changes, health probe), version check, start-up trust warnings |
+| [`valkey_ops.go`](../../internal/cluster/valkey_ops.go) | The commands trove needs (`get`, `set`, `setNX`, `setIfEq`, `delIfEq`, `incr`, `publish`, `ping`), unexported, behind breaker and command timeout |
+| [`valkey_keys.go`](../../internal/cluster/valkey_keys.go) | Key and channel family registry (`registerKeyFamily`, `registerChannelFamily`), `Key`/`Channel` types, `formKey`/`formKeyTTL`/`channel`, keyspace |
+| [`valkey_pubsub.go`](../../internal/cluster/valkey_pubsub.go) | `subscribe`, the one Pub/Sub connection and its resubscription |
+| [`valkey_reason.go`](../../internal/cluster/valkey_reason.go) | `ReasonCode`, the fixed vocabulary of `ValkeyStatus.ReasonCode` |
+| [`valkey_integration.go`](../../internal/cluster/valkey_integration.go) | Compiled only with the `integration` build tag: `cluster.Raw(v)` and `RegisterTestKeyFamily`/`RegisterTestChannelFamily` for `test/integration/valkey`; no build of the binary has it |
 | [`valkey_sentinel.go`](../../internal/cluster/valkey_sentinel.go) | Sentinel probe (`trove_valkey_sentinels_reachable`) and startup classification (Q-HA-13) |
 | [`valkey_breaker.go`](../../internal/cluster/valkey_breaker.go) | Circuit breaker |
 | [`valkey_errors.go`](../../internal/cluster/valkey_errors.go) | Error kinds (`trove_valkey_errors_total{kind}`) and what counts for the breaker |
@@ -31,14 +35,20 @@ The Sentinel probe is separate: every refresh interval, every configured Sentine
 
 `NewValkey` returns an error only for settings it cannot run with (unreadable credential/CA/certificate file, invalid mode, duplicate metrics registration). It waits for the first connection attempt, bounded by timeouts, so `StartupError()` is meaningful. Outcomes:
 
-| Situation | `Available()` | `StartupError()` |
-|---|---|---|
-| Connected, Valkey 9.0+ | true | nil |
-| Every Sentinel unreachable | false, reason `no Sentinel reachable (0 of N): ...` | nil (Q-HA-13) |
-| Unknown `primary_name` on every reachable Sentinel | false | non-nil |
-| `WRONGPASS`/`NOAUTH`/`NOPERM` (data node or Sentinel) | false | non-nil |
-| Certificate rejected | false | non-nil |
-| Server below 9.0 (HELLO `version`) | false, reason `valkey 8.1.11 is not supported; trove requires 9.0 or later` | nil |
+| Situation | `Available()` | `Status().ReasonCode` | `StartupError()` |
+|---|---|---|---|
+| Connected, Valkey 9.0+ | true | `""` | nil |
+| No attempt finished yet; refused or reset connection | false | `connecting` | nil |
+| Every Sentinel unreachable | false, reason `no Sentinel reachable (0 of N): ...` | `no_sentinel` | nil (Q-HA-13) |
+| Connection attempt ran into a deadline | false | `timeout` | nil |
+| Unknown `primary_name` on every reachable Sentinel | false | `config_error` | non-nil |
+| `WRONGPASS`/`NOAUTH`/`NOPERM` (data node or Sentinel) | false | `auth_failed` | non-nil |
+| Certificate rejected | false | `config_error` | non-nil |
+| Server below 9.0 (HELLO `version`) | false, reason `valkey 8.1.11 is not supported; trove requires 9.0 or later` | `unsupported` | nil |
+
+Later states: `circuit_open` (breaker open), `probe_failed` (last health probe failed), `closed` (after `Close`). `Status().DegradedReason` is the free text: it can name addresses and server replies, so it goes to the log (`valkey degraded` carries `reason_code` and `reason`) and the authenticated replica list; `/readyz?verbose=1` on the ops listener shows only the code (`cluster.ReasonCodes()` lists them).
+
+**Start-up warnings.** In Sentinel mode `NewValkey` logs one WARN each when `valkey.sentinel.password_file` is unset (anyone who reaches a Sentinel can name another primary) and when TLS verifies against the system roots (`valkey.tls.ca_file` unset: a primary a Sentinel names passes with any publicly issued certificate for that name). The configuration has no strictness switch that turns them into errors. `tls.mode: verify-ca` without `tls.ca_file` is refused by the configuration check and by `NewValkey`: verify-ca skips the host name, and with the system roots any public certificate would pass.
 
 The client keeps retrying with `reconnect.*` backoff; `StartupError` clears when a later attempt connects. The readiness registry holds back only the first readiness on a non-nil `StartupError`.
 
@@ -46,16 +56,16 @@ The client keeps retrying with `reconnect.*` backoff; `StartupError` clears when
 
 Every key is `<key_prefix><keyspace>:<mechanism>:v<version>[:<part>...]`; channels the same. The keyspace is the first 12 hex digits of `system_state.keyspace_id` (`WithKeyspaceID` or `SetKeyspaceID`, set once).
 
-- A `Key` can only be created by `Valkey.Key(family, parts...)` or `KeyTTL(family, ttl, parts...)`. A family exists only with a positive maximum TTL (`RegisterKeyFamily` panics otherwise), and the key carries its TTL. The write methods take a `Key` and set the expiry themselves, so a write without a TTL cannot be expressed. The zero `Key` is rejected. `Incr` sets the expiry once (`EXPIRE ... NX` in the same `MULTI`).
+- A `Key` can only be created by `v.formKey(family, parts...)` or `v.formKeyTTL(family, ttl, parts...)`. A family exists only with a positive maximum TTL (`registerKeyFamily` panics otherwise), and the key carries its TTL. The write methods take a `Key` and set the expiry themselves, so a write without a TTL cannot be expressed. The zero `Key` and a zero family are rejected. `incr` sets the expiry once (`EXPIRE ... NX` in the same `MULTI`).
 - Parts must match `[A-Za-z0-9_-]{1,128}`: identifiers and hashes, never raw names.
 - Values and payloads are limited to 1 KiB (`ErrValueTooLarge`).
 - There is no `Del`: the ACL user has none. A malformed value is removed with `DelIfEq`.
 
 ### Add a key family
 
-1. Register it at package level in the owning package: `var fam = cluster.RegisterKeyFamily("lock:fetch", 1, 30*time.Second)` (mechanism lower-case words separated by `:`; version is the encoding version; the duration is the maximum TTL). For a channel, `RegisterChannelFamily`.
-2. Form keys with `v.Key(fam, parts...)`; pass a shorter TTL with `KeyTTL` where the TTL is configured.
-3. Use only the methods of `valkey_ops.go`. If a new command is needed, it must be on the R-ARCH-031 list and in the ACL rule of `test/integration/conf/users.acl`; add the method to `valkey_ops.go`, its label to the command list of R-OPS-007.
+1. The mechanism lives in `internal/cluster` (a `valkey_<mechanism>.go` file) and exports a typed API (`FlightLock.Acquire`, `NegativeCache.Lookup`, …), never a key or a raw command. Register its family at package level there: `var fam = registerKeyFamily("lock:fetch", 1, 30*time.Second)` (mechanism lower-case words separated by `:`; version is the encoding version; the duration is the maximum TTL). For a channel, `registerChannelFamily`.
+2. Form keys with `v.formKey(fam, parts...)`; pass a shorter TTL with `formKeyTTL` where the TTL is configured.
+3. Use only the methods of `valkey_ops.go`. If a new command is needed, it must be on the R-ARCH-031 list and in the ACL rule of `test/integration/conf/users.acl`; add the unexported method to `valkey_ops.go` and its wrapper to `valkey_integration.go`, its label to the command list of R-OPS-007.
 4. Add the row to the usage table of R-ARCH-030 and a test with the R- ID in the subtest name.
 5. A changed encoding gets a new version number, never an edited one.
 
@@ -69,7 +79,7 @@ After `circuit_breaker.failure_threshold` consecutive failures the breaker refus
 
 ## Pub/Sub
 
-`Subscribe` registers locally and never fails because Valkey is down. One goroutine owns the connection: it subscribes every wanted channel, and reconnects when the connection breaks or the primary the client is bound to changes (checked every 250 ms, so a demoted primary that keeps its connection cannot hold the subscription). `OnSubscribed(fn)` and `OnPrimaryChange(fn)` are the hooks for the change-log poll and flight-lock waiters. Handlers run on the reader goroutine and must not block.
+`subscribe` (unexported, reached through the sealed `Bus` interface of signal_bus.go) registers locally and never fails because Valkey is down. One goroutine owns the connection: it subscribes every wanted channel, and reconnects when the connection breaks or the primary the client is bound to changes (checked every 250 ms, so a demoted primary that keeps its connection cannot hold the subscription). `OnSubscribed(fn)` and `OnPrimaryChange(fn)` are the hooks for the change-log poll and flight-lock waiters. Handlers run on the reader goroutine and must not block.
 
 ## Metrics
 
@@ -77,6 +87,6 @@ After `circuit_breaker.failure_threshold` consecutive failures the breaker refus
 
 ## Tests
 
-- Unit (`go test -race ./internal/cluster/...`): breaker with a fake clock, error classification (real server errors via a fake RESP server in `valkey_fake_test.go`), key registry, version decision, startup classification, TLS modes with real handshakes, credential rotation, the client against fake servers (8.1 refusal, WRONGPASS, unreachable Sentinels, breaker).
-- Integration (`make integration-up`, then `make test-integration`; package [`test/integration/valkey`](../../test/integration/valkey)): connection names and count, wrong name/password/CA, failover with and without `+switch-master` (the stack is returned to its layout), Pub/Sub, key TTL scan, breaker via `CLIENT PAUSE WRITE`, a throwaway Valkey 8.1 (refusal; image pinned in `tools/versions.env`) and 9.0 (API under the example ACL rule). The stack's own line (9.1 or 9.0) is not switched by these tests.
+- Unit (`go test -race ./internal/cluster/...`): breaker with a fake clock, error classification (real server errors via a fake RESP server in `valkey_fake_test.go`), key registry, version decision, startup classification, reason codes, start-up warnings, TLS modes with real handshakes, credential rotation, the client against fake servers (8.1 refusal, WRONGPASS, unreachable Sentinels, breaker), and the exported surface (`valkey_surface_test.go`).
+- Integration (`make integration-up`, then `make test-integration`; package [`test/integration/valkey`](../../test/integration/valkey)): connection names and count, wrong name/password/CA with their reason codes, failover with and without `+switch-master` (the stack is returned to its layout), Pub/Sub, key TTL scan, breaker via `CLIENT PAUSE WRITE`, a throwaway Valkey 8.1 (refusal; image pinned in `tools/versions.env`) and 9.0 (API under the example ACL rule). The stack's own line (9.1 or 9.0) is not switched by these tests. The tests reach the raw commands through `cluster.Raw(v)` (integration build tag only).
 - The tests that create a Sentinel ACL user (`nosub`) delete it at the end.

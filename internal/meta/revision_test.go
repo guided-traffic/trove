@@ -3,7 +3,7 @@ package meta
 import "testing"
 
 func TestRevisionRegistry(t *testing.T) {
-	t.Run("R-ARCH-009 registered columns are listed in table order", func(t *testing.T) {
+	t.Run("the revision-column registry lists registered columns in table order", func(t *testing.T) {
 		r := NewRevisionRegistry()
 		r.Register("packages", "rev_seq")
 		r.Register("cluster_epoch", "epoch")
@@ -15,7 +15,7 @@ func TestRevisionRegistry(t *testing.T) {
 			t.Fatal("Has answers wrongly")
 		}
 	})
-	t.Run("R-ARCH-009 a duplicate registration panics", func(t *testing.T) {
+	t.Run("the revision-column registry panics on a duplicate registration", func(t *testing.T) {
 		r := NewRevisionRegistry()
 		r.Register("packages", "rev_seq")
 		mustPanic(t, func() { r.Register("packages", "rev_seq") })
