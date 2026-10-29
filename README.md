@@ -1,14 +1,16 @@
 # trove
 
-[![Build Status](https://github.com/guided-traffic/trove/actions/workflows/ci.yml/badge.svg)](https://github.com/guided-traffic/trove/actions)
+[![Build Status](https://github.com/guided-traffic/trove/actions/workflows/release.yml/badge.svg)](https://github.com/guided-traffic/trove/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/guided-traffic/trove)](https://goreportcard.com/report/github.com/guided-traffic/trove)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 > **Status: pre-release, foundation milestone (M0): platform only, no package format yet.** The binary, its configuration,
 > the PostgreSQL and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the endpoints,
 > the system API, the ops endpoints and the Helm chart are built and tested. There is no login, no repository, no package
-> protocol and no backup yet. Everything else is the target design in [docs/spec/](docs/spec/README.md). There is no release
-> and no published image.
+> protocol and no backup yet. Everything else is the target design in [docs/spec/](docs/spec/README.md). The first release,
+> `v0.1.0`, is published as the image `ghcr.io/guided-traffic/trove:0.1.0` (linux/amd64, linux/arm64) and the chart
+> `oci://ghcr.io/guided-traffic/charts/trove` at version `0.1.0`, both signed; the [release workflow](.github/workflows/release.yml)
+> publishes the release versions that follow.
 
 trove is a self-hosted, highly available binary repository manager. Its target: host your own packages, proxy and cache public
 registries on demand (pull-through), and put both behind one URL per ecosystem. People sign in through your OpenID Connect

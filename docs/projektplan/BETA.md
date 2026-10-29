@@ -221,7 +221,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **Helm chart and release**
 - ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
-- ⚪ Release pipeline: image and chart published to `ghcr.io/guided-traffic`
+- 🟢 Release pipeline: image and chart published to `ghcr.io/guided-traffic`, signed keyless. Pulled forward from this phase for the owner's permanent preview; `v0.1.0` is the first release it published ([release.yml](../../.github/workflows/release.yml))
 - ⚪ Beta candidate `v0.6.0` published
 
 ## Phase 7 · Walkthrough and beta release
