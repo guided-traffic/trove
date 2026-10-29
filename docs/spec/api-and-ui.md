@@ -579,6 +579,12 @@ Priority: **MVP** · Covers: trove-only
 - The UI sends the ETag it loaded on every write and never sends `If-Match: *` on its own
   (R-UI-042).
 - GET supports `If-None-Match` and answers 304.
+- A representation that carries a member which changes without a new revision has a tag that
+  follows the member, because a strong validator changes with every observable change of the
+  representation ([RFC 9110 §8.8.1](https://www.rfc-editor.org/rfc/rfc9110#section-8.8.1)). The
+  repository's `lastActivityAt` is the case: its read tag is `"<revision>.<microseconds>"` while
+  there is an activity time, and a write accepts either form and compares the revision only
+  (Q-API-156).
 - **Revision columns survive a restore without repeating.** Every column whose value is served as
   an `ETag` or compared with `If-Match` or `If-None-Match` (`revision`, `version`,
   `config_version`, …, whatever name the owning page gives it) is registered with
@@ -5057,6 +5063,29 @@ frame and one pointer string per level: memory in proportion to the square of th
 agent would revisit the figure if a document needs more.
 
 **Applied in the spec:** R-API-017 (a bullet).
+
+### Q-API-156 · The tag of a repository read follows `lastActivityAt`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`lastActivityAt` is a member of the repository representation (Q-API-34) and is written by the activity buffer without a new
+`config_version`. The read tag was the revision only, so a conditional read after a download answered 304 and the client kept a
+stale `lastActivityAt` under a tag that is strong (R-API-012, RFC 9110 section 8.8.1).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exclude `lastActivityAt` from what the tag validates | Document it | No change | The tag is strong for a representation it does not describe |
+| (b) Take the member out of the single read | Only the list shows it | The tag is exact | The detail page of the UI shows it |
+| (c) Let the activity bump the revision | | The tag is exact | Every editor's `If-Match` fails once a minute |
+| (d) Add the activity time to the read tag (chosen) | `"<revision>.<microseconds>"`; writes strip the suffix and compare the revision | The tag is exact and a download is no conflict | Two tags for the same revision; a tag taken from a read is not the tag a write answers |
+
+**Choice:** (d), in `repositoryETag` and `repositoryPrecondition`. The 412 `currentEtag` and the write answers carry the plain
+revision tag.
+
+**Rationale:** the client treats a tag as opaque, so a longer one costs nothing, and the concurrency control stays on the revision.
+The development agent would revisit it if another resource gets a volatile member; then the suffix becomes a shared helper.
+
+**Applied in the spec:** R-API-012.
 
 ## What this does not cover
 

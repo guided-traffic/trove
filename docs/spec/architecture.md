@@ -311,9 +311,9 @@ Normative rules:
   (HA-006) therefore does not exist in trove.
 - Imports form layers:
   1. Edge: `httpserver`, `api/v1`, `webui`, format handlers.
-  2. Domain: `repository`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
+  2. Domain: `repository`, `files`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`. Every layer may import them, and they import only each other.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`. Every layer may import them, and they import only each other.
 
   No lower layer imports a higher one. Format packages reach storage only through the host interface
   (R-ARCH-009), so the diagram has no arrow from `formats` to `blob`.
@@ -1007,7 +1007,8 @@ type Request struct {
 	Route     *Route
 	Params    Params
 	Path      Path                   // canonical repository path (R-ARCH-005)
-	Principal auth.Principal
+	Subject   authz.Subject          // who acts, as the authentication stage resolved it (authorization.md R-AUTHZ-003)
+	Index     *authz.Index           // the grant index the request started on (authz.Engine.Begin); every decision of the request runs on it
 	Host      Host
 }
 
@@ -1085,7 +1086,7 @@ Normative rules:
   content is the name authorization checks ([authorization.md](authorization.md)).
 - `Route.Action` is a coarse check that the core runs before the body is read: "may this principal
   do this action anywhere in this repository?". The handler then decides on the concrete path or
-  package through `Host.Authorize`.
+  package through `Host.Authorize`, with an `authz.Coordinate` that names it.
 - `OnCommit`, `OnItemsRemoved`, `OnItemsRestored` and `RemoteAdapter.OnFill` run inside the
   storage transaction and MUST NOT perform I/O outside PostgreSQL.
 - **Remote fill.** The storage hook that runs inside a remote metadata cache-fill transaction,
@@ -1120,7 +1121,9 @@ Priority: **MVP** · Covers: FMT-007, STOR-001, STOR-002
 
 ```go
 type Host interface {
-	Authorize(ctx context.Context, rq *Request, a authz.Action, res authz.Resource) error
+	// Authorize decides the coordinate (repository, path or package, version, actions) for rq.Subject
+	// on rq.Index (authz.Engine.DecideOn) and returns the refusal of R-AUTHZ-016, or nil.
+	Authorize(ctx context.Context, rq *Request, c authz.Coordinate) error
 	InTx(ctx context.Context, fn func(tx Tx) error) error // R-ARCH-019
 
 	Ingest() Ingestor            // upload pipeline of storage.md: admission, spool, digests, commit

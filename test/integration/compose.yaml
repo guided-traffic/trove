@@ -201,7 +201,11 @@ services:
       - -ip=127.0.0.1
       - -ip.bind=0.0.0.0
       - -master.volumeSizeLimitMB=512
-      - -volume.max=24
+      # A bucket is a collection and a collection grows several volumes at once, so the
+      # volume count, not the disk, ran out after a few runs of the 500 MiB upload test
+      # ("Not enough data nodes found"). Volumes are not preallocated; the same count as
+      # deploy/dev/s3.yaml.
+      - -volume.max=100
       - -filer
       - -s3
       - -s3.port=8333

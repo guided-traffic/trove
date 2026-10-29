@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -88,22 +89,45 @@ func (s *Service) Deploy(ctx context.Context, c Caller, req DeployRequest) (Depl
 }
 
 // maxUpload reads the repository's own upload limit, config.storage.maxUploadSize
-// in bytes (R-STOR-004 admission); zero means none.
-func maxUpload(repo repository.Repository) int64 {
+// in bytes (R-STOR-004 admission); zero means none. A value that is not a
+// non-negative integer cannot be a limit someone meant to lift: the repository
+// refuses the upload (fails closed) instead of reading it as "none". The
+// management API refuses to store such a value; this guards a document that
+// predates the rule or was written around it.
+func maxUpload(repo repository.Repository) (int64, error) {
 	var doc struct {
 		Storage struct {
-			MaxUploadSize int64 `json:"maxUploadSize"`
+			MaxUploadSize json.RawMessage `json:"maxUploadSize"`
 		} `json:"storage"`
 	}
-	if json.Unmarshal(repo.Config, &doc) != nil || doc.Storage.MaxUploadSize < 0 {
-		return 0
+	if len(repo.Config) == 0 {
+		return 0, nil
 	}
-	return doc.Storage.MaxUploadSize
+	if err := json.Unmarshal(repo.Config, &doc); err != nil {
+		return 0, invalidUploadLimit()
+	}
+	raw := bytes.TrimSpace(doc.Storage.MaxUploadSize)
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(string(raw), 10, 63)
+	if err != nil {
+		return 0, invalidUploadLimit()
+	}
+	return int64(n), nil
+}
+
+func invalidUploadLimit() error {
+	return errs.E(errs.Internal, errs.CodeInternal, "The repository's upload limit (config.storage.maxUploadSize) is not a non-negative integer; uploads are refused until it is corrected.")
 }
 
 func (s *Service) deployFile(ctx context.Context, c Caller, repo repository.Repository, req DeployRequest, dec authz.Decision) (DeployResult, error) {
+	limit, err := maxUpload(repo)
+	if err != nil {
+		return DeployResult{}, err
+	}
 	sp, err := s.blobs.Ingest(ctx, req.Body, blob.IngestOptions{
-		ContentLength: req.ContentLength, MaxSize: maxUpload(repo), Expect: req.Expect,
+		ContentLength: req.ContentLength, MaxSize: limit, Expect: req.Expect,
 	})
 	if err != nil {
 		return DeployResult{}, err
@@ -140,6 +164,16 @@ func (s *Service) deployFile(ctx context.Context, c Caller, repo repository.Repo
 			return DeployResult{}, err
 		}
 	}
+	// A concurrent upload may create the path between the check above and the
+	// link step, which then replaces content. Whether `overwrite` is held is
+	// settled here, outside the transaction, so no decision waits for the index
+	// inside it while it holds the blob row and the item (R-STOR-007, R-ARCH-019).
+	overwriteOK := overwriteChecked
+	if !overwriteOK {
+		if overwriteOK, err = s.mayOverwrite(ctx, c, req.Repo, path); err != nil {
+			return DeployResult{}, err
+		}
+	}
 
 	if req.BeginCommit != nil {
 		req.BeginCommit()
@@ -147,8 +181,15 @@ func (s *Service) deployFile(ctx context.Context, c Caller, repo repository.Repo
 	var out linkOutcome
 	_, err = s.blobs.Commit(ctx, sp, func(ctx context.Context, tx meta.Tx) error {
 		out = linkOutcome{}
-		return s.linkFile(ctx, tx, c, repo, req, sp, dec, overwriteChecked, &out)
+		return s.linkFile(ctx, tx, c, repo, req, sp, dec, overwriteOK, &out)
 	})
+	if errors.Is(err, errOverwriteDenied) {
+		// The path appeared meanwhile and the caller holds `deploy` only: the
+		// refusal is decided, and audited, as any other.
+		if _, err = s.decide(ctx, c, req.Repo, path, authz.KindWrite, authz.Deploy, authz.Overwrite); err == nil {
+			err = errForbidden(authz.Overwrite, req.Repo, path)
+		}
+	}
 	if err != nil {
 		return DeployResult{}, err
 	}
@@ -160,6 +201,27 @@ func (s *Service) deployFile(ctx context.Context, c Caller, repo repository.Repo
 		it = Item{Repository: req.Repo, Path: path, Kind: KindFile, Size: sp.Size, Digest: sp.SHA256, MediaType: req.MediaType}
 	}
 	return DeployResult{Created: out.created || out.overwritten, Overwritten: out.overwritten, Item: it}, nil
+}
+
+// errOverwriteDenied is returned by the link step when it finds content to
+// replace and the caller was not found to hold `overwrite` before the commit.
+var errOverwriteDenied = errors.New("files: overwrite not granted")
+
+// mayOverwrite says whether the caller holds `overwrite` on the path, without an
+// audit event: it is asked in case a concurrent upload makes the deploy an
+// overwrite, which usually does not happen. The decision point's PathsAllowed
+// is the non-auditing evaluation; a decision point without it is asked with
+// Decide, and a refusal then is read as "not held".
+func (s *Service) mayOverwrite(ctx context.Context, c Caller, repo, path string) (bool, error) {
+	if s.paths != nil {
+		ok, err := s.paths.PathsAllowed(ctx, c.Subject, s.coordinate(c, repo, path, authz.KindWrite), authz.Overwrite, []string{path})
+		if err != nil {
+			return false, err
+		}
+		return len(ok) == 1 && ok[0], nil
+	}
+	d := s.authz.Decide(ctx, c.Subject, s.coordinate(c, repo, path, authz.KindWrite, authz.Deploy, authz.Overwrite))
+	return d.Allowed(), nil
 }
 
 // linkOutcome is what the link step of a file deploy did.
@@ -177,7 +239,7 @@ const maxLinkRounds = 5
 // the allowed write. It may run again (a restarted round), so it resets its
 // outcome.
 func (s *Service) linkFile(ctx context.Context, tx meta.Tx, c Caller, repo repository.Repository, req DeployRequest,
-	sp *blob.Spooled, dec authz.Decision, overwriteChecked bool, out *linkOutcome,
+	sp *blob.Spooled, dec authz.Decision, overwriteOK bool, out *linkOutcome,
 ) error {
 	qs, err := queries(tx)
 	if err != nil {
@@ -188,11 +250,11 @@ func (s *Service) linkFile(ctx context.Context, tx meta.Tx, c Caller, repo repos
 		if err := s.ensureParents(ctx, qs, rid, c, path); err != nil {
 			return err
 		}
-		locked, err := lockParent(ctx, qs, rid, parent)
+		locked, err := lockAncestors(ctx, qs, rid, path)
 		if err != nil {
 			return err
 		}
-		if !locked { // the parent was removed by a concurrent delete; create it again
+		if !locked { // an ancestor was removed by a concurrent delete; create it again
 			continue
 		}
 		rows, err := qs.LockLiveItem(ctx, q.LockLiveItemParams{RepoID: rid, Path: path})
@@ -217,10 +279,8 @@ func (s *Service) linkFile(ctx context.Context, tx meta.Tx, c Caller, repo repos
 		case bytes.Equal(rows[0].BlobSha256, sp.SHA256[:]):
 			return s.recordAllowed(ctx, tx, c, req.Repo, path, dec, authz.Deploy) // identical: nothing changes
 		default:
-			if !overwriteChecked {
-				if _, err := s.decide(ctx, c, req.Repo, path, authz.KindWrite, authz.Deploy, authz.Overwrite); err != nil {
-					return err
-				}
+			if !overwriteOK {
+				return errOverwriteDenied
 			}
 			if err := s.replaceFile(ctx, qs, rows[0].ID, params); err != nil {
 				return err
@@ -299,15 +359,21 @@ func (s *Service) ensureParents(ctx context.Context, qs *q.Queries, rid int64, c
 	return nil
 }
 
-// lockParent holds the parent folder FOR SHARE until the transaction ends, so
-// that the removal of an empty implicit folder waits for this deploy. It reports
-// false when the parent is gone.
-func lockParent(ctx context.Context, qs *q.Queries, rid int64, parent string) (bool, error) {
-	if parent == "" {
+// lockAncestors holds every ancestor folder of the path FOR SHARE until the
+// transaction ends, so that neither the removal of an empty implicit folder nor
+// the removal of a folder with its subtree can take one from under the new item:
+// they wait for this deploy and then see its child. All of them, not the parent
+// alone, because a delete of the subtree removes the ancestors that it empties
+// and an ancestor that is gone would leave the item below missing folders
+// (R-STOR-017). The locks are taken deepest first, the order of the delete. It
+// reports false when one of them is gone, and the caller creates it again.
+func lockAncestors(ctx context.Context, qs *q.Queries, rid int64, path string) (bool, error) {
+	chain := ancestors(path)
+	if len(chain) == 0 {
 		return true, nil
 	}
-	ids, err := qs.LockFolderShared(ctx, q.LockFolderSharedParams{RepoID: rid, Path: parent})
-	return len(ids) == 1, err
+	rows, err := qs.LockFoldersShared(ctx, q.LockFoldersSharedParams{RepoID: rid, Paths: chain})
+	return len(rows) == len(chain), err
 }
 
 func (s *Service) recordDeployed(ctx context.Context, tx meta.Tx, c Caller, repo, path string, sp *blob.Spooled, overwritten bool) error {
@@ -340,7 +406,7 @@ func (s *Service) deployFolder(ctx context.Context, c Caller, repo repository.Re
 			if err := s.ensureParents(ctx, qs, rid, c, path); err != nil {
 				return err
 			}
-			if locked, err := lockParent(ctx, qs, rid, parent); err != nil {
+			if locked, err := lockAncestors(ctx, qs, rid, path); err != nil {
 				return err
 			} else if !locked {
 				continue

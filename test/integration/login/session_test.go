@@ -5,6 +5,7 @@ package login
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -382,6 +383,30 @@ func TestR_AUTH_007_008_Provisioning(t *testing.T) {
 			t.Fatalf("login of a disabled user: %d %s", resp.StatusCode, body)
 		}
 	})
+}
+
+// TestR_AUTH_016_ASessionIsNotCreatedForADisabledUser: the status is read under the
+// principal lock, so a session whose creation waited for a disable does not
+// exist when the user is enabled again.
+func TestR_AUTH_016_ASessionIsNotCreatedForADisabledUser(t *testing.T) {
+	e := newEnv(t)
+	e.start(1, e.defaultAuth())
+	ctx := context.Background()
+	var id string
+	if err := e.admin.QueryRow(ctx, `INSERT INTO principal (id, kind, name, status) VALUES (gen_random_uuid(), 'user', 'frozen', 'disabled') RETURNING id::text`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.admin.Exec(ctx, `INSERT INTO app_user (principal_id, origin) VALUES ($1::uuid, 'admin')`, id); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.replicas[0].sessions.Create(ctx, session.NewSession{PrincipalID: id})
+	if !errors.Is(err, session.ErrPrincipalNotActive) {
+		t.Fatalf("Create for a disabled user: %v", err)
+	}
+	var n int
+	if err := e.admin.QueryRow(ctx, `SELECT count(*) FROM ui_session WHERE principal_id = $1::uuid`, id).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("%d sessions of a disabled user, %v", n, err)
+	}
 }
 
 func TestR_AUTH_043_SessionCleanup(t *testing.T) {

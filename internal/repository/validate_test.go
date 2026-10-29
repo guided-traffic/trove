@@ -252,6 +252,16 @@ func TestGenericSettings(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
+	t.Run("R-STOR-004 maxUploadSize must be a non-negative integer", func(t *testing.T) {
+		for limit, ok := range map[string]bool{
+			`0`: true, `1048576`: true, `1e9`: false, `1.5`: false, `-1`: false, `"10"`: false, `null`: false, `9223372036854775808`: false,
+		} {
+			_, _, err := decodeValidate(t, `{"key":"x1","class":"local","format":"generic","storage":{"maxUploadSize":`+limit+`}}`, true)
+			if got := fieldsOf(err)["/storage/maxUploadSize"] == ""; got != ok {
+				t.Errorf("maxUploadSize %s: accepted = %v, want %v (err %v)", limit, got, ok, err)
+			}
+		}
+	})
 	t.Run("R-REPO-004 a format with package names takes the members the generic format refuses", func(t *testing.T) {
 		_, _, err := decodeValidate(t, `{"key":"x1","class":"local","format":"pkgfmt","priorityMember":true,
 			"local":{"packageOwnership":"enforce","autoClaim":true}}`, true)

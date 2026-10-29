@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // DeleteJobKind is the job kind that removes a large subtree in batches
@@ -35,6 +36,11 @@ type DeleteArgs struct {
 	Key    string      `json:"key"`
 	Path   string      `json:"path"`
 	Actor  audit.Actor `json:"actor"`
+	// MaxID is the highest item id the permission check saw. The job removes only
+	// items up to it: an item that a deploy adds to the subtree afterwards was
+	// never decided and stays (R-STOR-018). Zero (a job enqueued before the field
+	// existed) bounds nothing.
+	MaxID int64 `json:"maxId,omitempty"`
 }
 
 // DeleteRequest is a delete of a file or of a folder with its subtree.
@@ -73,6 +79,10 @@ func (s *Service) Delete(ctx context.Context, c Caller, req DeleteRequest) (Dele
 	repo, err := s.resolve(ctx, req.Repo, req.Strict)
 	if err != nil {
 		return DeleteResult{}, err
+	}
+	if repo.Class == repository.Virtual {
+		return DeleteResult{}, errs.E(errs.MethodNotAllowed, errs.CodeMethodNotAllowed,
+			"A virtual repository holds no items; delete them in a member repository.", errs.WithAllow("GET", "HEAD"))
 	}
 	rid := repoID(repo)
 	it, found, err := s.liveItem(ctx, req.Repo, rid, req.Path)
@@ -264,10 +274,15 @@ func (s *Service) enqueueDelete(ctx context.Context, c Caller, repoKey string, r
 	if s.jobs == nil {
 		return DeleteResult{}, errs.E(errs.Unavailable, errs.CodeUnavailable, "A subtree this large is deleted by a job, and this replica has no job queue.")
 	}
+	var maxID int64
 	err := s.read(ctx, func(qs *q.Queries) error {
 		rows, err := s.subtree(ctx, qs, rid, req.Path, false)
 		if err != nil {
 			return err
+		}
+		maxID = 0
+		for _, r := range rows {
+			maxID = max(maxID, r.ID)
 		}
 		return s.checkDeletable(ctx, c, req, rows)
 	})
@@ -281,7 +296,7 @@ func (s *Service) enqueueDelete(ctx context.Context, c Caller, repoKey string, r
 		}
 		job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
 			Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(rid, 10) + ":" + req.Path,
-			Args:       DeleteArgs{RepoID: rid, Key: repoKey, Path: req.Path, Actor: c.Actor},
+			Args:       DeleteArgs{RepoID: rid, Key: repoKey, Path: req.Path, Actor: c.Actor, MaxID: maxID},
 			TargetKind: "item", TargetKey: repoKey + "/" + req.Path, CreatedBy: c.actorID(),
 		})
 		if err != nil {
@@ -340,7 +355,7 @@ func (s *Service) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi stri
 			return err
 		}
 		rows, err := qs.ListSubtreeBatch(ctx, q.ListSubtreeBatchParams{
-			RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, FilesOnly: true, RowLimit: int32(batch), //nolint:gosec // storage.delete.batch_size
+			RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, FilesOnly: true, MaxID: a.MaxID, RowLimit: int32(batch), //nolint:gosec // storage.delete.batch_size
 		})
 		if err != nil {
 			return err
@@ -365,7 +380,7 @@ func (s *Service) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs
 		after = ""
 		for {
 			rows, err := qs.ListSubtreeBatch(ctx, q.ListSubtreeBatchParams{
-				RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, After: after, RowLimit: 1000,
+				RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, After: after, MaxID: a.MaxID, RowLimit: 1000,
 			})
 			if err != nil {
 				return err

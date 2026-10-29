@@ -25,7 +25,7 @@ What to have in mind first:
 | File | Responsibility |
 |---|---|
 | [session/session.go](../../internal/auth/session/session.go) | The contract: `Info`, `Validator`, `ErrInvalid`, `ErrCSRF`, the auth methods |
-| [session/store.go](../../internal/auth/session/store.go) | `Store`: `Create` (principal row lock, fixation, re-authentication, `max_per_user`), `Validate` (cache and freshness gate, shared lookups, deadlines from the row, the conditional touch) |
+| [session/store.go](../../internal/auth/session/store.go) | `Store`: `Create` (principal row lock and its `status` check, fixation, re-authentication, `max_per_user`), `Validate` (cache and freshness gate, shared lookups that fill under `context.WithoutCancel` with a 10 s timeout so one request's cancellation is not handed to the requests that joined, deadlines from the row, the conditional touch) |
 | [session/end.go](../../internal/auth/session/end.go) | `Logout`, `EndForPrincipal` (on a caller's transaction), `EndPrincipalSessions`, `EndBreakGlass(Tx)`, `EndAll`, `List`, the `auth.session.ended` event |
 | [session/csrf.go](../../internal/auth/session/csrf.go) | `CheckCSRF`, `SameOrigin`, `NormalizeOrigin`, the `auth.csrf_failed` bound per session and minute |
 | [session/cookie.go](../../internal/auth/session/cookie.go), [ids.go](../../internal/auth/session/ids.go) | The three `__Host-` cookies and their attributes; `NewSecret`, `WellFormed`, `Hash`; `NewID` (UUIDv7) |
@@ -57,7 +57,7 @@ What to have in mind first:
 | Step 10 | mapping and gates, then `Provisioner.SignIn` (its transaction), then `Store.Create` (another, Q-AUTH-32) | `callback` |
 | Validation | cache while the poll is fresh, otherwise a shared query; deadlines from the row; touch every 60 s | `Store.Validate` |
 | Logout | CSRF checks, the end and its change in one transaction, cookies cleared, `redirectTo` | `HandleLogout`, `Store.Logout` |
-| Local login | origin, lockout row, slot, Argon2id, failure count or session | `HandleLocalLogin` |
+| Local login | origin, lockout row, reserve the attempt (`ReserveLockoutAttempt`), slot, Argon2id, then a lock on the threshold failure (`LockOnLockoutFailure`) or, after a second read of the lock, reset and session (Q-AUTH-171) | `HandleLocalLogin` |
 | Rotation | the watcher sees the file change, opens the hold and ends the break-glass sessions, then switches | `BreakGlass.CheckRotation` |
 
 ## Seams to the other areas

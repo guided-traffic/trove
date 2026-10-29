@@ -1348,7 +1348,8 @@ Priority: **MVP** · Covers: ART-034, STOR-002
 - A subtree larger than `storage.delete.max_sync_items` is removed by a background job
   (`202 Accepted` with the job URL, job API per [architecture.md](architecture.md)); the
   permission check still completes before the first removal. The job removes in transactions of
-  `storage.delete.batch_size` items; a crash resumes with the remainder.
+  `storage.delete.batch_size` items; a crash resumes with the remainder. The job removes only
+  items the check saw (Q-STOR-143): one that is deployed into the subtree afterwards stays.
 - Remote repositories: a delete removes the cached copy permanently (no trash can); the next
   request refetches it. Virtual repositories answer `405`.
 - Deleting a whole repository (operation of
@@ -4067,6 +4068,74 @@ see, and the cost of a page must not depend on its size. The development agent w
 other purposes exists.
 
 **Applied in the spec:** none; R-STOR-017 and Q-STOR-20 read unchanged apart from the pointer to this decision.
+
+### Q-STOR-143 · The delete job removes only the items its permission check saw
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-STOR-018 decides `delete` for every item of a subtree larger than `storage.delete.max_sync_items` at the request and removes in a
+job. The job listed what it found, so a file that a holder of `deploy` added below the folder between the check and the batch that
+reached it was removed without a decision (H-154).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep it as a documented gap | H-154 as written | No change | A principal without `delete` loses a file to another's delete |
+| (b) Decide again per batch for the stored subject | The job carries the subject and calls `PathsAllowed` for every batch | Also follows a grant that was removed meanwhile | A job has no request: the subject, its token scope and the endpoint ceiling would have to be stored and rebuilt; a refused batch leaves a half-deleted subtree |
+| (c) Fix the set at check time (chosen) | The job carries the highest item id the check saw (`DeleteArgs.MaxID`) and removes only items up to it | One integer; the set that was decided is the set that goes; no subject in a job | An item with a lower id that is committed after the check's snapshot (an insert in flight at that moment) is still removed |
+
+**Choice:** (c). The folders go the same way; a folder that still has a child (the late file) stays, with the ancestors above it.
+
+**Rationale:** the grant that applied at the request is the one the caller was told about, and the job is the continuation of that
+request. Item ids come from one sequence, so everything inserted after the check has a higher id. The development agent would
+revisit it if a trash can (R-STOR-022) made the window recoverable, or if the in-flight insert has to be closed too (a snapshot
+horizon stored with the job).
+
+**Applied in the spec:** R-STOR-018 above; [file-transfer.md](../security/file-transfer.md) H-154 is narrowed to the in-flight insert.
+
+### Q-STOR-144 · A deploy locks the whole ancestor chain, and `overwrite` is settled before the commit transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Two defects of the link step of a deploy (R-STOR-005, R-STOR-007, R-STOR-017). It held the parent folder `FOR SHARE` and checked that
+the ancestors are folders, not that they exist, so a delete of the subtree that removes the emptied ancestors while the deploy runs
+could leave a file below folders that are gone. And when a concurrent upload created the path after the checks, the link step decided
+`overwrite` inside the commit transaction, where a decision that waits for the index holds the blob row lock and the item lock.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lock the parent only, as before | | One lock | The grandparents are not protected |
+| (b) Lock every ancestor `FOR SHARE`, deepest first, require all present (chosen) | `LockFoldersShared` after `ensureParents`; a missing one repeats the round | A delete waits for the deploy at every level and finds the child | One statement with as many rows as the path has folders |
+| (c) Lock them top down | | Natural reading order | The delete removes folders deepest first and would meet it in the opposite order: a deadlock |
+| (d) Decide `overwrite` in the transaction | As before | No extra decision | A wait inside the transaction |
+| (e) Settle `overwrite` before the commit (chosen) | `PathsAllowed` for `overwrite` beside the commit-time check, without an audit event; the link step returns `errOverwriteDenied`, and the refusal is then decided and audited outside | No decision inside the transaction | One more evaluation per deploy that did not see the path |
+
+**Choice:** (b) and (e). The `overwrite` evaluation is `PathsAllowed` of the same index family as the commit-time check, not the very
+index `Begin` returned (that call has no non-auditing form); the two evaluations are one request apart.
+
+**Rationale:** the lock order of a delete is the one a deploy must follow; the deterministic test holds the lock of a folder two levels
+above the file and removes the chain under it. The development agent would revisit the index identity when `DecideOn` gets a
+non-auditing form.
+
+**Applied in the spec:** none; R-STOR-017 and R-STOR-007 read unchanged.
+
+### Q-STOR-145 · A repository's `maxUploadSize` is a validated integer and fails closed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`config.storage.maxUploadSize` (R-STOR-004) was read into an `int64` at deploy time, and the document check only required `storage` to
+be an object. `1e9` was accepted and decoded to zero, which is "no limit"; the limit failed open.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Validate at write only | 422 `invalid_value` at `/storage/maxUploadSize` for anything but a non-negative integer literal | The error is where the mistake is made | A stored document that predates the rule still reads as none |
+| (b) Validate at write, refuse at use (chosen) | (a), and a stored value that is not an integer refuses the upload with 500 | No path ends in "unlimited" | An old bad document blocks uploads until corrected |
+
+**Choice:** (b). The literal form is digits only (`1e9`, `1.5`, `-1`, `"10"`, `null` are refused); it must fit an int64.
+
+**Rationale:** a limit someone set and mistyped is not a limit they meant to lift. The development agent would revisit it if the
+management API gains a migration that rewrites such documents.
+
+**Applied in the spec:** R-STOR-004 reads unchanged; the same change makes deleting in a virtual repository `405` in code, as R-STOR-018 already says.
 
 ## What this does not cover
 

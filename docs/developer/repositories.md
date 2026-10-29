@@ -110,7 +110,10 @@ removed in the first transaction. `detach` has nothing to detach until virtual m
 The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `lifecycle`,
 `createdAt`, `updatedAt`, `lastActivityAt` and, on a write, `warnings`. The input drops those members before the strict decode, so a
 body obtained by GET can be sent back (Q-API-34). A body error is `400 invalid_document` with the pointer of the member (Q-REPO-21).
-The ETag of the full view is `"<config_version>"`, of the consumer view `"<config_version>-consumer"`.
+The ETag of the full view is `"<config_version>"`, of the consumer view `"<config_version>-consumer"`. A read of one repository adds the
+activity time while there is one, `"<config_version>.<microseconds>"` (`repositoryETag`), because `lastActivityAt` changes without a new
+version and a strong tag follows the representation; a write answers the plain tag and accepts both (`repositoryPrecondition` strips the
+suffix, `withoutActivity`) (Q-API-156).
 
 ## Formats
 

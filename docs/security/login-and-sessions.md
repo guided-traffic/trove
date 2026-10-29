@@ -99,9 +99,15 @@ whose SHA-256 is the session's (constant-time compare) and an `Origin` equal to 
 
 [breakglass.go](../../internal/auth/oidc/breakglass.go):
 
-- Every attempt reads the `auth_lockout` row; a lock answers 429 even for the right password, a rotation hold 503. Failures are
-  counted in one `INSERT … ON CONFLICT DO UPDATE`, so attempts on several replicas at the same moment are all counted, and a
-  Valkey flush cannot reset the count.
+- Every attempt reads the `auth_lockout` row; a lock answers 429 even for the right password, a rotation hold 503. An attempt is
+  counted in one `INSERT … ON CONFLICT DO UPDATE` **before** its password is verified (`reserveAttempt`), so attempts on several
+  replicas at the same moment are all counted and at most `lockout.threshold` are verified before a lock stands; the next one answers
+  429 unverified. The failure that brings the count to the threshold sets the lock (`LockOnLockoutFailure`, one winner, one event),
+  a success resets the count after the row was read once more, an attempt that was never verified is taken back, and a Valkey flush
+  cannot reset the count (Q-AUTH-171).
+- A session is created under the principal row lock only for an `active` principal (`session.ErrPrincipalNotActive`): a login that
+  waited for a disable creates none, so no session comes back to life when the user is enabled again (Q-AUTH-172,
+  `TestR_AUTH_016_ASessionIsNotCreatedForADisabledUser`).
 - One Argon2id verification per attempt, for unknown usernames too, at least `m=65536,t=3,p=4`, in one of
   `max_concurrent_verifications` slots of the replica; no slot within 1 s gives 503 `server_busy`.
 - A changed password file opens the rotation hold in the same transaction that ends every break-glass session; only after that

@@ -119,8 +119,18 @@ func validateSections(v *validation, info FormatInfo, d *Document) {
 		var probe map[string]json.RawMessage
 		if len(trimmed) == 0 || trimmed[0] != '{' || json.Unmarshal(trimmed, &probe) != nil {
 			v.add("/storage", codeInvalidValue, "must be a JSON object")
+		} else if raw, ok := probe["maxUploadSize"]; ok && !validByteLimit(raw) {
+			v.add("/storage/maxUploadSize", codeInvalidValue, "must be a non-negative integer number of bytes")
 		}
 	}
+}
+
+// validByteLimit reports whether a JSON value is a non-negative integer that
+// fits an int64, written without fraction or exponent: the form the upload
+// admission decodes (R-STOR-004). Anything else would decode to "no limit" there.
+func validByteLimit(raw json.RawMessage) bool {
+	_, err := strconv.ParseUint(string(bytes.TrimSpace(raw)), 10, 63)
+	return err == nil
 }
 
 func validateLocal(v *validation, info FormatInfo, d *Document, na func(pointer, why string)) {

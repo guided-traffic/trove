@@ -79,15 +79,22 @@ leading slash; the stored media type is the request's `Content-Type` parsed with
 2. The repository must be a local one (else 405), not disabled (404), and its patterns must admit the path (403 `not_admitted`, for
    every caller).
 3. `Ingest` spools the body (declared length, `storage.upload.max_size` and `config.storage.maxUploadSize`, the digests of
-   `Repr-Digest`: 400 for a length mismatch, 409 for a digest mismatch, nothing stored).
+   `Repr-Digest`: 400 for a length mismatch, 409 for a digest mismatch, nothing stored). The repository's own limit is validated
+   as a non-negative integer when the configuration is written (`validByteLimit`, 422 at `/storage/maxUploadSize`); a stored value
+   that is none (`maxUpload` returns an error) refuses the upload with 500 instead of reading as "no limit" (Q-STOR-145).
 4. The commit-time re-check of R-AUTHZ-015: the write is decided again now that the body has arrived, `deploy` with `overwrite` for an
    existing item with other bytes, `deploy` alone otherwise, **before** the object is written and before the commit transaction opens
-   (a stale index makes a decision wait). That decision is the one `RecordAllowed` records. A folder at the path, or a file at an
+   (a stale index makes a decision wait). That decision is the one `RecordAllowed` records. Whether `overwrite` is held is settled
+   there too (`mayOverwrite`, `PathsAllowed`, no audit event), for the case that a concurrent upload creates the path before the link
+   step: the link step then replaces content or returns `errOverwriteDenied`, and no decision is asked inside the transaction
+   (Q-STOR-144). A folder at the path, or a file at an
    ancestor, is 409 `path_conflict`. `If-None-Match: *` makes the deploy create-only (412).
 5. `BeginCommit` tells the server that the request is committing (R-ARCH-024 step 5), then `Commit` runs the protocol of
    [blob-store.md](blob-store.md). Its link function, in the transaction that holds the blob row's `FOR SHARE` lock:
    - inserts the missing ancestor folders (`ON CONFLICT DO NOTHING`) and refuses a file among them;
-   - holds the parent folder `FOR SHARE` until the commit, so the removal of an empty implicit folder waits for it;
+   - holds every ancestor folder `FOR SHARE` until the commit, deepest first (`lockAncestors`, the order in which a delete takes its
+     exclusive locks), and requires all of them present, else the round repeats and `ensureParents` creates them again; so neither the
+     removal of an empty implicit folder nor a folder delete can take an ancestor from under the new file (Q-STOR-144);
    - locks the item row `FOR UPDATE` (two uploads to one path serialise here, the second is an overwrite), or inserts it; an insert
      that loses the race against another upload repeats the step (at most 5 rounds);
    - writes `artifact.deployed` and, through `RecordAllowed`, the audit row of the allowed write, in the same transaction.
@@ -125,7 +132,9 @@ transaction, decides `delete` for every item with `PathsAllowed` (403 and nothin
 the path the caller sent), deletes the files by id, writes one `artifact.deleted` per file, removes the folders deepest first
 (each only if it is empty then) and the empty implicit folders above. A larger subtree is checked in full at the request and
 removed by the job `items-delete` in batches of `storage.delete.batch_size` (files first, then the folders), answered `202` with
-the job. Items are deleted for good: the trash can is P1 (Q-STOR-19).
+the job. The job carries the highest item id the check saw (`DeleteArgs.MaxID`) and removes only items up to it, so a file that is
+deployed into the subtree afterwards stays (Q-STOR-143). A virtual repository holds no items: a delete there is `405`, as a deploy
+is. Items are deleted for good: the trash can is P1 (Q-STOR-19).
 
 ## Listings and statistics
 
@@ -165,5 +174,5 @@ Valkey is not part of it: nothing in the transfer needs it.
 
 ## Decisions
 
-[Q-STOR-17 to Q-STOR-21](../spec/storage.md#decisions), [Q-ARCH-40 to Q-ARCH-43](../spec/architecture.md#decisions),
+[Q-STOR-17 to Q-STOR-21, Q-STOR-143 to Q-STOR-145](../spec/storage.md#decisions), [Q-ARCH-40 to Q-ARCH-43](../spec/architecture.md#decisions),
 [Q-GENERIC-6](../spec/formats/generic.md#decisions), [Q-API-32 to Q-API-34](../spec/api-and-ui.md#decisions).

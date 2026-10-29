@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -242,11 +243,41 @@ func repositoryPrecondition(p Precondition) repository.Precondition {
 	if p.Any {
 		return repository.MatchAny()
 	}
-	rev, _ := p.Revision("")
+	rev, _ := withoutActivity(p).Revision("")
 	if rev < 1 {
 		return repository.MatchVersion(math.MaxInt64)
 	}
 	return repository.MatchVersion(rev)
+}
+
+// repositoryETag is the tag of a read of one repository. The representation
+// carries lastActivityAt, which changes without a new revision, and a strong
+// validator must change with every observable change of the representation
+// (RFC 9110 section 8.8.1): the tag is the revision, then the activity time as
+// ".<microseconds>" when there is one. A write answers the plain revision tag,
+// and a write accepts both forms; the suffix is not part of the concurrency
+// check, because a download is no conflict with an edit (R-API-012).
+func repositoryETag(st repository.Stored, view string) string {
+	tag := ETag(st.Repository.Version, view)
+	if t := st.Repository.LastActivityAt; !t.IsZero() {
+		tag = tag[:len(tag)-1] + "." + strconv.FormatInt(t.UnixMicro(), 10) + `"`
+	}
+	return tag
+}
+
+// withoutActivity removes the activity suffix of repositoryETag from an If-Match
+// tag, so that the tag of a read is the revision of the write.
+func withoutActivity(p Precondition) Precondition {
+	if !p.Present || p.Any {
+		return p
+	}
+	inner := p.Tag[1 : len(p.Tag)-1]
+	if i := strings.LastIndexByte(inner, '.'); i > 0 {
+		if _, err := strconv.ParseInt(inner[i+1:], 10, 64); err == nil {
+			p.Tag = `"` + inner[:i] + `"`
+		}
+	}
+	return p
 }
 
 func repositoryURL(r *http.Request, key string) string {
@@ -582,11 +613,11 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 	if !cfg {
 		view = consumerView
 	}
-	tag := ETag(st.Repository.Version, view)
+	tag := repositoryETag(st, view)
 	if NotModified(w, r, tag) {
 		return
 	}
-	SetETag(w, st.Repository.Version, view)
+	w.Header().Set("ETag", tag)
 	if !cfg {
 		writeJSON(w, r, http.StatusOK, consumerRep(httpserver.InfoFrom(ctx).BaseURL, st))
 		return

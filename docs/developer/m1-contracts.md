@@ -170,9 +170,9 @@ then at step 8 the repository snapshot, the session store (`wireSessions`), the 
 authenticator (`wireIdentity`, which takes the session store as its `session.Validator` and `auth.break_glass.username`
 from the configuration), the OIDC and break-glass login (`wireLogin`, which calls the provisioner and takes the limiter
 `auth.flow_starts`), the grant index (authz needs the repository snapshot and the principal store), the files and endpoint components, and
-last the API limiter. Fields are set once before the client listener starts. `app.authenticate` and `app.access`
-fall back to the M0 stand-ins while `a.m1.authenticator` or `a.m1.authorizer` is nil; the area that wires the
-component deletes the stand-in it replaced. `audit.Freeze()` runs in `freezeRegistries`.
+last the API limiter. Fields are set once before the client listener starts. `app.authenticate` answers 503
+`unavailable` (Retry-After 1 s) while `a.m1.authenticator` is nil, and the API access check grants nobody any permission while
+`a.m1.authorizer` is nil; no M0 stand-in remains. `audit.Freeze()` runs in `freezeRegistries`.
 
 ## Error codes
 

@@ -590,9 +590,10 @@ SELECT id, path, kind, blob_sha256, size
  WHERE repo_id = $1::bigint AND trashed_at IS NULL
    AND (path = $2::text OR (path >= $3::text AND ($4::text = '' OR path < $4::text)))
    AND path > $5::text
-   AND (NOT $6::bool OR kind = 'file')
+   AND ($6::bigint = 0 OR id <= $6::bigint)
+   AND (NOT $7::bool OR kind = 'file')
  ORDER BY path
- LIMIT $7::int
+ LIMIT $8::int
 `
 
 type ListSubtreeBatchParams struct {
@@ -601,6 +602,7 @@ type ListSubtreeBatchParams struct {
 	Lo        string
 	Hi        string
 	After     string
+	MaxID     int64
 	FilesOnly bool
 	RowLimit  int32
 }
@@ -614,7 +616,8 @@ type ListSubtreeBatchRow struct {
 }
 
 // A keyset batch of the subtree in path order, files and folders. The delete
-// checks every item of it before anything is removed.
+// checks every item of it before anything is removed. max_id bounds the batch to
+// the items that existed when the delete was authorized (0: no bound).
 func (q *Queries) ListSubtreeBatch(ctx context.Context, arg ListSubtreeBatchParams) ([]ListSubtreeBatchRow, error) {
 	rows, err := q.db.Query(ctx, listSubtreeBatch,
 		arg.RepoID,
@@ -622,6 +625,7 @@ func (q *Queries) ListSubtreeBatch(ctx context.Context, arg ListSubtreeBatchPara
 		arg.Lo,
 		arg.Hi,
 		arg.After,
+		arg.MaxID,
 		arg.FilesOnly,
 		arg.RowLimit,
 	)
@@ -714,6 +718,48 @@ func (q *Queries) LockFolderShared(ctx context.Context, arg LockFolderSharedPara
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockFoldersShared = `-- name: LockFoldersShared :many
+SELECT id, path
+  FROM items
+ WHERE repo_id = $1::bigint AND path = ANY($2::text[]) AND kind = 'folder' AND trashed_at IS NULL
+ ORDER BY path DESC
+   FOR SHARE
+`
+
+type LockFoldersSharedParams struct {
+	RepoID int64
+	Paths  []string
+}
+
+type LockFoldersSharedRow struct {
+	ID   int64
+	Path string
+}
+
+// The whole ancestor chain of a deploy, FOR SHARE, deepest first: the order in
+// which the removal of folders takes its exclusive locks (bottom up), so the two
+// cannot wait for each other in a circle. The caller compares the count with the
+// chain: a folder that a concurrent delete removed is missing from the result.
+func (q *Queries) LockFoldersShared(ctx context.Context, arg LockFoldersSharedParams) ([]LockFoldersSharedRow, error) {
+	rows, err := q.db.Query(ctx, lockFoldersShared, arg.RepoID, arg.Paths)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockFoldersSharedRow{}
+	for rows.Next() {
+		var i LockFoldersSharedRow
+		if err := rows.Scan(&i.ID, &i.Path); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

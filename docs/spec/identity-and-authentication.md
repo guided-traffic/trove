@@ -1252,7 +1252,9 @@ Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADM
 - Users have no password; only the break-glass account has one, and it lives outside the
   database.
 - Status is `active` or `disabled`. The break-glass lockout of R-AUTH-038 appears separately as
-  `lockedUntil`.
+  `lockedUntil`. A session is created only for an active principal, checked under the principal row
+  lock: a login that waited for a disable creates none, so no session is valid again on the
+  re-enable (Q-AUTH-172).
 - `isAdmin` and `adminVia` are read-only. They are derived from the role bindings of
   [authorization.md](authorization.md).
 - Users are addressed by username in paths. The record also returns the stable `id`.
@@ -2909,8 +2911,12 @@ fresh threshold (INV-3, R-ARCH-034):
 
 - `lockout.threshold` failures within `lockout.window` lock the account until
   `now + lockout.duration`;
-- each failure is counted with one `INSERT … ON CONFLICT (account_key) DO UPDATE` statement, so
-  failures arriving on several replicas at the same moment are all counted;
+- each attempt is counted before its password is verified, with one
+  `INSERT … ON CONFLICT (account_key) DO UPDATE` statement, so attempts arriving on several replicas
+  at the same moment are all counted and no more than `lockout.threshold` of them are verified
+  before the failure that locks has committed; the attempt beyond that answers 429 unverified. A
+  verified failure that brings the count to the threshold locks the account; a success resets the
+  count; an attempt that was never verified (no slot, cancelled) is taken back (Q-AUTH-171);
 - every attempt reads the row, and no replica caches it, so a lock or an unlock is in force on
   every replica at once;
 - during the lock, the local login answers 429 with `Retry-After`, even for the correct
@@ -4683,6 +4689,47 @@ stays fillable by many distinct networks; that residual is H-211 in
 The development agent would revisit (c) if the cap is filled in practice.
 
 **Applied in the spec:** R-AUTH-038 (the bucket of `auth.flow_starts`, the endpoint list).
+
+### Q-AUTH-171 · A break-glass attempt is counted before it is verified
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The lockout read the row, verified the password and counted a failure afterwards. Attempts that ran at the same time, on one replica
+or on several, were all verified before the failure that locks had committed, so a burst larger than `lockout.threshold` was
+verified in full, and a correct guess in it logged in although the account was locked a moment later.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lock the lockout row in the session-creating transaction | Refuse if locked | One check at the end | The burst is still verified in full; only the last step is guarded |
+| (b) Count every attempt before it is verified, as a failure | The count rises first, a success lowers it | The simplest | The fifth attempt with the right password after four failures would lock the account |
+| (c) Reserve the attempt, then settle it (chosen) | `ReserveLockoutAttempt` counts it atomically; attempts beyond the threshold are refused unverified; a verified failure at the threshold locks (`LockOnLockoutFailure`, one winner and one event); a success resets; an unverified attempt is released; the lock is read again after a successful verification | At most `threshold` verifications between two resets, on any number of replicas; the right password on the fifth attempt still logs in | The attempts that were refused while the admitted ones were in flight answer 429 although no lock is set yet, and count until the window passes or a success resets them |
+
+**Choice:** (c). The 429 for a refused attempt carries `Retry-After: 1`; the lock itself keeps its duration.
+
+**Rationale:** the lockout guards the one password in the system, and the guarantee it gives is the number of guesses, not the number
+of locks. The development agent would revisit the `Retry-After` of an attempt refused in flight if operators see it in practice.
+
+**Applied in the spec:** R-AUTH-038, the break-glass lockout paragraph.
+
+### Q-AUTH-172 · A session is created only for an active principal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`Create` locked the principal row to serialise logins and the session limit, but did not look at the status it locked. A disable
+ends the sessions it knows about and holds the row until it commits; a login that waited for that lock then wrote a session for
+a disabled user, and the session became valid when the user was enabled again.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Check the status before the lock | In the login | No change to the lock | The disable can commit between the check and the lock |
+| (b) Return the status with the lock and refuse (chosen) | `LockPrincipal` returns `status`; anything but `active` is `session.ErrPrincipalNotActive` | Decided under the lock that the disable also takes | None |
+
+**Choice:** (b). The OIDC login maps it to the reason `user_disabled`; the break-glass login answers `403 local_login_disabled`.
+
+**Rationale:** the status and the sessions of a principal change under one lock, so the check belongs under it. The development agent
+sees nothing to revisit here.
+
+**Applied in the spec:** R-AUTH-016, the user record.
 
 ## What this does not cover
 

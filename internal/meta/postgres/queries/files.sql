@@ -53,6 +53,17 @@ SELECT id
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(path)::text AND kind = 'folder' AND trashed_at IS NULL
    FOR SHARE;
 
+-- name: LockFoldersShared :many
+-- The whole ancestor chain of a deploy, FOR SHARE, deepest first: the order in
+-- which the removal of folders takes its exclusive locks (bottom up), so the two
+-- cannot wait for each other in a circle. The caller compares the count with the
+-- chain: a folder that a concurrent delete removed is missing from the result.
+SELECT id, path
+  FROM items
+ WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = ANY(sqlc.arg(paths)::text[]) AND kind = 'folder' AND trashed_at IS NULL
+ ORDER BY path DESC
+   FOR SHARE;
+
 -- name: InsertFileItem :many
 -- A concurrent upload to the same path wins the unique index; no row comes back
 -- and the caller locks the winner and treats its own upload as an overwrite.
@@ -102,12 +113,14 @@ SELECT count(*)::bigint
 
 -- name: ListSubtreeBatch :many
 -- A keyset batch of the subtree in path order, files and folders. The delete
--- checks every item of it before anything is removed.
+-- checks every item of it before anything is removed. max_id bounds the batch to
+-- the items that existed when the delete was authorized (0: no bound).
 SELECT id, path, kind, blob_sha256, size
   FROM items
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND trashed_at IS NULL
    AND (path = sqlc.arg(path)::text OR (path >= sqlc.arg(lo)::text AND (sqlc.arg(hi)::text = '' OR path < sqlc.arg(hi)::text)))
    AND path > sqlc.arg(after)::text
+   AND (sqlc.arg(max_id)::bigint = 0 OR id <= sqlc.arg(max_id)::bigint)
    AND (NOT sqlc.arg(files_only)::bool OR kind = 'file')
  ORDER BY path
  LIMIT sqlc.arg(row_limit)::int;

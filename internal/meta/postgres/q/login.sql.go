@@ -700,10 +700,56 @@ func (q *Queries) LiveSessionsOfPrincipal(ctx context.Context, principalID strin
 	return items, nil
 }
 
+const lockOnLockoutFailure = `-- name: LockOnLockoutFailure :many
+UPDATE auth_lockout l SET locked_until = now() + make_interval(secs => $1::float8)
+ WHERE l.account_key = $2::text AND l.failures >= $3::int
+   AND (l.locked_until IS NULL OR l.locked_until <= now())
+RETURNING l.failures, l.locked_until
+`
+
+type LockOnLockoutFailureParams struct {
+	DurationS  float64
+	AccountKey string
+	Threshold  int32
+}
+
+type LockOnLockoutFailureRow struct {
+	Failures    int32
+	LockedUntil pgtype.Timestamptz
+}
+
+// A verified failure: the attempt that brings the count to the threshold locks the
+// account. Concurrent failures serialize on the row, so exactly one of them gets a
+// row back (locked_now) and writes the event.
+func (q *Queries) LockOnLockoutFailure(ctx context.Context, arg LockOnLockoutFailureParams) ([]LockOnLockoutFailureRow, error) {
+	rows, err := q.db.Query(ctx, lockOnLockoutFailure, arg.DurationS, arg.AccountKey, arg.Threshold)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockOnLockoutFailureRow{}
+	for rows.Next() {
+		var i LockOnLockoutFailureRow
+		if err := rows.Scan(&i.Failures, &i.LockedUntil); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockPrincipal = `-- name: LockPrincipal :many
 
-SELECT id::text AS id FROM principal WHERE id = $1::text::uuid FOR UPDATE
+SELECT id::text AS id, status FROM principal WHERE id = $1::text::uuid FOR UPDATE
 `
+
+type LockPrincipalRow struct {
+	ID     string
+	Status string
+}
 
 // Queries of the login area (WP1.1): UI sessions (R-AUTH-010 to R-AUTH-013),
 // browser login flows (R-AUTH-005, R-AUTH-006), the break-glass account and its
@@ -717,20 +763,23 @@ SELECT id::text AS id FROM principal WHERE id = $1::text::uuid FOR UPDATE
 // are ever compared. Statements that return at most one row are :many, so the
 // caller never meets the driver's no-rows error.
 // The principal row lock of R-AUTH-006 step 10 and R-AUTH-010: logins of one
-// user and the session limit run one after the other on every replica.
-func (q *Queries) LockPrincipal(ctx context.Context, id string) ([]string, error) {
+// user and the session limit run one after the other on every replica. The status
+// comes back with the lock: a disable that committed while the caller waited has
+// ended the sessions it knew, and a session created after it would become valid
+// again on the re-enable.
+func (q *Queries) LockPrincipal(ctx context.Context, id string) ([]LockPrincipalRow, error) {
 	rows, err := q.db.Query(ctx, lockPrincipal, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []LockPrincipalRow{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i LockPrincipalRow
+		if err := rows.Scan(&i.ID, &i.Status); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -805,65 +854,16 @@ func (q *Queries) PrincipalKindByName(ctx context.Context, name string) ([]Princ
 	return items, nil
 }
 
-const recordLockoutFailure = `-- name: RecordLockoutFailure :many
-INSERT INTO auth_lockout AS l (account_key, failures, window_started_at, locked_until)
-VALUES ($1::text, 1, now(),
-        CASE WHEN 1 >= $2::int THEN now() + make_interval(secs => $3::float8) END)
-ON CONFLICT (account_key) DO UPDATE SET
-    failures = CASE WHEN l.window_started_at <= now() - make_interval(secs => $4::float8)
-                          OR l.locked_until <= now() THEN 1 ELSE l.failures + 1 END,
-    window_started_at = CASE WHEN l.window_started_at <= now() - make_interval(secs => $4::float8)
-                                   OR l.locked_until <= now() THEN now() ELSE l.window_started_at END,
-    locked_until = CASE
-        WHEN l.locked_until > now() THEN l.locked_until
-        WHEN (CASE WHEN l.window_started_at <= now() - make_interval(secs => $4::float8)
-                         OR l.locked_until <= now() THEN 1 ELSE l.failures + 1 END) >= $2::int
-             THEN now() + make_interval(secs => $3::float8)
-        WHEN l.locked_until <= now() THEN NULL
-        ELSE l.locked_until END
-RETURNING failures, (locked_until IS NOT NULL AND locked_until = now() + make_interval(secs => $3::float8))::bool AS locked_now,
-          locked_until
+const releaseLockoutAttempt = `-- name: ReleaseLockoutAttempt :exec
+UPDATE auth_lockout SET failures = greatest(failures - 1, 0)
+ WHERE account_key = $1::text AND (locked_until IS NULL OR locked_until <= now())
 `
 
-type RecordLockoutFailureParams struct {
-	AccountKey string
-	Threshold  int32
-	DurationS  float64
-	WindowS    float64
-}
-
-type RecordLockoutFailureRow struct {
-	Failures    int32
-	LockedNow   bool
-	LockedUntil pgtype.Timestamptz
-}
-
-// One failure, counted atomically on any replica (R-AUTH-038). A window that has
-// passed, or a lock that has expired, starts the count again. locked_now is true
-// for exactly the failure that locked the account.
-func (q *Queries) RecordLockoutFailure(ctx context.Context, arg RecordLockoutFailureParams) ([]RecordLockoutFailureRow, error) {
-	rows, err := q.db.Query(ctx, recordLockoutFailure,
-		arg.AccountKey,
-		arg.Threshold,
-		arg.DurationS,
-		arg.WindowS,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RecordLockoutFailureRow{}
-	for rows.Next() {
-		var i RecordLockoutFailureRow
-		if err := rows.Scan(&i.Failures, &i.LockedNow, &i.LockedUntil); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+// Takes back a reserved attempt that was never verified (no verification slot,
+// a cancelled request).
+func (q *Queries) ReleaseLockoutAttempt(ctx context.Context, accountKey string) error {
+	_, err := q.db.Exec(ctx, releaseLockoutAttempt, accountKey)
+	return err
 }
 
 const renameBreakGlassUser = `-- name: RenameBreakGlassUser :execrows
@@ -881,6 +881,56 @@ func (q *Queries) RenameBreakGlassUser(ctx context.Context, arg RenameBreakGlass
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const reserveLockoutAttempt = `-- name: ReserveLockoutAttempt :many
+INSERT INTO auth_lockout AS l (account_key, failures, window_started_at)
+VALUES ($1::text, 1, now())
+ON CONFLICT (account_key) DO UPDATE SET
+    failures = CASE WHEN l.locked_until > now() THEN l.failures
+                    WHEN l.window_started_at <= now() - make_interval(secs => $2::float8)
+                          OR l.locked_until <= now() THEN 1 ELSE l.failures + 1 END,
+    window_started_at = CASE WHEN l.locked_until > now() THEN l.window_started_at
+                             WHEN l.window_started_at <= now() - make_interval(secs => $2::float8)
+                                   OR l.locked_until <= now() THEN now() ELSE l.window_started_at END,
+    locked_until = CASE WHEN l.locked_until <= now() THEN NULL ELSE l.locked_until END
+RETURNING failures, (locked_until IS NOT NULL AND locked_until > now())::bool AS locked
+`
+
+type ReserveLockoutAttemptParams struct {
+	AccountKey string
+	WindowS    float64
+}
+
+type ReserveLockoutAttemptRow struct {
+	Failures int32
+	Locked   bool
+}
+
+// One attempt, counted atomically on any replica before its password is verified
+// (R-AUTH-038): attempts that run in parallel are counted before any of them is
+// verified, so no more than the threshold are ever verified before a lock can
+// stand. A window that has passed, or a lock that has expired, starts the count
+// again; an attempt during a lock is not counted. The caller admits the attempt
+// while failures <= threshold.
+func (q *Queries) ReserveLockoutAttempt(ctx context.Context, arg ReserveLockoutAttemptParams) ([]ReserveLockoutAttemptRow, error) {
+	rows, err := q.db.Query(ctx, reserveLockoutAttempt, arg.AccountKey, arg.WindowS)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReserveLockoutAttemptRow{}
+	for rows.Next() {
+		var i ReserveLockoutAttemptRow
+		if err := rows.Scan(&i.Failures, &i.Locked); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const resetLockoutFailures = `-- name: ResetLockoutFailures :exec

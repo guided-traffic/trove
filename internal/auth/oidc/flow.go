@@ -200,6 +200,9 @@ func (s *Service) callback(r *http.Request, p *Provider) (completed, *loginError
 	}
 	created, err := s.o.Sessions.Create(ctx, n)
 	if err != nil {
+		if reason, ok := refusalReason(err); ok {
+			return done, fail(reason, err)
+		}
 		return done, systemFailure(err)
 	}
 	done.created = created
@@ -216,7 +219,7 @@ func refusalReason(err error) (string, bool) {
 		return ReasonUsernameTaken, true
 	case errors.Is(err, principal.ErrNotProvisioned):
 		return ReasonNotProvisioned, true
-	case errors.Is(err, principal.ErrUserDisabled):
+	case errors.Is(err, principal.ErrUserDisabled), errors.Is(err, session.ErrPrincipalNotActive):
 		return ReasonUserDisabled, true
 	case errors.Is(err, principal.ErrUsernameInvalid):
 		return ReasonUsernameInvalid, true

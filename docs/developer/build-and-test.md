@@ -138,7 +138,7 @@ the stack, because Sentinel rewrote the configuration of the data nodes.
 | PgBouncer | `trove-it-pgbouncer` | `127.0.0.1:16432` | `pool_mode = transaction`, a catch-all database entry, `max_prepared_statements = 100`; the admin console is the database `pgbouncer`; TLS in (`require`) and out (`verify-full`) |
 | Valkey primary, replica | `trove-it-valkey-primary`, `trove-it-valkey-replica` | `127.0.0.1:16379`, `:16380` | `port 0`, `tls-port`, `tls-replication yes`, ACL file with the users below |
 | Sentinels | `trove-it-valkey-sentinel-{1,2,3}` | `127.0.0.1:26381` to `:26383` | TLS only, password-protected, monitor name `trove`, quorum 2, `down-after-milliseconds 3000` |
-| SeaweedFS (S3 gateway) | `trove-it-seaweedfs` | `https://127.0.0.1:18333` | HTTPS only, path-style, static credentials; buckets `trove-blobs` (versioning on) and `trove-backups` |
+| SeaweedFS (S3 gateway) | `trove-it-seaweedfs` | `https://127.0.0.1:18333` | HTTPS only, path-style, static credentials; buckets `trove-blobs` (versioning on) and `trove-backups`; `-volume.max=100` (a bucket is a collection that grows several volumes, so a low count runs out after a few runs of the 500 MiB upload test), set in `compose.yaml` only: `make integration-up` is the one way the stack starts, locally and in CI. |
 
 **How a client on the host follows a failover.** The five Valkey processes run in separate containers
 that share one network namespace (the container `trove-it-net`), and every port is published on the host

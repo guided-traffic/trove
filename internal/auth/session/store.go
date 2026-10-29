@@ -277,6 +277,15 @@ type flight struct {
 // bound ago, or starts one. The query then started after every change older
 // than the bound, so sharing keeps the bound; its result is never cached.
 func (s *Store) shared(ctx context.Context, key string) (*entry, error) {
+	return s.sharedFill(ctx, key, s.fill)
+}
+
+// flightFillTimeout bounds the query of a shared lookup. It runs without the
+// cancellation of the request that started it, because the requests that joined
+// it must not fail with that request's cancellation.
+const flightFillTimeout = 10 * time.Second
+
+func (s *Store) sharedFill(ctx context.Context, key string, fill func(context.Context, string) (*entry, error)) (*entry, error) {
 	s.fmu.Lock()
 	if f, ok := s.flights[key]; ok && time.Since(f.started) < s.o.RevocationBound {
 		s.fmu.Unlock()
@@ -294,7 +303,9 @@ func (s *Store) shared(ctx context.Context, key string) (*entry, error) {
 	s.flights[key] = f
 	s.fmu.Unlock()
 
-	f.e, f.err = s.fill(ctx, key)
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightFillTimeout)
+	f.e, f.err = fill(fctx, key)
+	cancel()
 	close(f.done)
 	s.fmu.Lock()
 	if s.flights[key] == f {
@@ -452,6 +463,12 @@ func (s *Store) Create(ctx context.Context, n NewSession) (Created, error) {
 		}
 		if len(locked) == 0 {
 			return fmt.Errorf("session: principal %s does not exist", n.PrincipalID)
+		}
+		// Checked under the lock: a disable that ran meanwhile has ended the
+		// sessions it saw, and one written now would be valid again on the
+		// re-enable (R-AUTH-016).
+		if locked[0].Status != "active" {
+			return ErrPrincipalNotActive
 		}
 		var ended []endedSession
 		// The session a re-authentication replaces is usually the presented

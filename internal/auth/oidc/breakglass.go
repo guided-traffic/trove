@@ -326,8 +326,15 @@ func (b *BreakGlass) login(w http.ResponseWriter, r *http.Request, req loginRequ
 	if pw == nil {
 		return errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
 	}
+	// The attempt is counted before it is verified, so attempts in parallel (on
+	// this replica or on others) cannot all be verified before the failure that
+	// locks the account has committed (R-AUTH-038).
+	if err := b.reserveAttempt(ctx); err != nil {
+		return err
+	}
 	ok, err := b.verify(ctx, pw, req)
 	if err != nil {
+		b.releaseAttempt(ctx)
 		return err
 	}
 	if !ok {
@@ -339,6 +346,11 @@ func (b *BreakGlass) login(w http.ResponseWriter, r *http.Request, req loginRequ
 		b.s.m.Attempt("breakglass", "failure", "invalid_credentials")
 		return errs.E(errs.Unauthenticated, errs.CodeInvalidCredentials, "The username or the password is wrong.")
 	}
+	// A failure that locked the account while this password was verified wins: the
+	// right guess does not log in through a lock that has been committed.
+	if err := b.checkLockout(ctx); err != nil {
+		return err
+	}
 	if err := b.s.o.DB.Read(ctx, func(db q.DBTX) error { return q.New(db).ResetLockoutFailures(ctx, LockoutKey) }); err != nil {
 		return postgres.Unavailable(err)
 	}
@@ -346,6 +358,9 @@ func (b *BreakGlass) login(w http.ResponseWriter, r *http.Request, req loginRequ
 		PrincipalID: b.userID, BreakGlass: true, ClientAddr: b.s.clientAddr(r), UserAgent: r.UserAgent(),
 		ReplaceCookie: session.CookieValue(r, session.CookieSession),
 	})
+	if errors.Is(err, session.ErrPrincipalNotActive) {
+		return errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
+	}
 	if err != nil {
 		return postgres.Unavailable(err)
 	}
@@ -410,9 +425,44 @@ func (b *BreakGlass) verify(ctx context.Context, pw *password, req loginRequest)
 	return passOK && nameOK, nil
 }
 
-// recordFailure counts one failure in one statement on any replica and, when
-// it locks the account, writes auth.breakglass.locked in the same transaction
-// (R-AUTH-038).
+// reserveAttempt counts one attempt in one statement on any replica. Only as many
+// attempts as the lockout threshold are admitted to the verification between
+// two resets: the next one answers 429 although the lock is not yet written,
+// because the attempts in flight decide whether it is (R-AUTH-038).
+func (b *BreakGlass) reserveAttempt(ctx context.Context) error {
+	l := b.cfg.Lockout
+	var rows []q.ReserveLockoutAttemptRow
+	err := b.s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			return errors.New("break-glass: the transaction does not come from the PostgreSQL store")
+		}
+		var err error
+		rows, err = q.New(ptx).ReserveLockoutAttempt(ctx, q.ReserveLockoutAttemptParams{AccountKey: LockoutKey, WindowS: l.Window.Seconds()})
+		return err
+	})
+	if err != nil {
+		return postgres.Unavailable(err)
+	}
+	if len(rows) == 1 && (rows[0].Locked || int(rows[0].Failures) > l.Threshold) {
+		b.s.m.RateLimited("break_glass_lockout")
+		return errs.E(errs.RateLimited, errs.CodeBreakGlassLocked, "The break-glass account is locked after too many failed logins.",
+			errs.WithRetryAfter(time.Second))
+	}
+	return nil
+}
+
+// releaseAttempt takes back an attempt that was never verified. It runs on a
+// context of its own: the request may be the reason the verification did not run.
+func (b *BreakGlass) releaseAttempt(ctx context.Context) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_ = b.s.o.DB.Read(rctx, func(db q.DBTX) error { return q.New(db).ReleaseLockoutAttempt(rctx, LockoutKey) })
+}
+
+// recordFailure locks the account when the failed attempt brought the count to the
+// threshold and, when it does, writes auth.breakglass.locked in the same
+// transaction (R-AUTH-038). The count itself was taken by reserveAttempt.
 func (b *BreakGlass) recordFailure(ctx context.Context, r *http.Request) error {
 	l := b.cfg.Lockout
 	err := b.s.o.DB.InTx(ctx, func(tx meta.Tx) error {
@@ -420,10 +470,10 @@ func (b *BreakGlass) recordFailure(ctx context.Context, r *http.Request) error {
 		if !ok {
 			return errors.New("break-glass: the transaction does not come from the PostgreSQL store")
 		}
-		rows, err := q.New(ptx).RecordLockoutFailure(ctx, q.RecordLockoutFailureParams{
-			AccountKey: LockoutKey, Threshold: int32(l.Threshold), WindowS: l.Window.Seconds(), DurationS: l.Duration.Seconds(), //nolint:gosec // validated range
+		rows, err := q.New(ptx).LockOnLockoutFailure(ctx, q.LockOnLockoutFailureParams{
+			AccountKey: LockoutKey, Threshold: int32(l.Threshold), DurationS: l.Duration.Seconds(), //nolint:gosec // validated range
 		})
-		if err != nil || len(rows) == 0 || !rows[0].LockedNow {
+		if err != nil || len(rows) == 0 {
 			return err
 		}
 		details, _ := json.Marshal(map[string]any{"severity": "high", "failures": rows[0].Failures, "locked_until": rows[0].LockedUntil.Time.UTC().Format(time.RFC3339)})

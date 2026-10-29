@@ -91,14 +91,17 @@ still arriving leaves nothing behind (the spool file is removed); one whose body
 
 ## What this does not cover
 
-### H-154 · An item that appears below a folder while its deletion job runs is removed without a check
+### H-154 · An insert that was in flight when the delete was checked is removed without a decision
 
-Component: the job `items-delete` (R-STOR-018). Subject: `delete` on a subtree larger than `storage.delete.max_sync_items`. Live with
-milestone M1. The request decides `delete` for every item of the subtree and then enqueues the job, which lists and removes what it finds;
-it does not decide again, because a job has no caller. A file that a holder of `deploy` adds below the folder between the check and the
-batch that reaches it is removed although the caller of the delete had no `delete` grant on it. A subtree up to the synchronous limit is
-checked and removed in one transaction and has no such window. What makes it real: a folder with more than `max_sync_items` entries that
-another principal may still write into while it is deleted. The trash can (R-STOR-022, P1) makes it recoverable.
+Component: the job `items-delete` (R-STOR-018, Q-STOR-143). Subject: `delete` on a subtree larger than `storage.delete.max_sync_items`.
+Live with milestone M1, narrowed from "any item added during the job". The request decides `delete` for every item of the subtree and
+enqueues the job with the highest item id it saw; the job removes only items up to that id, so a file that a holder of `deploy` adds
+afterwards stays, and so do the folders above it. What stays open: an item whose id lies below that maximum and whose transaction
+commits after the check read the subtree (an insert in flight at that instant) is removed although the caller of the delete had no
+`delete` grant on it. A subtree up to the synchronous limit is checked and removed in one transaction and has no such window. What
+makes it real: a deploy into the folder that commits within the few milliseconds between the check's read and the enqueue. The job
+does not decide again, so a grant removed after the request does not stop it either. The trash can (R-STOR-022, P1) makes it
+recoverable.
 
 ### H-155 · The first request for an unknown repository key costs a query that a known key does not
 
@@ -108,7 +111,8 @@ lifetime (`cache.unknown_repo_keys`, 60 s) and then answered from the negative c
 measures the first answer for a fresh key can tell a key that exists but is hidden from it (a lookup that finds the row and polls the
 change log) from a key that does not exist (a lookup that finds nothing) only for that first request, and only by the extra poll. What
 makes it real: probing for the names of private repositories with timing measurements against a replica that has not seen them.
-The answer bytes are the same (R-AUTHZ-016); the time is not.
+The answer bytes are the same (R-AUTHZ-016); the time is not. This is the decision of Q-AUTHZ-152: the specification promises the
+bytes and records the time here; padding the first answer was weighed and not chosen.
 
 ### H-156 · A repository has no quota, so a holder of deploy is bounded only by the size limits
 

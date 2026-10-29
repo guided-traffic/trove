@@ -1043,7 +1043,11 @@ A refused request is answered as follows (first matching row wins):
 - 404 instead of 403 for refused reads follows [RFC 9110 §15.5.4](https://www.rfc-editor.org/rfc/rfc9110#section-15.5.4),
   which allows a server to hide a forbidden resource. A hiding 404 MUST be indistinguishable from
   the 404 for a missing resource on the same endpoint (same body, same headers), and authorization
-  MUST run before the existence lookup, so the response time does not depend on existence either.
+  MUST run before the existence lookup of the item or package. The one lookup that precedes the
+  decision is the repository lookup of [architecture.md](architecture.md) R-ARCH-011 step 2, which a
+  repository created through another replica needs (R-API-052); what this page promises is the
+  bytes, and the response time of the first request for a key that a replica has never seen is
+  not promised (Q-AUTHZ-152, H-155 in [file-transfer.md](../security/file-transfer.md)).
 - A refused write gets 403 whether or not the target exists, and the message names only the action
   and the coordinate the caller sent. Existence matters only once the caller holds `deploy` (to
   tell a new upload from an overwrite); a caller with `deploy` learns of existence through its own
@@ -3182,6 +3186,31 @@ switch in [api-and-ui.md](api-and-ui.md) and H-63 name only the system informati
 removed (Q-AUTHZ-16).
 
 **Applied in the spec:** Q-AUTHZ-16 (a note on its choice).
+
+### Q-AUTHZ-152 · The time of the repository lookup before the decision is not promised
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-016 asks that authorization run before the existence lookup so that the time does not depend on existence; R-ARCH-011 step 2
+(Q-ARCH-40) looks the repository up first, because a repository created through another replica is unknown to its grant index until
+the change-log poll. A key the replica has not seen costs one PostgreSQL query (and, when the row exists, a wait for the index); a
+key it holds, hidden or not, costs a map lookup.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lookup only for callers who could be allowed | Skip it when the subject holds no grant anywhere | No cost for a stranger | The creator on another replica is such a caller until the poll: R-API-052 is broken for exactly the caller it is for |
+| (b) The same cost for every key | A query for every request | No difference | A database round trip per request; the negative cache (`cache.unknown_repo_keys`) is the point of the design |
+| (c) Pad the answer | A delay for the cheap path | Narrows the gap | Not constant time, and a delay per request |
+| (d) Promise the bytes, record the time (chosen) | R-AUTHZ-016 amended; H-155 names the residual | Honest, and R-API-052 stays | A caller who measures the first answer for a fresh key can tell that the key is unknown to the replica |
+
+**Choice:** (d). The difference exists for the first request for a key per `cache.unknown_repo_keys` lifetime (60 s) and replica;
+status, headers and body are identical in every case, which the hidden-existence test checks byte for byte.
+
+**Rationale:** (a) and (c) trade the guarantee the lookup exists for against a timing difference of a few milliseconds that
+network jitter hides; (b) removes the cache. The development agent would revisit it if probing for repository names is seen, then with
+(c) on the first request for an unknown key.
+
+**Applied in the spec:** R-AUTHZ-016, the hiding rule.
 
 ## What this does not cover
 

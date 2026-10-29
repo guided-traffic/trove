@@ -51,6 +51,10 @@ func (i Info) AuthenticatedWithin(d time.Duration) bool {
 // against a lower-ranked source (R-AUTH-001).
 var ErrInvalid = errors.New("session: invalid")
 
+// ErrPrincipalNotActive is returned by Create when the principal was disabled
+// before the session could be written (R-AUTH-016): no session is created.
+var ErrPrincipalNotActive = errors.New("session: the principal is not active")
+
 // ErrCSRF is returned when the CSRF rules of R-AUTH-012 refuse a request.
 var ErrCSRF = errors.New("session: csrf check failed")
 

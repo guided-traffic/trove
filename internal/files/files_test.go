@@ -61,12 +61,20 @@ func TestRepositoryUploadLimit(t *testing.T) {
 	for cfg, want := range map[string]int64{
 		`{}`:                                 0,
 		`{"storage":{"maxUploadSize":1024}}`: 1024,
-		`{"storage":{"maxUploadSize":-5}}`:   0,
 		`{"storage":{"quota":"1TiB"}}`:       0,
-		`not json`:                           0,
+		``:                                   0,
 	} {
-		if got := maxUpload(repository.Repository{Config: []byte(cfg)}); got != want {
-			t.Errorf("maxUpload(%s) = %d, want %d", cfg, got, want)
+		if got, err := maxUpload(repository.Repository{Config: []byte(cfg)}); err != nil || got != want {
+			t.Errorf("maxUpload(%s) = %d, %v, want %d", cfg, got, err, want)
+		}
+	}
+	// R-STOR-004: a limit that cannot be decoded refuses the upload, it does not lift it.
+	for _, cfg := range []string{
+		`{"storage":{"maxUploadSize":-5}}`, `{"storage":{"maxUploadSize":1e9}}`, `{"storage":{"maxUploadSize":"10"}}`,
+		`{"storage":{"maxUploadSize":null}}`, `{"storage":{"maxUploadSize":1.5}}`, `not json`,
+	} {
+		if got, err := maxUpload(repository.Repository{Config: []byte(cfg)}); err == nil {
+			t.Errorf("R-STOR-004 maxUpload(%s) = %d, want an error", cfg, got)
 		}
 	}
 }

@@ -2,7 +2,7 @@
 // R-STOR-012, R-STOR-013, R-STOR-016 to R-STOR-018, R-GENERIC-004 to
 // R-GENERIC-007): deploy, download, delete, item information, folder listings
 // and download statistics of the files in a repository, on the blob store and
-// the items tables. The HTTP layers are thin: internal/api/files serves
+// the items tables. The HTTP layers are thin: internal/api/rawfiles serves
 // /files/ and internal/api/v1 serves the items operations of the management API,
 // and both call this package, so the rules exist once.
 //
