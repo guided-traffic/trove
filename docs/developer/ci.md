@@ -1,14 +1,17 @@
 # Continuous integration
 
-Two GitHub Actions workflows run every check that the [Makefile](../../Makefile) and the
-[web workspace](web-ui.md) define. [ci.yml](../../.github/workflows/ci.yml) runs on every push to
-`main` and on every pull request. [nightly.yml](../../.github/workflows/nightly.yml) runs the S3
-conformance tests against MinIO, and reports AWS S3 as skipped until an AWS account exists. In M0
-nothing is pushed to a registry and no release is cut; the release pipeline belongs to phase 6.
+Four GitHub Actions workflows run the checks and publish the artifacts. Every check that the
+[Makefile](../../Makefile) and the [web workspace](web-ui.md) define runs in
+[ci.yml](../../.github/workflows/ci.yml), on every push to `main` and on every pull request.
+[nightly.yml](../../.github/workflows/nightly.yml) runs the S3 conformance tests against MinIO, and
+reports AWS S3 as skipped until an AWS account exists. [preview.yml](../../.github/workflows/preview.yml)
+publishes every green commit of `main`, and [release.yml](../../.github/workflows/release.yml)
+publishes a `v0.*` tag. Both push to ghcr.io and sign what they push
+([Preview publication](#preview-publication), [Release pipeline](#release-pipeline)).
 
-Status: the workflows are validated with actionlint and by running each target and each shell step
-on macOS. They have **not run on a GitHub runner yet**. The first run on `main` is the first real
-test of the Linux-only steps (see [Not in place yet](#not-in-place-yet)).
+Status: the `ci` workflow runs on GitHub runners. The run of `main` at `d153ee3` passed every job,
+the e2e job included. The nightly, preview and release workflows are validated with actionlint; the
+release workflow's first publication is recorded in [Release pipeline](#release-pipeline).
 
 ## What has to be in your head first
 
@@ -49,6 +52,8 @@ test of the Linux-only steps (see [Not in place yet](#not-in-place-yet)).
 | `nightly` | `minio` | Builds MinIO from source at `MINIO_COMMIT`, starts it over TLS, seeds the buckets, runs the conformance tests with `TROVE_TEST_SCOPE=s3` (only the `TROVE_TEST_S3_*` variables and an optional CA are required; without a scope `testenv` requires the whole stack) | E0.5 nightly, MinIO leg |
 | `nightly` | `e2e-failover` | the same preparation, then `make e2e SET=failover` | E0.13: PostgreSQL switchover, kill and 30 s stop, Valkey failover, kill and 60 s outage under k6 load, with E0.4 and E0.6. Nightly because it needs a runner's CPU for about 20 minutes and k6 at 100 requests/s must not share a small runner with a kind cluster in a pull request |
 | `nightly` | `aws-gate` and `aws-s3` | See [Nightly](#nightly-workflow) | E0.5 nightly, AWS leg, reported as skipped |
+| `preview` | `publish` | A green `ci` run of a push to `main`, or a manual run of `main`: `make image-push` (image `main-<sha12>` and `main`), the chart at `0.<next minor>.0-main.<run>`, both signed and verified | Every green commit of `main` is a preview build; see [Preview publication](#preview-publication) |
+| `release` | `resolve`, `versions`, `image`, `chart`, `release-notes` | A `v0.*` tag push, or a manual run from `main` with a tag: the image and the chart at the tag's version, both signed and attested, the digests in the GitHub release notes; see [Release pipeline](#release-pipeline) | R-HA-047 and Q-HA-11: the published artifacts of a release |
 
 The `e2e` job has not run on a GitHub runner either. Its design is in [e2e.md](e2e.md): it builds the release
 image, brings the dev profile up on kind (HAProxy Ingress, cert-manager, the Valkey operator, the
@@ -68,7 +73,9 @@ sets a 75-minute limit (90 for the nightly one) and dumps the cluster state on f
   `GOLANGCI_LINT_VERSION`, `ACTIONLINT_VERSION`, `MINIO_COMMIT`) run it; jobs that only call make do
   not need it, because the Makefile includes the same file.
 - Every checkout sets `persist-credentials: false`, and the workflows set `permissions: contents: read`
-  at the top. Only the nightly AWS job requests `id-token: write`, for OIDC.
+  at the top. Jobs that need more request it themselves: `id-token: write` for OIDC in the nightly AWS
+  job and in the preview and release jobs that sign, `packages: write` and `attestations: write` where
+  they publish or attest, and `contents: write` only in the release job that edits the release notes.
 - Test reports are uploaded with `if: always()`, so a failed run still leaves its report.
 
 ## Pins
@@ -84,6 +91,10 @@ sets a 75-minute limit (90 for the nightly one) and dumps the cluster state on f
 | Integration images | [tools/versions.env](../../tools/versions.env) `INTEGRATION_*`, `VALKEY_90_IMAGE`, `VALKEY_91_IMAGE`, `SEAWEEDFS_IMAGE` | by digest |
 | Release base image | [tools/versions.env](../../tools/versions.env) `RUNTIME_BASE_IMAGE` | by digest |
 | MinIO source | [tools/versions.env](../../tools/versions.env) `MINIO_COMMIT` | the commit the nightly MinIO leg builds |
+| Cosign | [tools/versions.env](../../tools/versions.env) `COSIGN_VERSION` | `v3.1.4`, the release the owner's chart repository signs with |
+| Docker Buildx | [tools/versions.env](../../tools/versions.env) `BUILDX_VERSION` | `v0.38.1`, `docker/setup-buildx-action` `version` in `preview` and `release` |
+| Syft | [tools/versions.env](../../tools/versions.env) `SYFT_VERSION` | `v1.55.0`, the SBOM generator of `release` |
+| gh | [tools/versions.env](../../tools/versions.env) `GH_VERSION` | `v2.103.3`, built with `go install` by [install-gh](../../.github/actions/install-gh/action.yml) |
 
 kind is installed in CI with `go install sigs.k8s.io/kind@$KIND_VERSION`, helm and kubectl with the
 Azure setup actions. golangci-lint and actionlint are built with `go install` at their pins.
@@ -97,7 +108,12 @@ Azure setup actions. golangci-lint and actionlint are built with `go install` at
 | `actions/setup-go` | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` (v7.0.0) | every Go job |
 | `actions/setup-node` | `949feb2413d6458794dcd2491c4babbbce0c15c1` (v7.1.0) | `versions`, `web`, `image` |
 | `actions/cache` | `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` (v6.1.0) | `lint` |
-| `actions/upload-artifact` | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` (v7.0.2) | `unit`, `chart`, `integration`, `minio` |
+| `actions/upload-artifact` | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` (v7.0.2) | `unit`, `chart`, `integration`, `minio`, `release` |
+| `actions/attest-build-provenance` | `4d101475d8b20a2381f78447822ac1eab6504dd8` (v4.2.2) | `release` (image and chart, pushed to the registry) |
+| `docker/setup-buildx-action` | `f87e5991a6d7451dcb8d9637bfbc97413f497069` (v4.4.1) | `preview`, `release` |
+| `docker/login-action` | `81c6f93d4bc991e510b342a00b419b3bb4efc5c6` (v4.7.0) | `preview`, `release` |
+| `sigstore/cosign-installer` | `6f9f17788090df1f26f669e9d70d6ae9567deba6` (v4.1.2) | `preview`, `release` |
+| `anchore/sbom-action/download-syft` | `e22c389904149dbc22b58101806040fa8d37a610` (v0.24.0) | `release` |
 | `actions/download-artifact` | `9000827ccba6bdab643e8b6fd33ac0654aef8333` (v8.0.2) | `coverage-evidence` |
 | `azure/setup-helm` | `9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310` (v5.0.1) | `versions`, `chart` |
 | `azure/setup-kubectl` | `bda439f5f36b99b262ebdcd3613869bddb064c8e` (v5.2.0) | `versions`, `chart` |
@@ -199,7 +215,7 @@ failure says so, and it does not read as a pass.
 
 [preview.yml](../../.github/workflows/preview.yml) publishes every commit of `main` whose `ci` run
 succeeded (and a manual run of `main`'s head) as a preview build. Release builds of `v0.N.0` tags
-are a separate pipeline (roadmap M5); this workflow never publishes a release version.
+are a separate pipeline, [release.yml](../../.github/workflows/release.yml) ([Release pipeline](#release-pipeline)); this workflow never publishes a release version.
 
 | Artifact | Name | Notes |
 |---|---|---|
@@ -212,12 +228,94 @@ over the `-main.N` prereleases and a cosign verification of the identity above. 
 preview build reports the version `dev` unless the commit carries a `v0.*` tag (the binary accepts
 only `major.minor.patch` or `dev`).
 
+## Release pipeline
+
+[release.yml](../../.github/workflows/release.yml) publishes a release version `v0.MINOR.PATCH`. It
+runs on a pushed `v0.*` tag, and on a manual run that names an existing tag. It publishes the image
+`ghcr.io/guided-traffic/trove:<version>` for linux/amd64 and linux/arm64, and the chart
+`oci://ghcr.io/guided-traffic/charts/trove` with version and appVersion `<version>`
+([R-HA-047](../spec/ha-and-helm.md), Q-HA-11). It never publishes `latest` or `main`; those are
+preview tags.
+
+**Source and tooling.** The source is the tag. The release tooling (`.github`, `Makefile`,
+`Dockerfile`, `tools/versions.env`) comes from the commit the run started on: a tag push uses the
+tag's own tooling, a manual run uses the tooling of `main`. So a tag that predates the tooling can
+still be published. Each job checks out the tag and the run's commit, and copies the tooling over the
+tag's tree before it reads a pin or calls a composite action.
+
+**Gates.** A run stops before it pushes anything unless:
+
+- the tag has the form `v0.MINOR.PATCH`, the only form the binary accepts as a version;
+- a manual run starts from `main`, because the signature identity names the branch of a manual run;
+- a `ci` run of the tagged commit succeeded, the same rule that `preview.yml` applies to `main`;
+- the GitHub release of the tag exists, because its notes are written last;
+- the version is not in ghcr.io yet, unless the `overwrite` input is set. The check runs in `image`
+  and `chart` after the login, because an anonymous request to a private package answers like a
+  missing one.
+
+**Jobs.**
+
+| Job | What it does |
+|---|---|
+| `resolve` | Names the tag, checks the gates, reads the commit and its date. The build date is the commit's, so one tag gives one binary |
+| `versions` | The pins of Helm, cosign and Node against the installed tools, then `make versions-check` (E0.2) |
+| `image` | `make image-push`, the target that `preview.yml` uses: the Angular build (`make web`), both binaries, and the buildx push with the labels source, revision, version and licenses. Then the checks: the binary reports the tag and the commit, every asset of the English index is in both binaries, the pushed index has both platforms. Then the keyless signature, the SPDX SBOM (syft, attested with `cosign attest --type spdxjson`), the SLSA provenance, and the verification of all three |
+| `chart` | `helm lint`, `helm package --version --app-version`, a check that the package says so, `helm push`, the keyless signature, the SLSA provenance, and the verification of both |
+| `release-notes` | Writes the artifact section into the notes of the release |
+
+**Artifacts.**
+
+| Artifact | Reference | Checked by |
+|---|---|---|
+| Image | `ghcr.io/guided-traffic/trove:<version>`, the digest of the image index | `cosign verify`, `cosign verify-attestation --type spdxjson`, `gh attestation verify` (job `image`) |
+| Chart | `oci://ghcr.io/guided-traffic/charts/trove`, the digest of the chart manifest | `cosign verify`, `gh attestation verify` (job `chart`) |
+| Release notes | the section between `<!-- release-pipeline:start -->` and `<!-- release-pipeline:end -->`: both digests, the identity and the verify commands | [release-notes.sh](../../.github/scripts/release-notes.sh) replaces that section and nothing else; the rest of the notes is kept as it was |
+
+The chart does not pin the image by digest. Its `image.tag` is empty, so the image is
+`<version>`, the appVersion, as R-HA-031 defines it. The image tag is immutable as long as the
+overwrite gate holds.
+
+**Signature identity.** The identity is this workflow file at the ref the run started on:
+`https://github.com/guided-traffic/trove/.github/workflows/release.yml@refs/tags/v0.1.0` for a tag push,
+and `https://github.com/guided-traffic/trove/.github/workflows/release.yml@refs/heads/main` for a manual
+run. The issuer is `https://token.actions.githubusercontent.com`. Each job verifies its own signatures
+against the identity of its run, and the release notes print that identity in the verify commands:
+
+```shell
+cosign verify ghcr.io/guided-traffic/trove@<digest> \
+  --certificate-identity https://github.com/guided-traffic/trove/.github/workflows/release.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+**Starting a release by hand.** A manual run takes the tag and, after a failure that came after the
+push, `overwrite`. It must start from `main`:
+
+```shell
+gh workflow run release.yml --ref main -f tag=v0.1.0
+gh workflow run release.yml --ref main -f tag=v0.1.0 -f overwrite=true
+```
+
+The second form replaces the versions that exist. The replaced digest loses its tag and is not
+deleted.
+
 ## Not in place yet
 
-- **The first run on a GitHub runner.** Nothing here has run on a runner. Two steps depend on runner
-  details I could not check: the Node-free `PATH` trimming in `build-no-node` assumes that `node`
-  sits in a directory that does not also hold `go`, `make` or `file`, and the `versions` job assumes
-  the Azure setup actions install the pinned helm and kubectl first on `PATH`.
+- **The Node-free build and the pinned helm on the runner.** The run of `d153ee3` passed
+  `build-no-node` and `versions`, so the `PATH` trimming and the Azure setup actions work on the
+  runner image as written. The first run of any new step on a runner is still the first test of that
+  step.
+- **Chart SBOM.** R-HA-047 asks for an SPDX SBOM on every chart artifact. The chart has a signature
+  and a provenance attestation, but no SBOM, because a chart carries no packages of its own.
+- **Identity for outside verifiers.** R-HA-047 documents the identity with `refs/tags/v`. A manual run
+  signs as `refs/heads/main`, which is the only way to build a tag that predates the workflow, so an
+  outside verifier that accepts only tags rejects those signatures. Which identities an outside
+  verifier accepts is not decided yet.
+- **No environment protection.** The release jobs run without a GitHub environment and without a
+  required reviewer. Whoever can push a `v0.*` tag, or start a manual run from `main`, can publish.
+- **Binaries are checked after the push.** `make image-push` pushes in one step, so the checks of the
+  binaries run after the image is in ghcr.io. A failed check leaves the version published, and the
+  next run needs `overwrite`.
+- **Tests are not run again.** The release relies on the `ci` run of the tagged commit.
 - **The e2e test report in the evidence record.** `coverage-evidence` reads four reports; the e2e report
   (`.out/test-e2e.json`, test names carry the requirement IDs) is not among them, so the requirements it
   proves are not in `implemented.txt` yet. Wiring it needs the coverage generator and the record to
@@ -226,9 +324,6 @@ only `major.minor.patch` or `dev`).
   k6 drops iterations there, the job fails on `dropped_iterations` instead of passing.
 - **Image scanning.** No Trivy or grype job. Adding one needs a pinned scanner version in
   `tools/versions.env`, which this package does not add.
-- **`MINIO_COMMIT`.** The pin is not in `tools/versions.env` yet. The nightly MinIO job fails with a
-  message naming the file until the line `MINIO_COMMIT=7aac2a2c5b7c882e68c1ce017d8256be2feea27f`
-  is added.
 - **Coverage badge.** No `.github/badges/coverage.json` exists, so the README has no coverage badge.
 - **shellcheck in CI.** The `workflows` job runs actionlint with shellcheck disabled, because the
   runner's shellcheck is not pinned.
