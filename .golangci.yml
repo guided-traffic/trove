@@ -1,0 +1,84 @@
+# golangci-lint v2 configuration. The version is pinned in tools/versions.env.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - revive
+    - errorlint
+    - bodyclose
+    - noctx
+    - unconvert
+    - misspell
+    - nilerr
+    - copyloopvar
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: if-return
+        - name: increment-decrement
+        - name: var-declaration
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: unused-parameter
+    gosec:
+      excludes:
+        - G104 # unchecked errors are errcheck's business
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - noctx
+          - revive
+    paths:
+      - web/node_modules
+      - internal/archtest/testdata
+      - third_party$
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/guided-traffic/trove
+  exclusions:
+    generated: lax
+    paths:
+      - web/node_modules
+      - internal/archtest/testdata

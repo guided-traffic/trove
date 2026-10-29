@@ -1,0 +1,24 @@
+# Local tool binaries and build output
+/.bin/
+/.out/
+/bin/
+# Local dev state: integration certificates and env, dev cluster kubeconfig
+/.dev/
+
+# Web workspace build output (internal/webui/dist is committed on purpose)
+/web/node_modules/
+/web/dist/
+/web/.angular/
+/web/coverage/
+
+# Go
+*.test
+*.out
+/trove
+coverage.txt
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
