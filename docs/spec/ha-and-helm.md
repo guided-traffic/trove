@@ -2,21 +2,31 @@
 
 Status: specification — not implemented
 
-This page specifies how trove stays available and how it is deployed. It covers:
+This page specifies how trove stays available, scales out and is deployed. It covers:
 
-- The replica model: identical replicas, the optional `api`/`worker` role split, and how replicas
-  coordinate only through PostgreSQL (INV-2, INV-12).
+- The replica model: identical, interchangeable replicas per role, with `web` and `worker` as
+  separate Deployments from the start and `backup` as a CronJob (INV-2), and how replicas
+  coordinate through PostgreSQL and Valkey without talking to each other (INV-3, INV-12, INV-18).
 - The failure contract of every component: pod crash, node drain and node loss, PostgreSQL failover
-  with reconnect and retry, object-storage outage, spool exhaustion and a failed migration.
+  with reconnect and retry, Valkey failover through Sentinel and Valkey outage, object-storage
+  outage, spool exhaustion and a failed migration.
 - Leader-less scheduling and singleton work under advisory-lock leases.
+- Node drains without outage: the capacity rule, disruption budgets, spreading and the drain
+  acceptance test under npm and NuGet load.
 - Rolling upgrades with expand/contract migrations and the migration Job.
 - PostgreSQL requirements: version floor, server settings, roles and privileges, TLS, connection
-  budget and credential rotation.
-- Backup, restore and disaster recovery, including why a restored database never points at a
-  deleted blob.
-- The Helm chart `deploy/helm/trove`: every resource it renders and its complete `values.yaml`.
+  budget, the optional transaction-mode pooler and credential rotation.
+- Valkey requirements: discovery through Sentinel, credentials and TLS, supported topologies and
+  the degraded mode.
+- Backup, restore and disaster recovery from the deployment side: the backup CronJob, the restore
+  Job, the platform layer (point-in-time recovery, bucket versioning) and why a restored database
+  never points at a deleted blob. Backup format and procedure belong to
+  [backup-and-restore.md](backup-and-restore.md).
+- The Helm chart `deploy/helm/trove`: every resource it renders, every volume it mounts (none
+  ReadWriteMany, none persistent) and its complete `values.yaml`.
 - Edge-proxy requirements for large uploads, sizing guidance, the local development profile
-  (kind, CloudNativePG, SeaweedFS) and the failure-injection suite that proves all of the above.
+  (kind, CloudNativePG, Valkey with Sentinel, SeaweedFS) and the failure-injection suite that
+  proves all of the above.
 
 Semantics owned elsewhere are referenced, not repeated. The probe endpoints and replica registry
 are in [operations-and-observability.md](operations-and-observability.md). Blob commit, garbage
@@ -26,8 +36,8 @@ is in [identity-and-authentication.md](identity-and-authentication.md).
 
 Covers: the catalog pages [ha-and-deployment.md](../features/ha-and-deployment.md) (`HA`, all MVP
 and P1 entries), the upgrade and backup entries of
-[operations-and-monitoring.md](../features/operations-and-monitoring.md) (OPS-033, OPS-072,
-OPS-073, OPS-074, OPS-076), and the deployment side of
+[operations-and-monitoring.md](../features/operations-and-monitoring.md) (OPS-032 and OPS-033 on
+the chart side, OPS-072, OPS-073, OPS-074, OPS-076), and the deployment side of
 [storage-and-blobs.md](../features/storage-and-blobs.md) (spool volume, object-store credentials
 through workload identity). The storage entries themselves belong to [storage.md](storage.md).
 
@@ -35,7 +45,7 @@ through workload identity). The storage entries themselves belong to [storage.md
 
 | Topic | Owner |
 |---|---|
-| `/healthz`, `/readyz` semantics, check list, `health.*` keys, drain delay | [operations-and-observability.md](operations-and-observability.md) R-OPS-001 |
+| `/healthz`, `/readyz` semantics, check list (the `valkey` check included), `health.*` keys, drain delay | [operations-and-observability.md](operations-and-observability.md) R-OPS-001 |
 | Replica registry table `replica`, heartbeat keys, `GET /api/v1/system/replicas` | [operations-and-observability.md](operations-and-observability.md) R-OPS-003 |
 | `server.base_url`, trusted proxies, forwarded headers | [operations-and-observability.md](operations-and-observability.md) R-OPS-005 |
 | Metric names and the metrics catalog | [operations-and-observability.md](operations-and-observability.md) R-OPS-006 to R-OPS-008 |
@@ -46,7 +56,9 @@ through workload identity). The storage entries themselves belong to [storage.md
 | Content origin semantics (`server.content_base_url`) | [architecture.md](architecture.md) R-ARCH-029 |
 | Append-only audit rows, `audit_policy`, `audit_maintain_partitions()` | [operations-and-observability.md](operations-and-observability.md) R-OPS-015 |
 | Outbound CA bundles, egress address policy | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-035, R-REPO-038 |
-| Cross-replica fetch collapse and its lock pool | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 |
+| Cross-replica fetch collapse and its Valkey lock (INV-11) | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 |
+| What Valkey holds and what it never holds, its key layout and keyspace, the change log and signals, the Valkey client library and its command list | [architecture.md](architecture.md) R-ARCH-018, R-ARCH-030, R-ARCH-031, R-ARCH-033, R-ARCH-034 |
+| Backup format, `trove backup create` and `trove backup restore`, consistency with garbage collection, retention semantics, what "empty installation" means | [backup-and-restore.md](backup-and-restore.md) |
 | Break-glass account, `trove admin` bootstrap commands, session table | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-014, R-AUTH-015, R-AUTH-010 |
 | Authorization cache staleness and fail-closed behavior | [authorization.md](authorization.md) |
 | Job queue schema, worker loop, in-process caches, server shutdown timeout | [architecture.md](architecture.md) |
@@ -55,170 +67,280 @@ through workload identity). The storage entries themselves belong to [storage.md
 ## Topology
 
 ```text
-            clients: npm, pnpm, Yarn, dotnet, nuget.exe, browsers, GitLab jobs
-                                   │ HTTPS
-                  ┌────────────────▼─────────────────┐
-                  │  Ingress controller or Gateway   │  TLS ends here (R-HA-037)
-                  └────────────────┬─────────────────┘
-                                   │ HTTP, Service <fullname>:8080
-         ┌─────────────────────────┼─────────────────────────┐
-  ┌──────▼───────┐          ┌──────▼───────┐          ┌──────▼───────┐
-  │ trove pod  │          │ trove pod  │   ...    │ trove pod  │  roles [api, worker]
-  │ :8080  :8081 │          │ :8080  :8081 │          │ :8080  :8081 │  spool: emptyDir
-  └──┬────────┬──┘          └──┬────────┬──┘          └──┬────────┬──┘
-     │ SQL    │ S3 API         │        │                │        │
-     ▼        ▼                ▼        ▼                ▼        ▼
-  ┌──────────────────────┐                       ┌──────────────────────────┐
-  │ PostgreSQL primary   │──streaming──▶ standby  │ S3 bucket, versioning on │
-  │ (CloudNativePG, RDS) │                        │ (AWS S3, MinIO, Ceph RGW) │
-  └──────────────────────┘                       └──────────────────────────┘
-     ▲
-     └── migration Job (Helm pre-install/pre-upgrade hook): trove migrate up
+             clients: npm, pnpm, Yarn, dotnet, nuget.exe, browsers, GitLab jobs
+                                    │ HTTPS
+                   ┌────────────────▼─────────────────┐
+                   │  Ingress controller or Gateway   │  TLS ends here (R-HA-037)
+                   └────────────────┬─────────────────┘
+                                    │ HTTP, Service <fullname>:8080, no session affinity
+            ┌───────────────────────┼───────────────────────┐
+     ┌──────▼──────┐         ┌──────▼──────┐         ┌──────▼──────┐
+     │ web pod     │         │ web pod     │   ...   │ web pod     │  Deployment <fullname>-web
+     │ :8080 :8081 │         │ :8080 :8081 │         │ :8080 :8081 │  spool: emptyDir
+     └─────────────┘         └─────────────┘         └─────────────┘
+     ┌─────────────┐         ┌─────────────┐
+     │ worker pod  │   ...   │ worker pod  │  Deployment <fullname>-worker: jobs, :8081 only
+     └─────────────┘         └─────────────┘
+     ┌─────────────┐
+     │ backup pod  │  CronJob <fullname>-backup ──S3──▶ backup target bucket (R-HA-060)
+     └─────────────┘
+
+  every pod ──SQL───▶ PostgreSQL primary ──streaming──▶ standbys (CloudNativePG, Patroni, RDS)
+                      optional: request pool through a transaction-mode pooler, control
+                      connection through a pool of its own (R-HA-058, Q-HA-20)
+  web, worker ─RESP─▶ Valkey primary ──replication──▶ replica; ≥ 3 Sentinels name the primary
+                      (backup, restore and migration pods never connect to Valkey)
+  every pod ──S3────▶ blob bucket, versioning recommended (AWS S3, MinIO, Ceph RGW, SeaweedFS)
+
+  Helm hook before the Deployments: the migration Job. With restore.enabled: no migration Job,
+  both roles at zero, and the restore Job as an ordinary resource (R-HA-060, Q-HA-18)
 ```
 
-Replicas never open connections to each other. Every cross-replica signal (cache invalidation,
-leases, job claims, membership) goes through PostgreSQL, so the pod network needs no
-replica-to-replica rule and no peer discovery.
+Replicas never open connections to each other. Every cross-replica signal goes through PostgreSQL
+(job claims, leases, the replica registry, the change log that carries invalidations) or Valkey
+(fetch collapse, the negative cache of remote repositories, rate-limit counters, change messages
+and signals); [architecture.md](architecture.md) R-ARCH-030 assigns each mechanism (INV-12). The
+pod network therefore needs no replica-to-replica rule and no peer discovery. Everything a pod
+keeps outside these three services is scratch space for one request or one job (INV-18).
 
 ## Replica model and coordination
 
 ### R-HA-001 · Active-active replicas without a primary node
 Priority: **MVP** · Covers: HA-001, HA-002, HA-010
 
-- Every replica MUST be able to serve every client request and every management request. No
-  replica holds state that another replica needs to answer a request (INV-2). The only local state
-  is the spool (R-HA-035) and in-process caches, which are invalidated via R-HA-004.
+- Every `web` replica MUST be able to serve every client request and every management request, and
+  every `worker` replica every job kind it implements. No replica holds state that another replica
+  needs to answer a request (INV-2, INV-18): consecutive requests of one client, the requests of a
+  multi-request protocol included, may reach different replicas. The only local state is the spool
+  of the request or job that is running (R-HA-035) and in-process caches, which are invalidated via
+  R-HA-004.
 - There MUST be no primary, leader or seed replica in configuration. Work that must run once per
-  cluster runs under leases that any eligible replica can take (R-HA-005, R-HA-006).
-- A replica is *eligible for background work* when its `roles` include `worker`. A replica with
-  `roles: [api]` serves HTTP and never claims jobs or leases. A replica with `roles: [worker]`
-  serves only the operations listener. The default is `roles: [api, worker]` (INV-2 "all").
-- A production deployment MUST run at least two replicas (INV-12). The chart enforces this unless
-  `highAvailability.enforce` is false (R-HA-029). A single replica is supported for development
-  only. It has the same code path and the same dependencies (external PostgreSQL and S3), so
-  moving from one replica to several is a change of `replicaCount` and nothing else. The catalog's
-  "single node with embedded database and local file storage" topology does not exist in trove.
-- Adding a replica needs no configuration besides the replica count. The new replica becomes
-  eligible for background work as soon as it is ready. Removing a replica needs no handover: its
-  leases end with its database sessions (R-HA-006) and its job leases expire (R-HA-005).
+  cluster runs under leases that any `worker` replica can take (R-HA-005, R-HA-006).
+- **Roles** (INV-2, [architecture.md](architecture.md) R-ARCH-001). A process has one role,
+  `process.role: web|worker`, which has no default. The chart starts each Deployment with
+  `trove serve --role <role>`, the flag form that overrides `process.role` (R-HA-002), so the
+  shared configuration file names no role:
+  - `web` serves the client listener and the operations listener, and never claims jobs or leases;
+  - `worker` claims jobs and leases, and serves only the operations listener;
+  - `all` combines both. It exists only for the local profile, for a binary started outside the
+    chart during development, and the chart never renders it.
 
-Configuration (trove; the chart sets it per Deployment, R-HA-030):
-
-```yaml
-roles: [api, worker]   # default (proposed); [api] or [worker] with the role split (R-HA-002)
-```
+  The `backup` role is the `trove backup` subcommand. The backup CronJob and the restore Job run it
+  (R-HA-060), and it serves no listener.
+- A production deployment MUST run at least two replicas of each role, on different nodes (INV-12).
+  The chart enforces this unless `highAvailability.enforce` is false (R-HA-029). One replica of a
+  role is supported for development only. It runs the same code path against the same dependencies
+  (external PostgreSQL, Valkey and S3), so scaling is a change of a replica count and nothing else.
+  The catalog's "single node with embedded database and local file storage" topology does not exist
+  in trove.
+- Load is shared by adding replicas of a role (INV-12). Capacity planning assumes that the peak load
+  needs more than one `web` replica. R-HA-059 states how many replicas a node drain needs on top.
+- Adding a replica needs no configuration besides the replica count. A new `worker` replica takes
+  jobs as soon as it is ready. Removing a replica needs no handover: its leases end with its
+  database sessions (R-HA-006), its job leases expire (R-HA-005), and its Valkey locks expire
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026).
 
 Acceptance criteria:
 
-- With three replicas behind the Service, `for i in $(seq 1 300); do curl -s -o /dev/null -w '%{http_code}\n' https://trove.example.com/api/v1/system/ping; done | sort | uniq -c`
+- With three `web` replicas behind the Service, `for i in $(seq 1 300); do curl -s -o /dev/null -w '%{http_code}\n' https://trove.example.com/api/v1/system/ping; done | sort | uniq -c`
   prints only `200`, and the `X-Trove-Replica` header of authenticated calls shows all three pod
   names.
-- `kubectl scale deploy/trove --replicas=4` adds a replica that serves traffic and appears in
+- `kubectl scale deploy/trove-web --replicas=4` adds a replica that serves traffic and appears in
   `GET /api/v1/system/replicas` without any other change.
-- `helm upgrade … --set server.replicaCount=1 --set highAvailability.enforce=false` yields a
-  working single-replica installation against the same database and bucket.
+- `helm upgrade … --set web.replicaCount=1 --set worker.replicaCount=1 --set highAvailability.enforce=false`
+  yields a working installation with one replica per role against the same database, Valkey and
+  bucket.
+- A test proxy in front of the `web` pod IPs sends every request to a different replica in strict
+  rotation. Through it, these flows complete (INV-18): an npm web login with its polling requests,
+  `dotnet nuget push` followed by a restore of the pushed version, `npm publish` followed by
+  `npm view`, and a paged API listing followed to its last page.
 
-### R-HA-002 · Role split into api and worker Deployments
-Priority: **P1** · Covers: HA-015
+### R-HA-002 · Role split into web and worker Deployments
+Priority: **MVP** · Covers: HA-015
 
-- With `roleSplit.enabled: true` the chart MUST render two Deployments: `<fullname>-api` with
-  `roles: [api]` and `<fullname>-worker` with `roles: [worker]`. Each has its own replica count,
-  resources, autoscaler, disruption budget and scheduling settings. Without the split, the chart
-  renders one Deployment `<fullname>` with `roles: [api, worker]`.
-- The client Service selects only pods with the `api` role. Worker pods are reached only on the
-  operations port (probes and metrics).
-- With the split enabled, `worker.replicaCount` (or `worker.autoscaling.minReplicas`) MUST be at
-  least 1, otherwise no scheduled work runs. The chart refuses to render (R-HA-029). With
-  `highAvailability.enforce` the minimum is 2, so that GC and other singleton work survive a worker
-  pod loss without waiting for a reschedule.
-- Workers and API pods run the same image and the same configuration file; only `roles` differs.
-  No component runs in a separate image or as a sidecar.
-- Reasons to split: background work (GC, retention runs, reindexing, cache fills of prefetch jobs)
-  stops competing with request latency for CPU and memory, and API pods can scale on CPU without
-  multiplying workers.
+The role that serves clients is named `web` (INV-2), and
+the split is no longer optional: it is an owner constraint since 2026-10-28.
+
+- The chart MUST always render two Deployments: `<fullname>-web`, whose container runs
+  `trove serve --role web`, and `<fullname>-worker`, whose container runs
+  `trove serve --role worker`. Each has its own replica count, resources, autoscaler, disruption
+  budget, termination grace period, spool size and scheduling settings (R-HA-031, R-HA-032). There
+  is no single-Deployment mode, and no value renders `--role all`.
+- The client Service selects only `web` pods. `worker` pods are reached only on the operations port
+  (probes and metrics).
+- `worker.replicaCount` (or `worker.autoscaling.minReplicas`) MUST be at least 1, otherwise no
+  scheduled work runs. The chart refuses to render (R-HA-029). With `highAvailability.enforce` the
+  minimum is 2 for both roles, so that GC and other singleton work survive a worker pod loss without
+  waiting for a reschedule.
+- `web` and `worker` pods run the same image and the same configuration file; only the `--role`
+  argument differs. No component runs in a separate image or as a sidecar.
+- Why from the start: background work (GC, retention runs, reindexing, cache fills of prefetch jobs,
+  webhook delivery) never competes with request latency for CPU and memory; `web` scales on request
+  load and `worker` on job load; a drain or rollout of one role does not touch the other; and a
+  further split of either role (R-HA-062) is a change of values, not of code.
 
 Acceptance criteria:
 
-- With the split and `server.replicaCount: 2`, `worker.replicaCount: 2`,
-  `kubectl get deploy -l app.kubernetes.io/instance=trove` lists `trove-api` and
-  `trove-worker`; `GET /api/v1/system/replicas` shows roles `["api"]` and `["worker"]`.
-- A manual GC run (`POST /api/v1/system/tasks/gc/run`) through the API pods is executed on a
-  worker pod (its `trove_lease_held` series is 1 during the run).
-- `helm template … --set roleSplit.enabled=true --set worker.replicaCount=0` fails and names
-  `worker.replicaCount`.
+- With default values, `kubectl get deploy -l app.kubernetes.io/instance=trove` lists `trove-web`
+  and `trove-worker`, and `GET /api/v1/system/replicas` shows roles `["web"]` and `["worker"]`.
+- A manual GC run (`POST /api/v1/system/tasks/gc/run`) sent to a `web` pod is executed on a
+  `worker` pod (the worker's instance ID appears in `job.locked_by` of the gc job), and the
+  instance ID of no `web` pod ever appears in `job.locked_by`.
+- `helm template … --set worker.replicaCount=0` fails and names `worker.replicaCount`.
+- For every value set in `ci/`, the rendered containers carry the argument `--role web` or
+  `--role worker`, never `all`.
+
+### R-HA-062 · Further splits of a role into several Deployments
+Priority: **P1** · Covers: HA-015
+
+The owner allows several worker types and a split service (INV-2). Because every replica of a role
+can serve everything its role serves, a further split is routing and scheduling only.
+
+- **Web pools.** Each entry of `web.pools` renders a Deployment `<fullname>-web-<name>` with
+  `--role web`, its own Service `<fullname>-web-<name>` (port 8080, no session affinity), PDB,
+  autoscaler and the keys of `web` as overrides. The Ingress and the HTTPRoute route the entry's
+  `paths` (path prefixes inside the same host, for example `/api/npm/` and `/api/nuget/`) to that
+  Service; every other path stays on `<fullname>`. Use: a surge of package traffic cannot starve
+  the UI and the management API. The host is still routed whole (R-HA-037): the pools split it by
+  prefix, never by rewriting.
+- **Worker pools.** Each entry of `worker.pools` renders a Deployment `<fullname>-worker-<name>`
+  with `--role worker` that claims only the job queues listed in `queues`; the queue names and the
+  setting that restricts a process to them belong to [architecture.md](architecture.md) R-ARCH-016.
+  The main `worker` Deployment claims every queue that no pool lists, so a queue never stays
+  unclaimed. Use: indexing or garbage collection on nodes of their own.
+- Every pool follows the rules of its role: at least two replicas with `highAvailability.enforce`,
+  spreading, PDB, the drain rule of R-HA-059, and the connection budget of R-HA-016, which counts
+  pools like any other Deployment. A pool's pods carry `trove/pool: <name>`, which keeps its
+  selectors apart from the main Deployment's (R-HA-028) and becomes the target label `pool` of its
+  series (R-HA-045).
+
+```yaml
+web:
+  pools: []                    # default (proposed); example:
+  # - name: packages           # example
+  #   paths: [/api/npm/, /api/nuget/, /files/]   # example
+  #   replicaCount: 4          # example; every key of web may be overridden here
+worker:
+  pools: []                    # default (proposed); example:
+  # - name: indexing           # example
+  #   queues: [index]          # example; queue names from architecture.md R-ARCH-016
+  #   replicaCount: 2          # example
+```
+
+Acceptance criteria: with one web pool for `/api/npm/` and one worker pool for the index queue,
+R-HA-059's drain test passes; npm requests appear only in the pool's access logs; jobs of the index
+queue run only on the pool's pods; `helm template` fails when two pools list the same path prefix
+or the same queue.
 
 ### R-HA-003 · Replica registry as the coordination view
 Priority: **MVP** · Covers: HA-006, HA-009
 
 The replica registry of R-OPS-003 (table `replica`, heartbeat every `system.heartbeat_interval`,
 stale after `system.heartbeat_stale_after`) is the single source of truth for "which replicas are
-alive, with which version and roles". This page uses it for four HA mechanisms. The table, the
-heartbeat, the pruning of stale rows and the read-only API `GET /api/v1/system/replicas` are
-therefore MVP (Q-HA-12). The UI status screen is MVP as well ([api-and-ui.md](api-and-ui.md)
-R-UI-038, Q-API-8): it renders only from MVP endpoints and is the only UI view of the replicas, the
-scheduled tasks and the key ring. R-HA-001 and R-HA-020 verify rollouts through the replica API.
+alive, with which version and roles, on which node". This page uses it for four HA mechanisms. The
+table, the heartbeat, the pruning of stale rows and the read-only API `GET /api/v1/system/replicas`
+are therefore MVP (Q-HA-12). The node comes from `TROVE_NODE_NAME`, which the chart sets from the
+downward API (R-HA-030); the registry also records how many Sentinels each replica reaches
+(`valkey_sentinels_reachable`, R-HA-057). The UI status screen is MVP as well
+([api-and-ui.md](api-and-ui.md) R-UI-038, Q-API-8, Q-UI-7): it groups the replicas by role, states
+per role whether two ready replicas run on different nodes, summarises the replicas' Valkey views
+and shows the backup summary of R-API-050. It is the only UI view of the replicas, the scheduled
+tasks and the key ring. R-HA-001 and R-HA-020 verify rollouts through the replica API.
 
 | Use | Rule |
 |---|---|
 | Contract-migration guard | A contract step runs only when no live replica runs a version that still uses the dropped object (R-HA-018). |
 | Cluster minimum version | `min(version)` over live replicas gates features and background migrations whose data the previous release cannot interpret (R-HA-020, R-HA-022). |
-| Connection budget check | The migration Job compares `max_connections` with the budget derived from the expected replica counts (R-HA-016). |
+| Connection budget check | The migration Job compares `max_connections` with the budget derived from the expected replica counts per role (R-HA-016). |
 | Post-restore cleanup | `trove admin post-restore` empties the table, because every row in a restored database describes a pod that no longer exists (R-HA-025). |
 
 - "Live" means `heartbeat_at > now() - system.heartbeat_stale_after`, evaluated with PostgreSQL's
   clock. Replica clocks are never compared with each other (R-HA-005).
 - A replica in state `draining` still counts as live for the contract guard: it may still run old
   code for up to its grace period.
-- The migration Job does not insert a `replica` row. It is not a serving replica and must not appear
-  in the minimum-version computation.
+- The migration Job, the backup CronJob's pods and the restore Job do not insert a `replica` row.
+  They are not serving replicas and must not appear in the minimum-version computation.
 
 Acceptance criteria:
 
 - During a rolling upgrade from 0.3.0 to 0.4.0, `GET /api/v1/system/replicas` shows both versions;
-  after `kubectl rollout status deploy/trove` returns, only 0.4.0 is listed within
-  `system.heartbeat_stale_after`.
+  after `kubectl rollout status deploy/trove-web` and `deploy/trove-worker` return, only 0.4.0 is
+  listed within `system.heartbeat_stale_after`.
 - `kubectl delete pod --grace-period=0 --force <pod>` makes the row stale within 30 s; the
   contract guard of a migration started afterwards ignores it.
 
-### R-HA-004 · Cross-replica invalidation over LISTEN/NOTIFY
+### R-HA-004 · Cross-replica invalidation through the change log and Valkey
 Priority: **MVP** · Covers: HA-006
 
-- Every replica MUST hold exactly one dedicated `LISTEN` session, outside the connection pool, for
-  all invalidation channels. Channel names and payloads belong to the subsystems that send them
-  ([architecture.md](architecture.md)). A `NOTIFY` is sent in the same transaction as the change
-  it announces, so it is delivered only after commit
-  ([NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html)).
-- Notifications sent while a replica is disconnected are lost. Therefore, after every
-  (re)connection of the `LISTEN` session, a replica MUST drop every in-process cache that
-  notifications keep fresh *before* it reports `notify` as passing (R-OPS-001), then re-subscribe.
-- Every such cache MUST also carry a maximum entry age (its owner sets it; this page requires one to
-  exist), so a missed notification cannot keep a stale entry alive indefinitely.
-- Payloads are versioned. A replica that receives a payload version it does not know MUST flush the
-  whole cache of that channel instead of ignoring the message (R-HA-020: during a rolling upgrade,
-  the newer release may send messages the older one cannot parse).
-- When the listener connection is recycled (credential rotation, R-HA-017), the replica MUST open
-  the new session and `LISTEN` on it before it closes the old one, so recycling causes no gap and
-  no cache flush.
-- Payloads stay below PostgreSQL's 8,000-byte limit. A change that touches many objects sends one
-  "flush" message per cache, not one message per object.
-- **Delivery probe.** After every (re)connection of the `LISTEN` session, the replica sends a probe
-  notification on its own replica channel through the main pool. It reports `notify` as passing
-  only after that probe has arrived on the listener session. The probe proves the whole path, and
-  it is the guard against an unsupported transaction-mode pooler (R-HA-006, Q-HA-6), under which
-  the listener is expected never to receive it. A missing probe keeps the replica not ready and
-  logs, once per minute, that `LISTEN` delivery failed and that transaction-mode poolers are not
-  supported.
+Since 2026-10-28 trove issues no `LISTEN` and no `NOTIFY`,
+and no replica holds a coordination session for invalidations ([architecture.md](architecture.md)
+R-ARCH-018, Q-ARCH-15). A change reaches the other replicas through a change log in PostgreSQL,
+which carries correctness, and through a Valkey Pub/Sub message, which carries speed. The writing
+transaction raises the area's row in `cluster_epoch` and inserts the change into `cluster_change`;
+every `web` and `worker` replica polls both tables every `cluster.epoch_poll_interval` on its
+control connection. This requirement fixes the HA rules that mechanism MUST satisfy.
+
+- **Delivery of a message is never a correctness condition.** Every cache that a change keeps
+  fresh is self-validating or carries a maximum entry age; its owner sets the age, and this page
+  requires one to exist (R-ARCH-018, ADR-031). The change-log poll applies every committed change
+  within `cluster.epoch_poll_interval`, whatever Valkey does, and only the poll advances a
+  replica's applied epoch of an area. A Valkey message only evicts early and never advances the
+  applied epoch, so a lost, late, duplicated or forged message can neither suppress nor reorder a
+  change.
+- **Only committed changes are announced.** The change-log row commits with the change, and the
+  Valkey message is published only after commit.
+- **Valkey loss degrades, PostgreSQL loss gates.** While Valkey is unavailable, changes take effect
+  at the next poll, typically within a second, and the replica stays ready (INV-12, Q-HA-13). A
+  missing Valkey delivery only reports `valkey` as degraded (R-HA-008); it never fails a check that
+  gates readiness. The `invalidation` readiness check of R-ARCH-018 passes while the last
+  successful poll is younger than `cluster.epoch_max_staleness`. A replica that cannot poll the
+  change log fails it after that, because it can then no longer bound how stale its revocations
+  are; R-HA-008 debounces the check so that it never undercuts the `database` check.
+- **No connection outside the main pool.** The poll runs on the replica's control connection, a
+  reserved connection of the main class ([architecture.md](architecture.md) R-ARCH-019), so it
+  works through a transaction-mode pooler (R-HA-058) and needs no session connection. A `web`
+  replica therefore holds no PostgreSQL connection outside its main pool (R-HA-016). Behind a
+  pooler, the control connection uses a server pool that request traffic cannot exhaust
+  (Q-HA-20), so a saturated request pool cannot stall the poll.
+- **Rolling upgrades.** Payloads are versioned. A replica that reads a payload version it does not
+  know flushes the caches of that area instead of ignoring the row (R-HA-020: during a rolling
+  upgrade, the newer release may write rows the older one cannot parse).
+- **Failover and restore.** After a PostgreSQL failover that lost committed transactions
+  (asynchronous replication, R-HA-013) or after a point-in-time restore, an area's epoch in
+  PostgreSQL can be lower than the epoch a replica last applied, or later writes can already have
+  raised it again to the same or a higher number, which then stands for different changes. The
+  replica detects both: with its applied epoch it keeps the `changed_at` it read, which equals the
+  `created_at` of the change row at that epoch, because both come from the writing transaction's
+  `now()` ([architecture.md](architecture.md) R-ARCH-018, [authorization.md](authorization.md)
+  R-AUTHZ-028, "A reused epoch"). An area whose epoch went backwards, whose epoch equals the
+  applied one with a different `changed_at`, or whose change row at the applied epoch carries a
+  different `created_at` MUST be flushed, and the replica takes the database's current epoch as its
+  new starting point, so that later changes are not skipped as already applied. Two transactions
+  separated by a failover never share that timestamp. A replica started after the restore starts
+  from the current epochs anyway.
+- Payloads stay below 1 KiB (R-ARCH-018). A change that touches many objects sends one "flush"
+  entry per cache, not one entry per object.
 
 Acceptance criteria:
 
-- `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name LIKE 'trove/%/listen'`
-  on one replica increments `trove_cache_flushes_total{reason="reconnect"}` there, and a
-  permission change made through another replica afterwards takes effect on it.
-- With the listener recycled by a credential rotation, `trove_cache_flushes_total{reason="reconnect"}`
-  does not increase.
-- A replica connected through PgBouncer with `pool_mode = transaction` (test fixture) stays not
-  ready with `"failing":["notify"]` and logs the pooler message; the same replica through
-  `pool_mode = session` becomes ready.
+- With Valkey's Pub/Sub connection of one replica killed (`CLIENT KILL TYPE pubsub`), a permission
+  change made through another replica takes effect on it within `cluster.epoch_poll_interval` plus
+  1 s, and `/readyz` keeps answering `200`.
+- With Valkey stopped, a token revoked through one replica is rejected on every replica within
+  `cluster.epoch_poll_interval` plus 1 s.
+- A NetworkPolicy that denies one replica's egress to PostgreSQL makes it fail `invalidation` (and
+  `database`) and leave the Service; after removal it applies every change it missed before it is
+  ready again.
+- A test lowers an area's epoch below the epochs the replicas have applied, as a failover with lost
+  transactions would. Every replica flushes that area's caches, and the next change of the area
+  takes effect on every replica.
+- A test reuses an epoch: with Valkey stopped and one replica's poll paused by a test hook, it
+  deletes the newest `cluster_change` row of an area, resets the area's `cluster_epoch` row to the
+  previous epoch and `changed_at`, and commits a different change through another replica, which
+  takes the same epoch number again. When the hook is lifted, the paused replica flushes the area
+  (`trove_cache_flushes_total` rises) within `cluster.epoch_poll_interval` plus 1 s and serves the
+  new change; a further change that raises the epoch above the reused one before the hook is
+  lifted is detected the same way through the change row's `created_at`.
 
 ### R-HA-005 · Leader-less scheduling and job leases
 Priority: **MVP** · Covers: HA-002, HA-007
@@ -229,7 +351,7 @@ work. This requirement fixes the HA guarantees both must give.
 
 **Scheduling without a fixed leader.**
 
-- One scheduler loop runs on each worker-eligible replica. Each tick (`jobs.schedule_tick`)
+- One scheduler loop runs on each `worker` replica. Each tick (`jobs.schedule_tick`)
   tries to take the `scheduler` lease (an advisory-lock lease, R-HA-006). Only the holder enqueues
   due work. When the holder dies, its session ends, PostgreSQL releases the lock, and the next tick
   of another replica takes over. No replica is configured as scheduler.
@@ -316,12 +438,23 @@ Acceptance criteria:
 ### R-HA-006 · Singleton work under advisory-lock leases with fencing
 Priority: **MVP** · Covers: HA-007
 
-Work that must not run twice at the same time (the scheduler tick, garbage collection, the orphan
-sweep, retention runs, secret re-encryption, background migrations) runs under an
-*advisory-lock lease* (INV-12). Reindexing is not on this list: a manual reindex and an automatic
-index rebuild are jobs with the dedup key `index:<repository id>` ([architecture.md](architecture.md)
-R-ARCH-016), which keeps two runs for one repository apart without a lease, because leases carry
-registered numbers only (R-ARCH-017). A lease works as follows:
+Work that must not run twice at the same time (the scheduler tick, secret re-encryption,
+background migrations) runs under an *advisory-lock lease* (INV-12). Two kinds of work are not on
+this list:
+
+- **Storage maintenance runs.** Garbage collection, the orphan sweep, retention runs, the scrub and
+  remote-cache cleanup are kept apart by exclusive job keys in the job table
+  ([architecture.md](architecture.md) R-ARCH-016), not by a lease; cap enforcement claims its
+  outbox rows with `FOR UPDATE SKIP LOCKED` ([storage.md](storage.md) R-STOR-044). Their safety
+  rests on row locks and, for S3 deletes, on the hand-over rule of [storage.md](storage.md)
+  R-STOR-024: two overlapping runs cannot delete a referenced blob, so exclusion is an efficiency
+  property there ([storage.md](storage.md) Q-STOR-13). They write through the main pool and need no
+  session connection.
+- **Reindexing.** A manual reindex and an automatic index rebuild are jobs with the dedup key
+  `index:<repository id>` (R-ARCH-016), which keeps two runs for one repository apart without a
+  lease, because leases carry registered numbers only (R-ARCH-017).
+
+A lease works as follows:
 
 1. The worker takes a connection from the dedicated lease pool (`database.lease_pool_size`) and
    calls `pg_try_advisory_lock(<class>, <key>)`, a session-level lock
@@ -330,8 +463,9 @@ registered numbers only (R-ARCH-017). A lease works as follows:
 2. **Fencing.** Every state change the singleton makes in PostgreSQL MUST be executed on that same
    session. The lease and the writes share one session. If the session has died, the lock is gone,
    *and* the write fails, so a replica that lost its lease cannot commit anything. Actions outside
-   PostgreSQL (S3 deletes) happen only after the database change that authorizes them has committed
-   on that session ([storage.md](storage.md) R-STOR-024 follows this order).
+   PostgreSQL happen only after the database change that authorizes them has committed on that
+   session. (The S3 deletes of storage maintenance follow R-STOR-024's hand-over rule instead,
+   because no database fence can stop a request that was already sent.)
 3. The worker checks the session every `database.lease_check_interval` (`SELECT 1`). On failure it
    cancels the work, records the loss (`trove_lease_lost_total{task}`), and does not try to
    re-acquire in the same run. The next scheduled run starts fresh. All singleton jobs MUST be
@@ -343,23 +477,26 @@ registered numbers only (R-ARCH-017). A lease works as follows:
    server's own settings are left at the operating-system default. Client-side detection
    (default ≤ 30 s) is shorter than server-side release (default ≤ 120 s), and fencing (2) covers
    the remaining window.
-5. Transaction-mode and statement-mode connection poolers break session-level locks, `LISTEN` and
-   the fetch-collapse locks of R-REPO-026. trove MUST NOT be connected through one (Q-HA-6). Direct
-   connections and session-mode poolers (for example PgBouncer with `pool_mode = session`) are
-   supported. The delivery probe of R-HA-004 keeps a replica not ready in the usual
-   misconfiguration. It is a guard, not a proof; the supported setups are the ones named here.
-   Splitting the main pool onto a transaction-mode pooler while session work connects directly is
-   P2 (Deferred).
+5. Session-level locks need a session that stays on one server connection, which
+   transaction-mode and statement-mode poolers break. Only three things therefore connect to the
+   *session host* (`database.session_host`, R-HA-058): the lease pool of `worker` replicas,
+   `trove migrate` (the migration lock) and `trove backup` (the backup's snapshot and export
+   connections, and the restore's writes). The session host is PostgreSQL directly, or a
+   session-mode pooler such as PgBouncer with `pool_mode = session`. `web` replicas hold no
+   coordination session and no session connection at all: their only class is the main pool,
+   which MAY go through a transaction-mode pooler (Q-HA-6). A session connection that lands on a
+   transaction-mode pooler is refused before its first use ([architecture.md](architecture.md)
+   R-ARCH-017). That is a guard, not a proof; the supported setups are the ones named here.
 
 **Lock key registry.** Every advisory lock uses the two-argument form with a registered category as
 `classid`, as fixed by the registry of [architecture.md](architecture.md) R-ARCH-017, so `pg_locks`
-names every lock (ADR-077). This page uses three of its categories:
+names every lock (ADR-077). This page uses two of its categories and keeps the retired one listed:
 
 | `classid` | Category | Key (`objid`) | Used by |
 |---|---|---|---|
-| 1 | `lease` | registered lease number of the task (`internal/cluster/locks.go`) | singleton leases of this requirement and R-HA-005 |
-| 2 | `fetch` | 32-bit hash of the flight key | fetch collapse of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 |
-| 3 | `migration` | 0 | schema migration (R-HA-019) |
+| 1 | `lease` | registered lease number of the task (`internal/cluster/locks.go`; `scheduler` = 1) | singleton leases of this requirement and R-HA-005 |
+| 2 | `fetch` (retired, reserved) | — | Nothing since 2026-10-28: the fetch lock lives in Valkey ([architecture.md](architecture.md) R-ARCH-033, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026). The number stays reserved and is never reused |
+| 3 | `migration` | 0 | schema migration, exclusive (R-HA-019); the database phase of a backup, shared (R-HA-060) |
 
 Configuration:
 
@@ -371,12 +508,19 @@ database:
 
 Acceptance criteria:
 
-- With GC running on replica A, `SELECT classid, objid, pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 1`
-  shows one row; terminating that backend (`pg_terminate_backend`) stops the run on A within
-  `lease_check_interval` + 1 s, A logs the lease loss, and no further GC writes from A appear.
-- A fault-injection test blocks A's traffic to PostgreSQL (NetworkPolicy) while A is in a GC batch.
-  A issues no S3 `DeleteObject` for a row whose `deleting` transition did not commit, and B takes
-  the lease after the server releases the session.
+- With the `scheduler` lease held by worker A,
+  `SELECT classid, objid, pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 1 AND objid = 1`
+  shows one row; terminating that backend (`pg_terminate_backend`) stops A's scheduler tick within
+  `lease_check_interval` + 1 s, A logs the lease loss (`trove_lease_lost_total{task="scheduler"}`
+  rises), no further `schedule` update or job insert from A's scheduler appears, and another worker
+  holds the lease within `cluster.lease_retry_interval` + 1 s.
+- A fault-injection test blocks A's traffic to PostgreSQL (NetworkPolicy) while A holds the
+  `scheduler` lease and a schedule `* * * * *` is due. A commits no `schedule` update and no job
+  insert after its session is gone, B takes the lease after the server releases the session, and
+  every minute's occurrence is enqueued exactly once.
+- With three workers and no other singleton work running, a GC run and a retention run in progress
+  hold no advisory lock of category 1 (`pg_locks` shows only the `scheduler` lease), and their job
+  rows carry an exclusive dedup key (Q-STOR-13).
 
 ## Failure modes
 
@@ -388,17 +532,27 @@ trove MUST behave as in this table. Each row is exercised by the failure-injecti
 
 | Failure | Detection | trove behavior | Client effect | Recovery |
 |---|---|---|---|---|
-| Container crash (panic, OOM kill) | kubelet; session end releases locks | In-flight requests of that pod end; nothing half-committed (a `201` means durable, R-STOR-004); its job leases expire; its advisory locks are released immediately | Requests on that pod fail with connection reset or `502` from the proxy; npm (`fetch-retries`) and NuGet clients retry | kubelet restarts the container; the spool directory is emptied at start (R-HA-012) |
-| Pod eviction, node drain, rolling restart | `SIGTERM` | Drain (R-HA-011): readiness fails at once, in-flight requests finish within the grace period, jobs are released | None for requests shorter than the grace period; longer transfers are cut | PDB keeps all but one replica serving (R-HA-032) |
-| Node loss (no `SIGTERM`) | Node controller marks the node not ready | Endpoints of the lost pods are removed when their Ready condition flips; job leases expire; advisory locks are released by the server's TCP keepalive, which trove sets on its lock-holding sessions (R-HA-013, R-HA-015) | Requests routed to the lost pods fail until the endpoints are removed (tens of seconds) | Pods are recreated after `server.nodeFailureTolerationSeconds` (R-HA-032) |
+| Container crash (panic, OOM kill) | kubelet; session end releases locks | In-flight requests of that pod end; nothing half-committed (a `201` means durable, R-STOR-004); its job leases expire; its advisory locks are released immediately; its Valkey locks expire after their TTL | Requests on that pod fail with connection reset or `502` from the proxy; npm (`fetch-retries`) and NuGet clients retry | kubelet restarts the container; the spool directory is emptied at start (R-HA-012) |
+| Pod eviction, node drain, rolling restart, autoscaler scale-down | `SIGTERM` | Drain (R-HA-011): readiness fails at once, in-flight requests finish within the grace period, jobs are released | None for requests shorter than the grace period; longer transfers are cut (tolerance in R-HA-059) | PDB keeps all but one replica per role serving (R-HA-032); the capacity rule of R-HA-059 keeps the rest from overload |
+| Node loss (no `SIGTERM`) | Node controller marks the node not ready | Endpoints of the lost pods are removed when their Ready condition flips; job leases expire; advisory locks are released by the server's TCP keepalive, which trove sets on its lock-holding sessions (R-HA-013, R-HA-015); Valkey locks expire | Requests routed to the lost pods fail until the endpoints are removed (tens of seconds) | Pods are recreated after `nodeFailureTolerationSeconds` of their role (R-HA-032) |
 | One replica cut off from PostgreSQL | `database` check (R-OPS-001) | That replica answers `503` and turns not ready after the check threshold; its singleton work stops (R-HA-006) | Traffic moves to the other replicas | Automatic when the network heals |
-| PostgreSQL switchover or failover | Connection errors, SQLSTATE `57P01`, `25006`, class `08` | Retry with backoff within `database.retry.max_elapsed`, pool reset, listener reconnect with cache flush, singleton work aborts and resumes on the next run (R-HA-009) | Requests stall for up to the retry budget; those that exceed it get `503` with `Retry-After` | Automatic |
-| PostgreSQL unavailable beyond the retry budget | `database` check on every replica | Every replica answers `503` and turns not ready; liveness stays `200`, so nothing restarts; authorization fails closed after `authz.cache.max_staleness` ([authorization.md](authorization.md)) | `503` for everything (the Service has no ready endpoints) | Readiness returns when PostgreSQL does; no manual step |
+| PostgreSQL switchover or failover | Connection errors, SQLSTATE `57P01`, `25006`, class `08` | Retry with backoff within `database.retry.max_elapsed`, pool reset, the change-log poll resumes (an area whose epoch went backwards or was reused is flushed, R-HA-004), singleton work aborts and resumes on the next run (R-HA-009) | Requests stall for up to the retry budget; those that exceed it get `503` with `Retry-After` | Automatic |
+| PostgreSQL unavailable beyond the retry budget | `database` check on every replica | Every replica answers `503` and turns not ready; liveness stays `200`, so nothing restarts; authorization decides nothing on a grant index unconfirmed for longer than `authz.cache.max_staleness` (10 s); such requests wait within the retry budget like database calls, then get `503` `authz_stale` ([authorization.md](authorization.md) R-AUTHZ-028, Q-AUTHZ-13) | `503` for everything (the Service has no ready endpoints) | Readiness returns when PostgreSQL does; no manual step |
 | PostgreSQL connection limit reached (`53300`) | Connect error | Backoff and retry inside the budget; metric `trove_db_retries_total{kind="too_many_connections"}` | Latency, then `503` | Size the budget (R-HA-016) |
+| PostgreSQL saturated: every request connection, or every server connection of the request pooler, busy | `trove_db_pool_acquire_duration_seconds`, alert `TroveDatabasePoolSaturated` | Requests wait for a connection within their deadline; those that exceed it get `503` with `Retry-After`. The control connection keeps the change-log poll, the `database` check and the job heartbeats off the request pool: directly on its own backend, behind a pooler on a pool of its own (R-HA-008, Q-HA-20). Replicas stay ready and keep their jobs | Higher latency, some `503`; no replica leaves the Service because of the load | Scale the database, or lower the load |
+| Instance of a transaction-mode pooler stopped or lost (request or control pooler, R-HA-058) | Connection errors of class `08` on the main pool | Retry with backoff (R-HA-009); the new connection reaches another instance of the same pooler through its Service; session-host connections are unaffected | A graceful stop that outlasts trove's connection lifetime: none. A lost instance: only requests whose `COMMIT` was in flight get `503` with `Retry-After` | Automatic |
 | Object storage unreachable from all replicas, for any duration | Circuit breaker (R-STOR-033), `objectStore` check, alert `TroveObjectStoreUnreachable` | Behavior per [storage.md](storage.md) R-STOR-036: new uploads `503`, downloads of stored content `503`, metadata, listings, deletes, deduplicated uploads and the API keep working. Running replicas stay ready (R-HA-008, Q-HA-1). A replica that starts during the outage stays not ready until its startup check (R-STOR-035) succeeds; it retries without exiting, so it becomes ready as soon as the store returns | Degraded: reads of metadata, the UI, logins and CI token exchange succeed; blob transfers fail with retryable `503` | Automatic; no blob is marked missing because of errors |
 | Object storage unreachable from one replica only | Its circuit opens; peers' do not; alert `TroveObjectStoreUnreachableSingleReplica` | That replica's blob requests fail fast with `503` and `Retry-After`; it stays ready | Blob requests that hit it fail; clients' retries are balanced by the edge proxy and usually reach another replica | Automatic when its network path heals; otherwise the responder deletes the pod |
 | S3 throttling (`503 SlowDown`) | SDK retryer | Retries with backoff (R-STOR-033) | Higher latency | The content-addressed key layout spreads load across prefixes (R-HA-050) |
 | S3 credentials fail (expired web identity, revoked key) | `AccessDenied`, refresh error | Counted as object-store failure; logged with the credential source, never the secret | As the outage rows | Fix the credential; static key files are re-read (R-STOR-031) |
+| Valkey primary lost or switched over (Sentinel failover) | Command errors, timeouts, `READONLY`, closed connections; Sentinel's `switch-master` event as an early hint | Each Valkey use falls back for that call (R-HA-057); the client re-resolves the primary through Sentinel and checks its `ROLE` (R-HA-056); after `valkey.circuit_breaker.failure_threshold` failures the circuit skips Valkey for `open_duration`; replicas stay ready (Q-HA-13) | None; latency rises; a concurrent cache miss may be fetched upstream once per replica instead of once | Automatic, within Sentinel's `down-after-milliseconds` plus the failover and one reconnect backoff |
+| Sentinel quorum lost (fewer than a majority of Sentinels reachable) | Sentinel queries fail or time out; `trove_valkey_sentinels_reachable`, the number of configured Sentinels that answered the last probe of all of them (R-HA-056 step 4, R-HA-057) | Existing connections to the primary keep working; a reconnect needs one reachable Sentinel; no failover can happen meanwhile | None while the primary is healthy; if the primary fails too, as the next row | Restore the Sentinels; alert `TroveValkeySentinelsDegraded` |
+| Valkey unavailable for every replica, for any duration | Circuit open on every replica, `valkey` check, alert `TroveValkeyUnavailable` | Degraded mode (R-HA-057): fetch collapse and negative caching per replica, rate limits approximated per replica, changes applied at the next change-log poll (R-HA-004); replicas stay ready; a replica started during the outage becomes ready (Q-HA-13) | None; upstream load rises, changes take up to `cluster.epoch_poll_interval` | Automatic; nothing to repair in Valkey |
+| Valkey unreachable from one replica only | Its circuit opens; peers' do not; alert `TroveValkeyUnavailableSingleReplica` | That replica runs in degraded mode; it stays ready | None | Automatic when its path heals; otherwise the responder deletes the pod |
+| Valkey content lost (flush, restart without persistence, a failover that drops writes not yet replicated) | Not detected, and not needed | A lost fetch lock causes a duplicate upstream fetch, which content addressing makes harmless (INV-11); negative-cache entries are fetched again; rate-limit counters restart; an entry that an older primary brings back is ignored when a newer invalidation covers it (R-ARCH-030) | None | Automatic |
+| Valkey rejects trove's credentials or certificate (rotation mistake) | `WRONGPASS`, `NOAUTH`, TLS verification error | Running replicas: as "Valkey unavailable". New replicas: not ready until fixed, because a configuration error gates the first readiness (Q-HA-13), so a rollout stalls instead of degrading every replica | None from running replicas | Fix the Secret or the Valkey user |
+| Backup pod evicted, crashed or cut off during a run | Pod failure; Job controller | A drain eviction is not counted against `backoffLimit` (R-HA-060); the Job starts a new pod; an incomplete run is never listed as a backup ([backup-and-restore.md](backup-and-restore.md)) | None; serving replicas are not involved | Automatic; `TroveBackupFailed` when a run ends `failed` or `abandoned` (an `interrupted` run does not count), `TroveBackupStale` when no run succeeds within 1.5 × `backup.expected_interval` (R-HA-045) |
+| Restore pod evicted, crashed or cut off during a restore | Pod failure; Job controller | A drain eviction is not counted against `restore.backoffLimit`; the Job's next pod resumes from the restore anchor ([backup-and-restore.md](backup-and-restore.md) R-BAK-021); `trove migrate` refuses the anchored database meanwhile (R-HA-019) | None beyond the restore's own downtime; both roles are at zero | Automatic; a Job that failed for good is deleted and created again (R-HA-060) |
 | Spool volume full | Spool budget (R-STOR-004) | New uploads `503` with `Retry-After`; uploads larger than the whole budget `413` | Retry succeeds when space frees | R-HA-035 sizing |
 | Migration Job fails | Helm sees the hook Job fail | Old pods keep running on the unchanged or expanded schema; new pods are never created (pre-upgrade runs before the new manifests are applied) | None | Fix the cause, re-run `helm upgrade` (R-HA-019) |
 | Encryption key set differs on a new replica | Startup check (R-HA-027) | The new replica refuses to start | None (old replicas keep serving; the rollout stalls) | Fix the Secret |
@@ -440,6 +594,37 @@ the check thresholds and the chart's probe settings (R-HA-034) must satisfy toge
   `health.failure_threshold` and `health.success_threshold`. It is meant for an installation behind
   an outer load balancer that can fail over to a second installation. The chart passes
   `config.health.require_object_store` through unchanged.
+- **Valkey never gates readiness after the first one** (INV-12, Q-HA-13). The `valkey` check runs
+  every `valkey.health_check_interval` and is reported in verbose `/readyz`
+  (`"degraded":["valkey"]`), in the replica registry and as `trove_valkey_available`. Before a
+  replica is ready for the first time, only a *configuration error* holds it back: Valkey or a
+  Sentinel rejects the credentials (`WRONGPASS`, `NOAUTH`, an ACL denial), TLS verification fails,
+  or every reachable Sentinel answers that it does not know `valkey.sentinel.primary_name`.
+  Unreachable Sentinels or data nodes never hold a replica back, so a replica started during a
+  Valkey outage becomes ready in degraded mode, and the autoscaler and a drain can still add
+  capacity. A rollout with a mistyped Valkey setting stalls with `maxUnavailable: 0` instead of
+  degrading every replica.
+- **Load never fails a check.** The `database` check ([operations-and-observability.md](operations-and-observability.md)
+  R-OPS-001) and the change-log poll behind the `invalidation` check run on the replica's control
+  connection ([architecture.md](architecture.md) R-ARCH-019), never on the request pool. A request
+  pool that is exhausted under load therefore makes requests wait or fail with `503`, but never
+  takes replicas out of the Service one after another, which would push their load onto the rest
+  and turn overload into an outage. Behind a transaction-mode pooler, the control connection uses
+  a server pool of its own for the same reason (R-HA-058, Q-HA-20).
+- **No check undercuts the PostgreSQL window.** The `invalidation` check of
+  [architecture.md](architecture.md) R-ARCH-018 also depends on PostgreSQL, through the change-log
+  poll. It MUST NOT turn a replica unready sooner than the `database` check does. Its evaluations
+  start failing only once the poll has been stale for `cluster.epoch_max_staleness` (default 5 s),
+  and it is debounced with the same thresholds as `database` (`health.failure_threshold`,
+  `health.success_threshold`, [operations-and-observability.md](operations-and-observability.md)
+  R-OPS-001). For one outage, `invalidation` therefore turns a replica unready no earlier than
+  `database`, which keeps architecture.md's 5 s default. Otherwise a switchover of a few seconds
+  would empty the Service through `invalidation`, although requests ride it out in their retry loop
+  (R-HA-009). Raising `cluster.epoch_max_staleness` to the readiness window (about 15 s) would be
+  the alternative, at the cost of a slower readiness signal for a replica cut off from the change
+  log. Code paths that must fail closed sooner, such as authorization
+  ([authorization.md](authorization.md) R-AUTHZ-028), read the change-log freshness directly
+  instead of relying on readiness.
 - A replica whose schema is behind its `requiredSchema` (R-HA-018) stays not ready and logs the
   required schema version once per minute. It does not exit, so the rollout stalls visibly with
   `maxUnavailable: 0` (R-HA-020) instead of crash-looping, and the replica becomes ready as soon as
@@ -459,6 +644,11 @@ Acceptance criteria:
   and all pods return to ready within 15 s after removal.
 - With that policy applied, `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`
   evicts the trove pod on that node instead of waiting.
+- A test endpoint of the test build holds every request connection of every `web` replica in
+  `SELECT pg_sleep(4)` transactions for 60 s, once with direct connections and once with the
+  pooler profile (R-HA-058), where it also occupies every server connection of the request pooler.
+  `/readyz` answers `200` on every replica throughout, and no `worker` job returns to `queued`
+  because a heartbeat was late.
 
 ### R-HA-009 · PostgreSQL failover: reconnect and retry
 Priority: **MVP** · Covers: HA-064
@@ -477,6 +667,10 @@ trove MUST implement the following.
   points at the current primary. With Amazon RDS it is the instance or cluster endpoint whose DNS
   record moves on failover. Go's resolver does not cache DNS answers, so each new connection
   resolves the name again.
+- With a transaction-mode pooler (R-HA-058), `database.host` names the pooler, and the pooler
+  follows the primary. A failover then reaches trove as errors on pooled connections (class `08`,
+  `25006` from a server connection that the pooler opened before the switch), which the table below
+  retries. The session host follows the rules above.
 
 **Detecting dead connections.**
 
@@ -515,7 +709,9 @@ the function. S3 writes happen before the transaction and are idempotent by cont
 
 **After a failover.**
 
-- The `LISTEN` session reconnects with backoff and flushes caches (R-HA-004).
+- The change-log poll resumes on the control connection, a reserved connection of the main class.
+  An area whose epoch went backwards because the failover lost committed transactions, or whose
+  epoch number was reused by later writes, is flushed (R-HA-004).
 - Singleton leases are lost with their sessions. The work aborts and resumes from its cursor on the
   next scheduled run (R-HA-006).
 - The pool refills on demand. `database.pool.min_conns` connections are re-established in the
@@ -594,8 +790,8 @@ On `SIGTERM` a replica follows R-OPS-001: it fails readiness at once, keeps serv
 connections and waits for in-flight requests. This page fixes the time budget and what happens to
 background work.
 
-- The chart sets `terminationGracePeriodSeconds` (default 120 s for API pods, 300 s for worker pods
-  with the split). The server shutdown timeout ([architecture.md](architecture.md)) MUST be derived
+- The chart sets `terminationGracePeriodSeconds` per role (default 120 s for `web`, 300 s for
+  `worker`). The server shutdown timeout ([architecture.md](architecture.md)) MUST be derived
   from it: `server.shutdown_timeout = terminationGracePeriodSeconds − health.shutdown_drain_delay − 5 s`.
   The chart passes the grace period to the process as `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD`, so
   the two cannot drift apart. The process exits before the kubelet's `SIGKILL`.
@@ -606,13 +802,31 @@ background work.
 - Workers stop claiming jobs at `SIGTERM`. Running jobs get the shutdown timeout to finish or to
   persist their cursor. At the deadline their job leases are released explicitly
   (`state = 'queued'`, `attempt` unchanged), and their advisory-lock sessions are closed.
-- The `LISTEN` session and the pools are closed last.
-- A transfer that outlasts the grace period is cut. The client sees a connection reset and must
-  retry. Operators size the grace period to their p99 upload duration (R-HA-050).
+- A fetch that the replica leads for other waiters (R-REPO-026) finishes within the shutdown timeout
+  or is abandoned; either way the replica releases its Valkey fetch lock explicitly (delete only if
+  the lock still carries this replica's token), so waiters on other replicas take over at once
+  instead of after the lock's TTL. From `SIGTERM` on, the replica holds no new cross-replica
+  flight; a request on it joins a flight held elsewhere or fetches under its in-process
+  single-flight only ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026, Q-REPO-7).
+- Leases are released explicitly, and the lease connections, the Valkey connections and the pools
+  are closed last (R-ARCH-024). One exception: the `scheduler` lease is released at `SIGTERM`
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-001 shutdown step 1,
+  R-OPS-019), not after the running jobs, so a worker drain hands over scheduling within
+  `cluster.lease_retry_interval` instead of after the worker grace period. Leases that fence a
+  running singleton job stay with that job until it ends or is released.
+- A transfer that outlasts `server.shutdown_timeout` is cut at the deadline
+  ([architecture.md](architecture.md) R-ARCH-024 step 5, Q-ARCH-18). A download is detectable as
+  cut (`Content-Length`) and resumes with `Range` and `If-Range` on any replica; an upload whose
+  body was still arriving leaves nothing committed and is retried by the client. An upload whose
+  body has fully arrived is not cut before its status line: it may run on into the 5 s margin of
+  the grace period for at most 4 s, so a commit whose answer is lost never turns the client's retry
+  into a version conflict, and the process still exits before `SIGKILL`. Operators size the grace
+  period to their p99 transfer duration (R-HA-050); R-HA-059 states the tolerance that the drain
+  test applies.
 
 Acceptance criteria:
 
-- `kubectl rollout restart deploy/trove` during a loop of `curl -T 500mb.bin …/files/generic-local/<n>.bin`
+- `kubectl rollout restart deploy/trove-web` during a loop of `curl -T 500mb.bin …/files/generic-local/<n>.bin`
   over a link limited to 50 MB/s: no upload fails.
 - `kubectl delete pod <worker>` during a test job that persists its cursor every second: the job
   continues on another replica from the persisted cursor with `attempt` unchanged.
@@ -631,9 +845,11 @@ PostgreSQL (R-STOR-004). What a crash leaves behind, and what removes it:
 | Objects written to S3 whose metadata commit never happened | Orphan sweep after `storage.orphans.min_age` (R-STOR-026) |
 | Incomplete multipart uploads | Orphan sweep (`storage.orphans.multipart_max_age`), plus a bucket lifecycle rule `AbortIncompleteMultipartUpload` after 1 day as a second line ([lifecycle rule](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html)) |
 | Jobs in `running` with a dead owner | Lease expiry and the reaper (R-HA-005) |
-| Advisory locks of the dead process | Released when its session ends; on node loss after the server's TCP keepalive, which trove sets per session (R-HA-013, R-HA-015) |
+| Lease locks of a dead `worker` process (the only advisory locks a replica holds; `web` replicas hold none) | Released when its lease session ends; on node loss after the server's TCP keepalive, which trove sets per session (R-HA-013, R-HA-015) |
 | A `replica` row with a stale heartbeat | Shown as `lost`, pruned after 24 h (R-OPS-003) |
-| Remote-fetch collapse locks | Released with the session (R-REPO-026) |
+| Remote-fetch collapse locks in Valkey | Expire with their Valkey TTL (`cluster.flight_lock_ttl`, 30 s), or are released at graceful shutdown (R-HA-011); waiters fetch themselves after their wait bound ([architecture.md](architecture.md) R-ARCH-033, R-REPO-026) |
+| Negative-cache entries and counters the dead process wrote to Valkey | Nothing to remove: every key carries a TTL, and readers validate what they read (R-ARCH-030) |
+| Partial output of a backup run | Never listed as a backup; removed by the next run or by retention ([backup-and-restore.md](backup-and-restore.md)) |
 
 - The node-local volume of the catalog (HA-005: persistent per-node storage for data in transit)
   does not exist in trove. Uploads are never acknowledged before they reach S3, and there is no
@@ -648,6 +864,95 @@ Acceptance criteria:
   multipart upload remains under the prefix
   (`aws s3api list-multipart-uploads --bucket trove-blobs --prefix trove/` is empty).
 - After the restart, the spool directory of that pod is empty.
+
+### R-HA-059 · Node drain without outage
+Priority: **MVP** · Covers: HA-009, HA-047
+
+A node drain (`kubectl drain`, a node-pool upgrade, a cluster-autoscaler scale-down) MUST cause no
+failed client request when the installation follows the rules below (INV-12). The rules define
+what "sized for it" means.
+
+**Rules.**
+
+1. **Capacity is N + 1 per role.** For each role, and each pool of R-HA-062:
+   `minimum replicas ≥ ceil(peak load ÷ capacity of one replica) + maxUnavailable of its PDB`.
+   The capacity of one replica comes from the reference load test (R-HA-050). Kubernetes evicts
+   before the replacement exists, so the remaining replicas carry the peak alone until the
+   replacement is ready. The autoscaler may add replicas above the minimum, but the rule does not
+   count on it reacting during a drain. The defaults (three `web`, two `worker`, Q-HA-16) satisfy
+   the rule for a peak that two `web` replicas carry.
+2. **One pod per role at a time.** Each role's PDB allows one unavailable pod (`maxUnavailable: 1`,
+   R-HA-032). `kubectl drain` retries a refused eviction, so a node that hosts several pods of one
+   role is drained one pod after the other, each after the previous replacement is ready.
+3. **Replacements can schedule.** Both roles spread over nodes with `DoNotSchedule` and
+   `nodeTaintsPolicy: Honor` (R-HA-032). A cordoned node carries the
+   `node.kubernetes.io/unschedulable` taint. With the default `nodeTaintsPolicy: Ignore` it would
+   still count as a spreading domain holding zero pods, and the replacement of a role with one pod
+   on each of three nodes would stay `Pending`
+   ([topology spread constraints](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/#spread-constraint-definition):
+   `nodeTaintsPolicy` defaults to `Ignore`, is on by default since Kubernetes 1.26 and GA since
+   1.33). The remaining nodes need free resources for one pod of each role that is being drained.
+4. **The endpoint is gone before the listener closes.** The replica fails readiness at `SIGTERM` and
+   keeps serving for `health.shutdown_drain_delay` (R-HA-011). The delay MUST exceed the time the
+   edge proxy needs to stop sending to an endpoint whose readiness flipped; otherwise the edge sends
+   new requests to a closed listener, and clients see `502`. The drain test measures that time for
+   each edge of R-HA-039 and fails when the delay is shorter.
+5. **Dependencies drain by their own rules.** trove's guarantee holds only when the services on the
+   drained node are drained safely as well:
+
+   | Service on the node | What makes its drain safe |
+   |---|---|
+   | PostgreSQL instance | CloudNativePG switches the primary over before it drains the primary's node ([Kubernetes upgrade and maintenance](https://cloudnative-pg.io/docs/1.30/kubernetes_upgrade)); with `dataDurability: required` at least three instances, so a drained standby leaves a synchronous standby (R-HA-013). Other platforms: their maintenance procedure |
+   | Pooler instance (R-HA-058), request or control pooler | At least two instances of each pooler on different nodes, a PDB, PgBouncer 1.23 or later, whose `SIGTERM` waits for clients to disconnect ([signals](https://www.pgbouncer.org/usage.html)), and a grace period longer than trove's pooled connection lifetime |
+   | Valkey primary | A replica and a Sentinel majority on other nodes. Sentinel fails over after `down-after-milliseconds`, and trove runs degraded meanwhile (R-HA-057). Running `SENTINEL FAILOVER` before the primary stops shortens that window |
+   | Valkey replica, Sentinel | A PDB with `maxUnavailable: 1` from whoever runs Valkey; three Sentinels on three nodes keep a majority |
+   | S3-compatible store, edge proxy | The platform's; both must run highly available |
+   | A running backup pod | Evicted without a disruption budget; the Job starts the run again (R-HA-060) |
+
+6. **Long transfers.** A transfer on an evicted replica that lasts longer than
+   `server.shutdown_timeout` (grace period − drain delay − 5 s, R-HA-011) is cut, and its client
+   sees a connection reset. This is the one client effect a drain may have. Downloads resume with a
+   `Range` request; uploads are repeated by the client. Installations that cannot accept it raise
+   `terminationGracePeriodSeconds` to their p99 transfer duration (R-HA-050).
+
+**Acceptance test.** Nightly in CI on the kind profile of R-HA-051 with three worker nodes; `web`
+runs 3 replicas, the chart default, set with `--set web.replicaCount=3` on top of
+`values-dev.yaml`, and `worker` 2. PostgreSQL and Valkey run on nodes other than the drained one,
+except where a variant says otherwise. The load starts 5 minutes before the drain and runs until
+10 minutes after `kubectl drain` returns:
+
+| Load | Rate |
+|---|---|
+| `npm ci --cache "$(mktemp -d)"` of a fixture with 400 locked dependencies through the virtual repository `npm-all` (remote and local members, cache warm) | 8 parallel loops |
+| `dotnet restore --no-cache --force` of a fixture with 60 packages through `nuget-all` | 4 parallel loops |
+| `npm publish` of a new version to `npm-local`; `dotnet nuget push` of a new version to `nuget-local` | one each every 10 s |
+| k6 `constant-arrival-rate` against the edge: 50 % npm packument GETs, 30 % npm tarball GETs of 1–5 MB, 20 % NuGet registration and flat-container GETs | 150 requests/s |
+| Long-transfer probes: `curl --limit-rate 2M --retry 5 --retry-all-errors -C - -o big.bin …/files/generic-local/1gib.bin` (about 512 s, longer than the `web` grace period) | 2 parallel loops |
+
+The drain is `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=20m` of a
+node that hosts at least one `web` and one `worker` pod. Pass conditions:
+
+- every `npm` and `dotnet` command exits `0` with the clients' default retries;
+- k6 records no response other than `2xx` or `304` and no connection error (k6 does not retry);
+- the p99 latency of k6 requests from the first eviction until 2 minutes after the drain is at most
+  twice the p99 of the warm-up;
+- every acknowledged publish installs afterwards;
+- a long-transfer probe is cut at most once per evicted `web` pod that served it, completes through
+  resume, and its SHA-256 matches; a cut on a pod that was not evicted fails the test;
+- the kubelet events show no `SIGKILL` of a trove container;
+- every job that ran on an evicted `worker` pod finishes on another one with `attempt` unchanged
+  (R-HA-011);
+- no trove pod stays `Pending` for longer than 60 s, and `kubectl drain` returns within 10 minutes.
+
+Variants, with the same load and pass conditions:
+
+| Variant | The drained node also hosts | Additional pass condition | Runs |
+|---|---|---|---|
+| A | nothing else | — | every change to `main` (2 minutes of load before and 3 after) and nightly |
+| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | nightly |
+| C | the PostgreSQL primary | CloudNativePG switches over before the eviction | nightly |
+| D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | nightly |
+| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | nightly |
 
 ## PostgreSQL
 
@@ -682,7 +987,7 @@ Routing reads to replicas is Deferred.
 | `tcp_keepalives_idle`, `tcp_keepalives_interval`, `tcp_keepalives_count` | Recommended `60`, `10`, `6` | The server ends the session of a vanished replica, and releases its advisory locks, within about 2 minutes instead of the OS default ([connection settings](https://www.postgresql.org/docs/current/runtime-config-connection.html)). trove sends the same values as startup parameters on every session it opens, the lock-holding ones included (R-HA-015), so the advisory-lock bound holds without this server setting; the server setting still covers other clients |
 | `client_connection_check_interval` | Recommended `10s` | Detects a vanished client during a long query |
 | WAL archiving | Required for point-in-time recovery (R-HA-023) | Restore to a point in time |
-| Synchronous replication | Recommended, with one synchronous standby | Without it, a failover can lose transactions that were acknowledged as `201`. With CloudNativePG: `postgresql.synchronous: {method: any, number: 1, dataDurability: required}` ([replication](https://cloudnative-pg.io/docs/1.30/replication)); `required` pauses writes when no standby is available, `preferred` keeps writing and risks that loss |
+| Synchronous replication | Recommended, with one synchronous standby | Without it, a failover can lose transactions that were acknowledged as `201`. With CloudNativePG: `postgresql.synchronous: {method: any, number: 1, dataDurability: required}` ([replication](https://cloudnative-pg.io/docs/1.30/replication)); `required` pauses writes when no standby is available, `preferred` keeps writing and risks that loss. With `required`, run at least three instances, so that a drained or lost standby still leaves a synchronous standby and a node drain never pauses writes (R-HA-059) |
 | `default_tablespace` | Empty or a tablespace created for the purpose | Partitioned tables cannot be created in `pg_global` |
 | Extensions | None required | Any page that needs one MUST add it to this table |
 | `idle_in_transaction_session_timeout`, `statement_timeout`, `lock_timeout` | Not required at server level; trove sets them per session (R-HA-015) | Works on managed services without parameter-group changes |
@@ -804,7 +1109,7 @@ GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
   (R-OPS-015, R-OPS-017).
 - In single-role mode the runtime role owns these objects, so none of this applies there (R-OPS-015,
   H-39).
-- The runtime role needs no privilege for advisory locks, `LISTEN` or `NOTIFY`.
+- The runtime role needs no privilege for advisory locks.
 - Preflight, run by the migration Job and by every replica at startup, MUST check:
   - the server version (R-HA-013);
   - `server_encoding = 'UTF8'`;
@@ -822,15 +1127,62 @@ GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
 
     A missing grant and a surplus grant on the audit objects both fail the check. In single-role
     mode the runtime role owns every object, so the check is skipped there.
+  - when `database.backup_role` is set (migration Job only, after the grants above), that the role
+    exists and holds `SELECT` on every table and sequence of the schema, `INSERT`, `UPDATE` and
+    `DELETE` on `backup_run` and `backup_blob_pin`, and `INSERT` on `audit_event`. `trove backup
+    create` checks the same grants at start and exits `2` naming a missing one (R-BAK-015).
 - Managed services: on Amazon RDS the administrator account is not a true superuser, and the SQL
   above runs as that account unchanged. With CloudNativePG, `bootstrap.initdb.owner` creates the
   owner; the two runtime roles are added through the cluster's managed roles or with the SQL above.
+- **Backup and restore credentials (R-HA-060).** The backup CronJob uses `secrets.databaseBackup`
+  when it is set, otherwise the runtime credentials. The restore Job uses the migration credentials
+  (the runtime credentials in single-role mode), because a restore creates schema objects and
+  disables triggers. The privileges each command needs are listed in
+  [backup-and-restore.md](backup-and-restore.md) R-BAK-015. A dedicated backup login is
+  recommended: the backup pod also holds the backup target's credentials, and with its own login it
+  cannot change trove's data beyond its own run records. That login is not read-only, because a run
+  records itself, pins blobs and audits its outcome. The database administrator creates it once,
+  with connect and schema usage only:
+
+  ```sql
+  CREATE ROLE trove_backup LOGIN PASSWORD :'backup_password';
+  GRANT CONNECT ON DATABASE trove TO trove_backup;
+  GRANT USAGE ON SCHEMA trove TO trove_backup;
+  ```
+
+  When `database.backup_role` names it, `trove migrate` (as the owner) grants the rest after
+  applying the steps, idempotently on every run, so tables added by later migrations are covered:
+
+  ```sql
+  GRANT SELECT ON ALL TABLES IN SCHEMA trove TO trove_backup;
+  GRANT SELECT ON ALL SEQUENCES IN SCHEMA trove TO trove_backup;
+  GRANT INSERT, UPDATE, DELETE ON backup_run, backup_blob_pin TO trove_backup;
+  GRANT INSERT ON audit_event TO trove_backup;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA trove GRANT SELECT ON TABLES TO trove_backup;
+  ```
+
+  The default privileges cover tables the owner creates between two migration runs, such as the
+  monthly `audit_event` partitions of `audit_maintain_partitions()`, so the export's `LOCK TABLE`
+  never meets a partition the backup role cannot read.
+- **Role defaults with a transaction-mode pooler (R-HA-058).** Per-session settings cannot travel
+  as startup parameters through the pooler. The administrator sets them on each runtime login, not
+  on the group role `trove_app`, because role-level settings are not inherited by members
+  ([ALTER ROLE](https://www.postgresql.org/docs/current/sql-alterrole.html)):
+
+  ```sql
+  ALTER ROLE trove_app_a IN DATABASE trove SET statement_timeout = '30s';                   -- example: database.session.statement_timeout
+  ALTER ROLE trove_app_a IN DATABASE trove SET lock_timeout = '5s';                         -- example
+  ALTER ROLE trove_app_a IN DATABASE trove SET idle_in_transaction_session_timeout = '60s'; -- example
+  ALTER ROLE trove_app_a IN DATABASE trove SET search_path = trove;                         -- example: database.schema
+  -- the same four statements for trove_app_b
+  ```
 
 Configuration:
 
 ```yaml
 database:
   schema: trove               # default (proposed)
+  backup_role: ""             # default (proposed): empty = no backup grants; example: trove_backup (R-BAK-015)
   preflight:
     allow_superuser: false      # default (proposed)
 ```
@@ -845,6 +1197,10 @@ Acceptance criteria:
   names `audit_event` and `UPDATE`.
 - A runtime role with `SUPERUSER` makes the replica exit with a message naming
   `database.preflight.allow_superuser`.
+- With `database.backup_role: trove_backup`, after `trove migrate` a backup with the
+  `trove_backup` credential completes, and `psql -U trove_backup -c 'DELETE FROM trove.job'` fails
+  with `42501`. After `REVOKE INSERT ON trove.audit_event FROM trove_backup` by hand, the next
+  migration Job grants it again.
 
 ### R-HA-015 · Connection settings and TLS
 Priority: **MVP** · Covers: HA-061, HA-063
@@ -861,10 +1217,15 @@ Priority: **MVP** · Covers: HA-061, HA-063
 - The CloudNativePG CA Secret contains the CA's private key (`ca.key`) next to `ca.crt`. The chart
   MUST project only the configured key (`ca.crt`) into the pod (R-HA-030), so the replica never
   holds a key that can mint server certificates.
-- `application_name` is `trove/<pod name>/<pool>` with `<pool>` in `main`, `lease`, `lock`,
-  `listen`, `migrate`, truncated to 63 bytes. This makes every session attributable in
-  `pg_stat_activity`.
-- Per-session settings, sent as startup parameters:
+- `application_name` is `trove:<pod name>:<class>` with `<class>` in `main`, `lease`, `migrate`
+  and `backup` (the restore Job uses `backup` as well), truncated to 63 bytes
+  ([architecture.md](architecture.md) R-ARCH-019 owns the classes). This makes every session
+  attributable in `pg_stat_activity`.
+- Per-session settings, sent as startup parameters on direct and session-host connections. Through
+  a transaction-mode pooler the main pool sends only `application_name` and `TimeZone`, which
+  PgBouncer tracks; PgBouncer refuses other startup parameters
+  ([`track_extra_parameters`](https://www.pgbouncer.org/config.html)). The other settings then come
+  from role defaults (R-HA-014), and preflight verifies them (R-HA-058):
 
 | Parameter | Value |
 |---|---|
@@ -877,17 +1238,22 @@ Priority: **MVP** · Covers: HA-061, HA-063
 
 - The server-side keepalive parameters are user-settable (context `user`), so they need no
   privilege and no server configuration. They make the server end the session of a vanished
-  replica, and release its advisory locks (R-HA-006, R-REPO-026), within
-  `idle + interval × count` (about 2 minutes with the defaults), the bound R-HA-013 recommends for
-  the server setting. They are sent on every session, which includes the listener (coordination)
-  session, the lease pool and the fetch-collapse lock pool that hold session-level locks.
+  replica, and release its advisory locks (R-HA-006), within `idle + interval × count` (about
+  2 minutes with the defaults), the bound R-HA-013 recommends for the server setting. They are sent
+  on every session that connects to the session host, which includes the lease pool that holds
+  session-level locks.
 
 Configuration:
 
 ```yaml
 database:
-  host: trove-db-rw.trove.svc     # example; comma-separated list allowed (R-HA-009)
+  host: trove-db-rw.trove.svc     # example; comma-separated list allowed (R-HA-009); the pooler with R-HA-058
   port: 5432                          # default (proposed)
+  session_host: ""                    # default (proposed): empty = host; the direct host with R-HA-058
+  session_port: 0                     # default (proposed): 0 = port
+  control_host: ""                    # default (proposed): empty = host; the control pooler with R-HA-058 (Q-HA-20)
+  control_port: 0                     # default (proposed): 0 = port
+  control_name: ""                    # default (proposed): empty = name; a PgBouncer database entry of its own
   name: trove                       # example
   username_file: /var/run/secrets/trove/database/username  # default (proposed); set by the chart
   password_file: /var/run/secrets/trove/database/password  # default (proposed); set by the chart
@@ -909,7 +1275,7 @@ database:
 
 Acceptance criteria:
 
-- `SELECT application_name, ssl FROM pg_stat_activity JOIN pg_stat_ssl USING (pid) WHERE application_name LIKE 'trove/%'`
+- `SELECT application_name, ssl FROM pg_stat_activity JOIN pg_stat_ssl USING (pid) WHERE application_name LIKE 'trove:%'`
   shows `ssl = true` for every trove session.
 - Against a server whose `tcp_keepalives_*` settings are left at `0` (operating-system default),
   R-HA-006's partition test passes, and the other replica takes the lease within 150 s of the
@@ -921,35 +1287,73 @@ Acceptance criteria:
 ### R-HA-016 · Connection budget and pool sizing
 Priority: **MVP** · Covers: HA-062
 
-Every replica opens connections from four sources:
+A replica opens PostgreSQL connections from these sources. [architecture.md](architecture.md)
+R-ARCH-019 owns the pools; this requirement owns the budget.
 
-| Source | Key | Default (proposed) |
-|---|---|---|
-| Main pool | `database.pool.max_conns` | 20 |
-| Lease pool (R-HA-006) | `database.lease_pool_size` | 4 |
-| Fetch-collapse lock pool ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026) | `proxy.lock_pool_size` | 16 |
-| Listener (R-HA-004) | — | 1 |
+| Source | Key | Default (proposed) | Roles | Connects to |
+|---|---|---|---|---|
+| Main pool (class `main`) | `database.pool.max_conns` | 20 | `web`, `worker` | `database.host`, the pooler with R-HA-058 |
+| Lease pool (class `lease`, R-HA-006) | `database.lease_pool_size` | 4 | `worker` | session host |
+
+There is no listener session and no fetch-collapse lock pool any more: invalidations travel through
+the change log on the main pool (R-HA-004), and fetch collapse takes a Valkey lock since INV-11
+changed ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026,
+[architecture.md](architecture.md) Q-ARCH-14). There is no coordination session either, so a `web`
+replica opens nothing but its main pool. Jobs add the migration Job (2 connections) and the
+backup Job (`backup_conns` = 2 + `backup.database.parallel`, 4 with defaults,
+[backup-and-restore.md](backup-and-restore.md) R-BAK-005), counted once per cluster because one
+backup runs at a time (R-BAK-010), both on the session host. The restore Job uses 2 connections and
+is not counted, because no replica runs while it does (R-HA-060). The main class includes one
+reserved control connection per replica inside `database.pool.max_conns`
+([architecture.md](architecture.md) R-ARCH-019), so the formula below does not change.
+`database.pool.max_conns` must therefore be at least 2: the replica refuses a smaller value at
+start-up and names the key (R-ARCH-019), and the `config` schema carries the same minimum, so
+`helm template` refuses it first (R-HA-029). Behind a transaction-mode pooler the control
+connection reaches the server through the control pool of R-HA-058, whose server connections
+`database.pooler.server_connections` includes.
 
 The PostgreSQL connection limit MUST satisfy:
 
 ```text
-per_replica  = database.pool.max_conns + database.lease_pool_size + proxy.lock_pool_size + 1
-replicas_max = Σ over Deployments (autoscaling.enabled ? maxReplicas : replicaCount)
-               + Σ over Deployments rollingUpdate.maxSurge
-budget       = replicas_max × per_replica
-               + 2                                  (migration Job)
-               + database.preflight.reserved_connections   (operators, backup tools, monitoring)
-               + superuser_reserved_connections     (server setting, default 3)
+web_max      = Σ over web Deployments (autoscaling.enabled ? maxReplicas : replicaCount) + rollingUpdate.maxSurge
+worker_max   = Σ over worker Deployments, the same terms
+session      = worker_max × database.lease_pool_size
+pooled       = database.pooler.mode == transaction
+                 ? database.pooler.server_connections           (declared, R-HA-058: request and control pools)
+                 : (web_max + worker_max) × database.pool.max_conns
+budget       = pooled + session
+               + 2                                              (migration Job)
+               + backup_conns                                   (backup Job: 2 + backup.database.parallel, once per cluster)
+               + database.preflight.reserved_connections        (operators, tools, monitoring)
+               + superuser_reserved_connections                 (server setting, default 3)
 max_connections ≥ budget
 ```
 
-Example with defaults, two replicas, `maxSurge: 1`: 3 × (20 + 4 + 16 + 1) + 2 + 10 + 3 = **138**.
-The PostgreSQL default of 100 is too small, so the chart's NOTES print the computed budget.
+Examples:
 
-- The chart passes `replicas_max` to the migration Job (`TROVE_DATABASE_PREFLIGHT_EXPECTED_REPLICAS`).
+- Defaults, direct connections, `web` 3 and `worker` 2 replicas with `maxSurge: 1`
+  (`web_max` 4, `worker_max` 3): 7 × 20 + 3 × 4 + 2 + 4 + 10 + 3 = **171**, with no `web_max × 1`
+  term, because `web` replicas hold no session connection. The PostgreSQL default of 100 is too
+  small, so the chart's NOTES print the computed budget.
+- Large profile (R-HA-050), `web` up to 16 and `worker` up to 6, `max_conns: 30`: without a pooler
+  24 × 30 + 7 × 4 + 19 = **767**; with a transaction-mode pooler declaring 100 server connections,
+  100 + 28 + 19 = **147**.
+
+**Growth with the replica count (INV-12).** Without a pooler, every added replica adds its whole
+main pool. With the pooler, the main pools add nothing at the server: an added `web` replica adds
+no server connection at all, and an added `worker` replica adds its lease pool. The server-side
+count then depends only on the number of `worker` replicas, which follow job load and stay small
+(Q-HA-6).
+
+- The chart passes `web_max` and `worker_max` to the migration Job
+  (`TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS`, `TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS`).
   The Job compares the budget with `SHOW max_connections`. With
   `database.preflight.connection_budget: enforce` (default) a shortfall fails the Job, and with it
   `helm upgrade`, before the larger deployment exists. With `warn` it logs and continues.
+- trove cannot read the pooler's limits. With the pooler, `NOTES.txt` prints the client connections
+  each pooler must accept, `(web_max + worker_max) × database.pool.max_conns` for the request pool
+  and `web_max + worker_max` for the control pool, next to the budget, and R-HA-058 lists the
+  pooler settings that must match.
 - Sizing the main pool: database time per request is a few milliseconds, so 20 connections serve
   several thousand short transactions per second per replica. More connections per replica rarely
   help. The total number of *active* connections should stay near 2–4 × the database server's
@@ -976,13 +1380,15 @@ database:
 
 Acceptance criteria:
 
-- Against a server with `max_connections = 100` and the default values with three replicas,
-  `helm upgrade --install` fails in the migration Job with a message that names 179 required and
-  100 available.
+- Against a server with `max_connections = 100` and the default values, `helm upgrade --install`
+  fails in the migration Job with a message that names 171 required and 100 available.
 - Under the reference load test (R-HA-050, medium profile),
   `max(trove_db_pool_connections{state="acquired"})` stays below `max_conns`, and
-  `SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE 'trove/%'` never exceeds
-  the computed budget.
+  `SELECT count(*) FROM pg_stat_activity WHERE usename LIKE 'trove%'` never exceeds the computed
+  budget.
+- With the pooler profile (R-HA-058), scaling `web` from 2 to 12 replicas leaves
+  `SELECT count(*) FROM pg_stat_activity WHERE usename LIKE 'trove%'` at or below the declared
+  `database.pooler.server_connections` plus the `worker` leases and the one-off connections.
 
 ### R-HA-017 · Database credential rotation without downtime
 Priority: **P1** · Covers: HA-065
@@ -996,9 +1402,8 @@ R-HA-014 (`trove_app_a`, `trove_app_b`), which share all grants through `trove_a
    and `password` of `trove_app_b` in one update. The kubelet replaces all keys of a Secret
    volume in one atomic swap, so a replica never reads a mismatched pair.
 3. Within the kubelet sync period (about a minute) every new connection uses `trove_app_b`.
-   Existing connections end within `max_conn_lifetime` + jitter. The listener and lease sessions are
-   recycled on the same schedule (the listener without a gap, R-HA-004; lease sessions only between
-   runs).
+   Existing connections end within `max_conn_lifetime` + jitter. Lease connections are recycled on
+   the same schedule, but only between singleton runs.
 4. When `SELECT count(*) FROM pg_stat_activity WHERE usename = 'trove_app_a'` returns 0, disable
    the old login: `ALTER ROLE trove_app_a PASSWORD NULL`.
 
@@ -1013,6 +1418,396 @@ Acceptance criteria:
 
 - During an `npm ci` loop, steps 1–4 complete without a failed iteration and without a pod
   restart; afterwards `pg_stat_activity` shows only `trove_app_b` sessions.
+
+### R-HA-058 · Transaction-mode pooler for the main pool
+Priority: **MVP** · Covers: HA-062
+
+The main pool MAY reach PostgreSQL through a transaction-mode pooler, so that the server-side
+connections of the main pools stay fixed however many replicas run (INV-12, Q-HA-6). Direct
+connections stay supported and remain the default.
+
+- `database.pooler.mode` says what `database.host` is: `none` (default) for PostgreSQL itself,
+  `session` for a session-mode pooler (trove behaves as with a direct connection), `transaction`
+  for a transaction-mode pooler. Statement-mode poolers are not supported for any class
+  ([architecture.md](architecture.md) R-ARCH-019): they refuse transactions of more than one
+  statement, and trove's write paths run exactly such transactions.
+- With `transaction`, every connection that needs session state connects to the *session host*
+  (`database.session_host`, `database.session_port`): the lease pool of `worker` replicas, the
+  migration Job, the backup Job and the restore Job (the session classes of R-ARCH-019). There is
+  no coordination session; `web` replicas never connect to the session host. The
+  session host is PostgreSQL or a session-mode pooler. An empty `database.session_host` is refused
+  at startup and by the chart (R-HA-029), because session work would then land on the pooler.
+- **The control connection has a server pool of its own** (Q-HA-20). The reserved control
+  connection of [architecture.md](architecture.md) R-ARCH-019 carries the change-log poll, the
+  `database` check, the registry heartbeat and the job heartbeats. Its client-side reservation does
+  not reach the server through a shared pooler: when every server connection of the request
+  pooler is busy, the control queries of every replica would queue behind request transactions,
+  every replica would fail `database` and `invalidation` at once, and workers would lose job
+  leases. With `transaction`, the control connection therefore connects to the *control endpoint*
+  (`database.control_host`, `database.control_port`, `database.control_name`): a second pooler
+  whose server pool serves only control connections (with CloudNativePG, a second `Pooler`
+  resource), or a database entry of a self-managed PgBouncer with its own `pool_size`. The chart
+  refuses a control endpoint equal to the request endpoint (R-HA-029). Its load is one poll per
+  replica per `cluster.epoch_poll_interval` plus the heartbeats and checks, each a short statement,
+  so a few server connections serve hundreds of replicas. Empty control keys mean the request endpoint,
+  which is correct for `none` and `session`, where the control connection has a server backend of
+  its own.
+- **Nothing on the main pool keeps session state:** no `SET` without `LOCAL`, no session-level
+  advisory lock, no `LISTEN`, no temporary table, no `WITH HOLD` cursor, no SQL-level `PREPARE`.
+  [architecture.md](architecture.md) R-ARCH-019 enforces this with a test over the queries.
+  Transaction-scoped advisory locks (`pg_advisory_xact_lock`) work through the pooler.
+- **Settings.** Through the pooler, the main pool sends only `application_name` and `TimeZone` as
+  startup parameters (R-HA-015). `statement_timeout`, `lock_timeout`,
+  `idle_in_transaction_session_timeout` and `search_path` come from role defaults on each runtime
+  login (R-HA-014), and request transactions still set `SET LOCAL statement_timeout`
+  (R-ARCH-019). At startup, preflight reads the four settings on a pooled connection of the request
+  endpoint and of the control endpoint, and refuses to start, naming the login and the setting,
+  when one differs from the configured value.
+- **Prepared statements.** pgx caches protocol-level prepared statements per connection. PgBouncer
+  supports them in transaction mode while `max_prepared_statements` is above 0, which its
+  documentation gives as default 200
+  ([`max_prepared_statements`](https://www.pgbouncer.org/config.html)). With a pooler that does not,
+  the main pool's exec mode is switched as [architecture.md](architecture.md) R-ARCH-019 states.
+- **The pooler is highly available.** Each pooler (request and control) runs at least two instances
+  on different nodes behind one Service, with a PodDisruptionBudget that the operator adds
+  (CloudNativePG's pooling page names none, checked 2026-10-28), and PgBouncer 1.23 or later, whose
+  `SIGTERM` waits for clients to disconnect ([signals](https://www.pgbouncer.org/usage.html)). With
+  the pooler, trove's main pool SHOULD use `database.pool.max_conn_lifetime: 5m` and
+  `max_conn_lifetime_jitter: 1m`, and the pooler pods' termination grace period MUST exceed their
+  sum. A draining pooler instance then loses no client before trove has moved its connections to
+  another instance (R-HA-059).
+- **Pooler limits.** Each request-pooler instance accepts `max_client_conn ≥ (web_max + worker_max)
+  × database.pool.max_conns`, because one instance may receive every client while the other
+  drains; each control-pooler instance accepts `max_client_conn ≥ web_max + worker_max`.
+  `database.pooler.server_connections` declares the sum over the instances of both poolers of
+  `default_pool_size` plus `reserve_pool_size`; R-HA-016 counts it.
+- TLS from trove to the pooler follows R-HA-015 (`verify-full` against the pooler's certificate).
+  A PostgreSQL failover behind the pooler is handled by R-HA-009.
+
+CloudNativePG example ([connection pooling](https://cloudnative-pg.io/docs/1.30/connection_pooling);
+the `template` needs `containers: []` when no container is overridden):
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: trove-db-pooler-rw                # example
+spec:
+  cluster:
+    name: trove-db                        # example
+  instances: 2                            # example; at least 2, on different nodes
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: "40"             # example; 2 × (40 + 5) = 90 server connections
+      reserve_pool_size: "5"              # example
+      max_client_conn: "1000"             # example; ≥ (web_max + worker_max) × max_conns
+      max_prepared_statements: "200"      # example
+  template:
+    metadata:
+      labels:
+        app: trove-db-pooler              # example
+    spec:
+      containers: []
+      terminationGracePeriodSeconds: 420  # example; > max_conn_lifetime + jitter (360 s)
+      topologySpreadConstraints:
+        - maxSkew: 1                      # example
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: trove-db-pooler        # example
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: trove-db-pooler-control           # example; the control pool (Q-HA-20)
+spec:
+  cluster:
+    name: trove-db                        # example
+  instances: 2                            # example; at least 2, on different nodes
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: "5"              # example; 2 × 5 = 10 server connections
+      reserve_pool_size: "0"              # example
+      max_client_conn: "200"              # example; ≥ web_max + worker_max
+      max_prepared_statements: "200"      # example
+  template:
+    metadata:
+      labels:
+        app: trove-db-pooler-control      # example
+    spec:
+      containers: []
+      terminationGracePeriodSeconds: 420  # example
+      topologySpreadConstraints:
+        - maxSkew: 1                      # example
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: trove-db-pooler-control  # example
+```
+
+trove configuration:
+
+```yaml
+database:
+  host: trove-db-pooler-rw.trove.svc            # example: the request pooler
+  control_host: trove-db-pooler-control.trove.svc  # example: the control pooler (Q-HA-20)
+  session_host: trove-db-rw.trove.svc           # example: PostgreSQL directly
+  pooler:
+    mode: transaction                           # example; default (proposed): none
+    server_connections: 100                     # example: 90 + 10; default (proposed): 0
+  pool:
+    max_conn_lifetime: 5m                       # example; recommended with the pooler
+    max_conn_lifetime_jitter: 1m                # example
+```
+
+Acceptance criteria (pooler profile of R-HA-051, nightly):
+
+- The full R-HA-052 suite passes.
+- R-HA-016's growth criterion holds: 10 more `web` replicas add no server connection.
+- `kubectl delete pod <pooler pod>` during an `npm ci` loop: no failed iteration. With
+  `--grace-period=0 --force`, only requests whose `COMMIT` was in flight answer `503` with
+  `Retry-After`, and every client iteration succeeds after its own retries.
+- A login without the role defaults makes the replica exit with a message naming the login and the
+  setting.
+- With `pooler.mode: transaction` and an empty `session_host`, `helm template` fails and names
+  `config.database.session_host`; with none of the `control_*` keys set, it fails and names
+  `config.database.control_host`.
+- R-HA-008's saturation criterion passes in this profile: with every server connection of the
+  request pooler held by `pg_sleep(4)` transactions for 60 s, every replica stays ready, and
+  `SHOW POOLS` on the control pooler shows no client waiting longer than 1 s.
+
+## Valkey
+
+### R-HA-056 · Valkey with Sentinel: connection and supported topologies
+Priority: **MVP** · Covers: trove-only
+
+Valkey holds trove's shared ephemeral state (INV-3); [architecture.md](architecture.md) R-ARCH-030
+decides what goes there, and R-ARCH-031 specifies the client. This requirement owns the `valkey`
+configuration keys, the supported topologies, the server settings and what the chart wires.
+Valkey with Sentinel is an owner constraint (INV-12).
+
+**Supported topologies** (Q-HA-14):
+
+| Topology | Status |
+|---|---|
+| A Valkey primary with at least one replica and at least three Sentinels, each on a different node; run by an operator, a Helm chart or the platform team, in the cluster or on virtual machines | Supported; the reference topology, which the local profile runs (R-HA-051) |
+| A managed Valkey service that exposes Sentinel | Supported, with the same configuration |
+| A managed service that offers a primary endpoint whose DNS name follows failover, without Sentinel (for example Amazon ElastiCache with Multi-AZ, [auto failover](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/AutoFailover.html)) | `valkey.mode: endpoint`, P1 (Deferred) |
+| Valkey Cluster (sharded) | Not supported (Deferred) |
+| One Valkey instance | `valkey.mode: standalone`, development only; the chart refuses it with `highAvailability.enforce` (R-HA-029) |
+
+- **The chart bundles no Valkey and no Sentinel** (R-HA-028), as it bundles no PostgreSQL and no
+  object store: production needs them highly available, and their upgrades, failover drills and
+  memory sizing belong to whoever runs them. Ways to run them, as of 2026-10-28: the official
+  `valkey-io/valkey-helm` chart has Sentinel settings on its main branch but not in its latest
+  release, 0.12.1 ([repository](https://github.com/valkey-io/valkey-helm), checked 2026-10-28);
+  third-party operators; managed services. The local profile uses manifests of its own (Q-HA-15).
+- **Version.** Valkey 9.0 or later, because trove's lock release uses `DELIFEQ`, which exists since
+  9.0 ([architecture.md](architecture.md) Q-ARCH-13, R-ARCH-031). CI tests the newest patch of 9.0
+  and 9.1. Maintained lines on 2026-10-28: 9.1, 9.0, 8.1, 8.0 and 7.2
+  ([download page](https://valkey.io/download/)).
+
+**Server settings.**
+
+| Setting | Requirement | Reason |
+|---|---|---|
+| `maxmemory` | Set, sized per R-HA-050 | Without it Valkey grows until the container is OOM-killed |
+| `maxmemory-policy` | `allkeys-lru` recommended; trove works under every policy, and a refused write counts as unavailable for that call (R-ARCH-030) | Every trove key has a TTL and may be lost (INV-3); under memory pressure the least recently used entries go first. Evicting a rate-limit counter resets that limit early |
+| Persistence | Not needed: `save ""` and `appendonly no` are fine | Valkey never holds the only copy (INV-3), so its pods need no PersistentVolumeClaim (INV-13). A primary that restarts empty before Sentinel notices makes its replicas resynchronize to an empty data set, which costs only cache warmth |
+| `min-replicas-to-write` | `0` (Valkey's default) | With `1` and a single replica, draining the replica's node stops all writes on the primary |
+| Sentinels | At least three, on three nodes, quorum 2 | A majority must authorize a failover ([Sentinel](https://valkey.io/topics/sentinel/)); one drained node leaves a majority |
+| Sentinel `down-after-milliseconds` | 5000 recommended | trove runs degraded for about this long when the primary dies (R-HA-057); a much shorter value risks failovers on short stalls |
+| ACL | A user for trove, limited to keys `~<key_prefix>*`, channels `&<key_prefix>*` and the command list of [architecture.md](architecture.md) R-ARCH-031, which includes `ROLE` for the Sentinel client protocol and `DELIFEQ` for the script-free lock release, and no scripting command | A leaked trove credential cannot read or flush other applications' data and cannot run scripts or administrative commands ([ACL](https://valkey.io/topics/acl/)) |
+| TLS | On, with `tls-replication yes`, so that Sentinels speak TLS as well | Valkey enables a Sentinel's `tls-port` only together with `tls-replication`, and requires client certificates by default (`tls-auth-clients yes`): mount one (`secrets.valkeyClientCert`) or set `tls-auth-clients optional` ([TLS](https://valkey.io/topics/tls/)) |
+
+**Discovery and failover.** trove's Valkey client MUST follow the Sentinel client protocol
+([Sentinel clients](https://valkey.io/topics/sentinel-clients/)); the library is
+[architecture.md](architecture.md)'s choice and MUST support these steps, TLS and separate
+credentials for Sentinels:
+
+1. Ask the configured Sentinels in order, each within `valkey.sentinel_query_timeout`, for
+   `SENTINEL get-master-addr-by-name <valkey.sentinel.primary_name>`. The first Sentinel that
+   answers moves to the front of the list; a null answer moves on to the next Sentinel.
+2. Connect to the returned address, authenticate, and check `ROLE`. Anything other than a primary
+   sends the client back to step 1 after a short wait.
+3. Re-resolve after every timeout, connection error, closed connection and `READONLY` error. When
+   the primary moved, close every pooled connection to the old address, the Pub/Sub subscriber
+   included, which subscribes again on the new primary and triggers one change-log poll
+   ([architecture.md](architecture.md) R-ARCH-018). Sentinel's `switch-master`
+   message is an early trigger only, because messages can be missed; since Valkey 9, coordinated
+   failover relies on clients that follow the whole protocol
+   ([Sentinel](https://valkey.io/topics/sentinel/)).
+4. Reconcile with the Sentinels every `valkey.sentinel.refresh_interval` as well: a demoted primary
+   can keep its connections open, and a client that missed `switch-master` would otherwise stay
+   bound to it (R-ARCH-031). In the same round, the replica probes every configured Sentinel, each
+   within `valkey.sentinel_query_timeout` and concurrently, and sets
+   `trove_valkey_sentinels_reachable` to the number that answered. Step 1 stops at the first
+   Sentinel that answers, so its count would stay at 1 and could not show a lost majority.
+5. Sentinels learned through `SENTINEL sentinels` MAY be added for the lifetime of the process; the
+   configured list is never shortened.
+6. While no Sentinel answers, connections to a primary that still answers `ROLE` as primary stay in
+   use; new connections wait for a Sentinel.
+
+**Connection rules.**
+
+- Every Valkey call carries `valkey.command_timeout`. No Valkey call runs inside a PostgreSQL
+  transaction, and no request waits for Valkey longer than that timeout (R-HA-057).
+- Every key and every channel name starts with `valkey.key_prefix`, and every key carries a TTL.
+  The prefix lets one Valkey serve several installations under ACL key patterns. Names follow the
+  shape `<key_prefix><ks>:<mechanism>:v1:…`, with the default prefix `trove:<ks>:<mechanism>:v1:…`,
+  where `<ks>` is the installation's keyspace and `v1` the encoding version
+  ([architecture.md](architecture.md) R-ARCH-030).
+- Each connection carries the client name `trove:<pod name>:<purpose>` (`CLIENT SETNAME`), so
+  `CLIENT LIST` attributes it, like `application_name` in PostgreSQL (R-HA-015). A replica holds at
+  most six Valkey connections, whatever its request load (R-ARCH-031).
+- Credentials come only from files (INV-15): `valkey.username_file` and `valkey.password_file` for
+  the data nodes, `valkey.sentinel.username_file` and `valkey.sentinel.password_file` for the
+  Sentinels. The chart mounts them from existing Secrets (R-HA-030). Files are re-read for every new
+  connection, and connections are recycled after `valkey.max_conn_lifetime` with up to 10 % jitter,
+  so a rotated Secret applies without a restart. A rotation without a gap uses an ACL user's
+  several passwords: add the new password, update the Secret, wait one connection lifetime, remove
+  the old password.
+- TLS: `valkey.tls.mode` is `verify-full` (default), `verify-ca` or `disable`; `disable` needs
+  `valkey.allow_insecure: true`, otherwise the replica refuses to start. `valkey.sentinel.tls`
+  applies the same TLS settings to the Sentinels.
+
+Configuration:
+
+```yaml
+valkey:
+  mode: sentinel                     # default (proposed): sentinel | standalone (development only); endpoint is P1
+  sentinel:
+    addresses: []                    # required in sentinel mode; example: [trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379]
+    primary_name: ""                 # required in sentinel mode; example: trove (the name in "sentinel monitor")
+    username_file: ""                # default (proposed): empty = Sentinels without ACL user; set by the chart
+    password_file: ""                # default (proposed): empty = Sentinels without password; set by the chart
+    tls: true                        # default (proposed): use valkey.tls for Sentinel connections too
+    refresh_interval: 5s             # default (proposed): periodic reconciliation with the Sentinels (R-ARCH-031)
+  address: ""                        # standalone mode only; example: localhost:6379
+  database: 0                        # default (proposed)
+  key_prefix: "trove:"               # default (proposed)
+  username_file: ""                  # default (proposed): empty = the "default" user; set by the chart
+  password_file: ""                  # set by the chart from secrets.valkey
+  tls:
+    mode: verify-full                # default (proposed): verify-full | verify-ca | disable
+    ca_file: ""                      # default (proposed): empty = system roots plus trustedCA; set by the chart from secrets.valkeyCA
+    cert_file: ""                    # default (proposed): no client certificate; set by the chart
+    key_file: ""                     # default (proposed)
+    server_name: ""                  # default (proposed): the host name of each address
+  allow_insecure: false              # default (proposed); required for tls.mode disable
+  connect_timeout: 2s                # default (proposed)
+  command_timeout: 500ms             # default (proposed)
+  sentinel_query_timeout: 300ms      # default (proposed), per Sentinel tried
+  max_conn_lifetime: 30m             # default (proposed)
+  health_check_interval: 5s          # default (proposed)
+  reconnect:
+    initial_backoff: 100ms           # default (proposed)
+    max_backoff: 5s                  # default (proposed)
+  circuit_breaker:
+    failure_threshold: 5             # default (proposed): consecutive failed calls that open the circuit
+    open_duration: 5s                # default (proposed)
+```
+
+Acceptance criteria:
+
+- `CLIENT LIST` on the Valkey primary of the local profile lists connections named
+  `trove:<pod>:…` from every `web` and `worker` pod, over the TLS port only (the profile's
+  plaintext port is 0).
+- A new replica with a wrong `primary_name` stays not ready and logs that no Sentinel knows the
+  name; with a wrong password it stays not ready and logs `WRONGPASS`; with every Sentinel
+  unreachable at its first start it becomes ready with `"degraded":["valkey"]` (Q-HA-13).
+- With `valkey.tls.mode: disable` and `allow_insecure: false`, the replica exits and names both
+  keys.
+- After a full R-HA-052 run, `valkey-cli --scan` lists no key outside `key_prefix`, and `TTL` of
+  1,000 sampled keys never answers `-1`.
+- The password rotation above, run during an `npm ci` loop, causes no failed iteration and no pod
+  restart.
+
+### R-HA-057 · Valkey failover, outage and degraded mode
+Priority: **MVP** · Covers: trove-only
+
+Losing Valkey, or Valkey's contents, costs performance only, never correctness or data, and never
+readiness (INV-3, INV-12). [architecture.md](architecture.md) R-ARCH-030 assigns every mechanism
+and its fallback; this requirement fixes the contract they share.
+
+1. **A Valkey failure never fails a client request by itself.** Every use of Valkey has a fallback
+   that works without it, and nothing that trove serves to a client, and no positive
+   authentication or authorization result, is read from Valkey (R-ARCH-030, Q-ARCH-16). The uses
+   and their fallbacks:
+
+   | Use | Owner | Fallback while Valkey is unavailable | Cost |
+   |---|---|---|---|
+   | Fetch collapse across replicas | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026, [architecture.md](architecture.md) R-ARCH-033 | In-process single-flight only | Up to one upstream fetch per replica and object |
+   | Negative cache of remote repositories | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028 | Negative cache: per-replica L1 only ([architecture.md](architecture.md) R-ARCH-030) | More upstream requests for missing paths |
+   | Rate-limit counters with cluster scope | [architecture.md](architecture.md) R-ARCH-034 | Per-replica buckets at the configured values divided by the live replicas of the role | Limits hold approximately, not exactly |
+   | Change messages | [architecture.md](architecture.md) R-ARCH-018 | The change-log poll ([architecture.md](architecture.md) R-ARCH-018, R-HA-004), bound `cluster.epoch_poll_interval` | Changes take effect within `cluster.epoch_poll_interval` instead of milliseconds |
+   | Signals (job wake-ups, metadata refreshes, outbox wake-up) | [architecture.md](architecture.md) R-ARCH-018 | Consumers poll | Up to one poll interval of extra delay |
+
+2. **What Valkey returns is validated.** Valkey can come back with old content: after an outage, or
+   after a failover to a replica that missed the last writes, because Valkey replicates
+   asynchronously and Sentinel does not guarantee that acknowledged writes survive a failover
+   ([Sentinel](https://valkey.io/topics/sentinel/)). A reader therefore checks every value before
+   use: a negative-cache entry counts only inside its time window and only if no newer
+   invalidation covers it, and every key expires on its own (R-ARCH-030). Deleting a Valkey key is
+   never the only invalidation.
+3. **Circuit breaker per replica.** After `valkey.circuit_breaker.failure_threshold` consecutive
+   failed calls, the replica skips Valkey for `open_duration` and then lets one probe through. While
+   the circuit is open, every use runs its fallback at once instead of waiting for a timeout.
+4. **Readiness.** As R-HA-008 and Q-HA-13 state: degraded, alerted, never unready after the first
+   readiness.
+5. **Headroom.** While Valkey is unavailable, remote repositories may fetch an object once per
+   replica, negative caching is per replica, and change propagation falls back to the poll. The
+   reference load test (R-HA-050) runs once with Valkey stopped and records upstream request rates
+   and PostgreSQL load; the profiles leave room for that run.
+6. **Nothing to repair afterwards.** When Valkey answers again, the circuit closes after a
+   successful probe. No flush is needed, because of rule 2.
+7. **Restores move to a new keyspace; nothing is flushed.** After a restore, Valkey's keys describe
+   an installation state that no longer exists. A restore assigns a new `system_state.keyspace_id`,
+   and every key and channel carries it ([backup-and-restore.md](backup-and-restore.md) R-BAK-022,
+   R-ARCH-030), so the restored installation never reads an old key, also on a shared Valkey, and
+   needs no access to Valkey to restore. No key is scanned or deleted; the old keys expire by their
+   TTLs. The point-in-time restore of R-HA-025 sets a new keyspace ID the same way, because a PITR
+   brings back the old ID.
+
+Metrics (R-OPS-007 conventions): `trove_valkey_available` (gauge per replica),
+`trove_valkey_circuit_open`, `trove_valkey_sentinels_reachable` (the number of configured Sentinels
+that answered the replica's last probe of all of them, run every
+`valkey.sentinel.refresh_interval`, R-HA-056 step 4), `trove_valkey_primary_changes_total`,
+`trove_valkey_errors_total{kind}` with `kind` in `timeout`, `connection`, `readonly`, `auth`, `tls`,
+`oom`, `no_primary` (a Sentinel query named no primary for `valkey.sentinel.primary_name`).
+
+Acceptance criteria. All run under R-HA-052's load on the local profile, whose Sentinels use
+`down-after-milliseconds 5000`; "zero failed" means every `npm` and `dotnet` command exits `0` and
+k6 records only `2xx` and `304`:
+
+- **Planned failover:** `SENTINEL FAILOVER trove` on one Sentinel. Zero failed;
+  `trove_valkey_primary_changes_total` rises by one on every replica; every replica writes to the
+  new primary within 10 s.
+- **Primary loss:** `kubectl delete pod <Valkey primary> --grace-period=0 --force`. Zero failed;
+  every replica reports `valkey` degraded for at most `down-after-milliseconds` plus 15 s;
+  `/readyz` answers `200` throughout.
+- **Outage:** the Valkey pods and the Sentinels scaled to 0 for 5 minutes, with one `web` pod
+  deleted meanwhile. Zero failed; the replacement pod becomes ready in degraded mode;
+  `TroveValkeyUnavailable` fires; after the return, `degraded` clears within `open_duration` plus
+  `health_check_interval` plus 5 s.
+- **Sentinel quorum loss:** with all three Sentinels up, `trove_valkey_sentinels_reachable` is 3 on
+  every replica and `TroveValkeySentinelsDegraded` stays silent. The Sentinels are then scaled to 1,
+  then to 0, while the primary stays healthy. Zero failed; running replicas do not degrade; the
+  gauge drops to 1 and then 0 within `valkey.sentinel.refresh_interval` plus 1 s;
+  `TroveValkeySentinelsDegraded` fires.
+- **Content loss:** `FLUSHALL` on the primary with a test credential. Zero failed; a counting
+  upstream stub records at most one fetch per replica for each object that was in flight.
+- **Stale content:** a negative-cache entry written straight into Valkey with a creation time in
+  the future, and another older than a covering invalidation, are both ignored, and the request
+  reaches the upstream (R-ARCH-030).
+- **Slow Valkey:** a fault proxy delays every Valkey command by 2 s. The circuits open, and the p99
+  of the k6 load stays below its baseline plus twice `valkey.command_timeout`.
 
 ## Upgrades and migrations
 
@@ -1162,7 +1957,26 @@ Priority: **MVP** · Covers: HA-066, HA-069
 - Hooks run before the release's ordinary resources exist on a first install. The Job therefore
   MUST NOT depend on chart-rendered ordinary resources. Its configuration ConfigMap and its
   ServiceAccount are rendered as hook resources with weight `-10`. Secrets are pre-existing
-  (R-HA-030).
+  (R-HA-030). With `restore.enabled` the chart renders no migration Job, because the restore
+  applies the migrations itself (R-HA-060).
+- **Backups and migrations exclude each other.** A backup's database phase holds a long
+  transaction whose table locks would block the migration's DDL, which would then exhaust
+  `migrate.ddl_lock_retries` and fail the upgrade. The backup therefore holds
+  `pg_advisory_lock_shared(3, 0)` during its database phase (R-HA-060), and `trove migrate` takes
+  `pg_advisory_lock(3, 0)` exclusively (step 2 below). A migration waits for a running backup's
+  database phase up to `migrate.advisory_lock_wait`, then fails with a message that names the
+  backup; a backup waits for a running migration. The upgrade preparation (R-HA-021) runs the
+  pre-upgrade backup to completion first.
+- **Never on a half-restored database.** `trove migrate up` refuses, with exit status `3` and
+  without applying anything, while the schema carries a restore anchor or `system_state` holds
+  `restore_in_progress` ([backup-and-restore.md](backup-and-restore.md) R-BAK-021), and names the
+  backup ID. A restore that was interrupted, for example because an operator turned
+  `restore.enabled` off before the restore Job completed, which deletes the Job, is then resumed
+  instead of being overtaken: migrations applied beyond the backup's step before the load would make
+  the resumed load fail its column comparison. The restore holds the migration lock while it runs,
+  so the check runs after step 2 below.
+- The Job connects to the session host (`database.session_host`, R-HA-058), because the migration
+  lock is a session-level lock.
 - The hook ConfigMap carries the same `trove.yaml` as `<fullname>-config` (R-HA-030), so
   `trove migrate` reads `audit.retention_days` and the `database` and `migrate` sections from the
   same configuration file as the replicas.
@@ -1172,7 +1986,7 @@ Priority: **MVP** · Covers: HA-066, HA-069
   2. `pg_advisory_lock(3, 0)` (category `migration`, R-ARCH-017), waiting up to
      `migrate.advisory_lock_wait`, so concurrent Jobs serialize and the second finds nothing to do.
      Every later step runs on that same connection;
-  3. verify the checksums of applied steps;
+  3. refuse a half-restored database (above), then verify the checksums of applied steps;
   4. compute the plan, run the contract guard (exit status `3` when it refuses, R-HA-018), apply
      the steps, update `schema_state`;
   5. write `audit.retention_days` into `audit_policy`, then call `audit_maintain_partitions()`
@@ -1183,7 +1997,11 @@ Priority: **MVP** · Covers: HA-066, HA-069
   in single-role mode. It mounts no S3 credential and no service-account token, and it has the same
   pod and container security context as the replicas.
 - Job settings: `backoffLimit` 2 (steps are idempotent), `activeDeadlineSeconds` 1800 and
-  `ttlSecondsAfterFinished` 86400, so the logs stay readable for a day.
+  `ttlSecondsAfterFinished` 86400, so the logs stay readable for a day. `restartPolicy: Never` with
+  a `podFailurePolicy`: pod condition `DisruptionTarget` → `Ignore`, so a node drain during
+  `helm upgrade` does not use up the retries (the evicted pod's session ends, which releases the
+  migration lock and rolls back its open step); exit status `3` → `FailJob`, because a refusal of
+  the contract guard or of a half-restored database does not change on retry.
 - Helm's default `--timeout` (5 m) is shorter than the Job deadline. The documented command is
   `helm upgrade --install … --wait --timeout 30m`.
 - GitOps: Argo CD maps both `pre-install` and `pre-upgrade` to its `PreSync` phase and honors
@@ -1208,19 +2026,33 @@ Acceptance criteria:
   and `helm history trove` shows the release as failed.
 - `helm rollback trove <previous revision> --wait` after an upgrade with expand steps brings back
   the previous version, and its readiness passes.
+- Against a database whose restore was stopped during its blob copy (anchor set), the migration
+  Job exits `3`, applies nothing, names the backup ID and ends `Failed` without a retry; the
+  restore Job created again afterwards resumes and completes (R-BAK-021).
+- Draining the node of a running migration Job pod ends with the Job `Complete` and the
+  `helm upgrade` succeeding, also with `migrations.backoffLimit: 0`.
 
 ### R-HA-020 · Rolling upgrade and mixed-version operation
 Priority: **MVP** · Covers: HA-069, OPS-073
 
-- Deployments use `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
+- Both Deployments use `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
   `minReadySeconds: 10`. Serving capacity never drops below the replica count during an upgrade,
-  so two replicas suffice for a zero-downtime upgrade. The catalog's recommendation of three nodes
-  comes from upgrades that take a node out of service.
-- During the mixed-version window, release N and N−1 serve the same clients alternately. Therefore:
+  so the replica counts of the drain rule (R-HA-059) suffice for a zero-downtime upgrade. The
+  catalog's recommendation of three nodes comes from upgrades that take a node out of service.
+- **Order.** Helm runs the migration hook first (R-HA-019) and then applies the `web` and `worker`
+  Deployments together; each rolls on its own.
+  No order between them is needed, because both roles tolerate the other role in release N−1
+  (below). The backup CronJob takes the new image for its next run; a run already in progress
+  finishes on the old one, which the expand-only window allows.
+- During the mixed-version window, release N and N−1 serve the same clients alternately, and N−1
+  workers may run jobs that N web replicas enqueued. Therefore:
   - Anything a client carries between requests MUST be understood by both releases: pagination
     cursors, `ETag` values, session cookies, CSRF tokens, upload session identifiers.
-  - Job payloads and `NOTIFY` payloads are versioned. Older workers skip unknown job kinds
-    (R-HA-005), and older listeners flush on unknown payloads (R-HA-004).
+  - Job payloads and change-log payloads are versioned. Older workers skip unknown job kinds
+    (R-HA-005), and older replicas flush the area on an unknown change-log payload (R-HA-004).
+  - Valkey keys and channels are versioned the same way: an incompatible change of an encoding
+    uses a new version segment in the key (R-ARCH-030), so N and N−1 never read each other's
+    incompatible entries; they only miss them for the duration of the rollout.
   - A feature that writes data N−1 would misinterpret MUST stay inactive until the cluster minimum
     version (R-HA-003) is ≥ N. Until then the API answers requests to that feature with `503`
     `cluster_upgrade_in_progress`.
@@ -1228,7 +2060,7 @@ Priority: **MVP** · Covers: HA-069, OPS-073
   configuration error, failed key check), because `maxUnavailable: 0` keeps all old pods.
   `kubectl rollout undo` or `helm rollback` returns to the previous release.
 - Upgrade verification:
-  - `kubectl rollout status deploy/trove`;
+  - `kubectl rollout status deploy/trove-web` and `kubectl rollout status deploy/trove-worker`;
   - `GET /api/v1/system/replicas` lists only the new version;
   - `GET /api/v1/system/migrations` shows no pending step and the expected background migrations.
 
@@ -1247,7 +2079,7 @@ Priority: **MVP** · Covers: OPS-072, HA-070
 |---|---|
 | Patch (x.y.z → x.y.z+1) | Rolling, zero downtime; patch releases contain no contract steps |
 | Next minor (x.y → x.y+1) | Rolling, zero downtime (R-HA-020) |
-| Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
+| Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale both roles to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
 | Major | As stated in the release notes; skipping a major is not supported |
 
 - The Helm chart is the only supported installation and upgrade method (INV-13). The chart version
@@ -1262,7 +2094,9 @@ Priority: **MVP** · Covers: OPS-072, HA-070
   names the same path.
 - Preparation:
   1. Read the release notes for breaking changes and new required values.
-  2. Confirm that the PostgreSQL backup is current, and note the time as a restore point
+  2. Take a backup and wait for it to complete:
+     `kubectl -n trove create job --from=cronjob/trove-backup trove-backup-pre-upgrade` (R-HA-060).
+     Where the platform keeps point-in-time recovery, also note the time as a restore point
      (R-HA-023).
   3. Confirm that the encryption key Secret contains all keys listed in
      `secrets.encryption.keys` (R-HA-027).
@@ -1277,8 +2111,11 @@ Acceptance criteria:
 
 - Upgrading from 0.2.x directly to 0.4.x with a contract step headed
   `-- trove:requires-app >= 0.3.0` fails in the Job (`trove migrate` exits with status `3`) with
-  the message of R-HA-018. After `kubectl scale deploy/trove --replicas=0`, a 30 s wait and
-  `helm upgrade`, it succeeds without any override.
+  the message of R-HA-018. After `kubectl scale deploy/trove-web deploy/trove-worker --replicas=0`,
+  a 30 s wait and `helm upgrade`, it succeeds without any override.
+- A `helm upgrade` started while a backup's database phase runs waits for it; with the phase
+  artificially held longer than `migrate.advisory_lock_wait`, the migration Job fails with a message
+  that names the backup, and the old pods keep serving.
 
 ### R-HA-022 · Background data migrations
 Priority: **MVP** · Covers: OPS-074
@@ -1335,17 +2172,174 @@ Acceptance criteria:
 
 ## Backup, restore and disaster recovery
 
-### R-HA-023 · Backup of PostgreSQL, object storage and keys
-Priority: **P1** · Covers: OPS-033
+### R-HA-060 · Backup CronJob and restore Job
+Priority: **MVP** · Covers: OPS-032, OPS-033
 
-trove's state lives in three places. Each needs its own protection, and none is backed up by
-trove itself (an application-level export is Deferred, OPS-032):
+`trove backup create` writes a consistent backup of the service, a transactionally consistent
+snapshot of trove's PostgreSQL data with every blob it references, to a configurable S3 target, and
+`trove backup restore` restores one into an empty installation (INV-19).
+[backup-and-restore.md](backup-and-restore.md) owns the format, the consistency with garbage
+collection, the configuration semantics, the exit codes, the retention and the restore procedure
+(R-BAK-009 to R-BAK-013, R-BAK-020, R-BAK-021). This requirement is the chart side; R-BAK-012
+describes the same objects from the backup's side.
+
+**Backup CronJob.** With `backup.enabled: true` (default, Q-HA-17) the chart renders the CronJob
+`<fullname>-backup`:
+
+| Field | Value |
+|---|---|
+| `schedule`, `timeZone` | `backup.schedule` (default `"0 2 * * *"`) and `backup.timeZone` (default `Etc/UTC`; [time zones](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#time-zones), stable since Kubernetes 1.27) |
+| `concurrencyPolicy` | `Forbid`, fixed and not a value: when the previous run is still going, the controller skips the due run ([concurrency policy](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#concurrency-policy)). The database decides in the end (R-BAK-010), because a manual Job bypasses the CronJob |
+| `startingDeadlineSeconds` | `backup.startingDeadlineSeconds` (default 3600): a run missed by more than an hour is skipped, not started late |
+| `successfulJobsHistoryLimit`, `failedJobsHistoryLimit` | 3 and 3 (defaults) |
+| `suspend` | `backup.suspend` (default `false`); rendered `true` while `restore.enabled` is set, and set by R-HA-025's procedure |
+| Job `backoffLimit`, `activeDeadlineSeconds` | `backup.backoffLimit` (2) and `backup.activeDeadlineSeconds` (0 = not rendered, because a first backup of a large installation may take many hours; `TroveBackupRunningLong` reports a run that hangs) |
+| Job `podFailurePolicy` | Pod condition `DisruptionTarget` → `Ignore`, so an eviction by a drain or preemption is not counted against `backoffLimit`; exit codes 2, 3, 4 and 6 of R-BAK-013 → `FailJob`, because a retry cannot help. `restartPolicy: Never`, as the policy requires ([pod failure policy](https://kubernetes.io/docs/concepts/workloads/controllers/job/#pod-failure-policy), stable since Kubernetes 1.31) |
+
+- **Pod.** The trove image runs `trove backup create --trigger schedule` (plus `--adopt-target`
+  while `backup.adoptTarget` is set, R-BAK-002) with the configuration file `<fullname>-config`,
+  the security contexts of R-HA-033, `backup.resources` and
+  `terminationGracePeriodSeconds: backup.terminationGracePeriodSeconds` (60). The backup streams
+  table files and blobs, so the pod mounts no volume but `/tmp`, an `emptyDir` with
+  `backup.tmpSizeLimit` (R-HA-061). It has no listener for clients and no probes.
+- **Identity.** The pod runs as ServiceAccount `<fullname>-backup` (`backup.serviceAccount.*`),
+  separate from the replicas' account, so workload identity maps the backup to a cloud role of its
+  own (R-BAK-015). `automountServiceAccountToken: false`.
+- **Credentials.** PostgreSQL with `secrets.databaseBackup` (otherwise the runtime credentials,
+  R-HA-014) on the session host (R-HA-058). The blob store with read access, through
+  `config.storage.s3` with the backup account's identity or `secrets.s3`. The target through
+  `config.backup.target.credentials.source`: `default` uses the backup account's workload
+  identity, `static` mounts `secrets.backupTarget`. Target credentials are rendered into backup and
+  restore pods only, never into `web` or `worker` pods (R-BAK-011). The encryption key Secret is not
+  mounted: a backup copies sealed values as stored (R-HA-027). Valkey is not used (INV-19).
+- **Drains.** No PodDisruptionBudget selects backup pods, so a drain never waits for a backup
+  (R-HA-059). On `SIGTERM` the run ends itself within the grace period, and the Job starts a new pod
+  whose run starts over with a new snapshot and skips what is already copied (R-BAK-012,
+  R-BAK-013). The pod carries `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`, as
+  R-BAK-012 requires: only the cluster autoscaler's scale-down reads it, so consolidation does not
+  restart a multi-hour run over and over, while `kubectl drain` and the Eviction API ignore it.
+- **Concurrency.** `Forbid` serializes scheduled runs. A manual run
+  (`kubectl -n trove create job --from=cronjob/trove-backup trove-backup-manual-$(date +%s)`) and
+  a scheduled one are serialized by the backup's run row (R-BAK-010). The database phase also holds
+  the shared migration lock, so backups and migrations exclude each other (R-HA-019). A hung run
+  cancels itself after `backup.stall_timeout` and exits `75` (R-BAK-013, Q-BAK-11), so `Forbid` is
+  never held by a run that makes no progress, without a wall-clock limit that would also end a
+  healthy first backup of many hours.
+- **Configuration.** The chart renders `config.backup` into the shared configuration file; its keys
+  are R-BAK-011's, and R-HA-031 shows all of them. It also renders the chart-managed keys
+  `backup.manual_run.namespace` (the release namespace) and `backup.manual_run.cronjob`
+  (`<fullname>-backup`), so the API's backup summary and the UI can show the exact manual-run
+  command ([api-and-ui.md](api-and-ui.md) R-API-050, Q-API-10); no API endpoint starts a backup.
+  The backup alerts read `backup.expected_interval` through the gauge
+  `trove_backup_expected_interval_seconds`, so the chart needs no threshold value of its own
+  (R-HA-045).
+
+**Where the target may live** (R-BAK-002, R-BAK-015):
+
+- The target MUST NOT share the blob store's endpoint and bucket unless
+  `config.backup.target.allow_same_bucket: true`, and even then neither prefix may contain the
+  other: the orphan sweep deletes every object under `storage.s3.prefix` that no row references
+  (R-STOR-026), backups included. The chart refuses other values (R-HA-029), and
+  `trove backup create` exits `2` on them as well, so a configuration set outside the chart is
+  caught too (R-BAK-002). The setting exists for single-bucket evaluation setups and logs a warning
+  on every run.
+- A bucket of its own, in another account or project, is recommended: the replicas' credential has
+  no access to it, and the backup's credential cannot delete in the blob bucket. Object Lock on the
+  target keeps a stolen backup credential from destroying backups within the lock period
+  (R-BAK-015, Security notes).
+
+**Restore Job** (Q-HA-18). With `restore.enabled: true` and `restore.backupId` set, the chart
+renders the Job `<fullname>-restore` and changes two other things while the value is set:
+
+- The Job runs `trove backup restore <restore.backupId>`, plus `--skip-revocation-journal` while
+  `restore.skipRevocationJournal` is set (R-BAK-024) and `restore.extraArgs`. It is an ordinary
+  resource, not a Helm hook, so Helm does not wait for it; the operator waits with
+  `kubectl wait --for=condition=complete job/<fullname>-restore`, and a restore that takes many
+  hours meets no Helm or GitOps timeout.
+- The migration hook Job is not rendered, because the restore applies the migrations itself, up to
+  the backup's step before the load and the rest after it (R-BAK-021, R-BAK-023).
+- The backup CronJob is rendered suspended, so no backup runs against a half-restored
+  installation.
+- The chart refuses `restore.enabled` while `web` or `worker` has a replica count above 0 or
+  autoscaling enabled (R-HA-029): nothing may write to the installation during the restore. The
+  restore itself refuses a non-empty database or blob prefix (R-BAK-020).
+- **Identity.** The Job runs as ServiceAccount `<fullname>-restore` (`restore.serviceAccount.*`),
+  `automountServiceAccountToken: false`. Its cloud identity holds R-BAK-015's target reader, blob
+  writer and journal reader rows. Neither existing account fits: the backup account may only read
+  the blob bucket, and the replicas' account has no access to the target (R-BAK-015). The Job uses
+  the migration credentials (R-HA-014) on the session host, `secrets.s3` and `secrets.backupTarget`
+  where the blob store or the target use static keys, and the encryption key Secret, because the
+  restore checks before it loads
+  anything that the key ring opens every key ID of the backup (R-BAK-020, R-HA-027). It never
+  touches Valkey, mounts no Valkey Secret and has no Valkey egress: the restored installation gets
+  a new keyspace ID, and nothing is flushed (R-BAK-022, R-HA-057 rule 7).
+- **Interruptions resume** ([backup-and-restore.md](backup-and-restore.md) R-BAK-021, Q-BAK-10).
+  The Job takes the backup Job's failure handling: `restartPolicy: Never`, `podFailurePolicy` with
+  `DisruptionTarget` → `Ignore` and exit codes 2, 3, 4 and 6 → `FailJob`, and
+  `backoffLimit: restore.backoffLimit` (2). A pod evicted by a drain, killed or cut off by a
+  PostgreSQL failover exits or disappears, and the Job's next pod resumes the restore from its
+  anchor without a flag. No PodDisruptionBudget selects the pod, so a drain never waits for a
+  restore either; the pod carries `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` like
+  the backup pod. `activeDeadlineSeconds` comes from `restore.activeDeadlineSeconds` (0 = not
+  rendered).
+- **A Job that failed for good** (its retries used up, or a `FailJob` exit) is continued after the
+  cause is fixed by deleting it and running the same `helm upgrade` with the restore values again:
+  `kubectl -n trove delete job trove-restore`. Helm then creates the Job anew, and its pod resumes.
+  Turning `restore.enabled` off instead deletes the Job and renders the migration hook again, which
+  refuses the anchored database (R-HA-019) and fails the upgrade, so an unfinished restore is never
+  overtaken.
+
+The operator's sequence (R-BAK-021):
+
+```shell
+helm install trove oci://ghcr.io/guided-traffic/charts/trove -n trove -f values.yaml \
+  --set web.replicaCount=0 --set web.autoscaling.enabled=false \
+  --set worker.replicaCount=0 --set worker.autoscaling.enabled=false \
+  --set highAvailability.enforce=false \
+  --set restore.enabled=true --set restore.backupId=20261028T020000Z-7f3a   # example ID
+kubectl -n trove wait --for=condition=complete job/trove-restore --timeout=24h
+helm upgrade trove oci://ghcr.io/guided-traffic/charts/trove -n trove -f values.yaml   # normal values
+```
+
+The final `helm upgrade` renders the migration Job again, which finds nothing to apply, and starts
+both roles.
+
+Acceptance criteria:
+
+- `helm template` renders the CronJob with `concurrencyPolicy: Forbid`, the pod failure policy
+  above, `restartPolicy: Never` and its own ServiceAccount, and no PodDisruptionBudget selects its
+  pods. No `web` or `worker` container has a file or variable with target credentials.
+- `kubectl create job --from=cronjob/trove-backup b1` during R-HA-052's load completes, with zero
+  failed client commands.
+- With `backup.backoffLimit: 0` for the test, draining the node of a running backup pod still ends
+  with the Job complete on another node.
+- `helm template --set restore.enabled=true --set restore.backupId=x` with both roles at zero
+  renders the restore Job with its own ServiceAccount and the pod failure policy above, no
+  migration Job and a suspended CronJob; with `--set web.replicaCount=2` it fails and names
+  `restore.enabled` and `web.replicaCount`.
+- Draining the node of the restore pod during the blob copy ends with the restore Job `Complete`,
+  also with `restore.backoffLimit: 0`, and the restored installation matches the backup
+  (R-BAK-012).
+- The sequence above, run on the local profile against a backup taken there, brings up an
+  installation whose `npm view` output matches the backup (R-HA-051 `dev-restore`).
+- With `config.storage.s3.bucket: trove-blobs` and prefix `trove`, `helm template … --set config.backup.target.bucket=trove-blobs --set config.backup.target.prefix=trove/backups --set config.backup.target.allow_same_bucket=true`
+  fails and names both locations; without `allow_same_bucket` any prefix in `trove-blobs` fails.
+
+### R-HA-023 · Backup of PostgreSQL, object storage and keys
+Priority: **MVP** · Covers: OPS-033
+
+trove's own backup (INV-19, R-HA-060) is the backup every installation has. This requirement is
+the platform layer under it: continuous protection that gives a recovery point of minutes instead
+of one backup interval, and the rules that keep a compromised replica from destroying history.
+The platform layer is recommended, not required; its checks and rules are MVP (Q-HA-19).
 
 | State | Protection | Requirement |
 |---|---|---|
+| Everything in PostgreSQL and every referenced blob, as of one snapshot | trove's backup CronJob, to its own target | R-HA-060, [backup-and-restore.md](backup-and-restore.md) |
 | PostgreSQL (all metadata, configuration, users, tokens, audit) | Continuous WAL archiving plus base backups, enabling point-in-time recovery ([continuous archiving](https://www.postgresql.org/docs/current/continuous-archiving.html)) | Recovery window ≥ `backup.recovery_window`. With CloudNativePG through the Barman Cloud plugin ([backup](https://cloudnative-pg.io/docs/1.30/backup), [plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/intro/)); on managed services their PITR. The archive goes to a bucket *other than* the blob bucket, with different credentials |
 | Blob bucket | Bucket versioning with noncurrent-version expiry ≥ `backup.recovery_window`, plus the multipart lifecycle rule (R-HA-012); optionally replication to a second site (R-HA-026) | [S3 versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) |
-| Encryption keys (R-HA-027), Helm values | Kept outside the cluster in the operator's secret store; Helm values in Git | Without the keys, sealed secrets in a restored database cannot be decrypted |
+| Encryption keys (R-HA-027), Helm values | Kept outside the cluster in the operator's secret store; Helm values in Git; a trove backup does not contain the keys | Without the keys, sealed secrets in a restored database cannot be decrypted |
+| Valkey | None: nothing in it is the only copy (INV-3, INV-19) | — |
 
 - **Recovery point.** CloudNativePG archives a WAL segment at least every `archive_timeout`
   (default 5 min, [PostgreSQL configuration](https://cloudnative-pg.io/docs/1.30/postgresql_conf)),
@@ -1361,7 +2355,9 @@ trove itself (an application-level export is Deferred, OPS-032):
   - `SHOW archive_mode` on the database;
   - whether `storage.gc.grace_period` covers `backup.recovery_window` (R-HA-024).
 
-  The result is exported as the gauge `trove_backup_check_ok{check}` by a daily task.
+  The result is exported as the gauge `trove_backup_check_ok{check}` by the daily task
+  `backup-check` (default schedule `40 5 * * *`,
+  [operations-and-observability.md](operations-and-observability.md) R-OPS-019).
 
 Configuration:
 
@@ -1414,6 +2410,11 @@ that restores to older points must work.
 - **Orphans after restore.** Objects written after *t* have no row in the restored database. The
   orphan sweep removes them after `storage.orphans.min_age` (R-STOR-026), unless deletions are paused
   (R-HA-025).
+- **Restores of trove backups.** A trove backup copies every blob its snapshot references
+  (INV-19), so restoring it does not depend on the grace period or on versioning for those blobs.
+  The orderings above still matter for that backup's own consistency
+  ([backup-and-restore.md](backup-and-restore.md) owns it) and for every point-in-time restore of
+  the platform layer (R-HA-025).
 
 Acceptance criteria:
 
@@ -1426,13 +2427,21 @@ Acceptance criteria:
   replica exits with a message naming the three keys.
 
 ### R-HA-025 · Restore procedure
-Priority: **P1** · Covers: OPS-033
+Priority: **MVP** · Covers: OPS-033
 
 Restores are whole-installation, point-in-time operations. Restoring a single repository is
-Deferred (repository export and import, OPS-036 and OPS-037, are P2).
+Deferred (repository export and import, OPS-036 and OPS-037, are P2). This procedure restores the
+platform layer (R-HA-023) to a time *t*. A trove backup is restored with the restore Job of
+R-HA-060 and the procedure of [backup-and-restore.md](backup-and-restore.md); that procedure
+runs the cleanup of step 4 as well (R-BAK-022, R-BAK-024), except the deletion pause, which is not
+needed with a blob prefix that starts empty and ends holding exactly the referenced blobs
+(Q-HA-19), and except a Valkey flush, which neither path performs: both replace it by a new
+keyspace.
 
-1. **Stop writers.** `helm upgrade … --set server.replicaCount=0 --set worker.replicaCount=0 --set server.autoscaling.enabled=false --set highAvailability.enforce=false`.
-   Wait `system.heartbeat_stale_after`.
+1. **Stop writers and backups.** `helm upgrade … --set web.replicaCount=0 --set worker.replicaCount=0 --set web.autoscaling.enabled=false --set worker.autoscaling.enabled=false --set highAvailability.enforce=false --set backup.suspend=true`.
+   Wait `system.heartbeat_stale_after`. A backup run that is already going is deleted
+   (`kubectl delete job -l app.kubernetes.io/component=backup`), so it cannot record a
+   half-restored state.
 2. **Restore PostgreSQL** into a new cluster. With CloudNativePG, a new `Cluster` with
    `bootstrap.recovery.source` naming the backup's external cluster and
    `recoveryTarget.targetTime` set to *t* ([recovery](https://cloudnative-pg.io/docs/1.30/recovery));
@@ -1447,6 +2456,17 @@ Deferred (repository export and import, OPS-036 and OPS-037, are P2).
    - sets the deletion pause (below), so GC and the orphan sweep delete nothing until an operator
      resumes them;
    - ends every UI session (`trove admin sessions end --all`, R-AUTH-015);
+   - runs two fix-ups of [backup-and-restore.md](backup-and-restore.md) R-BAK-022 in one
+     transaction: a new random `system_state.keyspace_id`, so that no replica reads a lock,
+     negative-cache entry or counter written after *t* (R-HA-057, rule 7), and the offset of 2^32
+     on every column registered with `meta.RegisterRevisionColumn` (`packages.rev_seq`,
+     `repositories.config_version`, `cluster_epoch.epoch` and the others R-BAK-022 lists). A PITR
+     brings back the old keyspace ID and the old revision counters exactly as a backup restore
+     does. A Valkey flush instead would leave the revision counters uncovered: a client holding an
+     `ETag` from after *t* would get `304` for different content, and an `If-Match` would match it;
+   - sets the `system_state` key `restored_at` to the current time; single-use CI issuers refuse
+     subject tokens issued up to `clock_skew` after it ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)
+     R-CI-018);
    - runs `trove admin storage verify --since <t − storage.gc.grace_period>` and prints the
      number of referenced blobs whose objects are missing;
    - re-applies the revocation journal entries newer than *t* (R-HA-054) and prints one line per
@@ -1459,8 +2479,8 @@ Deferred (repository export and import, OPS-036 and OPS-037, are P2).
    referenced objects. This needs a separate credential with `s3:ListBucketVersions` and
    `s3:DeleteObjectVersion`, passed only to this command (`--credentials-file`). The runtime
    credential deliberately lacks these permissions (R-HA-023).
-6. **Start.** `helm upgrade` with the normal values. The migration Job brings an older restored
-   schema forward.
+6. **Start.** `helm upgrade` with the normal values, which also resumes the backup CronJob. The
+   migration Job brings an older restored schema forward.
 7. **Resume deletions** after verification: `trove admin maintenance resume-deletions`.
 
 Deletion pause (sketch; `system_state` is defined in R-OPS-024):
@@ -1471,12 +2491,15 @@ ALTER TABLE system_state
   ADD COLUMN deletions_paused_reason text;
 ```
 
-- GC, the orphan sweep and retention runs ([storage.md](storage.md)) MUST check the pause before
-  every batch of deletions, and skip the batch while it is set.
+- GC, the orphan sweep, retention runs, cap enforcement ([storage.md](storage.md) R-STOR-044) and
+  remote-cache cleanup (R-STOR-045) MUST check the pause before every batch of deletions, and skip
+  the batch while it is set. A paused collection or sweep run ends with `result.paused: true`; a
+  paused retention run ends `stopped` with `error.code = deletions_paused`; cap enforcement claims
+  nothing while the pause is set (R-STOR-024, R-STOR-026, R-STOR-040, R-STOR-044, R-STOR-045).
 - `trove admin maintenance pause-deletions --reason …` sets the pause by hand, for example
   before a planned restore drill.
 
-Acceptance criteria (restore drill, part of R-HA-052, run monthly in CI):
+Acceptance criteria (point-in-time restore drill, part of R-HA-052, run weekly in CI):
 
 - Steps 1–7 against the local profile restore a database to *t* = 10 minutes ago.
   - `npm view` shows exactly the versions published before *t*.
@@ -1484,6 +2507,11 @@ Acceptance criteria (restore drill, part of R-HA-052, run monthly in CI):
   - After `resume-deletions` and an orphan sweep with the test `min_age`, that object is removed.
   - A token revoked after *t* is rejected after step 4 (R-HA-054). With
     `backup.revocation_journal.enabled: false` it works again, which documents H-37.
+  - After step 4, `system_state.keyspace_id` differs from its value before the restore, and the
+    replicas write only keys of the new keyspace.
+  - An npm client that fetched a package document after *t* from the old database keeps its
+    `ETag`; after the restore and one publish to the same package, the same conditional request
+    answers `200`, not `304` (revision offset of R-BAK-022).
 
 ### R-HA-026 · Cross-site disaster recovery
 Priority: **P1** · Covers: OPS-033
@@ -1494,8 +2522,11 @@ Priority: **P1** · Covers: OPS-033
     cross-region read replica;
   - a bucket filled by one-way replication of the blob bucket
     ([S3 replication](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html));
-  - an installed Helm release with replica count 0, the same encryption key Secret, and values
-    that differ only in database host, bucket and region.
+  - an installed Helm release with both roles at replica count 0, the backup CronJob suspended,
+    the same encryption key Secret, and values that differ only in database host, bucket, region
+    and Valkey addresses;
+  - a Valkey with Sentinel of its own (R-HA-056). Nothing is replicated into it: its content is
+    ephemeral (INV-3), and the recovery site starts with an empty keyspace.
 
   Active-active operation across sites is not supported. R-STOR-035 assumption A4 allows only one
   writing site, and federation is Later.
@@ -1507,9 +2538,20 @@ Priority: **P1** · Covers: OPS-033
   1. Promote the replica cluster.
   2. Move the DNS name of `server.base_url` to the recovery site's edge. Keeping the same base URL
      keeps clients' configuration, tokens and every URL embedded in cached metadata valid.
-  3. Scale the release up.
-  4. Run `trove admin post-restore --restored-to <last replayed transaction time>`. It pauses
-     deletions and reports blobs whose objects have not arrived yet.
+  3. Run `trove admin post-restore --restored-to <last replayed transaction time>` while both roles
+     are still at zero. It pauses deletions, reports blobs whose objects have not arrived yet and
+     gives the installation a new keyspace ID (R-HA-025 step 4).
+  4. Scale both roles up, and resume the backup CronJob with a target at the recovery site.
+
+  The order matters: a replica reads the keyspace ID once, at start-up, after any restore has
+  finished ([architecture.md](architecture.md) R-ARCH-030, R-ARCH-024), so replicas started before
+  `post-restore` would keep the old keyspace until they restart. Operators who scaled up first
+  restart both roles after `post-restore` (`kubectl rollout restart`). The CI restore cut-off
+  `restored_at` does not depend on the order, because the token exchange reads it in its own
+  transaction ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018).
+- The trove backups of R-HA-060 are a second way back when both the database replica and the
+  bucket replica are unusable: their target SHOULD be in a third location, or at least not at the
+  primary site.
 - **Replication lag.** The database replica can be ahead of bucket replication. A blob committed on
   the primary shortly before the disaster may be referenced but not yet copied. Its reads answer
   `503` (R-HA-024) until the object arrives, if it ever does. Remote-repository content heals by
@@ -1537,8 +2579,9 @@ lists the key files, the file name without `.key` is the key ID, `secrets.active
 sealing key, and the `secret_key_canary` table stops a replica whose ring cannot open a key ID that
 sealed rows still reference. This requirement covers what HA and the chart add:
 
-- **Same keys on every replica.** All Deployments and the migration Job mount the same Secret
-  (`secrets.encryption.existingSecret`). `secrets.encryption.keys` is the ordered list of key files
+- **Same keys on every replica.** All Deployments, the migration Job and the restore Job mount the
+  same Secret (`secrets.encryption.existingSecret`). The backup CronJob does not mount it
+  (R-HA-060). `secrets.encryption.keys` is the ordered list of key files
   of that Secret. The chart renders `secrets.encryption_key_files` from the whole list and
   `secrets.active_key_id` from the first entry.
 - **Never generated by the chart.** The chart MUST NOT create the key. It fails rendering when no
@@ -1591,12 +2634,16 @@ Acceptance criteria:
   R-ARCH-021, while the others keep serving.
 
 ### R-HA-054 · Revocation journal in object storage
-Priority: **P1** · Covers: trove-only
+Priority: **MVP** · Covers: trove-only
 
-A database restore to time *t* undoes every access removal made after *t* (H-37). trove therefore
-records every change to an access-bearing object a second time, outside PostgreSQL, and
-`trove admin post-restore` re-applies the removals among the entries newer than *t* (R-HA-025,
-step 4; Q-HA-9). Replay never grants access.
+A database restore to time *t* undoes every access removal made after *t* (H-37), and every
+withdrawal or reservation of a package version made after *t*. trove therefore records every
+change to an access-bearing object, and every change that withdraws or reserves a version number
+where a format page asks for it, a second time, outside PostgreSQL, and `trove admin post-restore`
+re-applies the removals and reservations among the entries newer than *t* (R-HA-025, step 4;
+Q-HA-9). A restore of a trove backup replays the journal the same way, with *t* the backup's
+snapshot time ([backup-and-restore.md](backup-and-restore.md), R-HA-060). Replay never grants
+access and never deletes content.
 
 **What is journaled.** Transactional audit events (R-OPS-015) whose entry in the event registry
 (R-OPS-014) declares `journal: revocation`. When the audit writer inserts such an event, it inserts
@@ -1618,6 +2665,12 @@ to this mechanism. At least these events are flagged:
 | `authz.ownership.removed`, `authz.ownership.released` | authorization R-AUTHZ-019 | Remove the owner |
 | `ci.issuer.*` and `ci.mapping.*` disables and deletions | gitlab-ci R-CI-002, R-CI-019, R-CI-020 | Disable the issuer or mapping. Disabling a mapping that was enabled also suspends every later enabled mapping of its tier, so no job falls through to a mapping that grants more ([Q-CI-11](gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match)) |
 | `authz.policy.updated`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
+| `npm.unpublish` | [formats/npm.md](formats/npm.md) R-NPM-017, R-NPM-047 | Withhold the version: tombstone it and apply the dist-tag rule, leaving its items stored and unserved, when the restored repository holds it live with the journaled integrity (`applied`); `already in effect` when it is tombstoned; otherwise `subject unknown`. Nothing is deleted; `trove admin npm reinstate` reverses it |
+| `package.published`, `package.deleted` (from P1 also the copy and move events of R-STOR-019) of local NuGet repositories | [formats/nuget.md](formats/nuget.md) R-NUGET-033 | Addition of an absent version: write a `reserved` tombstone for the journaled SHA-512. Removal: an absent version's tombstone becomes or is written as `removed`; a present version with the journaled SHA-512 is reported `revived`; never delete |
+
+**Dispatch.** An entry of a format event is dispatched to that format's replay handler, which the
+format page specifies (the two rows above). An entry of a format without a replay handler is
+reported `skipped`. Access entries are replayed by the rules below.
 
 The break-glass account's `enabled` state lives in the configuration file, not in PostgreSQL, so a
 restore does not revive it and it is not journaled.
@@ -1663,8 +2716,8 @@ restore does not revive it and it is not journaled.
   did not commit is shipped again under the same key with identical content, which is harmless.
   trove never deletes a journal object. `_journal/` is a key family of
   [storage.md](storage.md) R-STOR-001, so the orphan sweep leaves it alone.
-- Shipping is triggered through `NOTIFY` and runs at least every
-  `backup.revocation_journal.ship_interval`.
+- Shipping is triggered by a signal ([architecture.md](architecture.md) R-ARCH-018) and runs at
+  least every `backup.revocation_journal.ship_interval`.
 - A change never waits for object storage. During an object-store outage the outbox grows and ships
   afterwards. The gauge `trove_revocation_journal_pending` shows the backlog.
 
@@ -1674,7 +2727,10 @@ restore does not revive it and it is not journaled.
   `at > t − backup.revocation_journal.replay_margin` and sorts them by `at` and `id`. It applies
   them in that order, each to the state its predecessors left.
 - It prints one line per entry (`applied`, `already in effect`, `subject unknown`, `skipped`,
-  `suspended`) and writes the audit event `system.restore.journal_replayed` with the counts.
+  `suspended`, `revived`) and writes the audit event `system.restore.journal_replayed` with the
+  count of each outcome. `revived` marks a version that a format handler found present although the
+  journal recorded its removal, and that it leaves in place because replay never deletes
+  ([formats/nuget.md](formats/nuget.md) R-NUGET-033).
 - The margin covers transactions that started before *t* and committed after it (`at` is the
   transaction's `now()`).
 - With bucket versioning and the restore credential of R-HA-025 step 5 (`--credentials-file`),
@@ -1743,8 +2799,9 @@ Priority: **MVP** · Covers: HA-029, HA-032, HA-038, HA-021
   [Helm chart best practices](https://helm.sh/docs/chart_best_practices/): camelCase values,
   standard `app.kubernetes.io/*` labels, no CRDs shipped, no subcharts. It is released with
   `version` = `appVersion` = trove's version.
-- There is no bundled database and no bundled object store, because production needs both to be
-  highly available (INV-12). The local development profile (R-HA-051) installs them separately.
+- There is no bundled database, no bundled Valkey and no bundled object store, because production
+  needs all three to be highly available (INV-12). The local development profile (R-HA-051)
+  installs them separately.
 - **The chart never creates or generates a Secret.** Every credential is a reference to an
   existing Secret (R-HA-030). This removes a whole class of upgrade failures: no generated value
   can change on re-render.
@@ -1754,27 +2811,39 @@ does not contain `trove`, overridable by `fullnameOverride`):
 
 | Kind | Name | Rendered when |
 |---|---|---|
-| Deployment | `<fullname>`, or `<fullname>-api` and `<fullname>-worker` | always; two with `roleSplit.enabled` |
-| Service (ClusterIP) | `<fullname>`, port `http` 8080 → container `http` | always |
-| Service (ClusterIP) | `<fullname>-ops`, port `ops` 8081, all roles | always (probes from the kubelet do not need it; ServiceMonitor does) |
+| Deployment | `<fullname>-web`, `<fullname>-worker` | always (R-HA-002) |
+| Deployment, Service | `<fullname>-web-<pool>`, `<fullname>-worker-<pool>` (Deployment only) | per entry of `web.pools` and `worker.pools` (P1, R-HA-062) |
+| Service (ClusterIP) | `<fullname>`, port `http` 8080 → `web` pods, `sessionAffinity: None` | always |
+| Service (ClusterIP) | `<fullname>-ops`, port `ops` 8081, `web` and `worker` pods | always (probes from the kubelet do not need it; ServiceMonitor does) |
 | ConfigMap | `<fullname>-config` (`trove.yaml`) | always |
 | ServiceAccount | `<fullname>` | `serviceAccount.create` |
-| ConfigMap, ServiceAccount (hooks, weight −10) | `<fullname>-migrate` | `migrations.mode: hook` |
-| Job (hook) | `<fullname>-migrate` | `migrations.mode: hook` |
+| ConfigMap, ServiceAccount (hooks, weight −10) | `<fullname>-migrate` | `migrations.mode: hook` and not `restore.enabled` |
+| Job (hook, weight 0) | `<fullname>-migrate` | `migrations.mode: hook` and not `restore.enabled` |
+| Job | `<fullname>-restore` | `restore.enabled` (R-HA-060) |
+| ServiceAccount | `<fullname>-restore` | `restore.enabled` and `restore.serviceAccount.create` |
 | Job (hook) | `<fullname>-post-restore` | `postRestore.enabled` |
-| PodDisruptionBudget | per Deployment | `podDisruptionBudget.enabled` |
-| HorizontalPodAutoscaler (`autoscaling/v2`) | per Deployment | `autoscaling.enabled` |
+| CronJob | `<fullname>-backup` | `backup.enabled` (R-HA-060) |
+| ServiceAccount | `<fullname>-backup` | `backup.enabled` and `backup.serviceAccount.create` |
+| PodDisruptionBudget | per Deployment, none for Jobs | `podDisruptionBudget.enabled` of the role |
+| HorizontalPodAutoscaler (`autoscaling/v2`) | per Deployment | `autoscaling.enabled` of the role |
 | Ingress | `<fullname>` | `ingress.enabled` |
 | HTTPRoute | `<fullname>` | `gateway.enabled` |
 | Gateway | `<fullname>-gateway` | `gateway.enabled` and `gateway.create.enabled` (P1, R-HA-053) |
-| NetworkPolicy | `<fullname>` (and `<fullname>-migrate` for the Job) | `networkPolicy.enabled` |
+| NetworkPolicy | `<fullname>` (`web` and `worker`), `<fullname>-migrate`, `<fullname>-restore`, `<fullname>-backup` | `networkPolicy.enabled` |
 | ServiceMonitor, PrometheusRule | `<fullname>` | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
 | anything | from `extraObjects` | listed |
 
+- The chart renders no StatefulSet, no PersistentVolumeClaim and no Valkey, PostgreSQL or object
+  store (R-HA-061).
 - Labels on every object: `app.kubernetes.io/name: trove`, `app.kubernetes.io/instance`,
   `app.kubernetes.io/version`, `app.kubernetes.io/managed-by`, `helm.sh/chart`, and
-  `app.kubernetes.io/component` (`server`, `api`, `worker`, `migrate`). Selectors use name,
-  instance and component only, because selector labels are immutable.
+  `app.kubernetes.io/component` (`web`, `worker`, `migrate`, `restore`, `backup`). `web` and
+  `worker` pods also carry `trove/pool` (name proposed): `<name>` for the pods of a pool of R-HA-062,
+  and the empty value for the main Deployments. The ServiceMonitor sets the target label `pool`
+  from it, and Prometheus drops an empty label, so the main Deployments' series carry no `pool`
+  (R-HA-045). Selectors use name, instance, component and, for `web` and `worker`, `trove/pool`,
+  from the MVP on, because selector labels are immutable: adding a pool later then never overlaps
+  the main Deployment's or the client Service's selector and never changes an immutable one.
 - **Ports (HA-021).** Containers listen on 8080 (`http`, client listener) and 8081 (`ops`) and
   nothing else (INV-6). Both ports are unprivileged, so no capability is needed. Replicas need no
   port open towards each other.
@@ -1803,21 +2872,35 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `config.storage.s3.bucket` empty | the value |
 | `config.storage.s3.credentials.source: static` without `secrets.s3.existingSecret` | both |
 | `secrets.encryption.existingSecret` or `secrets.encryption.keys` empty | the value, and the key-creation command of R-HA-027 |
-| `highAvailability.enforce` and fewer than 2 replicas (`replicaCount`, or `autoscaling.minReplicas`) for any Deployment, or a disabled PDB | the Deployment |
-| `roleSplit.enabled` and `worker.replicaCount` (or minimum) < 1 | `worker.replicaCount` |
-| `config.storage.upload.max_size` > the spool budget derived from `spool.sizeLimit` (R-HA-035) | both |
-| `terminationGracePeriodSeconds` < `config.health.shutdown_drain_delay` + 15 s | both |
+| `highAvailability.enforce` and fewer than 2 replicas (`replicaCount`, or `autoscaling.minReplicas`) for `web`, `worker` or a pool, a disabled PDB, or a missing host spread constraint, one that is not `DoNotSchedule`, or one without `nodeTaintsPolicy: Honor` (R-HA-059 rule 3) | the Deployment and the value |
+| `worker.replicaCount` (or `worker.autoscaling.minReplicas`) < 1 | `worker.replicaCount` |
+| `config.storage.upload.max_size` > the spool budget derived from the `web` spool size (R-HA-035) | both |
+| `terminationGracePeriodSeconds` of a role < `config.health.shutdown_drain_delay` + 15 s | both |
+| `config.valkey.mode: sentinel` with `config.valkey.sentinel.addresses` or `config.valkey.sentinel.primary_name` empty | the value |
+| `highAvailability.enforce` and `config.valkey.mode` other than `sentinel`, or fewer than 3 Sentinel addresses | `config.valkey.mode` or `config.valkey.sentinel.addresses` |
+| `secrets.valkey.existingSecret` empty | the value |
+| `config.valkey.tls.mode: disable` without `config.valkey.allow_insecure: true` | both |
+| `config.database.pooler.mode: transaction` with `config.database.session_host` empty or equal to `config.database.host` | `config.database.session_host` |
+| `config.database.pooler.mode: transaction` with a control endpoint (`control_host`, `control_port`, `control_name`, each defaulting to its main counterpart) equal to the request endpoint (Q-HA-20) | `config.database.control_host` |
+| `backup.enabled` and `config.backup.target.bucket` empty | both |
+| `backup.schedule` in a form that trove's cron parser rejects: six fields, `?`, day-of-week `7`, `@every`, `TZ=` or `CRON_TZ=` ([operations-and-observability.md](operations-and-observability.md) Q-OPS-7, [storage.md](storage.md) R-STOR-025) | `backup.schedule` |
+| The backup target on the blob store's endpoint and bucket without `config.backup.target.allow_same_bucket: true`, or with one prefix containing the other (R-HA-060; `trove backup create` exits `2` on the same rule, R-BAK-002) | both locations |
+| `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` | both |
+| `restore.enabled` without `restore.backupId` | `restore.backupId` |
+| `restore.enabled` with a `web` or `worker` replica count above 0 or autoscaling enabled | `restore.enabled` and the value |
+| Two pools with the same name, path prefix or queue (P1, R-HA-062) | the pools |
 | `gateway.enabled` without `gateway.parentRefs` and without `gateway.create.enabled` | `gateway.parentRefs` |
 | `gateway.enabled` and `.Capabilities.APIVersions` lacks `gateway.networking.k8s.io/v1/HTTPRoute` | the missing API |
 | `metrics.serviceMonitor.enabled` (or `prometheusRule`) and the `monitoring.coreos.com/v1` API missing | the missing API |
-| A chart-managed configuration key set inside `config` (secret file paths, `roles`, `storage.spool.dir`, `server.content_base_url`) | the key |
+| A chart-managed configuration key set inside `config` (secret file paths, among them those of `valkey` and `backup.target`; `storage.spool.dir`; `server.content_base_url`; `backup.manual_run`) | the key |
 | `contentOrigin.host` equal to the host of `config.server.base_url` or of a `config.server.additional_base_urls` entry (P1, R-HA-055) | `contentOrigin.host` |
 | `podDisruptionBudget` with both `minAvailable` and `maxUnavailable` set | both |
 
 - `values.schema.json` validates every chart-owned value (types, enums, `additionalProperties:
   false`); Helm checks it on install, upgrade, lint and template
   ([schema files](https://helm.sh/docs/topics/charts/#schema-files)). It uses JSON Schema
-  draft-07 keywords only.
+  draft-07 keywords only. Its enums admit only `ReadWriteOnce` and `ReadWriteOncePod` as access
+  modes of a generic ephemeral volume (R-HA-061).
 - The `config` subtree is validated against the schema the binary emits (`trove config schema`).
   CI regenerates it from the Go configuration types and fails on drift. A typo in a configuration
   key therefore fails `helm install`, not silently at runtime (catalog trap HA-036). The binary
@@ -1835,22 +2918,34 @@ Priority: **MVP** · Covers: HA-033, HA-035, HA-036, HA-037, HA-053
 **Configuration file.**
 
 - The chart renders `config` into `/etc/trove/trove.yaml` (INV-15), merged with chart-managed
-  keys:
+  keys. One file serves every Deployment and Job; what differs per Deployment, the role, is the
+  container argument `--role` (R-HA-002), not a key in the file. The chart-managed keys:
   - secret file paths;
-  - `roles` per Deployment;
   - `storage.spool.dir`;
-  - `storage.spool.max_bytes`, derived from the volume when unset (R-HA-035);
   - `server.content_base_url`, rendered as `https://<contentOrigin.host>` when `contentOrigin.host`
-    is set (P1, R-HA-055).
+    is set (P1, R-HA-055);
+  - `backup.manual_run.namespace` (the release namespace) and `backup.manual_run.cronjob`
+    (`<fullname>-backup`), which the API's backup summary and the UI read to show the manual-run
+    command ([api-and-ui.md](api-and-ui.md) R-API-050, Q-API-10; R-HA-060).
 - Precedence follows INV-15: environment variable `TROVE_<SECTION>_<KEY>` (nested keys joined
   with `_`, e.g. `TROVE_DATABASE_POOL_MAX_CONNS`) > file > built-in default. `extraEnv` can
   therefore override any file value. The chart itself sets only:
-  - `TROVE_RUNTIME_MEMORY_LIMIT_BYTES`, `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD` and
-    `TROVE_DATABASE_PREFLIGHT_EXPECTED_REPLICAS`, the variables of the schema keys
-    `runtime.memory_limit_bytes`, `runtime.termination_grace_period` and
-    `database.preflight.expected_replicas` (R-OPS-028 mapping; the chart is their only source);
+  - `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` and `TROVE_RUNTIME_TERMINATION_GRACE_PERIOD` per
+    Deployment, and `TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS` and
+    `TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS` for the migration Job, the variables of the
+    schema keys `runtime.memory_limit_bytes`, `runtime.termination_grace_period`,
+    `database.preflight.expected_web_replicas` and `database.preflight.expected_worker_replicas`
+    (R-OPS-028 mapping; the chart is their only source);
+  - `TROVE_STORAGE_SPOOL_MAX_BYTES` per Deployment, derived from the role's spool size when
+    `config.storage.spool.max_bytes` is unset (R-HA-035);
   - `GOMAXPROCS` (R-HA-036);
-  - the pod name and namespace through the downward API.
+  - in every trove pod (`web`, `worker`, backup, restore, migration and post-restore), from the
+    downward API: `TROVE_POD_NAME` (`fieldRef: metadata.name`), `TROVE_POD_NAMESPACE`
+    (`metadata.namespace`) and `TROVE_NODE_NAME` (`spec.nodeName`). R-OPS-028 reserves these
+    names. They feed the replica registry, including its `node` column that the status screen
+    groups by ([api-and-ui.md](api-and-ui.md) R-UI-038, Q-UI-7), the `replica` field of every log
+    record and the trace resource (R-OPS-003, R-OPS-009, R-OPS-018). `spec.nodeName` is offered
+    by the downward API as an environment variable only, not as a volume file.
 - There is no "complete configuration file from a Secret" mode. It would let an operator replace
   chart-managed paths and lose the validation of R-HA-029. Everything that is not a secret goes
   through `config`.
@@ -1863,17 +2958,30 @@ Priority: **MVP** · Covers: HA-033, HA-035, HA-036, HA-037, HA-053
 **Secrets.** Every Secret is pre-created by the operator and mounted as a read-only volume with
 `items` (only the named keys), `defaultMode: 0440`, and no `subPath`, so rotations reach the files.
 Secrets never become environment variables. Environment variables are readable through `/proc`,
-end up in crash reports, and do not follow Secret updates.
+end up in crash reports, and do not follow Secret updates. Each Secret is mounted only into the
+pods whose process reads it; the first column names the pods where the set is narrower than every
+trove pod.
+
+**Secret propagation time.** A rotated Secret reaches the mounted files of every pod within
+2 minutes (the kubelet's sync period plus its cache delay). [identity-and-authentication.md](identity-and-authentication.md)
+R-AUTH-014's `auth.break_glass.rotation_hold` default (2 min) equals this time; if this time
+changes, that default follows.
 
 | Value | Keys (default names) | Mount path | Configuration key set by the chart |
 |---|---|---|---|
 | `secrets.database` | `username`, `password` | `/var/run/secrets/trove/database/` | `database.username_file`, `database.password_file` |
-| `secrets.databaseMigration` (Job only) | `username`, `password` | same path in the Job | same |
+| `secrets.databaseMigration` (migration and restore Jobs only) | `username`, `password` | same path in the Jobs | same |
+| `secrets.databaseBackup` (backup pods only; empty = `secrets.database`) | `username`, `password` | same path in the backup pod | same |
 | `secrets.databaseCA` | `ca.crt` | `/var/run/secrets/trove/database-ca/` | `database.ssl_root_cert_file` |
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/database-client/` | `database.ssl_cert_file`, `database.ssl_key_file` |
 | `secrets.s3` (only with `source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `…secret_access_key_file` |
-| `secrets.oidc[]` (one entry per provider ID) | `client-secret` | `/var/run/secrets/trove/oidc-<id>/` | `client_secret_file` of the provider with that `id` in `config.auth.oidc.providers` |
-| `secrets.breakGlass` | `password` | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file`; empty value → `auth.break_glass.enabled: false` |
+| `secrets.valkey` (`web`, `worker` only; not in backup, restore, migration or post-restore pods, R-BAK-012, R-BAK-022) | `username` (optional), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` |
+| `secrets.valkeySentinel` (same pods) | `username` (optional), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` |
+| `secrets.valkeyCA` (same pods) | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` |
+| `secrets.valkeyClientCert` (same pods) | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` |
+| `secrets.backupTarget` (backup and restore pods; only with `source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/backup-target/` | `backup.target.credentials.access_key_id_file`, `…secret_access_key_file` |
+| `secrets.oidc[]` (one entry per provider ID; `web` pods only, not worker, backup, migration or restore pods, R-AUTH-042) | `client-secret` | `/var/run/secrets/trove/oidc-<id>/` | `client_secret_file` of the provider with that `id` in `config.auth.oidc.providers` |
+| `secrets.breakGlass` (`web` pods only, as `secrets.oidc[]`, R-AUTH-014, R-AUTH-042) | `password` | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file`; empty value → `auth.break_glass.enabled: false` |
 | `secrets.encryption` | `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered) and `secrets.active_key_id` (the first entry) |
 | `secrets.metricsToken` | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` (R-OPS-006) |
 | `trustedCA.*` (Secret or ConfigMap) | listed keys | `/etc/trove/ca/` | `proxy.outbound.tls.ca_files` (R-REPO-035); optionally `storage.s3.ca_file` |
@@ -1891,7 +2999,7 @@ end up in crash reports, and do not follow Secret updates.
   ([EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)).
   Static keys use `secrets.s3`.
 - **Bootstrap (HA-037).** The break-glass administrator is the first-start credential (R-AUTH-014).
-  Further bootstrapping is `kubectl exec deploy/trove -- trove admin …` (R-AUTH-015). The chart
+  Further bootstrapping is `kubectl exec deploy/trove-web -- trove admin …` (R-AUTH-015). The chart
   renders no Job that writes tokens into Secrets: such a Job would need `create` on Secrets in the
   namespace, a permission the chart otherwise never needs. Operators store the printed token with
   their own secret tooling.
@@ -1908,9 +3016,11 @@ Priority: **MVP** · Covers: HA-029
 
 The complete `values.yaml`. Every value carries `# default (proposed)` or `# example`. Keys under
 `config` belong to the pages named in the comments; this page only fixes how the chart wires them.
-Keys marked P1 (`gateway.create`, `contentOrigin`, `config.backup.revocation_journal`, `bootstrap`) enter the chart
-with the release that implements them: the `config` subtree is validated against the schema the
-binary emits (R-HA-029), so a key the binary does not know yet would fail `helm install`.
+Keys marked P1 (`gateway.create`, `contentOrigin`, `bootstrap`, `web.pools`, `worker.pools`) enter
+the chart with the release that implements them: the `config` subtree is validated against the
+schema the binary emits (R-HA-029), so a key the binary does not know yet would fail
+`helm install`. The keys under `config.backup` are [backup-and-restore.md](backup-and-restore.md)
+R-BAK-011's, shown here with every key and default.
 
 <details>
 <summary>deploy/helm/trove/values.yaml</summary>
@@ -1934,14 +3044,11 @@ image:
   pullPolicy: IfNotPresent              # default (proposed)
 
 highAvailability:
-  enforce: true                         # default (proposed): ≥ 2 replicas and a PDB per Deployment (R-HA-029)
+  enforce: true                         # default (proposed): ≥ 2 replicas, a PDB and DoNotSchedule host spreading per role; Sentinel mode with ≥ 3 Sentinels (R-HA-029)
 
-roleSplit:
-  enabled: false                        # default (proposed): one Deployment with roles [api, worker] (R-HA-002)
-
-# ── Server Deployment: roles [api, worker], or [api] with roleSplit ──────────
-server:
-  replicaCount: 2                       # default (proposed); ignored when autoscaling.enabled
+# ── web Deployment: trove serve --role web (R-HA-002) ───────────────────────
+web:
+  replicaCount: 3                       # default (proposed) (Q-HA-16); ignored when autoscaling.enabled
   minReadySeconds: 10                   # default (proposed)
   revisionHistoryLimit: 5               # default (proposed)
   strategy:
@@ -1950,6 +3057,8 @@ server:
       maxSurge: 1                       # default (proposed)
       maxUnavailable: 0                 # default (proposed)
   terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+  spool:
+    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
   resources:
     requests:
       cpu: "1"                          # default (proposed)
@@ -1959,8 +3068,8 @@ server:
       memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
   autoscaling:
     enabled: false                      # default (proposed)
-    minReplicas: 2                      # default (proposed)
-    maxReplicas: 6                      # default (proposed)
+    minReplicas: 3                      # default (proposed) (Q-HA-16, R-HA-059)
+    maxReplicas: 8                      # default (proposed)
     targetCPUUtilizationPercentage: 70  # default (proposed)
     targetMemoryUtilizationPercentage: 0  # default (proposed): 0 = no memory metric
     metrics: []                         # default (proposed); additional autoscaling/v2 metric specs
@@ -1984,12 +3093,13 @@ server:
     unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
   topologySpread:
     enabled: true                       # default (proposed): render the two constraints below
+    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
     zone:
       maxSkew: 1                        # default (proposed)
       whenUnsatisfiable: ScheduleAnyway # default (proposed)
     host:
       maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: DoNotSchedule  # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
   topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
   nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
   affinity: {}                          # default (proposed)
@@ -2000,10 +3110,11 @@ server:
   podAnnotations: {}                    # default (proposed)
   podLabels: {}                         # default (proposed)
   extraEnv: []                          # default (proposed); appended after the shared extraEnv
+  pools: []                             # P1 (R-HA-062); example: [{name: packages, paths: [/api/npm/, /api/nuget/], replicaCount: 4}]
 
-# ── Worker Deployment: roles [worker]; rendered only with roleSplit.enabled ─
+# ── worker Deployment: trove serve --role worker (R-HA-002) ─────────────────
 worker:
-  replicaCount: 2                       # default (proposed)
+  replicaCount: 2                       # default (proposed) (Q-HA-16)
   minReadySeconds: 10                   # default (proposed)
   revisionHistoryLimit: 5               # default (proposed)
   strategy:
@@ -2012,7 +3123,8 @@ worker:
       maxSurge: 1                       # default (proposed)
       maxUnavailable: 0                 # default (proposed)
   terminationGracePeriodSeconds: 300    # default (proposed): jobs persist their cursor before exit
-  spoolSizeLimit: 5Gi                   # default (proposed); workers spool only cache fills of jobs
+  spool:
+    sizeLimit: 5Gi                      # default (proposed); workers spool only cache fills of jobs and, from P1, the nuget-symbol-index job's one extracted PDB at a time (formats/nuget.md R-NUGET-021)
   resources:
     requests:
       cpu: 500m                         # default (proposed)
@@ -2035,12 +3147,13 @@ worker:
     unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed)
   topologySpread:
     enabled: true                       # default (proposed)
+    nodeTaintsPolicy: Honor             # default (proposed)
     zone:
       maxSkew: 1                        # default (proposed)
       whenUnsatisfiable: ScheduleAnyway # default (proposed)
     host:
       maxSkew: 1                        # default (proposed)
-      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed): workers spread evenly; with nodes ≥ replicas no two share a node (INV-12)
   topologySpreadConstraints: []         # default (proposed)
   nodeFailureTolerationSeconds: 60      # default (proposed)
   affinity: {}                          # default (proposed)
@@ -2051,10 +3164,12 @@ worker:
   podAnnotations: {}                    # default (proposed)
   podLabels: {}                         # default (proposed)
   extraEnv: []                          # default (proposed)
+  pools: []                             # P1 (R-HA-062); example: [{name: indexing, queues: [index], replicaCount: 2}]
 
 # ── trove configuration (rendered to /etc/trove/trove.yaml) ───────────
-# Chart-managed keys (secret file paths, roles, storage.spool.dir, server.content_base_url) must not be set here (R-HA-029).
-# The migration Job's hook ConfigMap carries the same file (R-HA-019).
+# Chart-managed keys (secret file paths, storage.spool.dir, server.content_base_url) must not be set here (R-HA-029).
+# One file serves every Deployment and Job; the role is the container argument --role (R-HA-002).
+# The hook ConfigMap of the migration Job carries the same file (R-HA-019); the restore Job mounts <fullname>-config.
 config:
   server:                               # operations-and-observability.md R-OPS-005
     base_url: ""                        # required; example: https://trove.example.com
@@ -2062,25 +3177,34 @@ config:
     additional_base_urls: []            # default (proposed)
   health:                               # operations-and-observability.md R-OPS-001
     require_object_store: false         # default (proposed): object storage gates only the first readiness (R-HA-008, Q-HA-1)
-    shutdown_drain_delay: 5s            # default (proposed)
+    shutdown_drain_delay: 5s            # default (proposed); must exceed the edge's endpoint removal time (R-HA-059)
   metrics:                              # operations-and-observability.md R-OPS-006
     enabled: true                       # default (proposed)
     auth: none                          # default (proposed): none | static (needs secrets.metricsToken)
   log:
     level: info                         # default (proposed); operations-and-observability.md
-  database:                             # this page, R-HA-009 to R-HA-016
-    host: ""                            # required; example: trove-db-rw.trove.svc
+  database:                             # this page, R-HA-009 to R-HA-016, R-HA-058
+    host: ""                            # required; example: trove-db-rw.trove.svc, or the pooler with R-HA-058
     port: 5432                          # default (proposed)
+    session_host: ""                    # default (proposed): empty = host; required with pooler.mode transaction; example: trove-db-rw.trove.svc
+    session_port: 0                     # default (proposed): 0 = port
+    control_host: ""                    # default (proposed): empty = host; required with pooler.mode transaction (R-HA-058, Q-HA-20); example: trove-db-pooler-control.trove.svc
+    control_port: 0                     # default (proposed): 0 = port
+    control_name: ""                    # default (proposed): empty = name
     name: trove                       # example
     schema: trove                     # default (proposed)
+    backup_role: ""                     # default (proposed): empty = trove migrate grants no backup privileges; example: trove_backup (R-HA-014, R-BAK-015)
     ssl_mode: verify-full               # default (proposed)
     target_session_attrs: read-write    # default (proposed)
     connect_timeout: 5s                 # default (proposed)
+    pooler:
+      mode: none                        # default (proposed): none | session | transaction (R-HA-058, Q-HA-6)
+      server_connections: 0             # default (proposed); with transaction: the server-side total of the request and control poolers (R-HA-016); example: 100
     pool:
-      max_conns: 20                     # default (proposed)
+      max_conns: 20                     # default (proposed); at least 2, one is the control connection (R-HA-016)
       min_conns: 2                      # default (proposed)
-      max_conn_lifetime: 30m            # default (proposed)
-      max_conn_lifetime_jitter: 5m      # default (proposed)
+      max_conn_lifetime: 30m            # default (proposed); 5m recommended with a transaction-mode pooler
+      max_conn_lifetime_jitter: 5m      # default (proposed); 1m recommended with a transaction-mode pooler
       max_conn_idle_time: 5m            # default (proposed)
       health_check_period: 30s          # default (proposed)
     lease_pool_size: 4                  # default (proposed)
@@ -2106,6 +3230,31 @@ config:
       connection_budget: enforce        # default (proposed): enforce | warn
       reserved_connections: 10          # default (proposed)
       allow_superuser: false            # default (proposed)
+  valkey:                               # this page, R-HA-056, R-HA-057
+    mode: sentinel                      # default (proposed): sentinel | standalone (development only)
+    sentinel:
+      addresses: []                     # required; example: [trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379]
+      primary_name: ""                  # required; example: trove
+      tls: true                         # default (proposed)
+      refresh_interval: 5s              # default (proposed)
+    address: ""                         # default (proposed); standalone mode only; example: trove-valkey.trove.svc:6379
+    database: 0                         # default (proposed)
+    key_prefix: "trove:"                # default (proposed)
+    tls:
+      mode: verify-full                 # default (proposed): verify-full | verify-ca | disable
+      server_name: ""                   # default (proposed): host name of each address
+    allow_insecure: false               # default (proposed)
+    connect_timeout: 2s                 # default (proposed)
+    command_timeout: 500ms              # default (proposed)
+    sentinel_query_timeout: 300ms       # default (proposed)
+    max_conn_lifetime: 30m              # default (proposed)
+    health_check_interval: 5s           # default (proposed)
+    reconnect:
+      initial_backoff: 100ms            # default (proposed)
+      max_backoff: 5s                   # default (proposed)
+    circuit_breaker:
+      failure_threshold: 5              # default (proposed)
+      open_duration: 5s                 # default (proposed)
   storage:                              # storage.md R-STOR-024 to R-STOR-036
     s3:
       bucket: ""                        # required; example: trove-blobs
@@ -2120,8 +3269,6 @@ config:
       max_size: 10GiB                   # default (proposed) in storage.md; must fit the spool (R-HA-035)
     gc:
       grace_period: 24h                 # default (proposed) in storage.md; see R-HA-024
-  proxy:
-    lock_pool_size: 16                  # default (proposed) in repositories-and-proxy.md; counts toward R-HA-016
   jobs:
     schedule_tick: 10s                  # default (proposed)
     lease_duration: 60s                 # default (proposed)
@@ -2130,13 +3277,56 @@ config:
       batch_size: 1000                  # default (proposed)
       pause_between_batches: 100ms      # default (proposed)
   migrate:
-    advisory_lock_wait: 5m              # default (proposed)
+    advisory_lock_wait: 5m              # default (proposed); also how long a migration waits for a backup's database phase (R-HA-019)
     ddl_lock_timeout: 5s                # default (proposed)
     ddl_lock_retries: 20                # default (proposed)
-  backup:
+  backup:                               # backup-and-restore.md R-BAK-011 owns these keys; manual_run.* is chart-managed (R-HA-030)
+    target:
+      endpoint: ""                      # default (proposed): AWS resolution; example: https://s3.eu-central-1.amazonaws.com
+      region: ""                        # example: eu-central-1
+      bucket: ""                        # required with backup.enabled; example: trove-backups
+      prefix: trove                     # default (proposed)
+      force_path_style: false           # default (proposed)
+      allow_insecure_endpoint: false    # default (proposed)
+      ca_file: ""                       # default (proposed): system trust store
+      storage_class: ""                 # default (proposed): bucket default; example: STANDARD_IA
+      allow_same_bucket: false          # default (proposed); R-BAK-002, R-HA-060
+      credentials:                      # same keys as storage.s3.credentials (R-STOR-031); the *_file keys are chart-managed (secrets.backupTarget, workload identity), not set here
+        source: default                 # default (proposed): default | webIdentity | static (secrets.backupTarget)
+        role_arn: ""                    # default (proposed); example: arn:aws:iam::210987654321:role/trove-backup-writer
+        sts_endpoint: ""                # default (proposed)
+      sse:
+        mode: s3                        # default (proposed): s3 | kms | none (R-BAK-026)
+        kms_key_id: ""                  # default (proposed); example: arn:aws:kms:eu-central-1:210987654321:key/9a8b…
+        bucket_key: true                # default (proposed)
+    database:
+      parallel: 2                       # default (proposed); backup connections = 2 + parallel (R-HA-016)
+      lock_timeout: 60s                 # default (proposed)
+      migration_wait: 15m               # default (proposed); below stall_timeout
+      part_size: 16MiB                  # default (proposed)
+    copy:
+      concurrency: 16                   # default (proposed)
+      server_side: auto                 # default (proposed): auto | always | never
+      part_size: 256MiB                 # default (proposed)
+      check_existing: auto              # default (proposed): auto | always | never
+      bytes_per_second: 0               # default (proposed): 0 = unlimited
+    compression_level: 3                # default (proposed); zstd level 1–19
+    exclude:
+      remote_caches: false              # default (proposed); R-BAK-008
+    retention:
+      keep_last: 7                      # default (proposed); ≥ 1
+      keep_within: 0s                   # default (proposed): count only; example: 720h
+      sweep_interval: 168h              # default (proposed); full pool sweep (R-BAK-017)
+    expected_interval: 24h              # default (proposed); drives TroveBackupStale through its gauge (R-HA-045, R-BAK-014)
+    lease_duration: 5m                  # default (proposed)
+    heartbeat_interval: 15s             # default (proposed); × 4 ≤ lease_duration
+    stall_timeout: 30m                  # default (proposed); a run without progress cancels itself (R-BAK-013)
+    finalize_timeout: 30s               # default (proposed); × 2 < lease_duration
+    verify_sample: 1000                 # default (proposed)
+    run_history: 2160h                  # default (proposed); backup_run rows kept 90 days
     recovery_window: 0s                 # default (proposed): undeclared; example: 168h (R-HA-024)
     object_versioning: false            # default (proposed)
-    revocation_journal:                 # P1 (R-HA-054)
+    revocation_journal:                 # R-HA-054 (MVP, Q-HA-9)
       enabled: true                     # default (proposed)
       ship_interval: 5s                 # default (proposed)
       replay_margin: 5m                 # default (proposed)
@@ -2158,6 +3348,10 @@ secrets:
     existingSecret: ""                  # default (proposed): empty = single-role mode (R-HA-014); example: trove-db-owner
     usernameKey: username               # default (proposed)
     passwordKey: password               # default (proposed)
+  databaseBackup:
+    existingSecret: ""                  # default (proposed): empty = secrets.database (R-HA-014, R-HA-060); example: trove-db-backup
+    usernameKey: username               # default (proposed)
+    passwordKey: password               # default (proposed)
   databaseCA:
     existingSecret: ""                  # example: trove-db-ca (only ca.crt is projected)
     key: ca.crt                         # default (proposed)
@@ -2167,6 +3361,26 @@ secrets:
     keyKey: tls.key                     # default (proposed)
   s3:
     existingSecret: ""                  # default (proposed); required with credentials.source static
+    accessKeyIdKey: access-key-id       # default (proposed)
+    secretAccessKeyKey: secret-access-key  # default (proposed)
+    sessionTokenKey: ""                 # default (proposed)
+  valkey:
+    existingSecret: ""                  # required (R-HA-029); example: trove-valkey
+    usernameKey: username               # default (proposed); a missing key = the "default" user
+    passwordKey: password               # default (proposed)
+  valkeySentinel:
+    existingSecret: ""                  # default (proposed): Sentinels without authentication; example: trove-valkey-sentinel
+    usernameKey: username               # default (proposed)
+    passwordKey: password               # default (proposed)
+  valkeyCA:
+    existingSecret: ""                  # default (proposed): empty = system roots plus trustedCA; example: trove-valkey-ca
+    key: ca.crt                         # default (proposed)
+  valkeyClientCert:
+    existingSecret: ""                  # default (proposed): no client certificate; needed while Valkey keeps tls-auth-clients yes
+    certKey: tls.crt                    # default (proposed)
+    keyKey: tls.key                     # default (proposed)
+  backupTarget:
+    existingSecret: ""                  # default (proposed); required with config.backup.target.credentials.source static
     accessKeyIdKey: access-key-id       # default (proposed)
     secretAccessKeyKey: secret-access-key  # default (proposed)
     sessionTokenKey: ""                 # default (proposed)
@@ -2220,16 +3434,16 @@ securityContext:
   seccompProfile:
     type: RuntimeDefault                # default (proposed)
 
-# ── Volumes ────────────────────────────────────────────────────────────────
+# ── Volumes (R-HA-035, R-HA-061: nothing ReadWriteMany, nothing persistent) ─
 spool:
   type: emptyDir                        # default (proposed): emptyDir | ephemeral
-  sizeLimit: 20Gi                       # default (proposed) (R-HA-035)
-  headroom: 2GiB                        # default (proposed): sizeLimit − headroom = storage.spool.maxBytes
+  sizeLimit: 20Gi                       # default (proposed) (R-HA-035); web.spool and worker.spool override it
+  headroom: 2GiB                        # default (proposed): sizeLimit − headroom = storage.spool.max_bytes (R-HA-035, R-STOR-004)
   medium: ""                            # default (proposed): node disk; "Memory" counts against the memory limit
   ephemeral:
     storageClassName: ""                # default (proposed): cluster default
     size: 50Gi                          # default (proposed); used with type ephemeral
-    accessModes: [ReadWriteOnce]        # default (proposed)
+    accessModes: [ReadWriteOnce]        # default (proposed): ReadWriteOnce | ReadWriteOncePod; nothing else validates
 
 tmp:
   sizeLimit: 1Gi                        # default (proposed); /tmp under readOnlyRootFilesystem
@@ -2264,6 +3478,7 @@ service:
   type: ClusterIP                       # default (proposed): ClusterIP | LoadBalancer | NodePort
   port: 8080                            # default (proposed)
   opsPort: 8081                         # default (proposed)
+  # No sessionAffinity value: the client Service always renders sessionAffinity: None (R-HA-037).
   annotations: {}                       # default (proposed)
   labels: {}                            # default (proposed)
   loadBalancerSourceRanges: []          # default (proposed)
@@ -2274,7 +3489,7 @@ service:
 ingress:
   enabled: false                        # default (proposed)
   className: ""                         # default (proposed): cluster default IngressClass; example: traefik
-  annotations: {}                       # default (proposed); controller-specific settings (R-HA-039)
+  annotations: {}                       # default (proposed); controller-specific settings (R-HA-039); never cookie affinity (R-HA-037)
   labels: {}                            # default (proposed)
   hosts: []                             # default (proposed): empty = host of config.server.base_url
   # No path value: every host is routed whole, path / with pathType Prefix (R-HA-037).
@@ -2326,8 +3541,14 @@ networkPolicy:
     database:
       to: []                            # default (proposed); example: [{podSelector: {matchLabels: {cnpg.io/cluster: trove-db}}}]
       ports: [5432]                     # default (proposed)
+    valkey:
+      to: []                            # default (proposed); example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-valkey}}}]
+      ports: [6379, 26379]              # default (proposed): data nodes and Sentinels
     objectStorage:
       to: []                            # default (proposed); example: [{ipBlock: {cidr: 0.0.0.0/0}}] or a MinIO podSelector
+      ports: [443]                      # default (proposed)
+    backupTarget:
+      to: []                            # default (proposed); backup and restore pods only; example: [{ipBlock: {cidr: 0.0.0.0/0}}]
       ports: [443]                      # default (proposed)
     podIdentityAgent: false             # default (proposed); true allows 169.254.170.23:80 (EKS Pod Identity)
     internet:
@@ -2344,7 +3565,7 @@ metrics:
     interval: 30s                       # default (proposed)
     scrapeTimeout: 10s                  # default (proposed)
     labels: {}                          # default (proposed); example: {release: kube-prometheus-stack}
-    relabelings: []                     # default (proposed)
+    relabelings: []                     # default (proposed); appended after the fixed role and pool relabelings (R-HA-045)
     metricRelabelings: []               # default (proposed)
   prometheusRule:
     enabled: false                      # default (proposed)
@@ -2352,7 +3573,7 @@ metrics:
     disabledAlerts: []                  # default (proposed); example: [TroveSpoolNearlyFull]
     extraRules: []                      # default (proposed)
 
-# ── Migrations and restore (R-HA-019, R-HA-025) ────────────────────────────
+# ── Migrations and restore (R-HA-019, R-HA-025, R-HA-060) ──────────────────
 migrations:
   mode: hook                            # default (proposed): hook | disabled
   backoffLimit: 2                       # default (proposed)
@@ -2371,10 +3592,64 @@ postRestore:
   enabled: false                        # default (proposed); renders the post-restore hook Job once
   restoredTo: ""                        # example: "2026-10-28T09:15:00Z"
 
+# ── Backup CronJob and restore Job (R-HA-060, backup-and-restore.md R-BAK-012) ──
+backup:
+  enabled: true                         # default (proposed) (Q-HA-17); needs config.backup.target.bucket
+  schedule: "0 2 * * *"                 # default (proposed)
+  timeZone: Etc/UTC                     # default (proposed)
+  suspend: false                        # default (proposed); rendered true while restore.enabled
+  adoptTarget: false                    # default (proposed); adds --adopt-target after a restore (R-BAK-002)
+  startingDeadlineSeconds: 3600         # default (proposed)
+  successfulJobsHistoryLimit: 3         # default (proposed)
+  failedJobsHistoryLimit: 3             # default (proposed)
+  backoffLimit: 2                       # default (proposed); evictions are not counted (podFailurePolicy)
+  activeDeadlineSeconds: 0              # default (proposed): 0 = not rendered
+  terminationGracePeriodSeconds: 60     # default (proposed)
+  tmpSizeLimit: 256Mi                   # default (proposed); the only volume (R-HA-061); the commands use at most 64 MiB (R-BAK-012), the rest keeps the kubelet's sizeLimit eviction away
+  resources:
+    requests:
+      cpu: 500m                         # default (proposed)
+      memory: 256Mi                     # default (proposed)
+    limits:
+      memory: 1Gi                       # default (proposed)
+  serviceAccount:
+    create: true                        # default (proposed)
+    name: ""                            # default (proposed): <fullname>-backup
+    annotations: {}                     # default (proposed); example (IRSA, read on the blob bucket, write on the target):
+    #  eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/trove-backup  # example
+  nodeSelector: {}                      # default (proposed)
+  tolerations: []                       # default (proposed)
+  affinity: {}                          # default (proposed)
+  priorityClassName: ""                 # default (proposed)
+  podAnnotations: {}                    # default (proposed); cluster-autoscaler.kubernetes.io/safe-to-evict: "false" is always added (R-BAK-012)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed)
+
+restore:
+  enabled: false                        # default (proposed); renders the restore Job, no migration Job, a suspended CronJob (Q-HA-18)
+  backupId: ""                          # required with enabled; example: 20261028T020000Z-7f3a
+  skipRevocationJournal: false          # default (proposed); only when the source bucket is gone (R-BAK-024, H-37)
+  extraArgs: []                         # default (proposed); example: [--check] for a dry run of the preconditions (R-BAK-020)
+  backoffLimit: 2                       # default (proposed); evictions are not counted, every retry resumes (R-BAK-021)
+  activeDeadlineSeconds: 0              # default (proposed): 0 = not rendered
+  serviceAccount:
+    create: true                        # default (proposed)
+    name: ""                            # default (proposed): <fullname>-restore
+    annotations: {}                     # default (proposed); example (IRSA, read on the target, write on the new blob prefix, read on the source journal):
+    #  eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/trove-restore  # example
+  resources:
+    requests:
+      cpu: "1"                          # default (proposed)
+      memory: 1Gi                       # default (proposed)
+    limits:
+      memory: 2Gi                       # default (proposed)
+  podAnnotations: {}                    # default (proposed); safe-to-evict: "false" is always added, as for backup pods
+  extraEnv: []                          # default (proposed)
+
 # ── Extension points (R-HA-046) ────────────────────────────────────────────
 extraEnv: []                            # default (proposed); example: [{name: TROVE_LOG_LEVEL, value: debug}]
 extraEnvFrom: []                        # default (proposed)
-extraVolumes: []                        # default (proposed)
+extraVolumes: []                        # default (proposed); the operator's: R-HA-061 cannot see a claim's access mode
 extraVolumeMounts: []                   # default (proposed)
 initContainers: []                      # default (proposed); run before trove starts
 sidecars: []                            # default (proposed); native sidecars (restartPolicy: Always) allowed
@@ -2389,42 +3664,58 @@ Acceptance criteria:
 - `helm show values deploy/helm/trove` equals this block, except for formatting. A CI test
   compares the key sets.
 - `helm template` with only the required values set (`config.server.base_url`,
-  `config.database.host`, `config.storage.s3.bucket`, `secrets.database.existingSecret`,
+  `config.database.host`, `config.storage.s3.bucket`, `config.valkey.sentinel.addresses`,
+  `config.valkey.sentinel.primary_name`, `config.backup.target.bucket`,
+  `secrets.database.existingSecret`, `secrets.valkey.existingSecret`,
   `secrets.encryption.existingSecret`, `secrets.encryption.keys`) renders without error.
 
 ### R-HA-032 · Replicas, disruption budget, spreading and autoscaling
 Priority: **MVP** · Covers: HA-009, HA-032, HA-043, HA-044
 
-- **Replicas.** Default 2 per Deployment (INV-12). When autoscaling is enabled, the Deployment's
-  `replicas` field is omitted, so `helm upgrade` does not reset the autoscaler's choice.
-- **Disruption budget.** `policy/v1` PodDisruptionBudget with `maxUnavailable: 1` and
-  `unhealthyPodEvictionPolicy: AlwaysAllow` (R-HA-008). `maxUnavailable` scales with the replica
-  count, whereas `minAvailable: 1` with one replica would block every drain.
-- **Spreading.** Two topology spread constraints, rendered unless replaced
+- **Replicas.** Defaults: 3 for `web` and 2 for `worker` (Q-HA-16); at least 2 per role with
+  `highAvailability.enforce` (INV-12). The drain rule of R-HA-059 sets the real minimum: the
+  replicas that carry the peak plus the PDB's `maxUnavailable`. When autoscaling is enabled, the
+  Deployment's `replicas` field is omitted, so `helm upgrade` does not reset the autoscaler's
+  choice, and `minReplicas` follows the drain rule.
+- **Disruption budget.** One `policy/v1` PodDisruptionBudget per Deployment with
+  `maxUnavailable: 1` and `unhealthyPodEvictionPolicy: AlwaysAllow` (R-HA-008). `maxUnavailable`
+  scales with the replica count, whereas `minAvailable: 1` with one replica would block every
+  drain. Backup and restore pods have none (R-HA-060).
+- **Spreading.** Two topology spread constraints per Deployment, rendered unless replaced
   ([topology spread](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)):
   - `topology.kubernetes.io/zone`, `maxSkew: 1`, `ScheduleAnyway`;
-  - `kubernetes.io/hostname`, `maxSkew: 1`, `DoNotSchedule` (server) or `ScheduleAnyway`
-    (worker).
+  - `kubernetes.io/hostname`, `maxSkew: 1`, `DoNotSchedule`, for both roles, so that a role's
+    replicas spread evenly over the nodes: the replica counts of any two eligible nodes differ by
+    at most one, so with at least as many schedulable nodes as replicas no two share a node, and with at least
+    two nodes one node loss never takes a whole role (INV-12).
 
   Both use `matchLabelKeys: [pod-template-hash]`, so the skew is computed per ReplicaSet and a
-  rollout does not pile new pods onto the nodes the old ones leave. Single-node development
-  clusters set `host.whenUnsatisfiable: ScheduleAnyway` (R-HA-051).
+  rollout does not pile new pods onto the nodes the old ones leave. Both use
+  `nodeTaintsPolicy: Honor`, so a cordoned node does not count as a domain and the replacement of
+  an evicted pod can schedule (R-HA-059). Single-node development clusters set
+  `host.whenUnsatisfiable: ScheduleAnyway` and `highAvailability.enforce: false`.
 - **Node loss.** Tolerations for `node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable`
-  with `tolerationSeconds: server.nodeFailureTolerationSeconds` (60) replace the default of 300 s
+  with `tolerationSeconds` from the role's `nodeFailureTolerationSeconds` (60) replace the default
+  of 300 s
   ([taint-based evictions](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/#taint-based-evictions)).
   Replicas are stateless, so recreating them early costs nothing.
-- **Autoscaling.** `autoscaling/v2` on CPU (default target 70 %), optional memory and custom
-  metrics. Scale-down is slow (one pod per 2 minutes after a 5-minute stabilization window), because
-  every removed pod drains its uploads. Scaling raises the database connection demand: the budget
-  (R-HA-016) uses `maxReplicas`, so it must be raised before `maxReplicas` is.
+- **Autoscaling.** `autoscaling/v2` per Deployment: `web` on CPU (default target 70 %), `worker` on
+  CPU (80 %), optional memory and custom metrics. Scale-down is slow (one pod per 2 minutes after a
+  5-minute stabilization window), because every removed pod drains its uploads, as in a node drain.
+  Scaling raises the database connection demand: the budget (R-HA-016) uses `maxReplicas`, so it
+  must be raised before `maxReplicas` is, unless the transaction-mode pooler carries the main pool
+  (R-HA-058).
 - **Placement controls.** `nodeSelector`, `tolerations`, `affinity`, `priorityClassName`,
-  `schedulerName` are passed through unchanged.
+  `schedulerName` are passed through unchanged, per role.
 
 Acceptance criteria:
 
-- On a three-node kind cluster with three zones labeled, three replicas land on three nodes.
-  `kubectl drain` of one node keeps two replicas serving at all times.
-- With autoscaling enabled, a CPU load test raises the replica count to `maxReplicas`, and a
+- On a three-node kind cluster with three zones labeled, three `web` replicas land on three nodes
+  and two `worker` replicas on two. `kubectl drain` of one node keeps at least two `web` replicas
+  serving at all times, and the replacement of every evicted pod becomes ready on the remaining
+  nodes. The same drain with `nodeTaintsPolicy: Ignore` leaves the `web` replacement `Pending`,
+  which documents why the value is set.
+- With autoscaling enabled, a CPU load test raises the `web` replica count to `maxReplicas`, and a
   following `helm upgrade` with unchanged values does not reset it.
 
 ### R-HA-033 · Pod and container security
@@ -2440,8 +3731,10 @@ Priority: **MVP** · Covers: HA-045
   This satisfies the Kubernetes *restricted* Pod Security Standard
   ([Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/)).
   The namespace can therefore enforce `pod-security.kubernetes.io/enforce: restricted`.
-- Writable paths are only the spool (`/var/lib/trove/spool`) and `/tmp` (an `emptyDir` with
-  `tmp.sizeLimit`). `TMPDIR` points to `/tmp`.
+- Writable paths are only the spool (`/var/lib/trove/spool`, `web` and `worker`) and `/tmp` (an
+  `emptyDir` with `tmp.sizeLimit`, in backup and restore pods `backup.tmpSizeLimit`). `TMPDIR`
+  points to `/tmp`. The backup CronJob, the restore Job and the migration Job run with the same
+  security contexts as the Deployments.
 - The image is a minimal non-root base with CA certificates and time-zone data, no shell and no
   package manager. Debugging uses ephemeral debug containers. `trove admin` subcommands run with
   `kubectl exec` (no shell needed).
@@ -2479,18 +3772,28 @@ Acceptance criteria: the probe settings render as in the table. R-HA-008's tests
 ### R-HA-035 · Spool and temporary volumes
 Priority: **MVP** · Covers: HA-005
 
-- The spool (R-STOR-004) is an `emptyDir` at `/var/lib/trove/spool` with `sizeLimit:
-  spool.sizeLimit`. With `spool.type: ephemeral` it is a generic ephemeral volume (a per-pod
+- The spool (R-STOR-004) is an `emptyDir` at `/var/lib/trove/spool` with `sizeLimit` from the
+  role's `spool.sizeLimit` (`web.spool.sizeLimit`, `worker.spool.sizeLimit`, falling back to
+  `spool.sizeLimit`). With `spool.type: ephemeral` it is a generic ephemeral volume (a per-pod
   PersistentVolumeClaim deleted with the pod) of `spool.ephemeral.size`
   ([ephemeral volumes](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/)), for nodes
-  whose local disk is too small.
+  whose local disk is too small. Its access mode is `ReadWriteOnce` or `ReadWriteOncePod`, never
+  shared (R-HA-061).
+- The spool is scratch space for the request or job that is running and nothing else (INV-18).
+  Nothing in it outlives that request: a multi-request upload keeps its parts in S3 multipart
+  uploads and its state in PostgreSQL ([storage.md](storage.md)), so the next request of the same
+  upload may reach another replica, and a lost pod loses no acknowledged data.
 - The kubelet evicts a pod whose `emptyDir` exceeds its `sizeLimit`. The process must reject uploads
-  before that point. The chart therefore sets `storage.spool.max_bytes = spool.sizeLimit −
-  spool.headroom` unless `config.storage.spool.max_bytes` is set. R-STOR-004's admission keeps the
-  spool below its budget, so eviction never happens through uploads.
+  before that point. The chart therefore sets `storage.spool.max_bytes = <role's sizeLimit> −
+  spool.headroom` per Deployment, as the environment variable `TROVE_STORAGE_SPOOL_MAX_BYTES`,
+  unless `config.storage.spool.max_bytes` is set. R-STOR-004's admission keeps the spool below its
+  budget, so eviction never happens through uploads.
 - Sizing: `spool.sizeLimit ≥ concurrent spooled uploads per pod × p95 upload size + headroom`, and
   at least `storage.upload.max_size + headroom` (validated, R-HA-029). Remote-cache fills use the
   spool too (R-STOR-004). Example: 20 concurrent uploads of 500 MB, plus 2 GiB, needs about 12 GiB.
+  A `worker` pod spools only the cache fills of jobs and, from P1, the `nuget-symbol-index` job,
+  which spools one extracted PDB at a time ([formats/nuget.md](formats/nuget.md) R-NUGET-021), so
+  its default is smaller.
 - `resources.requests.ephemeral-storage` should cover the expected steady use, not the limit, so
   pods schedule on ordinary nodes. The `sizeLimit` caps the worst case.
 - `medium: Memory` is allowed but counts against the memory limit. It is meant for small,
@@ -2503,12 +3806,50 @@ Acceptance criteria:
   (`kubectl get events` shows no eviction).
 - `helm template … --set spool.sizeLimit=5Gi --set config.storage.upload.max_size=10GiB` fails.
 
+### R-HA-061 · Volumes: nothing shared, nothing persistent
+Priority: **MVP** · Covers: HA-005
+
+No ReadWriteMany storage class can be assumed (owner constraint, INV-13). trove needs none: no pod
+mounts a volume that another pod writes, and no pod keeps data on a volume beyond its own life.
+Every volume the chart renders:
+
+| Pods | Mount | Volume | Access | Lifetime |
+|---|---|---|---|---|
+| `web`, `worker` | `/var/lib/trove/spool` | `emptyDir` (default) or a generic ephemeral volume (R-HA-035) | node-local, or one ReadWriteOnce (or ReadWriteOncePod) claim per pod | the pod |
+| every trove pod | `/tmp` | `emptyDir` with `tmp.sizeLimit` (backup and restore pods: `backup.tmpSizeLimit`, because they stream, R-BAK-012) | node-local | the pod |
+| every trove pod | `/etc/trove/trove.yaml` | ConfigMap | read-only projection | — |
+| every trove pod | `/var/run/secrets/trove/…`, `/etc/trove/ca/` | Secret or ConfigMap projections (R-HA-030) | read-only projection | — |
+
+- The chart renders no PersistentVolumeClaim, no StatefulSet and no `volumeClaimTemplates`. A
+  generic ephemeral volume is a claim that Kubernetes creates for one pod and deletes with it
+  ([generic ephemeral volumes](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes)).
+  `values.schema.json` admits only `ReadWriteOnce` and `ReadWriteOncePod` as its access modes
+  (R-HA-029).
+- Nothing the services need is on a trove volume: PostgreSQL holds metadata, S3 holds blobs,
+  backups and the revocation journal, Valkey holds ephemeral state (INV-3, INV-4, INV-18).
+- Dependencies outside the chart: PostgreSQL instances use one ReadWriteOnce claim each, owned by
+  their operator (CloudNativePG: one per instance); Valkey and its Sentinels need no claim, because
+  Valkey's content may be lost (R-HA-056); the S3 store is the platform's. Draining a node that
+  holds a PostgreSQL instance follows R-HA-059.
+- `extraVolumes` belong to the operator. The chart cannot see the access mode of a claim they
+  reference, so this requirement covers the volumes the chart renders.
+
+Acceptance criteria:
+
+- For every value set in `ci/`, `helm template` output contains no `ReadWriteMany` or
+  `ReadOnlyMany`, no `kind: PersistentVolumeClaim`, no `kind: StatefulSet` and no
+  `volumeClaimTemplates` (checked with `yq` in CI).
+- `helm template … --set spool.type=ephemeral --set 'spool.ephemeral.accessModes={ReadWriteMany}'`
+  fails schema validation.
+- The local profile's kind cluster offers only its default storage class, which provisions
+  ReadWriteOnce volumes on the node, and the whole R-HA-052 suite passes there.
+
 ### R-HA-036 · Resources and Go runtime limits
 Priority: **MVP** · Covers: HA-052
 
-- Defaults: requests 1 CPU and 1 GiB memory, memory limit 2 GiB, no CPU limit (server). Workers:
-  500m and 512 MiB, memory limit 1 GiB. Requests are set, never left empty, so the scheduler and
-  the autoscaler have a basis.
+- Defaults: requests 1 CPU and 1 GiB memory, memory limit 2 GiB, no CPU limit (`web`). `worker`
+  and backup pods: 500m and 512 MiB, memory limit 1 GiB. Requests are set, never left empty, so the
+  scheduler and the autoscaler have a basis.
 - **CPU.** Since Go 1.25 the runtime sets `GOMAXPROCS` from the cgroup CPU *limit* and ignores
   requests ([Go 1.25 release notes](https://go.dev/doc/go1.25#container-aware-gomaxprocs)).
   Without a CPU limit it would use every CPU of the node. When `resources.limits.cpu` is unset, the
@@ -2537,10 +3878,18 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 
 - **One entry point (HA-012).** All client traffic (UI, API, package protocols, raw files, login)
-  uses one port and one Service (`<fullname>:8080`). The Ingress has one rule per host, path `/`,
-  `pathType: Prefix`, to that Service. There is no second route that bypasses anything, because no
-  internal component sits behind the replica. The operations port is never routed by the Ingress or
-  the Gateway.
+  uses one port and one Service (`<fullname>:8080`), which selects the `web` pods. The Ingress has
+  one rule per host, path `/`, `pathType: Prefix`, to that Service; web pools of R-HA-062 (P1) add
+  more specific prefixes of the same host. There is no second route that bypasses anything, because
+  no internal component sits behind the replica. The operations port is never routed by the Ingress
+  or the Gateway.
+- **No session affinity anywhere (INV-12, INV-18, [architecture.md](architecture.md) R-ARCH-032).**
+  Every Service the chart renders, the client Service and the Services of web pools, keeps
+  `sessionAffinity: None`, fixed and not a value, and the edge route sets no affinity cookie. The
+  chart renders no cookie or client-IP affinity on the Ingress or the HTTPRoute, and its examples
+  (R-HA-039) contain none; an operator who adds
+  one through annotations or `extraObjects` gains nothing, because any `web` replica can answer any
+  request (R-HA-001). The edge proxy balances requests over the ready `web` endpoints.
 - **The whole host, never a sub-path.** trove owns the root of every host it is served on.
   Clients fix some routes at the host root (npm's `/-/npm/v1/` exchange prefix,
   [formats/npm.md](formats/npm.md) Q-NPM-1; `/v2/` for OCI, Q-HA-4), which INV-6 reserves next to
@@ -2809,17 +4158,18 @@ the chart's Ingress succeeds without any Ingress annotation beyond R-HA-039's.
 ### R-HA-042 · Network policies
 Priority: **MVP** · Covers: HA-054
 
-With `networkPolicy.enabled: true` (default) the chart renders, for all trove pods:
+With `networkPolicy.enabled: true` (default) the chart renders, for the `web` and `worker` pods:
 
 - **Ingress.**
   - Port 8080 from `networkPolicy.ingress.http.from`; empty means from anywhere, so the ingress
-    controller works wherever it runs.
+    controller works wherever it runs. `worker` pods do not listen on 8080 (R-HA-001).
   - Port 8081 only from `networkPolicy.ingress.ops.from` (default: namespace `monitoring`) and
     `probeCIDRs`.
   - Nothing else; replicas do not talk to each other.
 - **Egress** (only with `networkPolicy.egress.enabled: true`):
   - DNS;
-  - PostgreSQL (`database.to`, port 5432);
+  - PostgreSQL (`database.to`, port 5432), which includes a pooler (R-HA-058);
+  - Valkey data nodes and Sentinels (`valkey.to`, ports 6379 and 26379);
   - object storage (`objectStorage.to`);
   - optionally the EKS Pod Identity agent (`169.254.170.23:80`);
   - optionally the internet on 443/80 except private and link-local ranges (upstream registries,
@@ -2827,7 +4177,48 @@ With `networkPolicy.enabled: true` (default) the chart renders, for all trove po
   - `extra` rules.
 
   This is the second layer behind the egress address policy of R-REPO-038.
-- The migration Job gets its own policy: egress to DNS and PostgreSQL only.
+- The migration Job gets the policy `<fullname>-migrate`, the restore Job `<fullname>-restore` and
+  the backup pods `<fullname>-backup`. None of them accepts any ingress. Their egress, with egress
+  enabled: the migration Job to DNS and PostgreSQL only; the backup pods to DNS, PostgreSQL, object
+  storage and the backup target (`backupTarget.to`); the restore Job to DNS, PostgreSQL, object
+  storage, the backup target, and the source blob bucket for the revocation journal
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-024), which `objectStorage.to` covers when
+  both buckets are on the same store. None of the three reaches Valkey: the backup does not use it
+  and the restore never touches it (R-BAK-022, R-HA-057 rule 7).
+- **Valkey and the Sentinels admit only trove's pods** ([architecture.md](architecture.md) H-49).
+  Whoever can write under trove's key prefix can deny service, so the Valkey data nodes and the
+  Sentinels MUST be reachable only from trove's `web` and `worker` pods, from each other and from
+  their own operator. The chart renders no Valkey (R-HA-028), so this ingress policy belongs to
+  whoever runs Valkey; with Valkey in the release namespace it selects trove's pods by their
+  labels:
+
+  ```yaml
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: trove-valkey-ingress                    # example
+  spec:
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: trove-valkey      # example: the Valkey data nodes and Sentinels
+    policyTypes: [Ingress]
+    ingress:
+      - from:
+          - podSelector:
+              matchExpressions:
+                - {key: app.kubernetes.io/name, operator: In, values: [trove]}
+                - {key: app.kubernetes.io/instance, operator: In, values: [trove]}   # example: the release
+                - {key: app.kubernetes.io/component, operator: In, values: [web, worker]}
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: trove-valkey  # example: replication and Sentinel traffic
+        ports:
+          - {port: 6379}
+          - {port: 26379}
+  ```
+
+  The local profile applies this policy to its Valkey (R-HA-051), and the egress policy above
+  limits trove's side to `valkey.to`.
 - Kubelet probes: most CNIs exempt node-to-pod probe traffic from policies. Where one does not,
   `probeCIDRs` adds the node CIDRs to the 8081 rule.
 
@@ -2848,6 +4239,8 @@ Acceptance criteria:
 - With egress enabled and configured for the local profile, all R-HA-052 scenarios pass, and
   a connection from a trove pod's network namespace to `169.254.169.254:80` (`kubectl debug -it <pod>
   --image=<pinned curl image> --target=trove -- curl -m 5 http://169.254.169.254/`) times out.
+- In the local profile, a connection to the Valkey and Sentinel ports from a pod in namespace
+  `default`, and from the restore Job's pod, times out, while every `web` and `worker` pod connects.
 
 ### R-HA-043 · Trusted CA bundles
 Priority: **MVP** · Covers: HA-019
@@ -2884,24 +4277,44 @@ Acceptance criteria: on a dual-stack kind cluster (`networking.ipFamily: dual`) 
 the IPv6 client address of the `curl -6` request.
 
 ### R-HA-045 · Monitoring integration
-Priority: **P1** · Covers: HA-055
+Priority: **MVP** · Covers: HA-055
+
+MVP since 2026-10-28. INV-12 requires that a Valkey outage is alerted on, the backup alerts of
+[backup-and-restore.md](backup-and-restore.md) R-BAK-014 are MVP, and MVP acceptance criteria
+(R-HA-010, R-HA-057) expect these alerts to fire. The ServiceMonitor and the PrometheusRule are
+templates over metrics the MVP already exports, so the change adds no backend work.
 
 - **Logs.** trove writes JSON lines to stdout only (INV-16). The cluster's log collector ships them.
   The chart renders no logging sidecars. A sidecar that needs to (e.g. a SIEM forwarder) goes into
   `sidecars`.
 - **ServiceMonitor.** It scrapes the `ops` port of `<fullname>-ops`, every pod, path `/metrics`
   (R-OPS-006). When `config.metrics.auth: static`, the bearer token comes from
-  `secrets.metricsToken`.
+  `secrets.metricsToken`. Its endpoint always renders two relabelings that set the target labels
+  `role` and `pool` from the pod's labels
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-006, Q-OPS-13):
+  `role` from `app.kubernetes.io/component` (`web` or `worker`), and `pool` from the label
+  `trove/pool` (R-HA-028), which carries the pool's name on the pods of each entry of `web.pools`
+  and `worker.pools` (R-HA-062) and is empty on the main Deployments, so their series carry no
+  `pool`. `metrics.serviceMonitor.relabelings` is appended after these two:
+
+  ```yaml
+  relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+      targetLabel: role
+    - sourceLabels: [__meta_kubernetes_pod_label_trove_pool]
+      targetLabel: pool
+  ```
 - **PrometheusRule.** Default alerts; names are stable and individually disabled with
   `disabledAlerts`:
 
 | Alert | Expression (sketch) | For |
 |---|---|---|
-| `TroveReplicasNotReady` | `sum(kube_deployment_status_replicas_available{deployment=~"trove.*"}) < 2` (needs kube-state-metrics) | 5m |
+| `TroveReplicasNotReady` | `min by (deployment) (kube_deployment_status_replicas_available{deployment=~"<fullname>-(web\|worker).*"}) < 2`, per Deployment, so one role without replicas fires while the other is healthy (needs kube-state-metrics) | 5m |
 | `TroveDatabaseUnreachable` | `sum(rate(trove_db_retries_total{kind="connection"}[5m])) > 0 and sum(rate(trove_http_requests_total{code="503"}[5m])) > 0` | 2m |
 | `TroveObjectStoreUnreachable` | `min(trove_storage_s3_circuit_open) == 1` (all replicas) | 2m |
 | `TroveObjectStoreUnreachableSingleReplica` | `max(trove_storage_s3_circuit_open) == 1 and min(trove_storage_s3_circuit_open) == 0` | 5m |
-| `TroveDatabasePoolSaturated` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket[5m])) > 0.1` | 10m |
+| `TroveDatabasePoolSaturated` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="request"}[5m])) > 0.1`; the control connection's waits are the next row's ([operations-and-observability.md](operations-and-observability.md) R-OPS-046) | 10m |
+| `TroveControlConnectionWaits` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="control"}[5m])) > 1`: readiness-critical loops wait for the control connection (Q-HA-20), before `invalidation` and `database` start failing on every replica (R-OPS-046) | 5m |
 | `TroveJobsStuck` | `max(trove_jobs_oldest_queued_age_seconds) > 900` | 5m |
 | `TroveLeaseLost` | `increase(trove_lease_lost_total[15m]) > 3` | 0m |
 | `TroveMixedVersions` | `count(count by (version) (trove_build_info)) > 1` | 2h |
@@ -2910,23 +4323,54 @@ Priority: **P1** · Covers: HA-055
 | `TroveGCStale` | `time() - max(trove_gc_last_success_timestamp_seconds) > 172800` | 1h |
 | `TroveBackupCheckFailed` | `min(trove_backup_check_ok) == 0` | 1h |
 | `TroveRevocationJournalBacklog` | `max(trove_revocation_journal_pending) > 0` (R-HA-054) | 15m |
+| `TroveValkeyUnavailable` | `max(trove_valkey_available) == 0` (every replica degraded, R-HA-057) | 2m |
+| `TroveValkeyUnavailableSingleReplica` | `min(trove_valkey_available) == 0 and max(trove_valkey_available) == 1` | 5m |
+| `TroveValkeySentinelsDegraded` | `min(trove_valkey_sentinels_reachable) < 2` (no majority of three, R-HA-056; the gauge counts the answers to a probe of every configured Sentinel, R-HA-057) | 5m |
+| `TroveValkeyFailoverFlapping` | `max(increase(trove_valkey_primary_changes_total[1h])) > 2` (failovers repeating, [operations-and-observability.md](operations-and-observability.md) Q-OPS-15) | 0m |
+| `TroveValkeyPrimaryDisagreement` | `max(trove_valkey_primary_views) > 1`: replicas name different primaries, for example one still bound to a demoted primary (Q-OPS-15, R-ARCH-031) | 5m |
+| `TroveBackupStale` | `time() - max(trove_backup_last_success_timestamp_seconds) > 1.5 * max(trove_backup_expected_interval_seconds)`, or `trove_backup_last_success_timestamp_seconds` absent for longer than `backup.expected_interval` ([backup-and-restore.md](backup-and-restore.md) R-BAK-014). Renamed from `TroveBackupTooOld` | 0m |
+| `TroveBackupFailed` | `max(trove_backup_last_failure_timestamp_seconds) > max(trove_backup_last_success_timestamp_seconds)` (R-BAK-014). Not `kube_job_status_failed > 0`, which keeps firing for as long as `failedJobsHistoryLimit` keeps a failed Job, also after later runs succeeded; an `interrupted` run does not count | 0m |
+| `TroveBackupRunningLong` | `max(trove_backup_running_seconds) > 0.5 * max(trove_backup_expected_interval_seconds)` (R-BAK-014) | 0m |
+| `TroveBackupGlobalHoldLong` | `max(trove_backup_gc_hold{mode="all"}) == 1` (R-BAK-014) | 30m |
+| `TroveBackupSourceDamage` | `max(trove_backup_source_blobs_damaged) > 0` (R-BAK-014) | 0m |
+| `TroveBackupVerifyFindings` | `max(trove_backup_last_verify_findings) > 0` (R-BAK-014) | 0m |
 
 Metric names come from [operations-and-observability.md](operations-and-observability.md) R-OPS-008
 and [storage.md](storage.md); `trove_storage_blobs_damaged_total{status}` is storage.md's
 (R-STOR-027), counted by every detection of a missing or corrupt blob. This page adds
 `trove_db_retries_total`, `trove_db_pool_resets_total`, `trove_db_commit_unknown_total`,
-`trove_lease_lost_total`, `trove_backup_check_ok` and `trove_revocation_journal_pending`.
+`trove_lease_lost_total`, `trove_backup_check_ok`, `trove_revocation_journal_pending` and the
+Valkey metrics of R-HA-057. The `trove_backup_*` gauges are
+[backup-and-restore.md](backup-and-restore.md)'s (R-BAK-014); every `web` and `worker` replica
+reads them from the run records in PostgreSQL, because a finished backup pod cannot be scraped. The
+backup thresholds come from `backup.expected_interval` through the gauge
+`trove_backup_expected_interval_seconds`, the same value that drives the API's `expectedInterval`
+and the UI's overdue mark, so the chart has no threshold value of its own.
+`trove_valkey_primary_views` and the `db_pool` label are
+[operations-and-observability.md](operations-and-observability.md)'s (R-OPS-008). The alert
+mapping to the owner's constraints is R-OPS-046's.
 Expressions are sketches; the rule file is tested with `promtool test rules` in CI.
 
-Acceptance criteria: `promtool check rules` and `promtool test rules` pass. With the S3 store
-stopped in the local profile, `TroveObjectStoreUnreachable` fires in a Prometheus scraping through
-the ServiceMonitor.
+Acceptance criteria:
+
+- `promtool check rules` and `promtool test rules` pass, with one rule test per alert that fires on
+  its failure input and stays silent on a healthy one.
+- With the S3 store stopped in the local profile, `TroveObjectStoreUnreachable` fires in a
+  Prometheus scraping through the ServiceMonitor; with Valkey stopped, `TroveValkeyUnavailable`
+  fires.
+- With `config.backup.expected_interval: 1h` and the backup CronJob suspended,
+  `TroveBackupStale` fires 90 minutes (1.5 × `expected_interval`) after the last success.
+- A backup run that ends `interrupted` by a drain, followed by a successful retry, never makes
+  `TroveBackupFailed` fire; a run that ends `failed` makes it fire until the next success.
+- Every series scraped from a pod of a web pool carries `role="web"` and `pool="<name>"`; series of
+  the main `web` Deployment carry `role="web"` and no `pool`.
 
 ### R-HA-046 · Extension points
 Priority: **P1** · Covers: HA-048, HA-049, HA-050, HA-051
 
-- `extraEnv` and `extraEnvFrom` (all trove containers), `server.extraEnv` and `worker.extraEnv`
-  (per role), `extraVolumes` and `extraVolumeMounts` (trove container), `initContainers`,
+- `extraEnv` and `extraEnvFrom` (all trove containers), `web.extraEnv`, `worker.extraEnv`,
+  `backup.extraEnv`, `restore.extraEnv` and `migrations.extraEnv` (per workload), `extraVolumes`
+  and `extraVolumeMounts` (trove container), `initContainers`,
   `sidecars` (Kubernetes native sidecars with `restartPolicy: Always` are allowed), `lifecycle`
   and `extraObjects`.
 - All of them are rendered with `tpl`, so they can reference values and release names.
@@ -2945,7 +4389,7 @@ Priority: **P1** · Covers: HA-056, OPS-076
 
 - Images are referenced as `<global.imageRegistry or image.registry>/<image.repository>` with
   `@<digest>` when set, otherwise `:<tag or appVersion>`. `global.imagePullSecrets` and
-  `imagePullSecrets` apply to all pods, including the hook Jobs.
+  `imagePullSecrets` apply to all pods, including the hook Jobs and the backup CronJob.
 - Images are multi-architecture (`linux/amd64`, `linux/arm64`).
 - **Publishing location (Q-HA-11).** The repository is hosted on GitHub (`origin` is
   `github.com/guided-traffic/trove`), so the release workflow publishes to the GitHub Container
@@ -2973,7 +4417,8 @@ Priority: **P1** · Covers: HA-056, OPS-076
   pod creation.
 - **Air-gapped.** Mirror the chart (`helm pull oci://… --version`) and the image by digest
   (`crane copy`, `skopeo copy --all`) into the internal registry, then set `global.imageRegistry`.
-  The chart pulls no other image. No init container image, no bundled database, no proxy image.
+  The chart pulls no other image. No init container image, no bundled database or Valkey, no proxy
+  image.
   Signatures and attestations are copied with `cosign copy`.
 
 Acceptance criteria:
@@ -2987,32 +4432,36 @@ Acceptance criteria:
 ### R-HA-048 · Uninstall and data removal
 Priority: **MVP** · Covers: HA-071
 
-- `helm uninstall trove -n trove` removes every release-managed resource. The chart renders no
-  StatefulSet, no PersistentVolumeClaim and no resource with `helm.sh/resource-policy: keep`, so
-  uninstall leaves no claim behind that would have to be either kept or deleted by label (HA-071).
+- `helm uninstall trove -n trove` removes every release-managed resource, the backup CronJob and
+  its Jobs included. The chart renders no StatefulSet, no PersistentVolumeClaim and no resource
+  with `helm.sh/resource-policy: keep`, so uninstall leaves no claim behind that would have to be
+  either kept or deleted by label (HA-071, R-HA-061).
   - With `spool.type: emptyDir` (default) there is no claim at all.
   - With `spool.type: ephemeral` each pod's claim is a generic ephemeral volume owned by its pod.
     Kubernetes deletes the claim with the pod
     ([generic ephemeral volumes](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes)).
     The claim template carries the release's labels, so the claims are visible while pods run.
     Whether the underlying volume is deleted follows the storage class's reclaim policy.
-    `spool.ephemeral.storageClassName` SHOULD name a class with `reclaimPolicy: Delete`; with
+    The storage class of a generic ephemeral volume SHOULD have `reclaimPolicy: Delete`; with
     `Retain`, released volumes holding transient upload data accumulate and must be deleted by
     hand.
 - Hook resources are not part of the release
   ([chart hooks](https://helm.sh/docs/topics/charts_hooks/)). The migration Job deletes itself
   through `ttlSecondsAfterFinished`. The hook ConfigMap and ServiceAccount are removed with
   `kubectl -n trove delete configmap,serviceaccount,job -l app.kubernetes.io/instance=trove,app.kubernetes.io/component=migrate`
-  (printed by `NOTES.txt` and by `helm uninstall`'s documentation).
+  (printed by `NOTES.txt` and by `helm uninstall`'s documentation). The restore Job is an ordinary
+  resource and goes with the release.
 - **Data removal is separate, manual and irreversible.** Uninstall touches neither the database nor
-  the bucket nor the Secrets. Removing data:
+  the buckets nor Valkey nor the Secrets. Removing data:
   1. `DROP DATABASE trove;` and the roles of R-HA-014;
-  2. empty the bucket including all object versions (a lifecycle rule that expires current and
-     noncurrent versions, or the store's tooling), then delete it;
-  3. delete the PostgreSQL backups;
-  4. last, the encryption key Secret.
+  2. empty the blob bucket including all object versions (a lifecycle rule that expires current
+     and noncurrent versions, or the store's tooling), then delete it;
+  3. delete the trove backups in the backup target (R-HA-060) and the PostgreSQL backups of the
+     platform layer (R-HA-023);
+  4. delete trove's Valkey keys (`valkey.key_prefix`) and the Valkey user, or let them expire;
+  5. last, the encryption key Secret.
 
-  Deleting the keys first would make the database backups' sealed secrets undecryptable while the
+  Deleting the keys first would make the sealed secrets in the backups undecryptable while the
   backups still exist.
 
 Acceptance criteria:
@@ -3030,19 +4479,22 @@ Priority: **MVP** · Covers: HA-068, HA-008
 
 | Requirement | Value |
 |---|---|
-| Kubernetes | 1.34 to 1.37 tested (the range Helm 4.3 supports, verified 2026-10-28 on [Helm version skew](https://helm.sh/docs/topics/version_skew/)). The chart uses no API newer than 1.31 (PDB `unhealthyPodEvictionPolicy`), so 1.31–1.33 are expected to work untested |
+| Kubernetes | 1.34 to 1.37 tested (the range Helm 4.3 supports, verified 2026-10-28 on [Helm version skew](https://helm.sh/docs/topics/version_skew/)). The chart uses no field newer than 1.31: PDB `unhealthyPodEvictionPolicy` and Job `podFailurePolicy` are stable since 1.31, `nodeTaintsPolicy` is on by default since 1.26 and GA since 1.33, CronJob `timeZone` stable since 1.27. 1.31–1.33 are expected to work untested |
 | Helm | 4.x. Helm 3 (latest 3.x) is supported until its security support ends on 2027-02-10 ([Helm 3 end of life](https://helm.sh/blog/helm-v3-end-of-life)) |
 | Gateway API (optional) | CRDs v1.2 or later, Standard channel |
 | Prometheus Operator CRDs (optional) | `monitoring.coreos.com/v1` for ServiceMonitor and PrometheusRule |
 | PostgreSQL | 16+ (R-HA-013), highly available (CloudNativePG, Patroni, a managed service) |
+| Connection pooler (optional) | PgBouncer 1.23 or later in transaction mode for the main pool: a request pooler and a control pooler, at least two instances each (R-HA-058, Q-HA-20) |
+| Valkey | 9.0 or later, highly available with Sentinel: a primary, at least one replica, at least three Sentinels on different nodes (R-HA-056) |
 | Object storage | S3 API meeting R-STOR-035, versioning recommended (R-HA-023) |
 | Node architectures | `amd64`, `arm64` |
-| Ephemeral storage | Nodes with enough local disk for `spool.sizeLimit`, or a StorageClass for `spool.type: ephemeral` |
+| Ephemeral storage | Nodes with enough local disk for the spool, or a ReadWriteOnce StorageClass for `spool.type: ephemeral`. No ReadWriteMany class is needed (R-HA-061) |
 | OpenShift | 4.x with `restricted-v2` (R-HA-033) |
 
-- **Network locality (HA-008).** Replicas, PostgreSQL and the bucket MUST be in one region. Spreading
-  replicas over availability zones of that region is recommended (R-HA-032), with the PostgreSQL
-  primary and standbys spread the same way. One cluster stretched across regions is not supported.
+- **Network locality (HA-008).** Replicas, PostgreSQL, Valkey and the bucket MUST be in one
+  region. Spreading replicas over availability zones of that region is recommended (R-HA-032), with
+  the PostgreSQL instances, the Valkey nodes and the Sentinels spread the same way. The backup
+  target SHOULD be in another failure domain than the blob bucket (R-HA-060). One cluster stretched across regions is not supported.
   Separate sites use R-HA-026.
 
 Acceptance criteria: the CI matrix installs the chart on kind with Kubernetes 1.34 and 1.37 using
@@ -3056,16 +4508,27 @@ Starting points. They are not measured: trove does not exist yet. The reference 
 local and virtual repositories) replaces these numbers before 1.0, and CI publishes its results per
 release.
 
-| Profile | Typical use | Server replicas (HPA min–max) | Requests CPU / memory | Memory limit | `database.pool.max_conns` | `spool.sizeLimit` | PostgreSQL | `max_connections` (R-HA-016) |
-|---|---|---|---|---|---|---|---|---|
-| small | ≤ 50 concurrent clients, ≤ 500 GB of blobs | 2 (no HPA) | 500m / 512Mi | 1Gi | 10 | 10Gi | 2 vCPU, 4 GiB, 3 instances | 150 |
-| medium | ≤ 300 concurrent clients, CI-heavy | 3 (3–6) | 1 / 1Gi | 2Gi | 20 | 20Gi | 4 vCPU, 16 GiB, 3 instances | 400 |
-| large | ≤ 1,000 concurrent clients, several TB | 4 (4–12), role split with 2–4 workers | 2 / 2Gi | 4Gi | 30 | 50Gi (`ephemeral`) | 8 vCPU, 32 GiB, 3 instances | 1000 |
+| Profile | Typical use | `web` replicas (HPA min–max) | `worker` replicas (HPA min–max) | `web` requests CPU / memory | `web` memory limit | `database.pool.max_conns` | `web` spool | PostgreSQL | Pooler (R-HA-058) | `max_connections` (R-HA-016) | Valkey `maxmemory` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| small | ≤ 50 concurrent clients, ≤ 500 GB of blobs | 3 (no HPA) | 2 (no HPA) | 500m / 512Mi | 1Gi | 10 | 10Gi | 2 vCPU, 4 GiB, 3 instances | none | 150 | 256 MiB |
+| medium | ≤ 300 concurrent clients, CI-heavy | 4 (4–8) | 2 (2–4) | 1 / 1Gi | 2Gi | 20 | 20Gi | 4 vCPU, 16 GiB, 3 instances | none | 400 | 512 MiB |
+| large | ≤ 1,000 concurrent clients, several TB | 6 (6–16) | 3 (3–6) | 2 / 2Gi | 4Gi | 30 | 50Gi (`ephemeral`) | 8 vCPU, 32 GiB, 3 instances | transaction mode: request and control poolers, 2 instances each, 100 server connections in total | 200 | 1 GiB |
 
 - `max_connections` follows the R-HA-016 formula with `maxReplicas`, `maxSurge: 1`, the default
-  lock and lease pools, and the workers where applicable. Example for medium:
-  (6 + 1) × (20 + 4 + 16 + 1) + 15 = 302 → 400 with margin. Large: (12 + 4 + 2) × (30 + 4 + 16 + 1)
-  + 15 = 933 → 1000.
+  lease pool, a backup Job of 4 connections (R-BAK-005) and 15 more (2 migration, 10 reserved, 3
+  superuser). Small: 7 × 10 + 3 × 4 + 19 = 101 → 150. Medium: 14 × 20 + 5 × 4 + 19 = 319 → 400.
+  Large, through the pooler: 100 + 7 × 4 + 19 = 147 → 200; without it the same profile would need
+  767.
+- The minimum replica counts follow the drain rule of R-HA-059: each profile's peak is assumed to
+  fit into one `web` replica fewer than its minimum. The reference load test replaces that
+  assumption with the measured capacity of one replica.
+- Valkey: memory holds fetch locks, negative-cache entries of remote repositories and rate-limit
+  counters, each under 1 KiB ([architecture.md](architecture.md) R-ARCH-030); CPU is negligible at
+  these sizes. The numbers are estimates for `maxmemory`; the container limit adds about 25 % for
+  Valkey's own overhead. Sentinels need a few tens of MiB each.
+- While Valkey is unavailable, upstreams receive more requests and changes take up to a poll
+  interval (R-HA-057, rule 5). The reference load test runs every profile once with Valkey stopped
+  and records upstream request rates and PostgreSQL load.
 - CPU goes mostly into TLS-free HTTP streaming, the four hashes per upload (R-STOR-004) and JSON
   metadata rendering. npm proxying of large packuments is the most memory-intensive path. Raise the
   memory limit first when remote npm repositories dominate.
@@ -3074,8 +4537,9 @@ release.
 - S3: content addressing spreads keys over 65,536 two-level prefixes. AWS S3 scales request rates
   per prefix ([performance guidelines](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html)),
   so throttling is unlikely below thousands of requests per second.
-- Grace period: `terminationGracePeriodSeconds` ≥ p99 upload duration + `shutdown_drain_delay` +
-  15 s.
+- Grace period: `terminationGracePeriodSeconds` ≥ p99 transfer duration (uploads and downloads) +
+  `shutdown_drain_delay` + 15 s; longer transfers are cut at the deadline and resumed or retried
+  ([architecture.md](architecture.md) Q-ARCH-18, R-HA-011).
 
 Acceptance criteria: the profile files exist and render (R-HA-029). The reference load test runs
 against each profile in CI before 1.0, and this table is updated from its results in the same change.
@@ -3083,17 +4547,22 @@ against each profile in CI before 1.0, and this table is updated from its result
 ### R-HA-051 · Local development profile
 Priority: **MVP** · Covers: trove-only
 
-A developer brings up a production-shaped installation (two replicas, HA PostgreSQL, S3, the real
-chart) on a laptop with one command. Files live in `deploy/dev/`. Tool versions (kind, kubectl,
-Helm, CloudNativePG operator chart, PostgreSQL image, SeaweedFS image) are pinned once in the
-repository's tool pins and read by the task runner and CI alike. Images are pinned by digest.
+A developer brings up an HA-shaped installation on a laptop with one command: the real chart with
+two `web` and two `worker` replicas, PostgreSQL with a standby, Valkey with a replica and three
+Sentinels, an S3 store and the backup CronJob. Failover of every dependency can therefore be tested
+locally and in CI with the same files. Files live in `deploy/dev/`. Tool versions (kind, kubectl,
+Helm, openssl, CloudNativePG operator chart, PostgreSQL image, Valkey image, SeaweedFS image) are
+pinned once in the repository's tool pins and read by the task runner and CI alike. Images are
+pinned by digest.
 
 | File | Content |
 |---|---|
-| `deploy/dev/kind.yaml` | One control-plane and two worker nodes, labeled with two zones, so spreading, drains and node loss can be exercised |
+| `deploy/dev/kind.yaml` | One control-plane and three worker nodes, labeled with three zones, so spreading, drains and node loss can be exercised with two replicas per role (R-HA-059) |
 | `deploy/dev/postgres.yaml` | CloudNativePG `Cluster` `trove-db`: 2 instances, synchronous replication with `dataDurability: preferred` (a stopped standby does not pause writes on a laptop), the settings of R-HA-013, `bootstrap.initdb` with database `trove` and owner `trove` (single-role mode) |
-| `deploy/dev/s3.yaml` | Single-process SeaweedFS Deployment (master, volume server, filer and S3 gateway in one `weed` process) with an `emptyDir`, Service `trove-s3` on port 9000 mapped to the S3 gateway, plus a Job that creates bucket `trove-blobs` with versioning enabled and bucket `trove-pg-archive` for the WAL archive (Q-HA-3) |
-| `deploy/dev/values-dev.yaml` | Chart values: 2 replicas, `host.whenUnsatisfiable: ScheduleAnyway`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets |
+| `deploy/dev/pooler.yaml` | Optional pooler overlay (`dev-up POOLER=1`): CloudNativePG `Pooler` resources `trove-db-pooler-rw` and `trove-db-pooler-control` in transaction mode with 2 instances each, as in R-HA-058, and the values that point `database.host`, `database.control_host` and `database.session_host` at them |
+| `deploy/dev/valkey.yaml` | Valkey with Sentinel (Q-HA-15), from the official `valkey/valkey` image: StatefulSet `trove-valkey` with 2 pods (pod 0 starts as primary, pod 1 as its replica) and StatefulSet `trove-valkey-sentinel` with 3 pods, both behind headless Services and spread over the three nodes, each with an `emptyDir` and no claim. Sentinels monitor the primary as `trove` with quorum 2, `down-after-milliseconds 5000`, `failover-timeout 60000`, `resolve-hostnames yes` and `announce-hostnames yes`, so stable pod host names survive restarts. An init container asks the running Sentinels for the current primary before a Sentinel or Valkey pod starts, so a restarted pod does not announce pod 0 as primary after a failover. TLS only (`port 0`, `tls-port 6379`, Sentinel `tls-port 26379`, `tls-replication yes`, `tls-auth-clients optional`), the ACL user `trove` with the example rule of [architecture.md](architecture.md) R-ARCH-031, a Sentinel password, `maxmemory 256mb`, `maxmemory-policy allkeys-lru`, `save ""`, `appendonly no`, a PDB with `maxUnavailable: 1` for each StatefulSet, and the ingress NetworkPolicy of R-HA-042 that admits only trove's `web` and `worker` pods and the Valkey pods themselves (H-49) |
+| `deploy/dev/s3.yaml` | Single-process SeaweedFS Deployment (master, volume server, filer and S3 gateway in one `weed` process) with an `emptyDir`, Service `trove-s3` on port 9000 mapped to the S3 gateway, plus a Job that creates bucket `trove-blobs` with versioning enabled, bucket `trove-pg-archive` for the WAL archive (Q-HA-3) and bucket `trove-backups` as backup target (R-HA-060) |
+| `deploy/dev/values-dev.yaml` | Chart values: `web` and `worker` 2 replicas each, `highAvailability.enforce: true`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets, the three Sentinel addresses with `primary_name: trove`, the Valkey Secrets, and the backup target `trove-backups` on the same SeaweedFS endpoint with a schedule every 6 hours |
 
 Steps behind the task-runner target `dev-up` (target names are an example until the task runner is
 chosen):
@@ -3103,8 +4572,17 @@ kind create cluster --name trove --config deploy/dev/kind.yaml
 helm upgrade --install cnpg cloudnative-pg --repo https://cloudnative-pg.github.io/charts \
   -n cnpg-system --create-namespace --version "$CNPG_CHART_VERSION" --wait
 kubectl create namespace trove
-kubectl -n trove apply -f deploy/dev/postgres.yaml -f deploy/dev/s3.yaml
+deploy/dev/valkey-certs.sh                   # openssl: a dev CA and one certificate for the Valkey and Sentinel host names
+kubectl -n trove create secret generic trove-valkey-ca --from-file=ca.crt=.dev/valkey/ca.crt
+kubectl -n trove create secret tls trove-valkey-tls --cert=.dev/valkey/tls.crt --key=.dev/valkey/tls.key
+kubectl -n trove create secret generic trove-valkey \
+  --from-literal=username=trove --from-literal=password="$(head -c 24 /dev/urandom | base64)"
+kubectl -n trove create secret generic trove-valkey-sentinel \
+  --from-literal=password="$(head -c 24 /dev/urandom | base64)"
+kubectl -n trove apply -f deploy/dev/postgres.yaml -f deploy/dev/valkey.yaml -f deploy/dev/s3.yaml
 kubectl -n trove wait --for=condition=Ready cluster/trove-db --timeout=5m
+kubectl -n trove rollout status statefulset/trove-valkey --timeout=5m
+kubectl -n trove rollout status statefulset/trove-valkey-sentinel --timeout=5m
 kubectl -n trove create secret generic trove-encryption-keys \
   --from-file=dev.key=<(head -c 32 /dev/urandom | base64)
 kubectl -n trove create secret generic trove-break-glass \
@@ -3117,10 +4595,18 @@ kubectl -n trove port-forward svc/trove 8080:8080
   directly (`secrets.database`, `secrets.databaseCA`), so the dev profile exercises TLS with
   `verify-full` like production. The host is the cluster's read-write Service
   ([quickstart](https://cloudnative-pg.io/docs/1.30/quickstart), [bootstrap](https://cloudnative-pg.io/docs/1.30/bootstrap)).
+- Valkey runs TLS-only with `verify-full` as well; the dev CA lives in `.dev/`, which is ignored by
+  Git and recreated by `dev-up`.
 - Further targets:
   - `dev-down` deletes the kind cluster;
   - `dev-failover` runs `kubectl cnpg promote trove-db <standby>`;
+  - `dev-valkey-failover` runs `SENTINEL FAILOVER trove` on a Sentinel; `dev-valkey-kill`
+    force-deletes the Valkey primary pod; `dev-valkey-outage` scales Valkey and the Sentinels to 0
+    for a given duration;
   - `dev-s3-outage` scales the S3 store to 0 for a given duration;
+  - `dev-drain` runs variant A of R-HA-059's drain test against a node the target picks;
+  - `dev-backup` creates a Job from the backup CronJob and waits for it; `dev-restore` installs a
+    second release into an empty namespace from the latest backup (R-HA-060);
   - `dev-chaos` runs the R-HA-052 suite.
 - **S3 store (Q-HA-3).** The profile and the per-change CI run SeaweedFS
   ([repository](https://github.com/seaweedfs/seaweedfs), Apache-2.0, maintained, images published).
@@ -3130,6 +4616,9 @@ kubectl -n trove port-forward svc/trove 8080:8080
   also states that version-specific lifecycle rules are not fully implemented; the profile
   therefore relies on the orphan sweep (R-HA-012), not on lifecycle rules. The profile counts as
   valid only while `trove admin storage check` (R-STOR-035) and the restore drill pass on it.
+- **Valkey (Q-HA-15).** The profile's Valkey counts as valid only while the failover scenarios of
+  R-HA-057 pass on it. When the official Valkey Helm chart releases Sentinel support, the profile
+  moves to it.
 - **MinIO.** The MinIO community repository was archived on 2026-04-25 and is distributed as
   source only, without prebuilt binaries or images ([repository](https://github.com/minio/minio)).
   MinIO stays a supported production target as long as it passes R-STOR-035's conformance check.
@@ -3141,13 +4630,17 @@ kubectl -n trove port-forward svc/trove 8080:8080
 - The break-glass password is printed once by the target (`kubectl get secret … | base64 -d`).
   OIDC is optional in dev. An optional Dex overlay belongs to
   [identity-and-authentication.md](identity-and-authentication.md).
+- Running the binary outside the cluster (`trove serve --role all` from an IDE, R-HA-001) uses the
+  same dependencies through `kubectl port-forward`; it is a convenience, not a tested profile.
 
 Acceptance criteria:
 
-- On a machine with Docker and the pinned tools, `dev-up` completes in under 10 minutes and
+- On a machine with Docker and the pinned tools, `dev-up` completes in under 15 minutes and
   `npm ping --registry http://localhost:8080/api/npm/npm-all/` succeeds.
-- `dev-failover` during an `npm ci` loop causes no failed iteration. `dev-s3-outage 60s` behaves as
-  R-HA-010 states.
+- `dev-failover` and `dev-valkey-failover` during an `npm ci` loop cause no failed iteration.
+  `dev-s3-outage 60s` behaves as R-HA-010 states, `dev-valkey-outage 60s` as R-HA-057 states.
+- `dev-backup` followed by `dev-restore` yields a second installation whose `npm view` output
+  matches the first.
 - CI runs the same profile, so "works in dev" and "works in CI" use one configuration.
 
 ### R-HA-052 · Failure-injection test suite
@@ -3159,12 +4652,13 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 - `npm ci` against a virtual repository (remote and local members);
 - `dotnet restore --no-cache` against a NuGet virtual repository;
 - `npm publish` of unique versions to a local repository;
-- `curl -T` of 200 MB files.
+- `curl -T` of 200 MB files;
+- for the drain and Valkey scenarios, the k6 load of R-HA-059 as well.
 
 | Scenario | Injection | Pass condition |
 |---|---|---|
-| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random replica every 2 min for 20 min | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`) |
-| Rolling restart | `kubectl rollout restart` | Zero failed iterations |
+| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min for 20 min | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`) |
+| Rolling restart | `kubectl rollout restart` of `deploy/trove-web`, then of `deploy/trove-worker` | Zero failed iterations |
 | Rolling upgrade | Previous minor → current with the migration Job | Zero failed iterations; R-HA-020 verification passes |
 | Rollback | `helm rollback` after the upgrade | Zero failed iterations |
 | PostgreSQL switchover | `kubectl cnpg promote` | Zero failed iterations |
@@ -3172,18 +4666,37 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | PostgreSQL partition of one replica | NetworkPolicy denying egress to PostgreSQL for one pod | That pod unready within 15 s; no failed iteration overall; its leases move |
 | PostgreSQL outage | Scale the database to 0 instances for 2 min (hibernation) | No container restart; full recovery within 30 s of return |
 | Object-store outage | The S3 store scaled to 0 for 30 s and for 5 min; during the 5-minute run one replica is deleted | Metadata, UI and API succeed throughout; blob transfers answer `503` with `Retry-After` (R-STOR-036); no running replica turns unready (R-HA-008); the replacement pod started during the outage stays not ready with its container restart count unchanged, because the startup check retries without exiting (R-STOR-035), and becomes ready within 60 s after the store returns; full recovery within `storage.s3.circuit_breaker.open_duration` + 10 s |
-| Node drain | `kubectl drain` of a worker node | Zero failed iterations; PDB respected |
+| Node drain | R-HA-059's drain test, variants A to E | R-HA-059's pass conditions |
 | Node loss | `docker stop` of a kind worker node | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s; no duplicate singleton work (lease table) |
-| Listener loss | `pg_terminate_backend` of the `listen` session | Cache flush recorded; next permission change visible on that replica |
-| Lease holder loss | Kill the replica holding the GC lease mid-run | Another replica completes the next run; no S3 delete without a committed `deleting` row |
+| Change propagation without Valkey | `CLIENT KILL TYPE pubsub` for one replica, then Valkey stopped | R-HA-004: changes take effect within `cluster.epoch_poll_interval` + 1 s; replicas stay ready |
+| Change log unreachable for one replica | NetworkPolicy denying its egress to PostgreSQL | R-HA-004: `invalidation` fails, the replica leaves the Service and catches up before it returns |
+| Valkey planned failover | `SENTINEL FAILOVER trove` | R-HA-057 |
+| Valkey primary loss | Force-delete the Valkey primary pod | R-HA-057 |
+| Valkey outage | Valkey and Sentinels scaled to 0 for 5 min; one `web` pod deleted meanwhile | R-HA-057 |
+| Sentinel quorum loss | Sentinels scaled to 1, then to 0 | R-HA-057 |
+| Valkey content loss | `FLUSHALL` on the primary | R-HA-057 |
+| Slow Valkey | Fault proxy adds 2 s to every Valkey command | R-HA-057 |
+| Valkey failover flapping | Three `SENTINEL FAILOVER trove` within one hour | `TroveValkeyFailoverFlapping` fires ([operations-and-observability.md](operations-and-observability.md) R-OPS-046); zero failed iterations |
+| Replica bound to a stale primary | A failover forced while one replica's Sentinel traffic is blocked and the old primary keeps that replica's connections, with `valkey.sentinel.refresh_interval` raised for the test | `TroveValkeyPrimaryDisagreement` fires after 5 minutes; after the block is lifted, the replica moves to the new primary within `valkey.sentinel.refresh_interval` + 1 s and the alert resolves |
+| Control-pool saturation | A test build holds the control connection of every replica (direct profile), or every server connection of the control pooler (pooler profile), with back-to-back `pg_sleep(2)` statements for 6 minutes | `TroveControlConnectionWaits` fires; `TroveDatabasePoolSaturated` does not, because it selects `db_pool="request"`; replicas stay ready, because each wait stays below `cluster.epoch_max_staleness` |
+| Maintenance stays quiet | R-HA-059 variants A to E and the planned failover of R-HA-057, each with a Prometheus scraping through the ServiceMonitor | No alert of R-HA-045 fires (R-OPS-046) |
+| Pooler instance loss (pooler profile) | Delete a pooler pod, gracefully and forced | R-HA-058 |
+| Lease holder loss | Kill the worker holding the `scheduler` lease; separately, kill the worker running a GC job mid-run | Another worker holds the `scheduler` lease within `cluster.lease_retry_interval` + 1 s and no occurrence is enqueued twice (R-HA-005, R-HA-006); the GC job is completed by another worker (its exclusive job key, Q-STOR-13); no S3 delete without a committed `deleting` row |
 | Spool exhaustion | Concurrent uploads above the budget | `503` with `Retry-After`; no eviction |
 | Migration failure | A migration that fails on purpose | Old pods keep serving; `helm upgrade` fails |
-| Restore drill | R-HA-025 steps 1–7 | As R-HA-025 |
+| Backup under load | `kubectl create job --from=cronjob/trove-backup` during the load | Zero failed iterations; the backup completes (R-HA-060) |
+| Backup during a drain | Drain the node of a running backup pod | R-HA-059 variant E |
+| Database saturation | Every request connection held by `pg_sleep(4)` transactions for 60 s, direct and in the pooler profile | R-HA-008: every replica stays ready, no job returns to `queued` |
+| Migration during a drain | Drain the node of the running migration Job pod during `helm upgrade` | R-HA-019: the Job completes, the upgrade succeeds |
+| Restore during a drain | Drain the node of the restore pod during the blob copy of the trove-backup restore drill | R-HA-060: the restore Job completes, the result matches the backup |
+| Restore drill, trove backup | `dev-restore` from the latest backup into an empty namespace (R-HA-060) | As [backup-and-restore.md](backup-and-restore.md) states; a token revoked after the backup stays rejected (R-HA-054) |
+| Restore drill, point in time | R-HA-025 steps 1–7 | As R-HA-025 |
 
 - The suite records client-side errors per scenario and fails on any deviation from the pass
   condition. Results are published as a CI artifact per run.
-- The pod-crash, switchover, rolling-upgrade and object-store scenarios run on every change to `main`.
-  The full suite runs nightly, the restore drill monthly.
+- The pod-crash, switchover, rolling-upgrade, object-store and Valkey-primary-loss scenarios and
+  variant A of the drain test run on every change to `main`. The full suite, the pooler profile and
+  the trove-backup restore drill run nightly; the point-in-time restore drill runs weekly.
 
 Acceptance criteria: the suite exists, runs as described, and is green before any release.
 
@@ -3201,10 +4714,10 @@ Acceptance criteria: the suite exists, runs as described, and is green before an
 | HA-041 | P2 | Bundled edge reverse proxy: Ingress or Gateway API instead |
 | HA-057 | Later | Server-side extension scripts delivered through the chart |
 | HA-073 | Later | Message-broker TLS for a scanning component |
-| OPS-032 | P2 | Scheduled application-level backups: platform PITR plus bucket versioning instead (R-HA-023) |
 | trove-only | P2 | Read-only queries routed to PostgreSQL standbys |
 | trove-only | P2 | Worker autoscaling on queue depth (`trove_jobs_oldest_queued_age_seconds` through an external metrics adapter) |
-| trove-only | P2 | Split connections: the main pool through a transaction-mode pooler, listener, lease and lock sessions direct (Q-HA-6, option (b)) |
+| trove-only | P1 | Valkey endpoint mode for managed services that offer a failover-following primary endpoint but no Sentinel (Q-HA-14) |
+| trove-only | P2 | Valkey Cluster (sharded) as a supported topology (Q-HA-14) |
 | trove-only | Later | Active-active operation across sites |
 
 Out of scope, listed for completeness: HA-017 (service trust key between internal services; one
@@ -3222,7 +4735,11 @@ management).
   - the database password;
   - the encryption keys, which together with database read access unseal every stored upstream
     credential;
-  - the break-glass password.
+  - the break-glass password;
+  - the Valkey password, which allows deleting fetch locks, resetting rate-limit counters and
+    publishing forged change messages within the ACL's key pattern, all of which cost
+    availability only (R-ARCH-030);
+  - the backup target's static keys, if used, which reach every backup.
 
   Restrict `get`/`list` on Secrets in that namespace to the platform team. Enable encryption at
   rest for Secrets in etcd. Prefer an Argon2id hash for the break-glass Secret (R-AUTH-014).
@@ -3230,11 +4747,34 @@ management).
   has no DDL rights (R-HA-014). It can neither change nor delete audit rows, nor shorten their
   retention, so a compromised replica or a SQL injection cannot erase its traces in the database
   (R-HA-014, R-OPS-015); the owner and superusers still can, which external log shipping covers.
-  DDL credentials exist only in the short-lived migration Job pod.
+  DDL credentials exist only in the short-lived migration and restore Job pods. A dedicated backup
+  login (`database.backup_role`) reads every table but writes only its own run records, blob pins
+  and audit events, so the backup pod cannot change trove's data (R-HA-014, R-BAK-015).
 - **Least privilege in the bucket.** The runtime credential cannot delete object versions or change
   versioning, lifecycle or bucket policy. A compromised replica cannot destroy the history that
   restores depend on (R-HA-023). The archive bucket for PostgreSQL backups uses different
   credentials.
+- **Backups are a second copy of everything except the keys.** A trove backup holds every
+  metadata row, token hashes and sealed secrets included, and every referenced blob (INV-19). It
+  belongs in a bucket of its own whose credential the replicas do not hold; the backup's
+  credential reads the blob bucket and writes the target, nothing more, through its own
+  ServiceAccount (R-HA-060). The restore Job has an identity of its own that reads the target and
+  the source's journal and writes the new blob prefix; its ServiceAccount exists only while
+  `restore.enabled` is set. Retention needs delete rights on the target, so a stolen backup
+  credential can delete backups; bucket versioning or object lock on the target keeps them
+  recoverable. The encryption keys are never in a backup (R-HA-027).
+- **Valkey is reached with authentication and TLS.** The chart refuses an installation without a
+  Valkey password, and plaintext needs an explicit `allow_insecure` (R-HA-029, R-HA-056). Nothing
+  trove serves to a client and no positive authentication or authorization result is read from
+  Valkey, so whoever can write trove's keys can cost availability (duplicate fetches, reopened
+  rate-limit budgets, early cache evictions), never access or integrity
+  ([architecture.md](architecture.md) R-ARCH-030, Q-ARCH-16). A dedicated ACL user limited to
+  trove's key and channel prefix and to the commands of R-ARCH-031 keeps a leaked trove credential
+  away from other applications' data, and the egress policy lists the Valkey pods (R-HA-042). An
+  ingress NetworkPolicy on the Valkey data nodes and Sentinels that admits only trove's `web` and
+  `worker` pods, which whoever runs Valkey adds, keeps other workloads from writing under the
+  prefix ([architecture.md](architecture.md) H-49, R-HA-042); backup, restore and migration pods
+  hold no Valkey credential and reach no Valkey port.
 - **Operations listener.** Port 8081 serves unauthenticated probes and, by default,
   unauthenticated metrics (R-OPS-006). It is never routed by Ingress or Gateway. The default
   NetworkPolicy limits it to the monitoring namespace (R-HA-042).
@@ -3245,11 +4785,13 @@ management).
   account token, no RBAC objects, `enableServiceLinks: false` (R-HA-030, R-HA-033).
 - **Supply chain.** Images and chart are signed, with SBOM and provenance, and installed by digest
   in production (R-HA-047).
-- **Restore is a security event.** It reverts revocations (H-37), so post-restore records an audit
-  event and prints the warning (R-HA-025). From P1 on it re-applies the revocation journal
-  (R-HA-054). Replay applies removals and only those updates that grant nothing beyond the
-  object's current state, so whoever can write to the bucket can at worst revoke access through the
-  journal, never grant any.
+- **Restore is a security event.** It reverts revocations (H-37), so post-restore and the restore
+  of a trove backup record an audit event, print the warning and re-apply the revocation journal
+  (R-HA-025, R-HA-054, R-HA-060). Replay applies removals and only those updates that grant nothing
+  beyond the object's current state, so whoever can write to the bucket can at worst revoke access
+  through the journal, never grant any. A restore also moves the installation to a new Valkey
+  keyspace, so no lock, negative-cache entry or rate-limit counter of the lost state is read again
+  (R-HA-057, rule 7).
 - **Egress is unrestricted by default.** Without `networkPolicy.egress.enabled`, a compromised
   trove process can reach every address the pod network reaches, including cloud metadata
   endpoints and in-cluster services. trove's own outbound connections are checked by the address
@@ -3437,31 +4979,49 @@ the guard's error must name.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Leases, the listener and the fetch-collapse lock need session-level state. PgBouncer in
-transaction mode breaks them.
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (a) to (b), and (b) moves from P2 to MVP. INV-12 now requires that PostgreSQL connections do not grow without bound with the replica count, while the load is expected to need many `web` replicas; and the fetch-collapse lock pool, one of the session-dependent pools, moved to Valkey (INV-11). Option (d) was added.
+
+The lease pool, the migration lock and, before the revisit, the listener session need
+session-level state, which PgBouncer in transaction mode breaks.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Not supported | Direct connections or a session-mode pooler only | Advisory-lock fencing (R-HA-006), `LISTEN` and fetch collapse work as designed; nothing to build | Large replica counts need a larger `max_connections` (R-HA-016) |
-| (b) Split connections | The main pool goes through a transaction-mode pooler; listener, lease and lock sessions use a second, direct host | Fewer server connections at high replica counts | Two hosts to configure and secure; prepared-statement handling under the pooler; worth it only beyond the sizes of R-HA-050 |
+| (a) Not supported | Direct connections or a session-mode pooler only | Advisory-lock fencing (R-HA-006) works as designed; nothing to build | Every replica brings its whole main pool (20 by default) to the server, so the database's connection limit caps how far `web` scales: the large profile would need 767 connections (R-HA-016), against INV-12 |
+| (b) Split connections | The main pool goes through a transaction-mode pooler; the lease pool, the migration Job and the backup and restore Jobs use a second, direct host (`database.session_host`) | Main-pool connections at the server stay at the pooler's pool size however many replicas run (147 instead of 767 for the large profile); fencing is unchanged; direct connections stay possible | Two hosts to configure and secure; per-session settings become role defaults; prepared statements need a pooler that tracks them; the pooler is one more HA component to run and drain |
 | (c) Table-based leases | Replace session-level locks with lease rows | Works through any pooler | Gives up immediate release on session end, which R-HA-006's fencing builds on; `LISTEN` would still need a direct session |
+| (d) No PostgreSQL session at all | Leases and every notification move to Valkey; every connection goes through the pooler | No direct connection per replica | Leases whose loss would corrupt data must stay in PostgreSQL (INV-3); a Valkey failover can lose a lock, and fencing on a Valkey lock does not protect PostgreSQL writes |
 
-**Choice:** (a) — transaction-mode and statement-mode poolers are not supported; (b) stays a P2
-item for installations whose connection counts demand it.
+**Choice:** (b) — supported from the MVP on, and optional: `database.pooler.mode: transaction`
+sends the main pool through a transaction-mode pooler, and every session-dependent connection uses
+`database.session_host`. The session host carries only the lease pool of `worker` replicas,
+`trove migrate` and `trove backup`; `web` replicas have no coordination session and never connect
+to it. Direct connections stay supported and remain the default.
 
-**Rationale:** The spec text already followed (a) (R-HA-006 item 5 and the Deferred table), and this
-decision confirms it. The connection budget of R-HA-016 stays within normal `max_connections`
-values for the documented profiles (R-HA-050), so (b) solves a problem the MVP does not have, and
-(c) would weaken fencing, the property that keeps a partitioned replica from committing garbage
-collection decisions. What the text lacked was detection: a misconfigured pooler would have
-surfaced as silent cache staleness. The `notify` check now waits for a delivery probe, which keeps
-such a replica not ready. The development agent revisits this when a reference load test needs
-more connections than a managed database offers.
+**Rationale:** The per-replica cost under (a) is the main pool, and (b) moves exactly that behind
+a fixed server-side pool while keeping fencing for singleton work on direct sessions.
+[architecture.md](architecture.md) replaced `LISTEN` with a change log polled on each replica's
+control connection, a reserved connection of the main class (Q-ARCH-15), and gave `web` replicas
+no coordination session and no session connection (Q-ARCH-14), so with (b) the server-side
+count no longer depends on the number of `web` replicas at all; only the `worker` leases remain,
+and workers follow job load. (c) and (d) both give up fencing or move data-protecting mutual
+exclusion out of PostgreSQL, which INV-3 forbids. Building (b) at MVP costs a second host key, a preflight check of the role defaults
+and the pooler profile in CI; the protocol work is the pooler's. The development agent revisits
+this if PgBouncer's prepared-statement tracking causes failures in the conformance suite, or if
+the number of `worker` replicas, whose leases bypass the pooler, ever approaches the database's
+connection limit.
 
-**Applied in the spec:** R-HA-006 item 5: names transaction-mode and statement-mode poolers, states
-that direct connections and session-mode poolers are supported, and points to the probe and the
-P2 item. R-HA-004: new delivery-probe bullet and acceptance criterion with PgBouncer in both modes.
-The Deferred row stays P2 and now names option (b) instead of the question.
+**Applied in the spec:** new R-HA-058 (pooler, session host, role defaults, pooler HA, CloudNativePG
+example). R-HA-006 item 5: only the lease pool of `worker` replicas, `trove migrate` and
+`trove backup` use the session host; `web` replicas hold no session connection; the main pool may
+use the pooler. R-HA-004: invalidations need no connection outside the main pool. R-HA-014: role
+defaults per runtime login. R-HA-015: `application_name` form and
+startup parameters through the pooler; `session_host` and `session_port`. R-HA-016: the budget per
+role, with and without the pooler, and the growth rule. R-HA-007, R-HA-009: pooler loss and
+failover behind the pooler. R-HA-031: `database.session_host`, `database.session_port`,
+`database.pooler.*`. R-HA-050: the large profile uses the pooler. R-HA-052, R-HA-059: pooler
+scenarios. The Deferred row for (b) is removed. [architecture.md](architecture.md) R-ARCH-017 and
+R-ARCH-019 use the same session host and main-pool rules (Q-ARCH-14), so no cross-page edit
+remains.
 
 ### Q-HA-7 · Priority of Gateway API
 
@@ -3519,6 +5079,8 @@ that command.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the journal moves from P1 to MVP. INV-19 makes `trove backup restore` an MVP path, and a restore from a scheduled backup undoes up to one backup interval of revocations, a day with the default schedule, instead of the minutes a point-in-time restore loses. That is the case this decision's revisit condition named: production restores in 1.0.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Document the gap | The operator replays revocations from the audit log stream by hand | Nothing to build | Depends on someone doing it correctly under restore pressure; a leaked token revoked after *t* is valid until then |
@@ -3526,8 +5088,8 @@ Status: **Decided by the development agent** — selected from the options below
 | (c) Invalidate all tokens on restore | `post-restore` revokes every token | Closes the gap completely for tokens | Breaks every CI pipeline and service account at once, does not cover permission removals, and punishes the restore instead of the attacker |
 | (d) Replay from the audit stream | `post-restore --audit-log <file>` re-applies revocations from an export of the `log: audit` stream | No new write path in trove | Depends on the operator's log pipeline keeping complete, untruncated events for the window; anyone who can write to the pipeline can inject events |
 
-**Choice:** (b) at P1 — a revocation journal in object storage that `post-restore` replays; the MVP
-keeps the manual procedure of (a).
+**Choice:** (b) at MVP — a revocation journal in object storage that `post-restore` and the
+restore of a trove backup replay.
 
 **Rationale:** A revoked credential that comes back to life is a security failure, and only (b)
 fixes it without an operator in the loop and without punishing legitimate users. Two design points
@@ -3543,15 +5105,14 @@ keep (b) correct for one developer:
   "unrestricted" (R-AUTHZ-005). With this rule, the worst a writer with the runtime S3 credential
   can do is revoke access, a denial of service and not an escalation.
 
-The journal is P1 although the restore procedure (R-HA-025) ships in 1.0
-([roadmap Q-ROAD-2](../coverage/roadmap.md#q-road-2--backup-and-restore-in-10)): it is a new write
-path across every access-bearing object type with per-object replay rules, and H-37 exists in
-every installation whose database is restored, whether or not a procedure is documented. Until the
-journal ships, H-37 stays live with the manual mitigation, and it is the first work after 1.0. The
-development agent revisits this in two cases: if a 1.0 installation needs a production restore
-before the journal ships, the journal is built ahead of all other work; if suspensions after
-restore drills turn out to be frequent, the replay rule moves to exact per-field narrowing where
-the owning page can define it.
+Until the revisit, the journal was P1 because the restore procedure (R-HA-025) was the only way
+back and restores to a point minutes before the incident lose few revocations. With the backup job
+of INV-19 every installation restores from backups taken on a schedule, and the window of undone
+revocations grows to the backup interval. A leaked token revoked in that window would come back in
+every restore, so the journal ships with the backup job. The cost is the new write path and the
+per-object replay rules on the owning pages, which already exist as specification. The development
+agent revisits this if suspensions after restore drills turn out to be frequent; the replay rule
+then moves to exact per-field narrowing where the owning page can define it.
 
 **Applied in the spec:** New R-HA-054 (P1). It defines the registry flag `journal: revocation`, the
 minimum set of flagged audit events under their existing names (token revocation and rotation,
@@ -3563,7 +5124,13 @@ that include forged entries. The break-glass `enabled` state is excluded, becaus
 configuration file. R-HA-025 step 4 replays the journal and reports suspended objects, and the
 drill criterion expects a revoked token to stay revoked. R-HA-031 adds the
 `backup.revocation_journal` values, R-HA-045 adds `TroveRevocationJournalBacklog`, and H-37 and the
-Security notes describe what stays live before and after P1.
+Security notes describe what stays live. After the revisit: R-HA-054 is MVP and is also replayed by
+the restore of a trove backup; R-HA-031 drops the P1 mark; H-37 and the Security notes describe the
+MVP state; R-HA-052 adds the trove-backup restore drill with a revoked token. Cross-page:
+[authorization.md](authorization.md) R-AUTHZ-031 to MVP; the journal entries of
+[identity-and-authentication.md](identity-and-authentication.md) and
+[gitlab-ci-oidc.md](gitlab-ci-oidc.md) to MVP; [backup-and-restore.md](backup-and-restore.md)
+replays the journal; the roadmap moves the journal from M11 to M5.
 
 ### Q-HA-10 · Default of the egress NetworkPolicy
 
@@ -3573,7 +5140,7 @@ Status: **Decided by the development agent** — selected from the options below
 |---|---|---|---|
 | (a) Off by default | Ingress policy on; egress opt-in, with a warning in `NOTES.txt` and an example values file | An installation never breaks because the chart guessed the network wrong; R-REPO-038 already checks trove's own outbound addresses | A compromised process can reach everything the pod network reaches until the operator enables egress |
 | (b) On with a generic allow-list | DNS, port 5432 and port 443 to anywhere except link-local ranges | Blocks cloud metadata endpoints by default | Breaks NodeLocal DNSCache (link-local address), GKE workload identity (metadata server on 169.254.169.254), EKS Pod Identity (169.254.170.23), S3 stores and upstreams on other ports; for AWS S3 the rule cannot be narrower than "any address on 443", because NetworkPolicy has no DNS names or prefix lists |
-| (c) On, explicit targets required | Rendering fails unless database and object-storage targets are given | No guessing; forces a deliberate egress design | Breaks the six-value minimal install (R-HA-031); managed databases and AWS S3 have no stable pod selectors or narrow CIDRs to give |
+| (c) On, explicit targets required | Rendering fails unless database and object-storage targets are given | No guessing; forces a deliberate egress design | Breaks the minimal install of R-HA-031; managed databases and AWS S3 have no stable pod selectors or narrow CIDRs to give |
 | (d) On, everything except the metadata address | One rule: egress to `0.0.0.0/0` and `::/0` except `169.254.169.254/32` (and `fd00:ec2::254/128`) | Blocks the classic credential theft through the cloud metadata service and nothing else | GKE workload identity serves tokens from that very address, so S3 credentials break there; on CNIs whose `ipBlock` rules do not match cluster pod addresses (Cilium, for example), in-cluster PostgreSQL and S3 become unreachable |
 
 **Choice:** (a) — egress stays off by default; `NOTES.txt` says so and points to
@@ -3635,36 +5202,305 @@ are MVP. The UI status screen is MVP as well: [api-and-ui.md](api-and-ui.md) R-U
 
 **Rationale:** The API is what operators and the failure-injection suite use to verify a rollout,
 and it is a single `SELECT` behind an existing permission. Without pruning, every crashed pod would
-leave a row forever. The status screen renders only from endpoints that are MVP (this API,
-R-OPS-004, the task and job API of R-OPS-019, R-API-049), so it adds no backend work, and it is the
-only UI view of the replicas, the scheduled tasks and the key ring. The development agent revisits
-this only if R-OPS-003's API grows beyond a read-only list.
+leave a row forever. The status screen renders from endpoints that are MVP (this API, R-OPS-004,
+the task and job API of R-OPS-019, R-API-049, and the backup summary of R-API-050), and it is the
+only UI view of the replicas, the scheduled tasks and the key ring. It no longer adds no backend
+work: since the role split and the drain constraint, it groups replicas by role and states drain
+safety and the Valkey view per replica ([api-and-ui.md](api-and-ui.md) R-UI-038, Q-UI-7), which
+needs two more registry columns, `node` (from `TROVE_NODE_NAME`, R-HA-030) and
+`valkey_sentinels_reachable` (R-HA-057), and the backup summary endpoint of R-API-050, all MVP.
+Each costs a column per heartbeat or one read query. The development agent revisits this only if
+R-OPS-003's API grows beyond a read-only list.
 
-**Applied in the spec:** R-HA-003: states which parts of the registry are MVP, that the UI status
-screen (R-UI-038) is MVP as well, and that R-HA-001 and R-HA-020 verify through the API.
-[operations-and-observability.md](operations-and-observability.md) R-OPS-003 states the same
-(registry, API and status screen MVP), so no cross-page edit remains.
+**Applied in the spec:** R-HA-003: states which parts of the registry are MVP, that the registry
+records the node and the Sentinels each replica reaches, that the UI status screen (R-UI-038) is
+MVP as well, and that R-HA-001 and R-HA-020 verify through the API. R-HA-030: the chart sets
+`TROVE_NODE_NAME`. [operations-and-observability.md](operations-and-observability.md) R-OPS-003
+states the same (registry with `node` and `valkey_sentinels_reachable`, API and status screen MVP),
+so no cross-page edit remains.
+
+### Q-HA-13 · Valkey and readiness
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-12 states that Valkey being unavailable degrades trove and does not make replicas unready. The
+open question is whether any Valkey condition may hold back a replica's first readiness, as the
+object-store startup check does (Q-HA-1).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Never gate | Valkey is reported and alerted on, never part of readiness | Simplest; INV-12 word for word | A release with a mistyped Sentinel name, password or CA rolls out and degrades every replica at once: fetch collapse and negative caching per replica, rate limits approximated per replica, changes at poll speed. Only an alert notices |
+| (b) Gate continuously | Readiness fails while Valkey is unreachable | Removes a replica whose own path to Valkey is broken | Contradicts INV-12: a Valkey outage would empty the Service, although every replica still serves correctly |
+| (c) Gate the first readiness on any Valkey failure | As Q-HA-1 does for object storage | Stalls every rollout whose Valkey does not answer | A replica started during a Valkey outage cannot become ready, so drains, crashes and the autoscaler lose capacity while PostgreSQL carries the extra load (R-HA-057, rule 5); contradicts INV-12 for new replicas |
+| (d) Gate the first readiness on configuration errors only | A rejected credential (`WRONGPASS`, `NOAUTH`, `NOPERM`), a failed TLS verification, or a primary name that no reachable Sentinel knows holds a new replica back; unreachability never does | Stalls a misconfigured rollout with `maxUnavailable: 0`, as Q-HA-1's gate does; a replica started during an outage still becomes ready; INV-12 holds for every outage | The error classes are code to test; a Sentinel that lost its configuration answers like a wrong primary name, so a broken Valkey deployment can stall a trove rollout |
+
+**Choice:** (d) — only configuration errors hold back the first readiness; Valkey outages never
+affect readiness.
+
+**Rationale:** A configuration error is part of the release being rolled out, so stalling that
+rollout keeps the working replicas, which is the protection Q-HA-1 gives against a wrong bucket. An
+outage is in a shared dependency, so holding back new replicas would only remove capacity. (a)
+would let a typo keep every replica in degraded mode for good, with rate limits that hold only
+approximately ([architecture.md](architecture.md) R-ARCH-034), a quiet loss of what Valkey was
+added for. (b) and (c) contradict INV-12. The classifier needs three error classes that Valkey and Sentinel report
+distinctly. The development agent revisits this if a Sentinel that lost its state after a restart
+ever stalls a rollout; the null-answer case would then need confirmation over a longer period
+before it counts as a configuration error.
+
+**Applied in the spec:** R-HA-008: the Valkey bullet. R-HA-007: the credential row. R-HA-056:
+acceptance criteria for a wrong primary name, a wrong password and unreachable Sentinels. R-HA-057:
+rule 4. Cross-page: [operations-and-observability.md](operations-and-observability.md) R-OPS-001
+gets a `valkey` check that is reported, not gating, except for configuration errors before the
+first readiness.
+
+### Q-HA-14 · Valkey topologies trove supports
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sentinel only | The reference topology and nothing else | Exactly the owner's constraint; one discovery path | Managed services without Sentinel, such as a primary endpoint that follows failover through DNS, stay out for good |
+| (b) Sentinel at MVP, a primary-endpoint mode at P1 | `valkey.mode: endpoint` later connects to one DNS name that the provider moves on failover; trove re-resolves and checks `ROLE` after errors | Opens managed services later without weakening the reference topology | A second discovery path to test; failover time then depends on the provider's DNS |
+| (c) Sentinel and Valkey Cluster | Also the sharded Cluster protocol | Valkey memory beyond one node | trove's Valkey data is small and ephemeral (R-HA-050: 1 GiB for the large profile); multi-key operations and publish/subscribe behave differently under Cluster; the owner asked for Sentinel |
+| (d) Standalone allowed in production | One instance | Simplest | Contradicts INV-12 |
+
+**Choice:** (b) — Sentinel is the only production topology at MVP; a standalone instance exists for
+development; the endpoint mode is P1; Valkey Cluster is deferred.
+
+**Rationale:** The owner fixed Sentinel, and the MVP supports exactly that, tested by the local
+profile and CI. Managed services are a real deployment target, and some of them offer a primary
+endpoint instead of Sentinel, so the endpoint mode is the cheapest extension: the client already
+re-resolves and checks `ROLE` after every error (R-HA-056). Cluster mode solves a memory problem
+that trove's data does not have. The development agent revisits this if an installation needs more
+Valkey memory than one node offers, which calls for (c).
+
+**Applied in the spec:** R-HA-056: the topology table and the configuration's `mode`. R-HA-029:
+Sentinel mode with at least three addresses under `highAvailability.enforce`. Deferred: the endpoint
+mode (P1) and Valkey Cluster (P2).
+
+### Q-HA-15 · Valkey with Sentinel in the local profile and CI
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The official Valkey Helm chart, released version | `valkey-io/valkey-helm` at its latest release | One upstream to follow | Its latest release, 0.12.1, has no Sentinel settings (checked 2026-10-28) |
+| (b) The official chart at a pinned commit of its main branch | Sentinel settings exist there | Upstream manifests | An unreleased chart pinned to a commit; its values may change before the release |
+| (c) A third-party operator | For example an operator that manages Valkey with Sentinel through custom resources | Closer to how some installations run Valkey | One more operator with its own CRDs and release cadence in a laptop profile; not what most production installations run either |
+| (d) Manifests of trove's own | `deploy/dev/valkey.yaml`: two StatefulSets from the official `valkey/valkey` image, `emptyDir` only, TLS, an ACL user and Sentinel timings set for tests | Full control over TLS, ACL, timings and failure injection; the official image is the only dependency | trove maintains the manifests and the Sentinel bootstrap init container |
+
+**Choice:** (d) — the local profile and CI run Valkey and three Sentinels from manifests in
+`deploy/dev/valkey.yaml`.
+
+**Rationale:** The profile exists to exercise failover deterministically: kill the primary, flush
+it, stop the Sentinels, delay commands. Own manifests make each of these a known operation and keep
+the dependency at the official image, pinned by digest. (b) pins unreleased code, and (c) brings an
+operator into every developer's laptop for a component whose production form trove does not
+prescribe. The development agent revisits this when the official chart releases Sentinel support:
+the profile then moves to (a), provided the failover scenarios of R-HA-057 pass on it.
+
+**Applied in the spec:** R-HA-051: the `valkey.yaml` row, the certificate and Secret steps, the
+Valkey targets and the validity bullet. R-HA-056: the bullet on what the chart does not bundle.
+
+### Q-HA-16 · Default replica counts and the capacity rule for drains
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-12 requires at least two replicas per role and states that the load exceeds one replica; a
+node drain must cause no outage when the setup is sized for it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two per role; the rule documented | Defaults stay at INV-12's minimum | Smallest footprint | With a load above one replica, draining one of two `web` replicas leaves less capacity than the load needs, so the default installation is not sized for a drain |
+| (b) `web` 3, `worker` 2; the rule documented and tested | `web` defaults to one replica more than a peak of two needs; `worker` stays at two, because job load waits in the queue instead of failing requests | The default installation survives a drain at the load the owner expects; the drain test runs with the defaults | One more `web` pod than (a) |
+| (c) A capacity value the chart validates | `web.capacity.peakReplicas`; the chart refuses a minimum below peak plus `maxUnavailable` | The rule cannot be forgotten | A number nobody knows before the reference load test; a wrong value gives false confidence |
+| (d) A PDB with `minAvailable` equal to the peak | The budget refuses evictions below the peak | Protects capacity directly | Blocks a drain whenever the replica count equals the peak, so maintenance stalls; with an autoscaler the right number moves |
+
+**Choice:** (b) — defaults of three `web` and two `worker` replicas, with the N + 1 rule of
+R-HA-059 documented and tested.
+
+**Rationale:** The owner's statement fixes the smallest sized installation: more than one replica
+carries the peak, so a drain needs at least one more. Three `web` replicas is the smallest default
+that fits; `worker` load is queued work, and a drain that removes one of two workers for a minute
+delays jobs without failing a request. (c) turns an unmeasured number into a validation. (d) trades
+a slower drain for capacity, but a drain that never finishes is an operational failure of its own.
+The development agent revisits this when the reference load test publishes the capacity of one
+replica, which makes (c) worth its value.
+
+**Applied in the spec:** R-HA-031: `web.replicaCount: 3` and `web.autoscaling.minReplicas: 3`.
+R-HA-032: the replicas bullet. R-HA-059: rule 1. R-HA-050: profile minimums.
+
+### Q-HA-17 · The backup CronJob is on by default
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This is the same question as [Q-BAK-9](backup-and-restore.md#q-bak-9--backup-cronjob-on-by-default),
+seen from the chart; both pages choose the CronJob on by default with a required target.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) On by default, target required | `backup.enabled: true`; rendering fails without `config.backup.target.bucket` | Every installation has the backup the owner requires from its first day; the error names the missing value; `backup.enabled: false` is a visible opt-out | One more required value in the minimal install |
+| (b) Off by default, `NOTES.txt` warns | The operator enables it | Smaller minimal install | An installation without backups is the outcome of doing nothing |
+| (c) On by default, target inside the blob bucket | Backups under a prefix of the blob bucket | Nothing to configure | Same failure domain and same credential as the data the backup protects; under the blob prefix the orphan sweep would delete the backups (R-STOR-026); a compromised replica could delete them |
+
+**Choice:** (a) — the backup CronJob is rendered by default, and the chart fails without a backup
+target.
+
+**Rationale:** The backup job is an owner requirement, and a fail-fast error that already names the
+fix costs one value, the same trade as Q-HA-8. (b) makes the unsafe state the default. (c) puts the
+backup where the failures it should survive happen. The development agent revisits this if target
+installations commonly have no second bucket; a validated location in the same bucket but outside
+the blob prefix, with credentials of its own, would then be the fallback.
+
+**Applied in the spec:** R-HA-060: the CronJob and the target rules. R-HA-029: the target rows.
+R-HA-031: the `backup` values and the required-value list.
+
+### Q-HA-18 · How a restore runs in the chart
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`trove backup restore` restores into an empty installation and applies the migrations itself, up
+to the backup's step before the load and the rest after it
+([backup-and-restore.md](backup-and-restore.md) R-BAK-021, R-BAK-023). A restore copies every
+referenced blob, so it can take hours.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A hook Job before the migration | `restore.enabled` renders a pre-install hook that runs before the migration hook; one `helm install` restores and starts | One command into an empty namespace | Helm and Argo CD wait for hooks up to their timeouts, which a multi-hour restore exceeds; the migration hook would run after a restore that already migrated |
+| (b) An ordinary Job with both roles at zero | While `restore.enabled`, the chart renders the restore Job, no migration Job and a suspended backup CronJob, and refuses replica counts above zero; a second `helm upgrade` with normal values starts the roles | No Helm or GitOps timeout limits the restore; nothing writes during the restore; the restore owns the migrations, as R-BAK-021 requires; an evicted or failed restore resumes in the Job's next pod, without a flag (R-BAK-021, Q-BAK-10) | Two Helm commands and a `kubectl wait`; turning `restore.enabled` off before the Job completes must not let a migration overtake the restore, which R-HA-019's anchor check prevents |
+| (c) A documented `kubectl run`, no chart support | The operator starts the restore by hand | Nothing in the chart | Mounts, credentials and service accounts are reproduced by hand at the worst moment |
+| (d) A Job created from the backup CronJob | `kubectl create job --from=cronjob/…` with an edited pod spec | Reuses the CronJob's pod template | The pod spec has to be edited after creation; the backup pod has no migration credentials, by design |
+
+**Choice:** (b) — `restore.enabled` renders the ordinary Job `<fullname>-restore` with both roles at
+zero, suppresses the migration Job and suspends the backup CronJob.
+
+**Rationale:** A restore is rare and stressful, and the one thing it must not meet is a timeout
+halfway through a copy of terabytes. (b) keeps Helm out of the restore's duration, keeps every
+writer away while it runs, and leaves the migrations to the command that knows the backup's
+schema step. The second command is the same `helm upgrade` an operator runs anyway.
+[backup-and-restore.md](backup-and-restore.md) R-BAK-012 and R-BAK-021 still describe (a)'s hook
+and change to this sequence as a cross-page consequence, so both pages state one procedure; the
+automatic resumption they specify (Q-BAK-10) works the same in an ordinary Job. The development
+agent revisits this if restores turn out to be
+short enough for Helm's timeouts in practice, which would make (a)'s single command worth its
+coupling.
+
+**Applied in the spec:** R-HA-060: the restore Job, its mounts and the operator's sequence; after
+review, its own ServiceAccount `<fullname>-restore` (the backup account may not write blobs), the
+backup Job's pod failure policy with `restore.backoffLimit: 2` and automatic resumption instead of
+`backoffLimit: 0` and a `--resume` argument, which R-BAK-021 does not have, and the way to continue
+a Job that failed for good. R-HA-019: no migration Job while `restore.enabled`, and `trove migrate`
+refuses an anchored database. R-HA-028: the resource table. R-HA-029: the `restore.backupId` and
+replica-count rows. R-HA-031: the `restore` values. R-HA-042: the restore Job's policy. R-HA-052:
+the restore-during-a-drain scenario. Cross-page: [backup-and-restore.md](backup-and-restore.md)
+R-BAK-012 and R-BAK-021 describe the restore Job as a pre-install hook and change to this
+ordinary Job and sequence.
+
+### Q-HA-19 · Priority of the platform backup layer and the point-in-time restore
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-HA-023 (platform layer: point-in-time recovery, bucket versioning, least privilege) and R-HA-025
+(point-in-time restore with the post-restore cleanup) carried the catalog's P1 for OPS-033, and the
+roadmap built both for 1.0 anyway
+([roadmap Q-ROAD-2](../coverage/roadmap.md#q-road-2--backup-and-restore-in-10), option (a)).
+INV-19 adds trove's own backup at MVP.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep both P1 | Labels as before; the roadmap keeps its named exception | No label change | The cleanup of R-HA-025's step 4 (replica rows, jobs, deletion pause, sessions, Valkey keyspace, journal replay) is, apart from the deletion pause, what a restore of a trove backup performs at MVP (R-BAK-022, R-BAK-024), so one cleanup would carry two priorities depending on the restore path |
+| (b) R-HA-025 MVP, R-HA-023 P1 | Only the restore procedure moves | The MVP restore path rests on MVP requirements only | R-HA-024, an MVP requirement, already reads R-HA-023's keys, and R-HA-023's least-privilege rules protect the source of every backup |
+| (c) Both MVP | Both are MVP requirements; the platform layer stays recommended, not required, for installations | Labels match what 1.0 ships; no part of the MVP restore path is P1; the roadmap's exception disappears | Two more MVP requirements to count, with no extra work, since both were already scheduled for 1.0 |
+| (d) Drop the point-in-time path | trove backups only | One restore path | The recovery point becomes one backup interval for every installation, also where the platform offers minutes |
+
+**Choice:** (c) — R-HA-023 and R-HA-025 are MVP; the platform layer remains a recommendation for
+installations, and its checks and rules are part of 1.0.
+
+**Rationale:** Q-ROAD-2 kept the labels because nothing in the design had changed. INV-19 changed
+the design: restore is now an MVP path; it performs R-HA-025's cleanup in its own form and rests
+on R-HA-023's least-privilege rules. Raising both labels costs nothing in schedule, because both
+were in the 1.0 milestone already. (d) would throw away a recovery point of minutes that many
+platforms provide.
+The development agent revisits this if the platform layer turns out to be rarely available in
+target installations; R-HA-023 could then return to P1 with its least-privilege rules moved into
+R-HA-060.
+
+**Applied in the spec:** R-HA-023: priority, introduction and the trove-backup row. R-HA-025:
+priority, introduction, step 1 (backups suspended), step 4 (Valkey keyspace), step 6, and the drill
+cadence. Cross-page: the roadmap's Q-ROAD-2 and M5 lists.
+
+### Q-HA-20 · Control connection behind a transaction-mode pooler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+[architecture.md](architecture.md) R-ARCH-019 reserves one control connection per replica for the
+change-log poll, the heartbeats and, after this review, the `database` check, so that an exhausted
+request pool cannot take replicas out of the Service one after another. With direct connections
+the reservation is real: the control connection has a server backend of its own. Behind a
+transaction-mode pooler (R-HA-058, Q-HA-6) it is not: the pooler hands every client, the control
+connection included, a server connection from one shared pool. When the database is saturated and
+every server connection of the pooler is busy, the control queries of every replica wait behind
+request transactions, and all replicas can fail `database` and `invalidation` at the same moment.
+The load expected by the owner makes saturation a planned case, and the pooler is the setup
+recommended when `web` scales out.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Share the request pooler | The control connection goes through the same pooler pool as requests | Nothing to configure | Under saturation, overload empties the Service instead of slowing it; job heartbeats wait as well, and workers can lose their leases. The guarantee of R-ARCH-019 holds only without a pooler |
+| (b) Control connection to the session host | Every replica opens its control connection directly | A real server backend per replica, as without a pooler; no new component | One server connection per `web` replica again, so the server-side count grows with the replica count, against INV-12 and the reason for Q-HA-6 |
+| (c) A control endpoint with a server pool of its own | `database.control_host`, `control_port` and `control_name` name a second pool: a second pooler (CloudNativePG: a second `Pooler`), or a database entry with its own `pool_size` in a self-managed PgBouncer | Request traffic cannot exhaust it; the server-side count stays fixed (for example 2 × 5); the control loops are short statements, so a small pool serves hundreds of replicas | One more pooler deployment to run, spread and drain; three more keys |
+| (d) A separate login for control traffic | The control connection logs in as its own role through the same pooler; PgBouncer keeps one pool per database and user | No second pooler deployment | A further login with its own grants and rotation pair (R-HA-017); the per-user pool is bounded only by `default_pool_size` per instance; a managed pooler that admits one login only cannot offer it |
+
+**Choice:** (c) — with `database.pooler.mode: transaction`, the control connection connects to a
+control endpoint whose server pool serves only control connections, and the chart refuses a
+control endpoint equal to the request endpoint. Without a transaction-mode pooler the control keys
+stay empty and nothing changes.
+
+**Rationale:** The reserved control connection exists so that load can slow trove down but never
+switch it off, and the owner expects load beyond one replica; (a) loses that property in exactly
+the setup that serves the most replicas. (b) restores it by giving back what Q-HA-6 gained. (c)
+keeps both: the server-side count stays fixed, and the control loops get capacity that requests
+cannot take. Its cost is one more pooler of a few connections, deployed the same way as the
+request pooler. (d) avoids the deployment but adds a role and a rotation pair, and its isolation
+depends on the pooler's per-user pools, which a managed pooler may not expose. The development
+agent revisits this if a pooler offers reserved capacity for named clients, which would make (a)
+safe, or if the saturation scenario of R-HA-052 shows control waits far below
+`cluster.epoch_max_staleness` with a shared pool, which would make the second pool unnecessary.
+
+**Applied in the spec:** R-HA-058: the control pool, its limits, the CloudNativePG example with a
+second `Pooler`, the trove configuration and two acceptance criteria. R-HA-004, R-HA-007 (a
+saturation row; the pooler row covers both poolers), R-HA-008 (the `database` check runs on the
+control connection, and a saturation criterion), R-HA-015 and R-HA-031 (`control_host`,
+`control_port`, `control_name`), R-HA-016 (the control pool inside `server_connections`), R-HA-029
+(the refusal), R-HA-049, R-HA-050, R-HA-051 (the second pooler) and R-HA-052 (the saturation
+scenario). Cross-page: [architecture.md](architecture.md) R-ARCH-019 (the control connection's
+endpoint and the `database` check on it) and
+[operations-and-observability.md](operations-and-observability.md) R-OPS-001 (the `database` check
+runs on the control connection).
 
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
 
-Restoring PostgreSQL to time *t* restores every token, session, user and permission policy as it
-was at *t*. Token revocations, user and service-account disables, group-membership and role-binding
-removals, policy narrowings and CI mapping changes made after *t* are undone. A token revoked
-because it leaked becomes valid again. `post-restore` ends all UI
-sessions and prints a warning, but it cannot know what happened after *t*: those facts were only in
-the lost part of the database and in the audit log stream.
+Restoring PostgreSQL to time *t*, from the platform layer (R-HA-025) or from a trove backup taken at
+*t* (R-HA-060), restores every token, session, user and permission policy as it was at *t*. Token
+revocations, user and service-account disables, group-membership and role-binding removals, policy
+narrowings and CI mapping changes made after *t* are undone. A token revoked because it leaked
+becomes valid again. With scheduled backups, *t* can lie up to one backup interval in the past.
+Both restore paths end all UI sessions and print a warning, but the database alone cannot know
+what happened after *t*: those facts were only in the lost part of the database, in the audit log
+stream and in the revocation journal.
 
-- **Live in the MVP.** The mitigation is manual: read the `log: audit` stream from *t* to the
-  restore, and repeat each revocation and removal through `trove admin token revoke` and the API.
-- **From P1 on (R-HA-054, Q-HA-9),** `post-restore` re-applies the revocation journal kept in
-  object storage. What stays live then: removals whose outbox rows had not been shipped when the old
-  database stopped (normally less than one shipping interval, default 5 s), every removal made
-  while `backup.revocation_journal.enabled` was false, and, without bucket versioning, journal
-  objects deleted with the runtime S3 credential. Access granted after *t* is lost rather than
-  revived, and objects whose history replay cannot reproduce exactly are suspended; both fail
-  closed.
+- **Mitigated in the MVP** by the revocation journal (R-HA-054, Q-HA-9): both restore paths
+  re-apply the journal kept in object storage. What stays live: removals whose outbox rows had not
+  been shipped when the old database stopped (normally less than one shipping interval, default
+  5 s), every removal made while `backup.revocation_journal.enabled` was false, the whole journal
+  when the blob bucket that holds it is lost together with the database, and, without bucket
+  versioning, journal objects deleted with the runtime S3 credential. Access granted after *t* is
+  lost rather than revived, and objects whose history replay cannot reproduce exactly are
+  suspended; both fail closed.
+- The manual fallback for what stays live: read the `log: audit` stream from *t* to the restore,
+  and repeat each revocation and removal through `trove admin token revoke` and the API.
 
 ### H-38 · Plain HTTP between the edge proxy and the replicas
 

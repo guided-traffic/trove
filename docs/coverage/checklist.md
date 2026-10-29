@@ -13,8 +13,8 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 in its `Covers:` line. *open*: no requirement does. For entries with priority *Out of scope*,
 open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 658 specified, 1,581 open. 491 spec requirements:
-437 cover catalog features, 54 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 662 specified, 1,577 open. 553 spec requirements:
+472 cover catalog features, 81 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -37,7 +37,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 60 | 19 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 40 | 60 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 44 | 56 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 |
@@ -614,7 +614,7 @@ Catalog page: [authentication-providers.md](../features/authentication-providers
 | AUTHN-008 | OpenID Connect provider definition | MVP | specified | [R-AUTH-004](../spec/identity-and-authentication.md) |
 | AUTHN-009 | Authorization code flow with PKCE | MVP | specified | [R-AUTH-005](../spec/identity-and-authentication.md), [R-AUTH-006](../spec/identity-and-authentication.md) |
 | AUTHN-010 | Preset provider types: Google, GitHub, Cloud Foundry UAA | P2 | open | – |
-| AUTHN-011 | Login-flow state across cluster nodes | MVP | specified | [R-AUTH-005](../spec/identity-and-authentication.md), [R-AUTH-010](../spec/identity-and-authentication.md) |
+| AUTHN-011 | Login-flow state across cluster nodes | MVP | specified | [R-AUTH-005](../spec/identity-and-authentication.md), [R-AUTH-010](../spec/identity-and-authentication.md), [R-AUTH-042](../spec/identity-and-authentication.md) |
 | AUTHN-012 | Binding an internal account to an OAuth identity | P2 | open | – |
 | AUTHN-013 | Automatic pairing of SSO users by e-mail address | P2 | open | – |
 | AUTHN-014 | Personal sign-up through public OAuth providers and invitations | Out of scope | open | – |
@@ -879,21 +879,21 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| HA-001 | Active-active cluster of identical nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md) |
+| HA-001 | Active-active cluster of identical nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-ARCH-032](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) |
 | HA-002 | Cluster-wide task execution without a primary node | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-ARCH-016](../spec/architecture.md), [R-ARCH-017](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md), [R-HA-005](../spec/ha-and-helm.md) |
 | HA-003 | Shared metadata database as the cluster backbone | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-HA-007](../spec/ha-and-helm.md), [R-HA-013](../spec/ha-and-helm.md) |
 | HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) |
-| HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md) |
-| HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-ARCH-017](../spec/architecture.md), [R-ARCH-018](../spec/architecture.md), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) |
-| HA-007 | Distributed locking through the database | MVP | specified | [R-ARCH-017](../spec/architecture.md), [R-HA-005](../spec/ha-and-helm.md), [R-HA-006](../spec/ha-and-helm.md) |
+| HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md), [R-HA-061](../spec/ha-and-helm.md) |
+| HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-ARCH-017](../spec/architecture.md), [R-ARCH-018](../spec/architecture.md), [R-ARCH-030](../spec/architecture.md), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) |
+| HA-007 | Distributed locking through the database | MVP | specified | [R-ARCH-017](../spec/architecture.md), [R-ARCH-030](../spec/architecture.md), [R-ARCH-033](../spec/architecture.md), [R-HA-005](../spec/ha-and-helm.md), [R-HA-006](../spec/ha-and-helm.md) |
 | HA-008 | Network locality of cluster components | MVP | specified | [R-HA-049](../spec/ha-and-helm.md) |
-| HA-009 | Horizontal scaling: adding and removing nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-003](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md) |
+| HA-009 | Horizontal scaling: adding and removing nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-ARCH-032](../spec/architecture.md), [R-HA-003](../spec/ha-and-helm.md), [R-HA-059](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) |
 | HA-010 | Deployment topology: single node or cluster | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md) |
 | HA-011 | Active-passive warm standby | P2 | open | – |
 | HA-012 | Single client entry point with path-based routing | MVP | specified | [R-ARCH-005](../spec/architecture.md), [R-HA-037](../spec/ha-and-helm.md) |
 | HA-013 | Internal service registry and health-gated routing | Later | open | – |
 | HA-014 | Availability-zone affinity for internal routing | P2 | open | – |
-| HA-015 | Components deployed as separately scaled workloads | P1 | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-002](../spec/ha-and-helm.md) |
+| HA-015 | Components deployed as separately scaled workloads | P1 | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-002](../spec/ha-and-helm.md), [R-HA-062](../spec/ha-and-helm.md) |
 | HA-016 | Cluster encryption key | MVP | specified | [R-API-049](../spec/api-and-ui.md), [R-ARCH-021](../spec/architecture.md), [R-HA-027](../spec/ha-and-helm.md) |
 | HA-017 | Service trust key provisioning and rotation | Out of scope | open | – |
 | HA-018 | Internal TLS with a built-in certificate authority | P2 | open | – |
@@ -925,7 +925,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-044 | Scheduling and disruption controls | MVP | specified | [R-HA-032](../spec/ha-and-helm.md) |
 | HA-045 | Container security hardening | MVP | specified | [R-HA-033](../spec/ha-and-helm.md) |
 | HA-046 | Health probes in the chart | MVP | specified | [R-HA-034](../spec/ha-and-helm.md) |
-| HA-047 | Graceful termination and connection draining | MVP | specified | [R-ARCH-024](../spec/architecture.md), [R-HA-011](../spec/ha-and-helm.md) |
+| HA-047 | Graceful termination and connection draining | MVP | specified | [R-ARCH-024](../spec/architecture.md), [R-HA-011](../spec/ha-and-helm.md), [R-HA-059](../spec/ha-and-helm.md) |
 | HA-048 | Custom volumes and volume mounts | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
 | HA-049 | Custom init containers | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
 | HA-050 | Custom sidecar containers | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
@@ -941,7 +941,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-059 | Non-PostgreSQL database engines | Out of scope | open | – |
 | HA-060 | Database provisioning | MVP | specified | [R-HA-014](../spec/ha-and-helm.md) |
 | HA-061 | Database connection settings | MVP | specified | [R-HA-015](../spec/ha-and-helm.md) |
-| HA-062 | Connection pool sizing and the cluster-wide connection budget | MVP | specified | [R-ARCH-019](../spec/architecture.md), [R-HA-016](../spec/ha-and-helm.md) |
+| HA-062 | Connection pool sizing and the cluster-wide connection budget | MVP | specified | [R-ARCH-019](../spec/architecture.md), [R-HA-016](../spec/ha-and-helm.md), [R-HA-058](../spec/ha-and-helm.md) |
 | HA-063 | TLS to the database | MVP | specified | [R-HA-015](../spec/ha-and-helm.md) |
 | HA-064 | PostgreSQL high availability and failover | MVP | specified | [R-HA-009](../spec/ha-and-helm.md) |
 | HA-065 | Database password rotation without downtime | P1 | specified | [R-HA-017](../spec/ha-and-helm.md) |
@@ -963,10 +963,10 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 
 ## Operations, monitoring and configuration (OPS)
 
-Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 20 of 23 · P2 3 of 34 · Later 0 of 1 · Out of scope 0 of 25
+Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 20 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 40 specified, 60 open</summary>
+<summary>100 features: 44 specified, 56 open</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -981,7 +981,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-009 | Cluster lock diagnostics | P2 | specified | [R-OPS-026](../spec/operations-and-observability.md) |
 | OPS-010 | Outbound connection test | P2 | open | – |
 | OPS-011 | Metrics endpoint | MVP | specified | [R-OPS-006](../spec/operations-and-observability.md) |
-| OPS-012 | Core metric families | MVP | specified | [R-OPS-007](../spec/operations-and-observability.md), [R-OPS-008](../spec/operations-and-observability.md) |
+| OPS-012 | Core metric families | MVP | specified | [R-BAK-014](../spec/backup-and-restore.md), [R-OPS-007](../spec/operations-and-observability.md), [R-OPS-008](../spec/operations-and-observability.md) |
 | OPS-013 | Auxiliary service metric families | P1 | specified | [R-OPS-008](../spec/operations-and-observability.md) |
 | OPS-014 | Federation metric families | Later | open | – |
 | OPS-015 | Metrics log output | P2 | open | – |
@@ -1001,14 +1001,14 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-029 | Syslog forwarding | P2 | open | – |
 | OPS-030 | Log analytics integrations | P2 | open | – |
 | OPS-031 | Support bundle | P1 | specified | [R-OPS-027](../spec/operations-and-observability.md) |
-| OPS-032 | Scheduled system backups | P2 | open | – |
-| OPS-033 | Component backup and disaster recovery | P1 | specified | [R-HA-023](../spec/ha-and-helm.md), [R-HA-024](../spec/ha-and-helm.md), [R-HA-025](../spec/ha-and-helm.md), [R-HA-026](../spec/ha-and-helm.md) |
-| OPS-034 | System export | P2 | open | – |
-| OPS-035 | System import | P2 | open | – |
+| OPS-032 | Scheduled system backups | P2 | specified | [R-API-050](../spec/api-and-ui.md), [R-UI-048](../spec/api-and-ui.md), [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-002](../spec/backup-and-restore.md), [R-BAK-003](../spec/backup-and-restore.md), [R-BAK-006](../spec/backup-and-restore.md), [R-BAK-008](../spec/backup-and-restore.md), [R-BAK-009](../spec/backup-and-restore.md), [R-BAK-010](../spec/backup-and-restore.md), [R-BAK-011](../spec/backup-and-restore.md), [R-BAK-012](../spec/backup-and-restore.md), [R-BAK-013](../spec/backup-and-restore.md), [R-BAK-014](../spec/backup-and-restore.md), [R-BAK-016](../spec/backup-and-restore.md), [R-BAK-017](../spec/backup-and-restore.md), [R-BAK-018](../spec/backup-and-restore.md), [R-BAK-029](../spec/backup-and-restore.md), [R-HA-060](../spec/ha-and-helm.md) |
+| OPS-033 | Component backup and disaster recovery | P1 | specified | [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-005](../spec/backup-and-restore.md), [R-BAK-006](../spec/backup-and-restore.md), [R-BAK-015](../spec/backup-and-restore.md), [R-BAK-019](../spec/backup-and-restore.md), [R-BAK-026](../spec/backup-and-restore.md), [R-BAK-028](../spec/backup-and-restore.md), [R-HA-060](../spec/ha-and-helm.md), [R-HA-023](../spec/ha-and-helm.md), [R-HA-024](../spec/ha-and-helm.md), [R-HA-025](../spec/ha-and-helm.md), [R-HA-026](../spec/ha-and-helm.md) |
+| OPS-034 | System export | P2 | specified | [R-BAK-001](../spec/backup-and-restore.md), [R-BAK-003](../spec/backup-and-restore.md), [R-BAK-005](../spec/backup-and-restore.md) |
+| OPS-035 | System import | P2 | specified | [R-BAK-012](../spec/backup-and-restore.md), [R-BAK-020](../spec/backup-and-restore.md), [R-BAK-021](../spec/backup-and-restore.md), [R-BAK-023](../spec/backup-and-restore.md), [R-BAK-029](../spec/backup-and-restore.md) |
 | OPS-036 | Repository export | P2 | open | – |
 | OPS-037 | Repository import | P2 | open | – |
 | OPS-038 | Identity-service configuration export and import | P2 | open | – |
-| OPS-039 | Instance migration by export and import | P2 | open | – |
+| OPS-039 | Instance migration by export and import | P2 | specified | [R-BAK-021](../spec/backup-and-restore.md), [R-BAK-023](../spec/backup-and-restore.md), [R-BAK-025](../spec/backup-and-restore.md) |
 | OPS-040 | Node configuration file | MVP | specified | [R-ARCH-020](../spec/architecture.md), [R-OPS-028](../spec/operations-and-observability.md) |
 | OPS-041 | Advanced runtime properties | P2 | open | – |
 | OPS-042 | Central configuration descriptor | P2 | open | – |
@@ -2967,7 +2967,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>54 requirements</summary>
+<summary>81 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2977,6 +2977,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-API-014 | Idempotency keys for creates | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-017 | Request limits, timeouts and response headers | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-018 | Cross-origin access | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-051 | Requests that span replicas | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-052 | Visibility of a management write on other replicas | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-020 | Resource map and routing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-021 | Current caller and UI preferences | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-048 | Package ownership surface | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
@@ -2992,6 +2994,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-ARCH-004 | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-029 | Optional separate content origin | P1 | [architecture.md](../spec/architecture.md) |
+| R-ARCH-031 | Valkey client, Sentinel discovery, TLS, ACL and degradation | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-034 | Cluster-wide rate-limit counters | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-023 | Error model | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-027 | Performance targets | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-028 | Resource limits for untrusted package content | MVP | [architecture.md](../spec/architecture.md) |
@@ -3000,30 +3004,53 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-AUTHZ-019 | Package ownership API | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-020 | Shared ownership domains | P1 | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-028 | Compiled grant index and invalidation across replicas | MVP | [authorization.md](../spec/authorization.md) |
+| R-AUTHZ-032 | Seeing one's own permission change on any replica | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-029 | Audit of authorization decisions | MVP | [authorization.md](../spec/authorization.md) |
-| R-AUTHZ-031 | Revocation journal entries and the narrowing comparator | P1 | [authorization.md](../spec/authorization.md) |
+| R-AUTHZ-031 | Revocation journal entries and the narrowing comparator | MVP | [authorization.md](../spec/authorization.md) |
+| R-BAK-004 | Table registry and export classes | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
+| R-BAK-007 | Garbage-collection hold | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
+| R-BAK-022 | State a restore rebuilds or invalidates | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
+| R-BAK-024 | Revocation journal replay after a restore | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
+| R-BAK-027 | Client-side encryption of the database files | P1 | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-NPM-026 | Versions removed upstream | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-044 | npm audit events and metrics | MVP | [formats/npm.md](../spec/formats/npm.md) |
+| R-NPM-046 | npm across replicas: no state between requests, Valkey degradation, drain | MVP | [formats/npm.md](../spec/formats/npm.md) |
+| R-NPM-047 | npm data in backups and restores | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NUGET-027 | Acceptance test suite | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-028 | Audit events and metrics for NuGet | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
-| R-HA-054 | Revocation journal in object storage | P1 | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-NUGET-030 | NuGet on interchangeable replicas (INV-18) | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
+| R-NUGET-031 | Valkey unavailable or emptied | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
+| R-NUGET-032 | Pushes and deletes across drains, restarts and client retries | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
+| R-NUGET-033 | NuGet data in backups and restores | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
+| R-CI-029 | CI state across replicas, Valkey outages and restores | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
+| R-CI-030 | Background tasks of the CI exchange | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
+| R-HA-056 | Valkey with Sentinel: connection and supported topologies | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-057 | Valkey failover, outage and degraded mode | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-054 | Revocation journal in object storage | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-055 | Optional content host at the edge | P1 | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-051 | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-052 | Failure-injection test suite | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-AUTH-012 | CSRF protection for cookie-authenticated requests | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-021 | Dormant-user deactivation | P1 | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
+| R-AUTH-043 | Scheduled authentication tasks | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
+| R-OPS-045 | Valkey and coordination observability | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
+| R-OPS-046 | Operational signals for availability, horizontal scale and backup | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-013 | Secret redaction | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-014 | Event registry | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-018 | Trace context and OpenTelemetry export | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
+| R-OPS-047 | Installation-wide cache flush | P1 | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-024 | Read-only maintenance mode | P1 | [operations-and-observability.md](../spec/operations-and-observability.md) |
-| R-REPO-026 | Collapsing concurrent misses (single-flight and advisory lock) | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-026 | Collapsing concurrent misses (single-flight and Valkey flight lock) | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-038 | Egress address rules for remote repositories | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-040 | Size and concurrency limits | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-043 | Metadata URL rewriting | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-049 | Repository and proxy state on n replicas, without Valkey and during a drain | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-047 | Proxy and resolution observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-STOR-011 | Multi-request upload sessions | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-013 | Download integrity verification | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-027 | Integrity scrub | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-036 | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-046 | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-047 | Storage state in backups and restores | MVP | [storage.md](../spec/storage.md) |
 
 </details>

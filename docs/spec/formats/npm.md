@@ -6,9 +6,10 @@ This page specifies how trove speaks the npm registry protocol for local, remote
 npm repositories: the endpoints below `/api/npm/<repoKey>/`, how the npm format plug-in classifies
 requests, how package documents are generated, cached and merged, how publish, dist-tags,
 deprecation and unpublish change state, how a remote repository fetches and validates npm
-metadata, how a virtual repository merges members, and the client acceptance tests that gate the
-format. It is the npm half of the format plug-in contract: generic semantics live on the owner
-pages and are referenced, not repeated.
+metadata, how a virtual repository merges members, how npm behaves when requests reach `web`
+replicas at random, while Valkey is unavailable and across a backup and restore, and the client
+acceptance tests that gate the format. It is the npm half of the format plug-in contract: generic
+semantics live on the owner pages and are referenced, not repeated.
 
 | Topic | Owner |
 |---|---|
@@ -19,7 +20,9 @@ pages and are referenced, not repeated.
 | GitLab ID-token validation and identity mappings | [gitlab-ci-oidc.md](../gitlab-ci-oidc.md) |
 | Audit event storage, jobs, metrics conventions | [operations-and-observability.md](../operations-and-observability.md) |
 | Client setup dialog, management API conventions | [api-and-ui.md](../api-and-ui.md) |
-| Format plug-in interface, configured public base URL, trusted reverse proxies | [architecture.md](../architecture.md) |
+| Format plug-in interface, configured public base URL, trusted reverse proxies, process roles, in-process caches and the change log, Valkey usage and degradation, cross-replica request collapsing, no state between requests, graceful shutdown | [architecture.md](../architecture.md) |
+| Backup contents, export classes, revision columns, restore fix-ups | [backup-and-restore.md](../backup-and-restore.md) |
+| Node drain, role split and web pools, transaction-mode pooler, revocation journal | [ha-and-helm.md](../ha-and-helm.md) |
 
 Covers: every MVP and P1 entry of the npm format catalog
 [features/formats/npm.md](../../features/formats/npm.md), and the npm-specific parts of
@@ -195,8 +198,10 @@ Consequences:
   metadata and files, so the catalog's trap of a policy that admits the tarball but not the
   separately stored metadata (PKG-NPM-047) cannot occur.
 - Every stored tarball is an item at its canonical path (storage.md); raw access through
-  `/files/<repoKey>/<path>` (INV-6) uses the same path. Package documents are generated and have
-  no item.
+  `/files/<repoKey>/<path>` (INV-6) uses the same path, and is refused wherever the npm tarball
+  route refuses the tarball: a tombstoned version (R-NPM-015, R-NPM-047) or a version removed
+  upstream (R-NPM-026) answers 404 on `/files` and on the cache view as well. Package documents are
+  generated and have no item.
 - The package document's canonical path `<name>` is the package-document path the npm catalog
   entry registers (R-REPO-003, written `n` there; R-NPM-023): upstream gone-marking (R-REPO-029)
   and the shadowing check's stored-state lookup and probe (R-REPO-048) use it.
@@ -272,8 +277,8 @@ Priority: **MVP** · Covers: PKG-NPM-060
 
 - `npm-notice` (a response header npm prints on any response,
   [npm-registry-fetch](https://github.com/npm/npm-registry-fetch/blob/main/lib/check-response.js);
-  Yarn 2+ prints it only on error responses) is set only where this page says so (R-NPM-016,
-  R-NPM-038).
+  Yarn 2+ prints it only on error responses) is set only where this page says so (R-NPM-007,
+  R-NPM-016, R-NPM-038).
 - Request headers `npm-command`, `npm-session`, `npm-scope`, `npm-in-ci` and `npm-auth-type` are
   logged (R-NPM-044) and never used for decisions.
 
@@ -304,6 +309,10 @@ Priority: **MVP** · Covers: PKG-NPM-033, PKG-NPM-034, REPO-029, FMT-008
   PKG-NPM-037.
 - The format properties `npm.name`, `npm.version` and, for scoped names, `npm.scope` are exposed
   read-only on every stored or cached tarball (FMT-008), derived from these rows.
+- All npm state is in these PostgreSQL tables and in the blob store (INV-3, INV-4). Nothing npm
+  needs is held only in Valkey or on a replica's disk; the replica-local spool holds the body of
+  the request that is running and nothing else (INV-13, INV-18). Backup export classes and restore
+  behavior of these tables are R-NPM-047.
 
 Data model (sketch; `packages`, `package_versions`, `items`, `repositories` are storage.md's):
 
@@ -329,7 +338,10 @@ CREATE TABLE npm_versions (
   unpacked_size      bigint      NOT NULL,
   has_install_script boolean     NOT NULL,
   has_shrinkwrap     boolean     NOT NULL,
-  published_at       timestamptz NOT NULL
+  readme             text,                        -- R-NPM-010, extracted at publish, at most 64 KiB
+  readme_filename    text,
+  publish_tag        text        NOT NULL,        -- dist-tag the publish request carried (R-NPM-007 step 4)
+  published_at       timestamptz NOT NULL         -- PostgreSQL clock (R-NPM-012)
 );
 
 CREATE TABLE npm_tombstones (                     -- outlives trash and permanent removal (R-NPM-008)
@@ -337,6 +349,9 @@ CREATE TABLE npm_tombstones (                     -- outlives trash and permanen
   name           text        NOT NULL,
   version        text        NOT NULL,
   integrity      text        NOT NULL,
+  source         text        NOT NULL CHECK (source IN ('unpublish', 'move', 'journal')),
+                                                  -- 'journal': written by a restore's replay; the version
+                                                  -- may still be stored, withheld (R-NPM-047)
   unpublished_at timestamptz NOT NULL,             -- time of the unpublish or the move out
   unpublished_by uuid        NOT NULL,             -- its actor
   PRIMARY KEY (repo_id, name, version)
@@ -468,14 +483,34 @@ Processing:
      differences that change nothing a client installs or runs, apart from the `node-gyp rebuild`
      script above, which builds the package's own `binding.gyp` and is visible in the document.
 4. Immutability (R-NPM-008): existing version 409 `npm_version_exists`, tombstone 409
-   `npm_version_unpublished`.
+   `npm_version_unpublished`. One exception, the **acknowledged retry** (Q-NPM-11): the request is
+   a client's retry of a publish whose answer was lost when all of these hold for the existing,
+   live version:
+   - it was published by the same principal;
+   - `now() − published_at` is less than `npm.publish.retry_window`, both on PostgreSQL's clock
+     (R-NPM-012), never on the receiving replica's;
+   - its stored tarball has the SHA-512 just computed;
+   - the request carries a `.sigstore` attachment exactly when the version has a stored one, with
+     the same SHA-256;
+   - the request's dist-tag equals the `publish_tag` the original request carried.
+
+   trove changes nothing (no row, no tag, no `rev_seq`, no object) and answers 201 as in step 6,
+   with `npm-notice: <name>@<version> was already published by you at <time>; nothing changed`.
+   Every fact the rule reads is in PostgreSQL, so the replica that receives the retry decides it
+   exactly as the one that committed the original would (INV-18).
 5. Commit through R-STOR-005. Inside the commit transaction (`OnCommit` hook): lock or create the
-   package rows, re-check immutability, insert `package_versions`, the item and `npm_versions`,
-   apply the tag under R-NPM-016, increment `packages.rev_seq`, update `modified_at` and the
-   search vector, write the audit event (R-NPM-044); after commit `NOTIFY` for cache eviction
-   (INV-12).
+   package rows, re-check immutability (the acknowledged retry of step 4 included, so a retry that
+   overtakes its slow original on another replica ends in 201 as well), insert `package_versions`,
+   the item and `npm_versions` (with `publish_tag`, and the README of R-NPM-010), apply the tag
+   under R-NPM-016 against the `latest` read under that lock, increment `packages.rev_seq`, set
+   `published_at` and `modified_at` from PostgreSQL's clock after the lock is held (R-NPM-012),
+   update the search vector, write the audit event (R-NPM-044). No correctness depends on a
+   message to other replicas after the commit: every replica reads the new revision on its next
+   document request (R-NPM-010), and merged entries check it (R-NPM-030). Since 2026-10-28 trove
+   issues no `NOTIFY` ([architecture.md](../architecture.md) R-ARCH-018, Q-ARCH-15).
 6. Answer 201 `{"ok": true, "id": "<name>", "rev": "<rev>"}` once the blob is durable and the
-   transaction committed; npm ignores the body.
+   transaction committed; npm ignores the body. A replica that shuts down never cuts a publish
+   between its commit and this status line ([architecture.md](../architecture.md) R-ARCH-024).
 
 Stored manifest = the request's version manifest with server-controlled fields replaced:
 
@@ -489,7 +524,14 @@ Stored manifest = the request's version manifest with server-controlled fields r
   `access` is ignored, because permission policies decide visibility.
 
 Concurrent publishes of different versions of one package serialize on the package row and both
-succeed.
+succeed. This holds whichever replicas receive them, because the lock is a PostgreSQL row lock
+taken in the commit transaction. The look-alike rule of R-NPM-002 is enforced by the
+`UNIQUE (repo_id, name_fold)` constraint of `npm_packages`, not by a read before the insert: the
+row is created with `INSERT … ON CONFLICT DO NOTHING` and then locked
+([INSERT … ON CONFLICT](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT)),
+so of two concurrent first publishes of `acme-ui` and `acme_ui` through different replicas one
+commits and the other answers 400 `npm_invalid_name`, and two concurrent first publishes of one
+new name both succeed.
 
 Configuration (`trove.yaml`):
 
@@ -500,6 +542,7 @@ npm:
     max_unpacked_size: 2GiB        # default (proposed)
     max_tar_entries: 100000        # default (proposed)
     manifest_consistency: reject   # default (proposed); reject | warn
+    retry_window: 10m              # default (proposed); acknowledged retry of step 4, 0s turns it off (Q-NPM-11)
 ```
 
 Acceptance criteria:
@@ -519,7 +562,16 @@ Acceptance criteria:
   `npm_manifest_mismatch`.
 - A request manifest carrying `_npmUser.trustedPublisher` is stored with `_npmUser` =
   `{"name": "<publisher>"}`.
-- Two concurrent publishes of `1.0.1` and `1.0.2` of one package both succeed.
+- Two concurrent publishes of `1.0.1` and `1.0.2` of one package, sent to two different replicas,
+  both succeed. Two concurrent first publishes of `acme-ui` and `acme_ui`, sent to two different
+  replicas, end in one 201 and one 400 `npm_invalid_name`, never in a 5xx.
+- A fault-injecting edge resets the client connection of a committed `npm publish` of
+  `@acme/ui@1.0.3` after trove has sent its status line. npm retries the `PUT`, the retry reaches
+  another replica, and `npm publish` exits 0 with the `npm-notice`. `@acme/ui` has version `1.0.3`
+  once, its `rev_seq` grew by one, and the audit log holds one `npm.publish` event with outcome
+  `success` and one with outcome `retry_acknowledged`. The same request sent by another principal,
+  with another tarball, with another dist-tag, without the `.sigstore` attachment the original
+  carried, or after `npm.publish.retry_window` answers 409 `npm_version_exists`.
 - A tarball with two `package/package.json` entries, the second adding a `postinstall` script,
   answers 400 `npm_bad_publish`; so do one whose `package/package.json` is a symbolic link, one
   whose entries are named `./package/…`, and one holding both `package/package.json` and
@@ -532,28 +584,41 @@ Priority: **MVP** · Covers: PKG-NPM-016
   other bytes in that repository: not by a second publish, not after unpublish or a move out, not
   by a raw upload, not by a copy or move into the repository (P1, refused per item,
   [storage.md](../storage.md) R-STOR-019), not for a principal holding `overwrite` (R-AUTHZ-006
-  lets formats refuse regardless). Lockfiles pin `integrity` per version.
+  lets formats refuse regardless). Lockfiles pin `integrity` per version. A client's retry of a
+  publish whose answer was lost is not a second publish: R-NPM-007 step 4 acknowledges it only
+  for the same bytes and the same principal, and changes nothing (Q-NPM-11).
 - Unpublish writes an `npm_tombstones` row with the version's integrity. So does, from P1, a move
   of the version out of a local repository (R-STOR-019): the source repository's hook writes the
   row in the move transaction. Clients of the source repository may have cached the version, so a
   rebuilt version under the same number there would diverge exactly as after an unpublish; moving
   the version back is refused like a republish. A copy writes none, because the version stays.
   The row survives the trash can and permanent removal (R-STOR-022, R-STOR-023). No API, UI or
-  `trove admin` operation removes a tombstone, and a republish of identical bytes is refused like
-  any other (Q-NPM-8); only the restore below and the deletion of the whole repository remove one.
-- Restoring a version from the trash can brings back its original bytes; that is not a reuse. The
-  restore removes the tombstone and the version reappears in documents.
+  `trove admin` operation removes a tombstone of a version whose bytes are gone, and a republish of
+  identical bytes is refused like any other (Q-NPM-8). Only three operations remove a tombstone,
+  each of them by bringing back the version's own stored bytes, never new ones: the trash-can
+  restore below, `trove admin npm reinstate` for a version a restore's replay withheld (R-NPM-047),
+  and the deletion of the whole repository.
+- From P1, restoring a version from the trash can (R-STOR-023) brings back its original bytes;
+  that is not a reuse. The restore removes the tombstone and the version reappears in documents.
+  The trash can is P1 (R-STOR-022): in the MVP an unpublish deletes the version permanently, and
+  only its tombstone remains.
+- A restore of a backup (INV-19) returns the tombstones, like every other table, to the backup's
+  snapshot. Unpublishes made after the snapshot are re-applied by the journal replay, which
+  tombstones those versions again and withholds them (R-NPM-047, Q-NPM-12). The replay deletes
+  nothing: in the MVP, where the trash can does not exist, a replayed deletion could not be undone.
+  H-51 names what a restore still reverts.
 - Remote and virtual repositories serve upstream versions as they are; changed upstream digests
   for a cached version are handled by R-REPO-041.
 
 Acceptance criteria:
 
-- A second `npm publish` of `@acme/ui@1.2.0` fails with 409 `npm_version_exists`.
+- A second `npm publish` of `@acme/ui@1.2.0` with another tarball, by another principal, or after
+  `npm.publish.retry_window` fails with 409 `npm_version_exists`.
 - After `npm unpublish @acme/ui@1.2.0`, publishing `1.2.0` fails with 409
   `npm_version_unpublished`, also after the item is permanently removed from the trash;
   publishing `1.2.1` succeeds. The same holds for a principal with `overwrite`.
-- Restoring the unpublished version from the trash makes `npm view @acme/ui@1.2.0 dist.integrity`
-  print the original integrity.
+- From P1, restoring the unpublished version from the trash makes
+  `npm view @acme/ui@1.2.0 dist.integrity` print the original integrity.
 - After moving `@acme/ui@1.3.0` from `npm-local` to another local repository (P1), publishing a
   rebuilt `1.3.0` to `npm-local` fails with 409 `npm_version_unpublished`.
 
@@ -567,17 +632,29 @@ Priority: **MVP** · Covers: PKG-NPM-057
 - Every path containing `-rev/{rev}` MUST compare `{rev}` with the current revision inside the
   write transaction and answer 409 `npm_stale_rev` on mismatch, so two read-modify-write clients
   cannot lose each other's changes.
+- **A stale revision whose request changes nothing succeeds.** When `{rev}` (or a body's `_rev`,
+  R-NPM-018) is stale but applying the request to the current rows would change nothing (every
+  version it removes is already removed, every deprecation it sets is already set), trove answers
+  as for a successful write, with the current `_rev`, and writes nothing. npm retries a `PUT` or
+  `DELETE` whose answer was lost (Q-NPM-11), and the retry reaches any replica with the revision of
+  the attempt that already committed; without this rule it would fail with 409 although its
+  effect is in force. No change is lost by it, because the request changes nothing.
 - `GET {name}?write=true` MUST return the full document regardless of `Accept`, read from
   PostgreSQL inside the request, without `_attachments`. On a virtual repository it returns the
-  deployment target's own document (R-NPM-029).
+  deployment target's own document (R-NPM-029). A read-modify-write client (`npm deprecate`,
+  `npm unpublish`) may send its read and its write to different replicas; both see the same
+  `packages.rev_seq`, because neither reads it from a replica's memory (INV-18).
 - Remote documents carry the upstream's `_rev` if any; virtual documents carry a synthetic `_rev`
-  derived from their cache fingerprint. Neither can be written through.
+  derived from the merge fingerprint of R-NPM-013, so every replica gives one merged document the
+  same `_rev`. Neither can be written through.
 
 Acceptance criteria:
 
 - `curl '…/npm-local/@acme%2fui?write=true'` with an abbreviated `Accept` header returns
   `Content-Type: application/json` and a `_rev`.
 - `PUT …/@acme%2fui/-rev/<old rev>` after a newer publish answers 409.
+- `npm unpublish @acme/ui@1.0.0` succeeds; replaying its `PUT …/-rev/<rev>` with the same body
+  through another replica answers 200 with the current `_rev` and changes nothing.
 
 ### R-NPM-010 · Full package document
 Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
@@ -585,9 +662,11 @@ Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
 - Local package documents are computed from the rows of R-NPM-006; clients never upload one.
 - A publish, unpublish, deprecation or dist-tag change MUST be visible on every replica as soon as
   its request has returned 2xx. Each document request reads the package's `packages.rev_seq` (one
-  indexed lookup, R-ARCH-012) and renders, or reuses the rendering for, that revision. `NOTIFY`
-  evicts early but is not relied on, so a CI job that publishes and immediately installs through
-  any replica never sees the old document.
+  indexed lookup, R-ARCH-012) and renders, or reuses the rendering for, that revision from the
+  replica's in-process rendition cache (R-ARCH-018, Q-NPM-10). No message between replicas is
+  involved: a cached local document is keyed by its revision and has no invalidation to miss, so a
+  CI job that publishes and immediately installs through any replica never sees the old document,
+  with or without Valkey.
 - The full document is served for `Accept: application/json`, a missing `Accept`, and
   `?write=true`:
 
@@ -622,15 +701,19 @@ Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
   with an unencoded scope separator: the conventional shape that Yarn 2+ recognises (R-NPM-042).
 - Top-level `description`, `keywords`, `license`, `homepage`, `repository`, `bugs` and `author`
   come from the version `latest` points to; `readme` and `readmeFilename` from that version's
-  manifest or, if absent, from the tarball's first top-level `README*` file, cut at 64 KiB.
+  manifest or, if absent, from the tarball's first top-level `README*` file, cut at 64 KiB. The
+  README is extracted once, at publish (R-NPM-007 step 5, `npm_versions.readme`), so a rendering
+  on any replica reads rows only and never fetches a tarball from the object store.
   `maintainers` lists the distinct principal names that published the versions present, without
   e-mail; it is informational (ownership is R-AUTHZ-018).
 - An unknown package, or one without a live version, answers 404.
 
 Acceptance criteria:
 
-- `npm publish` followed directly by `npm view @acme/ui@<new version> version`, with two replicas
-  behind the Service and no session affinity, prints the new version in 100 of 100 runs.
+- `npm publish` followed directly by `npm view @acme/ui@<new version> version`, in the `scatter`
+  profile of [architecture.md](../architecture.md) R-ARCH-032 (three `web` replicas, every request
+  to another one, no session affinity), prints the new version in 100 of 100 runs, with Valkey
+  running and with Valkey stopped.
 - `npm view @acme/ui readme` shows the README of the version tagged `latest`.
 - The full document of a package with 1,000 versions renders in under 200 ms on a miss and is
   served from cache in under 10 ms *(targets, proposed)*.
@@ -682,6 +765,19 @@ enough to install. trove cannot override them; it MUST make them work:
   versions, the upstream's value for remote versions, the winning member's value for virtual
   versions (R-NPM-030). A remote version without an upstream time is listed without one; trove
   never invents upstream times.
+- Local times (`published_at`, `modified_at`, hence `time` and `Last-Modified`) come from
+  PostgreSQL's clock, never from the clock of the replica that received the publish. They are
+  taken with `clock_timestamp()` after the package row lock is held, not with `now()`, which is
+  the start of the transaction
+  ([current date/time](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT)):
+  two writes of one package serialize on that lock, so their times follow their commit order even
+  when the later one started first. Every write that increments `packages.rev_seq` (publish,
+  unpublish, dist-tag change, deprecation, reindex, a restore's replay) sets `modified_at` to
+  `greatest(modified_at + 1 ms, clock_timestamp())`, so `time.modified` never moves backwards.
+  Versions published through different replicas are therefore ordered by one clock, which
+  release-age policies and the `newest-published` strategies of R-NPM-031 compare, and a
+  downstream proxy's stale-copy check (R-NPM-024 run against trove) never mistakes a newer
+  document for an older one.
 - With `npm.abbreviated_time`, abbreviated documents carry the same map, so pnpm with
   `registrySupportsTimeField` (pnpm versions that know the setting;
   [pnpm settings](https://pnpm.io/settings/other#registrysupportstimefield)) applies its check
@@ -706,11 +802,43 @@ Acceptance criteria:
 Priority: **MVP** · Covers: PKG-NPM-032
 
 - Package documents MUST carry a weak `ETag` and `Last-Modified` (= `time.modified`) and answer
-  `If-None-Match` and `If-Modified-Since` with 304
-  ([RFC 9110 §13](https://www.rfc-editor.org/rfc/rfc9110#section-13)). The ETag is derived from
-  inputs, so a 304 needs no rendering: local (repository, package, `packages.rev_seq`, variant,
-  public base URL, rendering settings); remote (stored document digest, serving address, variant,
-  settings, as R-REPO-043 requires); virtual (merge fingerprint, variant).
+  `If-None-Match` with 304 ([RFC 9110 §13](https://www.rfc-editor.org/rfc/rfc9110#section-13)).
+  The ETag is derived from inputs, so a 304 needs no rendering: local (repository, package,
+  `packages.rev_seq`, variant, public base URL, rendering settings); remote (stored document
+  digest, serving address, variant, settings, as R-REPO-043 requires); virtual (merge fingerprint,
+  variant). The in-process rendition and merged-metadata caches key their entries by the same
+  tuple, so a replica never serves cached bytes under a validator computed from other inputs.
+- **`If-Modified-Since` never produces a 304 on a package document.** It is ignored when
+  `If-None-Match` is present, as RFC 9110 §13.1.3 requires, and also when it arrives alone. A
+  document's date does not move with every change of its bytes: a restore returns
+  `time.modified` to the snapshot while clients may hold later dates from the old installation,
+  and a member, permission or setting change, or a new `npmRenderVersion`, changes the bytes
+  without a new date. A date could therefore validate bytes that differ, on one replica or
+  across a restore. Every package document carries an ETag, which a client's HTTP cache sends back
+  as `If-None-Match` (Yarn 2+ does, R-NPM-042; npm and pnpm revalidate through the HTTP caches of
+  their fetch layers, PKG-NPM-032); a client that sends only a date receives 200, which costs
+  bytes, never correctness.
+  Tarballs keep date validation (R-STOR-012), because their bytes never change.
+- **The same validator on every replica.** The Service sends a conditional request to any `web`
+  replica, usually not the one that issued the ETag (INV-18). Every input of an ETag is therefore
+  a value each replica reads from PostgreSQL or from the shared configuration, plus
+  `npmRenderVersion`, a constant of the plug-in that a release increments whenever it changes the
+  bytes rendered from the same inputs. No input is per replica: no cache-entry time, no replica
+  identity, no random value. Every replica issues the same ETag for the same bytes and answers 304
+  only when it would serve those bytes ([RFC 9110 §8.8.3](https://www.rfc-editor.org/rfc/rfc9110#section-8.8.3));
+  during a rolling upgrade ([ha-and-helm.md](../ha-and-helm.md) R-HA-020), replicas of two
+  releases that render differently never share an ETag. In detail:
+  - "rendering settings" are the `npm` keys of `trove.yaml` that change rendered bytes
+    (`npm.abbreviated_time`) and the `config_version` of the serving repository, which covers its
+    repository settings;
+  - the *merge fingerprint* of a virtual document is: the member fingerprint of R-REPO-020 (which
+    already reflects patterns, pin rules, claims and the caller's readable members), each
+    contributing member's revision (local: `packages.rev_seq`, 0 when absent; remote: the stored
+    document digest), the `config_version` of the virtual repository and of each member (covering
+    `latestStrategy`, `distTagStrategy`, `externalDependencies` and `serveRemovedVersions`), the
+    public base URL and `npmRenderVersion`;
+  - after a restore, `rev_seq` and `config_version` have grown by 2^32 (R-BAK-022, R-NPM-047), so
+    no ETag of the old installation matches a restored document.
 - Package documents MUST carry `Vary: Accept, Accept-Encoding` and `Cache-Control: private,
   max-age=<npm.document_max_age>, must-revalidate`. They are always `private`: a merged document
   depends on the caller's readable members (R-AUTHZ-009 rule 4), and a shared HTTP cache must
@@ -731,6 +859,9 @@ Acceptance criteria:
 
 - A second Yarn 4 `yarn install` with a warm Yarn cache receives 304 for every package document.
 - After `npm dist-tag add`, a conditional request with the old ETag returns 200 with a new ETag.
+- A request with `If-Modified-Since` set to the document's own `Last-Modified` and no
+  `If-None-Match` answers 200; the same request with a matching `If-None-Match` and an
+  `If-Modified-Since` in the past answers 304.
 - No package document response in the test suite carries `Cache-Control: public`.
 
 ### R-NPM-014 · Single-version document
@@ -752,8 +883,9 @@ Priority: **MVP** · Covers: PKG-NPM-062
 - `{file}` MUST be `<basename>-<version>` with `<basename>` the name without scope; the version is
   what remains after removing `<basename>-` and `.tgz` and MUST be canonical. Otherwise 404.
 - Local: the item at the canonical path, streamed per R-STOR-012 (`HEAD`, single ranges,
-  conditional requests); trashed or tombstoned versions answer 404; deprecated versions are
-  served normally.
+  conditional requests); trashed or tombstoned versions answer 404, a version that a restore's
+  replay withheld (stored, tombstoned, R-NPM-047) included, and so does `/files` for their items
+  (R-NPM-003); deprecated versions are served normally.
 - Remote: R-NPM-025. Virtual: resolved by R-REPO-019; the member that serves the tarball is the
   one whose version entry the merged document carries (R-REPO-020, R-NPM-030), so the bytes match
   the advertised `dist.integrity`. npm, pnpm and Yarn abort with `EINTEGRITY` on any mismatch.
@@ -787,9 +919,13 @@ Priority: **MVP** · Covers: PKG-NPM-021, PKG-NPM-031
   ([npm source](https://github.com/npm/cli/blob/latest/lib/commands/publish.js)); pnpm and Yarn
   do not, and a maintenance release from an old branch would otherwise silently become `latest`.
 - A package with live versions MUST always have `latest`: a first publish under another tag also
-  sets `latest`; when the version `latest` points to is unpublished or trashed, `latest` moves to
-  the highest remaining non-pre-release version, or the highest version if all are pre-releases;
-  other tags pointing to it are removed.
+  sets `latest`; when the version `latest` points to is unpublished, trashed or withheld
+  (R-NPM-047), `latest` moves to the highest remaining non-pre-release version, or the highest
+  version if all are pre-releases; other tags pointing to it are removed.
+- Every tag change, by a publish, a tag write or a removal, runs under the package row lock of
+  R-NPM-007 step 5 and applies the guard and the rules above to the values read under that lock.
+  Concurrent publishes and tag writes through different replicas therefore cannot leave a package
+  without `latest`, or with a tag that points to a removed version.
 - Remote repositories serve the upstream's tags; writes answer 405. Virtual repositories merge
   (R-NPM-031) and route writes (R-NPM-029).
 - Every change increments `packages.rev_seq` and emits an audit event.
@@ -823,9 +959,9 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
 
 | Method | Path | Body | Effect | Response |
 |---|---|---|---|---|
-| PUT | `{name}/-rev/{rev}` | full document without the versions to remove | Each live version absent from `versions` is deleted through [storage.md](../storage.md) R-STOR-018 (to the trash can) and tombstoned | 200 `{"ok": true, "rev": "<new rev>"}`; 400 if `versions` is missing or names a version trove does not hold; 409 stale rev |
+| PUT | `{name}/-rev/{rev}` | full document without the versions to remove | Each live version absent from `versions` is deleted through [storage.md](../storage.md) R-STOR-018 (to the trash can from P1, permanently in the MVP) and tombstoned | 200 `{"ok": true, "rev": "<new rev>"}`; 400 if `versions` is missing or names a version trove does not hold; 409 stale rev, unless the request changes nothing (R-NPM-009) |
 | DELETE | `{name}/-/{file}.tgz/-rev/{rev}` | — | No-op for a version already removed by the `PUT` (npm sends it next) | 200; 400 if the version is still live |
-| DELETE | `{name}/-rev/{rev}` | — | Every live version deleted and tombstoned; all dist-tags removed | 200; 409 stale rev |
+| DELETE | `{name}/-rev/{rev}` | — | Every live version deleted and tombstoned; all dist-tags removed | 200; 409 stale rev, unless every version is already removed (R-NPM-009) |
 
 - On the `PUT` path trove applies removals only: dist-tags are recomputed by R-NPM-016, not taken
   from the body, and every other difference is ignored. A body without `versions` (npm's partial
@@ -856,7 +992,8 @@ as `PUT {name}` without a `.tgz` attachment, with `versions[v].deprecated` set
   `versions[v].deprecated` of live versions (a non-empty string sets the message; an empty string,
   or a missing key on a deprecated version, clears it). Versions absent from the body and all other
   fields are left unchanged.
-- If the body carries `_rev`, it MUST equal the current revision (409 otherwise).
+- If the body carries `_rev`, it MUST equal the current revision (409 otherwise), unless the
+  request changes nothing (R-NPM-009).
 - Messages are at most 1,024 characters (400 beyond).
 - Permission per R-AUTHZ-007: `deploy` and ownership (Q-NPM-9). Virtual repositories route
   to the deployment target; remote repositories answer 405.
@@ -882,7 +1019,10 @@ Acceptance criteria:
 
 - `npm whoami`, `pnpm whoami` and `yarn npm whoami` against `npm-all` print the principal name;
   without credentials npm fails with `E401`.
-- `npm ping` with a valid token succeeds; with a revoked token it fails with `E401`.
+- `npm ping` with a valid token succeeds. After the token is revoked through another replica,
+  `npm ping` fails with `E401` on every replica within 2 s
+  ([architecture.md](../architecture.md) R-ARCH-018, R-AUTH-023), with Valkey running and with
+  Valkey stopped.
 
 ### R-NPM-020 · Web login
 Priority: **P1** · Covers: PKG-NPM-008, PKG-NPM-058
@@ -897,12 +1037,26 @@ The flow, its data model and its settings are
   treats any 4xx or 500 on the start that way.
 - Yarn 2+ uses web login only with `--web-login` for registries other than the public ones; the
   same endpoints serve it.
+- The start, the approval page's requests and every poll are separate requests that the Service
+  spreads over the `web` replicas, and with web pools ([ha-and-helm.md](../ha-and-helm.md)
+  R-HA-062) over several Deployments: the start lies below the registry URL, the poll under
+  `/auth/cli/`. Their only shared state is the `cli_login` row in PostgreSQL (INV-18, R-AUTH-034),
+  so each request may reach a different replica. The start is limited cluster-wide (R-AUTH-038,
+  [architecture.md](../architecture.md) R-ARCH-034).
+- One approval yields one token, whichever replicas the polls reach: the poll that mints the token
+  moves the row from `approved` to `consumed` in the minting transaction, on the condition that it
+  is still `approved`, and a concurrent poll on another replica then finds it consumed and gets 404
+  (R-AUTH-034).
 
 Acceptance criteria:
 
 - `npm login --registry=https://trove.example.com/api/npm/npm-all/ --auth-type=web`, `pnpm login
   --auth-type=web` and `yarn npm login --web-login` (Yarn 4) each complete after approval in the
-  browser and write a working token into `~/.npmrc` or `~/.yarnrc.yml`.
+  browser and write a working token into `~/.npmrc` or `~/.yarnrc.yml`; also in the `scatter`
+  profile of [architecture.md](../architecture.md) R-ARCH-032, where the access logs show the
+  start, the approval page's requests and the polls on all three replicas.
+- After an approval, two polls of the same `doneUrl` sent at the same moment to two replicas yield
+  one 200 with a token and one 404, and the user owns one new PAT.
 
 ### R-NPM-021 · Legacy login and logout
 Priority: **P1** · Covers: PKG-NPM-009, PKG-NPM-010
@@ -925,7 +1079,8 @@ Acceptance criteria:
   `yarn npm whoami` prints the PAT's owner.
 - `npm login --auth-type=legacy` with a wrong password fails with `E401` and the error text
   "use an access token as password".
-- `npm logout` removes the token from `~/.npmrc`, and the token answers 401 afterwards.
+- `npm logout` removes the token from `~/.npmrc`, and within 2 s the token answers 401 on every
+  replica (R-AUTH-023, [architecture.md](../architecture.md) R-ARCH-018).
 
 ### R-NPM-022 · Trusted publishing through CI OIDC exchange
 Priority: **P1** · Covers: PKG-NPM-013, CIOIDC-018, CIOIDC-030
@@ -1045,6 +1200,10 @@ exceptions. This requirement fixes what an npm remote fetches and how it is chec
   form (the public registry's abbreviated document carries per version only `name`, `version`,
   `dist` and install fields, checked 2026-10-28), release-age and trust policies need them, and two
   independently refreshed representations could disagree about which versions exist.
+- Both request variants use the flight key of the `full` entry (R-REPO-026). Concurrent
+  abbreviated and full requests for one package therefore collapse into one upstream fetch: across
+  replicas through the flight lock in Valkey (INV-11, [architecture.md](../architecture.md)
+  R-ARCH-033), within a replica through its single-flight while Valkey is unavailable.
 - A received document MUST pass these checks before it replaces the stored one, otherwise 502
   `npm_invalid_upstream_document` and the previous entry stays: valid JSON within
   `maxMetadataBytes` (R-REPO-040); `name` equals the requested name; every `versions[v].version`
@@ -1054,15 +1213,36 @@ exceptions. This requirement fixes what an npm remote fetches and how it is chec
   copy (a lagging CDN edge or mirror). It does not replace the stored document, marks no version
   removed (R-NPM-026), renews the stored entry's freshness as a 304 would, and increments
   `trove_npm_stale_upstream_documents_total`. Without this rule, one stale answer would hide every
-  version published after it until the next refresh. The stored value used for the comparison is
-  capped at the time trove received that document, so a document dated in the future (a skewed
-  upstream clock) cannot block every later refresh. When either document lacks a parseable
-  `time.modified`, the rule does not apply and the received document replaces the stored one.
+  version published after it until the next refresh. The stored value used for the comparison
+  (`npm_remote_packages.doc_modified`) is capped at the time trove stored that document, taken from
+  PostgreSQL's clock in the storing transaction, so neither a document dated in the future (a
+  skewed upstream clock) nor a replica with a fast clock can block every later refresh. When either
+  document lacks a parseable `time.modified`, the rule does not apply and the received document
+  replaces the stored one.
 - When a document is stored, the plug-in records per version the facts that tarball serving
   needs, so no tarball request parses a large document: upstream digests, upstream time, and the
   tarball URL in `remote_url_map` when it is not the upstream base plus the canonical path
   (R-REPO-043). The same pass records versions that disappeared (R-NPM-026).
-- Upstream 404 for a document enters the negative cache (R-REPO-028).
+- **One stored document, one set of records, also under duplicate fills.** Two fills of one
+  document run at once whenever the cross-replica lock was lost in a Valkey failover or Valkey is
+  unavailable (R-ARCH-033), and the fill that commits last may carry the older document. The
+  records above and the removal marks of R-NPM-026 are therefore written in the transaction that
+  upserts the cache entry (R-REPO-026 step 5), after it has created (`INSERT … ON CONFLICT DO
+  NOTHING`) and locked the package's `npm_remote_packages` row, and only when that upsert replaces
+  the stored document. The stale-copy rule above is evaluated in that same transaction, under that
+  lock, against the `doc_modified` of the document stored at that moment, not against the one
+  that was stored when the fetch began: a fill whose document is older than one that another fill
+  committed meanwhile is a stale copy by the time it commits. When the core keeps the newer stored entry
+  (R-REPO-026), or the stale-copy rule applies, the fill keeps the stored document, renews its
+  freshness and changes no npm row. The stored document and its records then describe the same
+  document, the newest one received, whichever fill commits last, so a lost Valkey lock costs one
+  upstream request and never a tarball 404 for a version the served document lists (INV-3).
+- Upstream 404 for a document enters the negative cache (R-REPO-028), which lives in Valkey
+  behind a bounded per-replica L1 ([architecture.md](../architecture.md) R-ARCH-030).
+- The rows of `npm_remote_packages` and `npm_remote_versions` describe the remote's stored
+  documents. Where the core deletes a remote repository's cache entries instead of expiring them
+  (the restore of a backup that excluded remote caches, R-BAK-008), these rows of that repository
+  go with them (R-NPM-047).
 
 Data model (sketch; `remote_cache_entries` and `remote_url_map` are repositories-and-proxy.md's):
 
@@ -1071,10 +1251,13 @@ CREATE TABLE npm_remote_packages (
   repo_id        bigint      NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
   name           text        NOT NULL,
   doc_sha256     bytea       NOT NULL,            -- digest of the stored upstream document
-  upstream_gone  boolean     NOT NULL DEFAULT false,  -- upstream answered 404 after caching (R-NPM-026)
+  doc_modified   timestamptz,                     -- its time.modified, capped at the store time
+                                                  -- (PostgreSQL clock); NULL if absent or unparseable
   search_vector  tsvector,                        -- R-NPM-037
   PRIMARY KEY (repo_id, name)
 );
+-- "Gone from the upstream" is not an npm column: it is the core's upstream_gone_at on the package
+-- document's cache entry (R-REPO-029), set and cleared by the core alone (R-NPM-026).
 
 CREATE TABLE npm_remote_versions (
   repo_id        bigint      NOT NULL,
@@ -1093,8 +1276,14 @@ Acceptance criteria:
 
 - `npm view react versions` through `npm-remote` causes one upstream request; repeated within the
   period, none; after it, one conditional request answered with 304.
-- 50 concurrent `npm view react` requests over two replicas on a cold cache cause one upstream
-  request.
+- 50 concurrent `npm view react` requests, abbreviated and full mixed, over three replicas on a
+  cold cache cause one upstream request; with Valkey stopped, at most three.
+- With Valkey stopped, two replicas fill `react` at the same time. The test upstream answers the
+  first with a newer document and the second with an older one, delayed so that the older one
+  commits last. Afterwards the stored document is the newer one, `npm_remote_versions` lists
+  exactly its versions as `listed`, every tarball it lists installs, and no
+  `npm.remote.version_removed` event was written. The same holds when the older answer is the
+  first to arrive and the newer one commits last.
 - With the upstream unreachable and the document expired, `npm install react` succeeds from the
   stale document and cached tarballs.
 - A test upstream whose document `name` differs from the request produces 502 and the previously
@@ -1113,6 +1302,18 @@ Priority: **MVP** · Covers: PKG-NPM-038, PKG-NPM-062, RMT-022
   the records of R-NPM-024. If the document is not stored or does not list the version, the plug-in
   first fetches or refreshes the document; still unknown: 404. This serves lockfile-driven installs
   (`npm ci`), which request tarballs without documents.
+- **A cached tarball waits for a current document** (Q-NPM-13). A cached tarball is served only
+  while its package document's cache entry is current: not expired, and validated (a 200 or 304
+  from the upstream, `validated_at`) after the last restore of the installation
+  (`system_state.restored_at`, [backup-and-restore.md](../backup-and-restore.md) R-BAK-022), both on
+  PostgreSQL's clock. Otherwise the request first revalidates the document (a conditional request
+  in one flight, R-REPO-026) and then applies the marks of R-NPM-026 to the outcome. Without this,
+  a lockfile install, which never requests documents, would keep receiving a version the upstream
+  has withdrawn, and after a restore the restored marks of a version withdrawn later would decide
+  until somebody requested its document. When the revalidation cannot reach the upstream (circuit
+  open, offline, a failure of R-REPO-029), the stored marks decide, as stale serving does. The
+  check is one more indexed row in the lookup that serves the tarball, on any replica, and costs at
+  most one conditional upstream request per package and metadata period.
 - Expected digests handed to the integrity check (R-REPO-041): the `sha512` entries of
   `dist.integrity`, else `dist.shasum` (SHA-1). With the default `verify-if-available` policy a
   mismatch refuses the tarball with 502 `upstream_integrity_mismatch`; `ignore` and `pass-through`
@@ -1130,6 +1331,10 @@ Acceptance criteria:
 - A test upstream serving a tarball that does not match its integrity makes `npm install` fail
   with 502 and leaves no item; once fixed, a retry succeeds.
 - `npm ci` with a lockfile against an empty remote cache installs every package.
+- The test upstream drops `evil@1.0.1`, whose tarball is cached, and the metadata period passes.
+  `npm ci` with a lockfile pinning `evil@1.0.1` (no document request) fails with 404, the test
+  upstream records one conditional document request, and `npm_remote_versions` marks the version
+  unlisted. Repeated within the period, the upstream records no request.
 
 ### R-NPM-026 · Versions removed upstream
 Priority: **MVP** · Covers: trove-only
@@ -1137,21 +1342,38 @@ Priority: **MVP** · Covers: trove-only
 Public registries remove malicious versions and packages. A cache that keeps serving them after
 the upstream removed them preserves exactly what the upstream took down.
 
-- When a refreshed document no longer lists a version, the version is marked `listed = false`;
-  when the upstream answers 404 for a stored document, the package is marked `upstream_gone`.
+- When a refreshed document no longer lists a version, the version is marked `listed = false`.
+  When the upstream answers 404 or 410 for a stored document, the core marks the package
+  document's cache entry `upstream_gone_at` (R-REPO-029); npm keeps no second copy of that mark.
 - With `npm.serveRemovedVersions: false` (the default, Q-NPM-2), unlisted versions disappear
   from served documents and their tarballs answer 404 even if cached, also for lockfile-driven
-  requests; an `upstream_gone` package answers 404. With `true` they stay served (availability
-  over takedown) and are marked in the cache view. A version that the upstream lists again is
-  served again (`listed = true`).
+  requests; a gone package answers 404. Both hold on every route that serves the tarball: the npm
+  routes, `/files` and the cache view (R-NPM-003). With `true` they stay served (availability over
+  takedown) and are marked in the cache view; this replaces the core's gone-package rule for npm,
+  as R-REPO-029 provides. A version that the upstream lists again is served again
+  (`listed = true`).
 - A stale upstream copy (R-NPM-024, older `time.modified`) never marks a version removed.
 - A build that needs a version the upstream withdrew legitimately keeps it by publishing the
   tarball to a local repository (R-NPM-036) or by setting `serveRemovedVersions: true` on that
   remote.
-- Each transition writes the audit event `npm.remote.version_removed`, so operators can find the
-  clients that downloaded a version later removed (download audit is R-AUTHZ-029's).
-- The delay between an upstream removal and its effect is bounded by the metadata period plus, for
-  virtual repositories, the merged-metadata expiry (R-REPO-020); see H-33.
+- Each `listed` transition writes the audit event `npm.remote.version_removed`, so operators can
+  find the clients that downloaded a version later removed (download audit is R-AUTHZ-029's). The
+  event is written by the transaction that changes the mark, and a mark changes only in a fill that
+  replaces the stored document (R-NPM-024), so duplicate fills on several replicas write it once.
+  A gone package is recorded by the core's `proxy.upstream_gone` event on the first such answer
+  (R-REPO-029).
+- The marks are PostgreSQL state (`npm_remote_versions.listed`, the core's `upstream_gone_at`),
+  not negative-cache entries, and every replica applies them as soon as they are committed: a
+  tarball request reads its version's `listed` flag and the package document's cache entry (its
+  `upstream_gone_at`, `expires_at` and `validated_at`) in the lookup that serves it, and a document
+  request reads that entry anyway (R-REPO-025 step 4). Neither is cached per replica or read from
+  Valkey, so a loss of Valkey's data never makes a removed version servable again (INV-3). A
+  restore of a backup can return the marks to its snapshot; the next tarball request revalidates
+  the document first (R-NPM-025, Q-NPM-13).
+- The delay between an upstream removal and its effect on documents and tarballs is bounded by the
+  remote's metadata period: a merged entry never outlives the remote entry it was built from
+  (R-REPO-020, R-NPM-032), and a document or tarball request after the period refreshes the
+  document first (R-NPM-025). See H-33.
 
 Configuration (`npm` section of a remote repository):
 
@@ -1163,8 +1385,10 @@ npm:
 Acceptance criteria:
 
 - The test upstream drops `evil@1.0.1` from its document; after the period, `npm view evil
-  versions` through trove no longer lists it and its cached tarball answers 404; the audit log
-  has the event. With `serveRemovedVersions: true` the tarball is still served.
+  versions` through trove no longer lists it and its cached tarball answers 404, through
+  `/files/npm-remote/evil/-/evil-1.0.1.tgz` as well and on every replica; the audit log has the
+  event. After `valkey-cli FLUSHALL`, the tarball still answers 404. With
+  `serveRemovedVersions: true` the tarball is still served.
 - The test upstream then answers one refresh with an older copy of the document (lower
   `time.modified`) that lacks the newest version: trove keeps listing that version, and
   `trove_npm_stale_upstream_documents_total` increments.
@@ -1269,14 +1493,19 @@ with upstream versions, so the textbook confusion attack (public `acme-internal@
 internal `acme-internal@1.0.0`) cannot make the public version `latest`, and pnpm's trust policy
 never sees local versions without trust evidence next to upstream versions with it.
 
-Caching is R-REPO-020 (fingerprint of the permission-filtered member list, expiry no later than
-the contributing remote entries, `NOTIFY` on member changes). The core's merged-metadata cache
-also compares the package's `packages.rev_seq` in every eligible local member, recorded as 0 for a
-member that does not hold the package ([architecture.md](../architecture.md) R-ARCH-015, one
-`RevSeqs` query per request), so a publish, including the first local publish of a name that so far
-came only from a remote member, is visible through the virtual on every replica before the
-`NOTIFY` arrives. The check needs no npm code; npm's writes only have to increment the generic
-column (R-NPM-006).
+Caching is R-REPO-020: the merged-metadata cache in each replica's memory, never in Valkey
+([architecture.md](../architecture.md) Q-ARCH-16, Q-NPM-10), keyed by the fingerprint of the
+permission-filtered member list, with an expiry no later than that of the contributing remote
+entries. The core's merged-metadata cache also compares the package's `packages.rev_seq` in every
+eligible local member, recorded as 0 for a member that does not hold the package
+([architecture.md](../architecture.md) R-ARCH-015, one `RevSeqs` query per request), so a publish,
+including the first local publish of a name that so far came only from a remote member, is
+visible through the virtual on every replica as soon as it has returned, without any message
+between replicas. A remote refresh with new content evicts merged entries early through the
+`metadata_changed` signal over Valkey ([architecture.md](../architecture.md) R-ARCH-018); its
+delivery is at most once, nothing waits for it, and without it a merged entry ends with the remote
+entry it was built from. The check needs no npm code; npm's writes only have to increment the
+generic column (R-NPM-006).
 
 Acceptance criteria:
 
@@ -1288,7 +1517,7 @@ Acceptance criteria:
 - A version present in both members with different bytes installs the local bytes, and the
   conflict counter increments.
 - Publishing to `npm-local` and immediately reading through `npm-all` on the other replica shows
-  the new version in 100 of 100 runs.
+  the new version in 100 of 100 runs, with Valkey running and with Valkey stopped.
 
 ### R-NPM-031 · Dist-tag merge
 Priority: **MVP** · Covers: PKG-NPM-043, PKG-NPM-031
@@ -1410,12 +1639,26 @@ re-reads the tarball from the blob store, recomputes `file_count`, `unpacked_siz
 R-NPM-016, rebuilds the search vector, and increments `packages.rev_seq` of every changed package.
 It never changes a stored integrity value; a tarball whose bytes no longer match it is reported,
 and blob damage is handled by storage.md's integrity checks. On a virtual repository the reindex
-drops the merged cache (R-REPO-016); on a remote it answers 405.
+drops the merged cache (R-REPO-016) on every replica through a change area of
+[architecture.md](../architecture.md) R-ARCH-018, so the drop reaches replicas that miss the Valkey
+message at the next change-log poll; on a remote it answers 405.
+
+The rebuild runs on a `worker` replica (INV-2) and reads each tarball into that replica's scratch
+space, outside any transaction: no transaction is open while a tarball is read from the object
+store. It walks packages in `packages.id` order and writes each batch's changes in one short
+transaction that also stores the last package ID of the batch in the job's `checkpoint`
+([architecture.md](../architecture.md) R-ARCH-016), so the checkpoint never runs ahead of committed
+work. A worker that is drained releases the job, a lost one lets its lock expire, and another
+worker continues after the checkpoint; repeating a package is harmless, because the rebuild is
+idempotent and increments `rev_seq` only for a package whose values changed.
 
 Acceptance criteria:
 
 - After the `file_count` column of all versions is cleared in a test database, a reindex restores
   them and `npm view @acme/ui dist.fileCount` is correct again.
+- A reindex of 10,000 packages runs while the worker pod that holds it is deleted. The job
+  finishes on the other worker with `attempt` unchanged, and the packages before the persisted
+  checkpoint are not read again.
 
 ### R-NPM-036 · Deploy a tarball without the npm client
 Priority: **P1** · Covers: PKG-NPM-017, PKG-NPM-018, ART-006
@@ -1490,8 +1733,8 @@ audit`):
   the provider (default: the remote's upstream URL), with the remote's upstream credentials and
   `npm.audit.timeout`, through the egress rules of R-REPO-038, **only the names that the
   forwarding remote already holds a stored upstream document for** (an `npm_remote_packages` row,
-  R-NPM-024, also one marked `upstream_gone`, since withdrawn malware carries advisories; one
-  query for the whole body). Of those it also withholds
+  R-NPM-024, also one whose package document the core marked gone, since withdrawn malware carries
+  advisories; one query for the whole body). Of those it also withholds
   every name that exists in any npm local repository of the installation, is covered by a
   namespace claim of any scope of any npm local repository, or matches a pin rule of the
   requesting virtual repository (R-REPO-023). A name the remote has fetched is one the upstream
@@ -1518,6 +1761,11 @@ audit`):
   logs the audit failure and completes; `npm audit` and `pnpm audit` print status and text.
 - npm 6's `-/npm/v1/security/audits/quick` and `-/npm/v1/security/audits` answer 501.
 - Permission: `read` on the repository and, for a virtual, on the forwarding member.
+- The forward holds no PostgreSQL connection while it waits: its one query runs before the
+  provider is called. Its deadline is `min(npm.audit.timeout, server.shutdown_timeout − 1 s)`.
+  npm never retries a `POST` (R-NPM-001), so a forward cut by its replica's shutdown would fail
+  `npm audit`; with this deadline, a forward that is running when its replica starts to drain ends
+  before the shutdown deadline ([architecture.md](../architecture.md) R-ARCH-024, R-NPM-046).
 
 Configuration (`npm` section of a remote repository):
 
@@ -1541,6 +1789,8 @@ Acceptance criteria:
 - `npm audit --registry …/npm-local/` fails with 501 and the error text; `npm install` against the
   same registry succeeds.
 - A small gzip body that inflates beyond the limit answers 413.
+- The test provider answers after 20 s. The `web` pod that forwards an `npm audit` is deleted
+  1 s after the request arrived; `npm audit` succeeds, and the kubelet events show no `SIGKILL`.
 
 ### R-NPM-039 · Build-tool integration surface
 Priority: **P1** · Covers: PKG-NPM-055
@@ -1704,8 +1954,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: PKG-NPM-053
 
 - Yarn 2+ reads `.yarnrc.yml`, requests **full** documents and revalidates them with
-  `If-None-Match` and `If-Modified-Since` (R-NPM-013), so full-document rendering and 304 handling
-  are on its hot path.
+  `If-None-Match` and `If-Modified-Since`, so full-document rendering and 304 handling are on its
+  hot path; trove answers the `If-None-Match` and ignores the date (R-NPM-013).
 - Yarn 2+ treats `dist.tarball` as conventional only if it equals
   `<registry>/<name>/-/<basename>-<version>.tgz` (scope separator encoded or not), and then writes
   a registry-agnostic lockfile; any other URL is pinned verbatim. trove's tarball URLs are
@@ -1749,8 +1999,9 @@ actor, repository, package, version or tag, outcome and source address:
 
 | Event | When |
 |---|---|
-| `npm.publish` | R-NPM-007, R-NPM-036; with integrity and whether the latest guard applied |
-| `npm.unpublish` | R-NPM-017, per version |
+| `npm.publish` | R-NPM-007, R-NPM-036; with integrity, the dist-tag and whether the latest guard applied; outcome `retry_acknowledged` for an acknowledged retry (R-NPM-007 step 4) |
+| `npm.unpublish` | R-NPM-017, per version, with its integrity. The registry entry declares `journal: revocation` (R-OPS-014), so a restore re-applies it (R-NPM-047, Q-NPM-12) |
+| `npm.reinstate` | R-NPM-047: `trove admin npm reinstate` put a withheld version back, with its integrity and the journal entry that withheld it |
 | `npm.dist_tag.set`, `npm.dist_tag.delete` | R-NPM-016 |
 | `npm.deprecate` | R-NPM-018, per version and message change |
 | `npm.publish.manifest_mismatch` | R-NPM-007, in both modes |
@@ -1766,21 +2017,28 @@ Metrics (prefix `trove_`, INV-16): `trove_npm_requests_total{class,operation,sta
 `trove_npm_virtual_version_conflicts_total{repository}`,
 `trove_npm_removed_upstream_versions_total{repository}`,
 `trove_npm_stale_upstream_documents_total{repository}`,
-`trove_npm_audit_names_withheld_total{repository,reason}` (R-NPM-038). Access logs record
-`npm-command` and
+`trove_npm_audit_names_withheld_total{repository,reason}` (R-NPM-038),
+`trove_npm_publish_retries_acknowledged_total{repository}` (R-NPM-007),
+`trove_npm_tarball_document_revalidations_total{repository,outcome}` (R-NPM-025). Each replica exports its
+own counts; dashboards sum them over the replicas of a role. Access logs record `npm-command` and
 `npm-session`.
 
 Acceptance criteria:
 
 - Each acceptance test that performs one of the operations above finds exactly one matching audit
-  event.
+  event, whichever replica served it.
 
 ### R-NPM-045 · Client acceptance matrix
 Priority: **MVP** · Covers: FMT-002, FMT-003
 
 The npm format is accepted when the acceptance criteria of this page pass end to end with real
-clients against two replicas behind the Helm chart's Service and Ingress, with PostgreSQL, an
-S3-compatible store and a deterministic test upstream registry.
+clients against the Helm chart with its role split (three `web` and two `worker` replicas,
+[ha-and-helm.md](../ha-and-helm.md) R-HA-002, Q-HA-16), PostgreSQL, Valkey with Sentinel in the
+reference topology of R-HA-056, an S3-compatible store and a deterministic test upstream registry.
+The edge runs in the `scatter` profile of [architecture.md](../architecture.md) R-ARCH-032, so
+consecutive requests of one client reach different `web` replicas (INV-18). A nightly run repeats
+the scenario list with Valkey stopped (R-NPM-046); the node-drain run of R-HA-059 carries npm load
+of its own.
 
 The gate rows follow a rule, so the gate tracks what users run (Q-NPM-4):
 
@@ -1825,7 +2083,201 @@ maintenance until 2027-04-30, 24 in maintenance, 26 active LTS from 2026-10-28):
 
 Acceptance criteria:
 
-- The CI job `e2e-npm` runs the scenario list for every row and fails the build on any failure.
+- The CI job `e2e-npm` runs the scenario list for every row in the `scatter` profile and fails the
+  build on any failure. Its nightly run with Valkey stopped does the same.
+
+## Replicas, Valkey and backups
+
+### R-NPM-046 · npm across replicas: no state between requests, Valkey degradation, drain
+Priority: **MVP** · Covers: trove-only
+
+The Kubernetes Service sends each request to any `web` replica, without session affinity
+(INV-12, INV-18, [architecture.md](../architecture.md) R-ARCH-032). Every npm flow that spans
+requests keeps its state in PostgreSQL or in the request itself:
+
+| Flow | Requests | State between the requests | Where it lives |
+|---|---|---|---|
+| Publish, then install in the next CI step | `PUT {name}`, then document and tarball `GET`s | The new version | The commit; every document request reads `packages.rev_seq` (R-NPM-010, R-NPM-030) |
+| Read-modify-write: unpublish, deprecate, `-rev` writes | `GET {name}?write=true`, then `PUT` or `DELETE …/-rev/{rev}`; an unpublish also reads again and deletes the tarball | `_rev` | `packages.rev_seq`, read inside each request (R-NPM-009) |
+| A publish retried after a lost answer | The same `PUT` twice | Whether the first attempt committed | The version's publisher, publish time, integrity, provenance digest and `publish_tag` (R-NPM-007 step 4) |
+| A revisioned write retried after a lost answer | The same `PUT` or `DELETE …/-rev/{rev}` twice | Whether its effect is in force | The package rows, compared inside the retry (R-NPM-009) |
+| Conditional revalidation | `GET` with `If-None-Match` | The validator | Computed from PostgreSQL and configuration, the same on every replica; dates are not used (R-NPM-013) |
+| Lockfile install (`npm ci`) | Parallel tarball `GET`s without documents | Expected digests, upstream URLs, removal marks, document freshness | `npm_remote_versions` and the cache entries (R-NPM-024 to R-NPM-026) |
+| Remote miss from many clients | Concurrent `GET`s on several replicas | The running upstream fetch | The flight lock in Valkey; the entry in PostgreSQL (R-NPM-024) |
+| Trusted publishing (P1) | Exchange `POST`, then the publish `PUT` | The issued token | Token row (INV-8, R-NPM-022) |
+| Web login (P1) | Start `POST`, approval page requests, polls `GET /auth/cli/…` | The login | `cli_login` row (R-NPM-020, R-AUTH-034) |
+| Search pages (P1) | `GET -/v1/search?from=…` | The offset | The request (`from`) |
+| Legacy login, logout, whoami, ping, audit | One request each | — | — |
+
+Rules:
+
+- The npm plug-in keeps no per-replica state of its own. Its documents are cached only in the
+  core's in-process caches (the rendition cache and the merged-metadata cache, R-ARCH-018), under
+  keys every replica reads from PostgreSQL (Q-NPM-10). Its only local files are the spool of the
+  request or job that is running, on the pod's `emptyDir` or generic ephemeral volume (INV-13); no
+  npm state needs a persistent or shared volume. A new kind of per-replica state needs a row in
+  R-ARCH-032's table first.
+- No npm request holds a PostgreSQL connection or transaction while it receives or sends a body,
+  or waits for an upstream, an advisory provider or Valkey. The publish body is spooled and checked
+  before step 5 of R-NPM-007 opens its transaction; shadowing probes run outside it
+  ([architecture.md](../architecture.md) R-ARCH-014); remote fetches follow R-ARCH-013; audit
+  forwarding runs its one query first (R-NPM-038). npm code uses no PostgreSQL session state
+  (format packages do not import the driver, R-ARCH-002), so npm runs unchanged behind the
+  transaction-mode pooler of [ha-and-helm.md](../ha-and-helm.md) R-HA-058.
+- npm uses Valkey only through the core: the flight lock for remote documents and tarballs, the
+  negative cache for upstream 404s, the `metadata_changed` signal that evicts merged entries
+  early, and the cluster-scoped limiters of the web-login start (R-AUTH-038) and the token
+  exchanges (R-CI-021). No document, tarball URL, integrity value or authorization result that npm
+  serves is read from Valkey (Q-ARCH-16). While Valkey is unavailable, every npm operation works;
+  what changes is:
+
+  | Mechanism | With Valkey | Without Valkey (degraded, R-ARCH-030) |
+  |---|---|---|
+  | Remote document or tarball miss | One upstream fetch per cluster and flight | At most one per replica and flight |
+  | Upstream 404 of a document | Remembered cluster-wide for `notFoundTtlSeconds` | Remembered per replica (L1) |
+  | Merged document after a remote refresh | Evicted on every replica within milliseconds | Rebuilt when the merged entry expires, no later than the remote entry it was built from (R-REPO-020) |
+  | Rendered or merged document after a local write | Exact on every replica through `rev_seq` | The same |
+  | Removal marks and takedowns (R-NPM-026) | Read from PostgreSQL by every request | The same |
+  | Web-login start and exchange limits | Cluster-wide | A per-replica share of the limit (R-ARCH-034) |
+
+- **Valkey loses its data** (a Sentinel failover that drops acknowledged writes, a flush, a
+  restart; R-ARCH-030). npm sees what a short outage shows: a flight lock that vanished lets a
+  second replica fetch the same document or tarball, which R-NPM-024's duplicate-fill rule and
+  content addressing make harmless; negative entries are gone, so the upstream is asked again;
+  limiter windows restart, which allows at most one extra window of web-login starts and
+  exchanges. No npm row, mark or document is lost. npm holds no Valkey connection of its own; the
+  core finds the new primary through Sentinel and follows the failover (R-ARCH-031).
+- **Node drain** ([ha-and-helm.md](../ha-and-helm.md) R-HA-059). Each npm request either ends
+  within the shutdown timeout or is safe to repeat on another replica:
+  - document and tarball `GET`s are repeated by the clients' own retries (npm and pnpm
+    `fetch-retries`; Yarn 2+ `httpRetry`, default 3, [Yarn settings](https://yarnpkg.com/configuration/yarnrc));
+    npm repeats the whole request rather than resuming with `Range` (R-ARCH-024), which any
+    replica serves. A remote fetch that the draining replica leads keeps running and commits, or
+    is released with `failed` 5 s before the deadline so a waiter on another replica takes over
+    (R-REPO-026). Yarn 1's retry behavior was not verified; the drain test of R-HA-059 runs npm;
+  - a publish whose body has arrived is not cut between its commit and its status line
+    (R-ARCH-024), and a retry of a publish whose answer was lost elsewhere is acknowledged
+    (R-NPM-007 step 4, Q-NPM-11). A revisioned unpublish or deprecation whose answer was lost
+    succeeds on its retry when its effect is in force (R-NPM-009). Dist-tag writes, legacy login
+    and logout are idempotent. Two cases remain in which an answer lost outside trove makes the
+    client report a failure, and running the command again succeeds: a dist-tag removal, whose
+    retry answers 404 because the tag is gone (`npm dist-tag ls` shows the result), and a `POST`
+    that npm never retries (the web-login start and the trusted-publishing exchange, both P1);
+  - the audit forward ends before the shutdown deadline (R-NPM-038), because npm never retries a
+    `POST`;
+  - a web-login poll (P1) is a short read of `cli_login` and a `GET`, which npm's fetch layer
+    retries after a connection error. A poll that minted the token cannot be answered again,
+    because the secret is never stored (R-AUTH-034): when its answer is lost outside trove, the
+    retry gets 404, npm falls back to the legacy prompt, where a PAT can be entered (R-NPM-021),
+    and the minted token stays unused until it expires or is revoked;
+  - the reindex job (P1) is released with its checkpoint and continues on another `worker`
+    replica (R-NPM-035).
+- **Web pools** ([ha-and-helm.md](../ha-and-helm.md) R-HA-062, P1). A pool for `/api/npm/` serves
+  every registry URL. The host-root exchange prefix `/-/npm/v1/oidc/token/exchange/package/`
+  (R-NPM-022) and the web-login poll under `/auth/cli/` (R-NPM-020) stay on the main `web`
+  Deployment unless the pool lists them. Every `web` replica serves every route (INV-2), so both
+  placements work.
+
+Acceptance criteria:
+
+- In the `scatter` profile (three `web` replicas, round robin per request, upstream keep-alive
+  off), the scenario list of R-NPM-045 passes for every gate row.
+- The same run with Valkey stopped passes, every replica's `/readyz` answers `200` with
+  `"degraded":["valkey"]`, and the test upstream records at most one request per replica for each
+  document or tarball the run fetches.
+- In the `scatter` profile, `npm unpublish @acme/ui@1.0.0` succeeds, and the access logs show its
+  requests on three different replicas.
+- `curl -sI …/npm-all/@acme%2fui` through replica A returns ETag `E`; the request with
+  `If-None-Match: E` through B and through C answers `304`. After a publish of `@acme/ui` through
+  C, the same conditional request through A answers `200` with a new ETag. The same holds for
+  `…/npm-local/@acme%2fui` and for `…/npm-remote/lodash` after an upstream change.
+- A test build of the plug-in with `npmRenderVersion` incremented serves next to the current
+  build: a conditional request with an ETag from one build, answered by the other, answers `200`.
+- With the pooler profile of R-HA-058, the scenario list of R-NPM-045 passes for the npm 11 gate
+  row.
+- While a 200 MiB `npm publish` arrives over a link limited to 10 MiB/s, `pg_stat_activity` shows
+  no session of the receiving replica in state `idle in transaction`.
+- `valkey-cli FLUSHALL` during the scenario list, and a Sentinel failover forced with
+  `SENTINEL FAILOVER` during another run, fail no client operation.
+- A fault-injecting edge drops the answer of a committed `npm unpublish` `PUT`; npm's retry reaches
+  another replica and `npm unpublish` exits 0.
+
+### R-NPM-047 · npm data in backups and restores
+Priority: **MVP** · Covers: trove-only
+
+A backup holds a transactionally consistent snapshot of PostgreSQL and every blob it references
+(INV-19, [backup-and-restore.md](../backup-and-restore.md)). For npm this means:
+
+- **Export classes** (R-BAK-004). `npm_packages`, `npm_versions`, `npm_tombstones`,
+  `npm_remote_packages` and `npm_remote_versions` are all `data`. None holds transient state.
+  `npm_tombstones` in particular must come back with every restore, because it is what refuses a
+  reused version number (R-NPM-008).
+- **Revision columns** (R-BAK-022). npm keeps no counter of its own. `_rev`, document ETags and the
+  merge fingerprint derive from `packages.rev_seq` and `repositories.config_version`, both
+  registered revision columns, so no `_rev` or ETag of the old installation matches a restored
+  document (R-NPM-013). npm adds no entry to the registry.
+- **Valkey.** Nothing npm needs after a restore is in Valkey; the restored installation starts
+  with an empty keyspace (R-ARCH-030).
+- **A restore returns npm local repositories to the backup's `snapshotAt`:**
+  - versions published after it are gone, and their numbers can be published again. A client
+    whose lockfile pinned such a version fails with `EINTEGRITY` if other bytes are published
+    under that number; it never installs them silently;
+  - unpublishes made after it are re-applied by the journal replay of
+    [ha-and-helm.md](../ha-and-helm.md) R-HA-054, which every restore runs
+    ([backup-and-restore.md](../backup-and-restore.md) R-BAK-024; Q-NPM-12). The `npm.unpublish`
+    entry carries the repository ID, the package name, the version, its integrity and the actor's
+    ID, and no secret. Replay **withholds** the version: when the restored repository holds it live
+    with that integrity, replay writes its tombstone (`source = 'journal'`), applies the dist-tag
+    rule of R-NPM-016 and increments `packages.rev_seq`, in one transaction (`applied`). The items
+    and their bytes stay stored, but no route serves them: documents omit the version, the
+    tarball route and `/files` answer 404 for it, and no virtual repository takes the version from
+    this member (R-NPM-003, R-NPM-015).
+    A tombstoned version is `already in effect`; a version the restored repository does not hold,
+    or holds with another integrity, is `subject unknown`, and nothing changes. Replay deletes
+    nothing, neither permanently nor to the trash can, so a forged or mistaken entry costs
+    availability until an administrator acts, never integrity, access or data. A replayed deletion
+    would be irreversible in the MVP, because the trash can is P1 ([storage.md](../storage.md)
+    R-STOR-022, R-STOR-023);
+  - the replay output lists every withheld version. An administrator confirms a withdrawal by
+    deleting the version's items through the management item API (R-STOR-018; permanently in the
+    MVP, to the trash can from P1; the tombstone stays), or reverses it with `trove admin npm reinstate <repoKey> <name>@<version>`. The
+    reinstate removes a `journal` tombstone only while the version is stored with the tombstone's
+    integrity, so it brings back the same bytes and never admits new ones (Q-NPM-8); it increments
+    `rev_seq` and writes `npm.reinstate` (R-NPM-044). A withheld version counts toward the
+    repository's storage like a live one;
+  - dist-tag moves and deprecations made after it are undone (H-51).
+- **A restore returns npm remote repositories to the snapshot as well**, removal marks included. A
+  version the upstream withdrew after the snapshot is `listed` again in the restored rows. Its
+  cached tarball is not served on that basis: every package document validated before
+  `system_state.restored_at` counts as not current, so the first tarball request for the package
+  revalidates the document and re-applies the marks (R-NPM-025, Q-NPM-13). While the upstream
+  cannot be reached, the restored marks decide (H-51).
+- **Remote caches left out of a backup** (R-BAK-008). The npm rows of a remote repository describe
+  its stored documents (R-NPM-024). The restore step that deletes a remote repository's cache
+  entries also deletes that repository's `npm_remote_packages` rows, and their
+  `npm_remote_versions` rows cascade. The first request for a package then fetches its document as
+  on an empty remote (R-NPM-025), and audit forwarding withholds a name until the restored remote
+  has fetched it again (R-NPM-038).
+
+Acceptance criteria:
+
+- `@acme/ui@1.4.0` is published, a backup is created, `npm unpublish @acme/ui@1.4.0` runs, and
+  `backup.revocation_journal.ship_interval` passes. After the restore of that backup with its
+  journal replay, `npm view @acme/ui versions` does not list `1.4.0`, its tarball answers 404 on
+  the npm route, through `npm-all` and on `/files/npm-local/@acme/ui/-/ui-1.4.0.tgz`, publishing
+  `1.4.0` again answers 409 `npm_version_unpublished`, and the replay output lists the entry as
+  `applied`. `trove admin npm reinstate npm-local @acme/ui@1.4.0` brings the version back with its
+  original integrity.
+- A hand-written `npm.unpublish` journal object for a live version with its correct integrity is
+  replayed: the version is withheld, nothing is deleted, and a reinstate restores it.
+- `evil@1.0.1` is cached in `npm-remote`, a backup is created, and the test upstream then drops the
+  version. After the restore, `npm ci` with a lockfile pinning `evil@1.0.1` fails with 404, and the
+  test upstream records one document request.
+- With `backup.exclude.remote_caches: true`, `npm_remote_packages` holds no row of `npm-remote`
+  after the restore, and `npm ci` of a lockfile through `npm-remote` succeeds with one document
+  request per package to the test upstream.
+- R-BAK-022's criterion (an ETag kept from the old installation answers `200` after the restore
+  and one publish) passes for a full, an abbreviated and a merged document.
 
 ## Deferred
 
@@ -1854,7 +2306,10 @@ Acceptance criteria:
   are always `Cache-Control: private` (R-NPM-013) so no shared HTTP cache hands one caller's view
   to another, in addition to R-AUTHZ-009 rule 4.
 - **Takedown propagation.** Versions an upstream removes stop being served from cache by default
-  (R-NPM-026), so a pull-through cache does not keep distributing malware the upstream withdrew.
+  (R-NPM-026), on every route including `/files`, so a pull-through cache does not keep
+  distributing malware the upstream withdrew. A cached tarball waits for a current document once
+  the metadata period has passed or a restore happened (R-NPM-025, Q-NPM-13), so lockfile installs
+  and restored marks do not bypass a takedown while the upstream is reachable.
 - **Audit forwarding** sends a dependency name to the provider only if the forwarding remote has
   already fetched it from its upstream and no local repository, claim or pin rule marks it
   internal (R-NPM-038); see H-34.
@@ -1866,6 +2321,25 @@ Acceptance criteria:
   exhaust a replica's memory or spool.
 - **Encoded names.** Names are decoded once and validated before any lookup (R-NPM-002); storage is
   content-addressed, so a name never becomes a file-system path.
+- **Valkey stays outside npm's trust path.** No document, tarball URL, integrity value or
+  authorization result that npm serves is read from Valkey (R-NPM-046, Q-NPM-10,
+  [architecture.md](../architecture.md) Q-ARCH-16). Whoever can write to Valkey can at most hide a
+  remote package for a negative-cache period (H-49) or cause extra upstream requests; takedown
+  marks live in PostgreSQL (R-NPM-026).
+- **Validators across replicas.** ETags are computed from shared inputs plus the plug-in's
+  rendering version (R-NPM-013), so no replica answers 304 for bytes it would not serve, and
+  replicas of two releases never share a validator during a rolling upgrade. Dates never validate
+  a package document, so a restore cannot turn a client's old `If-Modified-Since` into a 304.
+- **Acknowledged publish retries change nothing.** The retry rule of R-NPM-007 step 4 answers 201
+  only for the same principal, identical bytes and the same dist-tag, inside a short window, and
+  writes no row, so it cannot be used to replace a version or move a tag (Q-NPM-11). A stale
+  revision succeeds only for a request that changes nothing (R-NPM-009), so it cannot overwrite a
+  concurrent change.
+- **Takedowns and restores.** Unpublishes made after a backup's snapshot are re-applied from the
+  journal after a restore by withholding the version, which deletes nothing, so a forged journal
+  entry cannot destroy restored content (R-NPM-047, Q-NPM-12). Upstream withdrawals made after the
+  snapshot are re-checked against the upstream before a cached tarball is served (Q-NPM-13). What a
+  restore still reverts is H-51.
 
 ## Decisions
 
@@ -1933,6 +2407,8 @@ audience default, R-ARCH-005, R-HA-037 and Q-HA-4.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice is unchanged. Its premise, that hiding reaches lockfile installs, now holds on n replicas and across a restore: every request reads the marks from PostgreSQL, the gone mark is the core's single `upstream_gone_at`, the stale-copy cap uses PostgreSQL's clock, and Q-NPM-13 makes a cached tarball wait for a current document.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Hide by default | `serveRemovedVersions: false`: a version the upstream no longer lists disappears from documents, and its cached tarball answers 404 | A takedown reaches every client, including lockfile installs | A build pinned to a legitimately withdrawn version breaks until the tarball is published locally or the switch is set |
@@ -1956,7 +2432,10 @@ time, so one future-dated document cannot freeze the cache and with it every lat
 rule is skipped when a document has no `time.modified`. R-NPM-026 states the default, covers
 lockfile requests explicitly, re-lists a version the upstream lists again, names the fixes for a
 legitimately withdrawn version, and gains an acceptance criterion for the stale copy. R-NPM-044
-lists the new metric.
+lists the new metric. Since 2026-10-28: R-NPM-024 caps the stored value at the store time on
+PostgreSQL's clock and evaluates the rule inside the storing transaction; R-NPM-026 reads the marks
+per request, uses the core's gone mark instead of an npm column, and applies them on `/files` and
+the cache view; R-NPM-025 and R-NPM-047 carry Q-NPM-13.
 
 ### Q-NPM-3 · Audit forwarding on by default
 
@@ -2021,6 +2500,8 @@ gate rows instead of single versions.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice is unchanged and gains two arguments. One stored representation means one flight per package across replicas, because both request variants collapse into the `full` entry, and one set of npm records that a duplicate fill under a lost Valkey lock cannot split from the stored document. With (b), two entries refreshed by different replicas at different times could disagree, and consecutive requests of one client, which now reach different replicas, would see both views. R-NPM-024 states both rules.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Full document only | Fetch and store the full document; derive the abbreviated one (R-NPM-024) | One stored view of which versions exist; `time` and `_npmUser` always present for release-age and trust policies; one conditional request per refresh | More bytes on a cold cache for packages with large documents |
@@ -2040,7 +2521,10 @@ document parse time shows up as a bottleneck in the fetch and render metrics.
 
 **Applied in the spec:** No change to the rule; the requirement text already follows this option.
 R-NPM-024 now states the verified fact that the upstream abbreviated form lacks `time` and
-`_npmUser`.
+`_npmUser`. Since 2026-10-28, R-NPM-024 also states that both variants use the flight key of the
+`full` entry, and that the npm records and removal marks are written in the cache-entry
+transaction, only when it replaces the stored document, with the stale-copy rule evaluated in that
+transaction against the document stored at that moment; R-NPM-026 writes its audit event once.
 
 ### Q-NPM-6 · Manifest consistency: verify or derive
 
@@ -2099,6 +2583,8 @@ rewriting.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice is unchanged. A restore of a backup (INV-19) returns `npm_tombstones` to the backup's snapshot and would so remove every tombstone written after it, which is exactly the purge this decision rules out. Q-NPM-12 re-applies those unpublishes through the journal after a restore; H-51 names what a restore still reverts.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) No purge | A tombstone outlives trash and permanent removal; only a restore from the trash or deleting the repository removes it | Lockfile integrity can never be broken by a version reuse | A version number withdrawn by mistake after the trash is emptied stays unusable; the next patch version serves |
@@ -2115,7 +2601,13 @@ depend on a role. The development agent would revisit this if an import from ano
 to bring tombstoned versions back.
 
 **Applied in the spec:** R-NPM-008 states that no API, UI or `trove admin` operation removes a
-tombstone and that a republish of identical bytes is refused.
+tombstone and that a republish of identical bytes is refused. Since 2026-10-28, R-NPM-008 also
+states how a backup restore treats tombstones and points to R-NPM-047. The acknowledged retry of
+Q-NPM-11 is not a republish: it applies only to a live version, never to a tombstone, and changes
+nothing. `trove admin npm reinstate` (R-NPM-047) is not a purge either: it removes only a tombstone
+that a restore's replay wrote for a version that is still stored with that integrity, and so
+brings back the same bytes, as a trash-can restore does. R-NPM-008 marks the trash-can restore as
+P1, because the trash can is (R-STOR-022).
 
 ### Q-NPM-9 · `annotate` or `deploy` for dist-tags and deprecation
 
@@ -2141,6 +2633,222 @@ a tag-only workflow appears that cannot be served by a package-scoped `deploy` g
 **Applied in the spec:** No change; R-NPM-004, R-NPM-016 and R-NPM-018 already require `deploy` per
 R-AUTHZ-007.
 
+### Q-NPM-10 · Where npm documents are cached when n replicas serve them
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Requests reach `web` replicas at random, and the load needs several of them (INV-12, INV-18). npm
+documents are the most expensive responses trove renders: the full document of a large upstream
+package is tens of megabytes (`next`: 31.5 MB unpacked, measured for Q-NPM-5), and Yarn 2+
+revalidates full documents on every install (R-NPM-042). INV-3 lists shared caches among Valkey's
+uses; [architecture.md](../architecture.md) Q-ARCH-16 decided for every format that rendered and
+merged documents stay in process. This block records the npm check of that line.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per replica, self-validating keys | Rendered local documents, abbreviated forms of remote documents and merged documents live in each replica's rendition and merged-metadata caches, keyed by `rev_seq`, stored document digest and merge fingerprint; ETags are computed from the same inputs | Exact on every replica without any message; a revalidation (`304`) costs one indexed query on any replica and no rendering; Valkey's content cannot change what a client installs | Each replica renders each package revision once, so n renders per revision; caches are cold after a rollout |
+| (b) Shared second level in Valkey | Rendered and merged documents stored in Valkey and read by every replica | One render per revision per cluster | Whoever can write to Valkey could serve a changed `dist.tarball` or `integrity` (ruled out by Q-ARCH-16); values of megabytes against R-ARCH-030's 1 KiB limit and Valkey's network; losing Valkey turns into a render burst on every replica at once |
+| (c) Renderings in object storage | Each rendering stored once in S3 under repository, package, revision, variant and settings, read by every replica | Shared, in trove's own store, survives restarts | One object write per publish and refresh, plus garbage collection of superseded renderings; an S3 GET costs tens of milliseconds, about what rendering a typical document costs; a second copy of what the rows already say |
+
+**Choice:** (a) — npm documents are cached per replica in process, under keys that every replica
+reads from PostgreSQL, and the ETag is computed from the same inputs.
+
+**Rationale:**
+- Random distribution hurts a cache only where its key depends on the replica. Under (a) none
+  does: each request reads `rev_seq` or the entry's digest from PostgreSQL, so every replica gives
+  the same answer and the same validator, with or without Valkey.
+- The cost of n renders is small at npm's write rates. An internal package published every 10 s,
+  with ten `web` replicas, costs at most one render per replica per publish, and R-NPM-010's target
+  is 200 ms for 1,000 versions. A remote document is rendered again per replica only after a
+  refresh, by default every 7,200 s.
+- Repeat installs mostly revalidate, and the ETag needs no rendering (R-NPM-013). (b) and (c) would
+  mostly save work that (a) does not do.
+- (b) would put Valkey into the supply chain, which Q-ARCH-16 rules out. (c) is the only shared
+  tier that could be acceptable, and it buys little until rendering shows up in profiles.
+- The development agent would revisit this if the reference load test (R-HA-050) shows document
+  rendering (P-4, P-5 of R-ARCH-027) as the limit on scale-out, or cold caches after a rollout as a
+  latency problem; (c), with the digest of each rendering checked on read, would then be the next
+  step.
+
+**Applied in the spec:** R-NPM-010 and R-NPM-030 name the in-process caches and drop the
+notification wording; R-NPM-010 stores the README at publish, so no rendering reads the object
+store. R-NPM-013 requires the same validator on every replica, defines its inputs, including
+`npmRenderVersion` and the merge fingerprint, keys the caches by the same tuple, and stops dates
+from validating a document: a date is the one validator input that a restore moves backwards and
+that settings and member changes leave unchanged. R-NPM-012 takes local times from PostgreSQL's
+clock after the row lock. R-NPM-009 derives the virtual `_rev` from that fingerprint. R-NPM-046
+lists these caches as npm's only per-replica state. The Security notes follow.
+
+### Q-NPM-11 · A publish retried after its answer was lost
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+npm's fetch layer retries every request other than a `POST` after a connection error and on 408,
+420, 429 and any 5xx ([make-fetch-happen `lib/remote.js`](https://github.com/npm/make-fetch-happen/blob/main/lib/remote.js),
+read on 2026-10-28). A publish `PUT` whose answer is lost is therefore sent again, and the Service
+delivers the retry to any replica. [architecture.md](../architecture.md) R-ARCH-024 keeps trove's
+own shutdown from cutting a publish between its commit and its status line. An answer can still be
+lost after trove has sent it: at an edge proxy instance on a drained node, through a reset between
+edge and client, or by npm's `fetch-timeout` on a large publish whose commit completed. R-NPM-008
+then answered the retry with 409, although the publish had succeeded.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Always 409 | Rely on R-ARCH-024 for the cuts trove makes itself | Simplest; every 409 means "this version existed before you asked" | A publish that succeeded fails its CI job when the answer is lost outside trove; the rerun fails with 409 again and needs a version bump |
+| (b) Acknowledge an identical retry | Same principal, identical tarball and provenance bundle, same dist-tag, within `npm.publish.retry_window` (10 min) on PostgreSQL's clock: 201 with an `npm-notice`, nothing changed | A lost answer costs nothing; the decision reads PostgreSQL only, so any replica takes it alike (INV-18); no state changes, so R-NPM-008's guarantee stands | A rerun of the same pipeline within the window, with a reproducible build, succeeds instead of failing with 409; one more column (`publish_tag`) |
+| (c) Acknowledge any identical republish | No principal or time condition | Reruns become idempotent too | Removes the loud signal that a version already exists; another principal would "publish" what someone else released |
+| (d) Idempotency key from a request header | Match retries by `npm-session` | Exact for npm | Not verified that pnpm 11 and 12 or Yarn 4 send it; R-NPM-005 keeps `npm-*` headers out of decisions; a header is only the client's claim |
+
+**Choice:** (b) — a retry by the same principal with identical bytes and the same dist-tag within
+`npm.publish.retry_window` is answered 201 with an `npm-notice` and changes nothing.
+
+**Rationale:**
+- The owner requires drains without outage, and a publish reported as failed although it
+  succeeded is an outage for the pipeline that ran it. R-ARCH-024 closes the case trove causes; (b)
+  closes the rest without touching integrity.
+- Every fact (b) reads (publisher, `published_at`, integrity, the stored provenance digest,
+  `publish_tag`) was committed with the original, and the window is measured on PostgreSQL's clock,
+  so the replica that receives the retry decides as any other would. The same check runs again
+  under the package row lock, so a retry that overtakes its slow original ends in 201 as well.
+- The dist-tag is part of the identity because a 201 that says "nothing changed" must not answer a
+  request that asked for a different tag: `npm publish --tag next` of bytes just published as
+  `latest` is not a retry, and answering it 201 would let automation believe `next` points to the
+  version. It answers 409 as before.
+- The same lost answer hits the revisioned writes of unpublish and deprecation, which npm retries
+  too. There the retry is recognised by its effect, without a window: a stale `{rev}` whose request
+  would change nothing succeeds (R-NPM-009). It cannot lose a concurrent change, because it makes
+  none.
+- (b) writes nothing: no version, no tag, no `rev_seq`, no object. It cannot replace bytes, move a
+  tag or revive a tombstoned version, because it applies to live versions only. Lockfiles and
+  Q-NPM-8 are untouched.
+- The window covers npm's retry schedule (two retries, after 10 s and 60 s, each attempt bounded by
+  the five-minute `fetch-timeout`) with margin, and keeps a rerun hours later loud. (c) gives that
+  up. (d) depends on a header the other clients may not send.
+- The development agent would revisit this if `trove_npm_publish_retries_acknowledged_total` shows
+  acknowledgements long after the original (reruns rather than retries), which would argue for a
+  shorter window, or if a client is found that retries a publish with a changed body.
+
+**Applied in the spec:** R-NPM-007 step 4 (the rule and its five conditions), step 5 (the
+re-check under the lock, `publish_tag`), step 6 (the reference to R-ARCH-024), the setting
+`npm.publish.retry_window` and an acceptance criterion; R-NPM-006 (`npm_versions.publish_tag`);
+R-NPM-008 (a retry is not a second publish; its acceptance criterion is qualified); R-NPM-009,
+R-NPM-017 and R-NPM-018 (a stale revision that changes nothing succeeds); R-NPM-005 (the
+`npm-notice` list); R-NPM-044 (outcome `retry_acknowledged` and its metric); R-NPM-046; the
+Security notes. Cross-page: [architecture.md](../architecture.md) R-ARCH-024 step 5.
+
+### Q-NPM-12 · Unpublishes made after a restored backup's snapshot
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-19 makes backup and restore a core function. A restore returns every table to the backup's
+`snapshotAt`, `npm_tombstones` included, so an unpublish made between the snapshot and the loss of
+the old database is undone: the version is live again and its tombstone is gone. Unpublish is how
+a version that leaked a secret or carried malicious code is withdrawn, and with a daily backup the
+window is up to a day. For access removals, the revocation journal of
+[ha-and-helm.md](../ha-and-helm.md) R-HA-054 solves the same problem, and it takes further event
+types through a flag in the event registry (R-OPS-014). R-HA-054 keeps a mistaken or forged entry
+reversible: a deleted user is disabled on replay, not deleted. The trash can is P1
+([storage.md](../storage.md) R-STOR-022), so in the MVP every deletion is permanent.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Document, repeat by hand | A gap item; operators repeat the unpublishes from the audit log stream | No new mechanism | A manual step after a disaster, easy to miss; until it runs, the withdrawn version installs again |
+| (b) Journal `npm.unpublish`, replay deletes | The event carries `journal: revocation`; replay deletes the version and tombstones it when the restored repository holds it live with the journaled integrity | Automatic on both restore paths; the restored installation holds exactly what the old one held; one row in R-HA-054 | Without the trash can (MVP) the deletion is permanent, so a forged or mistaken entry destroys a version that the backup had restored, with no way back short of another restore. Against R-HA-054's reversibility rule |
+| (c) Journal `npm.unpublish`, replay withholds | As (b), but replay only tombstones the version: its items stay stored and no route serves them; `trove admin npm reinstate` reverses it, deleting the items confirms it | Automatic on both restore paths; replay deletes nothing, so a forged or mistaken entry is reversible in the MVP as well, as R-HA-054 requires; a withdrawn version stops installing at once | A withheld version occupies storage until an administrator deletes it; one admin subcommand; `/files` must apply npm's tombstone (R-NPM-003); the flag's definition widens from access removals to content withdrawals; dist-tag moves and deprecations stay reverted (H-51) |
+| (d) Journal every npm change | Publishes, dist-tag moves and deprecations too, replayed after the restore | Brings back the whole npm state of the lost interval | Replaying a publish adds content, which a replay must never do; blobs published after the snapshot are not in the backup; the journal would become a second system of record |
+
+**Choice:** (c) — `npm.unpublish` is journaled, and replay withholds a restored version that is
+live with the journaled integrity: it tombstones the version, deletes nothing, and an administrator
+confirms or reverses each withdrawal.
+
+**Rationale:**
+- A withdrawn version is what a restore must not bring back. (c) keeps that property without a
+  manual step, with a mechanism both restore paths already run: from the replay on, no client
+  installs the version, on any route.
+- Replay stays inside the journal's rules. The integrity check ties an entry to one build, a
+  version the restored database does not hold is left alone, and nothing is deleted, so a mistaken
+  or forged entry costs availability until an administrator reinstates the version, never data.
+  (b) would need the trash can to undo a forged entry, but the trash can is P1; in the MVP (b)
+  would let whoever can write journal objects with the runtime S3 credential delete restored
+  versions for good, in the one procedure meant to recover from damage.
+- The reinstate does not reopen Q-NPM-8: it brings back the bytes the tombstone names, which are
+  still stored, as a trash-can restore does, and never admits other bytes.
+- (d) would make replay add content the backup does not hold. (a) leaves a security property to an
+  operator's memory after a disaster.
+- Tombstone-only entries for versions the restored database does not hold were considered and left
+  out. A forged entry could then burn version numbers for good, while the case they cover (a
+  version published and unpublished after the snapshot) is narrow and fails loudly with
+  `EINTEGRITY` if its number is reused.
+- [formats/nuget.md](nuget.md) Q-NUGET-10 answers the same question for NuGet, and both replays
+  delete nothing in the MVP for the same reason: the trash can is P1 ([storage.md](../storage.md)
+  R-STOR-022, R-STOR-023), so a replayed deletion could not be undone. npm's replay therefore never
+  deletes a version or moves it to the trash before this decision is revisited. The two formats
+  still differ in two points. For a version the restored repository holds live, npm withholds it
+  (no route serves it until an administrator reinstates or deletes it), while NuGet keeps serving
+  it and reports it `revived`. NuGet reserves the numbers of versions lost with the snapshot for
+  their journaled bytes, which npm leaves out (previous bullet). npm withholds because unpublish is
+  npm's path for withdrawing a leaked secret or malicious code, and a withheld version is as
+  reversible as a revived one. One rule for both formats is an item for the owner's walkthrough;
+  until it is settled, each page states its own rule.
+- The development agent would revisit this if restore drills or incident reports show dist-tag
+  moves or deprecations used as withdrawals (H-51); `npm.dist_tag.set` would then join the journal
+  with an update rule. It would also revisit the withholding once the trash can (P1) is on by
+  default, where replay could move the version to the trash instead, which a trash restore
+  reverses; NuGet's Q-NUGET-10 waits for the same point. It would revisit both points above if the
+  walkthrough settles one rule for both formats.
+
+**Applied in the spec:** R-NPM-047 (entry content, the withholding replay, `trove admin npm
+reinstate`, acceptance criteria); R-NPM-006 (`npm_tombstones.source`); R-NPM-003 and R-NPM-015
+(no route serves a tombstoned version, `/files` included); R-NPM-044 (the flag on `npm.unpublish`,
+the event `npm.reinstate`); R-NPM-008 (the replay deletes nothing); the revisit of Q-NPM-8; H-51;
+the Security notes. Cross-page: [formats/nuget.md](nuget.md) Q-NUGET-10 (the same question for
+NuGet, one rule for both formats at the walkthrough), R-OPS-014 (the flag's definition covers content withdrawals), R-HA-054 (a row for
+`npm.unpublish`), and [architecture.md](../architecture.md) R-ARCH-008 (a serve-time check that
+lets a format refuse an item on `/files`).
+
+### Q-NPM-13 · Removal marks after a restore and for cached tarballs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A restore returns `npm_remote_versions` and the core's gone marks to the backup's snapshot like
+every other table (INV-19). A version the upstream withdrew after the snapshot is `listed` again,
+and its cached tarball, which the backup holds, would be served until a refresh of its document
+marks it again. Lockfile installs (`npm ci`) request tarballs without documents, so they never
+trigger that refresh. The same blind spot exists without a restore: a cached tarball was served on
+its stored marks however old the document was, so a takedown reached lockfile installs only after
+someone else requested the document, which Q-NPM-2 assumed would happen.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave it to document requests | Marks change only when a document request refreshes the document | No extra upstream request | A lockfile-only workload keeps installing a withdrawn version indefinitely; after a restore, every takedown made since the snapshot is undone until the document is requested |
+| (b) Journal `npm.remote.version_removed` | The removal event joins the revocation journal; replay sets `listed = false` again | Re-applies removals after a restore even while the upstream is unreachable | Only covers restores; a version the upstream listed again after its removal stays hidden after the replay, because a later `304` does not rewrite the records (R-NPM-024); forged entries could hide public versions until the upstream document changes; one journal object per removal |
+| (c) A cached tarball waits for a current document | A cached tarball is served only while its package document is unexpired and was validated after the last restore; otherwise the request revalidates the document first, in one flight | The upstream's current state decides, on every replica, after a restore and for lockfile installs alike; nothing new to journal or forge; reads two PostgreSQL values the request already touches | One conditional upstream request per package and metadata period for lockfile-only traffic; while the upstream is unreachable, the stored or restored marks decide |
+
+**Choice:** (c) — a cached tarball is served only while its package document's cache entry is
+current: unexpired and validated after `system_state.restored_at`. Otherwise the request
+revalidates the document first.
+
+**Rationale:**
+- The upstream is the authority on what it withdrew. (c) asks it, as a document request would,
+  instead of keeping a second record of its decisions that can go stale (b).
+- The decision reads `expires_at`, `validated_at` and `system_state.restored_at`, all on
+  PostgreSQL's clock, so every replica decides the same way (INV-18), with or without Valkey.
+- The cost is what a document request already pays, once per package and period, collapsed across
+  replicas by the flight lock; with the default period of 7,200 s it is negligible next to the
+  tarball traffic itself.
+- While the upstream is unreachable, refusing every cached tarball would turn an upstream outage
+  into an install outage. (c) keeps stale serving and names the residual in H-51.
+- The development agent would revisit this if
+  `trove_npm_tarball_document_revalidations_total` shows the revalidations as a noticeable share of
+  upstream traffic, or if an upstream outage right after a restore turns out to be a common case;
+  (b) would then be added for the restore case only.
+
+**Applied in the spec:** R-NPM-025 (the rule, its cost and an acceptance criterion); R-NPM-026
+(marks read per request; the delay bound); R-NPM-047 (remote repositories after a restore, an
+acceptance criterion); R-NPM-044 (the metric); the revisit of Q-NPM-2; H-33 and H-51; the Security
+notes. Cross-page: [backup-and-restore.md](../backup-and-restore.md) R-BAK-022 (formats read
+`system_state.restored_at`).
+
 ## What this does not cover
 
 ### H-31 · Trusted publishing widens the set of credentials that can publish
@@ -2162,9 +2870,10 @@ cryptographically on the way through.
 ### H-33 · Takedown delay and earlier downloads
 
 When an upstream removes a malicious version, trove stops serving it (R-NPM-026) only after the
-remote's metadata period and the document refresh. Until then, and for every client that
-installed it earlier, the version stays reachable. trove does not scan package content;
-curation and scanning are separate capabilities.
+remote's metadata period and the document refresh, which the next document or tarball request
+after the period triggers (R-NPM-025). Until then, and for every client that installed it
+earlier, the version stays reachable; while the upstream is unreachable, the stored marks keep
+deciding. trove does not scan package content; curation and scanning are separate capabilities.
 
 ### H-34 · Audit forwarding discloses the dependency set
 
@@ -2178,3 +2887,37 @@ what a project is built from, and, with a `providerURL` other than the upstream,
 second party. An internal name that once reached the upstream (an earlier confusion attempt that
 found a public package of the same name) counts as fetched and is forwarded unless a claim covers
 it. What makes it real: projects whose dependency combination is itself confidential.
+
+### H-51 · A restore reverts npm metadata changes made after the backup's snapshot
+
+Component: the restore of a backup ([backup-and-restore.md](../backup-and-restore.md) R-BAK-021)
+together with the journal replay ([ha-and-helm.md](../ha-and-helm.md) R-HA-054) and the
+revalidation of remote documents (R-NPM-025). Subject: the consumers of npm local and remote
+repositories after a restore. Live in the MVP whenever a backup is restored (INV-19). The replay
+re-applies unpublishes by withholding the versions (R-NPM-047, Q-NPM-12) and nothing else of npm.
+What a restore still reverts or leaves behind:
+
+- a dist-tag moved after the snapshot points back to its old version, for example `latest` moved
+  off a broken or malicious release that was not unpublished;
+- from P1 (R-NPM-018), a deprecation set after the snapshot is gone;
+- a version published after the snapshot is lost, and its number can be published again with other
+  bytes, because the replay reserves no lost number (Q-NPM-12); clients that pinned the lost
+  version detect that as `EINTEGRITY`;
+- an unpublish that had not been shipped to the journal when the old database stopped (normally
+  less than `backup.revocation_journal.ship_interval`), that was made while the journal was
+  disabled, or that a restore with `--skip-revocation-journal` did not replay (R-BAK-024), is
+  undone;
+- from P1, a tombstone written by a move out of the repository (R-NPM-008), which is not journaled;
+- a withheld version's bytes stay in the blob store until an administrator deletes its items, so a
+  version unpublished because it leaked a secret is unreachable for clients but still readable to
+  object-store principals ([storage.md](../storage.md) H-11) until then;
+- a version an upstream withdrew after the snapshot is served from the cache again while that
+  upstream cannot be reached after the restore, because the restored marks decide until the
+  package document is revalidated (R-NPM-025, Q-NPM-13).
+
+What makes it real: a harmful version withdrawn by a tag move or a deprecation instead of an
+unpublish, followed by a restore to a snapshot older than the withdrawal; or a restore while the
+upstream is unreachable. Mitigation: withdraw a harmful version by unpublishing it; after a
+restore, repeat the `npm.dist_tag.set`, `npm.dist_tag.delete` and `npm.deprecate` events of the
+audit log stream between the snapshot and the restore, and delete or reinstate every version the
+replay output lists as withheld.

@@ -9,6 +9,21 @@ documented options for each question on the spec pages and for the four question
 builds the prototype through M5 on its own, and the owner reviews it at the
 [walkthrough](#owner-walkthrough) after M5.
 
+On 2026-10-28 the owner added constraints that cannot be deselected
+([docs/spec/README.md](../spec/README.md#owner-constraints)): HA PostgreSQL, HA Valkey with
+Sentinel and S3; a load that one replica cannot carry, spread at random by a Kubernetes Service,
+with node drains that cause no outage; a configurable backup job that writes a consistent backup
+to S3; and no ReadWriteMany volume. The spec pages took them in as INV-2, INV-3, INV-11, INV-12,
+INV-13, INV-18 and INV-19. This page folds the work they own into M0 to M5, all of it MVP:
+
+| Work | Where it is built | Where it is proven |
+|---|---|---|
+| Valkey with Sentinel and its degraded mode | M0 (client, discovery, fallbacks, dev profile with three Sentinels) | E0.12, E0.13; under full client load in E5.10 |
+| `web` and `worker` roles as separate Deployments | M0 (R-HA-002) | E0.3, E0.7; job routing from M1 |
+| Drain-safe shutdown | M0 (R-ARCH-024, R-HA-011) | E0.14, then with every format's load; R-HA-059 in E5.9 |
+| No state between requests, no ReadWriteMany | M0 (R-ARCH-032, R-HA-061), then per page in M1 to M4 | `scatter` profile from E0.11 on |
+| Backup create and restore, with the revocation journal | M5, in a lane that starts after M1 (Q-ROAD-2) | E5.11, E5.12 |
+
 This page orders the work from an empty repository to trove 1.0 (the MVP), then through P1, P2
 and Later. It is built from these inputs:
 
@@ -26,34 +41,41 @@ Reading the scope lists:
 
 - `R-AUTH-001…018` means every requirement of that prefix from 001 to 018.
 - Every MVP requirement appears in exactly one of M0 to M5. Every P1 requirement appears in exactly
-  one of M6 to M11, or in the format lane. There are two exceptions, both named where they occur:
-  - R-HA-023 and R-HA-025 are P1 and scheduled in M5 ([Q-ROAD-2](#q-road-2--backup-and-restore-in-10));
-  - M0 builds the `/v2/` reservation bullet of R-HA-041, and the rest of R-HA-041 stays in F4
-    (Q-HA-4).
+  one of M6 to M11, or in the format lane. There is one exception, named where it occurs: M0 builds
+  the `/v2/` reservation bullet of R-HA-041, and the rest of R-HA-041 stays in F4 (Q-HA-4).
+- A requirement sits in the milestone that builds its mechanism. Where one of its acceptance
+  criteria needs a client, a repository class or a load that a later milestone brings, that
+  criterion first runs in the later milestone, and the scope section of the earlier milestone
+  names it. R-ARCH-024 in M0 is an example: its drain criterion loads npm and NuGet clients.
 - Exit criteria are tests. Where a spec requirement already states the test, the criterion names
   that requirement and does not repeat the test.
 
 ## Starting point
 
-These numbers were measured on 2026-10-28 over the catalog and spec pages, after every spec
-question was decided. A throwaway script did the counting. It applied the parsing rules that M0's
-coverage generator will own.
+These numbers were measured on 2026-10-29 over the catalog and spec pages, after every spec
+question was decided and the spec pages had taken in the owner constraints of 2026-10-28. A
+throwaway script did the counting. It applied the parsing rules that M0's coverage generator will
+own, and it reproduces the numbers of the previous version (491 requirements, 658 listed entries)
+from the pages as committed before the constraints.
 
 | Catalog priority | Catalog entries | Listed in a requirement's `Covers:` line | Not listed yet |
 |---|---|---|---|
 | MVP | 359 | 359 | 0 |
 | P1 | 508 | 286 | 222 |
-| P2 | 909 | 13 | 896 |
+| P2 | 909 | 17 | 892 |
 | Later | 391 | 0 | 391 |
 | Out of scope | 72 | 0 | 72 |
-| **Total** | **2,239** | **658** | **1,581** |
+| **Total** | **2,239** | **662** | **1,577** |
 
-The spec contains 491 requirements: 342 MVP, 147 P1 and 2 P2 (R-STOR-014 and R-CI-022). Every ID
-in a `Covers:` line exists in the catalog. The spec pages carry 111 questions and the security gaps
-H-1 to H-45. The development agent decided every one of the questions in the `## Decisions` section
-of its page. This page adds Q-ROAD-1 to Q-ROAD-4, decided in [Decisions](#decisions).
+The spec contains 553 requirements on 12 pages: 408 MVP, 143 P1 and 2 P2 (R-STOR-014 and
+R-CI-022). The constraints added 62 requirements (58 MVP, 4 P1), most of them on the new page
+[backup-and-restore.md](../spec/backup-and-restore.md), and raised 8 from P1 to MVP: R-API-024,
+R-AUTHZ-031, R-HA-002, R-HA-023, R-HA-025, R-HA-045, R-HA-054 and R-OPS-021. Every ID in a
+`Covers:` line exists in the catalog. The spec pages carry 178 questions and the security gaps H-1
+to H-52. The development agent decided every one of the questions in the `## Decisions` section of
+its page. This page adds Q-ROAD-1 to Q-ROAD-4, decided in [Decisions](#decisions).
 
-Five findings shaped this plan:
+Six findings shaped this plan:
 
 1. **Generic local repositories are P1, yet 16 MVP requirements test against one.** These
    requirements use a generic repository (`generic-local` or `files-internal`) in their acceptance
@@ -63,10 +85,15 @@ Five findings shaped this plan:
    R-HA-052's load also includes `curl -T` of 200 MB files. npm and NuGet repositories refuse raw
    deploys (R-API-025), so these tests have no other target. [Q-ROAD-1](#q-road-1--generic-local-repositories-in-m1)
    (option (a)) moves the local class of the generic format into M1.
-2. **The MVP failure suite runs a P1 procedure.** R-HA-052's restore drill executes the steps of
-   R-HA-025. R-HA-025 (restore procedure) and R-HA-023 (backup) are both P1.
-   [Q-ROAD-2](#q-road-2--backup-and-restore-in-10) (option (a)) schedules both in M5 and keeps
-   their P1 label.
+2. **Backup and restore are MVP, and so is the revocation journal.** INV-19 makes trove's own
+   backup create and restore MVP (the `R-BAK` page, R-HA-060). Q-HA-19 raised the platform layer
+   R-HA-023 and the point-in-time restore R-HA-025 to MVP, so the exception this page used to make
+   for them is gone. Q-HA-9 raised the revocation journal R-HA-054 with R-AUTHZ-031's entries to
+   MVP, because a restore from a scheduled backup undoes up to one backup interval of revocations,
+   and a restore refuses to run without the journal (R-BAK-020). The drill restores npm and NuGet
+   data and replays CI revocations, so it can gate only once M3 and M4 exist.
+   [Q-ROAD-2](#q-road-2--backup-and-restore-in-10) (revisited, option (e)) builds the backup in a
+   lane that starts after M1 and gates it in M5.
 3. **The npm acceptance matrix includes P1 operations.** R-NPM-045's scenario list covers
    deprecate (R-NPM-018), login (R-NPM-020, R-NPM-021), audit (R-NPM-038) and search (R-NPM-037),
    all P1. M2 gates only on the MVP scenarios. Until M6 lands, the P1 scenarios check for the
@@ -83,31 +110,42 @@ Five findings shaped this plan:
    needs a spec page before its implementation starts, and so do build metadata, search and
    upstream curation, which also have P1 catalog entries without requirements. See
    [Spec work before P1 implementation](#spec-work-before-p1-implementation).
+6. **The constraints of 2026-10-28 belong in the foundation.** Valkey with Sentinel, the `web` and
+   `worker` split, no state between requests, drains without outage and the ban on ReadWriteMany
+   volumes each touch every request path and every chart template. Added after the first format,
+   each would mean building the proxy, authentication and job paths a second time. M0 therefore
+   brings up the HA-shaped stack (PostgreSQL with a standby, Valkey with a replica and three
+   Sentinels, the S3 store, three kind worker nodes), runs every end-to-end test in the `scatter`
+   profile, and gates on a node drain and on PostgreSQL and Valkey failovers with zero failed
+   requests. Each later milestone repeats those tests with its own client load, and M5 runs them
+   under the full failure suite.
 
 ## Milestones at a glance
 
 | Milestone | Theme | Requirements | Can start when | Ends with |
 |---|---|---|---|---|
-| [M0](#m0--foundation) | Foundation: skeleton, pins, CI, PostgreSQL, S3, coordination, chart skeleton, coverage generator | 69 MVP, plus the `/v2/` reservation (Q-HA-4) | — | internal build |
-| [M1](#m1--access-core) | Access core: OIDC login, tokens, permissions, repositories, raw file transfer, admin UI | 125 MVP, plus the generic local class and its spec page (Q-ROAD-1) | M0 | internal build |
-| [M2](#m2--npm) | npm with local, remote and virtual repositories; proxy and virtual engines | 76 MVP | M1 | pre-release 0.1 |
-| [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 24 MVP | M2's WP2.1 to WP2.3 | pre-release 0.2 |
-| [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 26 MVP | M1 for the work, M3 for the exit | pre-release 0.3 |
-| [M5](#m5--ha-hardening-and-helm-ga) | HA hardening and Helm GA | 22 MVP, plus the P1 requirements R-HA-023 and R-HA-025 (Q-ROAD-2) | M3 and M4 | **1.0 candidate** |
+| [M0](#m0--foundation) | Foundation: skeleton, pins, CI, PostgreSQL with a standby, Valkey with Sentinel, S3, coordination, `web` and `worker` roles, drain-safe shutdown, chart skeleton, coverage generator | 78 MVP, plus the `/v2/` reservation (Q-HA-4) | — | internal build |
+| [M1](#m1--access-core) | Access core: OIDC login, tokens, permissions, repositories, raw file transfer, admin UI, all of it across replicas | 131 MVP, plus the generic local class and its spec page (Q-ROAD-1) | M0 | internal build |
+| [M2](#m2--npm) | npm with local, remote and virtual repositories; proxy and virtual engines with request collapsing through Valkey | 81 MVP | M1 | pre-release 0.1 |
+| [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 27 MVP | M2's WP2.1 to WP2.3 | pre-release 0.2 |
+| [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | pre-release 0.3 |
+| [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 63 MVP | M3 and M4; the backup lane from M1 (Q-ROAD-2) | **1.0 candidate** |
 | [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | **1.0** |
-| [M6 to M12](#p1-platform-milestones) | P1 platform | 143 P1, plus 3 spec pages to write (builds, search, curation) | 1.0 | 1.x minors |
+| [M6 to M12](#p1-platform-milestones) | P1 platform | 141 P1, plus 3 spec pages to write (builds, search, curation) | 1.0 | 1.x minors |
 | [F1 to F7](#p1-format-expansion-order) | P1 formats | 2 P1, plus 6 format spec pages to write and `formats/generic.md` to extend | 1.0 | 1.x minors |
 
 ```mermaid
 flowchart LR
-  M0["M0 Foundation"] --> M1["M1 Access core"]
+  M0["M0 Foundation: HA-shaped stack, roles, drain, failover"] --> M1["M1 Access core"]
   M1 --> M2["M2 npm"]
   M2 --> M3["M3 NuGet"]
   M1 --> W4["M4 work: issuers, exchange, mappings"]
   W4 --> M4["M4 exit: reference pipeline"]
   M3 --> M4
-  M2 --> H["HA harness: chaos and load loops"]
-  H --> M5["M5 HA hardening, Helm GA = 1.0 candidate"]
+  M1 --> B["Backup lane: backup, restore, revocation journal"]
+  M2 --> H["HA harness: chaos, drain and load loops"]
+  H --> M5["M5 HA hardening, backup, Helm GA = 1.0 candidate"]
+  B --> M5
   M4 --> M5
   M5 --> R["Owner walkthrough, objections worked off = 1.0"]
   R --> P1["M6 to M12 platform"]
@@ -117,10 +155,13 @@ flowchart LR
 ## Why this order
 
 - **M0 comes first because every later acceptance test runs on the chart.** R-NPM-045,
-  R-NUGET-027 and R-CI-028 each require at least two replicas behind the Helm chart, with
-  PostgreSQL and S3-compatible storage. These must exist before the first format can be accepted.
-  HA is built in from M0 onward. M5 proves it under failure. Adding it after the fact would mean
-  revisiting every request path.
+  R-NUGET-027 and R-CI-028 each require several replicas behind the Helm chart, with PostgreSQL,
+  Valkey with Sentinel and S3-compatible storage, and R-NPM-046, R-NUGET-030 and R-CI-029 run them
+  in the `scatter` profile, where consecutive requests reach different `web` replicas (R-ARCH-032).
+  These must exist before the first format can be accepted. HA, the role split and statelessness
+  are built in from M0 onward: M0 already drains a node and fails PostgreSQL and Valkey over
+  without a failed request. M5 proves the same under the full client load and failure suite.
+  Adding any of it after the fact would mean revisiting every request path.
 - **Access (M1) comes before npm (M2).** Every package request resolves credentials (R-AUTH-001,
   R-AUTH-033) and goes through one decision point (R-AUTHZ-015). npm publish also depends on
   package ownership (R-AUTHZ-018) and token scopes (R-AUTH-024). Building npm first would mean
@@ -144,6 +185,13 @@ flowchart LR
   values reference (R-HA-031) must also cover every MVP setting, CI issuers included. The chaos and
   load harness itself starts in M2 (WP2.8), so M5 tightens a running suite and does not build one
   from scratch.
+- **Backup and restore gate in M5, but their work starts after M1.** The drill restores published
+  npm and NuGet packages and replays revocations of every kind, CI token revocations from M4
+  included (R-BAK-024, R-HA-054), so it can gate only once M3 and M4 exist. The snapshot, the blob
+  pool, the garbage-collection hold and the restore procedure depend only on M0 and M1, so the
+  backup lane runs in parallel with M2 to M4, as M4's work does
+  ([Q-ROAD-2](#q-road-2--backup-and-restore-in-10)). M0 already gives every table its export class
+  (R-BAK-004), so no table has to be classified after the fact.
 
 Orders considered and rejected:
 
@@ -151,13 +199,23 @@ Orders considered and rejected:
   token formats would have to be built twice.
 - *CI OIDC before any format.* The exit test would have nothing to publish.
 - *HA hardening first.* Without load from real clients, the failure suite has nothing to measure.
+- *Valkey and the role split after the first format.* The proxy's request collapsing, the rate
+  limits and the change propagation would first be built on PostgreSQL locks and `LISTEN`, in one
+  process type, and then again.
 
 Rules that hold across all milestones:
 
 - No milestone waits for an owner decision. A question that comes up during the work is decided by
   the development agent in the `## Decisions` section of the page that owns it, in the form that
   [docs/spec/README.md](../spec/README.md) prescribes, and the work goes on with that choice.
-- Every end-to-end test runs on at least two replicas behind the chart, from M0 onward.
+- Every end-to-end test runs in the `scatter` profile of R-ARCH-032 from M0 onward: the chart with
+  three `web` and two `worker` replicas on three kind worker nodes, an edge that balances every
+  request round robin over the `web` replicas, PostgreSQL with a standby, Valkey with a replica and
+  three Sentinels, and the S3 store. Each format's end-to-end job also runs nightly with Valkey
+  stopped.
+- No change renders a ReadWriteMany volume, a PersistentVolumeClaim, a StatefulSet or session
+  affinity, or keeps request state in a package-level variable: R-HA-061's template check and
+  R-ARCH-032's architecture test fail CI otherwise.
 - Migrations follow expand/contract from the first one (INV-3). The pre-releases of M2 to M4 are
   real upgrade sources: M5 upgrades from the M4 pre-release (E5.4).
 - A requirement counts as implemented when a test that names it passes on `main`
@@ -182,34 +240,55 @@ walkthrough.
 
 | Milestone | Questions | What the first commits encode |
 |---|---|---|
-| M0 | Q-ARCH-1…5, Q-ARCH-11, Q-API-1, Q-HA-2, Q-HA-3, Q-HA-8, Q-HA-11, Q-HA-12, Q-STOR-2, Q-STOR-4 (same as Q-OPS-7), Q-STOR-6, Q-STOR-10, Q-OPS-9, Q-ROAD-4 | `net/http.ServeMux` serves every route, and each format resolves its own escaped path (Q-ARCH-1). PostgreSQL is reached through pgx's native API, sqlc and the confined `listq` builder (Q-ARCH-2). A trove-owned migration runner applies each file together with its `schema_migration` row in one transaction (Q-ARCH-3). The `service/s3` client is used with trove's own multipart upload from the spool file (Q-ARCH-4). The job queue is trove's PostgreSQL job table (Q-ARCH-5). INV-6 is unchanged, with ports 8080 and 8081 (Q-ARCH-11). Go models, the server interface and the TypeScript types are generated from the hand-written OpenAPI 3.1 document (Q-API-1). PostgreSQL 16 is the floor version (Q-HA-2). SeaweedFS runs on every change, and MinIO (built from source at a pinned commit, on isolated runners) and AWS S3 run nightly (Q-HA-3). The operator creates the encryption-key Secret, and the chart fails without it (Q-HA-8). Images and chart are published to `ghcr.io/guided-traffic/trove` and `oci://ghcr.io/guided-traffic/charts/trove` (Q-HA-11). The replica table, heartbeat, pruning and read-only replica API are MVP (Q-HA-12). SHA-512 is computed for every upload (Q-STOR-2). Every schedule is five-field cron in UTC, read by one parser (Q-STOR-4, Q-OPS-7). Download verification is on (Q-STOR-6). Storage jobs are tasks of the shared framework (Q-STOR-10). The job API R-OPS-019 is MVP (Q-OPS-9). A test that names a requirement ID is the evidence that the requirement is implemented (Q-ROAD-4). |
-| M1 | Q-AUTH-1…4, Q-AUTH-6, Q-AUTH-7, Q-AUTHZ-3, Q-AUTHZ-5, Q-AUTHZ-9, Q-AUTHZ-10, Q-API-2…4, Q-API-6…9, Q-ARCH-10, Q-UI-1, Q-UI-2, Q-UI-4, Q-UI-5, Q-OPS-3, Q-OPS-4, Q-STOR-9, Q-ROAD-1 | Login providers are configured only in the YAML file (Q-AUTH-1). The cookies are `__Host-trv_session`, `__Host-trv_csrf` and `__Host-trv_oidc_binding` (Q-AUTH-2). There are no refresh tokens (Q-AUTH-3). A missing group claim clears the user's groups and emits a warning event (Q-AUTH-4). Revocation by value works unauthenticated, is rate-limited and has no existence oracle (Q-AUTH-6). Nobody but a PAT's owner ever holds its secret (Q-AUTH-7). The built-in principal `authenticated` is read-only, covers users only and is R-AUTHZ-030 (Q-AUTHZ-3). Refused reads are audited by default, allowed reads only with `authz.audit.reads: all` (Q-AUTHZ-5). A token scope element is a policy resource set plus `actions` (Q-AUTHZ-9). A scope names only resource types of the grant model, `repositories` in the MVP, and is always intersected with the subject's rights (Q-AUTHZ-10). `If-Match` is required on PUT and PATCH of resources with a revision ETag (Q-API-2). Rate limits are per replica (Q-API-3, H-43). INV-17 covers `/files/…` and `/auth/…` (Q-API-4). Lists page with `limit` and `cursor` (Q-API-6). Custom methods are kebab-case sub-path verbs (Q-API-7). The key-ring status endpoint is R-API-049 (Q-API-8). Singleton tasks start only through the task trigger and stop only through job cancel (Q-API-9). Content is served from one origin with content headers that the core enforces (Q-ARCH-10). The UI uses Angular Material, the CDK and `@angular/aria` (Q-UI-1). The side bar is pinned from 1024 CSS px, with compact density (Q-UI-2). The policy editor is one page with a sticky preview (Q-UI-4). Translations use compile-time i18n, one build per locale (Q-UI-5). The version endpoint needs a credential (Q-OPS-3). Audit rows are append-only for the runtime role (Q-OPS-4). Permissions and retention share one pattern syntax (Q-STOR-9). The generic local class is built in M1 (Q-ROAD-1). |
-| M2 | Q-NPM-1, Q-NPM-2, Q-NPM-4…6, Q-NPM-8, Q-NPM-9, Q-ARCH-6…9, Q-ARCH-12, Q-REPO-1…6, Q-AUTHZ-1, Q-AUTHZ-2, Q-AUTHZ-4, Q-UI-3, Q-UI-6, Q-OPS-10 | npm's trusted-publishing routes are reserved at the host root and below every registry URL, and the exchange itself is R-NPM-022 in M10 (Q-NPM-1). Versions the upstream removed are hidden by default (Q-NPM-2). The gate rows are npm 10, 11 and 12, pnpm 10, 11 and 12, Yarn 4 and Yarn 1.22 (Q-NPM-4). Remotes store only the full package document (Q-NPM-5). Inconsistent manifests are rejected (Q-NPM-6). Tombstones are never purged (Q-NPM-8). Dist-tags and deprecation need `deploy` plus ownership (Q-NPM-9). The fetch lock is a session advisory lock on a bounded pool with a bypass, behind `cluster.FlightLock` (Q-ARCH-6), and uses the two-key form (Q-ARCH-7). Hot-path notifications leave through a post-commit coalescer (Q-ARCH-8). Merged metadata checks each local member's `rev_seq` on every hit (Q-ARCH-9). Derived indexes are rendered per request, and no publish waits for one (Q-ARCH-12). R-ARCH-021 seals every stored secret (Q-REPO-1). A metadata period of `0` is allowed (Q-REPO-2). An upstream 404 or 410 for a package document marks the package gone (Q-REPO-3). Every remote of the format refuses `global`-claimed names (Q-REPO-4). Pins, claims, extra hosts and upstream credentials are generic members (Q-REPO-5). The shadowing check is R-REPO-048 (Q-REPO-6). `read` on a virtual repository is only an endpoint gate (Q-AUTHZ-1). New npm and NuGet local repositories enforce ownership (Q-AUTHZ-2). `cacheFillAction` defaults to `read` (Q-AUTHZ-4). The package page has two columns from 960 CSS px (Q-UI-3). External README images are blocked unless their origin is listed (Q-UI-6). The `repo` metric label is capped at 500 keys per metric family (Q-OPS-10). |
-| M3 | Q-NUGET-1…7 | A protocol delete unlists unless the repository sets `deleteMode: delete` (Q-NUGET-1). NuGet remotes default to a 300 s metadata period (Q-NUGET-2). IDs pushed to local repositories are ASCII (Q-NUGET-3). Search is forwarded to the upstream unless a term is protected (Q-NUGET-4). The version that created a package fixes its ID casing (Q-NUGET-5). Versions are immutable, and every removal leaves a tombstone (Q-NUGET-6). Symbol requests carry a routing name for patterns, claims and pin rules (Q-NUGET-7). |
-| M4 | Q-CI-1…4, Q-CI-6…10, Q-AUTHZ-6 | Mappings use first match per tier and union across tiers (Q-CI-1). The `scope` parameter is a scope string per RFC 6749 (Q-CI-2). Every `aud` element must be an allowed audience (Q-CI-3). Single use is off for GitLab and on for GitHub and generic issuers (Q-CI-4). Ownership is claimed on first publish (Q-CI-6). Each job revokes its own CI token, and the TTL stays the bound (Q-CI-7). A rejected subject token answers 400 `invalid_request` (Q-CI-8). Fork pipelines are denied by default (Q-CI-9). A mapping's principal is named `<CI issuer name>/<mapping name>` (Q-CI-10). A writing CI inline grant that omits `ownership` is saved as `bind_project`, and any other inline grant as `none` (Q-AUTHZ-6). |
-| M5 | Q-HA-1 (same as Q-STOR-1 and Q-OPS-2), Q-HA-5, Q-HA-6, Q-HA-7, Q-HA-10, Q-OPS-1, Q-ROAD-2 | Object storage gates only a replica's first readiness (Q-HA-1). Zero-downtime upgrades hold between adjacent minor releases only (Q-HA-5). Transaction-mode poolers are not supported (Q-HA-6). The HTTPRoute is MVP as R-HA-038, and a chart-created Gateway is P1 as R-HA-053 (Q-HA-7). The egress NetworkPolicy is off by default (Q-HA-10). Liveness never reads readiness and fails only when one of trove's own loops stops making progress (Q-OPS-1). R-HA-023 and R-HA-025 ship in 1.0 (Q-ROAD-2). |
-| P1 | Q-HA-4, Q-HA-9, Q-CI-11, Q-AUTH-5, Q-AUTH-8, Q-AUTHZ-7, Q-AUTHZ-8 (same as Q-API-5 and Q-STOR-3), Q-STOR-5, Q-STOR-7, Q-STOR-8, Q-OPS-5, Q-OPS-6, Q-OPS-8, Q-OPS-11, Q-NPM-3, Q-NPM-7, Q-ROAD-3 | M0 reserves `/v2/`, and the OCI routing itself is F4 (Q-HA-4). In M11 the revocation journal R-HA-054, with R-AUTHZ-031's entries, survives a database restore, while the MVP keeps the manual procedure (Q-HA-9). In M11 a replayed mapping disable also suspends every later enabled mapping of its tier (Q-CI-11). In M10 dormancy is on by default after 90 days (Q-AUTH-5). In M10 CI delegations stay independent of projects (Q-AUTHZ-7). In M6 the npm web-login poll is bound to the client's network (Q-AUTH-8). In M6 npm audit is forwarded only for names the remote holds (Q-NPM-3). In M6 the dependency rewrite touches HTTP(S) tarball URLs only (Q-NPM-7). In M7 a quota or capacity limit answers `507`, and the per-request size limit `413` (Q-STOR-7). In M8 an overwrite sends the previous file to the trash can (Q-STOR-5). In M8 a copy or move target is the exact destination (Q-STOR-8). In M9 build records get their own page, `builds.md` with prefix `R-BLD` (Q-AUTHZ-8). In M9 CloudEvents types are `trove.<registry name>` (Q-OPS-5). In M9 login providers stay out of configuration documents (Q-OPS-6). In M9 managed objects are locked against API and UI changes (Q-OPS-8). In M9 webhook templates are bounded `text/template` (Q-OPS-11). The format lane keeps the order on this page (Q-ROAD-3). |
+| M0 | Q-ARCH-1…5, Q-ARCH-11, Q-ARCH-13…16, Q-ARCH-18, Q-API-1, Q-HA-2, Q-HA-3, Q-HA-8, Q-HA-11…16, Q-STOR-2, Q-STOR-4 (same as Q-OPS-7), Q-STOR-6, Q-STOR-10, Q-STOR-12, Q-STOR-13, Q-OPS-9, Q-OPS-12, Q-OPS-13, Q-OPS-18, Q-ROAD-4 | `net/http.ServeMux` serves every route, and each format resolves its own escaped path (Q-ARCH-1). PostgreSQL is reached through pgx's native API, sqlc and the confined `listq` builder, and trove uses no `LISTEN` (Q-ARCH-2). A trove-owned migration runner applies each file together with its `schema_migration` row in one transaction (Q-ARCH-3). The `service/s3` client is used with trove's own multipart upload from the spool file (Q-ARCH-4). The job queue is trove's PostgreSQL job table, claimed only by `worker` replicas, with wake-ups from Valkey and polling as the bound (Q-ARCH-5). Valkey is reached through valkey-go, against Valkey 9.0 and later, in Sentinel mode for production (Q-ARCH-13). The main pool is transaction-scoped and may run through a transaction-mode pooler; session connections exist only for the lease pool of `worker` replicas, `trove migrate` and `trove backup` (Q-ARCH-14). Cross-replica invalidation is a per-area epoch and change log in PostgreSQL that every replica polls, with Valkey Pub/Sub as a fast path that can only evict early (Q-ARCH-15). Valkey holds coordination state and the negative cache, and nothing served to a client and no positive authentication or authorization result is read from it (Q-ARCH-16). A transfer still running at the shutdown deadline is cut, and clients resume with `Range` or retry (Q-ARCH-18). Only configuration errors hold back a replica's first readiness, and Valkey never affects readiness (Q-HA-13). Sentinel is the only production topology; a standalone instance serves development, and the endpoint mode is P1 (Q-HA-14). The dev profile and CI run Valkey with a replica and three Sentinels from `deploy/dev/valkey.yaml` (Q-HA-15). The chart defaults to three `web` and two `worker` replicas, with R-HA-059's N + 1 rule (Q-HA-16). Usage is folded from append-only deltas by every `worker` replica with `SKIP LOCKED`, and download statistics stay in per-replica buffers (Q-STOR-12). Storage maintenance runs are excluded only by their exclusive job key (Q-STOR-13). `worker` replicas run the same readiness checks as `web` and claim jobs only while ready (Q-OPS-12). `role` and `pool` are target labels that the ServiceMonitor attaches, and `trove_build_info{role}` reports the role (Q-OPS-13). Gauges read from PostgreSQL are evaluated in the background once per interval on every replica (Q-OPS-18). INV-6 is unchanged, with ports 8080 and 8081 (Q-ARCH-11). Go models, the server interface and the TypeScript types are generated from the hand-written OpenAPI 3.1 document (Q-API-1). PostgreSQL 16 is the floor version (Q-HA-2). SeaweedFS runs on every change, and MinIO (built from source at a pinned commit, on isolated runners) and AWS S3 run nightly (Q-HA-3). The operator creates the encryption-key Secret, and the chart fails without it (Q-HA-8). Images and chart are published to `ghcr.io/guided-traffic/trove` and `oci://ghcr.io/guided-traffic/charts/trove` (Q-HA-11). The replica table, heartbeat, pruning and read-only replica API are MVP (Q-HA-12). SHA-512 is computed for every upload (Q-STOR-2). Every schedule trove's scheduler evaluates is five-field cron in UTC, read by one parser; the chart checks the backup CronJob's schedule against the same rejected forms, with `backup.timeZone` defaulting to `Etc/UTC` (Q-STOR-4, Q-OPS-7). Download verification is on (Q-STOR-6). Storage jobs are tasks of the shared framework (Q-STOR-10). The job API R-OPS-019 is MVP (Q-OPS-9). A test that names a requirement ID is the evidence that the requirement is implemented (Q-ROAD-4). |
+| M1 | Q-AUTH-1…4, Q-AUTH-6, Q-AUTH-7, Q-AUTH-9…14, Q-AUTHZ-3, Q-AUTHZ-5, Q-AUTHZ-9…13, Q-API-2…4, Q-API-6…9, Q-API-12, Q-ARCH-10, Q-ARCH-17, Q-UI-1, Q-UI-2, Q-UI-4, Q-UI-5, Q-UI-7, Q-OPS-3, Q-OPS-4, Q-OPS-14, Q-OPS-22, Q-STOR-9, Q-ROAD-1 | Login providers are configured only in the YAML file (Q-AUTH-1). The cookies are `__Host-trv_session`, `__Host-trv_csrf` and `__Host-trv_oidc_binding` (Q-AUTH-2). There are no refresh tokens (Q-AUTH-3). A missing group claim clears the user's groups and emits a warning event (Q-AUTH-4). Revocation by value works unauthenticated, is rate-limited and has no existence oracle (Q-AUTH-6). Nobody but a PAT's owner ever holds its secret (Q-AUTH-7). Sessions, tokens, principals and runtime settings are cached in each replica's memory only, and Valkey carries only their change messages (Q-AUTH-9). The auth caches answer only while the replica's view of the change log is younger than `auth.revocation_bound`; otherwise the lookup goes to PostgreSQL, and a failed lookup answers `503`, never a cached acceptance (Q-AUTH-10). The failed-credential throttle and the login-flow limits count cluster-wide in Valkey, and the break-glass lockout stays in PostgreSQL (Q-AUTH-11). Multi-request login flows keep their state in PostgreSQL only (Q-AUTH-12). Idle expiry is decided from the session row (Q-AUTH-13). A break-glass password rotation opens a hold in PostgreSQL that ends every earlier break-glass session (Q-AUTH-14). The grant index follows the `authz` and `repo_config` change areas and treats a Valkey message as a hint that an epoch query confirms (Q-AUTHZ-11). A request may carry `Trove-Authz-Min-Epoch`, and every replica honours it (Q-AUTHZ-12). No decision is made on a grant index unconfirmed for longer than `authz.cache.max_staleness`; the request waits, then is decided or answered `503` `authz_stale` (Q-AUTHZ-13). The built-in principal `authenticated` is read-only, covers users only and is R-AUTHZ-030 (Q-AUTHZ-3). Refused reads are audited by default, allowed reads only with `authz.audit.reads: all` (Q-AUTHZ-5). A token scope element is a policy resource set plus `actions` (Q-AUTHZ-9). A scope names only resource types of the grant model, `repositories` in the MVP, and is always intersected with the subject's rights (Q-AUTHZ-10). `If-Match` is required on PUT and PATCH of resources with a revision ETag (Q-API-2). The rate-limit classes `read`, `write` and `anonymous` count cluster-wide in Valkey and fall back to per-replica shares while Valkey is unavailable; H-43 covers only that fallback (Q-API-3). The limiter of R-ARCH-034 serves every class that limits callers with cluster scope (Q-ARCH-17). Management reads come from PostgreSQL, and every other effect on enforcement follows R-ARCH-018's propagation bound (Q-API-12). INV-17 covers `/files/…` and `/auth/…` (Q-API-4). Lists page with `limit` and `cursor` (Q-API-6). Custom methods are kebab-case sub-path verbs (Q-API-7). The key-ring status endpoint is R-API-049 (Q-API-8). Singleton tasks start only through the task trigger and stop only through job cancel (Q-API-9). Content is served from one origin with content headers that the core enforces (Q-ARCH-10). The UI uses Angular Material, the CDK and `@angular/aria` (Q-UI-1). The side bar is pinned from 1024 CSS px, with compact density (Q-UI-2). The policy editor is one page with a sticky preview (Q-UI-4). Translations use compile-time i18n, one build per locale (Q-UI-5). The status screen groups replicas by role, states drain safety per role and summarises Valkey from the replicas' views (Q-UI-7). The version endpoint needs a credential (Q-OPS-3). Audit rows are append-only for the runtime role (Q-OPS-4). Audit deduplication stays per replica, so the bound is n first events and n summaries per key and window (Q-OPS-14). An event type flagged for the revocation journal requires an entry from its producer, except the allow-listed shared types `package.published` and `package.deleted` (Q-OPS-22). Permissions and retention share one pattern syntax (Q-STOR-9). The generic local class is built in M1 (Q-ROAD-1). |
+| M2 | Q-NPM-1, Q-NPM-2, Q-NPM-4…6, Q-NPM-8…11, Q-NPM-13, Q-ARCH-6…9, Q-ARCH-12, Q-REPO-1…9, Q-AUTHZ-1, Q-AUTHZ-2, Q-AUTHZ-4, Q-UI-3, Q-UI-6, Q-OPS-10 | npm's trusted-publishing routes are reserved at the host root and below every registry URL, and the exchange itself is R-NPM-022 in M10 (Q-NPM-1). Versions the upstream removed are hidden by default (Q-NPM-2). The gate rows are npm 10, 11 and 12, pnpm 10, 11 and 12, Yarn 4 and Yarn 1.22 (Q-NPM-4). Remotes store only the full package document (Q-NPM-5). Inconsistent manifests are rejected (Q-NPM-6). Tombstones are never purged (Q-NPM-8). Dist-tags and deprecation need `deploy` plus ownership (Q-NPM-9). npm documents are cached per replica under keys read from PostgreSQL, and dates do not validate a document (Q-NPM-10). An identical publish retried by the same principal within 10 minutes is acknowledged with `201` and changes nothing (Q-NPM-11). A cached tarball is served only while its package document is current (Q-NPM-13). The fetch lock is a Valkey lock per flight with a 30 s TTL that the holder extends, behind `cluster.FlightLock`, with per-replica collapsing as the fallback; no PostgreSQL connection is held during a fetch (Q-ARCH-6). Its key is the SHA-256 of the flight key, and every remaining PostgreSQL advisory lock keeps the two-key form (Q-ARCH-7). Signals from client traffic leave through a post-commit coalescer to Valkey Pub/Sub, and trove sends no `NOTIFY` (Q-ARCH-8). Merged metadata checks each local member's `rev_seq` on every hit (Q-ARCH-9). Derived indexes are rendered per request, and no publish waits for one (Q-ARCH-12). R-ARCH-021 seals every stored secret (Q-REPO-1). A metadata period of `0` is allowed (Q-REPO-2). An upstream 404 or 410 for a package document marks the package gone (Q-REPO-3). Every remote of the format refuses `global`-claimed names (Q-REPO-4). Pins, claims, extra hosts and upstream credentials are generic members (Q-REPO-5). The shadowing check is R-REPO-048, and it reads no negative entry from Valkey (Q-REPO-6). A draining replica finishes the fetches it holds until 5 s before its deadline and takes no new flight after `SIGTERM` (Q-REPO-7). `limits.maxConcurrentFetches` is a budget for the installation, shared out per replica from the replica registry (Q-REPO-8). `remote.sourceNetwork` takes a CIDR prefix with one address per replica (Q-REPO-9). `read` on a virtual repository is only an endpoint gate (Q-AUTHZ-1). New npm and NuGet local repositories enforce ownership (Q-AUTHZ-2). `cacheFillAction` defaults to `read` (Q-AUTHZ-4). The package page has two columns from 960 CSS px (Q-UI-3). External README images are blocked unless their origin is listed (Q-UI-6). The `repo` metric label is capped at 500 keys per metric family, the same keys on every replica, chosen from the repository snapshot (Q-OPS-10). |
+| M3 | Q-NUGET-1…11 | A protocol delete unlists unless the repository sets `deleteMode: delete` (Q-NUGET-1). NuGet remotes default to a 300 s metadata period (Q-NUGET-2). IDs pushed to local repositories are ASCII (Q-NUGET-3). Search is forwarded to the upstream unless a term is protected (Q-NUGET-4). The version that created a package fixes its ID casing (Q-NUGET-5). Versions are immutable, every removal leaves a tombstone, and an identical-bytes push of a stored version answers 201 (Q-NUGET-6). Symbol requests carry a routing name for patterns, claims and pin rules (Q-NUGET-7). Forwarded search results are cached unfiltered in each `web` replica's memory and filtered on every use (Q-NUGET-8). Rendered documents carry a weak ETag over a render version and their inputs, and stored files keep the strong, content-addressed ETag (Q-NUGET-9). Publishes and deletions on local repositories are journaled, so that a restore reserves the numbers of lost versions for their exact bytes and reports revived versions; the replay arrives with the journal in M5 (Q-NUGET-10). A symbol push only validates and stores the `.snupkg`, and indexing runs as one `nuget-symbol-index` job per symbol package on `worker` (Q-NUGET-11). |
+| M4 | Q-CI-1…4, Q-CI-6…10, Q-CI-12…15, Q-AUTHZ-6 | Mappings use first match per tier and union across tiers (Q-CI-1). The `scope` parameter is a scope string per RFC 6749 (Q-CI-2). Every `aud` element must be an allowed audience (Q-CI-3). Single use is off for GitLab and on for GitHub and generic issuers (Q-CI-4). Ownership is claimed on first publish (Q-CI-6). Each job revokes its own CI token, and the TTL stays the bound (Q-CI-7). A rejected subject token answers 400 `invalid_request` (Q-CI-8). Fork pipelines are denied by default (Q-CI-9). A mapping's principal is named `<CI issuer name>/<mapping name>` (Q-CI-10). An issuer's key set lives in one PostgreSQL row, refreshed by a `worker` task, with in-process copies on every replica (Q-CI-12). The replay set lives in PostgreSQL only, inside the exchange transaction, and after a restore single-use issuers refuse subject tokens issued before it finished (Q-CI-13). Exchange limits count cluster-wide per client address and per issuer and subject (Q-CI-14). The exchange evaluates again from PostgreSQL when its mapping cache is behind the issuer row's `mappings_version` (Q-CI-15). A writing CI inline grant that omits `ownership` is saved as `bind_project`, and any other inline grant as `none` (Q-AUTHZ-6). |
+| M5 | Q-HA-1 (same as Q-STOR-1 and Q-OPS-2), Q-HA-5, Q-HA-6, Q-HA-7, Q-HA-9, Q-HA-10, Q-HA-17 (same as Q-BAK-9), Q-HA-18…20, Q-BAK-1…8, Q-BAK-10, Q-BAK-11, Q-API-10, Q-API-11, Q-NPM-12, Q-CI-11, Q-OPS-1, Q-OPS-15, Q-OPS-16, Q-ROAD-2 | Object storage gates only a replica's first readiness (Q-HA-1). Zero-downtime upgrades hold between adjacent minor releases only (Q-HA-5). Transaction-mode poolers are supported for the main pool, with a separate control pool (Q-HA-6, Q-HA-20). The HTTPRoute is MVP as R-HA-038, and a chart-created Gateway is P1 as R-HA-053 (Q-HA-7). The revocation journal in object storage is MVP and is replayed by `trove admin post-restore` and by every restore of a trove backup (Q-HA-9). The egress NetworkPolicy is off by default (Q-HA-10). The backup CronJob is rendered by default, and the chart fails without a backup target unless `backup.enabled: false` is set (Q-HA-17, Q-BAK-9). `restore.enabled` renders an ordinary restore Job with both roles at zero, no migration Job and the backup CronJob suspended (Q-HA-18). R-HA-023 and R-HA-025 are MVP (Q-HA-19). The database part of a backup is trove's own `COPY` export from one `REPEATABLE READ READ ONLY` snapshot (Q-BAK-1). A global hold and then per-blob pins, both under a lease, keep garbage collection away from a running backup's blobs (Q-BAK-2). Blobs go to a content-addressed pool that every backup of a target shares, incremental by digest, with mark-and-sweep retention (Q-BAK-3). A `backup_run` row with a partial unique index and a lease allows one target-writing run at a time (Q-BAK-4). A restore takes a new Valkey keyspace ID and lifts every registered revision column by 2^32 (Q-BAK-5). Backups use server-side encryption at MVP, and client-side encryption of the database files is P1 (Q-BAK-6). A restore goes into an empty installation; reusing an existing blob store is P1 (Q-BAK-7). A newer release restores a backup when its migrations contain every step of the backup (Q-BAK-8). An interrupted restore resumes on its own (Q-BAK-10). A run without progress for 30 minutes cancels itself (Q-BAK-11). The API and UI start no backup and show the `kubectl` command for a manual run (Q-API-10), and they list stored backups from the newest run that listed the target (Q-API-11). npm unpublishes are journaled, and replay withholds a restored version (Q-NPM-12). A replayed disable of a CI mapping also suspends every later enabled mapping of its tier (Q-CI-11). Liveness never reads readiness and fails only when one of trove's own loops stops making progress (Q-OPS-1). A single Valkey failover raises no alert; repeated failovers and replicas that disagree about the primary do (Q-OPS-15). Deleting trove's Valkey keys is always safe, and the installation-wide cache flush is P1 as R-OPS-047 (Q-OPS-16). trove's own backup create and restore, the platform layer and the revocation journal ship in 1.0, built in a lane that starts after M1 (Q-ROAD-2). |
+| P1 | Q-HA-4, Q-AUTH-5, Q-AUTH-8, Q-AUTHZ-7, Q-AUTHZ-8 (same as Q-API-5 and Q-STOR-3), Q-STOR-5, Q-STOR-7, Q-STOR-8, Q-STOR-11, Q-OPS-5, Q-OPS-6, Q-OPS-8, Q-OPS-11, Q-OPS-17, Q-OPS-19…21, Q-NPM-3, Q-NPM-7, Q-ROAD-3 | M0 reserves `/v2/`, and the OCI routing itself is F4 (Q-HA-4). In M10 dormancy is on by default after 90 days (Q-AUTH-5). In M10 CI delegations stay independent of projects (Q-AUTHZ-7). In M6 the npm web-login poll is bound to the client's network (Q-AUTH-8). In M6 npm audit is forwarded only for names the remote holds (Q-NPM-3). In M6 the dependency rewrite touches HTTP(S) tarball URLs only (Q-NPM-7). In M7 a quota or capacity limit answers `507`, and the per-request size limit `413` (Q-STOR-7). In M8 an overwrite sends the previous file to the trash can (Q-STOR-5). In M8 a copy or move target is the exact destination (Q-STOR-8). In M8 a multi-request upload is one S3 multipart upload per session, with its offset, hash state and parts in PostgreSQL under a writer claim (Q-STOR-11). In M9 build records get their own page, `builds.md` with prefix `R-BLD` (Q-AUTHZ-8). In M9 CloudEvents types are `trove.<registry name>` (Q-OPS-5). In M9 login providers stay out of configuration documents (Q-OPS-6). In M9 managed objects are locked against API and UI changes (Q-OPS-8). In M9 webhook templates are bounded `text/template` (Q-OPS-11). In M9 a `webhook.deliver` claim counts its subscription's running deliveries under a row lock (Q-OPS-19), an unrecorded success leaves a tombstone row for the follow stream (Q-OPS-20), and the follow stream's position is `change_seq` (Q-OPS-21). In M11 the lock view shows PostgreSQL advisory locks only, and collapsed fetches are diagnosed through metrics and `Cache-Status` (Q-OPS-17). The format lane keeps the order on this page (Q-ROAD-3). |
 | P2 | Q-CI-5 | The `CI_JOB_TOKEN` fallback R-CI-022 is specified at P2 and is built only when a concrete population of pipelines needs it. |
 
 ## M0 · Foundation
 
-**Goal.** M0 delivers a production-shaped platform with no package format: one binary, two
-replicas on kind, PostgreSQL with migrations, a content-addressed blob store on S3, coordination
-between replicas, the chart skeleton, an embedded Angular shell, observability, and the coverage
-generator that measures everything after it.
+**Goal.** M0 delivers a production-shaped platform with no package format: one binary in the roles
+`web` and `worker`, each a Deployment with its own replicas on a kind cluster with three worker
+nodes; PostgreSQL with a standby and migrations; Valkey with a replica and three Sentinels; a
+content-addressed blob store on S3; coordination between replicas through PostgreSQL and Valkey;
+drain-safe shutdown; the chart skeleton; an embedded Angular shell; observability; and the coverage
+generator that measures everything after it. From M0 on, a node drain and a PostgreSQL or Valkey
+failover cause no failed request.
 
 **Scope.**
 
 | Area | Requirements |
 |---|---|
-| Architecture | R-ARCH-001…006, R-ARCH-016…026 |
-| Storage | R-STOR-001…006, R-STOR-024, R-STOR-025, R-STOR-030, R-STOR-031, R-STOR-033, R-STOR-035 |
-| HA and chart | R-HA-001, R-HA-003…006, R-HA-013…016, R-HA-018, R-HA-019, R-HA-027…030, R-HA-033…037, R-HA-051 |
+| Architecture | R-ARCH-001…006, R-ARCH-016…026, R-ARCH-030…032 |
+| Storage | R-STOR-001…006, R-STOR-024, R-STOR-025, R-STOR-030, R-STOR-031, R-STOR-033, R-STOR-035, R-STOR-046 |
+| HA and chart | R-HA-001…006, R-HA-011, R-HA-013…016, R-HA-018, R-HA-019, R-HA-027…030, R-HA-033…037, R-HA-051, R-HA-056, R-HA-061 |
+| Backup groundwork | R-BAK-004: the table registry and its migration test, so every table from the first migration on carries its export class; and the `system_state` table (below) |
 | Operations | R-OPS-001…004, R-OPS-006, R-OPS-007, R-OPS-009, R-OPS-010, R-OPS-013, R-OPS-018, R-OPS-028 |
 | API | R-API-001…003, R-API-009, R-API-038 |
 | Reserved route (Q-HA-4) | The reservation bullet of R-HA-041: `/v2/` and everything below it answer `404`, and a route-table test fails when any other client-listener pattern starts with `/v2/`. The rest of R-HA-041 stays in F4. |
 | UI | R-UI-001, R-UI-046, R-UI-047 |
 | trove-only | Coverage generator (below) |
+
+The first migration creates the key-value table `system_state` with `installation_id`,
+`keyspace_id` and `incarnation`. The table is MVP, because MVP requirements keep keys in it from
+the first release (the Valkey keyspace, restore markers, `restored_at`); R-OPS-024, the read-only
+maintenance mode that defines it, stays P1 in M11.
+
+Criteria of these requirements that need a later milestone run there:
+- from M1: R-HA-002's GC-trigger criterion, R-HA-011's upload criterion, R-ARCH-024's
+  `generic-local` download criteria, the UI login and paged list of R-ARCH-032's `scatter` suite,
+  and R-STOR-046's race test through the Service;
+- from M2: R-HA-051's `npm ping` and its failover-during-`npm ci` criterion, R-ARCH-001's and
+  R-ARCH-032's `npm` criteria, R-ARCH-030's negative-cache and client-suite criteria, and
+  R-HA-056's password rotation during `npm ci`;
+- from M3: R-ARCH-024's drain criterion, whose load includes `dotnet restore` and
+  `dotnet nuget push`, and R-ARCH-032's NuGet criterion;
+- from M5: R-HA-056's and R-HA-061's criteria over a full R-HA-052 run, R-HA-051's backup
+  criterion, R-BAK-004's export criterion and R-STOR-046's drain criterion.
 
 **Coverage generator.** This is a Go `main` package at `internal/tools/coverage/`, run with
 `go run ./internal/tools/coverage`. R-ARCH-003's layout tree gains the entry in the same
@@ -237,32 +316,47 @@ end-to-end reports.
   - a code generator runs at a version other than its `tool` directive;
   - the Angular packages differ from the lockfile of `web/`.
 
-  The dev profile's tool pins (kind, kubectl, Helm, CloudNativePG chart, PostgreSQL image, S3
-  store) are read from one place by both the task runner and CI (R-HA-051).
-- **E0.3** On a machine with Docker and the pinned tools, `dev-up` produces two trove replicas,
-  a two-instance CloudNativePG cluster and the S3 store on a three-node kind cluster in under
-  10 minutes. Both pods answer `200` on `:8081/readyz`, and `GET /api/v1/system/ping` answers `OK`
-  through the Ingress. R-HA-051's `npm ping` criterion moves to M2.
+  The dev profile's tool pins (kind, kubectl, Helm, openssl, CloudNativePG chart, PostgreSQL
+  image, Valkey image, SeaweedFS image) are read from one place by both the task runner and CI,
+  and every image is pinned by digest (R-HA-051).
+- **E0.3** On a machine with Docker and the pinned tools, `dev-up` produces, in under 15 minutes,
+  on a kind cluster with one control-plane and three worker nodes: two `web` and two `worker`
+  replicas, a two-instance CloudNativePG cluster, Valkey with a replica and three Sentinels over
+  TLS, and the S3 store with its blob, WAL-archive and backup buckets (R-HA-051). Every trove pod
+  answers `200` on `:8081/readyz`. `GET /api/v1/system/replicas` lists two replicas with role
+  `web` and two with role `worker`, and `GET /api/v1/system/ping` answers `OK` through the Ingress
+  (R-HA-002). R-HA-051's `npm ping` criterion moves to M2.
 - **E0.4** On an empty PostgreSQL 16, the floor version (Q-HA-2), the migration Job creates the
   schema. If two migration Jobs start at once, one applies the migrations and the other waits on
   the advisory lock, then exits with nothing to do. A migration that fails on purpose leaves the
   running replicas serving and makes `helm upgrade` fail. This is the "Migration failure" row of
-  R-HA-052, run early.
+  R-HA-052, run early. R-BAK-004's migration test fails on a test migration that adds a table
+  without an export class, and the first migration leaves `system_state` holding
+  `installation_id`, `keyspace_id` and `incarnation`.
 - **E0.5** The S3 conformance check of R-STOR-035 passes on every change against SeaweedFS, the
   CI store chosen in Q-HA-3, and nightly against MinIO (built from source at a pinned commit, on
   isolated runners) and AWS S3. Until the owner provides an AWS account and a CI role, the nightly
   results list the AWS S3 job as skipped, never as passed (R-HA-051), and M0 exits without it. The
   race test of R-STOR-005 passes, and so does R-STOR-024's variant with the collector killed at
-  random points. When 100 concurrent uploads of identical content are spread across both replicas,
-  exactly one object exists under its content address.
-- **E0.6** A singleton job holds its lease on exactly one replica. Force-deleting that pod moves
-  the lease to the other replica, and the lease table never shows two holders with valid fencing
-  tokens (R-HA-006). In the same run, `GET /api/v1/system/replicas` shows the deleted pod with
-  `"lost": true` within 30 s and then lists its replacement (R-OPS-003). On the dev profile, cross-replica invalidation reaches p99 ≤ 1 s (P-13) and
-  job pick-up reaches p99 ≤ 1 s (P-14).
+  random points. When 100 concurrent uploads of identical content are spread across the `web`
+  replicas, exactly one object exists under its content address. The blob-store integration tier
+  passes with Valkey stopped, and R-STOR-046's source test passes: nothing below `internal/blob`
+  imports the Valkey client or takes a session-level advisory lock.
+- **E0.6** A singleton job holds its lease on exactly one `worker` replica. Force-deleting that
+  pod moves the lease to the other `worker` replica, and the lease table never shows two holders
+  with valid fencing tokens (R-HA-006). No `web` replica's instance ID ever appears in
+  `job.locked_by`, and no `web` replica holds a lease connection (R-ARCH-001). In the same run,
+  `GET /api/v1/system/replicas` shows the deleted pod with `"lost": true` within 30 s and then
+  lists its replacement (R-OPS-003). On the dev profile, change propagation reaches p99 ≤ 100 ms
+  with Valkey and p99 ≤ `cluster.epoch_poll_interval` + 1 s with Valkey stopped (P-13), and job
+  pick-up reaches p99 ≤ 1 s with Valkey and p99 ≤ `jobs.poll_interval` + 1 s without it (P-14).
 - **E0.7** `helm lint` and `helm template` pass with the dev values. `helm template` without the
   encryption-key Secret fails with R-HA-029's message. The pods start in a namespace that enforces
-  the restricted Pod Security Standard (R-HA-033).
+  the restricted Pod Security Standard (R-HA-033). For every value set in `ci/`, the chart renders
+  `<fullname>-web` and `<fullname>-worker` with `--role web` and `--role worker`, never `all`, and
+  `--set worker.replicaCount=0` fails naming that key (R-HA-002). The output holds no
+  `ReadWriteMany` or `ReadOnlyMany` access mode, no PersistentVolumeClaim, no StatefulSet and no
+  `volumeClaimTemplates`, and a ReadWriteMany spool fails schema validation (R-HA-061).
 - **E0.8** The coverage generator reproduces the table in [Starting point](#starting-point) from
   the pages, fails CI on each rule violation listed above, and its committed output passes
   `git diff --exit-code`. Given a fixture `go test -json` stream with a passing test named after
@@ -272,24 +366,58 @@ end-to-end reports.
   tests run in CI (R-UI-001, R-UI-047).
 - **E0.10** `:8081/metrics` exposes `trove_` metrics, the request log is JSON, and a request that
   carries `traceparent` keeps its trace ID in the log and in `X-Request-Id` (R-OPS-002, R-OPS-018).
+- **E0.11** No state between requests from the first commit. The `scatter` e2e profile exists: the
+  edge balances every request round robin over three `web` replicas with its keep-alive to trove
+  off, and M0's end-to-end checks pass in it. The architecture test of R-ARCH-032 fails on a
+  package-level variable of map, slice, pointer or `sync.Map` type outside the allowed packages.
+- **E0.12** Valkey with Sentinel. On the dev profile, `CLIENT LIST` on the Valkey primary shows
+  connections named `trove:<pod>:…` from every `web` and `worker` pod over TLS only, at most six
+  per replica. A new replica with a wrong `primary_name` or a wrong password stays not ready and
+  logs the cause; with every Sentinel unreachable at its first start it becomes ready with
+  `"degraded":["valkey"]` (R-HA-056, Q-HA-13). R-ARCH-031's criteria pass: a Valkey 8.1 server
+  is refused with a degraded replica, the example ACL rule produces no denial, and a failover with
+  the Sentinels' Pub/Sub traffic blocked moves every replica to the new primary within
+  `valkey.sentinel.refresh_interval` plus 1 s. After the integration suite, every key starts with
+  the key prefix and has a TTL (R-ARCH-030).
+- **E0.13** Failovers without a failed request. Under a k6 load of 100 requests/s through the
+  Ingress against `GET /api/v1/system/ping` and `GET /api/v1/system/replicas`, with a test change
+  written through one replica and a test job enqueued every second:
+  - `dev-failover` (PostgreSQL switchover): k6 records only `200`;
+  - PostgreSQL primary force-deleted: failures only within `retry.maxElapsed`, all `503`, and
+    recovery without intervention; PostgreSQL stopped for 30 s: `/healthz` stays `200`, `/readyz`
+    turns `503` and back, and no restart count rises (R-ARCH-024);
+  - `dev-valkey-failover`, `dev-valkey-kill` and `dev-valkey-outage 60s`: k6 records only `200`,
+    `/readyz` answers `200` on every replica throughout, and changes and jobs keep P-13's and
+    P-14's bounds without Valkey.
+- **E0.14** A node drain without a failed request. `kubectl drain --ignore-daemonsets
+  --delete-emptydir-data` of a kind node that hosts a `web` and a `worker` pod runs under E0.13's
+  load, while a test job that persists its cursor every second runs on that `worker`. k6 records
+  only `200` and no connection error. The job finishes on the other `worker` from its cursor with
+  `attempt` unchanged. The kubelet events show no `SIGKILL` of a trove container, and no trove pod
+  stays `Pending` for longer than 60 s (R-ARCH-024, R-HA-011). This drain runs on every change to
+  `main` from here on and gains each later milestone's client load.
 
 **Work packages.**
 
 | WP | Content | Depends on | Runs in parallel with |
 |---|---|---|---|
 | WP0.1 | Repository skeleton: `go.mod` with `tool` pins, `web/` workspace with lockfile, task runner, architecture test of R-ARCH-002, placeholder `dist/` | — | — |
-| WP0.2 | CI: lint, unit tests, generate-diff check, image build, chart lint, integration tier with PostgreSQL and the S3 store in containers, version check of E0.2 | WP0.1 | WP0.3 to WP0.9 |
-| WP0.3 | PostgreSQL: pool and connection budget, migration runner under an advisory lock with the compatibility gate, core schema of R-STOR-003, roles and TLS | WP0.1 | WP0.4 to WP0.9 |
-| WP0.4 | Blob store: S3 client, spool, single-pass hashing, commit protocol, multipart transfer, conformance check, garbage collection | WP0.3 (schema), WP0.5 (GC lease) | WP0.6 to WP0.9 |
-| WP0.5 | Coordination: job queue, leases with fencing, advisory-lock categories, LISTEN/NOTIFY, in-process caches, replica registry | WP0.3 | WP0.4, WP0.6 to WP0.9 |
-| WP0.6 | Server shell: listeners, middleware, client address, error model, configuration, lifecycle, stored-secret encryption, outbound HTTP client, logs, metrics, traces, OpenAPI skeleton, ping and version | WP0.1 | all |
-| WP0.7 | Helm chart skeleton and dev profile | WP0.3 (`migrate`), WP0.6 (probes) | WP0.4, WP0.5, WP0.8, WP0.9 |
+| WP0.2 | CI: lint, unit tests, generate-diff check, image build, chart lint, integration tier with PostgreSQL, Valkey with Sentinel and the S3 store in containers, version check of E0.2 | WP0.1 | WP0.3 to WP0.10 |
+| WP0.3 | PostgreSQL: connection classes (a transaction-scoped main pool that keeps no session state, the reserved control connection, the lease pool on `worker` only) and the connection budget, migration runner under an advisory lock with the compatibility gate, core schema of R-STOR-003, `system_state`, the table registry of R-BAK-004, roles and TLS | WP0.1 | WP0.4 to WP0.10 |
+| WP0.4 | Blob store: S3 client, spool on `emptyDir`, single-pass hashing, commit protocol, multipart transfer, conformance check, garbage collection as `maintenance` jobs on `worker` | WP0.3 (schema), WP0.5 (job key) | WP0.6 to WP0.10 |
+| WP0.5 | Coordination: job queue claimed by `worker` only, leases with fencing, advisory-lock categories for the locks that stay in PostgreSQL, the change log with per-area epochs, in-process caches, replica registry | WP0.3; WP0.10 for the fast path | WP0.4, WP0.6 to WP0.9 |
+| WP0.6 | Server shell: listeners, roles (`--role web`, `worker`, `all`), middleware, client address, error model, configuration, lifecycle with drain-safe shutdown (readiness flip, drain delay, in-flight completion, job release), stored-secret encryption, outbound HTTP client, logs, metrics, traces, OpenAPI skeleton, ping and version | WP0.1 | all |
+| WP0.7 | Helm chart skeleton: `web` and `worker` Deployments, Services without session affinity, PodDisruptionBudgets, topology spreading with `nodeTaintsPolicy: Honor`, volumes per R-HA-061, Valkey wiring. Dev profile with three kind worker nodes, CloudNativePG with a standby, Valkey with a replica and three Sentinels, SeaweedFS, and the `scatter` e2e profile | WP0.3 (`migrate`), WP0.6 (probes), WP0.10 (Valkey keys) | WP0.4, WP0.5, WP0.8, WP0.9 |
 | WP0.8 | Angular workspace, signals baseline, embedding and serving | WP0.1 | all |
 | WP0.9 | Coverage generator | WP0.1 | all |
+| WP0.10 | Valkey: valkey-go client with Sentinel discovery, TLS and ACL, key prefix and keyspace ID, Pub/Sub fast path for change messages and signals, circuit breaker and the per-replica fallbacks, version check | WP0.1 | WP0.3, WP0.4, WP0.6, WP0.8, WP0.9 |
+| WP0.11 | Drain and failover harness: the `dev-failover`, `dev-valkey-*` and `dev-drain` targets and the k6 load of E0.13 and E0.14, which WP2.8 extends | WP0.7 | WP0.8, WP0.9 |
 
 **Not in M0:** repositories, users, tokens and any package format. The GC trigger and the task and
-job API (R-OPS-019) wait for the management API of M1. Failure-mode guarantees beyond E0.4 and
-E0.6 belong to M5.
+job API (R-OPS-019) wait for the management API of M1. The backup commands wait for M5's lane,
+which starts after M1. The transaction-mode pooler profile (R-HA-058) is M5; M0's main pool already
+keeps no session state, so the profile adds configuration, not a code path. Failure-mode guarantees
+beyond E0.4, E0.6, E0.13 and E0.14 belong to M5.
 
 ## M1 · Access core
 
@@ -302,13 +430,13 @@ and the administration UI.
 
 | Area | Requirements |
 |---|---|
-| Identity | R-AUTH-001…018, R-AUTH-020, R-AUTH-022…024, R-AUTH-026…029, R-AUTH-032, R-AUTH-033, R-AUTH-037, R-AUTH-038, R-AUTH-040, R-AUTH-041 |
-| Authorization | R-AUTHZ-001…006, R-AUTHZ-010, R-AUTHZ-013, R-AUTHZ-015, R-AUTHZ-016, R-AUTHZ-021…023, R-AUTHZ-028, R-AUTHZ-029, R-AUTHZ-030 |
+| Identity | R-AUTH-001…018, R-AUTH-020, R-AUTH-022…024, R-AUTH-026…029, R-AUTH-032, R-AUTH-033, R-AUTH-037, R-AUTH-038, R-AUTH-040…043 |
+| Authorization | R-AUTHZ-001…006, R-AUTHZ-010, R-AUTHZ-013, R-AUTHZ-015, R-AUTHZ-016, R-AUTHZ-021…023, R-AUTHZ-028, R-AUTHZ-032, R-AUTHZ-029, R-AUTHZ-030 |
 | Repositories | R-REPO-001…006, R-REPO-008…013 |
-| Request paths and items | R-ARCH-007, R-ARCH-011, R-ARCH-014, R-STOR-007, R-STOR-012, R-STOR-013, R-STOR-016, R-STOR-018 |
+| Request paths and items | R-ARCH-007, R-ARCH-011, R-ARCH-014, R-ARCH-034, R-STOR-007, R-STOR-012, R-STOR-013, R-STOR-016, R-STOR-018 |
 | Deployment | R-HA-040, R-HA-043 |
 | Operations and audit | R-OPS-005, R-OPS-014…017, R-OPS-019, R-OPS-020 |
-| API | R-API-004…008, R-API-010…022, R-API-025, R-API-031…033, R-API-037, R-API-039, R-API-040, R-API-049 |
+| API | R-API-004…008, R-API-010…022, R-API-025, R-API-031…033, R-API-037, R-API-039, R-API-040, R-API-049, R-API-051, R-API-052 |
 | UI | R-UI-002…005, R-UI-010, R-UI-011, R-UI-020, R-UI-021, R-UI-024…027, R-UI-029…031, R-UI-033, R-UI-037, R-UI-038, R-UI-042…045 |
 | Generic local class (Q-ROAD-1) | The local class of PKG-GENERIC-001, plus PKG-GENERIC-004 and PKG-GENERIC-005. WP1.4 first writes `docs/spec/formats/generic.md` (prefix `R-GENERIC`). Its local-class requirements are MVP and join this scope when the page exists. Its remote and virtual requirements are P1 and belong to F1. |
 
@@ -320,6 +448,12 @@ every long-running operation (R-API-015) return job references that must be poll
 release. Its acceptance criteria name the `storage-summary` task, which arrives with R-OPS-023 in
 M7. Until then M1 runs them against the MVP task `gc`.
 
+R-OPS-014 and R-OPS-015 are built with their journal parts, which are MVP since Q-HA-9: an event
+type carries its `journal: revocation` flag from its registration on (Q-OPS-22), and the audit
+writer inserts the `revocation_outbox` row in the same transaction as the event. R-AUTH-041
+registers the identity events that way. The journal writer, the replay and their criteria are
+R-HA-054 in M5, so no event type has to be revisited then.
+
 **Exit criteria.**
 
 - **E1.1** In the dev profile, a Keycloak test IdP signs a user in through the
@@ -328,7 +462,8 @@ M7. Until then M1 runs them against the MVP task `gc`.
   The break-glass administrator signs in and can be disabled (R-AUTH-014).
 - **E1.2** A personal access token is shown once, and the database stores only its SHA-256. A test
   scans a database dump for the token value and finds nothing. After revocation through replica A,
-  a request with that token through replica B gets `401` within 2 s (R-AUTH-029's bound).
+  a request with that token through replica B gets `401` within 2 s (R-AUTH-029's bound), with
+  Valkey running and again with Valkey stopped (Q-AUTH-10).
 - **E1.3** Deny by default holds on a fresh installation. With one generic local repository and no
   policies, anonymous and authenticated requests are refused as R-AUTHZ-016 specifies. A table of
   at least 200 authorization cases passes, covering policy union, token scope as a ceiling,
@@ -351,12 +486,31 @@ M7. Until then M1 runs them against the MVP task `gc`.
   authentication settings, audit log and system status. An automated accessibility check reports no
   serious violations on any of them (R-UI-044). The English and German builds both pass (R-UI-045).
 - **E1.8** R-AUTH-038's brute-force thresholds trigger in an automated test against Basic, Bearer
-  and the login flow. R-API-016's rate limits answer `429` with `Retry-After`.
+  and the login flow, with requests spread over three `web` replicas. R-API-016's rate limits
+  answer `429` with `Retry-After`. R-ARCH-034's criteria pass: limits count cluster-wide across
+  three `web` replicas, hold the same bound with Valkey stopped, and add no delay once the circuit
+  breaker is open.
 - **E1.9** R-API-049's acceptance criteria pass on two replicas whose key rings differ. The system
   status screen shows the same key-ring state in its "Stored-secret keys" card (R-UI-038).
 - **E1.10** `docs/spec/formats/generic.md` exists, passes the coverage generator's checks, and
   lists PKG-GENERIC-001, PKG-GENERIC-004 and PKG-GENERIC-005 in the `Covers:` lines of MVP
   requirements. Each of those requirements has a passing test that names it (Q-ROAD-1, Q-ROAD-4).
+- **E1.11** Requests that span replicas. In the `scatter` profile, the Playwright journeys of
+  R-UI-047 pass, every list operation is walked to its last page with `limit=1`, and an
+  `Idempotency-Key` replayed through another replica returns the stored outcome (R-API-051).
+  R-AUTH-042's MVP criteria pass: browser logins, re-authentication, logout, revocation and a
+  break-glass lockout, each with consecutive requests on different replicas, also with Valkey
+  stopped and with `FLUSHALL` in the middle. Its npm web and device logins join with R-AUTH-034
+  and R-AUTH-036 (P1). A management read on another replica shows a write at once (R-API-052).
+- **E1.12** R-AUTHZ-032's criteria pass: with three `web` replicas, Valkey stopped and propagation
+  slowed for the test, 20 parallel uploads that carry `Trove-Authz-Min-Epoch` follow a new grant
+  and then its removal on every replica.
+- **E1.13** Drains with raw transfers. R-HA-011's upload criterion and R-ARCH-024's two
+  `generic-local` download criteria pass: no `curl -T` of 500 MB fails during
+  `kubectl rollout restart deploy/trove-web`, and a download longer than the grace period is cut
+  once and resumes with `206` from another replica with a matching SHA-256. E0.14's drain runs with
+  an upload and download loop on `generic-local` added. R-HA-002's GC criterion passes: a GC run
+  triggered through a `web` pod executes on a `worker` pod.
 
 **Work packages.**
 
@@ -367,8 +521,8 @@ M7. Until then M1 runs them against the MVP task `gc`.
 | WP1.3 | Authorization engine: policies, selectors, patterns, evaluation, compiled grant index with invalidation, decision audit | WP1.2 (principals) | WP1.4, WP1.6 to WP1.8 |
 | WP1.4 | Spec page `formats/generic.md`, then the repository model and API, plus the generic local class (Q-ROAD-1) | M0 | WP1.1 to WP1.3 |
 | WP1.5 | Raw transfer: `/files/`, items API, upload and download request paths | WP1.3, WP1.4 | WP1.6 to WP1.8 |
-| WP1.6 | API conventions and admin resources: errors, pagination, ETags, idempotency, jobs, rate limits, CORS, settings, audit, GC trigger, key-ring status | M0 | all |
-| WP1.7 | Event registry and audit recording | M0 | all |
+| WP1.6 | API conventions and admin resources: errors, cursor pagination, ETags, idempotency keys in PostgreSQL, jobs, rate limits on the cluster limiter (R-ARCH-034), CORS, settings, audit, GC trigger, key-ring status | M0 | all |
+| WP1.7 | Event registry with the journal flag, and audit recording with the outbox row | M0 | all |
 | WP1.8 | UI shell and administration screens | consumes the OpenAPI types that WP1.6 produces; trails the API by one step | all |
 
 **Not in M1:** any package protocol. Package ownership waits for M2, because it needs package
@@ -384,15 +538,21 @@ format reuses.
 
 | Area | Requirements |
 |---|---|
-| npm | R-NPM-001…013, R-NPM-015…017, R-NPM-019, R-NPM-024…027, R-NPM-029…033, R-NPM-040…045 |
+| npm | R-NPM-001…013, R-NPM-015…017, R-NPM-019, R-NPM-024…027, R-NPM-029…033, R-NPM-040…046 |
 | Format contract | R-ARCH-008…010, R-ARCH-028 |
-| Proxy and virtual engines | R-ARCH-012, R-ARCH-013, R-ARCH-015, R-REPO-017, R-REPO-019…021, R-REPO-023…030, R-REPO-032, R-REPO-033, R-REPO-038…043, R-REPO-045, R-REPO-047, R-REPO-048, R-OPS-011 |
+| Proxy and virtual engines | R-ARCH-012, R-ARCH-013, R-ARCH-015, R-ARCH-033, R-REPO-017, R-REPO-019…021, R-REPO-023…030, R-REPO-032, R-REPO-033, R-REPO-038…043, R-REPO-045, R-REPO-047…049, R-OPS-011, R-OPS-021, R-API-024 |
 | Authorization | R-AUTHZ-008, R-AUTHZ-009, R-AUTHZ-018, R-AUTHZ-019 |
 | API and UI | R-API-029, R-API-030, R-UI-006…009, R-UI-016, R-UI-017, R-UI-022 |
 
+R-OPS-021 and R-API-024 are MVP since 2026-10-28: the negative cache lives in Valkey, and cache
+invalidation is the one way to cut a wrong or forged negative entry short without a Valkey
+credential (H-49). R-API-024's reindex row keeps P1 and arrives with R-OPS-022 in M7. R-NPM-046's
+pooler-profile criterion runs from M5 (R-HA-058); R-REPO-049's NuGet criterion runs from M3.
+
 **Exit criteria.**
 
-- **E2.1** On two replicas behind the chart's Ingress, every MVP scenario of R-NPM-045 passes for
+- **E2.1** In the `scatter` profile of R-ARCH-032 (three `web` and two `worker` replicas, Valkey
+  with Sentinel), and nightly with Valkey stopped, every MVP scenario of R-NPM-045 passes for
   each of its gate rows: npm 10, 11 and 12, pnpm 10, 11 and 12, Yarn 4 and Yarn 1.22 (Q-NPM-4).
   The rows follow R-NPM-045's rule, which is re-evaluated at every release, so the list can change;
   a scenario a row's client cannot run is marked not applicable with its reason. The P1 scenarios
@@ -402,6 +562,7 @@ format reuses.
   (at least 500 packages), and resolve through `npm-all`, a virtual repository over `npm-local` and
   `npm-remote`, with the remote pointing at the counting test upstream. All three succeed. The
   upstream records exactly one request per tarball and at most one per package document (P-12).
+  With Valkey stopped, it records at most one of each per replica.
 - **E2.3** `npm publish` through replica A, followed at once by `npm view` of that version through
   `npm-all` on replica B, returns the new version (R-ARCH-012, Q-ARCH-9).
 - **E2.4** With the upstream stopped, `npm ci` on a warm cache succeeds from stale metadata
@@ -420,19 +581,36 @@ format reuses.
   This is the remaining criterion of R-HA-051.
 - **E2.8** The version published in E2.3 appears in the packages list, its README renders
   sanitized, and E2.1's configure step uses the snippets from the client setup dialog verbatim.
+- **E2.9** Request collapsing through Valkey. R-ARCH-033's criteria pass: 100 concurrent misses
+  over two replicas cause one upstream `GET`, while no trove connection is `idle in transaction`
+  and no advisory lock is held; a killed holder's flight is taken over within
+  `cluster.flight_lock_ttl` plus the poll interval; with Valkey stopped the upstream sees at most
+  one `GET` per replica; a lock lost in a forced Sentinel failover costs at most one duplicate
+  fetch and leaves one cache entry. R-REPO-049's npm criteria pass in the `scatter` profile,
+  including a drain during a cold-cache `npm ci` with no entry for a partial body.
+- **E2.10** R-NPM-046's criteria pass, among them `FLUSHALL` and a forced Sentinel failover during
+  the scenario list without a failed client operation, conditional requests answered `304` by
+  every replica, and an `npm unpublish` whose answer the edge drops. A cache invalidation sent
+  through one replica takes effect on every replica within `cluster.epoch_poll_interval` plus 1 s,
+  with and without Valkey (R-OPS-021, R-REPO-045).
+- **E2.11** Drain and failover under npm load. Variant A of R-HA-059's drain test, with the npm
+  part of its load (the `npm ci` and `npm publish` loops and the k6 npm requests), runs on every
+  change to `main`: every npm command exits `0` with npm's default retries, and k6 records only
+  `2xx` and `304`. `dev-failover` and `dev-valkey-failover` during an `npm ci` loop cause no
+  failed iteration (R-HA-051).
 
 **Work packages.**
 
 | WP | Content | Depends on | Runs in parallel with |
 |---|---|---|---|
 | WP2.1 | Format contract, registry, conformance kit, limits for untrusted content | M1 | — |
-| WP2.2 | Proxy engine: remote settings, request path, single-flight and advisory-lock collapse, freshness, negative cache, offline circuit, egress rules, integrity check, URL rewriting | WP2.1 | WP2.3, WP2.4, WP2.7, WP2.8 |
+| WP2.2 | Proxy engine: remote settings, request path, single-flight and Valkey flight-lock collapse (R-ARCH-033), freshness, negative cache in Valkey with a per-replica L1, cache invalidation, fetch budget per installation, offline circuit, egress rules, integrity check, URL rewriting | WP2.1 | WP2.3, WP2.4, WP2.7, WP2.8 |
 | WP2.3 | Virtual resolution: membership, algorithm, merged-metadata cache, deployment target, pin rules, namespace claims and the shadowing check | WP2.1 | WP2.2, WP2.4, WP2.7, WP2.8 |
 | WP2.4 | npm local: publish, documents, revisions, dist-tags, unpublish, tombstones, whoami | WP2.1 | WP2.2, WP2.3 |
 | WP2.5 | npm remote and virtual: document fetch, tarball URLs, upstream removals, merges | WP2.2 to WP2.4 | WP2.6 to WP2.8 |
 | WP2.6 | Client matrix, counting upstream stub, reference lockfile in `perf/` | WP2.4 | WP2.5, WP2.7, WP2.8 |
 | WP2.7 | Package UI, install panel, client setup dialog and snippets | WP2.4 | WP2.5, WP2.6, WP2.8 |
-| WP2.8 | HA harness start: pod-crash scenario of R-HA-052 and the load scripts of R-ARCH-027 running against npm | WP2.4 | all |
+| WP2.8 | HA harness start: the pod-crash, PostgreSQL switchover, Valkey failover and Valkey outage scenarios of R-HA-052, variant A of R-HA-059's drain test, and the load scripts of R-ARCH-027 with k6, running against npm | WP2.4 | all |
 
 **Not in M2:** the P1 npm operations (M6) and npm trusted publishing (M10).
 
@@ -446,7 +624,7 @@ and then freezes it.
 
 | Area | Requirements |
 |---|---|
-| NuGet | R-NUGET-001…010, R-NUGET-012…020, R-NUGET-026…028 |
+| NuGet | R-NUGET-001…010, R-NUGET-012…020, R-NUGET-026…028, R-NUGET-030…032 |
 | Authorization | R-AUTHZ-007 |
 | UI | R-UI-018 |
 
@@ -469,18 +647,28 @@ and then freezes it.
   operation succeeds with the action and fails without it.
 - **E3.5** A push with a personal access token as `X-NuGet-ApiKey` succeeds, and so does a restore
   with a token as Basic password. A revoked token gets `401` on both (INV-8, R-NUGET-012).
+- **E3.6** NuGet on interchangeable replicas. R-NUGET-030 to R-NUGET-032 pass in the `scatter`
+  profile and with Valkey stopped, and so does R-REPO-049's NuGet criterion. A `dotnet nuget push`
+  whose answer a fault-injecting edge drops is repeated by the client and exits `0`, because an
+  identical push of a stored version answers `201` (Q-NUGET-6). Every rendered document has the
+  same body and the same weak `ETag` on all three `web` replicas (R-NUGET-030, Q-NUGET-9). Variant
+  A of the drain test gains the NuGet part of its load, and R-ARCH-024's drain criterion, whose
+  load needs both formats, passes.
 
 **Work packages.** These can run in parallel:
 
-- WP3.1, NuGet local: ingestion, push, unlist and delete, flat container, registrations, search;
-- WP3.2, remote and virtual repositories;
-- WP3.3, symbol package push;
-- WP3.4, the acceptance suite, including the Windows runner.
+- WP3.1, NuGet local: ingestion, push with identical-bytes retries, unlist and delete, flat
+  container, registrations, search;
+- WP3.2, remote and virtual repositories, with forwarded search cached per replica (Q-NUGET-8);
+- WP3.3, symbol package push, which validates and stores the `.snupkg`; extraction and indexing
+  are the `nuget-symbol-index` job of M6 (Q-NUGET-11);
+- WP3.4, the acceptance suite, including the Windows runner and the `scatter` and Valkey-stopped
+  runs.
 
 After those, WP3.5 holds the contract-freeze review and the action-map tests.
 
 **Not in M3:** the symbol server, symbol proxying, vulnerability data, autocomplete and reindexing
-(M6). NuGet v2 is P2 (INV-14).
+(M6). NuGet's part of backups and restores (R-NUGET-033) is M5. NuGet v2 is P2 (INV-14).
 
 ## M4 · GitLab CI OIDC
 
@@ -492,7 +680,7 @@ they produce.
 
 | Area | Requirements |
 |---|---|
-| CI | R-CI-001…021, R-CI-028 |
+| CI | R-CI-001…021, R-CI-028…030 |
 | Authorization | R-AUTHZ-014 |
 | API and UI | R-API-035, R-UI-035, R-UI-036 |
 
@@ -515,14 +703,22 @@ they produce.
   tester (R-UI-036) return the grants that the real exchange issued.
 - **E4.6** A CI token used after its expiry gets `401`. Revoking an issuance makes its token fail
   within R-AUTH-029's 2 s bound.
+- **E4.7** R-CI-028 passes in the `scatter` profile with a `web` node drained during the run and
+  again with Valkey stopped. Single-use exchanges yield exactly one success across a forced
+  Sentinel failover (R-CI-018, R-CI-029). The tasks of R-CI-030 run only on `worker` replicas. The
+  restore part of this criterion, a single-use subject token issued before a restore finished that
+  answers `subject_token_predates_restore`, needs the restore of M5 and runs in E5.12.
 
 **Work packages.** WP4.1 to WP4.4 start as soon as M1 ends, in parallel with M2 and M3:
 
-- WP4.1: issuers, discovery, signing keys with caching and rotation, subject-token validation;
-- WP4.2: exchange endpoint, errors, hardening, replay protection;
-- WP4.3: mapping engine, claim conditions, templating, grants, ownership binding, CI tokens in
-  evaluation;
-- WP4.4: token lifetime, identity, revocation, issuance records.
+- WP4.1: issuers, discovery, signing keys in one PostgreSQL row per issuer, refreshed by a
+  `worker` task (R-CI-030, Q-CI-12), subject-token validation;
+- WP4.2: exchange endpoint, errors, hardening with cluster-wide limits (Q-CI-14), replay
+  protection in PostgreSQL (Q-CI-13);
+- WP4.3: mapping engine with the `mappings_version` check (Q-CI-15), claim conditions, templating,
+  grants, ownership binding, CI tokens in evaluation;
+- WP4.4: token lifetime, identity, revocation, issuance records, with the CI events registered for
+  the revocation journal (R-CI-020).
 
 WP4.5 (mapping API, dry run and UI) follows WP4.3. WP4.6 sets up the two test environments:
 
@@ -538,7 +734,9 @@ needs it (Q-CI-5).
 
 ## M5 · HA hardening and Helm GA
 
-**Goal.** M5 proves the failure-mode contract under real client load and finishes the chart for
+**Goal.** M5 proves the failure-mode contract under real client load: node drains, PostgreSQL and
+Valkey failovers and the full failure-injection suite, each with zero failed client requests. It
+ships trove's own backup and restore with the revocation journal, and finishes the chart for
 production. Its result is the 1.0 candidate, which the owner reviews at the
 [walkthrough](#owner-walkthrough).
 
@@ -546,32 +744,49 @@ production. Its result is the 1.0 candidate, which the owner reviews at the
 
 | Area | Requirements |
 |---|---|
-| Failure modes and upgrades | R-HA-007…012, R-HA-020…022, R-HA-024, R-STOR-036 |
-| Chart GA | R-HA-031, R-HA-032, R-HA-038, R-HA-039, R-HA-042, R-HA-048…050 |
-| Proof | R-HA-052, R-ARCH-027, R-OPS-008 |
-| P1 requirements scheduled in M5 (Q-ROAD-2) | R-HA-023, R-HA-025 |
+| Failure modes and upgrades | R-HA-007…010, R-HA-012, R-HA-020…022, R-HA-024, R-STOR-036 |
+| Valkey, drains and connections | R-HA-057…059 |
+| Backup and restore | R-BAK-001…003, R-BAK-005…024, R-BAK-026, R-BAK-028, R-BAK-029, R-HA-023, R-HA-025, R-HA-060, R-STOR-047, R-NPM-047 (with `trove admin npm reinstate`), R-NUGET-033, R-API-050, R-UI-048 |
+| Revocation journal (Q-HA-9) | R-HA-054, R-AUTHZ-031 |
+| Chart GA | R-HA-031, R-HA-032, R-HA-038, R-HA-039, R-HA-042, R-HA-045, R-HA-048…050 |
+| Proof and signals | R-HA-052, R-ARCH-027, R-OPS-008, R-OPS-045, R-OPS-046 |
+
+The backup lane (WP5.8 to WP5.10) starts when M1 ends and runs in parallel with M2 to M4, as M4's
+work does. Its first slice backs up and restores an installation with generic local repositories,
+users, tokens and policies. npm and NuGet data join as M2 and M3 land (R-NPM-047, R-NUGET-033),
+and CI entries join the journal after M4. The identity and CI events are already registered with
+the journal flag in M1 and M4 (R-AUTH-041, R-CI-020); M5 adds the writer, the replay and the
+criteria of their entries. A restore refuses to run without the revocation journal (R-BAK-020),
+so the journal ships with the backup, not after it (Q-ROAD-2).
 
 **Exit criteria.**
 
-- **E5.1** The full R-HA-052 suite is green in two consecutive nightly runs. The restore drill has
-  passed once on the dev profile, from a PostgreSQL backup and a versioned bucket set up as R-HA-023
-  specifies, following R-HA-025's steps. Until R-HA-054 ships, step 4 of R-HA-025 has no revocation
-  journal to replay. The drill therefore runs the journal-off variant of its revoked-token check,
-  which documents H-37, and the MVP keeps the manual procedure that Q-HA-9 names.
+- **E5.1** The full R-HA-052 suite is green in two consecutive nightly runs, including its Valkey,
+  drain, pooler, backup and restore rows. Both restore drills pass: the trove-backup drill into an
+  empty namespace (R-HA-060) and the point-in-time drill from a PostgreSQL backup and a versioned
+  bucket set up as R-HA-023 specifies, following R-HA-025's steps. In both, `post-restore` or the
+  restore replays the revocation journal, and a token revoked after the restore point stays
+  rejected (R-HA-054). The journal-off case runs only as the documented
+  `--skip-revocation-journal` variant (R-BAK-024).
 - **E5.2** Cold cache with a replica killed mid-run: `npm ci` of the 500-package reference lockfile
-  through `npm-all` succeeds on three replicas while one replica is force-deleted partway through.
-  The same holds for `dotnet restore --no-cache` of the reference solution through `nuget-all`. No
-  client iteration fails after the clients' own retries, and `trove admin storage verify` reports
-  no item without its object.
-- **E5.3** P-1 to P-15 of R-ARCH-027 are met in two consecutive nightly runs on the reference
-  environment.
+  through `npm-all` succeeds on three `web` replicas while one of them is force-deleted partway
+  through. The same holds for `dotnet restore --no-cache` of the reference solution through
+  `nuget-all`. No client iteration fails after the clients' own retries, and
+  `trove admin storage verify` reports no item without its object.
+- **E5.3** P-1 to P-17 of R-ARCH-027 are met in two consecutive nightly runs on the reference
+  environment, among them the scale-out from three to six `web` replicas (P-16) and the latency
+  with Valkey down (P-17). The reference load test also runs once with Valkey stopped and records
+  upstream request rates and PostgreSQL load (R-HA-057).
 - **E5.4** A rolling upgrade from the M4 pre-release to the 1.0 candidate with the migration Job,
   followed by `helm rollback`, shows zero failed iterations under R-HA-052's load (R-HA-020).
 - **E5.5** The values reference documents every chart value, and the values schema validates it
   (R-HA-031). Production example values render the PodDisruptionBudget, topology spreading,
   HorizontalPodAutoscaler and NetworkPolicy (R-HA-032, R-HA-042). R-HA-038's criteria pass through
   an HTTPRoute attached to an existing Gateway. R-HA-039's 6 GiB upload and 15-minute slow download
-  pass through the Ingress and through the HTTPRoute.
+  pass through the Ingress and through the HTTPRoute. R-HA-045's ServiceMonitor and
+  PrometheusRule render with the production example values; the Valkey, drain and backup alerts
+  fire in their R-HA-052 scenarios, and the "Maintenance stays quiet" scenario fires none
+  (R-OPS-045, R-OPS-046).
 - **E5.6** The coverage generator shows no uncovered MVP catalog entry. Every MVP requirement has at
   least one passing test that names it (Q-ROAD-4).
 - **E5.7** [docs/security/](../security/) describes the 1.0 mechanisms. Each H-item from the spec
@@ -581,18 +796,61 @@ production. Its result is the 1.0 candidate, which the owner reviews at the
   `ghcr.io/guided-traffic/trove` and the chart to `oci://ghcr.io/guided-traffic/charts/trove`, the
   GitHub Container Registry chosen in Q-HA-11. `helm install` by digest from there passes E2.1's
   smoke scenarios. Image signing, SBOM and provenance arrive with R-HA-047 (M11).
+- **E5.9** Node drain with zero failed requests. R-HA-059's acceptance test passes with variants A
+  to E in two consecutive nightly runs, under its full load: eight `npm ci` loops, four
+  `dotnet restore` loops, an npm and a NuGet publish every 10 s, k6 at 150 requests/s, and the
+  long-transfer probes. Every `npm` and `dotnet` command exits `0` with the clients' default
+  retries; k6 records only `2xx` and `304` and no connection error; every acknowledged publish
+  installs afterwards; a long transfer is cut at most once per evicted `web` pod and completes by
+  resume; no trove container gets `SIGKILL`; and every job of an evicted `worker` finishes
+  elsewhere with `attempt` unchanged. R-STOR-046's drain criterion passes in the same runs.
+- **E5.10** PostgreSQL and Valkey failovers under client load. PostgreSQL: a switchover and drain
+  variant C cause zero failed iterations; a force-deleted primary causes failures only within
+  `retry.maxElapsed`, all `503`, with every client iteration succeeding after its own retries; the
+  database at 0 instances for 2 minutes restarts no container (R-HA-052). Valkey: R-HA-057's
+  criteria pass under R-HA-052's load (planned failover, primary loss, a 5-minute outage with a
+  `web` pod replaced, Sentinel quorum loss, `FLUSHALL`, a slow Valkey) with zero failed commands and
+  `/readyz` answering `200` throughout, and drain variant B passes. The pooler profile passes
+  R-HA-058's criteria nightly, drain variant D among them.
+- **E5.11** A backup taken during publishing restores into an empty installation. R-BAK-029 passes
+  scenario by scenario in CI. In scenario 1, npm and NuGet packages are published, deleted and
+  trashed, and garbage collection runs with `grace_period: 0s` every 10 s, while
+  `trove backup create` runs. The backup is restored into a fresh database and bucket. Every
+  untrashed and trashed file item then returns bytes whose SHA-256 equals its recorded digest,
+  `npm view` lists exactly the versions in the restored database, and `trove backup verify --deep`
+  exits `0`. Two overlapping runs yield one success and one exit code 3; a drain during a backup and
+  during a restore ends both Jobs `Complete` without manual steps; the nightly drill publishes its
+  timings.
+- **E5.12** What a restore brings back and what it withholds. After the trove-backup restore:
+  - a token revoked and a user disabled after the snapshot stay revoked and disabled, and
+    hand-written journal objects grant no principal any access (R-BAK-024, R-HA-054, R-AUTHZ-031);
+  - a replayed disable of a CI mapping also suspends every later enabled mapping of its tier
+    (R-CI-020, Q-CI-11);
+  - a single-use CI subject token issued before the restore finished answers
+    `subject_token_predates_restore` (R-CI-018, R-CI-029);
+  - an npm version unpublished after the snapshot is withheld until an administrator confirms or
+    reverses it with `trove admin npm reinstate` (R-NPM-047, Q-NPM-12);
+  - a NuGet version number deleted after the snapshot stays reserved for its journaled bytes
+    (R-NUGET-033, Q-NUGET-10);
+  - the first storage summary matches the restored `blobs` table (R-STOR-047);
+  - the backups screen shows the run, the stored backups and the restore origin from R-API-050
+    (R-UI-048).
 
 **Work packages.** These can run in parallel:
 
-| WP | Content |
-|---|---|
-| WP5.1 | Failure-mode contract, dependency failures, PostgreSQL failover, object-storage outage, graceful termination, node loss |
-| WP5.2 | Rolling upgrades, mixed-version operation, background data migrations, upgrade policy |
-| WP5.3 | Restore consistency, plus backup and restore (R-HA-023, R-HA-025; Q-ROAD-2) |
-| WP5.4 | Chart GA: values reference and schema, PDB, spreading, HPA, network policies, edge proxy requirements, uninstall, prerequisites, sizing |
-| WP5.5 | Completion of the failure-injection suite |
-| WP5.6 | Performance runs and the metrics catalog |
-| WP5.7 | Security pages and review; release pipeline |
+| WP | Content | Can start |
+|---|---|---|
+| WP5.1 | Failure-mode contract, dependency failures, PostgreSQL failover, object-storage outage, node loss | M3 and M4 |
+| WP5.2 | Rolling upgrades, mixed-version operation, background data migrations, upgrade policy | M3 and M4 |
+| WP5.3 | Restore consistency, the platform layer and the point-in-time restore (R-HA-023 to R-HA-025) | M3 and M4 |
+| WP5.4 | Chart GA: values reference and schema, PDB, spreading, HPA, network policies, edge proxy requirements, monitoring integration (R-HA-045), uninstall, prerequisites, sizing | M3 and M4 |
+| WP5.5 | Completion of the failure-injection suite: Valkey, drain, pooler, backup and restore rows | M3 and M4 |
+| WP5.6 | Performance runs and the metrics catalog, Valkey and operational signals (R-OPS-045, R-OPS-046) | M3 and M4 |
+| WP5.7 | Security pages and review; release pipeline | M3 and M4 |
+| WP5.8 | Backup create: snapshot and table export, blob pool with incremental copy, garbage-collection hold, run records and one run at a time, configuration, CronJob, exit codes, credentials, encryption, key escrow, retention, pool sweep, `list`, `verify`, `delete` | M1 |
+| WP5.9 | Restore: preconditions, resumable procedure, rebuilt state with the new keyspace and revision offsets, version compatibility, restore Job (R-HA-060); npm and NuGet parts as M2 and M3 land; backup API and screen (R-API-050, R-UI-048) | WP5.8 |
+| WP5.10 | Revocation journal: writer from the outbox, replay rules, R-AUTHZ-031's comparator, the identity entries, then the CI entries and the npm and NuGet version entries | M1; CI entries after M4 |
+| WP5.11 | Valkey degraded mode under client load, the drain rules and the pooler profile with its control pool (R-HA-057 to R-HA-059) | M2 |
 
 ## Owner walkthrough
 
@@ -608,6 +866,8 @@ way, and the owner reviews the result here instead of approving steps along the 
   - OIDC sign-in, users, groups, tokens and the policy editor;
   - npm and NuGet clients against local, remote and virtual repositories;
   - the GitLab reference pipeline (R-CI-028);
+  - a node drain and a PostgreSQL and a Valkey failover under client load (R-HA-059, R-HA-057);
+  - a backup taken by the CronJob and its restore into an empty namespace (R-HA-060);
   - a failure drill from R-HA-052;
   - the coverage numbers.
 
@@ -630,21 +890,20 @@ way, and the owner reviews the result here instead of approving steps along the 
 P1 has two lanes, both starting at 1.0. The platform lane (M6 to M12) extends subsystems that 1.0
 already has. The format lane (F1 to F7) adds formats through the frozen contract. Each lane ships 1.x
 minor releases. M7 to M11 touch separate subsystems and can run in parallel. The order below is the
-sequence to follow if only one team is available, with one exception. That team builds the
-revocation journal of M11 first: R-HA-054 with R-AUTHZ-031's entries and the journal criteria of
-R-CI-020 (Q-CI-11). The reason is that 1.0 ships the restore procedure while H-37 stays live
+sequence to follow if only one team is available. The revocation journal, which this page used to
+put first after 1.0, ships in 1.0 since Q-HA-9 made it MVP
 ([Q-ROAD-2](#q-road-2--backup-and-restore-in-10)).
 
 ### P1 platform milestones
 
 | Milestone | Scope | Exit criteria | Why at this position |
 |---|---|---|---|
-| **M6 · npm and NuGet completion** | R-NPM-014, R-NPM-018, R-NPM-020, R-NPM-021, R-NPM-023, R-NPM-028, R-NPM-034…039, R-NUGET-011, R-NUGET-021…025, R-NUGET-029, R-AUTH-034, R-AUTH-035, R-REPO-014…016, R-REPO-018, R-REPO-022, R-REPO-044, R-API-023, R-API-036, R-UI-023 | R-NPM-045's P1 scenarios (deprecate, web and legacy login, audit, search) join the gate and pass for every gated client. Symbols pushed in M3 are served through `nuget-all`, and nightly through a remote from nuget.org's symbol server. A nested virtual repository that would form a cycle is refused. With pass-through mode on, `npm ci` adds no object to the bucket. | Serves 1.0's users at once and closes the open rows of the acceptance matrix. Small, because it reuses the M2 and M3 engines. |
-| **M7 · Storage lifecycle and retention** | R-STOR-026…029, R-STOR-037…042, R-STOR-044, R-STOR-045, R-REPO-007, R-REPO-046, R-OPS-021…023, R-API-024, R-API-043 | A cleanup dry run over a repository with 10,000 versions lists exactly the versions the real run then deletes, and GC reclaims their blobs after the grace period. Remote-cache items unused past the configured period are removed and fetched again on request. The integrity scrub reports an object altered in the bucket out of band. A deploy beyond a repository cap answers `507` (Q-STOR-7) and leaves no orphaned object after the orphan sweep. | Remote caches and CI publishing grow storage without limit after go-live, so this is the first operational need. It also provides the orphan sweep that upload sessions (M8) rely on. |
+| **M6 · npm and NuGet completion** | R-NPM-014, R-NPM-018, R-NPM-020, R-NPM-021, R-NPM-023, R-NPM-028, R-NPM-034…039, R-NUGET-011, R-NUGET-021…025, R-NUGET-029, R-AUTH-034, R-AUTH-035, R-REPO-014…016, R-REPO-018, R-REPO-022, R-REPO-044, R-API-023, R-API-036, R-UI-023 | R-NPM-045's P1 scenarios (deprecate, web and legacy login, audit, search) join the gate and pass for every gated client. Symbols pushed in M3 are served through `nuget-all` once per-package `nuget-symbol-index` jobs on `worker` have indexed them, with a data migration that enqueues the backfill for symbol packages pushed before (Q-NUGET-11), and nightly through a remote from nuget.org's symbol server. A nested virtual repository that would form a cycle is refused. With pass-through mode on, `npm ci` adds no object to the bucket. | Serves 1.0's users at once and closes the open rows of the acceptance matrix. Small, because it reuses the M2 and M3 engines. |
+| **M7 · Storage lifecycle and retention** | R-STOR-026…029, R-STOR-037…042, R-STOR-044, R-STOR-045, R-REPO-007, R-REPO-046, R-OPS-022, R-OPS-023, R-API-043 | A cleanup dry run over a repository with 10,000 versions lists exactly the versions the real run then deletes, and GC reclaims their blobs after the grace period. Remote-cache items unused past the configured period are removed and fetched again on request. The integrity scrub reports an object altered in the bucket out of band. A deploy beyond a repository cap answers `507` (Q-STOR-7) and leaves no orphaned object after the orphan sweep. | Remote caches and CI publishing grow storage without limit after go-live, so this is the first operational need. Upload sessions (M8) expire through collection runs and through their own age check on every request (R-STOR-011, R-STOR-025); the orphan sweep is only their backstop. |
 | **M8 · Content operations and search** | R-STOR-008…011, R-STOR-015, R-STOR-017, R-STOR-019…023, R-API-026…028, R-UI-012…015, R-OPS-034; the SRCH entries once the search page exists | A chunked upload session survives killing the replica that received the first chunk (R-STOR-011). Copying 1,000 files between repositories creates no new object and keeps every digest. A file restored from the trash can is byte-identical. Checksum-first deploy of a known digest succeeds without a body. R-API-028's search criteria pass. | Start with R-STOR-011, which unblocks F4 (OCI), and with R-STOR-008 and R-STOR-010, which unblock F7 (Maven). |
 | **M9 · Automation and integration** | R-OPS-029…032, R-API-044, R-OPS-033, R-OPS-035…044, R-API-041, R-UI-039, R-API-042, R-UI-040, R-AUTHZ-027, R-STOR-043; the BLD entries once the builds page exists | Applying the same configuration document twice yields zero changes on the second apply. Exporting an installation and applying the export to an empty one reproduces its repositories, policies and CI mappings. An npm publish event reaches a test receiver with a valid signature, succeeds by retry after three `503` answers, and every attempt shows in the delivery log. Deliveries to link-local addresses are refused (R-OPS-042). A build record from the reference pipeline links that job's npm and NuGet artifacts. | Operators can script the 1.0 API (INV-17) until then. Configuration documents, webhooks and builds are where they stop scripting it by hand. |
 | **M10 · Identity, access and CI breadth** | R-AUTH-019, R-AUTH-021, R-AUTH-025, R-AUTH-030, R-AUTH-031, R-AUTH-036, R-AUTH-039, R-AUTHZ-011, R-AUTHZ-012, R-AUTHZ-017, R-AUTHZ-020, R-AUTHZ-024…026, R-CI-023…027, R-NPM-022, R-API-034, R-API-046…048, R-UI-028, R-UI-032, R-UI-041 | A GitHub Actions job publishes an npm package through the exchange (R-CI-025). A generic issuer works against an issuer double (R-CI-026). From GitLab CI, without a stored token, `npm publish` (npm 11 and 12 rows, host-root route), `pnpm publish` (pnpm 11 and 12 rows) and `yarn npm publish` (Yarn 4 row), both through the route below the registry URL, publish natively through the exchange (R-NPM-022). A SCIM client provisions and deprovisions users and groups, and deprovisioning revokes their tokens. For 10,000 random requests, the effective-permission explainer returns the evaluator's decision. | Extends the access model that 1.0 proved. Projects ship without touching CI delegations, which stay independent of them in P1 (Q-AUTHZ-7, decided). |
-| **M11 · HA and deployment breadth** | R-HA-002, R-HA-017, R-HA-026, R-HA-044…047, R-HA-053…055, R-AUTHZ-031, R-STOR-032, R-STOR-034, R-REPO-031, R-REPO-034…037, R-OPS-012, R-OPS-024…027, R-API-045, R-UI-034, R-ARCH-029 | R-HA-052 passes with separate api and worker Deployments. R-HA-038's criteria pass through a Gateway that the chart creates (R-HA-053). After a restore drill with the revocation journal on, a token revoked after the restore point stays rejected, and hand-written journal objects grant no principal any access (R-HA-054, R-AUTHZ-031). Replaying the disable of a CI mapping also suspends every later enabled mapping of its tier, so no job falls through to a broader mapping (R-CI-020, Q-CI-11). Database credential rotation under load causes zero failed iterations. An air-gapped install from a private registry verifies image and chart signatures before installing. A dual-stack kind cluster passes the npm suite. R-HA-055's chart criteria pass. On a chart install with `contentOrigin.host` set to a second host name, R-ARCH-029's acceptance criteria pass: a logged-in browser that opens `evil.svg` from the UI host ends on the content host and sends it no trove cookie, and `npm ci` and `dotnet restore` against the UI host make no request to the content host. | Most 1.0 installations do not need these immediately. Signatures (R-HA-047) are the item most likely to be pulled forward. The revocation journal (R-HA-054, with R-AUTHZ-031's entries) is P1 (Q-HA-9) and extends the restore procedure that 1.0 ships (Q-ROAD-2). Until it ships, H-37 stays live with the manual procedure, which is why a single team builds it first after 1.0. The separate content origin (R-ARCH-029, chart side R-HA-055) is deployment-level hardening on top of the header defence that 1.0 already enforces in the core (R-ARCH-007). It is off by default and needs a second host name, certificate and edge route. It moves into an earlier milestone, or into 1.0, as soon as one of the revisit triggers of [Q-ARCH-10](../spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render) occurs. |
+| **M11 · HA and deployment breadth** | R-HA-017, R-HA-026, R-HA-044, R-HA-046, R-HA-047, R-HA-053, R-HA-055, R-HA-062, R-STOR-032, R-STOR-034, R-REPO-031, R-REPO-034…037, R-OPS-012, R-OPS-024…027, R-OPS-047, R-BAK-025, R-BAK-027, R-API-045, R-UI-034, R-ARCH-029 | R-HA-052 passes, and so does R-HA-059's drain test for each pool, with a `web` pool for the package paths and a `worker` pool for the `maintenance` queue (R-HA-062). R-HA-038's criteria pass through a Gateway that the chart creates (R-HA-053). A restore with `--existing-blobs reuse` passes R-BAK-025's criteria, and a backup whose database files are encrypted to age recipients restores only with a matching identity (R-BAK-027). `POST /api/v1/system/caches/flush` drops the in-process and negative caches on every replica and deletes no Valkey key (R-OPS-047). Database credential rotation under load causes zero failed iterations. An air-gapped install from a private registry verifies image and chart signatures before installing. A dual-stack kind cluster passes the npm suite. R-HA-055's chart criteria pass. On a chart install with `contentOrigin.host` set to a second host name, R-ARCH-029's acceptance criteria pass: a logged-in browser that opens `evil.svg` from the UI host ends on the content host and sends it no trove cookie, and `npm ci` and `dotnet restore` against the UI host make no request to the content host. | Most 1.0 installations do not need these immediately. Signatures (R-HA-047) are the item most likely to be pulled forward. Further pools (R-HA-062) are a change of values on top of the `web` and `worker` split that 1.0 already deploys. The P1 backup options (R-BAK-025, R-BAK-027) extend the backup that 1.0 ships. The separate content origin (R-ARCH-029, chart side R-HA-055) is deployment-level hardening on top of the header defence that 1.0 already enforces in the core (R-ARCH-007). It is off by default and needs a second host name, certificate and edge route. It moves into an earlier milestone, or into 1.0, as soon as one of the revisit triggers of [Q-ARCH-10](../spec/architecture.md#q-arch-10--separate-content-origin-for-package-content-a-browser-can-render) occurs. |
 | **M12 · Upstream curation** | The 22 P1 curation entries (SEC-001, SEC-002, SEC-004, SEC-007…014, SEC-021…023, SEC-025…028, SEC-032, SEC-035…037); spec page first | A curated npm remote blocks a version flagged malicious in the risk data source, and serves the newest compliant version where the client allows a fallback. A dry-run policy only records its decisions. A waiver lets one version through. | The rubric's P1 list does not name curation, but the catalog marks these entries P1. Curation needs a spec page, an external risk data source and remotes in several ecosystems before it is worth building. Until then, R-NPM-012's release-age policy and R-REPO-023's namespace claims provide the cheapest protections. |
 
 ### P1 format expansion order
@@ -653,10 +912,12 @@ Every format follows the same path:
 
 1. A spec page `docs/spec/formats/<format>.md` with requirements and `Covers:` lines.
 2. The conformance kit.
-3. A native-client acceptance matrix on two replicas behind the chart.
-4. A cold-cache install of a reference project through a virtual repository on three replicas,
-   with one replica killed mid-run.
-5. One more load loop in R-HA-052.
+3. A native-client acceptance matrix in the `scatter` profile, and nightly with Valkey stopped.
+4. A cold-cache install of a reference project through a virtual repository on three `web`
+   replicas, with one replica killed mid-run.
+5. One more load loop in R-HA-052 and in the load of R-HA-059's drain test, and a section in the
+   format's spec page that lists its state across replicas and in backups, as R-NPM-046 and
+   R-NPM-047 do for npm.
 6. Client setup instructions (R-UI-019).
 
 The table adds the criterion specific to each format.
@@ -673,7 +934,7 @@ can reorder it at the walkthrough, before any format-lane work starts.
 | F1 | Generic: remote and virtual | 8 (local part in M1) | Closest: `/files/` exists, and a remote is the proxy engine without a metadata document. | none | A remote serves a 1 GiB upstream file to 10 concurrent clients with one upstream request. A `PUT` through a virtual repository lands in its deployment target. |
 | F2 | PyPI | 23 | Same shape as npm: one index page per project plus files on a separate host, URL rewriting, a merge per project in virtual repositories. Upload uses Basic, which NuGet already accepts. Name normalization resembles NuGet's. | none | `pip`, `uv` and Poetry install through a virtual repository. `twine upload` with a token as password succeeds. Names that differ only in `.`, `_` and `-` resolve to one project (PKG-PYPI-003). |
 | F3 | Helm, index-based | part of 18 | One repository-wide `index.yaml` merged across members is npm's document merge applied to a whole repository. Chart parsing is like reading `package.json` from a tarball. | none | `helm repo add` and `helm install` work from a virtual repository whose index merges a local and a remote member. trove's own chart is published there. |
-| F4 | OCI and Docker | 15 + 34 | Highest demand: every Kubernetes deployment, trove's own included, pulls images, and CI pipelines commonly build them. Also furthest from what exists: the registry API lives at `/v2/` outside INV-6, needs a bearer-token challenge, chunked uploads, manifests and tags as a data model, referrers, and multi-gigabyte layers. | R-STOR-011 (M8) with the orphan sweep (M7), the `/v2/` reservation that M0 puts in place (Q-HA-4), R-HA-041 edge routing, R-STOR-039 for untagged manifests, a P-12 measurement for Q-ARCH-6 | `docker`, Podman and ORAS push and pull through local, remote and virtual repositories, including referrers (BEYOND-015). A 5 GiB layer push survives the kill of the replica holding the session. In a cold-cache image pull test, the collapse-bypass counter stays at zero, or Q-ARCH-6 moves to its lease-row option. |
+| F4 | OCI and Docker | 15 + 34 | Highest demand: every Kubernetes deployment, trove's own included, pulls images, and CI pipelines commonly build them. Also furthest from what exists: the registry API lives at `/v2/` outside INV-6, needs a bearer-token challenge, chunked uploads, manifests and tags as a data model, referrers, and multi-gigabyte layers. | R-STOR-011 (M8), the `/v2/` reservation that M0 puts in place (Q-HA-4), R-HA-041 edge routing, R-STOR-039 for untagged manifests, a P-12 measurement with multi-gigabyte layers | `docker`, Podman and ORAS push and pull through local, remote and virtual repositories, including referrers (BEYOND-015). A 5 GiB layer push survives the kill of the replica holding the session, with consecutive chunks on different `web` replicas. In a cold-cache image pull test over three `web` replicas, the counting upstream records one request per layer while Valkey is available, and a flight that outlasts `cluster.flight_lock_ttl` keeps its Valkey lock through extensions (Q-ARCH-6, P-12). |
 | F5 | Helm charts as OCI | part of 18 | A thin layer over F4: chart artifact type and chart metadata. | F4 | `helm push` and `helm install oci://…` work through a virtual OCI repository. |
 | F6 | Go | 13 | Close to generic: the module proxy protocol is a fixed file layout (`list`, `.info`, `.mod`, `.zip`), and merging version lists is trivial. The `go` command has no publish operation (PKG-GO-006), so local hosting needs trove's own upload path. Remotes backed by version control systems are a new kind of upstream and come last. | none for the module-mirror remote | `go mod download` of a reference module graph with a cold cache works through a virtual repository, with checksum database proxying on (PKG-GO-014). trove's own `go.mod` resolves through it. |
 | F7 | Maven, with Gradle's P1 entries | 23 + 4 | Path-based like generic, but with the largest set of rules apart from OCI: releases and snapshots, metadata calculation, POM consistency, checksum sidecars, layouts. | R-STOR-008 and R-STOR-010 (M8), R-STOR-038 snapshot cleanup (M7), FMT-010 default layouts | `mvn deploy` of a release and a snapshot succeeds. `mvn -U` resolves the newest snapshot through a virtual repository. A Gradle build reads module metadata (PKG-JVM-005) from the same repository. Checksum sidecars behave as R-STOR-010 specifies. |
@@ -725,7 +986,7 @@ and gets no failure-mode guarantees.
 
 ## P2 breadth
 
-P2 covers the remaining 33 catalog formats, plus R-STOR-014, R-CI-022 and 896 P2 catalog entries
+P2 covers the remaining 33 catalog formats, plus R-STOR-014, R-CI-022 and 892 P2 catalog entries
 without a requirement. No milestone numbers yet. Within each family, the order is demand first, then
 closeness to the engines that will exist by then.
 
@@ -750,11 +1011,10 @@ P2 platform work, roughly in order:
 6. Internal TLS from the edge to the pods (HA-018, closes H-38).
 7. Read-only queries on PostgreSQL standbys.
 8. Worker autoscaling on queue depth.
-9. Transaction-mode pooler support (Q-HA-6, option b).
-10. Repository export and import (OPS-036, OPS-037).
-11. Build promotion (BLD-020).
-12. The P2 curation conditions (licenses, waiver workflows).
-13. The `CI_JOB_TOKEN` fallback (R-CI-022), specified but built only when pipelines that cannot
+9. Repository export and import (OPS-036, OPS-037).
+10. Build promotion (BLD-020).
+11. The P2 curation conditions (licenses, waiver workflows).
+12. The `CI_JOB_TOKEN` fallback (R-CI-022), specified but built only when pipelines that cannot
     declare `id_tokens:` need a CI path to trove (Q-CI-5).
 
 ## Later
@@ -843,47 +1103,65 @@ the sixteen criteria use and leave the rest to F1.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-R-HA-052 (MVP) runs a restore drill made of R-HA-025's steps. R-HA-025 (restore procedure) and
-R-HA-023 (backup) are P1, following the catalog's P1 for OPS-033. R-HA-024 (restore consistency,
-MVP) already assumes a restore procedure. The revocation journal R-HA-054 is P1 (Q-HA-9), so a
-restore in 1.0 brings back credentials revoked after the restore point (H-37) unless the operator
-repeats the revocations by hand.
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (a) to the new option (e). trove's own backup create and restore are MVP (INV-19), R-HA-023 and R-HA-025 are MVP (Q-HA-19), and the revocation journal R-HA-054 with R-AUTHZ-031's entries is MVP (Q-HA-9). The exception that put P1 requirements into M5 is gone, and the journal is no longer the first work after 1.0. The owner constraint excludes (b). The spec pages applied (c) and (d); (e) adds when the work starts, and (f) was added and rejected.
+
+R-HA-052 (MVP) runs two restore drills: the point-in-time drill of R-HA-025 and the drill that
+restores a trove backup through R-HA-060. Until 2026-10-28, R-HA-023 (platform backup) and
+R-HA-025 (restore procedure) were P1, following the catalog's P1 for OPS-033, and so was the
+revocation journal, so a restore in 1.0 would have brought back credentials revoked after the
+restore point (H-37). Since 2026-10-28 the owner requires a configurable backup job that writes a
+consistent backup to S3 (INV-19), and the spec pages made every part of backup and restore MVP:
+the `R-BAK` page, R-HA-023, R-HA-025, R-HA-054, R-HA-060 and R-AUTHZ-031. What remains open is the
+timing. The drill restores npm and NuGet data and replays CI revocations, so it can gate only
+after M3 and M4. The mechanism itself (snapshot, blob pool, garbage-collection hold, restore
+procedure) depends only on M0 and M1.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Schedule both in M5, label unchanged | R-HA-023 and R-HA-025 are built and drilled in M5. Their `Priority:` lines stay P1. | 1.0 ships a restore procedure that was run. No spec page changes. The coverage tables keep counting OPS-033 at the catalog's priority. | The rule that every P1 requirement sits in M6 to M11 needs a named exception. E5.6's per-requirement gate does not see them, so E5.1 has to. H-37 stays live in 1.0. |
-| (b) Remove the restore drill from R-HA-052 for 1.0 | 1.0 ships without a documented restore. | Smaller M5. | An HA release whose restore was never run is not ready for production. R-HA-024's consistency guarantee and H-37's manual procedure go untested. Operators would restore with the platform's tools anyway, without the post-restore step that ends UI sessions and warns. |
-| (c) Schedule both in M5 and raise them to MVP | As (a), and ha-and-helm.md changes both priority lines to MVP. | The priority label matches the release scope. | The same work as (a), plus a spec edit that moves a requirement away from the catalog's priority with no change to the design. |
-| (d) As (a), plus the revocation journal | R-HA-054 and R-AUTHZ-031 move into M5 as well. | H-37 is closed in 1.0. | The journal is a new write path across every access-bearing object type, with per-object replay rules (Q-CI-11). M5 would carry a new security subsystem instead of hardening the existing ones. H-37 exists in every installation whose database is restored, whether or not a procedure is documented. (a) does not create it. |
+| (a) Schedule both in M5, label unchanged | R-HA-023 and R-HA-025 are built and drilled in M5. Their `Priority:` lines stay P1. | 1.0 ships a restore procedure that was run. No spec page changes. | Since 2026-10-28 the labels are MVP (Q-HA-19), and trove's own backup (INV-19) is not covered at all. Before that: the rule that every P1 requirement sits in M6 to M11 needed a named exception, and H-37 stayed live in 1.0. |
+| (b) Remove the restore drill from R-HA-052 for 1.0 | 1.0 ships without a documented restore. | Smaller M5. | Excluded since 2026-10-28: the owner requires the backup job. An HA release whose restore was never run is not ready for production either. R-HA-024's consistency guarantee and H-37's manual procedure would go untested. |
+| (c) Schedule both in M5 and raise them to MVP | As (a), and ha-and-helm.md changes both priority lines to MVP. | The priority label matches the release scope. | Covers only the platform layer and leaves trove's own backup and the journal out. Q-HA-19 applied the label change. |
+| (d) As (a), plus the revocation journal | R-HA-054 and R-AUTHZ-031 move into M5 as well. | H-37 is closed in 1.0. | Alone, it still leaves trove's own backup out. Before 2026-10-28 the journal looked like a new security subsystem in a hardening milestone. Now a restore refuses to run without it (R-BAK-020), so it is part of the backup. |
+| (e) Everything in 1.0, gated in M5, built from M1 | trove's own backup and restore (the `R-BAK` page, R-HA-060, R-API-050, R-UI-048, R-STOR-047, the format parts R-NPM-047 and R-NUGET-033), the platform layer (R-HA-023, R-HA-025) and the journal (R-HA-054, R-AUTHZ-031) gate in M5. Their work runs in a lane that starts after M1, in parallel with M2 to M4. M0 gives every table its export class (R-BAK-004). | Meets INV-19 and closes H-37 for both restore paths in 1.0. The lane keeps the backup off M5's critical path. Every table is classified when it is created, not afterwards. The drill gates on real npm, NuGet and CI data. | M5 carries a feature lane besides the hardening. The lane has to follow M2 to M4: each new table, revision column and journaled event of those milestones joins the backup in the same change. |
+| (f) Gate backup and restore in M3, the journal in M5 | Backup and restore ship with the second format, and the journal two milestones later. | An earlier pre-release has a backup. | A restore refuses to run without the journal (R-BAK-020), and the replay is what withholds unpublished npm versions and reserves NuGet version numbers (Q-NPM-12, Q-NUGET-10). Until M5 a restore would run only with `--skip-revocation-journal`, which reopens H-37. |
 
-**Choice:** (a) — R-HA-023 and R-HA-025 are built and drilled in M5 and keep their P1 label. The
-revocation journal stays in M11, and a single team builds it first after 1.0.
+**Choice:** (e) — trove's own backup create and restore, the platform layer and the revocation
+journal are MVP and gate in M5. Their work starts after M1 in its own lane, and M0 builds the table
+registry.
 
-**Rationale:** (a) and (c) are the same work and the same test. (a) needs no spec edit and keeps a
-requirement's priority as the rubric's judgement, while this page decides the timing. The same
-split already applies to R-HA-041's `/v2/` reservation in M0. E5.1 gates on the drill, so nothing
-depends on E5.6 seeing the two requirements. The procedure is mostly the platform's point-in-time
-recovery plus bucket versioning, and R-HA-025's post-restore step ends UI sessions and warns about
-H-37. 1.0 is therefore safer with it than without it. (d) closes H-37 earlier but turns M5 from a
-hardening milestone into a feature milestone. Putting the journal at the front of P1 bounds how
-long H-37 stays live. The development agent would revisit this in two cases:
-- If a 1.0 installation needs a production restore before the journal ships, the journal is built
-  ahead of all other work.
-- If the coverage generator is extended to gate releases by priority label, (c) applies, so that
-  the gate sees both requirements.
+**Rationale:** The owner constraint settles that backup and restore ship in 1.0, and the spec pages
+already made every part MVP, so only the timing was open. The drill needs npm and NuGet data and CI
+revocations, so M5 is the earliest gate at which it tests what 1.0 ships. (f) gates earlier but
+only on a restore that skips the journal, which is the weaker restore that the spec refuses by
+default. (a) and (c) leave out the backup the owner asked for. The lane removes (e)'s main cost:
+nothing in the snapshot, the pool, the hold or the restore waits for a format, and the format
+parts are small pages of rules (R-NPM-047, R-NUGET-033). Registering export classes from M0 on
+costs one test and spares a pass over every table in M5. The development agent would revisit this
+in two cases:
+- If the lane falls behind, so that M5's other exit criteria pass while E5.11 and E5.12 do not, the
+  lane's exit becomes a pre-release of its own between M4 and M5 rather than holding up the HA
+  work.
+- If an installation of a pre-release needs a restore before 1.0, the lane's commands ship in the
+  next pre-release with the journal, never without it.
 
 **Applied in the roadmap:**
-- M5's scope row "P1 requirements scheduled in M5", E5.1 and WP5.3.
-- M11 no longer lists R-HA-023 and R-HA-025.
-- The list "Reading the scope lists" at the top of this page names the exception.
-- The M5 row of [Milestones at a glance](#milestones-at-a-glance).
-- The single-team order in [After 1.0: P1](#after-10-p1).
+- M5's scope rows "Backup and restore" and "Revocation journal", the lane paragraph, E5.1, E5.11,
+  E5.12 and WP5.8 to WP5.10.
+- M0's scope row "Backup groundwork" and E0.4; M1's paragraph on the journal parts of R-OPS-014
+  and R-OPS-015; M4's WP4.4 and E4.7.
+- M11 no longer lists R-HA-054 and R-AUTHZ-031, and gains R-BAK-025 and R-BAK-027.
+- The list "Reading the scope lists" at the top of this page no longer names an exception for P1
+  requirements in M5.
+- Finding 2 under [Starting point](#starting-point), the M5 row and the flowchart of
+  [Milestones at a glance](#milestones-at-a-glance), and the backup paragraph under
+  [Why this order](#why-this-order).
+- The single-team order in [After 1.0: P1](#after-10-p1) no longer puts the journal first.
 
-Cross-page: the rationale of
+Cross-page: [ha-and-helm.md Q-HA-19](../spec/ha-and-helm.md#q-ha-19--priority-of-the-platform-backup-layer-and-the-point-in-time-restore)
+raised R-HA-023 and R-HA-025 to MVP and starts from option (a) of this question, and
 [ha-and-helm.md Q-HA-9](../spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37)
-no longer derives the journal's P1 from a P1 restore procedure. It rests on the reasons that still
-hold (a new write path across every access-bearing object, and H-37 exists whether or not the
-restore is documented), and its revisit condition includes the production-restore case above.
+moved the journal to MVP on the production-restore case this question's earlier revisit condition
+named. The ADR log's index row for this question follows the choice above.
 
 ### Q-ROAD-3 · Ecosystems the owner's teams use after npm and NuGet
 

@@ -11,12 +11,15 @@ verification, optional presigned redirects per repository), item operations (inf
 listing, delete, copy, move, properties), the trash can, garbage collection that is safe against
 concurrent uploads, the integrity scrub and orphan sweep, quotas and capacity thresholds, retention
 and cleanup policies, the S3 configuration and credential chain, the consistency assumptions about
-the object store, and the behavior while the object store is unavailable. Repository semantics
-(classes, virtual resolution, pull-through) are in
-[repositories-and-proxy.md](repositories-and-proxy.md); the permission model is in
-[authorization.md](authorization.md); the format plug-in interface and the job framework are in
-[architecture.md](architecture.md); Helm values, backup and failure drills are in
-[ha-and-helm.md](ha-and-helm.md).
+the object store, the behavior while the object store is unavailable, which role runs each part
+of the storage work across any number of replicas (R-STOR-046), and what storage contributes to
+trove's own backup and restore (R-STOR-047). Repository semantics (classes, virtual resolution,
+pull-through) are in [repositories-and-proxy.md](repositories-and-proxy.md); the permission model
+is in [authorization.md](authorization.md); the format plug-in interface, the job framework, the
+Valkey usage map and the shutdown order are in [architecture.md](architecture.md); Helm values,
+volumes, the platform backup layer and failure drills are in [ha-and-helm.md](ha-and-helm.md);
+the backup job, its garbage-collection hold and the restore procedure are in
+[backup-and-restore.md](backup-and-restore.md).
 
 Covers: the catalog pages [storage-and-blobs.md](../features/storage-and-blobs.md) (`STOR`),
 [retention-and-cleanup.md](../features/retention-and-cleanup.md) (`RET`) and
@@ -32,7 +35,10 @@ OPS-067 from [operations-and-monitoring.md](../features/operations-and-monitorin
 | Reference | A row in any table that points at a blob through a `blob_sha256` foreign key (file items, including items in the trash can; stored run reports; cached documents of other subsystems). |
 | Package, version | The logical unit a format defines (an npm package and its versions, a NuGet package id and its versions). A version groups one or more file items. |
 | Lead item | The file item whose timestamps, downloads and properties stand for its whole version in retention decisions (npm: the tarball; NuGet: the `.nupkg`). |
-| Spool | Replica-local temporary storage that holds an upload while it is hashed and before it is written to S3. |
+| Spool | Scratch space of one pod (an `emptyDir` or a generic ephemeral volume, never shared and never persistent, INV-13) that holds an upload for the duration of one request or job while it is hashed and before it is written to S3. |
+| Upload session | The state of one blob uploaded over several requests: a PostgreSQL row and an S3 multipart upload, so that any replica continues it (R-STOR-011, INV-18). |
+| Hold | A running backup's protection of the blobs it still has to copy from garbage collection ([backup-and-restore.md](backup-and-restore.md) R-BAK-007). |
+| Deletion pause | The `system_state` flag of [ha-and-helm.md](ha-and-helm.md) R-HA-025 that stops every storage task from deleting until an operator resumes deletions. |
 | Principal | A user, service account or CI identity as defined in [identity-and-authentication.md](identity-and-authentication.md). |
 
 ## Handover to other pages
@@ -85,11 +91,15 @@ starts at `sha256/` (no leading slash).
   | Key family | Content | Lifecycle |
   |---|---|---|
   | `sha256/…` | Blobs | Created by the upload pipeline, deleted only by garbage collection (R-STOR-024) and the orphan sweep (R-STOR-026). |
-  | `_uploads/<session-uuid>/<seq>` | Staged chunks of multi-request upload sessions (R-STOR-011) | Deleted on finalize, cancel or expiry. |
+  | `_uploads/<session-id>/data`, `_uploads/<session-id>/tail-<writer>` | The S3 multipart upload of a multi-request upload session, and the session's tail of less than one part, one object per request that wrote it (R-STOR-011, P1) | Everything below `_uploads/<session-id>/` is deleted on finalize, abort or expiry; a superseded tail is deleted once its successor is recorded; the orphan sweep removes leftovers (R-STOR-026). |
   | `_probe/<replica-id>` | Startup and conformance probe objects (R-STOR-035) | Deleted after each probe. |
-  | `_journal/revocations/<yyyy>/<mm>/<dd>/<id>.json` | Revocation journal entries ([ha-and-helm.md](ha-and-helm.md) R-HA-054, P1) | Written by the shipping job (a re-ship writes identical content); never deleted by trove; expired only by an operator lifecycle rule. |
+  | `_journal/revocations/<yyyy>/<mm>/<dd>/<id>.json` | Revocation journal entries ([ha-and-helm.md](ha-and-helm.md) R-HA-054) | Written by the shipping job (a re-ship writes identical content); never deleted by trove; expired only by an operator lifecycle rule. |
 
   Any other object below `<prefix>/` is foreign: trove reports it and never deletes it.
+- A backup copies only `sha256/` objects that its database snapshot references; the other key
+  families are not part of a backup ([backup-and-restore.md](backup-and-restore.md) R-BAK-001).
+  A backup target never lies below `<prefix>/`, and `<prefix>/` never lies below a backup target
+  (R-BAK-002), so neither the orphan sweep nor a restore meets the other's objects.
 - Objects are written with the bucket's default storage class unless
   `storage.s3.storage_class` names another (R-STOR-030). Object content type is
   `application/octet-stream`; response headers come from item metadata, never from object
@@ -297,7 +307,13 @@ CREATE TABLE repository_usage (
     folders        bigint NOT NULL DEFAULT 0,
     updated_at     timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE storage_usage_deltas (             -- append-only, folded into repository_usage by a job
+CREATE TABLE storage_usage_totals (             -- one row: physical totals of all live blobs
+    id             smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    physical_bytes bigint NOT NULL DEFAULT 0,
+    blobs          bigint NOT NULL DEFAULT 0,
+    updated_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE storage_usage_deltas (             -- append-only, folded by the worker loop below
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     repo_id        bigint,                      -- NULL: physical (blob) delta
     logical_bytes  bigint NOT NULL DEFAULT 0,
@@ -306,6 +322,7 @@ CREATE TABLE storage_usage_deltas (             -- append-only, folded into repo
     physical_bytes bigint NOT NULL DEFAULT 0,
     blobs          bigint NOT NULL DEFAULT 0
 );
+-- no index besides the primary key: the fold takes rows in id order, and no request reads them
 ```
 
 </details>
@@ -363,10 +380,52 @@ Reference rules (normative for every page that adds a reference to a blob):
    upgrade.
 4. A migration test MUST fail when a foreign key to `blobs` lacks the index or either trigger.
 
-Usage counters (`repository_usage`, physical totals) are maintained by statement-level triggers
-on `items` and `blobs` that append to `storage_usage_deltas`; a job folds the deltas every 30
-seconds (`storage.usage.fold_interval`). Writers never update a shared counter row, so concurrent
-uploads to one repository do not contend on it.
+Usage counters (`repository_usage` per repository, `storage_usage_totals` for the physical
+totals) are maintained by statement-level triggers on `items` and `blobs` that append to
+`storage_usage_deltas`. Writers never update a shared counter row, so concurrent uploads to one
+repository from any number of `web` replicas do not contend on it (Q-STOR-12). The physical
+totals count `live` blob rows: a row inserted as `live` adds to them, and a row leaving `live`
+(R-STOR-024 step 3) subtracts; a row that the orphan sweep inserts as `deleting` (R-STOR-026)
+never counts.
+
+- **Fold.** Every `worker` replica runs the fold loop every `storage.usage.fold_interval` (5 s
+  by default, R-STOR-046), and runs the next iteration at once while the previous one took a full
+  10,000 rows, so a backlog cannot grow with the write rate. An iteration is a few statements on
+  the main pool, so the short interval costs little. One iteration is one transaction:
+
+  ```sql
+  WITH d AS (
+      DELETE FROM storage_usage_deltas
+       WHERE id IN (SELECT id FROM storage_usage_deltas ORDER BY id LIMIT 10000
+                    FOR UPDATE SKIP LOCKED)
+      RETURNING repo_id, logical_bytes, files, folders, physical_bytes, blobs)
+  SELECT repo_id, sum(logical_bytes), sum(files), sum(folders), sum(physical_bytes), sum(blobs)
+    FROM d GROUP BY repo_id ORDER BY repo_id NULLS LAST;
+  -- same transaction: upsert the repo_id rows into repository_usage in this order,
+  -- then add the physical sums to storage_usage_totals; COMMIT
+  ```
+
+  Concurrent folds on several workers take disjoint delta rows (`SKIP LOCKED`) and update the
+  counter rows in one order, so they neither count a delta twice nor deadlock
+  ([deadlocks](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-DEADLOCKS):
+  "acquire locks on multiple objects in a consistent order"). No lease and no Valkey lock is
+  involved; a worker drained mid-fold rolls back and its rows are folded by another one. The
+  upsert joins `repositories`, so the deltas of a repository deleted meanwhile are dropped instead
+  of failing every later iteration on the foreign key (physical deltas carry no repository and
+  are unaffected). An iteration that fails is repeated at the next interval.
+- **Reads.** Readers use the folded rows. Quota admission (R-STOR-029) reads one row by primary
+  key per enabled limit, and the storage summary (R-STOR-028) reads them as they are; both lag by
+  at most one fold interval plus one iteration. Neither adds the unfolded deltas: their number
+  grows with the cluster's write rate, so summing them in every admission would make each
+  upload's cost grow with the upload rate of all replicas. A reader that needs exact values
+  (tests, the acceptance criterion below) adds the unfolded deltas in the same statement as the
+  folded rows, so one snapshot covers both and a concurrent fold can neither hide a delta nor
+  count it twice.
+- **Recount.** `storage_usage_recount()` recomputes `repository_usage` and `storage_usage_totals`
+  from `items` and `blobs` and empties `storage_usage_deltas`, in one transaction. It runs only
+  where no writer runs: as a fix-up of a backup restore (R-STOR-047), because a backup exports
+  only referenced blob rows and the physical totals would otherwise still count rows the restore
+  never loads.
 
 Acceptance criteria:
 
@@ -377,6 +436,14 @@ Acceptance criteria:
   `a/b` and its descendants.
 - Deleting the only version of a package leaves its `packages` row in place with a higher
   `rev_seq`; publishing a new version afterwards raises it again rather than restarting at 1.
+- Three `worker` replicas fold while 32 goroutines on three `web` replicas upload to and delete
+  from four repositories for five minutes. One fold interval after the load stops,
+  `repository_usage` equals the sums over untrashed file items per repository,
+  `storage_usage_totals` equals the count and size of `live` blobs, and
+  `pg_stat_database.deadlocks` has not grown.
+- A repository is deleted while its items are removed in the background and the fold runs: the
+  fold keeps folding, `storage_usage_deltas` is empty one fold interval after the removal ends,
+  and no iteration fails twice in a row.
 
 ## Upload
 
@@ -402,12 +469,26 @@ request ─▶ authorize (deploy, overwrite) ─▶ admission ─▶ spool + has
      `storage.spool.min_free_bytes` free, with `503` and `Retry-After`.
 
    Rejecting before reading means no `100 Continue` is sent to clients that use
-   `Expect: 100-continue`. Bodies without a length reserve spool budget in increments while
-   streaming and fail with `413` as soon as they pass the maximum.
+   `Expect: 100-continue`. Bodies without a declared length (chunked) reserve spool budget in
+   increments while streaming. Such a body fails:
+   - with `413` as soon as it passes the effective maximum upload size; `413` is reserved for that
+     case;
+   - with `503` and `Retry-After` when it cannot reserve its next increment, because the spool
+     budget is exhausted or the spool volume has fallen below `storage.spool.min_free_bytes`. The
+     spool file is removed and nothing is committed, as for any cut upload.
+
+   The second status matters for clients that always stream. The NuGet clients send every push
+   chunked and retry a 5xx after waiting for its `Retry-After`, which
+   [formats/nuget.md](formats/nuget.md) R-NUGET-002 caps at 30 s on NuGet endpoints
+   (R-NUGET-032). A `503` therefore delays a push on a full spool until budget is free, possibly on
+   another replica, while a `413` would fail it for good with a message that blames the package.
 2. **Spool.** Bodies with a known length up to `storage.spool.memory_threshold` MAY be buffered in
    memory; all others MUST be written to a new file in `storage.spool.dir`, created with mode
-   `0600`, named by a random UUID. The spool is replica-local scratch space (an `emptyDir` volume
-   in the Helm chart, [ha-and-helm.md](ha-and-helm.md)); it never holds acknowledged data.
+   `0600`, named by a random UUID. The spool is scratch space of one pod: an `emptyDir` or a
+   generic ephemeral volume (one ReadWriteOnce or ReadWriteOncePod claim per pod, deleted with
+   it), never shared between pods and never persistent (INV-13, [ha-and-helm.md](ha-and-helm.md)
+   R-HA-035, R-HA-061). It holds data of the running request or job only and never holds
+   acknowledged data. `web` and `worker` pods each have one (R-STOR-046).
 3. **Hash.** While spooling, SHA-256, SHA-1, MD5 and SHA-512 MUST be computed in the same pass
    (one read of the stream, fanned out to the four hash states) and the byte count recorded.
 4. **Verify.** After the body ends the pipeline MUST compare the byte count with
@@ -420,6 +501,26 @@ request ─▶ authorize (deploy, overwrite) ─▶ admission ─▶ spool + has
 6. **Cleanup.** The spool file and its budget reservation MUST be released on every exit path
    (success, error, client disconnect). At startup a replica MUST delete every file in its spool
    directory, because no spool file survives its request.
+7. **No state between requests.** Nothing an upload leaves in the spool or in memory is used by a
+   later request (INV-18): the next request of the same client may reach any replica. A protocol
+   that sends one blob over several requests MUST use an upload session (R-STOR-011), whose state
+   is in PostgreSQL and whose bytes are in S3.
+8. **Shutdown.** At the shutdown deadline ([architecture.md](architecture.md) R-ARCH-024 step 5)
+   an upload whose body is still arriving is cut: its spool file is removed, nothing is
+   committed, and the client's retry reaches another replica. An upload whose body has arrived
+   completely is not cut at the deadline: it runs on into the margin that R-ARCH-024 grants (at
+   most 4 s of the grace period's 5 s margin; [architecture.md](architecture.md) P-11 bounds that
+   work). If its object write has not finished by the end of that margin, it is cut before its
+   commit in the same way, and its multipart upload is aborted. Once its commit transaction has
+   started, it is neither cancelled nor cut before its status line, so a drain never makes a
+   client retry a publish that committed, a retry that would meet its own version as a conflict
+   (`409`). A request
+   of an upload session (R-STOR-011) that is cut keeps the parts it has recorded and never aborts
+   the session's multipart upload: it cancels its outstanding `UploadPart`, waits for the call to
+   return, and releases its writer claim in one short transaction, so the client's retry continues
+   the session on another replica at once instead of waiting for the claim to expire. A
+   remote-cache fill still running 5 s before the deadline is cancelled before its commit, and its
+   flight lock is released with `failed` (R-ARCH-024 step 4, R-ARCH-033).
 
 Remote-cache fills use the same pipeline; whether the waiting client is served while the upstream
 body is still being spooled is decided in [repositories-and-proxy.md](repositories-and-proxy.md).
@@ -448,9 +549,21 @@ Acceptance criteria:
   body being transferred (`curl -v` shows no `100 Continue`).
 - Killing the client mid-upload leaves no spool file and no blob row; the spool budget metric
   returns to its previous value.
+- With `storage.spool.max_bytes: 100MiB` and `storage.upload.max_size: 90MiB`, two concurrent
+  chunked uploads of 80 MiB each (`curl -T - …/files/generic-local/a.bin < 80mb.bin`, which sends
+  `Transfer-Encoding: chunked`): one answers `201`, the other `503` with `Retry-After` and leaves
+  no spool file and no item; repeated afterwards, it answers `201`. A chunked upload of 95 MiB
+  answers `413`.
 - `npm publish` of a tarball whose `dist.integrity` was edited to a wrong value answers an error
   and stores nothing.
 - A replica restarted with files in its spool directory starts with an empty spool directory.
+- A test build delays the S3 write of a 500 MiB `curl -T` past the end of the shutdown margin and
+  the serving pod is deleted: `curl` reports an error, no item row and no blob row exists, and
+  `aws s3api list-multipart-uploads` lists no upload of that pod. Repeating the same `curl -T`
+  through the Service answers `201`.
+- `kubectl delete pod` of the `web` replica that receives a chunked upload's streamed `PATCH`
+  (P1, R-STOR-011): the session's multipart upload still exists afterwards, and the client's
+  status request and next `PATCH` through the Service are answered `204` and `202` without a `416`.
 
 ### R-STOR-005 · Blob commit protocol and deduplication
 Priority: **MVP** · Covers: STOR-001, STOR-002, STOR-019
@@ -515,7 +628,7 @@ storage:
   upload:
     commit_attempts: 5         # default (proposed)
     commit_deadline: 1h        # default (proposed); must be < storage.orphans.min_age / 2
-    blob_wait_timeout: 120s    # default (proposed); must exceed storage.gc.delete_settle
+    blob_wait_timeout: 120s    # default (proposed); must exceed 2 × storage.gc.delete_settle (R-STOR-024)
 ```
 
 Acceptance criteria:
@@ -553,6 +666,10 @@ Priority: **MVP** · Covers: STOR-023
   left behind by crashed replicas (R-STOR-026), and operators SHOULD also configure a bucket
   lifecycle rule that aborts incomplete multipart uploads after one day
   ([AWS lifecycle rule](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html)).
+  The multipart upload of an upload session (R-STOR-011) lives at most
+  `storage.uploads.session_max_age`, which stays below both that rule and the sweep's
+  `storage.orphans.multipart_max_age`, because both count from the upload's initiation; neither
+  can abort an open session.
 - After `CompleteMultipartUpload` the pipeline MUST confirm the object size with `HeadObject`
   before the row may become `live`.
 
@@ -709,8 +826,9 @@ Priority: **P1** · Covers: ART-009
 - A `PUT` of a sidecar path where the target file exists is not stored as an item: the body is
   parsed as a hex digest and recorded as the declared digest of the target (match: `201`;
   mismatch: `declared_mismatch = true`, answer `201` under `trust-server`, `409` under
-  `verify-client`). A sidecar uploaded before its file is kept in a short-lived pending table and
-  applied when the file arrives (`storage.sidecars.pending_ttl`).
+  `verify-client`). A sidecar uploaded before its file is kept in the short-lived PostgreSQL table
+  `pending_sidecars` and applied when the file arrives (`storage.sidecars.pending_ttl`), whichever
+  replica receives the file (INV-18).
 - A mismatching `Repr-Digest` on the upload of the file itself is always rejected (R-STOR-004);
   the policy governs only declarations that arrive separately.
 
@@ -733,54 +851,194 @@ Acceptance criteria:
 ### R-STOR-011 · Multi-request upload sessions
 Priority: **P1** · Covers: trove-only
 
-Some protocols upload one blob over several requests (OCI chunked blob upload, see the OCI format
-page once written; resumable generic uploads). Replicas are stateless (INV-2), so consecutive
-requests of one session may reach different replicas; the session therefore MUST NOT depend on a
-replica's spool.
+Some protocols upload one blob over several requests: the OCI chunked blob upload (see the OCI
+format page once written) and resumable generic uploads. The Service spreads requests at random
+(INV-12), so consecutive requests of one session reach different replicas, and a node drain may
+end any of them. Between requests a session therefore keeps its state in PostgreSQL and its bytes
+in one S3 multipart upload (INV-18, Q-STOR-11). No replica's spool or memory holds anything of a
+session after a request ends, and Valkey holds nothing of it: losing a session would cost the
+client a complete re-upload, more than the one retry that [architecture.md](architecture.md)
+R-ARCH-032 allows for state in Valkey.
 
-- A session row in PostgreSQL holds the repository, principal, received byte count, chunk count,
-  expiry and the serialized state of the four hash functions. Go's hash implementations support
-  serializing and restoring their internal state
+**State.** One `upload_sessions` row per session and one `upload_session_parts` row per completed
+part hold:
+
+- the repository, the principal, the received byte count and the serialized state of the four
+  hash functions at that count. Go's hash implementations marshal and restore their internal state
   ([`crypto/sha256`](https://pkg.go.dev/crypto/sha256) and the SHA-1, MD5 and SHA-512 packages),
-  so any replica continues hashing where the previous request stopped.
-- Each chunk is appended by streaming it to `<prefix>/_uploads/<session-uuid>/<seq>` while the
-  restored hash states consume it; the session row is updated with optimistic locking on the
-  byte count (a concurrent or out-of-order chunk answers `416`).
-- Finalize assembles the blob: when every chunk except the last is at least 5 MiB, through a
-  multipart upload with server-side part copies; otherwise by streaming the chunks through the
-  finalizing replica into the final key. Then the commit protocol (R-STOR-005) runs and the
-  staging objects are deleted.
-- Sessions expire after `storage.uploads.session_ttl` without activity; the orphan sweep removes
-  their staging objects (R-STOR-026).
+  so any replica continues hashing where the previous request stopped;
+- the S3 multipart upload of the staging object `<prefix>/_uploads/<session-id>/data`, created
+  with the session, with the server-side encryption of R-STOR-032;
+- the *tail*: the bytes after the last completed part, always fewer than
+  `storage.uploads.part_size`, kept as the object `<prefix>/_uploads/<session-id>/tail-<writer>`,
+  where `<writer>` is the claim token of the request that wrote it (`tail_writer`), together with
+  the tail's size and SHA-256. Every request writes its tail under its own key, so a writer that
+  lost its claim can never overwrite the tail that the session records;
+- the writer claim (`writer`, `writer_until`) and the state.
+
+**A request that carries bytes** (an OCI `PATCH`, or the body of the closing `PUT`):
+
+1. **Authorize.** The request's principal MUST be the session's principal, and `deploy` on the
+   session's repository is evaluated again on every request, so a permission revoked during an
+   upload ends it. A request of another principal answers `404`, as for an unknown session. The
+   session ID is a random UUID (version 4) and appears in upload URLs, so it is not a secret.
+2. **Claim.** A closing `PUT` that finds the session in `completing`, `assembled` or `done` is a
+   retried finalize (below). Any other request that finds the session not `open`, or older than
+   `storage.uploads.session_max_age`, answers `404` (OCI `BLOB_UPLOAD_UNKNOWN`), and an open
+   session past that age is set to `aborted`; its objects are removed under *Expiry*. Every
+   request checks the age itself, so a session can never be continued past the multipart expiry
+   of R-STOR-006, however long collection runs are delayed or paused. Otherwise one short
+   transaction sets `writer` to a fresh random token and
+   `writer_until = now() + storage.uploads.writer_lease`, only if no other claim is unexpired and
+   the request's first byte equals `received`. Otherwise the answer is `416` with the current
+   range, which is what the OCI specification requires for a chunk out of order. A claim held by a
+   replica that was drained is released at once (R-STOR-004 step 8); only a crashed holder's claim
+   blocks the session until `writer_until`. No transaction stays open after the claim
+   (R-ARCH-019).
+3. **Stream.** The body passes through the restored hash states into the spool and is cut into
+   parts of exactly `part_size`. The first part of a request begins with the recorded tail, read
+   back from S3 and checked against the recorded size and SHA-256 (a mismatch fails the session);
+   its bytes are already in the hash state and are not hashed again. Each full part is sent with
+   `UploadPart` (with the payload checksum of R-STOR-006) under the next consecutive part number,
+   as S3 requires when parts carry checksums
+   ([multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)).
+   One transaction then records the part row (number, size, ETag, SHA-256), the new `received`,
+   the hash state, `tail_size = 0` and no tail (the tail is now inside the part), `last_activity_at`
+   and a renewed `writer_until`, conditional on this request's writer token. A request whose token
+   no longer matches stops and answers `416`.
+4. **End of body.** The remaining bytes, after the recorded tail if no part consumed it, are
+   written as this request's tail object `tail-<writer>`, and one transaction records `received`,
+   the hash state, the tail's size, SHA-256 and writer, `last_activity_at`, and releases the claim,
+   conditional on the writer token. Only after that commit does the request delete the superseded
+   tail object; a request whose transaction failed deletes nothing. The response reports the
+   received range (OCI `Range: 0-<received − 1>`).
+5. **Limits.** A request that would raise `received` above the effective maximum upload size of
+   R-STOR-004 answers `413` and aborts the session. A request occupies at most one part plus its
+   own read buffer in the spool, whatever the chunk size.
+
+**Finalize** (the OCI closing `PUT` with `digest`):
+
+1. Any bytes in the request are handled as above. The computed SHA-256 MUST equal the `digest`
+   the client names; on a mismatch the protocol's error is returned (OCI `DIGEST_INVALID`) and the
+   session stays open. The change from `open` to `completing` takes the writer claim as in step 2
+   and is refused with `416` while another request holds an unexpired claim; claims need state
+   `open`, so no request writes bytes once a finalize has begun.
+2. State `completing`: the tail is read back, checked as in step 3, and uploaded as the last part,
+   which S3 allows to be smaller than 5 MiB
+   ([`EntityTooSmall`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html)
+   applies to every other part), and `CompleteMultipartUpload` runs with the recorded parts, their
+   ETags and checksums. S3 refuses a part whose ETag differs from the recorded one (`InvalidPart`),
+   so a part overwritten by a stale writer fails the session instead of corrupting the blob. A
+   session without a full part aborts its multipart upload and uses the tail object as its
+   staging object instead.
+3. State `assembled`: the commit protocol of R-STOR-005 runs, with a server-side copy of the
+   staging object to the content address as its object write (`CopyObject` up to 5 GiB,
+   `UploadPartCopy` above); a deduplication hit copies nothing. No byte passes through trove.
+4. Every object below `_uploads/<session-id>/` is deleted, the state becomes `done`, and the
+   answer is `201`.
+
+Each finalize step is recorded before the next starts, and each is idempotent. A finalize cut by
+a drain (R-ARCH-024) is therefore repeated by the client's retry on any replica and continues at
+the recorded state, without a claim: the retry's `digest` must equal the recorded one (otherwise
+`DIGEST_INVALID`), its body is not read again, and a session already `done` answers `201`. A
+`CompleteMultipartUpload` that answers `NoSuchUpload` in
+state `completing` is resolved by a `HeadObject` of the staging object: an object of the session's
+size means the earlier attempt completed. When two finalize requests of one session overlap (a
+client retry while the first still runs), a step that fails because the other already advanced
+the session (the staging object is gone, the state moved on) re-reads the state and continues
+from there, so both answer `201` for the one stored blob.
+
+**Resumption.** A request cut while its body arrives loses only the bytes after its last recorded
+part, and `received` stays at its last recorded value. A request cut by a drain releases its claim
+first (R-STOR-004 step 8). A client that asks for the upload status (OCI `GET` on
+the upload location, answered `204` with `Range`) continues from there on any replica; one that
+resends from its own offset gets `416` and asks
+([OCI distribution specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)).
+The session start answers with `OCI-Chunk-Min-Length: <part_size>`, which that specification lets a
+registry send and clients SHOULD honour; smaller chunks are accepted through the tail.
+
+**Expiry.** A session without a recorded request for `storage.uploads.session_ttl`, or older than
+`storage.uploads.session_max_age`, is aborted by the next collection run (R-STOR-025): state
+`aborted`, `AbortMultipartUpload`, every object below `_uploads/<session-id>/` deleted; the run
+does the same S3 clean-up for sessions that a request already set to `aborted`. Requests
+enforce `session_max_age` themselves (step 2), so a delayed or paused collection run only delays
+the clean-up. `session_max_age` MUST be shorter than `storage.orphans.multipart_max_age` and than
+the bucket's lifecycle rule (R-STOR-006). Startup refuses a value not below `multipart_max_age`;
+keeping the lifecycle rule at one day or longer is the operator's part, because the permissions of
+R-STOR-031 do not let trove read it. The orphan sweep (R-STOR-026) removes what an aborted run
+left.
 
 ```sql
 CREATE TABLE upload_sessions (
-    id            uuid PRIMARY KEY,
-    repo_id       bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-    principal_id  uuid,
-    received      bigint NOT NULL DEFAULT 0,
-    chunks        integer NOT NULL DEFAULT 0,
-    hash_state    bytea NOT NULL,              -- serialized SHA-256, SHA-1, MD5, SHA-512 states
-    state         text NOT NULL CHECK (state IN ('open', 'finalizing', 'done', 'aborted')),
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    expires_at    timestamptz NOT NULL
+    id                uuid PRIMARY KEY,            -- random (version 4); appears in upload URLs
+    repo_id           bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+    principal_id      uuid,                        -- every request must come from this principal
+    received          bigint NOT NULL DEFAULT 0,
+    hash_state        bytea NOT NULL,              -- SHA-256, SHA-1, MD5, SHA-512 states at `received`
+    part_size         bigint NOT NULL,             -- fixed when the session starts
+    s3_upload_id      text NOT NULL,               -- multipart upload of _uploads/<id>/data
+    tail_size         bigint NOT NULL DEFAULT 0 CHECK (tail_size < part_size),
+    tail_writer       uuid,                        -- names the tail object _uploads/<id>/tail-<tail_writer>
+    tail_sha256       bytea,                       -- checked when the tail is read back
+    writer            uuid,                        -- claim token of the request writing now
+    writer_until      timestamptz,
+    digest            bytea,                       -- SHA-256 named by the client at finalize
+    state             text NOT NULL CHECK (state IN ('open', 'completing', 'assembled', 'done', 'aborted')),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    last_activity_at  timestamptz NOT NULL DEFAULT now(),
+    CHECK ((tail_size = 0) = (tail_writer IS NULL) AND (tail_writer IS NULL) = (tail_sha256 IS NULL))
+);
+CREATE INDEX upload_sessions_live ON upload_sessions (last_activity_at)
+    WHERE state IN ('open', 'completing', 'assembled');
+
+CREATE TABLE upload_session_parts (
+    session_id   uuid NOT NULL REFERENCES upload_sessions (id) ON DELETE CASCADE,
+    part_number  integer NOT NULL CHECK (part_number BETWEEN 1 AND 10000),
+    size         bigint NOT NULL,
+    etag         text NOT NULL,
+    sha256       bytea NOT NULL,                   -- payload checksum sent with the part
+    PRIMARY KEY (session_id, part_number)
 );
 ```
+
+Both tables have the backup export class `transient` (R-STOR-047): staged bytes are not backed up,
+and a client restarts its upload after a restore.
 
 Configuration:
 
 ```yaml
 storage:
   uploads:
-    session_ttl: 24h     # default (proposed)
+    part_size: 16MiB        # default (proposed); minimum 5MiB; storage.upload.max_size must not exceed 10,000 parts
+    writer_lease: 60s       # default (proposed); renewed with every recorded part
+    session_ttl: 4h         # default (proposed); idle time after which a session is aborted
+    session_max_age: 20h    # default (proposed); must be < storage.orphans.multipart_max_age and the lifecycle rule
 ```
 
 Acceptance criteria:
 
-- A chunked upload whose three chunks are sent through three different replicas (test pins each
-  request to one pod) yields a blob whose SHA-256 equals the file's.
-- A session idle for longer than `session_ttl` is aborted and its staging objects disappear after
-  the next orphan sweep.
+- A chunked upload whose three chunks are sent through three different replicas (the test pins
+  each request to one pod) yields a blob whose SHA-256 equals the file's.
+- A 2 GiB blob sent as one streamed `PATCH` while the receiving `web` pod is drained: the `PATCH`
+  is cut, the upload status reports a multiple of `part_size`, the client resumes through the
+  Service on another replica without receiving a `416`, and the closing `PUT` answers `201` with
+  the right digest. Afterwards `aws s3api list-multipart-uploads` shows no upload of that session.
+- A fault-injection build delays a `PATCH` after its body ended until its claim has expired and a
+  second `PATCH` has continued the session; the first then writes its tail object and fails its
+  transaction. The session's recorded tail is unchanged, and the closing `PUT` answers `201` with
+  the right digest.
+- A session older than `session_max_age` while the deletion pause keeps collection from cleaning
+  up: its next `PATCH` answers `404` with `BLOB_UPLOAD_UNKNOWN`, the session is `aborted`, and the
+  first collection run after deletions resume removes its multipart upload and objects.
+- 100 chunks of 1 MiB each produce parts of 16 MiB (`aws s3api list-parts` during the upload) and
+  a correct blob.
+- Two concurrent `PATCH` requests for the same range: one is recorded, the other answers `416`,
+  and the blob is correct.
+- A closing `PUT` that is cut after `CompleteMultipartUpload` and repeated on another replica
+  answers `201` and stores one blob.
+- A session idle for longer than `session_ttl` is aborted by the next collection run; its
+  multipart upload and staging objects are gone.
+- A request with another principal's token on the session's URL answers `404`.
 
 ## Download
 
@@ -799,6 +1057,14 @@ content) resolve the item (virtual and remote resolution:
   (a strong validator: the content address); `Last-Modified` from `modified_at`;
   `Accept-Ranges: bytes`; `Repr-Digest: sha-256=:<base64>:`, plus `sha-512` when the request
   asks for it with `Want-Repr-Digest` ([RFC 9530](https://www.rfc-editor.org/rfc/rfc9530.html)).
+- **Every blob body has a declared length.** Every response that carries a stored blob's bytes
+  (`200`, and `206` with the length of the range) MUST carry `Content-Length` and MUST NOT use the
+  chunked transfer coding. The size comes from the blob row, so it is known before the first byte
+  is sent. A body that ends early, for example because a replica's shutdown deadline cut it
+  ([architecture.md](architecture.md) R-ARCH-024 step 5, Q-ARCH-18), is therefore detectable by
+  the client as incomplete and is never taken for the whole file. A remote-cache fill that the
+  fetching replica streams to its own client while the fetch runs follows the withheld-tail rule
+  of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-041 instead.
 - **User content is never rendered as part of trove's origin.** Responses carrying stored
   content MUST include these headers:
   - `X-Content-Type-Options: nosniff`;
@@ -818,12 +1084,27 @@ content) resolve the item (virtual and remote resolution:
   `If-Range` with the ETag or date is honored; an unsatisfiable range answers `416` with
   `Content-Range: bytes */<size>`. A request with several ranges is answered `200` with the full
   content (RFC 9110 permits ignoring `Range`).
+- **Resuming on any replica.** Every replica MUST answer `Range` with `If-Range: "<sha256 hex>"`
+  alike: `206` with the requested bytes when the ETag matches the item's current blob, `200` with
+  the full content when it does not. The ETag is the content address and the item lookup is in
+  PostgreSQL, so no replica needs state from the one that served the earlier part (INV-18). A
+  download cut at one replica's shutdown deadline therefore resumes with `206` on whichever
+  replica the client reaches next through the Service ([architecture.md](architecture.md)
+  R-ARCH-024, Q-ARCH-18).
 - **Caching:** `Cache-Control: private, no-cache` for authenticated requests, `no-cache` for
   anonymous ones; clients revalidate with the ETag.
-- **Errors:** `401`; `403` no `read`; `404` no such untrashed item; `500` with problem code
-  `content_unavailable` when the blob's `content_status` is `missing` or `corrupt` (remote
-  repositories instead treat the item as a cache miss and refetch); `503` with `Retry-After` when
-  the object store is unreachable (R-STOR-036).
+- **Errors:** `401`; `403` no `read`; `404` no such untrashed item, and also for a stored item
+  that its format refuses through the serve-time check of [architecture.md](architecture.md)
+  R-ARCH-008. npm refuses the tarball of a tombstoned version, of a version a restore's journal
+  replay withheld, and of a version removed upstream, on `/files` exactly as on its own tarball
+  route ([formats/npm.md](formats/npm.md) R-NPM-003, R-NPM-015, R-NPM-026, R-NPM-047). The check
+  runs before the `HEAD` and conditional answers, so neither a `200` to `HEAD` nor a `304` tells a
+  client that the refused bytes are still stored. Problem code
+  `content_unavailable` when the blob's `content_status` is not `ok`: `503` with `Retry-After` for
+  `missing`, because the object may come back through a version restore, replication or a restore
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-024, [backup-and-restore.md](backup-and-restore.md)
+  R-BAK-001), and `500` for `corrupt`; remote repositories instead treat the item as a cache miss
+  and refetch. `503` with `Retry-After` when the object store is unreachable (R-STOR-036).
 - A `GET` on a folder returns the directory index (R-STOR-017).
 - `?stats=false` suppresses the download statistics update (R-STOR-015).
 
@@ -844,6 +1125,10 @@ Acceptance criteria:
 - `curl -I …` answers `200` with the headers above while the S3 request counter does not grow.
 - `curl -H 'If-None-Match: "<sha256>"' …` answers `304`.
 - `curl -r 5000000000- …` on a small file answers `416` with `Content-Range: bytes */<size>`.
+- `curl -r 100- -H 'If-Range: "<sha256>"' …`, sent to each `web` pod in turn through
+  `kubectl port-forward`, answers `206` with bytes equal to `tail -c +101 widget.bin` on every pod;
+  with `If-Range: "<another sha256>"` it answers `200` with the full content. `curl -D - -o /dev/null`
+  of the full file shows `Content-Length` and no `Transfer-Encoding: chunked`.
 - An uploaded `evil.html` served from `/files` carries `Content-Disposition: attachment`, the
   sandbox CSP, `nosniff` and `Cross-Origin-Resource-Policy: same-site`; a browser opening the URL
   downloads it instead of rendering it.
@@ -938,10 +1223,18 @@ Priority: **P1** · Covers: ART-029
   at byte 0, or issues a presigned redirect; `HEAD`, `304`, sidecars and requests with
   `?stats=false` do not count.
 - Through a virtual repository the count goes to the item of the serving member.
-- Each replica aggregates counts in memory and flushes them every `storage.stats.flush_interval`
-  with one upsert per item (`downloads = downloads + n`,
-  `last_download_at = greatest(…)`, `last_downloader` of the latest download). A replica crash
-  loses at most one interval of counts; statistics are not audit data.
+- Each `web` replica aggregates counts in memory and flushes them every
+  `storage.stats.flush_interval` with one upsert per item (`downloads = downloads + n`,
+  `last_download_at = greatest(…)`, `last_downloader` of the latest download), in one transaction
+  per batch with the items in id order. Requests reach replicas at random, so several replicas
+  flush the same popular items in every interval; the common order keeps their batches from
+  deadlocking on each other's rows. The upsert joins `items`, so the counts of an item removed
+  since its download are dropped instead of failing the batch on the foreign key; a batch that
+  fails anyway stays in the buffer and is retried at the next flush.
+- The buffer is flushed at shutdown ([architecture.md](architecture.md) R-ARCH-024 step 6), so a
+  drain loses no counts; a replica crash loses at most one interval. Statistics are not audit
+  data. No request reads the buffer: the API below and the retention conditions read PostgreSQL,
+  which every replica sees alike (INV-18, Q-STOR-12).
 - `GET /api/v1/repositories/{repoKey}/stats?path=…` answers
   `{"downloads": 1832, "lastDownloadAt": "2026-10-27T22:01:55Z", "lastDownloader": "ci:acme/web"}`
   *(example)*. Permission: `read`.
@@ -1258,9 +1551,11 @@ Acceptance criteria:
 ### R-STOR-022 · Trash can
 Priority: **P1** · Covers: ART-036, RET-038
 
-- Runtime settings (stored in PostgreSQL, changed through
-  `PUT /api/v1/settings/storage`, cached per replica and invalidated through `LISTEN/NOTIFY`,
-  INV-12):
+- Runtime settings (stored in PostgreSQL, changed through `PUT /api/v1/settings/storage`, cached
+  per replica and invalidated through the change area `cache` of
+  [architecture.md](architecture.md) R-ARCH-018: the PostgreSQL change log, with the Valkey message
+  as the fast path, so a change applies on every replica within `cluster.epoch_poll_interval` even
+  while Valkey is unavailable):
 
   ```json
   { "trash": { "enabled": true, "retention": "336h" } }
@@ -1292,7 +1587,9 @@ Priority: **P1** · Covers: ART-036, RET-038
   - The purge, permanent removal and the manual purge of R-STOR-023 leave them in place, so a
     version number stays reserved after its content is gone.
   - Only a restore of the version (R-STOR-023) and the deletion of the whole repository remove
-    one.
+    one, and `trove admin npm reinstate` for a tombstone that a restore's journal replay wrote for
+    a version that is still stored with its integrity ([formats/npm.md](formats/npm.md)
+    R-NPM-047). None of them admits other bytes under the version number (R-NPM-008).
   - Tombstones do not appear in the trash-can listing.
 - Without the trash can, every deletion, including policy deletions, is permanent.
 - Visibility: a principal sees trashed items of an original path where it holds `deploy` or
@@ -1383,6 +1680,10 @@ object it is deleting.
   is confirmed by the per-blob protocol.
 - *Interrupted deletions*: rows in state `deleting`.
 
+Every candidate query reads the digest's `blob_gc_queue.enqueued_at` along with it, as `$seen`:
+the incremental query from the queue row, the full sweep through a left join (NULL when the
+digest has no entry). Step (3) uses it to keep a release that commits during the run.
+
 **Per-blob protocol.**
 
 ```sql
@@ -1395,9 +1696,18 @@ SELECT state FROM blobs WHERE sha256 = $1 FOR UPDATE;
 SELECT EXISTS (SELECT 1 FROM items WHERE blob_sha256 = $1)
     OR EXISTS (SELECT 1 FROM retention_runs WHERE blob_sha256 = $1)
     OR …;
--- (3) only when (1) returned state = 'live' and (2) returned false
+-- (2b) only when (2) returned false; a separate statement started after (2):
+--      the hold of a running backup (backup-and-restore.md R-BAK-007)
+SELECT EXISTS (SELECT 1 FROM backup_run r
+                WHERE r.hold = 'all' AND r.lease_expires_at > now())
+    OR EXISTS (SELECT 1 FROM backup_blob_pin p JOIN backup_run r ON r.id = p.run_id
+                WHERE p.sha256 = $1 AND r.hold = 'pinned' AND r.lease_expires_at > now());
+-- (3) only when (1) returned state = 'live', (2) returned false and (2b) returned false
+--     now() is the transaction's start: the claim time of the hand-over rules below
 UPDATE blobs SET state = 'deleting', state_changed_at = now() WHERE sha256 = $1;
-DELETE FROM blob_gc_queue WHERE sha256 = $1;     -- also when (2) found a reference
+--     also when (2) found a reference or (1) found no 'live' row; not when (2b) held it;
+--     only the entry the candidate query read, never one a later release wrote
+DELETE FROM blob_gc_queue WHERE sha256 = $1 AND enqueued_at = $seen;
 COMMIT;
 -- (4) outside any transaction; 204 and 404 both count as success
 S3 DeleteObject <prefix>/sha256/…
@@ -1434,26 +1744,102 @@ From 1–4: every committed reference points at a `live` row whose object exists
 outside trove (objects deleted or altered directly in the bucket) is detected by the scrub
 (R-STOR-027), not prevented.
 
-**Recovery.** Every step is idempotent. A collector that crashes after (3) leaves a `deleting`
-row; the next run repeats (4)–(6). Rows in `deleting` are processed on every run before new
-candidates.
+The hold check (2b) only ever keeps a blob, so it cannot weaken 1–4. It gives a running backup
+liveness: a blob that the backup's snapshot references stays in the bucket until the backup has
+copied it. [backup-and-restore.md](backup-and-restore.md) R-BAK-007 proves this and needs from
+this protocol only that (2b) starts after (2) of the same blob. A held blob stays `live`, its
+queue entry stays, `trove_gc_candidates_held_total` grows, and the next run considers it again.
+A run that finds a valid `all` hold when it reaches its candidates skips them and ends; the
+per-blob check still guards the race, and the early exit only saves the locking.
+
+**No release is lost from the queue.** The queue row is deleted only while its `enqueued_at`
+still equals `$seen`. Take a digest whose reference check (2) found a reference R. A transaction
+that removes R and commits during the collector's transaction moves the queue row's
+`enqueued_at` forward through the release trigger. Without the condition, the collector's
+`DELETE … WHERE sha256 = $1` would, under READ COMMITTED, either see the updated row (the release
+committed before the statement began) or wait for the releasing transaction's row lock and
+re-evaluate its condition against the updated row; either way it would match and delete the
+entry. The blob would then be unreferenced with no queue entry, and only the next full sweep
+(R-STOR-025) would reclaim it. With the condition, the updated row does not match, the entry
+stays, and the next incremental run handles the digest. A NULL `$seen` deletes nothing, so an
+entry written after a full-sweep candidate was read also stays. `$seen` is passed back exactly as
+the candidate query returned it, never recomputed. The condition decides only how soon a blob is
+reclaimed: rules 1–4 above do not rely on the queue, so safety is the same with or without it.
+
+**Recovery and hand-over between runs.** Every step is idempotent. A collector that crashes after
+(3) leaves a `deleting` row; a later run repeats (4)–(6). Rows in `deleting` are processed on every
+run before new candidates, and before a run ends it waits up to `delete_settle` to finish (6) for
+the rows it deleted and (4)–(6) for handed-over rows that became eligible meanwhile, so an upload
+waiting for such a row (R-STOR-005) is not left until the next scheduled run. With several
+`worker` replicas and node drains at any time (INV-12), a collection run regularly moves from one
+worker to another (R-ARCH-016), so the hand-over has rules of its own:
+
+- A collector reads its own monotonic clock before it begins a claim transaction; that reading
+  is no later than the transaction's start, which (3) stores as `state_changed_at`. It sends (4)
+  for a row it claimed itself only while less than `storage.gc.handover_delay −
+  storage.gc.delete_settle` has passed on that clock since the reading, checks this immediately
+  before the call, and gives the call that instant as its deadline. In batch mode the earliest
+  reading of the batch counts. A row it did not delete in time is left to a later run. The
+  collector never compares its clock with the database's, and a lock wait inside the claim
+  transaction only shortens its window.
+- A run finishes a `deleting` row without `object_deleted_at` that it did not claim itself only
+  after the row's `state_changed_at` is older than `handover_delay`.
+- On shutdown, the collection handler cancels its S3 calls and waits for them to return before its
+  job is released ([architecture.md](architecture.md) R-ARCH-016), so it sends nothing after the
+  release. In the same step it records (5) for the rows whose (4) succeeded and hands its other
+  claims over: one statement sets
+  `state_changed_at = now() − (handover_delay − delete_settle)` on them, so the run that
+  continues the job finishes them after `delete_settle` instead of `handover_delay`. A drain therefore delays the re-upload of a digest that was being collected
+  by seconds, not minutes. If that statement fails, the rows wait for `handover_delay`, as after a
+  crash.
+
+Without these rules, a collector that was drained, paused or partitioned after (3) could send its
+delete late. By then another run could have finished the row, and an uploader could have written
+the same digest again for a new `live` row (rule 3). The late delete would remove that new object,
+and a committed reference would point at nothing. Under the rules, the new row can exist only
+after `handover_delay`, or `delete_settle` after a release that followed the return of all the
+collector's calls; by then the first collector's delete has either completed or will not be sent,
+and `delete_settle` still absorbs a request already in flight. The remaining gap is a
+process frozen between its deadline check and the write of the request itself, which the scrub
+detects (R-STOR-027). An upload that meets such a row waits `storage.upload.blob_wait_timeout`,
+then answers `503` and is retried by its client (R-STOR-005). After a drain the wait is short,
+because the drained collector handed its rows over. After a crash, uploads of the digests the lost
+collector had claimed can answer `503` for up to `handover_delay` plus one `gc` interval; this
+touches only content that was unreferenced for the whole grace period and is uploaded again in
+that window.
 
 **Grace period.** The protocol is correct without it; the grace period exists for three other
 reasons: (a) content deleted and re-published shortly after (common in CI) is still stored, so
-the re-upload is a deduplication hit; (b) a PostgreSQL point-in-time restore to any moment within
-the last `grace_period` finds every blob it references still in the bucket, because a blob is
-deleted no earlier than `grace_period` after its last reference disappeared (longer restore
-windows need bucket versioning with noncurrent-version expiry at least that long; backup is
-specified in [ha-and-helm.md](ha-and-helm.md)); (c) defense in depth.
+the re-upload is a deduplication hit; (b) a point-in-time restore of the platform's database
+backup ([ha-and-helm.md](ha-and-helm.md) R-HA-023 to R-HA-025) to any moment within the last
+`grace_period` finds every blob it references still in the bucket, because a blob is deleted no
+earlier than `grace_period` after its last reference disappeared (longer restore windows need
+bucket versioning with noncurrent-version expiry at least that long, R-HA-024); (c) defense in
+depth. trove's own backups do not depend on it: the hold (2b) keeps every blob a running backup
+still has to copy, whatever the grace period is, and a completed backup holds its blobs in its own
+target ([backup-and-restore.md](backup-and-restore.md) R-BAK-006, R-BAK-007).
+
+**Deletion pause.** Before every batch of state changes (trash purge, (3), (4) and (6)) a run reads
+`system_state.deletions_paused_at` ([ha-and-helm.md](ha-and-helm.md) R-HA-025). While it is set,
+the run changes nothing and ends with `result.paused: true`; the next run after an operator
+resumes deletions continues.
 
 **Deletion batching.** The collector MAY claim up to `storage.gc.batch_size` blobs, one
 transaction each or one transaction for the batch with the locks taken in digest order, and
 delete their objects with `DeleteObjects` (up to 1,000 keys per request) when
-`storage.gc.batch_delete` is true.
+`storage.gc.batch_delete` is true. In batch mode one hold-check statement covers the batch
+(`p.sha256 = ANY($1)`, returning the held digests), issued after the batch's last reference check
+(R-BAK-007), and one queue deletion pairs each digest with its own `$seen`
+(`DELETE FROM blob_gc_queue q USING unnest($1::bytea[], $2::timestamptz[]) AS s(sha256, seen)
+WHERE q.sha256 = s.sha256 AND q.enqueued_at = s.seen`), leaving out the held digests.
 
-**Relation to other jobs.** Retention runs, deletes and copies may run concurrently with
-collection; the protocol needs no mutual exclusion beyond the row locks. Physical-usage deltas
-are recorded when rows are removed.
+**Relation to other jobs.** Retention runs, deletes, copies and backup runs may run concurrently
+with collection; the protocol needs no mutual exclusion beyond the row locks and the hold check.
+Two collection runs that overlap, for example while a lost worker's run is still finishing, are
+safe for the same reason; the exclusive job key of R-STOR-025 only avoids the duplicate work, and
+no advisory-lock lease or Valkey lock is involved (Q-STOR-13). Every statement runs in a short
+transaction on the main pool, so collection works through a transaction-mode pooler. The
+physical-usage delta of a blob is recorded when its row leaves `live` in step (3) (R-STOR-003).
 
 Configuration:
 
@@ -1462,6 +1848,7 @@ storage:
   gc:
     grace_period: 24h        # default (proposed)
     delete_settle: 30s       # default (proposed)
+    handover_delay: 10m      # default (proposed); must exceed jobs.lease_duration + 2 × delete_settle
     batch_size: 1000         # default (proposed)
     batch_delete: true       # default (proposed); false for stores without DeleteObjects
     delete_concurrency: 8    # default (proposed)
@@ -1470,7 +1857,8 @@ storage:
 Metrics (the `trove_gc_*` family of
 [operations-and-observability.md](operations-and-observability.md) R-OPS-008):
 `trove_gc_deleted_blobs_total`, `trove_gc_reclaimed_bytes_total`,
-`trove_gc_candidates_kept_total`, `trove_gc_deleting_rows`.
+`trove_gc_candidates_kept_total`, `trove_gc_candidates_held_total` (kept by a backup hold,
+R-BAK-007), `trove_gc_deleting_rows`.
 
 Acceptance criteria:
 
@@ -1482,19 +1870,47 @@ Acceptance criteria:
   fails with SQLSTATE `AS001`.
 - A test migration adds a new referencing table while an old binary runs collection; a blob
   referenced only from the new table is kept.
+- The hold criteria of [backup-and-restore.md](backup-and-restore.md) R-BAK-007 pass: with a
+  backup paused after its pins are committed, a pinned, unreferenced blob stays `live` through a
+  collection run with `grace_period: 0s`, and the first run after the backup deletes it.
+- A fault-injection build pauses a collector right after its reference check (2) found an item
+  that references the digest. A second transaction deletes that item and commits, and the
+  collector then continues. Afterwards `blob_gc_queue` holds the digest with the second
+  transaction's `enqueued_at`, and the next incremental run with `grace_period: 0s` deletes the
+  blob without a full sweep.
+- A fault-injection build pauses a collector between (3) and (4) with `kill -STOP` for longer than
+  `handover_delay`, while another worker takes over the run and an uploader re-publishes the same
+  content. After `kill -CONT`, the paused collector sends no `DeleteObject` (S3 request log), and
+  the re-published item downloads with the right SHA-256.
+- A fault-injection build holds a collector's `DeleteObjects` call after (3), and its pod is
+  deleted gracefully. The pod sends no `DeleteObject` after its job is released; the run continues
+  on the other `worker` replica and removes the claimed rows within `2 × delete_settle` plus one
+  job pick-up, and an upload of one of those digests started during the drain answers `201`
+  within `storage.upload.blob_wait_timeout`.
+- With `system_state.deletions_paused_at` set, a collection run with `grace_period: 0s` changes no
+  row and deletes no object, and its result carries `paused: true`.
 
 ### R-STOR-025 · Garbage-collection schedule, full sweep and manual run
 Priority: **MVP** · Covers: STOR-037
 
-Collection runs on the shared task framework (Q-STOR-10): the job table, scheduler and leases of
-[architecture.md](architecture.md), the task and job API of
+Collection runs on the shared task framework (Q-STOR-10): the job table, scheduler and job leases
+(`locked_until`) of [architecture.md](architecture.md) R-ARCH-016, the task and job API of
 [operations-and-observability.md](operations-and-observability.md) R-OPS-019 and R-OPS-020. This
 requirement fixes the two collection tasks, their parameters and results.
 
-- Two tasks: `gc` (incremental) and `gc-full` (full sweep). Both are registered with the dedup key
-  `gc` in `exclusive` mode, so at most one collection run is queued or running at any time,
-  whichever task started it. Each run first purges expired trash entries (R-STOR-022), then
-  finishes `deleting` rows, then processes candidates.
+- Two tasks: `gc` (incremental) and `gc-full` (full sweep). Both are registered in the queue
+  `maintenance` with the dedup key `gc` in `exclusive` mode, so at most one collection run is
+  queued or running at any time, whichever task started it, on whichever `worker` replica claims
+  it (R-STOR-046). The exclusion lives in the job table in PostgreSQL (INV-3); it avoids duplicate
+  work, while correctness rests on the row locks of R-STOR-024 (Q-STOR-13).
+- Each run first purges expired trash entries (R-STOR-022), then aborts expired upload sessions
+  (R-STOR-011, from P1 on), then finishes `deleting` rows under the hand-over rules of R-STOR-024,
+  then processes candidates. The deletion pause of R-STOR-024 stops every step; the backup hold
+  (R-STOR-024 step 2b) applies to the blob candidates, the only step that can remove content a
+  running backup still has to copy.
+- A node drain releases a running collection job ([architecture.md](architecture.md) R-ARCH-016):
+  `gc-full` continues from its keyset checkpoint on another worker; `gc` needs no checkpoint,
+  because its candidates are the remaining `blob_gc_queue` entries.
 - A scheduled slot that finds the other collection task queued or running is refused by the shared
   key, not dropped: the scheduler offers a task's latest due slot again on every tick
   ([architecture.md](architecture.md) R-ARCH-016), so it is enqueued once the blocking run has
@@ -1557,6 +1973,9 @@ Acceptance criteria:
   ever appears twice.
 - With both default schedules, which both fire on Sundays at 02:00 UTC, a `gc-full` job for that
   slot runs every Sunday, and no `gc` job and `gc-full` job ever run at the same time.
+- `kubectl drain` of the node whose `worker` runs a `gc-full` job: the job continues on the other
+  `worker` replica from its checkpoint with `attempt` unchanged, and afterwards exactly the blobs
+  are gone that an undisturbed run deletes over the same fixture.
 - Parser table test: `0 3 * * 1` and `0 3 * * mon` fire on Mondays at 03:00 UTC; `0 0 1 * 1` fires
   on the first of each month and on every Monday; `0 3 * * 7`, `0 30 3 * * ?`, `30 3 ? * 2`,
   `@every 1h`, `CRON_TZ=Europe/Berlin 0 3 * * *` and `0 0 30 2 *` are rejected.
@@ -1571,14 +1990,20 @@ The reverse check: walk the bucket and remove objects no blob row knows.
 - For each object without a blob row and with `LastModified` older than the run's `minAge`
   (default `storage.orphans.min_age`), the sweep MUST claim the digest by inserting a `deleting` row
   (`INSERT … ON CONFLICT DO NOTHING`) before deleting the object, then follow steps (4)–(6) of
-  R-STOR-024. An uploader that wrote the same object concurrently finds the `deleting` row and
-  writes again after it is gone (R-STOR-005); the commit deadline keeps freshly written objects
-  out of reach of `min_age`.
+  R-STOR-024 with its hand-over rules. An uploader that wrote the same object concurrently finds
+  the `deleting` row and writes again after it is gone (R-STOR-005); the commit deadline keeps
+  freshly written objects out of reach of `min_age`. The sweep needs no backup-hold check: it
+  deletes only objects without a blob row, and a backup's snapshot references none of them
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-007).
+- The sweep honours the deletion pause of R-STOR-024 before every prefix: while it is set, the
+  sweep deletes nothing and ends with `result.paused: true`, and a later run resumes at the
+  checkpoint.
 - Keys below `<prefix>/sha256/` that do not match the layout, and any other foreign key below
   `<prefix>/`, are reported and never deleted.
 - The sweep also aborts multipart uploads below `<prefix>/` initiated longer than
-  `storage.orphans.multipart_max_age` ago, and deletes staging objects of expired upload
-  sessions (R-STOR-011).
+  `storage.orphans.multipart_max_age` ago, and deletes the staging objects of upload sessions
+  that are aborted, done or unknown (R-STOR-011). An open session's multipart upload is never
+  that old, because `storage.uploads.session_max_age` is shorter than `multipart_max_age`.
 - The sweep is the task `orphan-sweep` of the shared task framework (Q-STOR-10; R-OPS-019).
   Trigger: `POST /api/v1/system/tasks/orphan-sweep/run` with
   `{"dryRun": false, "resume": true, "minAge": "24h"}` (all members optional; the values shown are
@@ -1623,7 +2048,8 @@ Priority: **P1** · Covers: trove-only
   a size different from `blobs.size` sets `corrupt`. Errors other than `404` (timeouts, `5xx`,
   `403`) MUST NOT change the status; they are counted and retried.
 - **Deep check**: every `live` blob SHOULD be downloaded and re-hashed at least once per
-  `storage.scrub.deep_interval`, throttled to `storage.scrub.deep_bytes_per_second` per replica; a
+  `storage.scrub.deep_interval`, throttled to `storage.scrub.deep_bytes_per_second` per run (the
+  task is `exclusive`, so one run reads at a time whatever the number of `worker` replicas); a
   SHA-256 mismatch sets `corrupt`.
 - Every detection (here and in R-STOR-013) increments the counter
   `trove_storage_blobs_damaged_total{status}` and writes an audit event per blob; the gauge
@@ -1763,8 +2189,13 @@ measured.
   quota failure after about 70 s; NuGet with exponential backoff over a few seconds. Every retry is
   rejected again at admission. This delay is the accepted cost of naming the cause in the status
   code (Q-STOR-7).
-- Enforcement uses the folded counters plus the unfolded deltas, so it can lag by at most one fold
-  interval (R-STOR-003); concurrent uploads may exceed a quota by the content in flight.
+- Enforcement reads the folded counters of R-STOR-003, so it lags by at most one fold interval
+  plus one fold iteration (`storage.usage.fold_interval`, 5 s by default); uploads committed in
+  that time and uploads in flight may exceed a quota. The counters live in PostgreSQL only, never
+  in Valkey or in a replica's memory, so every replica decides alike, whichever one a request
+  reaches, and a Valkey failover cannot reset a quota (Q-STOR-12). One admission costs one
+  primary-key read per limit that is enabled, whatever the number of replicas and the upload
+  rate.
 - Deletes, moves within a repository, property changes and downloads are never blocked by a
   quota.
 - The spool volume is the only replica-local disk on the upload path; its thresholds are checked
@@ -1777,8 +2208,8 @@ Acceptance criteria:
   content and running collection lets it succeed again.
 - With a repository quota exceeded, `dotnet nuget push` fails with
   `507 (Insufficient Storage)` and stores nothing.
-- A repository quota of 100 MiB rejects the upload that would cross it and accepts uploads to
-  other repositories.
+- A repository quota of 100 MiB rejects the upload that would cross it, once one fold interval
+  has passed since the uploads that filled it, and accepts uploads to other repositories.
 
 ## Object-store configuration
 
@@ -1916,6 +2347,9 @@ Priority: **MVP** · Covers: STOR-024, STOR-017
   `retry.max_backoff`, for throttling, `5xx` and network errors on idempotent operations (all
   operations trove uses are idempotent on content-addressed keys). Streaming `GetObject` bodies
   are not retried after the first byte reached the client.
+- The pool and `storage.s3.multipart.max_concurrent_parts` protect one replica. The store sees
+  their sum over all replicas, which grows with the replica count; sizing the store for it is
+  [ha-and-helm.md](ha-and-helm.md) R-HA-050's.
 - Circuit breaker per replica: after `circuit_breaker.failure_threshold` consecutive failures
   (network errors, timeouts, `5xx`, credential errors; not `404` or other `4xx`) the circuit opens
   for `circuit_breaker.open_duration`; blob operations then fail fast (R-STOR-036); one probe
@@ -2248,11 +2682,37 @@ Priority: **P1** · Covers: RET-011, RET-012, RET-018
   runs wait as `queued` (visible in the history) up to `retention.queue_size`; beyond that, a
   scheduled trigger is skipped with a log entry and an audit event, a manual trigger answers
   `429`. A policy never runs twice at the same time; a trigger while it runs answers `409`.
-- Runs are jobs in the job queue (INV-12); the scheduler that enqueues due runs holds an
-  advisory-lock lease. A run whose worker disappears (lease lost) is marked `failed` with reason
-  `worker-lost`: the job kind is registered with `MaxAttempts: 1`, so the reaper of
-  [architecture.md](architecture.md) R-ARCH-016 fails it instead of re-queueing it, and the next
+- **Run limit across workers.** A worker that claims a run job starts the run in one short
+  transaction that first locks the single row of `retention_run_gate` (`SELECT … FOR UPDATE`),
+  then counts the runs in `running` or `stopping`, and sets the run to `running` only below the
+  limit. Two workers that claim runs at the same moment therefore cannot both take the last slot,
+  and the lock is held for that transaction only, so it works through a transaction-mode pooler.
+  At the limit, the job goes back to `queued` with `run_at` one `jobs.poll_interval` later and
+  without counting the attempt (the release statement of [architecture.md](architecture.md)
+  R-ARCH-016), and the run stays `queued`. A run resumed after a drain is already `running` and
+  keeps its slot without passing the gate again. The enqueuing side (scheduler or manual trigger)
+  applies `retention.queue_size` with the same lock.
+
+  ```sql
+  -- one row, seeded by the migration that creates the table
+  CREATE TABLE retention_run_gate (id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1));
+  ```
+- Runs are jobs of the `default` queue, claimed by `worker` replicas (R-STOR-046); the scheduler
+  that enqueues due runs is the singleton under the `scheduler` lease of
+  [architecture.md](architecture.md) R-ARCH-016 and R-ARCH-017. "A policy never runs twice at the
+  same time" is the exclusive dedup key `retention:<policy key>` in the job table, in PostgreSQL;
+  no Valkey lock is involved (INV-3, Q-STOR-13).
+- **Drain.** A node drain releases a running run (R-ARCH-016: back to `queued`, `attempt`
+  unchanged). Another worker continues it: it keeps the run row, its counters and its deadline
+  (`maxRunDurationMinutes` counts from the first start) and evaluates the selection again, which is
+  idempotent. The run's status stays `running`; a drain never fails a run.
+- **Lost worker.** A run whose worker disappears without releasing it (crash, node loss: its job
+  lease expires) is marked `failed` with reason `worker-lost`: the job kind is registered with
+  `MaxAttempts: 1`, so the reaper of R-ARCH-016 fails it instead of re-queueing it, and the next
   scheduled or manual run starts from scratch.
+- **Deletion pause.** Before every batch of removals a run reads the deletion pause of R-STOR-024;
+  while it is set, the run ends with status `stopped` and `error.code = deletions_paused`, and
+  removes nothing more.
 - Runs and garbage collection may overlap (R-STOR-024).
 
 Configuration:
@@ -2273,6 +2733,12 @@ Acceptance criteria:
   `"0 30 3 ? * SUN"` are rejected with `invalid_schedule`.
 - A run with `maxRunDurationMinutes: 1` over 50,000 matching versions stops after about one minute
   with status `stopped-limit`; the next run continues with the remaining versions.
+- `kubectl drain` of the node whose `worker` runs a retention run over 50,000 matching versions:
+  the run finishes on the other `worker` replica with status `completed`, and its report lists
+  every removed version once.
+- With `retention.max_concurrent_runs: 1` and three `worker` replicas, manual runs of three
+  policies are triggered within one second: at no time are two of them `running`, and all three
+  end `completed`.
 
 ### R-STOR-041 · Manual run, dry run, stop and disable all
 Priority: **P1** · Covers: RET-014, RET-015, RET-016, RET-017
@@ -2287,6 +2753,11 @@ Priority: **P1** · Covers: RET-014, RET-015, RET-016, RET-017
 - A dry run is allowed on disabled policies, evaluates exactly like a real run, removes nothing
   and produces a report (R-STOR-042). It reflects the moment it ran.
 - A stopped run cannot be resumed; the next run starts from scratch.
+- A stop reaches the run through PostgreSQL, whichever `web` replica receives it: stop and
+  stop-all set the runs to `stopping` and their jobs to `cancelling` (queued runs end `stopped` at
+  once). The run reads its status before every batch, and the job heartbeat of
+  [architecture.md](architecture.md) R-ARCH-016 cancels its context, so it ends `stopped` after the
+  current batch on whichever `worker` it runs.
 - Every manual trigger, stop and disable-all records the acting principal in the run and in the
   audit log. Permission: system administrator.
 
@@ -2435,9 +2906,26 @@ kept revisions per overwritten tag) are repository settings owned by
 - All three caps are counts (RET-035): distinct snapshot versions per artifact, distinct tag names
   per image, kept revisions per tag name. Federated repositories are not part of the MVP (INV-5);
   when they arrive, they use the same count semantics, not an age in days.
-- After a push commits, the format plug-in's `VersionGroup` names the affected group; the commit
-  transaction writes it to an outbox. A job running every `retention.caps.interval` removes,
-  per group, the oldest variants beyond the cap through the normal delete path.
+- After a push, the format plug-in's `VersionGroup` names the affected group, and the push's
+  commit transaction appends one row (repository, group, push time) to the table `cap_outbox`.
+  Rows are only inserted and deleted, never updated, so concurrent pushes to one group never wait
+  for each other or for enforcement.
+- A loop on every `worker` replica (R-STOR-046) runs every `retention.caps.interval`. One
+  iteration is one transaction: it locks up to 100 outbox rows with `FOR UPDATE SKIP LOCKED`,
+  evaluates each group among them, removes the oldest variants beyond the cap through the normal
+  delete path, oldest first, and deletes exactly the rows it locked. Each variant is removed by
+  the version row the evaluation read, so a tag re-pushed meanwhile, which has a new current
+  version row, is not removed.
+  - A push that commits during an iteration has a row the iteration did not lock, so its group is
+    evaluated again. No push is lost, as it would be with one upserted row per group, where a push
+    whose upsert met the row locked by a running evaluation would add nothing that the evaluation
+    could still see.
+  - A worker drained or lost mid-iteration rolls back, and its rows wait for another worker.
+  - Two workers may evaluate one group at once when they locked different rows of it. Each removes
+    only what is beyond the cap in the state it read, a variant the other already removed is
+    skipped, and removals take their locks oldest first, so the outcome is that of one evaluation
+    of the later state and the two cannot deadlock. No lease and no Valkey lock is involved.
+  - While the deletion pause of R-STOR-024 is set, the loop claims nothing.
 - "Oldest" is the earliest `created_at` of the variant's current version row: for a snapshot its
   deploy time, for a tag the time the tag name last received a push (a re-pushed tag counts as
   new). No tag name is exempt, `latest` included; a tag that keeps receiving pushes is never the
@@ -2465,6 +2953,10 @@ Acceptance criteria:
   within one interval; `t1` is in the trash can.
 - With the same cap, pushing `latest`, `t1`, `t2`, re-pushing `latest`, then pushing `t3` removes
   `t1`, not `latest`.
+- With a tag cap of 3 and two `worker` replicas, 20 tags of one image are pushed concurrently
+  through three `web` replicas while the loop runs with `retention.caps.interval: 1s`. One
+  interval after the last push, exactly the 3 newest tags remain, `cap_outbox` is empty, and
+  `pg_stat_database.deadlocks` has not grown.
 
 ### R-STOR-045 · Unused remote-cache expiry
 Priority: **P1** · Covers: RET-036
@@ -2475,8 +2967,10 @@ Priority: **P1** · Covers: RET-036
   cached file items of remote repositories whose last use, `coalesce(last_download_at,
   created_at)`, is older than their repository's expiry. Removal is permanent (no trash can); the
   content is fetched again on the next request. Removed blobs are collected by R-STOR-024.
-- The task processes repositories one after another in batches and checkpoints after each batch.
-  Manual start: `POST /api/v1/system/tasks/remote-cache-cleanup/run` (system administrator,
+- The task processes repositories one after another in batches and checkpoints after each batch,
+  so a drained run continues on another `worker` from its checkpoint. It honours the deletion
+  pause of R-STOR-024 before every batch. Manual start:
+  `POST /api/v1/system/tasks/remote-cache-cleanup/run` (system administrator,
   `202 {"job": {…}}`, `409` while a run is active).
 
 Configuration:
@@ -2491,6 +2985,126 @@ Acceptance criteria:
 
 - With expiry `48h` on `npm-remote`, a tarball last downloaded 3 days ago is removed by the job; a
   following `npm install` fetches it from the upstream again.
+
+## Roles, scale-out and backups
+
+### R-STOR-046 · Storage work per role and across replicas
+Priority: **MVP** · Covers: trove-only
+
+Every storage mechanism runs on the role INV-2 assigns, behaves the same on any number of replicas
+of that role, and uses no state that an earlier request left on one replica (INV-18). The expected
+load exceeds one replica (INV-12), so no mechanism on this page may depend on the replica count.
+
+| Work | Role | How replicas share it |
+|---|---|---|
+| Uploads (R-STOR-004 to R-STOR-010), downloads (R-STOR-012 to R-STOR-014), item operations up to `storage.delete.max_sync_items`, remote-cache fills | `web` | Any replica serves any request; metadata in PostgreSQL, content in S3 |
+| Multi-request upload sessions (R-STOR-011, P1) | `web` | Session row and parts in PostgreSQL, bytes in one S3 multipart upload; each request may reach another replica |
+| Download-statistics buffer (R-STOR-015) | `web` | Per replica; flushed every interval and at shutdown, in item order |
+| Usage fold (R-STOR-003), cap enforcement (R-STOR-044, P1) | `worker`, every replica | Loops that lock their rows with `FOR UPDATE SKIP LOCKED`; any number of workers, no lease |
+| Collection, orphan sweep, scrub, remote-cache cleanup (R-STOR-025 to R-STOR-027, R-STOR-045) | `worker` | Jobs of the queue `maintenance` with an exclusive dedup key in the job table (Q-STOR-10, Q-STOR-13) |
+| Storage summary (R-STOR-028) | `worker` | The task of [operations-and-observability.md](operations-and-observability.md) R-OPS-023; reads are served by any `web` replica from its snapshot table |
+| Retention runs, build retention, background deletes, copies, moves and trash restorations (R-STOR-018, R-STOR-019, R-STOR-023, R-STOR-040, R-STOR-043) | `worker` | Jobs of the queue `default` ([architecture.md](architecture.md) R-ARCH-016; retention runs and build retention with the dedup keys registered there); the retention run limit through the row lock of `retention_run_gate` (R-STOR-040) |
+| Retention reports (R-STOR-042) | `worker` | Written by the run through the upload pipeline and the worker's spool |
+| Startup check (R-STOR-035) | `web`, `worker` | Per replica, before its first readiness |
+
+- **Local storage.** The spool is the only local storage on this page: one per `web` and `worker`
+  pod, an `emptyDir` or a generic ephemeral volume, never shared between pods and never persistent
+  (INV-13, R-STOR-004). No storage mechanism needs a ReadWriteMany or a persistent volume.
+- **Exclusion.** Every rule that keeps storage work from running twice lives in PostgreSQL: job
+  dedup keys, row locks and `SKIP LOCKED` claims (INV-3). None uses Valkey or an advisory-lock
+  lease (Q-STOR-13). The correctness of the commit protocol, collection and the orphan sweep rests
+  on row locks alone; exclusion only saves duplicate work.
+- **Valkey.** Storage reads and writes nothing in Valkey itself. It uses Valkey only through
+  [architecture.md](architecture.md): job wake-up signals and the change messages of the `cache`
+  area (R-ARCH-018), and the flight lock of remote fills (R-ARCH-033). While Valkey is unavailable,
+  every storage operation behaves as with it; job pick-up waits for `jobs.poll_interval`, and a
+  change to the storage settings waits for the change-log poll.
+- **Shared values.** Counters and limits that must agree across replicas live in PostgreSQL:
+  usage, quotas and download statistics (Q-STOR-12). Per-replica values exist only to protect the
+  replica itself: the spool budget, the S3 connection pool and part concurrency, and the circuit
+  breaker (R-STOR-004, R-STOR-033).
+- **Splitting the service.** Because every replica of a role can do everything this table assigns
+  to the role, a web pool that serves only package paths, or a worker pool that claims only the
+  `maintenance` queue ([ha-and-helm.md](ha-and-helm.md) R-HA-062, P1), needs no storage change.
+- **Drain.** A node drain costs no acknowledged data and fails no storage operation that its client
+  retries:
+  - on `web`: an upload cut before its commit leaves nothing (R-STOR-004); a cut download resumes
+    with `Range` on any replica (R-STOR-012); an upload session continues on another replica from
+    its last recorded part, because the cut request releases its writer claim (R-STOR-004 step 8,
+    R-STOR-011); download counts are flushed (R-STOR-015);
+  - on `worker`: jobs are released with their checkpoints (R-STOR-025, R-STOR-026, R-STOR-045),
+    retention runs continue on another worker (R-STOR-040), a collector waits for its S3 calls
+    and hands its unfinished claims over before its job is released (R-STOR-024), and an
+    interrupted fold or cap iteration rolls back (R-STOR-003, R-STOR-044).
+
+Acceptance criteria:
+
+- With Valkey stopped, the storage integration suite (upload, deduplication, download with
+  `Range`, delete, copy, collection with `grace_period: 0s`, quota rejection) passes against three
+  `web` and two `worker` replicas, and no replica turns unready.
+- The scatter profile of [architecture.md](architecture.md) R-ARCH-032 passes the R-STOR-005 race
+  test through the Service, with uploads, deletes and downloads spread round robin over three `web`
+  replicas and collection running on two `worker` replicas.
+- During [ha-and-helm.md](ha-and-helm.md) R-HA-059's drain test, one `worker` runs `gc-full` and
+  another a retention run; both finish on the remaining `worker` replicas, and no client operation
+  of the test's load fails.
+- A source test fails when a package below `internal/blob` or the storage job handlers imports the
+  Valkey client or calls a session-level advisory-lock function.
+
+### R-STOR-047 · Storage state in backups and restores
+Priority: **MVP** · Covers: trove-only
+
+[backup-and-restore.md](backup-and-restore.md) owns the backup job, its format and the restore
+procedure (INV-19). This requirement states what storage provides to them and what a restore
+leaves for storage.
+
+- **Referenced blobs.** A backup finds the blobs its snapshot references through the reference
+  rules of R-STOR-003, as collection does (rule 3: the referencing tables come from the catalog's
+  foreign keys to `blobs`). A table that a later page adds under those rules is backed up without
+  a change to the backup.
+- **Garbage collection.** The per-blob protocol of R-STOR-024 contains the hold check (2b), so a
+  running backup never loses a blob it still has to copy, whatever `storage.gc.grace_period` is
+  and however long the backup runs. The orphan sweep needs none (R-STOR-026). Collection and a
+  backup run at the same time; neither waits for the other.
+- **Export classes** of this page's tables ([backup-and-restore.md](backup-and-restore.md)
+  R-BAK-004):
+
+  | Table | Class | Reason |
+  |---|---|---|
+  | `blobs` | `blobs` | Only rows that the snapshot references; unreferenced and `deleting` rows are not restored |
+  | `blob_gc_queue` | `transient` | Candidates only |
+  | `upload_sessions`, `upload_session_parts` | `transient` | Staged bytes under `_uploads/` are not backed up; clients restart their uploads |
+  | `pending_sidecars` | `transient` | Declarations waiting for a file for at most `storage.sidecars.pending_ttl` |
+  | `repository_usage`, `storage_usage_totals`, `storage_usage_deltas` | `data` | Exported, then recomputed by the restore (below) |
+  | every other table of this page | `data` | Items (trashed ones included), packages, versions, properties, download statistics, property sets, retention policies, runs and run items, `retention_run_gate` (its one row), `cap_outbox` (pending cap evaluations; evaluating a group again is harmless) |
+
+- **Restore fix-ups.** In the fix-up transaction of R-BAK-022 the restore calls
+  `storage_usage_recount()` (R-STOR-003), because the `blobs` filter drops rows that the exported
+  physical totals still count; the quota of R-STOR-029 would otherwise decide on wrong numbers.
+  Blob rows of digests the backup recorded as damaged are loaded with
+  `content_status = 'missing'` (R-BAK-021 step 4), so their downloads answer `503` with
+  `Retry-After` as for any missing object (R-STOR-012,
+  [backup-and-restore.md](backup-and-restore.md) R-BAK-001). Trashed items keep
+  their `trashed_at`, so trash expiry continues from the original deletion.
+- **No storage work during a restore.** While `system_state` marks a restore in progress, `worker`
+  replicas wait at their schema check and claim no job ([architecture.md](architecture.md)
+  R-ARCH-024 step 3). No collection, orphan sweep or retention run can therefore meet blob objects
+  that the restore has copied before the rows that reference them are loaded.
+- **Key families.** Only `sha256/` objects that the snapshot references are backed up (R-STOR-001).
+  A restore into an empty installation writes exactly those, so it leaves no orphans. A restore
+  onto an existing blob prefix (R-BAK-025, P1) sets the deletion pause, and after deletions resume,
+  the orphan sweep (R-STOR-026) removes what the restored database does not reference.
+- **Platform restores.** A point-in-time restore of the platform's database backup relies on the
+  grace period or bucket versioning instead ([ha-and-helm.md](ha-and-helm.md) R-HA-024, R-STOR-024
+  "Grace period"), and on the deletion pause that `trove admin post-restore` sets (R-HA-025).
+
+Acceptance criteria:
+
+- A backup taken while three unreferenced `live` blobs and two `deleting` rows exist is restored.
+  The first storage summary afterwards (R-STOR-028) reports `blobs.count` and `blobs.bytes` equal
+  to `SELECT count(*), sum(size) FROM blobs WHERE state = 'live'`, and a system quota set just
+  above that size admits an upload that fits.
+- A unit test compares the backup table registrations of this page's tables with the table above.
 
 ## Configuration reference
 
@@ -2561,8 +3175,11 @@ storage:
     commit_attempts: 5                   # default (proposed)
     commit_deadline: 1h                  # default (proposed)
     blob_wait_timeout: 120s              # default (proposed)
-  uploads:
-    session_ttl: 24h                     # default (proposed)
+  uploads:                               # multi-request upload sessions (R-STOR-011, P1)
+    part_size: 16MiB                     # default (proposed)
+    writer_lease: 60s                    # default (proposed)
+    session_ttl: 4h                      # default (proposed)
+    session_max_age: 20h                 # default (proposed); < storage.orphans.multipart_max_age
   deploy_by_checksum:
     enabled: true                        # default (proposed)
     max_candidates: 100                  # default (proposed)
@@ -2581,10 +3198,11 @@ storage:
     max_values_per_item: 1000            # default (proposed)
     max_recursive_items: 100000          # default (proposed)
   usage:
-    fold_interval: 30s                   # default (proposed)
+    fold_interval: 5s                    # default (proposed); also the lag of quota decisions (R-STOR-029)
   gc:
     grace_period: 24h                    # default (proposed)
     delete_settle: 30s                   # default (proposed)
+    handover_delay: 10m                  # default (proposed)
     batch_size: 1000                     # default (proposed)
     batch_delete: true                   # default (proposed)
     delete_concurrency: 8                # default (proposed)
@@ -2621,8 +3239,14 @@ Durations use Go duration syntax (`h`, `m`, `s`; there is no `d` unit); sizes us
 (`KiB`, `MiB`, `GiB`). Runtime settings (trash can, system quota) live in PostgreSQL and are
 changed through `PUT /api/v1/settings/storage` with `If-Match` (R-STOR-022). Readiness has no storage key: the opt-in
 `health.require_object_store` belongs to R-OPS-001 (R-STOR-036). The internal loops
-(`storage.usage.fold_interval`, `storage.stats.flush_interval`, `retention.caps.interval`) are
-not maintenance tasks and keep their own interval keys.
+(`storage.usage.fold_interval` and `retention.caps.interval` on every `worker` replica,
+`storage.stats.flush_interval` on every `web` replica, R-STOR-046) are not maintenance tasks and
+keep their own interval keys. There is no storage key for Valkey: storage uses it only through
+[architecture.md](architecture.md) (R-STOR-046). Startup validation refuses
+`storage.gc.handover_delay` not above `jobs.lease_duration` plus twice `storage.gc.delete_settle`,
+`storage.uploads.session_max_age` not below `storage.orphans.multipart_max_age`,
+`storage.upload.blob_wait_timeout` not above twice `storage.gc.delete_settle`, and a
+`storage.upload.max_size` above 10,000 × `storage.uploads.part_size`; each message names the keys.
 
 </details>
 
@@ -2712,9 +3336,16 @@ not maintenance tasks and keep their own interval keys.
 - **Credentials.** S3 credentials come from workload identity or from mounted files, never from
   inline configuration (R-STOR-031); the outbound proxy password likewise (R-STOR-034). Static
   keys are the weakest mode and need rotation by the operator.
-- **Spool files contain unencrypted uploads** on the replica's ephemeral volume for the duration
-  of a request. They are created `0600`, removed on every exit path and wiped at startup
-  (R-STOR-004). Node-level disk encryption is the platform's responsibility.
+- **Spool files contain unencrypted uploads** on the pod's scratch volume for the duration of a
+  request. They are created `0600`, removed on every exit path and wiped at startup
+  (R-STOR-004). With a generic ephemeral volume, the files of a killed pod stay on the released
+  volume unless its storage class deletes it (`reclaimPolicy: Delete`,
+  [ha-and-helm.md](ha-and-helm.md) R-HA-048). Node-level disk encryption is the platform's
+  responsibility; the residual risk is H-2 in [architecture.md](architecture.md).
+- **Upload sessions are bound to their principal.** Any replica continues a session (R-STOR-011),
+  so the session ID, which appears in URLs and logs, must not authorize anything by itself. Every
+  request of a session is checked against the session's principal and authorized for `deploy`
+  again; another principal gets the same `404` as for an unknown session.
 - **Integrity.** Uploads are verified against declared digests and, where the store supports it,
   by the store against the payload checksum (R-STOR-006); full downloads are verified before the
   last bytes leave (R-STOR-013); the scrub catches damage at rest (R-STOR-027).
@@ -2731,6 +3362,8 @@ Each question below was decided by the development agent from the listed options
 ### Q-STOR-1 · Readiness tied to object-storage reachability (INV-12)
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice stays (d). The rationale now covers a node drain during an object-store outage and states that Valkey plays no part in this rule; no requirement text changed.
 
 All replicas share one bucket. If readiness follows S3, an S3 outage makes every replica unready at
 the same moment and the Service loses all endpoints.
@@ -2762,9 +3395,18 @@ causes such a restart, because liveness never reads a dependency
 ([operations-and-observability.md](operations-and-observability.md) Q-OPS-1), so only an
 unrelated crash or node loss during the outage costs that replica's capacity. The same decision
 is recorded as Q-HA-1 in [ha-and-helm.md](ha-and-helm.md) and Q-OPS-2 in
-[operations-and-observability.md](operations-and-observability.md). The development agent would
-revisit this if a deployment shows a replica-local S3 failure that the circuit breaker does not
-contain.
+[operations-and-observability.md](operations-and-observability.md).
+
+The owner's drain constraint (INV-12) does not change this. A node drained during an S3 outage
+evicts one pod per role; its replacement stays not ready, so the disruption budget
+(`maxUnavailable: 1`, [ha-and-helm.md](ha-and-helm.md) R-HA-032, R-HA-059) refuses the next
+eviction and the drain waits until the store returns. The outage costs each role at most one
+replica of capacity, and the Service never loses its last ready endpoints. Under (a) the same
+drain would find every replica already unready. Valkey is no input to this rule: its outage
+degrades and never gates readiness (INV-12), and object-storage readiness reads nothing from it.
+The development agent would revisit this if a deployment shows a replica-local S3 failure that the
+circuit breaker does not contain, or if drains during S3 outages stall maintenance windows often
+enough to matter.
 
 **Applied in the spec:** R-STOR-036: the readiness row now states first-readiness gating, the
 default and the opt-in; the keys `storage.s3.readiness.fail_after` and `recover_after` are removed
@@ -2774,7 +3416,8 @@ check keeps retrying transient errors without exiting, so a replica started duri
 not ready instead of crash-looping, and becomes ready as soon as the store returns rather than after
 a restart back-off; `storage.s3.startup_timeout` is removed (here and in the configuration
 reference) and an acceptance criterion covers the case. This changes INV-12; the edit to
-[README.md](README.md) is listed as a cross-page consequence.
+[README.md](README.md) is listed as a cross-page consequence. The revisit of 2026-10-28 changed
+no requirement text.
 
 ### Q-STOR-2 · SHA-512 for every blob or only on demand
 
@@ -3070,6 +3713,158 @@ ratio, and the listed repositories. R-STOR-045 uses task `remote-cache-cleanup`.
 metrics are renamed to the `trove_gc_*` family of R-OPS-008, and the configuration reference is
 updated. The matching edits on the operations, API and HA pages are cross-page consequences.
 
+### Q-STOR-11 · Multi-request uploads across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-12 and INV-18 (owner constraints of 2026-10-28) send the requests of one upload session to
+random replicas without affinity, and a node drain may end any request. R-STOR-011 staged each
+chunk as an object and assembled the chunks at finalize. The OCI distribution specification
+requires chunks in order, answers an out-of-order chunk with `416`, lets a client read the
+current offset with `GET`, and lets a registry announce a minimum chunk size
+(`OCI-Chunk-Min-Length`, which clients SHOULD honour). S3 requires every part except the last to
+have at least 5 MiB, and consecutive part numbers when parts carry checksums.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Staged chunk objects, assembled at finalize | The earlier R-STOR-011: each chunk becomes an object; finalize assembles them with `UploadPartCopy` when every chunk but the last has 5 MiB, otherwise by streaming all chunks through the finalizing replica | Simple chunk requests; no part bookkeeping | With small chunks the finalize request streams the whole blob through one replica, so its duration grows with the blob and a drain cuts it, losing the assembly; a client that streams the whole blob in one `PATCH` loses everything when that request is cut |
+| (b) One S3 multipart upload per session, parts of a fixed size, a bounded tail, progress in PostgreSQL | Each request appends to the session's multipart upload in parts of `part_size`, records every part, hash state and offset in PostgreSQL under a writer claim, and keeps fewer than `part_size` leftover bytes as a tail object that it writes under its own key and records with its SHA-256; finalize completes the upload and copies it server-side to the content address | Per-request work is bounded by the chunk plus one part; a long streamed request records progress at every part, so a drain loses at most one part and the client resumes on any replica; finalize moves no byte through trove; a stale writer can at worst fail the session, never corrupt it, because `CompleteMultipartUpload` checks every part's ETag and the stale writer's tail lands under a key the session never records | A part table and a writer claim; small chunks rewrite the tail, up to one part per request; one server-side copy at finalize |
+| (c) Session affinity | Route all requests of a session to one replica and keep the bytes in its spool | No staging in S3 | Contradicts INV-12 and INV-18 (no affinity); a drain or crash loses the session; the spool must hold whole blobs |
+| (d) Session state in Valkey, bytes in S3 | Hash state, offset and part list in Valkey | No PostgreSQL write per part | A Valkey failover or flush loses every open session and costs its client a complete re-upload, more than the one retry [architecture.md](architecture.md) R-ARCH-032 allows for state in Valkey; part lists exceed R-ARCH-030's 1 KiB value limit |
+
+**Choice:** (b) — one S3 multipart upload per session with parts of `storage.uploads.part_size`,
+a tail object below one part, and the session's offset, hash state and parts recorded in
+PostgreSQL under a writer claim.
+
+**Rationale:** The owner's drain constraint is what separates the options. Under (a), the request
+that does the most work, the finalize, grows with the blob, and the common client behaviour of one
+streamed `PATCH` per blob puts the whole blob into one cuttable request. Under (b), no request
+holds more than one part of unrecorded work, and the OCI protocol already has the resume path
+(`GET` for the offset, `416` for a wrong one), so a drain costs one part and one retry. (c) is
+excluded by the owner's constraint, and (d) by INV-3, because a lost session is not a performance
+cost but a lost upload. The writer claim keeps two requests from writing one session; the ETag
+check of `CompleteMultipartUpload` turns the remaining race, a writer that lost its claim and
+still uploads a part, into a failed session instead of a wrong blob. The tail has no such check
+in S3, because it is a plain object, so each request writes its own tail object and the session
+records which one counts, with its SHA-256; a stale writer's tail is never read. The final digest
+comes from the recorded hash states, not from re-reading the object, which is why every byte that
+enters a part must be the byte that was hashed. A drain must not leave the claim behind either: a
+client that meets `416` for as long as a cut request's claim lasts may exhaust its retries, so a
+cut request releases its claim, and only a crash leaves one to expire. The development agent
+would revisit this if a supported store's server-side copy of a 5 GiB blob takes longer than the
+`web` grace period, which would make every drain during a large finalize cost a retry.
+
+**Applied in the spec:** R-STOR-011 is rewritten: state, claim, parts, tail (one object per
+writing request, checked by its recorded SHA-256 on read-back), finalize steps (the change to
+`completing` takes the claim; overlapping finalizes converge), resumption, expiry (every request
+enforces `session_max_age`), the `upload_sessions` and `upload_session_parts` tables, configuration
+and acceptance criteria. R-STOR-004 step 8 releases a cut request's claim and keeps the session's
+multipart upload. R-STOR-001 names the staging keys, R-STOR-006 and R-STOR-026 keep open sessions
+out of reach of multipart expiry, R-STOR-025 lets collection runs abort expired sessions,
+R-STOR-047 classes both tables `transient`, and the security notes bind a session to its
+principal. Cross-page: [backup-and-restore.md](backup-and-restore.md) R-BAK-004 (initial
+`transient` table list); [architecture.md](architecture.md) R-ARCH-032 (the chunked-upload entry
+names the multipart upload and the part table) and R-ARCH-024 step 5 (a cut session request keeps
+its recorded parts and releases its claim).
+
+### Q-STOR-12 · Counters that several replicas update: usage, quotas and download statistics
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The load exceeds one replica (INV-12), so uploads, deletes and downloads of one repository arrive
+on many replicas at once. Usage counters feed quotas (R-STOR-029) and the storage summary
+(R-STOR-028); download statistics feed retention's `unusedForDays` (R-STOR-038). INV-3 now offers
+Valkey for shared ephemeral state, on the condition that losing it costs performance only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Append-only deltas in PostgreSQL, folded by every worker | Triggers append deltas; every `worker` replica folds them with `SKIP LOCKED`, updating counter rows in one order; readers, quota admission included, read the folded rows; download statistics are buffered per `web` replica and flushed in item order | No hot row on the write path, whatever the replica count; durable and identical for every replica; no lease, so folding scales with workers and survives drains; one primary-key read per quota admission, whatever the upload rate; independent of Valkey | Counters and quota decisions lag by one fold interval; a quota can be exceeded by what is committed in that time and by the content in flight |
+| (b) One counter row per repository, updated in every commit | The commit transaction updates `repository_usage` directly | Exact at all times | Every upload to a repository serializes on one row until its commit; with many replicas this row becomes the bottleneck, the pattern R-ARCH-018 already forbids for change areas |
+| (c) Counters in Valkey (`INCRBY`), persisted periodically | Writers count in Valkey; a job copies the totals to PostgreSQL | Fast, no PostgreSQL write | A failover with asynchronous replication loses increments, so quotas and the summary drift until a recount; a quota would then admit uploads beyond its limit after a Valkey incident, which is a correctness cost INV-3 rules out |
+| (d) Per-replica buffers for usage too | Each replica sums its deltas in memory and flushes them | Fewer rows | A crash loses deltas permanently, so counters drift; between flushes each replica decides quotas on different numbers, which INV-18 rules out |
+
+**Choice:** (a) — usage stays in append-only PostgreSQL deltas, folded by every `worker` replica
+with `SKIP LOCKED` and a fixed update order, read in folded form by quota admission, and
+recomputed after a backup restore; download statistics stay in per-replica buffers flushed in item
+order and at shutdown.
+
+**Rationale:** A quota is a limit operators rely on, so its counter must survive any Valkey
+incident; that rules out (c), and (d) fails the same test for a crashed replica. (b) is exact but
+puts every upload of a busy repository in one queue, which the owner's load assumption makes the
+first bottleneck. (a) was already the design; the new constraints add that the fold must run on
+any number of workers without a lease and survive a drain, which `SKIP LOCKED` and a fixed lock
+order give, and that a restore must recompute the totals, because the backup does not export
+unreferenced blob rows. Admission reads the folded rows only: adding the unfolded deltas would make
+it exact, but their number grows with the upload rate of all replicas, so every admission would
+read more rows as the installation grows, and the extra precision only narrows an overshoot that
+in-flight uploads cause anyway. The fold interval drops from 30 s to 5 s, so the overshoot that
+the lag adds stays at a few seconds of uploads, and a fold iteration is cheap enough to run that
+often. Download statistics stay buffered: they are not audit data, a
+crash loses
+at most ten seconds of counts against `unusedForDays` measured in days, and the shutdown flush
+makes a drain lose none. The development agent would revisit this if the fold falls behind under
+the reference load (`storage_usage_deltas` growing for longer than ten fold intervals), which
+would call for partitioning the deltas by repository.
+
+**Applied in the spec:** R-STOR-003 (fold SQL, repeated iterations under backlog, the join that
+keeps a deleted repository from blocking the fold, `storage_usage_totals` counting `live` rows,
+reads of the folded rows, `storage_usage_recount()`, acceptance criteria with three workers and
+with a repository deletion), R-STOR-015 (`web` role, item order, removed items dropped, shutdown
+flush), R-STOR-024 (the physical delta at step 3), R-STOR-029 (PostgreSQL only, folded rows, one
+primary-key read per limit), R-STOR-046, R-STOR-047, and the configuration reference
+(`storage.usage.fold_interval` 5 s instead of 30 s). Cross-page:
+[backup-and-restore.md](backup-and-restore.md) R-BAK-022 (the recount as a fix-up).
+
+### Q-STOR-13 · Exclusion of storage maintenance runs: job key, fenced lease or Valkey lock
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+[ha-and-helm.md](ha-and-helm.md) R-HA-006 lists garbage collection, the orphan sweep and retention
+runs as singleton work under a fenced advisory-lock lease, with every write on the lease's session.
+This page, [architecture.md](architecture.md) R-ARCH-016 and Q-STOR-10 register the same work as
+jobs with an exclusive dedup key, whose handlers write through the main pool. INV-3 keeps mutual
+exclusion whose failure would corrupt data in PostgreSQL. With n workers and drains at any time
+(INV-12), a run moves from one worker to another as a matter of routine.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exclusive job key; correctness from row locks; a hand-over rule for S3 deletes | One run at a time through the job table; every step is a short transaction whose safety rests on row locks; a collector deletes objects only within a bound after its claim, and another run finishes a claim only after it | Exclusion in PostgreSQL without a session; runs work through a transaction-mode pooler; a drain releases the run with its checkpoint and hands its claimed rows over; the hand-over rule bounds the late-delete race, the one hazard that a run moving between workers creates | A new setting (`storage.gc.handover_delay`); a row abandoned by a crashed collector waits that long, and uploads of its digest answer `503` meanwhile |
+| (b) A fenced advisory-lock lease, as R-HA-006 describes, in addition to the job | The handler holds a session lock; all its writes run on that session | A partitioned handler cannot commit after losing the lease | Collection's writes are already safe when two runs overlap, so the fence protects nothing in PostgreSQL that needs it; the dangerous late action is the S3 delete, which no database fence stops; the busiest maintenance writer moves onto session connections, outside the transaction-mode pooler |
+| (c) A Valkey lock | `SET NX` with a TTL around each run | No PostgreSQL session | A failover loses the lock and starts a second run; while Valkey is unavailable the runs either stop or run unguarded; INV-3 keeps such exclusion in PostgreSQL |
+| (d) No exclusion | Runs may overlap freely | Nothing to build | Duplicate work and duplicate result counts; overlapping scheduled slots |
+
+**Choice:** (a) — storage maintenance runs are excluded only by the exclusive job key in
+PostgreSQL; their safety rests on row locks, and S3 deletes follow the hand-over rule of
+R-STOR-024. They take no advisory-lock lease and no Valkey lock.
+
+**Rationale:** R-STOR-024's proof shows that two overlapping collectors cannot delete a referenced
+blob, and the orphan sweep's claim insert and retention's delete path rely on row locks the same
+way. Exclusion is therefore an efficiency property, and the job key provides it in PostgreSQL. The
+one hazard that comes from runs moving between workers is a delete that a drained, paused or
+partitioned collector sends late, after another run finished the row and an uploader stored the
+digest again. A database fence would not stop that request; the hand-over rule does, except for a
+process frozen between its deadline check and the write itself, which the scrub detects. The
+rule's clock is the collector's own, read before the claim transaction, because comparing a
+replica clock with the database's would let clock offset eat the margin. A drained collector is
+not a lost one: it knows its calls have returned, so it hands its rows over at release and costs
+an upload of the same digest seconds instead of `handover_delay`. (b) costs
+session connections for no correctness gain, and (c) would make exclusion depend on Valkey's
+availability. The development agent would revisit this if a storage task appears whose
+correctness needs exclusion; that task would then take (b).
+
+**Applied in the spec:** R-STOR-024 (hand-over rules with the collector's own clock, the hand-over
+of unfinished claims at release, the end-of-run pass, `storage.gc.handover_delay`, relation to
+other jobs, acceptance criteria with a paused and with a drained collector), R-STOR-005
+(`blob_wait_timeout` above twice `delete_settle`), R-STOR-025 (queue, job key, drain), R-STOR-040
+(dedup key, the run limit through `retention_run_gate`, drain, lost worker), R-STOR-041 (stop
+through the job state), R-STOR-044 (append-only `SKIP LOCKED` outbox), R-STOR-046.
+Cross-page: [ha-and-helm.md](ha-and-helm.md) R-HA-006 (garbage collection, the orphan sweep and
+retention runs leave the list of lease holders) and R-HA-002 (its acceptance criterion identifies
+the GC worker through `job.locked_by`, not `trove_lease_held`);
+[architecture.md](architecture.md) R-ARCH-016 (registration table: queue `maintenance` for the
+storage tasks, `default` for retention runs) and Q-ARCH-14 (its rationale no longer names
+garbage-collection decisions as what the lease fence protects).
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks
@@ -3101,8 +3896,16 @@ checksum does not leak this (unreadable content answers `404`).
 
 ### H-14 · No per-principal limit on concurrent uploads or spool use
 
-The spool budget (R-STOR-004) is per replica and shared by all principals. A single token with
+Component: the spool admission of R-STOR-004 on every `web` replica. Subject: every principal that
+uploads. The spool budget is per replica and shared by all principals. A single token with
 `deploy` can hold many slow concurrent uploads and exhaust the budget, making every other upload
-on that replica fail with `503` until the requests time out. Per-principal concurrency and rate
-limits are not specified on this page; if [api-and-ui.md](api-and-ui.md) defines request rate
-limiting, it has to count concurrent upload bodies, not only requests per second.
+on that replica fail with `503` until the requests end or are cut. The Service spreads the
+attacker's connections over all `web` replicas (INV-12), so the same token can exhaust every
+replica's budget; adding replicas raises the number of connections needed, not the protection.
+The cluster-scope limiter of [architecture.md](architecture.md) R-ARCH-034 counts requests per
+second, not bodies in flight, so it does not bound this. Live in the MVP for every principal with
+`deploy` on any repository; it becomes real where upload clients are not all trusted. Mitigation
+outside trove: per-client connection limits and request-body timeouts at the edge proxy
+([ha-and-helm.md](ha-and-helm.md) R-HA-039). A per-principal limit on bodies in flight would have
+to count across replicas and release the slots of a crashed replica; it is not specified on this
+page.

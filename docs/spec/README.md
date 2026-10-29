@@ -20,12 +20,23 @@ Given by the project owner; not up for redesign in these pages:
   configurable permissions (read other packages, write the packages the job produces).
 - Pull-through proxy: external package sources can be connected.
 - Package formats: every format in the feature catalog, more welcome; npm and NuGet first.
+- High availability is a core requirement that cannot be deselected: trove runs on HA PostgreSQL,
+  HA Valkey (with Sentinel) and S3.
+- Horizontal scale: n replicas answer requests that a Kubernetes Service distributes at random.
+  The expected load exceeds what one replica can carry, so the service is cut for load sharing
+  from the start. A node drain causes no outage when the setup is sized for it. There may be more
+  than one type of worker, and the service may be split.
+- A configurable backup job, comparable to GitLab's, creates a consistent backup of the service
+  when it runs and stores it in S3.
+- No ReadWriteMany storage class can be assumed in the cluster: no volume may be attached to
+  several pods. If a worker type needs a ReadWriteOnce volume, that is acceptable but not desired.
 
 ## Design invariants
 
 Baseline that every spec page builds on, so the pages agree. The development agent decided it, and
 the owner reviews it at the walkthrough; each invariant is an ADR in
-[docs/decisions.md](../decisions.md) (ADR-012 to ADR-028). A page may refine an invariant but must
+[docs/decisions.md](../decisions.md) (INV-1 to INV-17: ADR-012 to ADR-028; INV-18: ADR-096;
+INV-19: ADR-097). A page may refine an invariant but must
 not contradict it. A page that finds an invariant wrong raises a question in its `## Decisions`
 section; a choice that changes an invariant says so and edits it here as a cross-page consequence,
 as the choices behind INV-6, INV-8, INV-12 and INV-17 did.
@@ -35,17 +46,42 @@ download list both show go1.27.3 as current stable). Angular 22 (npm `@angular/c
 `latest` = 22.2.3 on 2026-10-28). The Angular build is embedded into the Go binary (`embed`), so
 one container image serves UI, management API and package protocols.
 
-**INV-2 · Process model.** One binary, `trove`. Every replica is identical and stateless: it
-serves HTTP and runs background workers. There is no primary node. Subcommands: `trove serve`,
-`trove migrate`, `trove admin …` (bootstrap and recovery). The Helm chart can split the roles
-(`api`, `worker`); the default is `all`.
+**INV-2 · Process model and roles.** One binary and one container image, `trove`, with roles. A
+role is a set of enabled subsystems chosen by configuration, not a separate build. Roles of the
+MVP: `web` (every HTTP request: UI, management API, package protocols, raw files), `worker`
+(background jobs from the job queue: indexing, garbage collection, cleanup, webhook delivery) and
+`backup` (the backup and restore commands, run as Kubernetes Job or CronJob). The configuration
+key `process.role` selects the role of `trove serve`: `web`, `worker` or `all`, with no default
+([architecture.md](architecture.md) R-ARCH-001). The Helm chart deploys `web` and `worker` as
+separate Deployments from the start, each with its own replica count and autoscaling, and never
+renders `all`. The combined role `all` exists only for a binary started outside the chart during
+development; the local development profile runs the chart with separate `web` and `worker`
+Deployments ([ha-and-helm.md](ha-and-helm.md) R-HA-001, R-HA-051). A role can be split further
+later (for example a separate deployment for package traffic behind its own Service) without code
+changes. Every replica of a role is identical and interchangeable; there is no primary node.
+Subcommands: `trove serve`, `trove migrate`, `trove backup …`, `trove admin …` (bootstrap and
+recovery). Owner constraint since 2026-10-28.
 
-**INV-3 · Metadata store.** PostgreSQL is the only stateful dependency besides object storage:
-repository configuration, package and file metadata, users, groups, tokens, permissions, audit
-events, job queue and cross-replica coordination. No Redis, no shared filesystem, no embedded
+**INV-3 · State.** PostgreSQL is the system of record: repository configuration, package and file
+metadata, users, groups, tokens, permissions, audit events, the durable job queue, the change log
+that carries cross-replica invalidation ([architecture.md](architecture.md) R-ARCH-018) and backup
+run records. The backup target, not the database, is the record of backups: run records are not
+part of a backup ([backup-and-restore.md](backup-and-restore.md) R-BAK-004). Valkey holds shared
+ephemeral state: request collapsing across replicas, the negative cache of remote repositories,
+rate-limit counters with cluster scope, the fast path of change messages and signals, and
+short-lived coordination ([architecture.md](architecture.md) R-ARCH-030). Nothing that trove
+serves to a client and no positive authentication or authorization result is read from Valkey,
+so Valkey holds no shared cache of either (Q-ARCH-16). Nothing in Valkey is the only copy of
+durable data: losing Valkey or its contents (an outage, a Sentinel failover with asynchronous
+replication, a flush, a restart) costs performance only, never correctness or data. Request
+collapsing and negative caching then work per replica, rate limits are approximated per replica,
+and changes reach the other replicas at the speed of the change-log poll (INV-12). A backup does
+not include Valkey. Mutual exclusion whose failure would corrupt data (schema migrations,
+singleton jobs that must not run twice) stays in PostgreSQL. No shared filesystem, no embedded
 database. Schema migrations are embedded in the binary and applied by `trove migrate` (Helm
 pre-install/pre-upgrade Job) under a PostgreSQL advisory lock. Migrations follow
 expand/contract, so version N and N-1 replicas can run side by side during a rolling upgrade.
+Valkey is an owner constraint since 2026-10-28.
 
 **INV-4 · Blob store.** S3-compatible object storage (AWS S3, MinIO, Ceph RGW and similar).
 Binaries are content-addressed by SHA-256 under `<prefix>/sha256/<h0h1>/<h2h3>/<64 hex>` and
@@ -123,11 +159,43 @@ specified as P2 in [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-022.
 **INV-11 · Pull-through proxy.** A remote repository fetches from its upstream on a cache miss,
 stores the binary in the blob store, caches metadata for a configurable period, caches misses
 (negative cache), and serves stale metadata when the upstream is unreachable. Concurrent misses
-for the same object are collapsed: in-process single-flight plus a PostgreSQL advisory lock
-across replicas. URLs in upstream metadata are rewritten to point at trove.
+for the same object are collapsed: in-process single-flight plus a Valkey lock across replicas. A
+lock lost in a Valkey failover only causes a duplicate upstream fetch, which content addressing
+makes harmless. URLs in upstream metadata are rewritten to point at trove.
 
-**INV-12 · High availability.** At least two replicas behind a Kubernetes Service and an Ingress or
-Gateway route, with a PodDisruptionBudget and readiness tied to PostgreSQL and process health
+**INV-12 · High availability and horizontal scale.** Owner constraint; it cannot be deselected.
+The production topology is HA PostgreSQL (e.g. CloudNativePG, Patroni, a managed service), HA
+Valkey with Sentinel (one primary, at least one replica, at least three Sentinels; trove finds the
+primary through Sentinel and follows failovers) and S3-compatible object storage. Single-instance
+PostgreSQL or Valkey serve development only; the local development profile itself runs PostgreSQL
+with a standby and Valkey with a replica and three Sentinels ([ha-and-helm.md](ha-and-helm.md)
+R-HA-051). Capacity planning assumes the load exceeds one replica: load is shared by adding
+replicas of a role. Each of the long-running roles `web` and `worker` runs at least two replicas
+spread across nodes (topology spread constraints), each role behind a PodDisruptionBudget that
+evicts one pod at a time; `web` replicas sit behind a Kubernetes Service without session affinity,
+so any request may reach any replica. The `backup` role runs as a Job, not as replicas
+([architecture.md](architecture.md) R-ARCH-024): one Job pod at a time, because an installation
+runs one backup operation at a time, and no PodDisruptionBudget selects it, so a drain evicts it
+without waiting for it. Its Job then retries: a retried backup skips what the evicted pod already
+copied, and an evicted restore resumes where it stopped
+([backup-and-restore.md](backup-and-restore.md) R-BAK-010, R-BAK-012, R-BAK-021). A node drain
+causes no outage when each of `web` and `worker` has at least two replicas on different nodes: a
+replica that is shut down stops being ready, waits for endpoint removal, lets in-flight requests
+finish within the termination grace period, and releases its jobs to other replicas. PostgreSQL
+connections do not grow without bound with the replica count: the main pool may run through a
+transaction-mode pooler; only `worker` replicas hold session connections, for their leases,
+besides the one-off `trove migrate` and `trove backup` processes
+([architecture.md](architecture.md) R-ARCH-019, Q-ARCH-14; the budget in
+[ha-and-helm.md](ha-and-helm.md) R-HA-016). Valkey being unavailable degrades trove and is
+alerted on, but does not make replicas unready ([ha-and-helm.md](ha-and-helm.md) R-HA-057):
+request collapsing and negative caching of remote repositories work per replica only, so an
+object may be fetched from its upstream once per replica; rate limits are approximated per
+replica, at the configured values divided by the live replicas of the role; changes reach the
+other replicas at the speed of the change-log poll instead of at once, and signals wait for their
+consumers' next poll.
+
+The remaining HA rules: the `web` replicas sit behind a Kubernetes Service and an Ingress or
+Gateway route, and readiness is tied to PostgreSQL and process health
 ([operations-and-observability.md](operations-and-observability.md) R-OPS-001). Object storage
 gates only a replica's first readiness (startup check, [storage.md](storage.md) R-STOR-035).
 Afterwards S3 failures degrade blob requests one by one through the circuit breaker and are
@@ -135,15 +203,20 @@ reported and alerted on, while running replicas stay ready; continuous gating on
 the opt-in `health.require_object_store: true` ([storage.md](storage.md) Q-STOR-1,
 [ha-and-helm.md](ha-and-helm.md) Q-HA-1,
 [operations-and-observability.md](operations-and-observability.md) Q-OPS-2). Replicas coordinate
-only through PostgreSQL: `LISTEN/NOTIFY` for cache invalidation, `FOR UPDATE SKIP LOCKED` for the
-job queue, advisory-lock leases for singleton schedulers (garbage collection, cleanup).
-PostgreSQL high availability and S3 durability come from the platform (e.g. CloudNativePG,
-Patroni, Amazon RDS; AWS S3, MinIO); the chart consumes them and does not bundle a production
-database.
+through PostgreSQL (the durable job queue, the change log of [architecture.md](architecture.md)
+R-ARCH-018, and leases whose loss would corrupt data) and Valkey (request collapsing, the negative
+cache of remote repositories, rate-limit counters with cluster scope, the fast path of change
+messages and signals); [architecture.md](architecture.md) R-ARCH-030 assigns each mechanism.
+PostgreSQL and Valkey high availability and S3 durability come from the platform
+(e.g. CloudNativePG, Patroni, Amazon RDS; Valkey with Sentinel; AWS S3); the chart consumes them
+and does not bundle production instances.
 
 **INV-13 · Deployment.** The Helm chart `trove` in `deploy/helm/trove` is the supported
-deployment. It renders the Deployment(s), a migration Job hook, Service, Ingress or Gateway
-route, PodDisruptionBudget, HorizontalPodAutoscaler, ServiceMonitor and NetworkPolicy. Secrets
+deployment. It renders one Deployment per role (`web`, `worker`), the backup CronJob, a migration
+Job hook, Services, an Ingress or Gateway route, PodDisruptionBudgets, HorizontalPodAutoscalers,
+a ServiceMonitor and NetworkPolicies. No ReadWriteMany volume is used anywhere: scratch space is
+`emptyDir` or a generic ephemeral volume (ReadWriteOnce, deleted with its pod). A role that ever
+needs persistent local storage gets one ReadWriteOnce volume per pod; none is planned. Secrets
 come from existing Kubernetes Secrets; S3 credentials from workload identity (IRSA and similar)
 or static keys.
 
@@ -167,6 +240,22 @@ stream.
 **INV-17 · UI.** The Angular UI uses only public, documented endpoints: the operations of the
 OpenAPI document (`/api/v1/…` and `/files/…`) and the browser sign-in flow under `/auth/…`. It
 has no private UI endpoints, so every UI action is scriptable.
+
+**INV-18 · No state between requests on a replica.** No request may depend on state that an
+earlier request left in one replica's memory or local disk. A protocol that spans several requests
+(chunked or resumable uploads, login polling, paged listings) keeps its state in PostgreSQL or
+Valkey and its data in S3 (multipart uploads), so consecutive requests may land on different
+replicas. Local disk is scratch space for one request or one job only. Owner constraint since
+2026-10-28 (random distribution by the Kubernetes Service).
+
+**INV-19 · Backup.** `trove backup create` produces a consistent backup of the service: a
+transactionally consistent snapshot of trove's PostgreSQL data together with every blob that
+snapshot references, written to a configurable S3 target (endpoint, bucket, prefix, credentials,
+retention). The chart schedules it as a CronJob; `trove backup restore` restores a backup into an
+empty installation, and an interrupted restore of the same backup resumes where it stopped
+([backup-and-restore.md](backup-and-restore.md) Q-BAK-10). Valkey is not part of a backup
+(INV-3). Owner constraint since 2026-10-28; format and procedure in
+[backup-and-restore.md](backup-and-restore.md).
 
 ## Requirement format
 
@@ -217,14 +306,15 @@ acceptance criteria.
 | Page | Requirement prefix | Scope |
 |---|---|---|
 | [architecture.md](architecture.md) | `R-ARCH` | Components, Go and Angular code layout, request paths, format plug-in interface, background jobs, caching |
-| [repositories-and-proxy.md](repositories-and-proxy.md) | `R-REPO` | Repository model and API, virtual resolution, pull-through proxy semantics |
-| [storage.md](storage.md) | `R-STOR` | Blob store on S3, metadata schema, upload/download pipeline, garbage collection, quotas, cleanup |
+| [repositories-and-proxy.md](repositories-and-proxy.md) | `R-REPO` | Repository model and API, virtual resolution, pull-through proxy semantics, proxy state across replicas, without Valkey and during a drain (R-REPO-049) |
+| [storage.md](storage.md) | `R-STOR` | Blob store on S3, metadata schema, upload/download pipeline, garbage collection, quotas, cleanup, storage work per role and across replicas, storage state in backups |
 | [identity-and-authentication.md](identity-and-authentication.md) | `R-AUTH` | OIDC login, sessions, users, groups, service accounts, tokens, client authentication |
 | [authorization.md](authorization.md) | `R-AUTHZ` | Permission model, evaluation, package ownership, administration roles |
 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | `R-CI` | GitLab CI OIDC token exchange, identity mappings, `CI_JOB_TOKEN` fallback |
 | [formats/npm.md](formats/npm.md) | `R-NPM` | npm registry protocol, local/remote/virtual behavior |
 | [formats/nuget.md](formats/nuget.md) | `R-NUGET` | NuGet v3 protocol, symbols, local/remote/virtual behavior |
-| [ha-and-helm.md](ha-and-helm.md) | `R-HA` | High availability, failure modes, upgrades, backup, Helm chart values |
-| [operations-and-observability.md](operations-and-observability.md) | `R-OPS` | Health, metrics, logs, audit, maintenance operations, webhooks, configuration as code |
+| [backup-and-restore.md](backup-and-restore.md) | `R-BAK` | Backup job, backup format in S3, consistency with garbage collection, restore, retention |
+| [ha-and-helm.md](ha-and-helm.md) | `R-HA` | High availability, failure modes, upgrades, backup CronJob and restore Job (chart side), platform backup (PITR, bucket versioning), disaster recovery, Helm chart values |
+| [operations-and-observability.md](operations-and-observability.md) | `R-OPS` | Health, metrics, logs, audit, Valkey and coordination observability, operational signals and alerts, maintenance operations, webhooks, configuration as code |
 | [api-and-ui.md](api-and-ui.md) | `R-API`, `R-UI` | Management API conventions and surface, Angular UI information architecture |
 | `builds.md` (not yet written) | `R-BLD` | Build records, their API, retention, promotion and storage: the record schema and its PostgreSQL tables, the API and permissions ([authorization.md](authorization.md) R-AUTHZ-027), mapping of CI job names to build names, promotion, run retention and the retention hooks of [storage.md](storage.md) R-STOR-043. P1; written before P1 build work starts (milestone M9), and the page that creates it turns `builds.md` in this cell into a link to itself. One owner, decided the same way three times: option (a) of [Q-AUTHZ-8](authorization.md#q-authz-8--spec-page-for-build-metadata), [Q-STOR-3](storage.md#q-stor-3--owner-of-build-records) and [Q-API-5](api-and-ui.md#q-api-5--owning-page-for-build-information); build records are not deferred to P2. It must provide R-STOR-043's contract: a run has a name, a number, a start time and its files as repository, path and SHA-256, and records live in PostgreSQL tables, not as repository items. |

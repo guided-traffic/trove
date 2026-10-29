@@ -11,15 +11,34 @@ documents today. The code layout, test tiers and build commands below are the pl
   full-featured binary repository manager does. The [specification](../spec/README.md) says *how*
   trove will do it. Each requirement names the catalog entries it covers. [Coverage](../coverage/README.md)
   measures the gap between the two, and [decisions.md](../decisions.md) records *why*.
-- **Owner constraints are fixed.** Go 1.27.3, Angular 22, PostgreSQL, S3, high availability, Helm,
-  OIDC login, tokens, detailed permissions, GitLab CI OIDC, pull-through proxying, and npm and NuGet
-  first. They are listed in [spec/README.md](../spec/README.md#owner-constraints) and are not up for
-  redesign.
-- **Invariants `INV-1` to `INV-17` bind every spec page.** A page may refine an invariant but must
+- **Owner constraints are fixed.** Go 1.27.3, Angular 22, PostgreSQL, S3, Helm, OIDC login, tokens,
+  detailed permissions, GitLab CI OIDC, pull-through proxying, and npm and NuGet first. Since
+  2026-10-28 also: high availability on HA PostgreSQL, HA Valkey with Sentinel and S3, which cannot
+  be deselected; load beyond one replica, shared by a Kubernetes Service that spreads requests at
+  random; node drains without outage; a configurable backup job that writes a consistent backup to
+  S3; and no ReadWriteMany volume. They are listed in
+  [spec/README.md](../spec/README.md#owner-constraints) and are not up for redesign.
+- **Invariants `INV-1` to `INV-19` bind every spec page.** A page may refine an invariant but must
   not contradict it. If an invariant looks wrong, raise a question `Q-<AREA>-n` in the page's
   `## Decisions` section and decide it there; a choice that changes an invariant edits it in
   [spec/README.md](../spec/README.md#design-invariants). Every invariant is a record in
   [decisions.md](../decisions.md).
+- **Three roles, one binary** (INV-2, [R-ARCH-001](../spec/architecture.md)). `web` serves every
+  HTTP request and never claims a job or holds a lease. `worker` runs jobs and serves only the ops
+  listener. `backup` runs the backup and restore commands and uses no Valkey. Work that outlasts a
+  request on `web` is enqueued as a job. `all` combines `web` and `worker` for a binary started
+  outside the chart; the chart never renders it.
+- **PostgreSQL decides, Valkey accelerates** (INV-3, [R-ARCH-030](../spec/architecture.md)). State
+  whose loss would cost correctness or data, including every mutual exclusion whose failure would
+  corrupt data, lives in PostgreSQL. Valkey holds request collapsing, the negative cache,
+  cluster-wide rate-limit counters, change messages and signals. Every use of Valkey has a fallback
+  that works without it. A value read from Valkey can at most make trove refuse (a `404` from a
+  negative entry, a `429` from a counter), never grant access or supply served content. Every key
+  expires, and only `internal/cluster` talks to Valkey.
+- **No state between requests** (INV-18, [R-ARCH-032](../spec/architecture.md)). Consecutive
+  requests of one client may land on different replicas. A protocol that spans several requests
+  keeps its state in PostgreSQL or Valkey and its data in S3; local disk is scratch space for one
+  request or one job.
 - **IDs are permanent.** No ID is ever renumbered or reused. A new entry takes the next free number
   in its prefix.
 - **Tools read the headings.** A `### <ID> · <Title>` heading followed directly by a `Priority:` line
@@ -34,7 +53,7 @@ documents today. The code layout, test tiers and build commands below are the pl
 
 | Page | Content |
 |---|---|
-| This page | Entry point: ID schemes, adding catalog entries and requirements, coverage, planned layout and test tiers |
+| This page | Entry point: ID schemes, adding catalog entries and requirements, coverage, planned layout, the local development profile and test tiers |
 
 Topic pages are created together with the code they describe. Until then their design lives in the
 spec:
@@ -42,8 +61,12 @@ spec:
 | Future topic | Design today |
 |---|---|
 | Architecture: components, request paths, startup | [spec/architecture.md](../spec/architecture.md) |
+| Process roles, graceful shutdown and node drains | [spec/architecture.md](../spec/architecture.md) R-ARCH-001, R-ARCH-024, R-ARCH-032; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-002, R-HA-011, R-HA-059, R-HA-062 |
+| Valkey: usage map, client, request collapsing, rate limits, degraded mode | [spec/architecture.md](../spec/architecture.md) R-ARCH-030, R-ARCH-031, R-ARCH-033, R-ARCH-034; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-056, R-HA-057 |
+| PostgreSQL connections, change log and leases | [spec/architecture.md](../spec/architecture.md) R-ARCH-016 to R-ARCH-019; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-016, R-HA-058 |
+| Backup and restore | [spec/backup-and-restore.md](../spec/backup-and-restore.md); chart side [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-060 |
 | Build, test and lint matrix | [spec/architecture.md](../spec/architecture.md) R-ARCH-003, R-ARCH-004; no task runner chosen yet |
-| Local development profile | [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-051 |
+| Local development profile | [Local development profile](#local-development-profile-planned) below; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-051 |
 | Adding a package format | [spec/architecture.md](../spec/architecture.md) R-ARCH-008 to R-ARCH-010 |
 | CI and release: images, chart, signatures | [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-047; published to ghcr.io/guided-traffic (image `trove`, chart `charts/trove`), Q-HA-11 |
 
@@ -172,10 +195,10 @@ Planned, from [R-ARCH-003](../spec/architecture.md) and [R-ARCH-004](../spec/arc
 ```text
 trove/
 ├── go.mod                       # one module; go 1.27.3; generators as tool directives
-├── cmd/trove/main.go          # subcommands serve, migrate, admin; flag parsing only
+├── cmd/trove/main.go            # subcommands serve, migrate, backup, admin; flag parsing only
 ├── api/openapi.yaml             # OpenAPI 3.1 source of truth, served as /api/v1/openapi.json
 ├── internal/                    # all Go code; no public Go API
-│   ├── app/                     # composition root: build components, start/stop order
+│   ├── app/                     # composition root: build components per role, start/stop order
 │   ├── config/                  # schema, YAML and environment loading, validation
 │   ├── httpserver/              # listeners, routing, middleware, client address
 │   ├── api/v1/                  # management API handlers
@@ -185,21 +208,59 @@ trove/
 │   ├── formats/                 # plug-in contract, registry, conformance kit, npm/, nuget/
 │   ├── proxy/                   # remote fetch engine
 │   ├── blob/s3/                 # spool, digests, content-addressed objects
-│   ├── meta/postgres/           # migrations, sqlc queries and generated code
-│   ├── cluster/                 # LISTEN/NOTIFY, leases, lock categories
+│   ├── meta/postgres/           # pgx pools, migrations, sqlc queries and generated code
+│   ├── cluster/                 # the only Valkey client and key registry (keys.go), change log
+│   │                            # and signal areas, FlightLock, shared counters, leases, lock categories
+│   ├── backup/                  # trove backup: create, restore, table registry
 │   ├── cache/  jobs/  audit/  outbound/  secrets/  errs/  observability/
 │   ├── webui/                   # embeds the Angular build (dist/ has a committed placeholder)
 │   └── archtest/                # fails on forbidden imports between layers
 ├── web/                         # Angular workspace; exact versions, .nvmrc
-├── deploy/helm/trove/         # Helm chart
-├── deploy/dev/                  # kind, CloudNativePG, SeaweedFS (S3), values-dev.yaml
-├── test/integration/            # real PostgreSQL and SeaweedFS (S3) in containers
+├── deploy/helm/trove/           # Helm chart: web and worker Deployments, backup CronJob
+├── deploy/dev/                  # HA-shaped local profile, see below
+├── test/integration/            # real PostgreSQL, PgBouncer, Valkey with Sentinel and SeaweedFS (S3) in containers
 ├── test/e2e/                    # kind + Helm + real clients (npm, pnpm, yarn, dotnet)
 └── perf/                        # load scripts, reference lockfiles
 ```
 
 The responsibility of each Go package and the import layering are in
 [R-ARCH-002](../spec/architecture.md).
+
+## Local development profile (planned)
+
+The local profile is HA-shaped, so that failover of every dependency, node drains and a backup and
+restore can be exercised on a laptop and in CI with the same files ([R-HA-051](../spec/ha-and-helm.md)).
+It runs the real chart, not a single process. Files live in `deploy/dev/`; the tool versions (kind,
+kubectl, Helm, openssl, the CloudNativePG operator chart, the PostgreSQL, Valkey and SeaweedFS
+images) are pinned once in the repository's tool pins, and images are pinned by digest.
+
+| Component | What runs | File |
+|---|---|---|
+| Cluster | kind, one control-plane and three worker nodes labeled with three zones, so two replicas per role can spread, drain and lose a node | `deploy/dev/kind.yaml` |
+| trove | the chart with `trove-web` and `trove-worker` at two replicas each, `highAvailability.enforce: true`, and the backup CronJob every 6 hours | `deploy/dev/values-dev.yaml` |
+| PostgreSQL | CloudNativePG `Cluster` `trove-db` with two instances (primary and standby), TLS with `verify-full` | `deploy/dev/postgres.yaml` |
+| Pooler (optional, `dev-up POOLER=1`) | CloudNativePG `Pooler` resources `trove-db-pooler-rw` and `trove-db-pooler-control` in transaction mode, two instances each | `deploy/dev/pooler.yaml` |
+| Valkey with Sentinel | StatefulSet `trove-valkey` (primary and replica) and StatefulSet `trove-valkey-sentinel` (three Sentinels, quorum 2, `down-after-milliseconds 5000`), spread over the three nodes, `emptyDir` only, TLS only, ACL user `trove`; the dev CA comes from `deploy/dev/valkey-certs.sh` and lives in `.dev/valkey/` | `deploy/dev/valkey.yaml` |
+| S3 | single-process SeaweedFS, Service `trove-s3` on port 9000, buckets `trove-blobs` (versioning on), `trove-pg-archive` and `trove-backups` | `deploy/dev/s3.yaml` |
+
+Every component is single-attach or ephemeral: the PostgreSQL instances use one ReadWriteOnce claim
+each through CloudNativePG, Valkey and SeaweedFS use `emptyDir`, and nothing needs ReadWriteMany
+([R-HA-061](../spec/ha-and-helm.md)).
+
+Targets (the names are examples until the task runner is chosen):
+
+| Target | What it does |
+|---|---|
+| `dev-up` / `dev-down` | Creates the kind cluster with everything above and port-forwards `svc/trove` to `localhost:8080` / deletes the cluster |
+| `dev-failover` | Promotes the PostgreSQL standby (`kubectl cnpg promote trove-db <standby>`) |
+| `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` | `SENTINEL FAILOVER trove`; force-deletes the Valkey primary pod; scales Valkey and the Sentinels to 0 for a given duration |
+| `dev-s3-outage` | Scales the S3 store to 0 for a given duration |
+| `dev-drain` | Runs variant A of the drain test of [R-HA-059](../spec/ha-and-helm.md) against a node the target picks |
+| `dev-backup`, `dev-restore` | Creates a Job from the backup CronJob and waits for it; installs a second release into an empty namespace from the latest backup |
+| `dev-chaos` | Runs the failure-injection suite of [R-HA-052](../spec/ha-and-helm.md) |
+
+`trove serve --role all` from an IDE uses the same dependencies through `kubectl port-forward`. It
+is a convenience, not a tested profile.
 
 ## Test tiers (planned)
 
@@ -208,8 +269,11 @@ The responsibility of each Go package and the import layering are in
 | Unit | next to the code | Package logic; the token format test vector | R-AUTH-022 |
 | Architecture | `internal/archtest` | Forbidden imports between layers | R-ARCH-002 |
 | Format conformance | `internal/formats/formattest` | Routing, path rejection, classification, rewrite and merge determinism, limits, content headers, client snippet templates | R-ARCH-010 |
-| Integration | `test/integration` | Real PostgreSQL and SeaweedFS (S3) in containers on every change; MinIO and AWS S3 nightly | R-ARCH-003, R-HA-051 |
-| End to end | `test/e2e` | kind, the real chart, and npm, pnpm, Yarn and `dotnet` against local, remote and virtual repositories | R-ARCH-010, R-NPM-045, R-NUGET-027 |
-| Failure injection | local profile in CI | Every failure mode of R-HA-007 under real client load | R-HA-052 |
+| Integration | `test/integration` | Real PostgreSQL, PgBouncer, Valkey with Sentinel (newest patch of each supported line, 9.0 and 9.1 today) and SeaweedFS (S3) in containers on every change; MinIO and AWS S3 nightly | R-ARCH-003, R-ARCH-031, R-HA-051 |
+| Chart | CI | `helm lint`, `helm template` per value set, schema validation; no `ReadWriteMany`, no PersistentVolumeClaim, no StatefulSet, no Secret, never `--role all` | R-HA-002, R-HA-028, R-HA-029, R-HA-061 |
+| End to end | `test/e2e` | kind, the real chart, and npm, pnpm, Yarn and `dotnet` against local, remote and virtual repositories; the client suite also with Valkey stopped | R-ARCH-010, R-ARCH-030, R-NPM-045, R-NUGET-027 |
+| Failure injection | local profile in CI | Every failure mode of R-HA-007 under real client load, including PostgreSQL switchover, Valkey failover, outage and content loss, object-store outage, node loss and backup under load | R-HA-052, R-HA-057 |
+| Node drain | local profile in CI | Variant A on every change to `main`; variants B to E (Valkey primary, PostgreSQL primary, pooler instance, running backup pod on the drained node) nightly | R-HA-059 |
+| Backup and restore | `test/integration`, kind | Consistency under load, overlapping runs, drain and crash during backup and restore, revocations surviving a restore; the restore drill nightly | R-BAK-029, R-HA-052 |
 | UI | `web/` | Unit, component, contract, end-to-end, accessibility, internationalization and security tiers | R-UI-047 |
 | Performance | `perf/` | Proposed targets, not measurements | R-ARCH-027 |

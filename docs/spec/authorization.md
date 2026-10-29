@@ -66,6 +66,9 @@ Decisions this page takes:
 | Whom does a writing CI inline grant make the owner? | The job's GitLab project (`bind_project`), unless the grant says `"ownership": "none"` (Q-AUTHZ-6). | R-AUTHZ-014 |
 | Which reads are audited by default? | Refused reads only; allowed reads with `authz.audit.reads: all` (Q-AUTHZ-5). | R-AUTHZ-029 |
 | Projects for delegated administration | P1, in a reduced form: repositories, project administrators, project-owned policies. Roles, environments and sharing stay P2. CI delegations stay independent of projects in P1 (Q-AUTHZ-7). | R-AUTHZ-026 |
+| How do n replicas learn of a permission change? | Through the `authz` change area of [architecture.md](architecture.md) R-ARCH-018: the change log in PostgreSQL carries correctness, a Valkey message only starts the rebuild sooner. Valkey never holds a grant or a decision (Q-AUTHZ-11). | R-AUTHZ-028 |
+| How long can a removed grant still work? | Typically 100 ms plus one index build; at most `cluster.epoch_poll_interval` plus 1 s on a replica whose change-log poll works, with or without Valkey; never longer than `authz.cache.max_staleness` (10 s) plus one build on any replica. A replica that cannot confirm its index waits like a request waits for the database, then answers 503 (Q-AUTHZ-13). | R-AUTHZ-028 |
+| Can a client see its own permission change on whichever replica answers next? | Yes, by sending `Trove-Authz-Min-Epoch` with the epoch its write returned (Q-AUTHZ-12). | R-AUTHZ-032 |
 
 ## Requirements
 
@@ -267,8 +270,9 @@ characters `*`, `?`, `@` and `:` never occur in a key and make the selector kind
 Acceptance criteria:
 
 - A policy grants `group:developers` `read` on `["npm-team-*"]`. An administrator creates local
-  repository `npm-team-x`; within 5 seconds a member of `developers` can `npm view` a package
-  published there, without any change to the policy.
+  repository `npm-team-x`; within `cluster.epoch_poll_interval` plus 1 s, also with Valkey
+  stopped, a member of `developers` can `npm view` a package published there through any replica,
+  without any change to the policy.
 - Repository `npm-old` is named by key in policy `legacy`, then deleted and created again.
   `GET /api/v1/permission-policies/legacy` reports `"inert": true` and grants nothing on the new
   `npm-old`.
@@ -629,6 +633,14 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
   (R-AUTHZ-013).
 - `content:bypass` makes the subject pass every repository check and the ownership check. It does
   not bypass the canonicalization rules of R-AUTHZ-005.
+- Read-only system status needs `settings:read`. That covers the replica registry, system
+  information, scheduled tasks and jobs, lock diagnostics, the redacted effective configuration and
+  the log levels ([operations-and-observability.md](operations-and-observability.md)), the
+  encryption status and the backup runs of [backup-and-restore.md](backup-and-restore.md)
+  R-BAK-014. Pages that call this permission
+  `system.read` mean this capability. Taking and restoring backups is not an API operation: the
+  `backup` role runs them as Kubernetes Jobs with credentials of its own (INV-19), so no capability
+  of this table starts one.
 
 Acceptance criteria:
 
@@ -770,7 +782,8 @@ Acceptance criteria:
 - Alice (who may deploy `@web/*`) creates a token whose scope admits only `read` on
   `["npm-all", "@any-local:npm", "@any-remote:npm"]`. With it, `npm install` through `npm-all`
   succeeds and `npm publish` gets `E403`.
-- Alice's group loses `deploy`; her token whose scope still admits `deploy` can no longer publish.
+- Alice's group loses `deploy`; within the bound of R-AUTHZ-028, her token whose scope still
+  admits `deploy` can no longer publish through any replica.
 - Alice's token with scope `{"repositories": [{"repositories": ["npm-internal"], "packages":
   {"include": ["@web/*"]}, "actions": ["read"]}]}` gets `@web/button` through `npm view` against
   `npm-internal` and `E404` for `@pay/core`, which her grants would let her read. Creating a token
@@ -818,8 +831,8 @@ Acceptance criteria:
   ID token of a generic OIDC issuer (R-CI-026) whose `project_path` claim is `team/ui*`, yields
   `@acme/ui\*`. It matches only the literal name `@acme/ui*`, so the token cannot publish
   `@acme/ui-kit`.
-- Removing a mapping from a policy's entries makes the next `npm install` with an already issued
-  token of that mapping fail, without a new exchange.
+- Removing a mapping from a policy's entries makes `npm install` with an already issued token of
+  that mapping fail on every replica within the bound of R-AUTHZ-028, without a new exchange.
 - `POST /api/v1/authz/explain` for a CI token lists its inline grants with
   `"source": {"kind": "ci-inline", "ordinal": …}`.
 - A mapping saved with the inline grant `{"repositories": ["npm-internal"], "packages":
@@ -833,16 +846,20 @@ Priority: **MVP** · Covers: IAM-019, IAM-024
 
 Evaluation MUST behave like the following pseudo-code. Implementations may reorder or cache steps
 as long as every decision is the same. Grant evaluation MUST NOT query PostgreSQL in the steady
-state; it reads the compiled grant index of R-AUTHZ-028. Ownership rows are read inside the write
-transaction (R-AUTHZ-018).
+state; it reads the compiled grant index of R-AUTHZ-028 in the replica's memory, never Valkey.
+Ownership rows are read inside the write transaction (R-AUTHZ-018).
 
 ```go
 // Decide runs for every coordinate of a request; the request proceeds only if every
 // coordinate is allowed. The resolver of R-REPO-019 calls MemberUsable per member.
-func Decide(sub Subject, c Coordinate) Decision {
-    idx := index.Current()
-    if idx.Stale() {
-        return Deny(ReasonStale)                                    // R-AUTHZ-028, answered 503
+func Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
+    // One index per request: the first call waits while the index is staler than
+    // authz.cache.max_staleness or below Trove-Authz-Min-Epoch (R-AUTHZ-028, R-AUTHZ-032);
+    // later calls of the same request return the same index. An epoch the database never
+    // reached was answered 412 before the first Decide.
+    idx, err := index.ForRequest(ctx)
+    if err != nil {
+        return Deny(ReasonStale)                                    // answered 503 authz_stale
     }
     if sub.Anonymous && !settings.AnonymousAccess() {               // R-AUTH-037
         return Deny(ReasonUnauthenticated)
@@ -930,8 +947,15 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
 ```
 
 - Writes MUST be evaluated again when they commit (after a long upload), against the grant index
-  and the ownership rows current at that moment. A refusal at commit discards the upload and
-  answers 403.
+  that the committing replica holds at that moment (R-AUTHZ-028) and the ownership rows read in
+  the commit transaction. A refusal at commit discards the upload and answers 403. The re-check
+  waits for a stale index like any decision; it never holds the commit transaction open while it
+  waits (R-ARCH-019).
+- Every request is decided on its own, on whichever replica receives it, and no decision is kept
+  in a replica's memory for a later request (INV-18). In a protocol that spans several requests
+  (chunked or resumable uploads, P1, [storage.md](storage.md) R-STOR-011), each request is
+  authorized when it arrives, and the request that commits runs the commit-time re-check on its
+  own replica.
 - `reasonFor` returns `deny.scope` when a grant would allow the action but a ceiling does not,
   `deny.triggering-user` when only the triggering-user bound refuses, and `deny.no-grant`
   otherwise.
@@ -959,8 +983,12 @@ Worked trace (repositories and policies of the team example in
 | 7 | Alice, read-only token | `npm publish @web/button@1.3.2` | grant allows `deploy`, the scope does not (`deny.scope`) | 403 |
 | 8 | Alice | `npm view left-pad` via `npm-all`, not cached | `npm-internal`: not found; `npmjs`: `read` and `cacheFillAction: read` pass; fetched | 200 |
 
-Acceptance criteria: each row of the trace is an automated end-to-end test against two replicas,
-issued once on each replica.
+Acceptance criteria: each row of the trace is an automated end-to-end test in the e2e profile
+`scatter` of [architecture.md](architecture.md) R-ARCH-032 (three `web` replicas, every request
+balanced round robin, no session affinity). The policies are written first. The test waits until
+every replica reports their epoch in `trove_authz_epoch`, or it sends the epoch in
+`Trove-Authz-Min-Epoch` where the client can (R-AUTHZ-032). Each row is then issued once on each
+replica, with the same result.
 
 ### R-AUTHZ-016 · Denial responses and hidden existence
 Priority: **MVP** · Covers: IAM-032, ADMAPI-002, PKG-NUGET-016, PKG-NPM-007
@@ -969,8 +997,9 @@ A refused request is answered as follows (first matching row wins):
 
 | Situation | Status |
 |---|---|
-| Grant index stale (R-AUTHZ-028) | 503 |
+| Grant index not confirmed current within the wait of R-AUTHZ-028 | 503 `authz_stale` with `Retry-After` |
 | No credential: anonymous access off, or `anonymous` lacks what the request needs (reads and writes alike) | 401 with the challenge of R-AUTH-002 |
+| `Trove-Authz-Min-Epoch` names an epoch the database has not reached (R-AUTHZ-032) | 412 `authz_epoch_unknown` |
 | Read-type request (request kinds `artifact`, `metadata`, `search`, R-REPO-003) without `read` on the coordinate; for a virtual repository, without `read` on it | 404 |
 | Read on a remote repository that would need to populate, caller may read but not populate (R-AUTHZ-008) | 403 `populate_not_permitted` |
 | Write-type request without a required action | 403, naming the missing action |
@@ -978,6 +1007,12 @@ A refused request is answered as follows (first matching row wins):
 | Shadowing check refused on the first version of a name ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048, R-AUTHZ-007) | 403 `shadows_remote_package`; 503 `shadow_check_unavailable` with `Retry-After` while a remote member cannot be asked |
 | Management operation without the required capability | 403 |
 
+- The `503` for an unconfirmed index carries `Retry-After`, which with a `503` tells the client how
+  long the service is expected to be unavailable
+  ([RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110#section-10.2.3)). It does not depend
+  on the coordinate, so it reveals nothing about existence. npm retries `5xx` answers except on
+  `POST` and streamed bodies ([make-fetch-happen](https://github.com/npm/make-fetch-happen/blob/main/lib/remote.js)),
+  and with random distribution its retry usually reaches another replica.
 - The 401 challenge for each endpoint family is specified in R-AUTH-002 (no `otp` on npm
   endpoints). NuGet clients send credentials only after a 401, so anonymous requests are always
   challenged, never answered with 404. The challenge does not depend on whether the resource
@@ -1114,9 +1149,15 @@ Rules:
 4. **Deleting every version does not release the name.** Owners stay recorded; releasing is an
    explicit operation (R-AUTHZ-019).
 5. **Concurrency.** The claim is an insert into `package_ownership` in the write transaction,
-   guarded by the primary key. Of two concurrent first publishes, one commits the claim; the other
-   then sees an owned name, is checked by rule 1 and is refused unless it is an owner. No advisory
-   lock is needed.
+   guarded by the primary key. Of two concurrent first publishes, on one replica or on two, one
+   commits the claim; the other then sees an owned name, is checked by rule 1 and is refused unless
+   it is an owner. The claim runs as `INSERT … ON CONFLICT DO NOTHING`, followed by a read of the
+   owners in the same transaction. Under `READ COMMITTED` the insert waits for the concurrent claim
+   and then does nothing, and the following read sees that claim, because each statement takes a
+   new snapshot ([transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)).
+   The publish therefore needs no retry. No advisory lock, no Valkey lock and no session state is
+   needed, so the claim works through a transaction-mode pooler
+   ([architecture.md](architecture.md) R-ARCH-019).
 6. **Principal deletion** removes the principal's owner entries. A name whose last owner
    disappears this way falls under rule 3.
 7. **Display.** CI project owners keep `project_path` as a display value, updated on every publish
@@ -1305,9 +1346,11 @@ Representation:
   `precondition_required` without it ([RFC 6585 §3](https://www.rfc-editor.org/rfc/rfc6585#section-3))
   and 412 `precondition_failed` on a version mismatch. `If-Match: *` is the deliberate blind write
   ([api-and-ui.md](api-and-ui.md) R-API-012, Q-API-2).
-- Every successful write bumps the authorization epoch (R-AUTHZ-028) in the same transaction, emits
-  an audit event with before and after (R-AUTHZ-029), and returns the new epoch in the response
-  header `Trove-Authz-Epoch`, so a client can wait for propagation.
+- Every successful write notifies the `authz` change area in its transaction, which increments the
+  authorization epoch (R-AUTHZ-028). It also emits an audit event with before and after
+  (R-AUTHZ-029). The response carries the new epoch in the header `Trove-Authz-Epoch`. A later
+  request names that epoch in `Trove-Authz-Min-Epoch` to see the change on whichever replica
+  answers it (R-AUTHZ-032).
 - Malformed JSON answers 400. Semantic validation answers 422 with one of: `unknown_principal`,
   `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
   `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`,
@@ -1332,8 +1375,10 @@ Acceptance criteria:
 - Create, read, replace without `If-Match` (428, nothing stored), replace with a stale `If-Match`
   (412), replace with the current one (200) and delete (204), all through `curl`; each change
   appears as one audit event.
-- After a `PUT` returns epoch `n`, a request to another replica observes the change once that
-  replica's `trove_authz_epoch` reports at least `n`, and no later than 5 seconds after the `PUT`.
+- A `PUT` returns epoch `n`. The next request through the Service with
+  `Trove-Authz-Min-Epoch: n` observes the change on whichever replica answers it. Without the
+  header, every replica observes it within 1 s (p99 over 100 trials) while Valkey is available, and
+  within `cluster.epoch_poll_interval` plus 1 s while Valkey is stopped.
 - `GET /api/v1/permission-policies?principal=user:alice` returns `team-web-publish` (through
   `group:team-web`); with `expandGroups=false` it does not.
 
@@ -1396,7 +1441,9 @@ other principals.
 ```
 
 - A check on a repository the caller cannot see answers `allowed: false`, exactly as for a missing
-  repository. Checks of package-mutating actions include the ownership rule.
+  repository. Checks of package-mutating actions include the ownership rule; the ownership rows of
+  all checks of one call are read with one query, so a call costs at most one database round trip
+  however many checks it holds.
 - Any authenticated subject may call it; anonymous callers get 401.
 - The UI hides controls whose check fails; the server enforces every operation regardless.
 
@@ -1602,48 +1649,172 @@ and refuses `other/app` with 403.
 ### R-AUTHZ-028 · Compiled grant index and invalidation across replicas
 Priority: **MVP** · Covers: trove-only
 
-Every replica evaluates against an in-memory grant index and keeps it consistent with PostgreSQL
-through an epoch counter, `LISTEN/NOTIFY` and polling (INV-12).
+Every `web` and `worker` replica evaluates against an in-memory grant index. It keeps the index
+consistent with PostgreSQL through the change areas of [architecture.md](architecture.md)
+R-ARCH-018 (Q-AUTHZ-11). The change log in PostgreSQL carries correctness. A Valkey message only
+makes a change take effect sooner. Until 2026-10-28 this requirement had its own `authz_epoch`
+table and `LISTEN/NOTIFY` on a dedicated connection per replica; both are gone (Q-ARCH-15).
 
-- **Index.** Built from policies (including entries that name CI mappings), role bindings,
-  repositories (key, class, format, project, authorization settings), projects and the
-  authorization settings: per repository ID, a map from principal ID to compiled grants (selectors
-  expanded against the current repository list, patterns compiled). A new index is built on the
-  side and swapped in atomically. Requests in flight finish on the index they started with, except
-  for the commit-time re-check of writes (R-AUTHZ-015).
-- **Epoch.** Every transaction that changes an input of the index increments `authz_epoch.value`
-  and calls `pg_notify('trove_authz', '<new epoch>')`. PostgreSQL delivers a notification only if
-  its transaction commits ([NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html)), so no
-  replica acts on a change that was rolled back.
-- **Not in this index:** group memberships, principal status, tokens and sessions (cached and
-  invalidated by [identity-and-authentication.md](identity-and-authentication.md), R-AUTH-023, on
-  channel `trove_auth`); CI mappings and issuance records ([gitlab-ci-oidc.md](gitlab-ci-oidc.md));
-  ownership rows (read in the write transaction).
-- **Listening and polling.** Each replica listens on a dedicated connection and rebuilds when a
-  notification carries a higher epoch. Independently, it reads the epoch every `poll_interval` and
-  rebuilds if it is behind. After its listening connection reconnects, it rebuilds unconditionally.
-- **Bound.** A committed change is in force on every replica within `poll_interval` in the worst
-  case, and typically within one second through notifications.
-- **Fail closed.** If a replica has not confirmed the current epoch for longer than `max_staleness`,
-  it answers 503 to every request that needs authorization and reports not ready
-  ([ha-and-helm.md](ha-and-helm.md)).
-- **Metrics:** `trove_authz_epoch` (gauge), `trove_authz_index_rebuild_seconds` (histogram),
-  `trove_authz_index_staleness_seconds` (gauge), `trove_authz_evaluation_seconds`
-  (histogram), `trove_authz_decisions_total{outcome, reason, action}` (counter).
-- **Rebuild cost:** building the index from 10,000 policies and 1,000 repositories SHOULD take at
-  most 500 ms.
+- **Index.** Built from:
+  - policies, including entries that name CI mappings;
+  - role bindings;
+  - repositories: key, class, format, project, virtual membership and deploy target, and the
+    authorization settings of R-AUTHZ-031's settings table;
+  - projects and their administrators.
 
-Data model:
+  For each repository ID, the index maps principal IDs to compiled grants: selectors expanded
+  against the current repository list, patterns compiled. A new index is built on the side and
+  swapped in atomically. Requests in flight finish on the index they started with, except for the
+  commit-time re-check of writes (R-AUTHZ-015).
+- **Who builds it.** Every `web` and `worker` replica (and `all`) builds the index during start-up
+  step 8 of [architecture.md](architecture.md) R-ARCH-024, before it opens the client listener or
+  starts job workers, so the `startup` check never passes without one. A job that decides for a
+  subject (a P1 bulk copy, for example) decides on the `worker` replica that runs it. The `backup`
+  role and `trove admin` write changes but evaluate nothing and build no index.
+- **Consistent build.** A build reads every input in one `REPEATABLE READ READ ONLY` transaction on
+  the main pool. Its first statement reads `epoch` and `changed_at` of the areas `authz` and
+  `repo_config` from `cluster_epoch`. Every query of the transaction sees the snapshot taken at its
+  first statement
+  ([repeatable read](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-REPEATABLE-READ)).
+  The index is therefore the state of one moment, labelled with that moment's epochs and their
+  `changed_at` values (the index's *label*). No build can combine a policy's entries from one
+  commit with its selectors from another, which could grant the new entries on the old selectors.
+  - A read-only transaction never meets a serialization failure.
+  - It is transaction-scoped, so it works through a transaction-mode pooler.
+  - Its context deadline and its `SET LOCAL statement_timeout` are `authz.cache.max_staleness`.
+  - It holds its connection only for its queries, never across a wait (R-ARCH-019).
+  - It runs on the request pool, like the epoch reads below, never on the replica's control
+    connection (R-ARCH-019). Authorization work therefore never delays the change-log poll, the
+    `database` check or the job heartbeats that readiness and job ownership depend on. When the
+    request pool is exhausted, the build queues for a connection like a request. Requests that wait
+    for a stale index hold no connection (below), so they never stand in its way.
+- **Epoch.** The authorization epoch is the epoch of the change area `authz`
+  (`cluster_epoch.epoch` of the row `area = 'authz'`). The following writes call
+  `cluster.Notify("authz", …)` in their transaction, which increments it (R-ARCH-018):
+  - every write to a policy, its selectors, patterns or entries;
+  - every write to a role binding;
+  - every write to a project or its administrators, and every project repository assignment
+    (R-AUTHZ-026, P1), which as a repository change also notifies `repo_config`;
+  - every write that `trove admin post-restore` or a restore's journal replay makes to these
+    objects (R-AUTHZ-031).
+
+  Repository changes notify `repo_config` ([repositories-and-proxy.md](repositories-and-proxy.md)),
+  and the index depends on both areas. The payload names the changed object's type and ID, never a
+  grant. A rollback leaves neither an epoch nor a message.
+- **When a replica rebuilds.**
+  - The change-log poll applies an epoch of `authz` or `repo_config` higher than the index's.
+  - The poll flushes either area. Causes: a gap in the log, an unknown payload version, or an epoch
+    that went backwards after a failover or a restore (R-ARCH-018,
+    [ha-and-helm.md](ha-and-helm.md) R-HA-004). After a flush the next build is installed whatever
+    its epochs.
+  - **A reused epoch.** A PostgreSQL failover can lose committed transactions under asynchronous
+    replication (R-HA-004). When later writes raise the area to the same number before this
+    replica's first successful poll after the failover, the epoch never looks lower, yet it now
+    stands for different changes: the index may hold a lost grant and miss a later removal. Every
+    comparison of this page with the database epochs (the poll's reading of `cluster_epoch`, a
+    message check, a `Trove-Authz-Min-Epoch` read) therefore compares `changed_at` as well. An area
+    whose database epoch equals the index's but whose
+    `changed_at` differs counts as flushed, and the next build is installed whatever its epochs.
+    `changed_at` is written by the same statement that raises the epoch (R-ARCH-018), and two
+    transactions separated by a failover never share it.
+  - A Valkey message on `trove:<ks>:inv:v1` names one of the two areas with an epoch higher than
+    the index's. Such a message only starts work early. It never advances the applied epoch and
+    never confirms an index. The replica first reads the two epochs from `cluster_epoch` (one
+    indexed query) and builds only if they differ from the index's label. These reads share the
+    coalesced epoch read of R-AUTHZ-032, which starts at most every 50 ms per replica. A forged,
+    duplicated or late message therefore never causes a build, and a flood of them causes at most
+    20 small queries per second per replica.
+  - The index is older than `authz.cache.safety_ttl`. This full rebuild, jittered by up to 10 %,
+    bounds a defect in which some write path changed an input without notifying.
+
+  Rebuilds are coalesced: at most one runs per replica and at most one waits behind it. A finished
+  build is swapped in only if its epochs are not lower than those of the installed index, so a slow
+  build never replaces a newer one.
+- **Valkey holds nothing of authorization** (Q-ARCH-16, [architecture.md](architecture.md)
+  R-ARCH-030). No grant, compiled index or decision is written to Valkey or read from it.
+  Unavailable Valkey, Valkey that lost its data, and forged messages cost propagation speed only.
+  They never make a replica refuse, never make it unready, and never let it decide on older grants
+  than the change log allows.
+- **Confirmation and staleness.** The index is *confirmed* at the start time of the most recent
+  successful change-log poll, or of its own build, that found `epoch` and `changed_at` of `authz`
+  and `repo_config` equal to the index's label. Its staleness is the time since then
+  (`trove_authz_index_staleness_seconds`). Staleness grows when the poll cannot reach PostgreSQL
+  (`cluster.ChangesFresh()`, R-ARCH-018) or when a needed build fails or waits for a connection.
+  It never grows because Valkey is unavailable.
+- **Bound.** A committed change is in force on a replica whose poll works within
+  `cluster.epoch_poll_interval` plus the poll query plus one build. With the defaults and a request
+  pool that has a free connection, that is at most 2 s, with Valkey or without it. While Valkey is
+  available it is typically 100 ms plus one build ([architecture.md](architecture.md) P-13; the
+  build is this page's addition). No replica decides on an index whose staleness exceeds
+  `authz.cache.max_staleness`. A removed grant is therefore never honoured for longer than
+  `authz.cache.max_staleness` plus one build after its commit, on any replica and under any
+  failure, a PostgreSQL failover that lost commits included. With the defaults that is about
+  10.5 s.
+- **Drain.** A replica that received `SIGTERM` keeps its change-log poll and its rebuilds running
+  until its last request has finished ([architecture.md](architecture.md) R-ARCH-024, shutdown
+  step 6). The requests it still serves during the drain delay, and the commit-time re-checks of
+  uploads that complete during the shutdown timeout, are therefore decided on a confirmed index
+  while PostgreSQL answers, and a drain alone never sends them into the stale-index wait below.
+- **Stale index (Q-AUTHZ-13).** A request that needs authorization may find the index staler than
+  `authz.cache.max_staleness`. It then waits for a confirmation for as long as a request waits for
+  an unreachable database: until its own deadline or `database.retry.max_elapsed`, whichever
+  comes first ([ha-and-helm.md](ha-and-helm.md) R-HA-009). It holds no database connection while
+  it waits. Afterwards it is decided on the confirmed index, or answered `503` `authz_stale` with
+  `Retry-After` (reason `deny.stale`, R-AUTHZ-016, R-AUTHZ-029).
+  - This rule gates no readiness. A replica whose poll fails leaves the Service through the
+    `database` check and the `invalidation` check of R-ARCH-018, which depend on PostgreSQL only,
+    so this page adds no check that could undercut the readiness window of
+    [ha-and-helm.md](ha-and-helm.md) R-HA-008.
+  - The default of `authz.cache.max_staleness` lies below that window (about 15 s), so a replica
+    stops deciding on unconfirmed grants before it leaves the Service.
+  - Start-up refuses a value below 3 × `cluster.epoch_poll_interval` and names the key, because a
+    single slow poll must not stop decisions.
+- **Not in this index:**
+  - group memberships, principal status, tokens and sessions, which
+    [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 caches and
+    invalidates through the area `auth`;
+  - CI mappings and issuance records ([gitlab-ci-oidc.md](gitlab-ci-oidc.md), areas `ci_mappings`
+    and `ci_issuer_keys`);
+  - ownership rows, which are read in the write transaction, so no replica decides ownership on a
+    cached copy.
+- **One configuration for every replica.** The `authz.*` keys of this page come from the one
+  configuration file that every role and pool shares ([ha-and-helm.md](ha-and-helm.md) R-HA-002,
+  R-HA-062), and decisions depend on them (INV-18). A rollout that changes one of them runs old
+  and new values side by side until it ends; the operator controls that window.
+- **Metrics:**
+  - `trove_authz_epoch` (gauge): the `authz` epoch of the installed index;
+  - `trove_authz_index_rebuild_seconds` (histogram);
+  - `trove_authz_index_rebuilds_total{trigger}` (counter): `startup`, `poll`, `message`, `flush`,
+    `safety`, `min_epoch`;
+  - `trove_authz_index_staleness_seconds` (gauge);
+  - `trove_authz_stale_waits_total{outcome}` (counter): `decided`, `refused`;
+  - `trove_authz_evaluation_seconds` (histogram);
+  - `trove_authz_decisions_total{outcome, reason, action}` (counter).
+- **Rebuild cost.** Building the index from 10,000 policies and 1,000 repositories SHOULD take at
+  most 500 ms. Each change of `authz` or `repo_config` makes every replica build once, so with
+  n replicas a change costs n builds. At administrative change rates that is small, and Q-AUTHZ-11
+  names the point at which incremental updates replace full builds.
+- **Completeness test.** A test runs every write operation of the policy, role-binding, project and
+  repository APIs, of the journal replay and of the `trove admin` commands that write these tables
+  (`service-account create --admin` binds a role,
+  [identity-and-authentication.md](identity-and-authentication.md)) against a test database. It
+  fails if an input table of the index changed in a transaction that advanced neither the `authz`
+  epoch nor the `repo_config` epoch.
+
+Data model. The authorization epoch is the `authz` row of `cluster_epoch`
+([architecture.md](architecture.md) R-ARCH-018). The migration that introduces the area inserts
+that row. There is no table `authz_epoch`. Every table of this page has the backup export class
+`data` ([backup-and-restore.md](backup-and-restore.md) R-BAK-004). A restore raises the epoch by
+2^32 through the registration of `cluster_epoch.epoch` (R-BAK-022), so every epoch a client holds
+from before the restore lies below the restored one. `authz_policy.version` and `project.version`
+are client-visible ETags (R-AUTHZ-021, R-AUTHZ-026), so both are registered with
+`meta.RegisterRevisionColumn` as well. Otherwise, after a restore, a client holding the ETag of a
+version written after the snapshot could pass `If-Match` against different content and overwrite a
+policy it never saw.
 
 ```sql
-CREATE TABLE authz_epoch (
-  singleton  boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-  value      bigint NOT NULL
-);
-INSERT INTO authz_epoch (value) VALUES (1);
--- in every changing transaction:
---   UPDATE authz_epoch SET value = value + 1 RETURNING value;
---   SELECT pg_notify('trove_authz', <value>::text);
+-- the authorization epoch, written only by internal/cluster (R-ARCH-018); the index label is
+--   SELECT area, epoch, changed_at FROM cluster_epoch WHERE area IN ('authz', 'repo_config');
 
 CREATE TABLE authz_policy (
   id             uuid PRIMARY KEY,
@@ -1694,18 +1865,140 @@ Configuration:
 ```yaml
 authz:
   cache:
-    poll_interval: 5s   # default (proposed)
-    max_staleness: 30s  # default (proposed)
+    max_staleness: 10s  # default (proposed): no decision on an index unconfirmed for longer (Q-AUTHZ-13)
+    safety_ttl: 10m     # default (proposed): full rebuild at least this often, jittered
+# Until 2026-10-28 this section also had poll_interval (5s), and max_staleness defaulted to 30s.
+# The poll is now cluster.epoch_poll_interval of architecture.md R-ARCH-018.
 ```
 
-Acceptance criteria (two replicas behind one Service):
+Acceptance criteria (three `web` replicas behind one Service without session affinity; the test
+reaches replicas A and B directly where a criterion names them):
 
-- A policy is deleted through replica A. A request through replica B that depended on it is
-  refused within 5 seconds, and within 1 second while notifications flow.
-- Replica B's listening connection is ended with `pg_terminate_backend` on the PostgreSQL side. A
-  policy change through A is still in force on B within 5 seconds.
-- PostgreSQL is unreachable from replica B for 40 seconds. B answers 503 to package requests after
-  30 seconds and reports not ready.
+- A policy is deleted through replica A. A request through replica B that depended on it is refused
+  within 1 s (p99 over 100 trials). With Valkey stopped, it is refused within
+  `cluster.epoch_poll_interval` plus 1 s, and every replica's `/readyz` answers `200` with
+  `"degraded":["valkey"]`.
+- B's Pub/Sub connection is killed on the Valkey primary (`CLIENT KILL TYPE pubsub`). A policy
+  change through A is in force on B within `cluster.epoch_poll_interval` plus 1 s.
+- A fault-injection build drops every Valkey message of the `authz` area and injects forged ones
+  with random epochs. Over 1,000 policy changes, no replica decides on a removed grant later than
+  `cluster.epoch_poll_interval` plus 1 s after its commit. The forged messages do not raise
+  `trove_authz_index_rebuilds_total{trigger="message"}`.
+- A test hook blocks B's change-log poll while its request pool keeps working.
+  - From `authz.cache.max_staleness` on, requests through B wait.
+  - When the hook is lifted within `database.retry.max_elapsed`, the waiting requests succeed.
+  - While the hook stays, they end with `503` `authz_stale` and `Retry-After`, and their audit
+    events carry `deny.stale`.
+  - No decision in that time uses an index staler than `authz.cache.max_staleness`.
+- PostgreSQL is unreachable from B for 40 s.
+  - B turns not ready through its `database` check within the window of
+    [ha-and-helm.md](ha-and-helm.md) R-HA-008.
+  - No request on B is decided on an index staler than `authz.cache.max_staleness`.
+  - B becomes ready again without a restart. The first request B decides afterwards already
+    honours a policy change made through A during the outage.
+- A test build pauses a build on B after its first statement. A policy change commits through A,
+  B's poll starts a second build, and that build is installed. The paused build then finishes and
+  is discarded. `trove_authz_epoch` on B never decreases, and the change stays in force.
+- A loop commits policy updates that replace entries and selectors together while B rebuilds
+  continuously. Every index B installs grants exactly what a database snapshot at its epochs
+  grants.
+- A reused epoch: a grant to Carol commits through A as `authz` epoch `e`, and B builds from it.
+  Valkey is then stopped and B's poll paused by a test hook. As a failover that lost the commit
+  would, the test deletes the grant and that `cluster_change` row and resets the `authz` row of
+  `cluster_epoch` to `e − 1` with its earlier `changed_at`. A removal of one of Alice's grants then
+  commits through A as epoch `e` again. When the hook is lifted, B installs a new index
+  within `cluster.epoch_poll_interval` plus 1 s (`trove_authz_index_rebuilds_total{trigger="flush"}`
+  rises): Carol's request is refused and Alice's removed grant no longer works.
+- During the request-pool saturation test of [ha-and-helm.md](ha-and-helm.md) R-HA-008, a policy
+  change commits through a replica outside the test. `/readyz` stays `200` on every replica, no
+  heartbeat is late, and no decision uses an index staler than `authz.cache.max_staleness`.
+- A Valkey Sentinel failover (`SENTINEL FAILOVER`) runs during a loop of 100 policy changes through
+  A. Every change is in force on B within `cluster.epoch_poll_interval` plus 1 s. From 10 s after
+  the new primary is promoted, changes are again in force on B within 1 s (p99), because B
+  re-subscribed on the new primary ([architecture.md](architecture.md) R-ARCH-031). `/readyz`
+  answers `200` on every replica throughout.
+- B receives `SIGTERM` while a policy change commits through A and an upload to B completes
+  during B's shutdown timeout. The upload's commit-time re-check honours the change, and no
+  request on B is answered `authz_stale`.
+- Start-up with `authz.cache.max_staleness: 2s` and `cluster.epoch_poll_interval: 1s` exits
+  non-zero and names `authz.cache.max_staleness`.
+
+### R-AUTHZ-032 · Seeing one's own permission change on any replica
+Priority: **MVP** · Covers: trove-only
+
+The Kubernetes Service distributes requests at random and without session affinity (INV-12), so
+the request that follows a permission change may reach a replica that has not applied it yet
+(INV-18). Until 2026-10-28 this page promised that a client could wait for propagation by watching
+a replica's epoch. Under random distribution a client cannot choose the replica that answers next,
+so it now names the epoch in its request instead (Q-AUTHZ-12).
+
+- **Epoch out.** The writes that notify the `authz` area (R-AUTHZ-028) answer with
+  `Trove-Authz-Epoch: <n>`, the epoch their transaction produced:
+  - policy writes (R-AUTHZ-021);
+  - role bindings (R-AUTHZ-022);
+  - project writes, including administrators and repository assignments (R-AUTHZ-026, P1).
+
+  A repository assignment changes a column of the repositories table, so it notifies `repo_config`
+  as well. `POST /api/v1/authz/check` (R-AUTHZ-023) and `POST /api/v1/authz/explain`
+  (R-AUTHZ-024) report the epoch of the index that answered.
+- **Epoch in.** A request on the client listener that authenticated (a valid session or token) may
+  send `Trove-Authz-Min-Epoch: <n>`. Authentication runs first, so an invalid credential gets its
+  `401` before the header is read. The replica then decides every coordinate of that request,
+  member checks of virtual resolution included, on an index whose `authz` epoch is at least `n`.
+  1. If the installed index already has epoch `n` or higher, nothing happens.
+  2. Otherwise the replica reads the `authz` epoch from `cluster_epoch` with a read that starts
+     after the request arrived. Concurrent requests share one read, and reads start at most every
+     50 ms per replica. The read runs on the request pool (R-AUTHZ-028); when PostgreSQL does not
+     answer, it is retried like any database call ([ha-and-helm.md](ha-and-helm.md) R-HA-009), and
+     the request ends with `503` `authz_stale` and `Retry-After` when its budget runs out. If the
+     database epoch is lower than `n`, the request is answered `412` `authz_epoch_unknown` at once
+     ([RFC 9110 §15.5.13](https://www.rfc-editor.org/rfc/rfc9110#section-15.5.13): a condition in
+     the request header fields evaluated to false).
+  3. Otherwise the replica starts a build (trigger `min_epoch`, coalesced as in R-AUTHZ-028). The
+     request waits for an index with epoch `n` or higher under the wait rule of R-AUTHZ-028, then
+     proceeds, or is answered `503` `authz_stale` with `Retry-After`.
+- A value that is not a decimal integer between 1 and 2^63 − 1 answers `400` `invalid_header`. A
+  request without a credential ignores the header, so an anonymous caller cannot probe the epoch.
+- The header covers grants that were added and grants that were removed alike. A script that
+  removes a right and then checks that it is gone sends the epoch of the removal.
+- **After a restore or a lost commit.** Epochs from before a restore lie below every restored epoch
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-022), so they pass at once. A PostgreSQL
+  failover can lose a committed transaction under asynchronous replication
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-004). The database epoch can then lie below a value the
+  client was given, and `412` tells the client that its change is not in the database.
+  - A client that gets `412` stops sending that epoch, because the database may take a long time to
+    reach it, and reads the object again (the policy's or project's `ETag`). Otherwise every later
+    request of the client would fail with `412`.
+  - The `412` is a hint, not a proof. If other writes have already raised the epoch to `n` again,
+    the header passes although the client's own change was lost. The object's `ETag` tells the
+    client whether its change is there; the grant index itself never decides on a lost change
+    (R-AUTHZ-028, "A reused epoch").
+- **Who sends it.** The UI sends the header on every request that follows one of its own permission
+  changes (INV-17), and follows the `412` rule above. Package clients do not know the header. For
+  them, and for every client that omits it, the bound of R-AUTHZ-028 applies: 1 s while Valkey is
+  available, and `cluster.epoch_poll_interval` plus 1 s while it is not.
+- **Not covered.** A repository created through one replica may be covered by a pattern selector of
+  an existing policy. Using it through another replica relies on the `repo_config` propagation of
+  [architecture.md](architecture.md) R-ARCH-018, which [repositories-and-proxy.md](repositories-and-proxy.md)
+  owns.
+- Metric `trove_authz_min_epoch_total{outcome}`: `current`, `waited`, `unknown`, `timeout`.
+
+Acceptance criteria (three `web` replicas behind the Service and Valkey stopped. For the test,
+`cluster.epoch_poll_interval` is raised to 30 s, `cluster.epoch_max_staleness` to 90 s so that the
+`invalidation` check keeps passing, and `authz.cache.max_staleness` to 120 s, so only the header
+can explain a prompt result):
+
+- An administrator gives `group:team-mobile` `deploy` on `files-internal`; the `PUT` answers
+  `Trove-Authz-Epoch: n`. A member of `team-mobile` then runs 20 uploads
+  `curl -T app-<i>.zip -H "Trove-Authz-Min-Epoch: n" https://trove.example.com/files/files-internal/app-<i>.zip`
+  at once. All 20 succeed, and the access logs show all three replicas. The administrator then
+  removes the grant (epoch `m`). Twenty uploads with `Trove-Authz-Min-Epoch: m` all answer `403`.
+- `Trove-Authz-Min-Epoch` set to the current epoch plus 1,000 answers `412` `authz_epoch_unknown`
+  within 100 ms. The value `abc` answers `400` `invalid_header`. A request without a credential
+  that sends the header gets the same answer as without it, and one with a revoked token gets
+  `401`, not `412`.
+- 1,000 requests per second with an unknown epoch, spread over the replicas, cause at most
+  20 epoch reads per second per replica (`pg_stat_statements`).
 
 ### R-AUTHZ-029 · Audit of authorization decisions
 Priority: **MVP** · Covers: trove-only
@@ -1752,19 +2045,45 @@ Fields of `authz.decision`:
 | `deny.ownership` | Action allowed, ownership refused |
 | `deny.shadowing` | Action allowed; the first version would shadow a package a remote member serves (R-AUTHZ-007, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048) |
 | `deny.capability` | Management operation without the required capability |
-| `deny.stale` | Grant index stale |
+| `deny.stale` | Grant index not confirmed current within the wait of R-AUTHZ-028 |
 
-- Repeated anonymous 401 answers are aggregated so that scanners cannot flood the audit store: per
-  source IP at most one event per second, plus `trove_authz_decisions_total`.
+- **Allowed populates.** The populate event belongs to the request that fetches from the upstream
+  and is written in its cache-fill transaction. A request that joins a collapsed fetch, in its own
+  replica or on another one through the Valkey flight lock (INV-11,
+  [architecture.md](architecture.md) R-ARCH-033), fetched nothing and writes no populate event;
+  its read is audited as a read. The number of populate events therefore follows the number of
+  upstream fetches, not the number of `web` replicas or concurrent requesters.
+- **Repeated anonymous 401 answers** are aggregated so that scanners cannot flood the audit store.
+  Where [operations-and-observability.md](operations-and-observability.md) R-OPS-015 records
+  anonymous denials at all (`audit.record_anonymous_denials`), they use that requirement's
+  deduplication, with the key replica and client address (after trusted-proxy processing) instead
+  of principal, action, repository and path.
+  - The first 401 for an address is written at once. The repeats within
+    `audit.denial_dedup_window` become one summary event with their exact count.
+  - With n `web` replicas, one address yields at most n first events and n summaries per window,
+    whatever its request rate and however many paths it probes. The sum of the counts is exact.
+    `trove_authz_decisions_total` counts every answer as well.
+  - The deduplication state stays in the replica's memory. An audit record never depends on
+    Valkey (R-OPS-015, INV-3), and nobody who can write to Valkey can suppress one: a value read
+    from Valkey may only make trove refuse ([architecture.md](architecture.md) R-ARCH-030 rule 2).
+- Asynchronous events go through the buffer of R-OPS-015. A replica that drains writes its buffer
+  and its open denial summaries before it exits (R-ARCH-024, shutdown step 6), so a drain or a
+  rollout loses no event while PostgreSQL is reachable. A replica killed without `SIGTERM` loses
+  what its buffer and its open summaries held: normally less than one second of refused-read and
+  refused-write events, and at most `audit.async_buffer` events while PostgreSQL is slow. The
+  transactional events of the table above are never lost this way.
 - Every event is also written to the structured log stream (INV-16).
 - The CI page's events `ci.package_ownership.claimed` and `.conflict` (R-CI-020) describe the same
   facts from the CI side and carry the same request ID, so the two can be joined.
 - Allowed reads are audited only with `reads: all`. The default `denied` (Q-AUTHZ-5) keeps the
   audit volume proportional to refusals, not to downloads; H-23 records what that leaves out.
-- From P1, `authz.role.unbound`, `authz.policy.deleted`, `authz.policy.updated`,
+- `authz.role.unbound`, `authz.policy.deleted`, `authz.policy.updated`,
   `authz.ownership.removed`, `authz.ownership.released` and `authz.settings.changed` are flagged
-  `journal: revocation` in the event registry, so a database restore cannot undo them
-  (R-AUTHZ-031, [ha-and-helm.md](ha-and-helm.md) R-HA-054).
+  `journal: revocation` in the event registry. A restore can then not undo them: neither a
+  point-in-time restore nor the restore of a trove backup
+  (R-AUTHZ-031, [ha-and-helm.md](ha-and-helm.md) R-HA-054,
+  [backup-and-restore.md](backup-and-restore.md) R-BAK-024). The flag is MVP since 2026-10-28,
+  because the backup job of INV-19 makes restores an MVP path (Q-HA-9).
 
 Configuration:
 
@@ -1785,13 +2104,20 @@ Acceptance criteria:
   `npm publish` fails and no version is stored.
 
 ### R-AUTHZ-031 · Revocation journal entries and the narrowing comparator
-Priority: **P1** · Covers: trove-only
+Priority: **MVP** · Covers: trove-only
 
-A database restore to time *t* undoes every authorization change made after *t*.
+A database restore to time *t* undoes every authorization change made after *t*. There are two
+ways to restore, and both are MVP:
+- a point-in-time restore ([ha-and-helm.md](ha-and-helm.md) R-HA-025);
+- the restore of a trove backup, where *t* is the backup's `snapshotAt` and can lie up to one
+  backup interval in the past (INV-19, [backup-and-restore.md](backup-and-restore.md) R-BAK-024).
+
 [ha-and-helm.md](ha-and-helm.md) R-HA-054 writes access-bearing changes a second time to object
-storage, and `trove admin post-restore` replays the removals among them; replay never grants
-(Q-HA-9). R-HA-054 leaves three things to the owning page: which events are journaled, what an
-entry carries, and the comparator `narrows(current, after)` of its update rule. For this page:
+storage. `trove admin post-restore` and `trove backup restore` replay the removals among them;
+replay never grants (Q-HA-9). R-HA-054 leaves three things to the owning page: which events are
+journaled, what an entry carries, and the comparator `narrows(current, after)` of its update rule.
+This requirement moved from P1 to MVP on 2026-10-28 with R-HA-054, because the backup job makes a
+restore from a scheduled backup an MVP path. For this page:
 
 | Audit event (R-AUTHZ-029), flagged `journal: revocation` | Entry carries | Replay |
 |---|---|---|
@@ -1834,8 +2160,12 @@ entry carries, and the comparator `narrows(current, after)` of its update rule. 
   same comparator.
 - **A suspended policy** has all entries removed. Its name, selectors and patterns stay, it reads
   back with `"entries": []` and grants nothing until an administrator adds entries again from the
-  after-state that `post-restore` prints. Suspension, like every write replay makes, bumps the
-  authorization epoch (R-AUTHZ-028) and writes its audit event as any policy change does.
+  after-state that the replay prints. Suspension, like every write replay makes, notifies the
+  `authz` change area (R-AUTHZ-028) and writes its audit event as any policy change does. Replay
+  runs while no `web` or `worker` replica serves: during a restore both roles are at zero
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-060). It publishes no Valkey message, because the restore
+  Job holds no Valkey credentials (R-BAK-022). Replicas started afterwards build their index from
+  the replayed state (R-AUTHZ-028).
 - **Settings comparator.** The access settings this page journals are the authorization settings
   of a repository:
 
@@ -1875,6 +2205,11 @@ everything, write the own scope"; `team-web-publish` gives `group:team-web` `["a
 - `npmjs` is restored with `cacheFillAction: read`. A journaled `authz.settings.changed` whose
   after-state sets `deploy` is reported `applied`; one on `npm-internal` whose before-state is
   `packageOwnership: enforce` and after-state `off` is reported `skipped`.
+- A trove backup is taken. Then `admin` is unbound from group `platform-admins` and `deploy` is
+  removed from the `group:team-web` entry of `team-web-publish`. `trove backup restore` of that
+  backup into an empty installation reports both entries `applied`. After the replicas start, a
+  member of `platform-admins` gets 403 on `POST /api/v1/repositories`, and a member of
+  `team-web` gets `E403` on `npm publish`, on every replica.
 
 ## Worked examples
 
@@ -2098,9 +2433,35 @@ Expected results:
 - **Anonymous populating.** With anonymous access on, an anonymous `read` grant on a remote
   repository with `cacheFillAction: read` lets anyone make trove download arbitrary upstream
   packages: storage growth, upstream rate limits, possibly upstream cost. The policy API flags such
-  a grant with the warning `anonymous_populates_remote`. Where remote repositories are exposed
-  anonymously, set `cacheFillAction: deploy` and grant `deploy` to authenticated groups only
-  (R-AUTHZ-008).
+  a grant with the warning `anonymous_populates_remote`. The per-repository fetch budget
+  `limits.maxConcurrentFetches` of [repositories-and-proxy.md](repositories-and-proxy.md)
+  R-REPO-040 is shared by the whole installation, so it bounds concurrent upstream fetches of one
+  repository whatever the replica count; it bounds concurrency, not volume, and the per-replica
+  `proxy.max_concurrent_fetches` grows with the number of `web` replicas and with autoscaling.
+  Where remote repositories are exposed anonymously, set `cacheFillAction: deploy` and grant
+  `deploy` to authenticated groups only (R-AUTHZ-008).
+- **Removed grants: a bounded window on every replica.** A removed grant stays usable on a replica
+  until that replica has applied the change (R-AUTHZ-028). The window is typically 100 ms plus one
+  index build while Valkey is available. With Valkey unavailable or its messages lost or forged, it
+  is at most `cluster.epoch_poll_interval` plus 1 s. It is never longer than
+  `authz.cache.max_staleness` plus one build, about 10.5 s by default, even on a replica cut off
+  from PostgreSQL, because such a replica stops deciding instead of deciding on old grants. A
+  PostgreSQL failover that lost commits does not extend it: an epoch number that later writes
+  reuse is recognised by its `changed_at` (R-AUTHZ-028).
+  - Who is affected: a holder of a valid credential who keeps using a right that an administrator
+    has just removed.
+  - What closes the window for a credential: revoking it ends it on the timeline of
+    [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023, independently of
+    the grant index.
+  - Writes are re-checked at commit on the committing replica's index (R-AUTHZ-015), so the window
+    applies to them as well.
+- **Valkey grants nothing.** No grant, index or decision is kept in Valkey (R-AUTHZ-028,
+  [architecture.md](architecture.md) Q-ARCH-16). Whoever can write under trove's Valkey prefix can
+  make replicas run extra epoch queries, at most 20 per second per replica however many messages
+  they forge. They cannot widen a permission, and they cannot suppress an audit event, because no
+  audit decision reads Valkey (R-AUTHZ-029). By dropping messages they can delay a change by at
+  most `cluster.epoch_poll_interval` plus 1 s, because the change log in PostgreSQL still applies
+  it (H-49).
 - **`authenticated` reads, nothing more.** The built-in principal for every signed-in person
   holds only `read`, never covers service accounts or CI tokens, so a leaked automation token
   carries only what was granted to it by name, and only holders of `policies:write` can grant to it
@@ -2168,6 +2529,8 @@ Status: **Decided by the development agent** — selected from the options below
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice stands. The rationale claimed that the concurrency limits bound the rate of anonymous fetches. The load now needs several `web` replicas whose count autoscaling changes, so the per-replica limit `proxy.max_concurrent_fetches` grows with the replica count; the per-repository budget `limits.maxConcurrentFetches` is shared by the installation (R-REPO-040, [repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-8) and keeps its bound whatever the replica count. Cross-replica request collapsing (INV-11) merges concurrent fetches of the same path only, not fetches of different packages. The rationale and the security note now say so; the risk still needs the same two explicit administrator decisions.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) `read` | Every caller who may read a remote repository may also make it fetch uncached content and refresh expired metadata (R-AUTHZ-008) | Behaves like the pull-through proxy users expect; no per-user inconsistency; no `deploy` grants on repositories that never accept uploads | With anonymous read on a remote repository, anyone can make trove download arbitrary upstream packages |
@@ -2176,26 +2539,28 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (a) — `cacheFillAction` defaults to `read`, `deploy` stays available per repository as frozen-mirror mode, and anonymous populating is flagged when it is granted.
 
-**Rationale:** The pull-through proxy is an owner constraint, and (a) is the only option under which it behaves the same for every reader. The risk that (c) addresses needs two explicit administrator decisions: turning on the runtime switch `anonymousAccess`, which is off by default, and a policy that names the remote repository by key for `anonymous` (R-AUTH-037, R-AUTHZ-003); an operator can also forbid anonymous access outright through the YAML ceiling. The policy API now names the consequence at the moment the grant is made (warning `anonymous_populates_remote`). The concurrency limits of [repositories-and-proxy.md](repositories-and-proxy.md) bound the rate of anonymous fetches but not their volume. The development agent would revisit this if operators report storage growth or upstream rate-limit incidents caused by anonymous populating. (c) would then become an opt-in per remote repository, not the default.
+**Rationale:** The pull-through proxy is an owner constraint, and (a) is the only option under which it behaves the same for every reader. The risk that (c) addresses needs two explicit administrator decisions: turning on the runtime switch `anonymousAccess`, which is off by default, and a policy that names the remote repository by key for `anonymous` (R-AUTH-037, R-AUTHZ-003); an operator can also forbid anonymous access outright through the YAML ceiling. The policy API now names the consequence at the moment the grant is made (warning `anonymous_populates_remote`). The concurrency limits of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040 bound the rate of anonymous fetches but not their volume. The per-repository budget `limits.maxConcurrentFetches` holds for the whole installation (Q-REPO-8); the per-replica `proxy.max_concurrent_fetches` grows with the number of `web` replicas. The development agent would revisit this if operators report storage growth or upstream rate-limit incidents caused by anonymous populating, or if autoscaling makes the per-replica bound meaningless in practice. (c) would then become an opt-in per remote repository, not the default.
 
-**Applied in the spec:** R-AUTHZ-008: the reasoning paragraph is marked as decided, and the default is stated for every new remote repository. New bullet "Anonymous populating is flagged" with the warning `anonymous_populates_remote`, plus an acceptance criterion. R-AUTHZ-021 lists the new warning. The security note on anonymous populating mentions it.
+**Applied in the spec:** R-AUTHZ-008: the reasoning paragraph is marked as decided, and the default is stated for every new remote repository. New bullet "Anonymous populating is flagged" with the warning `anonymous_populates_remote`, plus an acceptance criterion. R-AUTHZ-021 lists the new warning. The security note on anonymous populating mentions it. After the revisit: the rationale and the security note on anonymous populating state which concurrency bound is per replica and which is shared by the installation.
 
 ### Q-AUTHZ-5 · Default audit level for reads
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice stands, and its grounds changed. The rationale relied on PostgreSQL being the only coordination store. Under INV-3, Valkey now holds shared ephemeral state, so the deduplication store that option (d) lacked exists. The options table and the rationale are updated. With the load spread over several `web` replicas, option (c) writes one audit row per download of the whole installation, which strengthens the case for (b). The aggregation of refused anonymous requests now has a bound that holds across n replicas without Valkey (R-AUTHZ-029).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) `none` | No read events; refused reads appear only in `trove_authz_decisions_total` | Least audit volume | Probing (many refused reads of guessed names) leaves no attributable trace |
 | (b) `denied` | Refused reads are audited, allowed reads are not | Refusals are rare and signal probing or misconfiguration; volume follows refusals, not traffic | An authorized reader's downloads are not attributable (H-23) |
 | (c) `all` | Every read is audited | Every download attributable | One `npm ci` of a typical project issues hundreds of requests; audit rows in PostgreSQL (INV-16) then grow with the download rate and make the audit table the largest write load of an HA installation |
-| (d) `denied` plus first-read sampling | Refused reads, plus one event per principal, package version and day | Attribution of who fetched what, at bounded volume | Needs a cluster-wide deduplication store on the download path: a per-replica memory breaks the guarantee across replicas, and a PostgreSQL upsert per download brings back one write per read |
+| (d) `denied` plus first-read sampling | Refused reads, plus one event per principal, package version and day, deduplicated with a `SET … NX` key in Valkey that expires after the day | Attribution of who fetched what, at bounded volume; a lost Valkey key only writes a duplicate event, never drops one | One Valkey round trip on every allowed read, the hottest path of the system. Whoever can write to Valkey can set a key in advance and so suppress the event, which makes the audit record depend on Valkey, against [operations-and-observability.md](operations-and-observability.md) R-OPS-015. While Valkey is unavailable, deduplication must fall back to per-replica memory, which multiplies events by the replica count, or to a PostgreSQL upsert per download, which brings back one write per read. Attribution of downloads is not an owner requirement |
 
 **Choice:** (b) — refused reads are audited by default, and allowed reads only with `authz.audit.reads: all`.
 
-**Rationale:** (b) keeps the security signal of refused reads while the audit store stays sized by refusals, which matters because PostgreSQL is the only coordination and audit store (INV-3) and every replica writes to it. (c) is one setting away for installations that must attribute every download, and H-23 says so. (d) is the attractive middle ground, but its deduplication would put a database write or a cross-replica cache on the hottest path of the system. The development agent would revisit this if a compliance requirement for download attribution appears. (d) would then be built with batched deduplication in PostgreSQL.
+**Rationale:** (b) keeps the security signal of refused reads while the audit store stays sized by refusals. That matters because PostgreSQL is the audit store and the system of record (INV-3, INV-16), every replica writes to it, and the load is spread over several `web` replicas by design (INV-12). (c) is one setting away for installations that must attribute every download, and H-23 says so. (d) is the attractive middle ground. With Valkey part of every installation, its deduplication no longer needs a database write per read, but it still puts a network round trip on every allowed read, and a key planted in Valkey would suppress an audit event, which R-OPS-015 rules out for every audit record. While Valkey is down, it degrades into either an event flood or that database write. Nothing the owner asked for needs it. The development agent would revisit this if a compliance requirement for download attribution appears. (d) would then deduplicate in each replica's memory, as R-OPS-015 does for denials, and accept up to one event per `web` replica, principal, version and day.
 
-**Applied in the spec:** No change to the setting; R-AUTHZ-029 already defaulted to `denied`. A new bullet there states the decision and points to H-23.
+**Applied in the spec:** No change to the setting; R-AUTHZ-029 already defaulted to `denied`. A new bullet there states the decision and points to H-23. After the revisit: option (d) and the rationale reflect Valkey. R-AUTHZ-029 aggregates anonymous 401 events with the per-replica deduplication of [operations-and-observability.md](operations-and-observability.md) R-OPS-015, keyed by client address, so the bound grows with the replica count only, never with the scan rate. A Valkey limiter was considered for this and rejected: R-OPS-015 keeps audit state out of Valkey, and a counter in Valkey would let whoever can write to Valkey suppress audit events. R-AUTHZ-029 also states that allowed populates are audited once per upstream fetch, not once per collapsed requester, and what a drain and a crash do to buffered events.
 
 ### Q-AUTHZ-6 · Default `ownership` of CI inline grants that write
 
@@ -2277,6 +2642,184 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The catalog leaves open which resource types a scope can name (repository content only, or also projects and per-repository configuration types) and whether a resource scope is intersected with the subject's own rights (TOK-012). Because a scope only narrows, a scope type is useful only where a grant type exists behind it. (b) follows that rule exactly and leaves no item that silently yields nothing. Per-team configuration rights come from projects (R-AUTHZ-026), not from tokens. Intersection with the subject's rights is not optional in trove: every right must trace back to a policy, a role or a CI mapping. The development agent would revisit this when project roles arrive in P2 and add a `projects` part for TOK-011 and TOK-013.
 
 **Applied in the spec:** R-AUTHZ-013: new "Resource types" table (`repositories` MVP, `system` P1, `builds` P1), `inherit: true` covers build rights from P1, and a restricted scope without `builds` admits no build action. The "Differences from the catalog" list states that a scope is always intersected with the subject's rights, and that trove has no group-scoped token and so no group-list syntax (settling the open quoting and alias points of TOK-010). R-AUTHZ-027 refers to the `builds` part. R-AUTH-024 on [identity-and-authentication.md](identity-and-authentication.md) needs the P1 `builds` field.
+
+### Q-AUTHZ-11 · Invalidation path of the grant index across n replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Until 2026-10-28, R-AUTHZ-028 kept the index current through its own `authz_epoch` row, `NOTIFY` in
+the writing transaction, a `LISTEN` connection per replica and a 5 s poll. The new constraints
+change the frame:
+- [architecture.md](architecture.md) Q-ARCH-15 removes `LISTEN/NOTIFY` everywhere, and Q-ARCH-14
+  keeps `web` replicas free of session connections, so that PostgreSQL connections do not grow with
+  the replica count (INV-12).
+- INV-3 forbids that correctness depends on Valkey, and Q-ARCH-16 forbids reading a positive
+  authorization result from Valkey.
+- The load needs n replicas, which all hold the index.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the own epoch with `LISTEN/NOTIFY` | As specified before | Delivery on commit | One session connection per `web` replica, which a transaction-mode pooler cannot carry and which grows with the replica count; contradicts Q-ARCH-15 |
+| (b) Own epoch row and own poll, Valkey as fast path | `authz_epoch` stays; a second poll loop reads it | Correct from PostgreSQL alone | A second poll, a second ordering rule and a second readiness signal next to R-ARCH-018, for the same guarantee; writers serialize on the row for their whole transaction unless it copies R-ARCH-018's last-statement rule |
+| (c) The `authz` change area of R-ARCH-018 | The authorization epoch is the `authz` area's epoch. The index depends on `authz` and `repo_config` and is built from one `REPEATABLE READ` snapshot that carries its epochs. A Valkey message starts a build only after an epoch query confirms it | One poll and one readiness signal for every cache. The area's row lock orders the epochs. No session connection. A lost message costs latency; a forged one costs one indexed query. Repository code needs no knowledge of authorization | Every change makes every replica build the whole index. `Trove-Authz-Epoch` does not cover repository changes, because they live in the second area |
+| (d) Share the compiled index or decisions in Valkey | One build per change instead of n | Fewer builds and database reads | Whoever can write to Valkey could grant access (Q-ARCH-16). A loss of Valkey's data would cost correctness or force every replica to refuse, against INV-3 and INV-12 |
+| (e) No index: query PostgreSQL per decision | Policies are read for every coordinate | Exact, no propagation window | Queries per request and per virtual member, at a load beyond one replica, on the system of record. The 1 ms target of R-AUTHZ-015 fails, and a short database hiccup fails every decision |
+
+**Choice:** (c) — the grant index follows the `authz` and `repo_config` change areas, is built from one snapshot labelled with its epochs, and treats a Valkey message as a hint that an epoch query must confirm.
+
+**Rationale:**
+- (c) reuses the mechanism that R-ARCH-018 already establishes for tokens and the repository
+  snapshot: one change log, one poll per replica and one `invalidation` readiness check. (a) breaks
+  the connection model the owner's load requires. (b) builds the same guarantee a second time.
+- The snapshot build makes the index a self-validating entry in R-ARCH-018's sense. It carries the
+  epochs it was built from, so the rule that a fill never re-inserts an invalidated value holds by
+  construction: an index with lower epochs is never swapped in. A build that read its tables at
+  `READ COMMITTED` could combine a policy's new entries with its old selectors and grant more than
+  either state.
+- The label holds each area's `changed_at` next to its epoch. A PostgreSQL failover that lost
+  commits can be followed by writes that reach the same epoch number again before a replica polls,
+  and an epoch number alone would then confirm an index built from the lost history. Comparing
+  `changed_at` costs nothing extra, because the same row is read.
+- The build and the epoch reads run on the request pool, not on the control connection. A slow
+  build can then never delay the poll and the heartbeats that readiness and job ownership depend
+  on, which keeps INV-12's rule that load never takes replicas out of the Service.
+- An epoch query before a message-triggered build keeps Valkey outside the trust path and caps
+  what a forged message costs at one indexed query. That is the property H-49 assumes.
+- Depending on two areas costs less than making every repository write also notify `authz`. The
+  repository page needs no knowledge of authorization, and every build reads the repositories in
+  the same snapshot anyway. The price is that R-AUTHZ-032's header covers permission-side changes
+  only.
+- The build cost is the visible trade-off. With 100 replicas and a 500 ms build, one change costs
+  about 50 CPU seconds across the cluster and 100 snapshot reads, which is small at administrative
+  change rates. (d) and (e) would remove it at the price of trust or of database load on every
+  request.
+- The development agent would revisit this if the summed `trove_authz_index_rebuild_seconds` of
+  all replicas exceeds about 1 % of the `web` role's CPU, or if automation changes `repo_config`
+  per pipeline run. The index would then apply incremental updates from the change payloads, and
+  the full build would remain the fallback after a flush.
+
+**Applied in the spec:**
+- R-AUTHZ-028 is rewritten:
+  - the area, the consistent snapshot build with its label of epochs and `changed_at`, the request
+    pool as its connection, and the rebuild triggers including a reused epoch;
+  - the epoch query before a message-triggered build, the coalescing and the monotonic swap;
+  - the poll and the rebuilds running on through a drain;
+  - the `safety_ttl` rebuild, the rule that Valkey holds nothing of authorization, and the
+    completeness test;
+  - the data model without `authz_epoch`, the new configuration and new acceptance criteria.
+- R-AUTHZ-015: the index is read from memory, never from Valkey. R-AUTHZ-021: writes notify the
+  area. R-AUTHZ-031: replay notifies the area and publishes nothing. The security notes and the
+  decision table.
+- Cross-page:
+  - [architecture.md](architecture.md): the `authz` row of R-ARCH-018's area table; the isolation
+    exception in R-ARCH-019; Q-ARCH-15's rationale; R-ARCH-018's poll recognising a reused epoch
+    for every area, not only `authz`; R-ARCH-024 keeping the poll running until shutdown step 6.
+  - [backup-and-restore.md](backup-and-restore.md) R-BAK-021 and R-BAK-022: `authz_epoch` goes.
+  - [repositories-and-proxy.md](repositories-and-proxy.md): its writes notify `repo_config`.
+  - ADR-057 in [docs/decisions.md](../decisions.md).
+
+### Q-AUTHZ-12 · Seeing one's own permission change under random request distribution
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-021 returned the new epoch in `Trove-Authz-Epoch` "so a client can wait for propagation".
+The client was meant to watch a replica's epoch. Under INV-12 the Service sends each request to a
+random replica without session affinity, so the replica that reports an epoch is not the one that
+answers the next request (INV-18). A script that grants a right and uses it at once, the UI after a
+permission change and trove's own e2e tests in the `scatter` profile
+([architecture.md](architecture.md) R-ARCH-032) would see refusals for up to the propagation bound.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The bound only | Clients wait for the bound of R-AUTHZ-028 or retry | Nothing to build | Clients must sleep for the worst case (2 s without Valkey) or retry blindly. The promise of `Trove-Authz-Epoch` becomes empty |
+| (b) Request header `Trove-Authz-Min-Epoch` | A request names the epoch it needs; any replica waits for an index at least that new, or answers `412` when the database never reached it | Opt-in and deterministic. Covers added and removed grants and the member checks of virtual resolution. Costs nothing for requests without it, and its database reads are coalesced | Only clients that send it benefit. It covers the `authz` area, not repository creation |
+| (c) Re-check every refusal against the database epoch | A replica confirms a refusal by reading the current epoch, and rebuilds when it is behind | Transparent, package clients included | Covers only added grants that would end in a refusal; not removals, and not the member checks of virtual resolution, which are not refusals. Every refusal gets a database read, and scanners produce refusals at will. Strict read-your-writes needs each refusal to wait for a read that starts after it arrived |
+| (d) Decide writes and management operations on PostgreSQL | The index serves reads only | Writes exact | Two evaluators that must agree; several queries per write; reads remain unsynchronized |
+| (e) Session affinity for management clients | Route a client to the replica it wrote through | — | Forbidden by INV-12 and R-ARCH-032. A token used over several connections gains nothing |
+
+**Choice:** (b) — a request may carry `Trove-Authz-Min-Epoch`, and every replica honours it.
+
+**Rationale:**
+- Under random distribution, the epoch has to travel with the request. (b) is the smallest
+  mechanism that does that. It keeps the existing response header meaningful and gives the UI and
+  automation exact behavior for added and removed grants alike.
+- (c) is attractive because it is transparent. It covers the wrong half, though: a removal that
+  has not arrived yet produces an allow, which no refusal re-check sees. And it turns refusals into
+  database reads.
+- Honouring the header only for callers with a credential keeps anonymous callers from probing the
+  epoch. Answering `412` at once for an epoch the database never reached, and reading at most every
+  50 ms per replica, keeps forged values cheap.
+- Package clients do not need it in practice. A person publishes seconds after a grant change, and
+  the bound is 1 s while Valkey is available.
+- The development agent would revisit this in two cases. If automation reports refusals right
+  after its own grants without using the header, (c) would be added for writes only. If repository
+  creation followed by immediate use through a pattern grant becomes common, the `repo_config`
+  epoch would join the same header.
+
+**Applied in the spec:**
+- New R-AUTHZ-032 (MVP).
+- R-AUTHZ-021: the epoch header and an acceptance criterion with the request header.
+- R-AUTHZ-016: the `412` row. R-AUTHZ-015: the acceptance criterion of the trace.
+- R-AUTHZ-032: the header is read only after authentication succeeded; a client drops an epoch
+  that answered `412`; a `412` is a hint, because a reused epoch can hide a lost change.
+- The decision table.
+- Cross-page: [api-and-ui.md](api-and-ui.md) (the two headers, the codes `invalid_header`,
+  `authz_epoch_unknown` and `authz_stale`, the UI sending the header after its own permission
+  changes and dropping an epoch that answered `412`);
+  [operations-and-observability.md](operations-and-observability.md) (the metric
+  `trove_authz_min_epoch_total`).
+
+### Q-AUTHZ-13 · A replica whose grant index cannot be confirmed current
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Until 2026-10-28 a replica that had not confirmed the current epoch for 30 s answered `503` to every
+request that needed authorization and reported not ready. The revised frame sets four rules:
+- Readiness depends on PostgreSQL only, through the `database` and `invalidation` checks
+  ([architecture.md](architecture.md) R-ARCH-018).
+- No check may undercut the PostgreSQL readiness window of about 15 s
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-008). That page names authorization as a path that fails
+  closed sooner by reading the change-log freshness itself.
+- Requests ride out a PostgreSQL failover in their retry loop for up to `database.retry.max_elapsed`
+  (30 s, R-HA-009).
+- Valkey never makes a replica unready (INV-12).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) As before | 30 s; `503` at once; an own readiness gate | Known | The own gate duplicates `invalidation`. A removed grant can stay usable for 30 s on a replica cut off from the change log |
+| (b) 10 s, `503` at once, no own gate | The same refusal with a shorter bound | A 10 s bound; simple | During a failover, new requests get `503` at once from 10 s on, while requests already inside their database retry loop ride it out. Clients with tightly spaced retries, such as NuGet's six tries one second apart, fail |
+| (c) 10 s, wait like a database wait, no own gate | A request that finds the index staler than the bound waits for a confirmation within its deadline and `database.retry.max_elapsed`, then is decided or answered `503` | The security bound of (b). During a failover, requests behave as they do towards the database, which every request needs right after authorization anyway | Requests on a stale replica hold memory and a client connection, but no database connection, for up to the retry budget. A build failure on one replica makes its requests wait before they fail |
+| (d) No bound of its own | Rely on readiness | Nothing to build | A replica leaving the Service still decides the requests already routed to it, and those an edge sends during endpoint propagation, on grants of any age. When every replica is stale, nothing stops decisions |
+
+**Choice:** (c) — no decision is made on an index unconfirmed for longer than `authz.cache.max_staleness` (10 s); a request that meets such an index waits as it would for the database, then is decided or answered `503` `authz_stale`; authorization adds no readiness check.
+
+**Rationale:**
+- The security property is that no decision rests on an index older than the bound. (b) and (c)
+  share it. (c) adds that a failover looks the same to a client whether the index or the next query
+  notices it first, which matters with a load that keeps many requests in flight during every
+  failover.
+- 10 s is ten poll intervals, so a slow poll never stops decisions. It lies below the readiness
+  window, as R-HA-008 expects of authorization. It cuts the worst window for a removed grant from
+  about 30 s to about 10.5 s.
+- An own readiness check would add nothing for PostgreSQL outages, which `database` and
+  `invalidation` already cover, and at 10 s it would undercut R-HA-008's window. Valkey affects
+  neither the bound nor readiness.
+- Readiness does not see one case: a build that fails on one replica while its poll works. It shows
+  in `trove_authz_index_staleness_seconds` and in `authz_stale` answers. A build that fails
+  deterministically stalls every rollout, because start-up requires a successful build
+  (R-AUTHZ-028).
+- The development agent would revisit this if such replica-local build failures occur in practice.
+  A gating check that fires only while the poll is fresh would then be added; it cannot undercut
+  the PostgreSQL window.
+
+**Applied in the spec:**
+- R-AUTHZ-028: the bullets on confirmation and staleness, the bound and the stale index;
+  `authz.cache.max_staleness` 10 s with a start-up floor; `poll_interval` removed; acceptance
+  criteria for a blocked poll and a PostgreSQL outage.
+- R-AUTHZ-015: `index.ForRequest` in the pseudo-code, one index per request. R-AUTHZ-016: `503` `authz_stale` with
+  `Retry-After`. The security note on removed grants and the decision table.
+- Cross-page: [ha-and-helm.md](ha-and-helm.md) R-HA-007 (the row "PostgreSQL unavailable beyond
+  the retry budget"); ADR-057 in [docs/decisions.md](../decisions.md).
 
 ## What this does not cover
 

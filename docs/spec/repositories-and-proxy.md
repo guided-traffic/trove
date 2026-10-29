@@ -7,14 +7,16 @@ document of a repository, keys and addresses, validation, create, read, update, 
 specifies how virtual repositories resolve requests, including protection against dependency
 confusion through pin rules, namespace claims and a shadowing check on first publishes. And it
 specifies the pull-through proxy of remote repositories end to end: settings and defaults, cache
-state in PostgreSQL, collapsing of concurrent misses within and across replicas, metadata freshness,
-negative caching, upstream failure handling and offline modes, upstream authentication and stored
-secrets, client certificates, outbound HTTP proxies and CA bundles, egress address rules, redirects,
-size limits, integrity verification, metadata URL rewriting, cache invalidation and the settings
-that drive cache cleanup. Bytes, items and the operations on stored items (delete, copy, move,
-properties, trash can) are specified in [storage.md](storage.md); who may do what in
-[authorization.md](authorization.md); format-specific metadata in [formats/npm.md](formats/npm.md)
-and [formats/nuget.md](formats/nuget.md).
+state in PostgreSQL, collapsing of concurrent misses within a replica and across replicas through a
+Valkey lock, metadata freshness, negative caching in Valkey, upstream failure handling and offline
+modes, upstream authentication and stored secrets, client certificates, outbound HTTP proxies and
+CA bundles, egress address rules, redirects, size limits, integrity verification, metadata URL
+rewriting, cache invalidation and the settings that drive cache cleanup. It states how all of this
+behaves on n interchangeable replicas behind a Service without session affinity, while Valkey is
+unavailable, and while a replica drains (R-REPO-049). Bytes, items and the operations on stored
+items (delete, copy, move, properties, trash can) are specified in [storage.md](storage.md); who
+may do what in [authorization.md](authorization.md); format-specific metadata in
+[formats/npm.md](formats/npm.md) and [formats/nuget.md](formats/nuget.md).
 
 Covers: [repositories.md](../features/repositories.md) (`REPO-*`),
 [remote-repositories.md](../features/remote-repositories.md) (`RMT-*`), the cache-invalidation
@@ -29,11 +31,12 @@ entry ART-050 of [artifacts.md](../features/artifacts.md), the repository operat
 |---|---|
 | Base tables (`repositories`, `items`, `blobs`, `packages`), upload and download pipeline, spool, delete, copy, move, properties, property sets, trash can, garbage collection, quotas, repository caps enforcement, the remote-cache cleanup job | [storage.md](storage.md) |
 | Permission model, cache-fill rule, virtual-repository gate, capabilities and roles, projects, package ownership, existence hiding | [authorization.md](authorization.md) |
-| Format plug-in interface in Go, job framework, `LISTEN/NOTIFY` plumbing, the stored-secret key | [architecture.md](architecture.md) |
+| Format plug-in interface in Go, job framework, change areas and signals (R-ARCH-018), the Valkey usage map and client (R-ARCH-030, R-ARCH-031), `cluster.FlightLock` (R-ARCH-033), per-replica state rules (R-ARCH-032), process shutdown (R-ARCH-024), the stored-secret key | [architecture.md](architecture.md) |
 | npm and NuGet: document classes, metadata merge, URL rewrite details, digest sources, version-removal tracking, format settings | [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
 | Public base URL and trusted proxies, metrics catalog, upstream log record, audit storage, cache-invalidation endpoint surface, configuration as code and `secretRef`, read-only maintenance mode | [operations-and-observability.md](operations-and-observability.md) |
 | API conventions (error envelope, paging, job resource), UI | [api-and-ui.md](api-and-ui.md) |
-| Helm values for CA bundles and secret mounts, egress `NetworkPolicy`, database connection budget | [ha-and-helm.md](ha-and-helm.md) |
+| Helm values for CA bundles and secret mounts, egress `NetworkPolicy`, database connection budget, Valkey topology and degraded mode (R-HA-056, R-HA-057), termination grace period (R-HA-011), node drain (R-HA-059) | [ha-and-helm.md](ha-and-helm.md) |
+| Export classes of this page's tables, leaving remote caches out of a backup, raising revision columns on restore | [backup-and-restore.md](backup-and-restore.md) (R-BAK-004, R-BAK-008, R-BAK-022) |
 
 ## Terms
 
@@ -48,6 +51,8 @@ entry ART-050 of [artifacts.md](../features/artifacts.md), the repository operat
 | Effective member list | A virtual repository's members after nested virtual repositories are expanded and duplicates removed (R-REPO-018). |
 | Cache entry | What a remote repository stored for one canonical path and variant: an artifact, which is also an item of the repository ([storage.md](storage.md)), or a metadata document. |
 | Fresh, expired, stale | A metadata entry is fresh until its expiry, expired afterwards; an expired entry served because the upstream was not or could not be asked is stale. Artifacts never expire. |
+| Negative entry | A remembered upstream 404 or 410 for one canonical path and variant of a remote repository: a key in Valkey with a bounded copy in each replica's memory (R-REPO-028). It can make trove answer 404 and nothing else. |
+| Flight | The fetch of one cache entry from the upstream. Concurrent requests for the same (repository, canonical path, variant) share one flight, within a replica and across replicas (R-REPO-026). The replica that fetches is the flight's holder; requests that wait for it are followers (same replica) or waiters (other replicas). |
 | Cache-fill check | The check that guards contacting the upstream: `read` plus the action named by the remote repository's `cacheFillAction` ([R-AUTHZ-008](authorization.md)). |
 | Upstream origin | Scheme, host and port of the remote repository's upstream URL ([RFC 6454](https://www.rfc-editor.org/rfc/rfc6454)). |
 | Secret field | A configuration field holding a credential. It takes `{"value": "…"}` or `{"secretRef": {…}}` and is never returned (R-REPO-033). |
@@ -84,8 +89,8 @@ updated_at)` is defined in [storage.md](storage.md) (R-STOR-003). This page owns
 ALTER TABLE repositories
   ADD COLUMN lifecycle        text NOT NULL DEFAULT 'active'
                               CHECK (lifecycle IN ('active', 'deleting')),
-  ADD COLUMN config_version   bigint NOT NULL DEFAULT 1,     -- ETag, R-REPO-011
-  ADD COLUMN claims_version   bigint NOT NULL DEFAULT 1,     -- ETag of the claims, R-REPO-023
+  ADD COLUMN config_version   bigint NOT NULL DEFAULT 1,     -- ETag, R-REPO-011; R-BAK-022
+  ADD COLUMN claims_version   bigint NOT NULL DEFAULT 1,     -- claims ETag, R-REPO-023; R-BAK-022
   ADD COLUMN created_by       uuid,                          -- principal id
   ADD COLUMN updated_by       uuid,
   ADD COLUMN project_id       uuid REFERENCES project (id),  -- assignment: R-AUTHZ-026
@@ -96,6 +101,13 @@ ALTER TABLE repositories
 `config` never contains secret values; they are in `repository_secrets` (R-REPO-033). References
 that need referential integrity (members, deploy targets, pin targets, client certificates,
 outbound proxies) are relational tables on this page.
+
+`config_version` and `claims_version` are client-visible ETags, so both MUST be registered with
+`meta.RegisterRevisionColumn`, and a restore raises them above every value the old installation
+can have issued ([backup-and-restore.md](backup-and-restore.md) R-BAK-022). Otherwise a client
+holding the ETag of a version written after the snapshot could pass `If-Match` against different
+content after the restore, and a claims `PUT` could replace a claim set, `global` claims
+included, that its author never saw (R-REPO-023).
 
 Acceptance criteria:
 
@@ -368,11 +380,36 @@ Acceptance criteria:
 
 All operations below are part of the OpenAPI document at `/api/v1/openapi.json` (INV-6). Every
 change writes an audit event (INV-16; actor, action, repository, outcome; secrets as fingerprints)
-in the same transaction as the change and signals the other replicas with
-`NOTIFY trove_repo_config` carrying the repository id; replicas MUST apply a change within 2
-seconds of commit (INV-12). Capability and action names are those of
-[authorization.md](authorization.md) (R-AUTHZ-010): `repositories:read-config` (roles `admin`,
-`security-admin`, `auditor`, `repository-admin`), `repositories:write-config` (roles `admin`,
+in the same transaction as the change and calls `cluster.Notify("repo_config", …)` with the
+repository id in that transaction ([architecture.md](architecture.md) R-ARCH-018). Replicas MUST
+apply a change within 2 seconds of commit (INV-12), with or without Valkey: the PostgreSQL change
+log brings it within `cluster.epoch_poll_interval`, and Valkey's message within milliseconds.
+
+Two in-memory structures depend on the area: every replica's repository snapshot (R-REPO-049) and
+the grant index of [R-AUTHZ-028](authorization.md), which is built from each repository's key,
+class, format, project, virtual membership, deploy target and authorization settings. The writes
+that change an input of the index MUST therefore call `cluster.Notify("repo_config", …)` in their
+own transaction, wherever they run:
+
+- every repository create, including batch create, quick setup and configuration-as-code apply
+  (R-REPO-009, R-REPO-014, R-REPO-015); key, class and format change only through create and
+  delete (R-REPO-001);
+- every repository delete: the first transaction, which sets `lifecycle = 'deleting'` and with
+  `detach=true` removes the repository from member lists, pin rules and deploy targets, and the
+  job transaction that removes the row (R-REPO-013);
+- every change of the virtual membership (R-REPO-017, R-REPO-018), the deploy target (R-REPO-021),
+  the project assignment ([R-AUTHZ-026](authorization.md), P1) or one of the authorization
+  settings `cacheFillAction`, `packageOwnership`, `hideExistence` and `requireAuthentication`
+  ([R-AUTHZ-031](authorization.md)).
+
+The payload names the repository id, never a grant. R-AUTHZ-028's completeness test runs every
+write operation of this page's API against a test database and fails when an input of the index
+changed in a transaction that advanced neither the `authz` nor the `repo_config` epoch. Without
+the notification, a replica would keep deciding on the old member list or the old
+`cacheFillAction` until the index's `authz.cache.safety_ttl` rebuild.
+
+Capability and action names are those of [authorization.md](authorization.md) (R-AUTHZ-010): `repositories:read-config`
+(roles `admin`, `security-admin`, `auditor`, `repository-admin`), `repositories:write-config` (roles `admin`,
 `repository-admin`), `settings:read` and `settings:write`, repository actions `read`, `deploy`,
 `delete`, `manage`.
 
@@ -398,6 +435,7 @@ leaves the operator believing it is in effect.
 | Pin rule member not in the effective member list (R-REPO-023) | `invalid_pin_member` |
 | Upstream URL not absolute `http`/`https`, or carrying user info or a fragment (R-REPO-024) | `invalid_upstream_url` |
 | Numeric setting outside its range (R-REPO-024 and others) | `out_of_range` |
+| `remote.sourceNetwork` not a CIDR prefix (R-REPO-024) | `invalid_source_network` |
 | Referenced client certificate or outbound proxy missing | `unknown_reference` |
 | Secret field with both `value` and `secretRef`, or a `secretRef` outside the rules of R-OPS-029 | `invalid_secret` |
 | Custom header name or value invalid (R-REPO-036) | `invalid_header` |
@@ -405,7 +443,8 @@ leaves the operator believing it is in effect.
 
 Warnings do not block a save; they are returned in a `warnings` list, for example
 `dependency_confusion_unprotected` (R-REPO-023), `claim_overlaps` (R-REPO-023),
-`pattern_unscoped_only` (R-REPO-005) or `plain_http_upstream` (R-REPO-024).
+`pattern_unscoped_only` (R-REPO-005), `plain_http_upstream` or `source_network_single_address`
+(R-REPO-024).
 
 Acceptance criteria:
 
@@ -541,9 +580,11 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
   `offline`, `assumed-offline`). Holders of `repositories:read-config` also get the upstream URL.
 - `view=full` returns complete documents (the catalog's "all configurations").
 - Class and format values are spelled as in configuration documents (lower case).
-- `lastActivityAt` is the latest upload to or download from the repository. Replicas MUST aggregate
-  activity in memory and write it at most once per minute per repository, so downloads do not turn
-  into database writes.
+- `lastActivityAt` is the latest upload to or download from the repository. Each replica MUST
+  aggregate activity in memory and write it at most once per minute per repository, so downloads do
+  not turn into database writes. No request reads that buffer; it is flushed at shutdown
+  ([architecture.md](architecture.md) R-ARCH-024 step 6), and a crash loses at most one minute of
+  activity of that replica (R-REPO-049).
 
 Acceptance criteria:
 
@@ -568,9 +609,16 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
   of `repositories:read-config`. With `detach=true`, the same transaction removes it from every
   member list, pin rule and deploy-target reference.
 - A background job ([architecture.md](architecture.md)) removes items permanently, bypassing the
-  trash can ([storage.md](storage.md), R-STOR-018), and removes cache entries, negative entries, URL
-  mappings, claims and invalidations in batches. It is resumable after a replica restart. The
-  repository row goes last, which frees the key.
+  trash can ([storage.md](storage.md), R-STOR-018), and removes cache entries, URL mappings, claims
+  and invalidations in batches. A batch that removes claims calls `cluster.Notify("claims", …)`
+  with the repository id ([architecture.md](architecture.md) R-ARCH-018), so every replica drops
+  them from its in-memory trie within 2 seconds (R-REPO-023); without that, a `global` claim of
+  the deleted repository would keep refusing its names on every replica until that replica
+  restarts. The repository's negative entries in Valkey are left to expire: their
+  keys carry the repository id, which an identity column never hands out again (R-REPO-028). The job
+  runs on the `worker` role and is resumable after a replica restart. The repository row goes last,
+  which frees the key; that transaction calls `cluster.Notify("repo_config", …)`, because the row
+  is an input of the grant index (Repository management API above).
 - Job progress (items total and removed, errors) is read from the job resource.
 
 Acceptance criteria:
@@ -579,7 +627,8 @@ Acceptance criteria:
   returns 202, `npm-all` no longer lists it, and `npm view @acme/util --registry
   …/api/npm/npm-local/` returns `E404` at once.
 - After the job completes, a new repository named `npm-local` can be created and is empty.
-- Killing the replica that runs the job does not prevent completion: another replica resumes it.
+- Killing the `worker` replica that runs the job does not prevent completion: another `worker`
+  replica resumes it.
 
 ### R-REPO-014 · Batch operations
 Priority: **P1** · Covers: REPO-059, REPO-061, REPO-062, REPO-064, API-053, API-055, API-059, API-064
@@ -658,7 +707,15 @@ Priority: **P1** · Covers: REPO-009
   repository's items, incrementing `rev_seq` on every package row it changes, and the next request
   renders from the rebuilt rows. A format with a job-built repository-wide index (the exception
   of R-ARCH-012) also rebuilds that index. On a virtual repository the operation drops its
-  merged-metadata cache (R-REPO-020).
+  merged-metadata cache (R-REPO-020) on every replica.
+- **The drop travels through a change area.** The transaction that records a virtual
+  repository's reindex calls `cluster.Notify("cache_invalidation", …)` with the virtual
+  repository's id ([architecture.md](architecture.md) R-ARCH-018). A replica that applies a
+  `cache_invalidation` change naming a virtual repository drops that repository's merged entries.
+  The drop therefore reaches every replica at its next change-log poll, also one that missed the
+  Valkey message and while Valkey is unavailable. The signal area `metadata_changed` of R-REPO-020
+  is not enough here: it is delivered at most once, and not at all without Valkey.
+  [formats/npm.md](formats/npm.md) R-NPM-035 relies on this.
 - A reindex is an `exclusive` job of [architecture.md](architecture.md) R-ARCH-016 with the key
   `index:<repository id>`: while one is queued or running, a new request answers 409
   `reindex_running` naming it. Automatic rebuilds of job-built indexes (R-ARCH-012) are `coalesce`
@@ -673,6 +730,10 @@ Acceptance criteria:
   versions.
 - A second `POST …/repositories/npm-local/reindex` while the first job is queued or running
   returns 409 `reindex_running` naming that job.
+- With Valkey stopped, the merged document of `lodash` is cached on replica B, and a reindex of
+  `npm-all` is requested on replica A: after the job completes, the next `npm view lodash` through
+  `npm-all` on B, sent `cluster.epoch_poll_interval` plus 1 s later, is merged again
+  (`trove_cache_requests_total{cache="merged_metadata",result="miss"}` increments on B).
 
 ## Virtual repositories
 
@@ -725,7 +786,7 @@ Acceptance criteria:
 - A virtual `npm-all` with members `npm-local`, `npm-remote` serves `npm install lodash --registry
   https://trove.example.com/api/npm/npm-all/`.
 - With two replicas, a `PATCH` that reverses the member order is visible in the resolution
-  explanation (R-REPO-019) of both replicas within 2 seconds.
+  explanation (R-REPO-019) of both replicas within 2 seconds, also with Valkey stopped.
 
 ### R-REPO-018 · Nested virtual repositories
 Priority: **P1** · Covers: REPO-034
@@ -834,7 +895,10 @@ Priority: **MVP** · Covers: REPO-037
 - For every version, the merged document MUST take the version entry from the member that tier
   resolution would pick for that version's artifact, so the digest a client reads and the bytes it
   downloads come from the same member.
-- Merged documents MAY be cached per replica in memory. The cache key MUST include the virtual
+- Merged documents MAY be cached per replica in memory (registered as the cache `merged_metadata`
+  of [architecture.md](architecture.md) R-ARCH-018), and only there: a merged document is
+  served to clients, so it is never stored in or read from Valkey
+  ([architecture.md](architecture.md) R-ARCH-030, Q-ARCH-16). The cache key MUST include the virtual
   repository, the canonical path, the variant and a SHA-256 fingerprint of the ordered list of
   members that took part after permission filtering: two callers who see different members never
   share an entry ([R-AUTHZ-009](authorization.md) rule 4); callers who see the same members do.
@@ -850,11 +914,14 @@ Priority: **MVP** · Covers: REPO-037
   whatever the period and whether or not a notification has arrived. The 0 for an absent package
   covers the first local publish of a name that so far came only from a remote member.
 - **Early eviction.** A change of a member's metadata (publish, delete, restore, remote refresh
-  with new content, claim change) also sends `trove_metadata_changed` with repository id and
-  package-name hash, which drops the affected merged entries on all replicas. It is a hot-path
-  channel: the notification leaves through the post-commit coalescer of R-ARCH-018 (Q-ARCH-8),
-  never as a `NOTIFY` inside the writing transaction. It only evicts early; visibility of local
-  changes never depends on it.
+  with new content) also signals the area `metadata_changed` with repository id and package-name
+  hash, which drops the affected merged entries on all replicas. It is a signal area of
+  [architecture.md](architecture.md) R-ARCH-018: the signal leaves through the replica's post-commit
+  coalescer to Valkey Pub/Sub (Q-ARCH-8), at most once, and not at all while Valkey is unavailable.
+  It only evicts early. Visibility of local changes never depends on it (the `rev_seq` check above),
+  and a remote refresh made on another replica reaches a merged entry at the latest when that entry
+  expires, which is never later than the contributing remote entries. Claim changes reach the merged
+  entries through their change area `claims` (R-REPO-023), whose bound does not depend on Valkey.
 - A remote member that fails transiently and has no stored copy is left out of the merge; the result
   MUST NOT be cached, and the response carries `Cache-Status: trove; detail=partial`
   (R-REPO-047). Pin rules and claims keep internal names independent of remote members, so a partial
@@ -870,9 +937,9 @@ proxy:
 Acceptance criteria:
 
 - After `npm publish` of `@acme/util@1.5.0` to `npm-local`, `npm view @acme/util versions
-  --registry …/api/npm/npm-all/` on the other replica lists `1.5.0` immediately, also with the
-  notification coalescer disabled in a test build.
-- With the coalescer disabled and `local.autoClaim: false` on `npm-local` (so no new claim changes
+  --registry …/api/npm/npm-all/` on the other replica lists `1.5.0` immediately, also with Valkey
+  stopped.
+- With Valkey stopped and `local.autoClaim: false` on `npm-local` (so no new claim changes
   the member set), the merged document of `lodash`, served so far only by `npm-remote`, is cached
   on replica B; a `manage` holder publishes `lodash@99.0.0` to `npm-local` on replica A
   (R-REPO-048); the next `npm view lodash versions` through `npm-all` on B lists `99.0.0`.
@@ -1007,8 +1074,11 @@ confused dependency; such a caller receives 404 instead (H-7 names the remaining
 
 - Each replica keeps all claims and pin rules of all repositories in memory (a prefix trie per
   format, keyed by each pattern's literal part; candidates on the path are confirmed by the
-  R-AUTHZ-005 matcher, so `*` stops at `/`), loaded at start and reloaded on `NOTIFY trove_claims`;
-  a lookup costs no database query.
+  R-AUTHZ-005 matcher, so `*` stops at `/`), loaded at start and updated through the change area
+  `claims` ([architecture.md](architecture.md) R-ARCH-018); a lookup costs no database query. A
+  claim change, including the auto claim of a name's first publish, is in force on every replica
+  within 2 seconds of its commit, with or without Valkey. The auto claim writes the area once per
+  name and repository, never per upload of a later version.
 - On create or update of a virtual repository that has local and remote members, no pin rule, and
   local members without `autoClaim` and without claims, the response carries the warning
   `dependency_confusion_unprotected`.
@@ -1142,7 +1212,10 @@ R-NUGET-015):
 
 1. A stored metadata entry for that path (any variant), fresh or expired and not marked upstream
    gone (R-REPO-029): served.
-2. A stored entry marked upstream gone, or a valid negative entry (R-REPO-028): not served.
+2. A stored entry marked upstream gone: not served. Negative entries (R-REPO-028) are not
+   consulted. They live in Valkey, and a value read from Valkey may make trove refuse, never admit
+   a write ([architecture.md](architecture.md) R-ARCH-030); "not served" admits a `deploy` holder's
+   publish. A path for which R holds only a negative entry goes on to step 3.
 3. R offline (R-REPO-030, R-REPO-031) and nothing stored: not served; no upstream request.
 4. R's circuit open (R-REPO-029) and nothing stored: undetermined; no upstream request.
 5. Otherwise a probe: one `GET` of that path through R's fetch client, with its egress rules, TLS
@@ -1198,7 +1271,11 @@ plays no part):
 - `lead` sets the manual claim `left-pad` (scope `members`) on `npm-local`; `ci-bot` then publishes
   `left-pad@9.0.0` successfully although the stub serves `left-pad`.
 - `ci-bot` publishes `acme-brand-new@1.0.0`, which the stub does not know: it succeeds after exactly
-  one stub request for the name, and no negative entry exists afterwards.
+  one stub request for the name, and no negative entry exists afterwards, neither in the replica's
+  memory nor in Valkey.
+- The stub serves `acme-brand-new-3`, and a negative entry for its package document is written into
+  Valkey by hand with a current creation time. `ci-bot`'s publish of `acme-brand-new-3@1.0.0`
+  answers 403 `shadows_remote_package` after one stub request.
 - `npm-sandbox` (member of no virtual repository): `ci-bot` publishes `react@99.0.0`; it succeeds
   and the stub records no request.
 - The circuit of `npm-remote` is open and nothing is stored for `brand-new-2`: `ci-bot`'s publish
@@ -1235,7 +1312,7 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
 | `outboundProxy` | `{"mode": "default"\|"named"\|"direct", "name": …}` | `{"mode": "default"}` | | RMT-016 | R-REPO-037 |
 | `connectTimeoutMs` | TCP and TLS connection establishment | `10000` | 1000–120000 | RMT-015 | here |
 | `readTimeoutMs` | Longest time without receiving a byte | `15000` | 1000–600000 | RMT-015 | here |
-| `sourceAddress` | Local IP address for upstream connections | `null` (kernel choice) | an address of the pod | RMT-015 | here |
+| `sourceNetwork` | Network prefix from which each replica takes its own local address for upstream connections (Q-REPO-9) | `null` (kernel choice) | an IPv4 or IPv6 CIDR prefix | RMT-015 | here |
 | `cacheFillAction` | `read` or `deploy` | `read` | | IAM-023 | [R-AUTHZ-008](authorization.md) |
 | `cache.storeArtifacts` | `false` = pass-through | `true` | | RMT-017 | R-REPO-044 |
 | `cache.metadataTtlSeconds` | Metadata period | format default (npm: `7200`, NuGet: `300`) | 0–2592000 | RMT-018 | R-REPO-027 |
@@ -1251,15 +1328,28 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
 | `availability.circuitOpenSeconds` | Assumed-offline period, `0` = never | `300` | 0–86400 | RMT-029 | R-REPO-029 |
 | `limits.maxArtifactBytes` | Per-artifact limit, `null` = system default | `null` | | — | R-REPO-040 |
 | `limits.maxMetadataBytes` | Per-document limit, `null` = system default | `null` | | — | R-REPO-040 |
-| `limits.maxConcurrentFetches` | Upstream fetches in flight per replica | `32` | 1–1024 | — | R-REPO-040 |
+| `limits.maxConcurrentFetches` | Upstream fetches of this repository in flight across all replicas, shared out per replica (Q-REPO-8) | `64` | 1–4096 | — | R-REPO-040 |
 
 </details>
 
 - `url` is stored normalized (scheme and host lower case, default port removed). The upstream request
   for a canonical path is derived from it by the format plug-in. A plain `http` URL is accepted with
   the warning `plain_http_upstream`.
-- `sourceAddress` MUST be an address of the pod; otherwise every fetch fails and the circuit opens,
-  which the upstream test reveals.
+- `sourceNetwork` names a prefix, never a single address: replicas are interchangeable, and every
+  pod has its own address ([Kubernetes network model](https://kubernetes.io/docs/concepts/services-networking/):
+  "Each pod in a cluster gets its own unique cluster-wide IP address"), so one stored address could
+  fit one pod at most (Q-REPO-9). Each replica binds the repository's upstream connections to the
+  first of its own interface addresses inside the prefix, enumerated at start and every 60 s.
+  - A replica without such an address answers the repository's fetches with 502
+    `source_network_unavailable`. The failure does not count toward the circuit, which all replicas
+    share (R-REPO-029); it is logged at most once per minute and repository and counted in
+    `trove_remote_source_network_unavailable_total{repo}` (R-REPO-047). There is no fallback to the
+    kernel's choice, which could leave through an interface the upstream's firewall rejects.
+  - A value that is not a CIDR prefix answers 422 `invalid_source_network`. A prefix that holds a
+    single address (`/32`, `/128`) is stored with the warning `source_network_single_address`,
+    because it can fit one pod only.
+  - The upstream test reports the local address the probing replica bound, or
+    `source_network_unavailable`.
 
 Data model (scalar settings live in `repositories.config`; references and secrets are relational):
 
@@ -1286,6 +1376,7 @@ API, besides R-REPO-009 to R-REPO-013:
   "durationMs": 184,
   "tls": { "peerSubject": "CN=registry.npmjs.org", "notAfter": "2027-03-01T00:00:00Z" },
   "outboundProxy": null,
+  "sourceAddress": null,
   "error": null
 }
 ```
@@ -1300,6 +1391,12 @@ Acceptance criteria:
 - The upstream test against `https://registry.npmjs.org/` returns `reachable: true`; against an
   unknown host it returns `reachable: false` with a DNS error and leaves the circuit state alone.
 - `"connectTimeoutMs": 50` returns 422 `out_of_range`.
+- Two replicas each have a secondary interface in `10.99.0.0/24` (`10.99.0.11`, `10.99.0.12`), and
+  the remote has `"sourceNetwork": "10.99.0.0/24"`: the stub records requests from both addresses
+  and from no other. A third replica without such an interface answers 502
+  `source_network_unavailable`, and the circuit stays closed on all three.
+- `"sourceNetwork": "10.99.0.11"` returns 422 `invalid_source_network`; `"10.99.0.11/32"` is stored
+  with the warning `source_network_single_address`.
 
 ### R-REPO-025 · Remote request path
 Priority: **MVP** · Covers: RMT-001, RMT-033
@@ -1314,19 +1411,26 @@ execute these steps in order:
 4. Look up the cache entry (R, path, variant). An entry marked upstream gone, and every entry of a
    package that is gone from R, counts as absent here and in every later step (R-REPO-029; gone
    packages below). An artifact entry, or a metadata entry that is fresh and not invalidated
-   (R-REPO-045), is served: `Cache-Status: trove; hit; ttl=<seconds>`.
+   (R-REPO-045), is served: `Cache-Status: trove; hit; ttl=<seconds>`. A format MAY require a
+   current package document before it serves a cached artifact. npm does: a cached tarball is
+   served only while its package document's entry is unexpired and validated after
+   `system_state.restored_at`; otherwise the request first revalidates the document under these
+   steps (one flight, R-REPO-026) and then applies the format's removal marks to the outcome
+   ([formats/npm.md](formats/npm.md) R-NPM-025, Q-NPM-13; R-REPO-029).
 5. Request through the cache view, or with `Cache-Control: only-if-cached` → R-REPO-032.
 6. R offline, global offline (R-REPO-031), or read-only maintenance mode with `cacheFill: false`
    ([R-OPS-024](operations-and-observability.md)) → serve an existing entry as stale, otherwise 404
    `not_cached_offline`.
 7. R's circuit open (R-REPO-029) → serve an existing entry as stale, otherwise 503
    `upstream_assumed_offline` with `Retry-After`.
-8. A valid negative entry (R-REPO-028) → 404, `Cache-Status: trove; hit; detail=negative`.
+8. A valid negative entry (R-REPO-028; the replica's L1 first, then Valkey) → 404,
+   `Cache-Status: trove; hit; detail=negative`. While Valkey is unavailable, only the L1 answers.
 9. c fails the cache-fill check ([R-AUTHZ-008](authorization.md)) → serve an existing expired entry
    as stale without contacting the upstream, otherwise 403 `populate_not_permitted`
    (R-AUTHZ-008; through a virtual repository the member counts as a miss). No negative entry is
    written.
-10. Concurrency limits (R-REPO-040), then the fetch through the collapsing protocol (R-REPO-026),
+10. The collapsing protocol (R-REPO-026). Only the request that fetches, once it holds the flight
+    or goes on without the cross-replica lock, takes the fetch slots of R-REPO-040; then the fetch,
     classification of the outcome (R-REPO-029), verification (R-REPO-041, R-REPO-042), storage and
     response.
 
@@ -1360,7 +1464,10 @@ execute these steps in order:
   without storing it, under the pass-through rules of R-REPO-044 (verification included); a
   refreshed metadata document is served but not stored, and entries are not updated.
 - Replicas SHOULD keep recently served metadata bytes in a bounded in-memory cache keyed by blob
-  digest, so a fresh hit costs no object-store round trip.
+  digest, so a fresh hit costs no object-store round trip. Which digest a request serves is always
+  read from `remote_cache_entries`; the key is the content address, so this cache can never make
+  one replica answer differently from another (INV-18, R-REPO-049). It is never shared through
+  Valkey ([architecture.md](architecture.md) R-ARCH-030).
 
 Data model:
 
@@ -1406,91 +1513,156 @@ Acceptance criteria:
 - A unit test of the upstream URL builder turns the canonical segment `%2e%2e` into `%252e%252e`
   and `a b` into `a%20b`; no input produces an upstream path that decodes to a `..` segment.
 
-### R-REPO-026 · Collapsing concurrent misses (single-flight and advisory lock)
+### R-REPO-026 · Collapsing concurrent misses (single-flight and Valkey flight lock)
 Priority: **MVP** · Covers: trove-only
 
 Concurrent requests for the same uncached or expired entry MUST cause one upstream fetch per
-cluster, not one per request (INV-11). The protocol:
+cluster, not one per request (INV-11). Since 2026-10-28 the cross-replica part is a lock in Valkey
+behind `cluster.FlightLock` ([architecture.md](architecture.md) R-ARCH-033, Q-ARCH-6), not a
+PostgreSQL advisory lock. The protocol:
 
-1. **Flight key.** (repository id, canonical path, variant). The cross-replica lock is the
-   two-key advisory lock of category `fetch` ([architecture.md](architecture.md) R-ARCH-017,
-   `classid` 2); its lock id (`objid`) is the first 4 bytes of SHA-256 over
-   `repository-id 0x00 path 0x00 variant`, read as a signed big-endian 32-bit integer. A collision
-   only serializes two unrelated fetches.
+1. **Flight key.** (repository id, canonical path, variant). `<f>`, the lowercase hex SHA-256 of
+   `repository id 0x00 path 0x00 variant`, names the flight in Valkey: the lock
+   `trove:<ks>:lock:fetch:v1:<f>` and the outcome channel `trove:<ks>:fill:v1:<f>`
+   ([architecture.md](architecture.md) R-ARCH-030). The full hash leaves no collision case
+   (Q-ARCH-7).
 2. **In-process.** Requests on one replica join one flight
    ([singleflight](https://pkg.go.dev/golang.org/x/sync/singleflight)). The leader runs steps 3 to 6;
    followers wait for its result and then read the stored entry, or receive its error.
-3. **Cross-replica lock.** The proxy takes the fetch lock only through `cluster.FlightLock`
-   ([architecture.md](architecture.md) R-ARCH-017) and never calls the advisory-lock functions
-   itself. In the MVP, `FlightLock` acquires by taking a connection from a dedicated lock pool and
-   calling `pg_try_advisory_lock(2, <lock id>)`, a session-level lock
-   ([PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)).
-   If acquired, the leader re-reads the entry (another replica may have just finished) and serves
-   it if now valid; otherwise it fetches.
-4. **Waiting.** If the lock is held elsewhere, the leader waits through `FlightLock` for a
-   `trove_proxy_fetch` notification carrying the lock id
-   ([NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html), received through the
-   replica's coordination session, R-ARCH-017) and retries the acquire every
-   `proxy.lock_poll_interval_ms`. Polling stays mandatory: a notification can be lost, for example
-   when the holder's replica crashes between its commit and the coalescer's flush (R-ARCH-018).
-   Holding the lock, the leader re-reads the entry: present → serve; absent (the holder failed) →
-   fetch itself. Waiting is bounded by `proxy.fetch_wait_timeout_seconds`, and for expired metadata
-   additionally by the refresh timeout, after which the stale entry is served (R-REPO-027).
-5. **Commit.** The blob is committed through [storage.md](storage.md); the entry upsert runs in
-   one short transaction that issues no `NOTIFY`. `trove_proxy_fetch` is a hot-path channel: the
-   fill-complete notification carrying the lock id is attached to that transaction and handed to
-   the post-commit coalescer of [architecture.md](architecture.md) R-ARCH-018 once it has
-   committed (at most one `NOTIFY` per channel per 50 ms per replica, lock ids batched in the
-   payload; Q-ARCH-8). Delivery after commit is unchanged, so a woken waiter always finds the
-   committed entry. Then `FlightLock` releases the lock and the connection returns to the pool. No
-   database transaction is held open while bytes are transferred.
-6. **Crash safety.** The lock is released when the holder's connection closes: at once when the
-   holder's process dies or its pod is deleted, because the socket closes and PostgreSQL ends the
-   session; on node loss, where no close reaches the server, once the server's TCP keepalive
-   declares the connection dead ([ha-and-helm.md](ha-and-helm.md) R-HA-013, about 2 minutes with
-   the recommended `tcp_keepalives_*` settings). Waiters acquire the lock at their next poll and
-   fetch; until then they are bounded by step 4's timeouts.
+3. **Cross-replica lock.** The leader calls `FlightLock.Acquire` and never talks to Valkey itself.
+   `Acquire` tries once: `SET trove:<ks>:lock:fetch:v1:<f> <token> NX PX 30000`, with the TTL
+   `cluster.flight_lock_ttl` (30 s by default) and a token unique to this acquisition
+   ([architecture.md](architecture.md) R-ARCH-033).
+   If it acquires the flight, it repeats the checks of R-REPO-025 steps 4 to 8, because another
+   replica may have just stored the entry, recorded an upstream 404 as a negative entry or opened
+   the circuit. If one of them decides, the leader answers from it and releases the flight.
+   Otherwise it takes its fetch slots (R-REPO-040) and fetches. While the fetch, verification and
+   commit run, `FlightLock` extends the hold every third of `cluster.flight_lock_ttl` with a
+   compare-and-set on its token ([SET … IFEQ](https://valkey.io/commands/set/)).
+4. **Waiting.** If another replica holds the flight, the leader calls `FlightLock.Wait`: it
+   subscribes to the outcome channel, checks the lock once more, and returns on the outcome, when
+   the lock is gone, or after `proxy.lock_poll_interval_ms`, after which it checks again. Polling
+   stays mandatory, because Pub/Sub delivers at most once
+   ([Pub/Sub](https://valkey.io/topics/pubsub/)). After `Wait` returns, the leader repeats the
+   checks of R-REPO-025 steps 4 to 8: a valid entry is served, a valid negative entry answers 404,
+   an open circuit answers as step 7 says. Only when none of them decides does it call `Acquire`
+   again (the holder failed, or its lock expired). Without the negative-entry check, every waiting
+   replica would ask the upstream once more, one after another, for a path the holder just found
+   missing. With `notFoundTtlSeconds: 0` nothing records the miss, and that is what happens.
+   - Waiting is bounded by `proxy.fetch_wait_timeout_seconds`. When the bound ends without a valid
+     entry, the leader fetches without the cross-replica lock instead of failing, counted in
+     `trove_flight_lock_bypass_total{reason="wait_timeout"}`.
+   - For expired metadata, the refresh timeout of R-REPO-027 ends the client's wait earlier: the
+     client is served the stale entry. The flight keeps waiting, detached like a fetch, until
+     `proxy.fetch_wait_timeout_seconds`, and then refreshes without the lock (`wait_timeout`). A
+     slow refresh that another replica holds is therefore not duplicated within that bound, and a
+     held lock cannot keep a document stale beyond it.
+   - A lock that is held too long, or written by someone else ([architecture.md](architecture.md)
+     H-49), can therefore delay a fetch or a refresh by at most `proxy.fetch_wait_timeout_seconds`,
+     never fail a request.
+5. **Commit and release.** The blob is committed through [storage.md](storage.md); the entry upsert
+   runs in one short transaction, the cache-fill transaction, which also writes the populate audit
+   event (below). An upstream 404 or 410 is recorded as a negative entry
+   (R-REPO-028) before the release. After the entry has committed, after the negative entry has
+   been written, or after the fetch has failed, `FlightHold.Release` deletes the lock only if it
+   still carries this hold's token ([DELIFEQ](https://valkey.io/commands/delifeq/)) and publishes
+   `stored` or `failed` on the outcome channel. A woken waiter therefore finds the committed entry
+   or the negative entry through step 4's checks. The leader's own client receives the withheld
+   tail (R-REPO-041) only after the entry has committed. No PostgreSQL connection is held and no
+   transaction is open while acquiring, waiting, transferring or extending
+   ([architecture.md](architecture.md) R-ARCH-019).
+6. **Holder loss.** A holder that shuts down releases with `failed` (shutdown bullet below). A
+   holder that dies without releasing (process killed, node lost) frees the flight when its key
+   expires, after at most `cluster.flight_lock_ttl`; waiters acquire it at their next check and
+   fetch. Neither case depends on a database session or on TCP keepalive.
 
-- The lock is an optimization, not a correctness condition: blob commits are idempotent by content
-  address, and the entry upsert keeps the newer `fetched_at` for metadata and refuses a different
-  digest for an artifact (R-REPO-041). If the lock pool stays exhausted for 100 ms, the leader MUST
-  fetch without the cross-replica lock (counted in a metric) rather than queue.
-- The leader's fetch runs detached from its initiating client: a client that disconnects does not
-  abort a fetch others wait for. The leader's own client MAY receive the body while it is fetched,
-  under the withheld-tail rule of R-REPO-041; followers and waiters are served from the stored
-  entry.
+- **Valkey unavailable.** `Acquire` and `Wait` return at once (the replica's Valkey breaker,
+  [architecture.md](architecture.md) R-ARCH-031), and the leader fetches under its in-process
+  single-flight only (`reason="valkey_unavailable"`): at most one upstream fetch per replica and
+  flight. No request fails because Valkey failed (INV-12).
+- **The lock is an optimization, not a correctness condition** (INV-11). A lock lost in a Sentinel
+  failover, a bypass and an unavailable Valkey all lead to concurrent fetches of one entry, and
+  these are correct: blob commits are idempotent by content address, and the entry upsert keeps the
+  newer `fetched_at` for metadata and refuses a different digest for an artifact (R-REPO-041).
+  - Such duplicates are the normal degraded mode now, not a rare race, so the losing side is
+    specified. A leader whose artifact upsert is refused because another flight committed a
+    different digest MUST abort its own client before the withheld tail, as on an integrity
+    failure (R-REPO-041). It MUST serve its followers and waiters from the committed entry and
+    write the security event `proxy.upstream_digest_changed`.
+  - No client completes a download whose bytes differ from the stored artifact.
+- **Detached fetch.** The leader's fetch runs detached from its initiating client: a client that
+  disconnects does not abort a fetch others wait for. The leader's own client MAY receive the body
+  while it is fetched, under the withheld-tail rule of R-REPO-041; followers and waiters are served
+  from the stored entry.
+- **Shutdown and drain** (Q-REPO-7). From `SIGTERM` on, a replica leads no new cross-replica
+  flight.
+  - A request on a draining replica joins a flight that another replica holds, as a waiter (steps 4
+    and 5), but never calls `Acquire`. When no other replica holds the flight, it fetches under its
+    in-process single-flight only (`reason="draining"`).
+  - Fetches it already leads keep running detached and commit as usual. Those still running 5 s
+    before the shutdown deadline are cancelled and released with `failed`
+    ([architecture.md](architecture.md) R-ARCH-024 step 4), so waiters on other replicas take over
+    at once.
+  - A cancelled fetch leaves no entry: its spool file is the pod's own scratch space (INV-13), and
+    no other replica continues a partial body.
+- **Populate audit** ([authorization.md](authorization.md) R-AUTHZ-029). Only the request that
+  fetches from the upstream writes the transactional populate event (`authz.decision`, allowed
+  populate), in its cache-fill transaction (step 5); if the event cannot be written, the fill
+  fails. A request that joins a flight, in-process (step 2) or as a waiter through the Valkey
+  flight lock (step 4), fetched nothing and writes none; its read is audited as a read. A request
+  that goes on without the cross-replica lock (`valkey_unavailable`, `wait_timeout`, `draining`)
+  fetches and writes one. The number of populate events therefore follows the number of upstream
+  fetches, not the number of replicas or concurrent requesters.
 - Every response served from a collapsed flight carries `collapsed` in `Cache-Status`.
-- The lock pool adds `proxy.lock_pool_size` connections plus one listener connection per replica to
-  the database connection budget ([ha-and-helm.md](ha-and-helm.md)).
+- The protocol opens no PostgreSQL connection of its own, so it adds nothing to the connection
+  budget of [ha-and-helm.md](ha-and-helm.md) R-HA-016.
 
 Configuration:
 
 ```yaml
 proxy:
-  lock_pool_size: 16             # default (proposed), connections per replica
-  lock_poll_interval_ms: 1000    # default (proposed)
+  lock_poll_interval_ms: 1000      # default (proposed)
   fetch_wait_timeout_seconds: 120  # default (proposed)
+# The lock's TTL is cluster.flight_lock_ttl (30 s, architecture.md R-ARCH-033).
 ```
 
 Acceptance criteria (two replicas, counting stub upstream that delays every response by 2 s):
 
 - 100 concurrent requests for the same uncached tarball, 50 per replica: the stub records exactly
-  one `GET`; all 100 responses are 200 with identical bytes; at least 99 carry `collapsed` or `hit`.
-- The stub streams a 200 MiB artifact slowly and the leader's pod is killed mid-transfer: the other
-  replica's waiter acquires the lock within the poll interval plus connection teardown, fetches, and
-  completes every waiting request; no entry for a partial body exists at any time.
-- With `proxy.lock_pool_size: 0`, all requests still succeed and the stub records at most one `GET` per
-  replica.
-- With the notification coalescer disabled in a test build, the 100 concurrent requests above still
-  cause exactly one stub `GET`, and the waiters complete within the stub's delay plus one poll
+  one `GET`; all 100 responses are 200 with identical bytes; at least 99 carry `collapsed` or `hit`;
+  exactly one allowed populate event exists for the tarball's path. Meanwhile `pg_locks` shows no
+  advisory lock of category 2 (`fetch`, retired, [architecture.md](architecture.md) R-ARCH-017) and
+  none held by a connection of class `main` (R-ARCH-019), and `pg_stat_activity` shows no trove
+  connection `idle in transaction`.
+- The stub streams a 200 MiB artifact slowly, and the leader's pod is killed with `SIGKILL`
+  mid-transfer. A waiter on the other replica acquires the flight within `cluster.flight_lock_ttl`
+  plus `proxy.lock_poll_interval_ms`, fetches, and completes every waiting request. No entry for a
+  partial body exists at any time.
+- The same with `kubectl delete pod` and a transfer that outlasts the leader's shutdown deadline:
+  the waiter acquires within `proxy.lock_poll_interval_ms` of the leader's `failed`, and the
+  leader's own client, retrying through the Service, is served by the other replica.
+- A request reaches a replica during its drain delay for a path that no flight holds: no lock key
+  of that replica appears in Valkey (`valkey-cli GET trove:<ks>:lock:fetch:v1:<f>`), the request is
+  served, and `trove_flight_lock_bypass_total{reason="draining"}` increments.
+- With Valkey stopped, all 100 requests of the first criterion succeed, and the stub records at
+  most one `GET` per replica.
+- With every message on the outcome channels dropped by a fault proxy, the first criterion still
+  records exactly one `GET`, and the waiters complete within the stub's delay plus one poll
   interval.
-- The leader's node is cut off from the network mid-transfer, without closing its connections:
-  `pg_locks` no longer shows the fetch lock after at most `tcp_keepalives_idle +
-  tcp_keepalives_interval × tcp_keepalives_count` (120 s with R-HA-013's recommended values), and
-  a later request for the artifact is fetched and served by the other replica.
-- A test over `internal/proxy` fails on any direct `pg_advisory*` or `pg_try_advisory*` call; the
-  proxy reaches the fetch lock only through `cluster.FlightLock` (the `NOTIFY` rule has its own
-  test in R-ARCH-018).
+- 100 concurrent requests, 50 per replica, for a path the stub answers with 404: the stub records
+  exactly one `GET`, and all 100 responses are 404.
+- A lock key written by hand with a foreign token, and `proxy.fetch_wait_timeout_seconds: 5`: a
+  request for that path is served after about 5 s, and
+  `trove_flight_lock_bypass_total{reason="wait_timeout"}` increments.
+- The same foreign lock key, written without expiry, on an expired metadata document, with
+  `metadataRefreshTimeoutSeconds: 2` and `proxy.fetch_wait_timeout_seconds: 5`: the request is
+  served the stale document after about 2 s, the stub records one conditional request about 5 s
+  after the request arrived, and the next request is a fresh hit.
+- With Valkey stopped, the stub serves different bytes, and no announced digest, to two concurrent
+  fetches of one artifact on two replicas: exactly one cache entry exists, every completed client
+  response matches it, and a `proxy.upstream_digest_changed` event exists.
+- A test over `internal/proxy` fails on an import of the Valkey client and on any `pg_advisory*` or
+  `pg_try_advisory*` call; the proxy reaches the lock only through `cluster.FlightLock`.
 
 ### R-REPO-027 · Metadata freshness and refresh timeout
 Priority: **MVP** · Covers: RMT-018, RMT-019
@@ -1504,15 +1676,22 @@ Priority: **MVP** · Covers: RMT-018, RMT-019
   header exchange, collapsed across replicas (R-REPO-026) and bounded by the fetch limits
   (R-REPO-040), a period of `0` MUST be accepted; there is no minimum, unlike the catalog's 30
   seconds (Q-REPO-2).
-- An entry validated after a request arrived counts as fresh for that request, whatever the
-  period. Collapsed followers and cross-replica waiters that re-read the entry (R-REPO-026 steps 2
-  to 4) are therefore served by the flight they waited for; without this rule a period of `0` would
-  make every waiter fetch again after the holder released the lock.
+- An entry validated after a request first looked it up counts as fresh for that request, whatever
+  the period: its `validated_at` differs from the value the request read in R-REPO-025 step 4, or
+  the entry was absent then. Both values come from PostgreSQL, so no replica clock takes part, and
+  a waiter on a replica whose clock runs ahead is served like any other. Collapsed followers and
+  cross-replica waiters that re-read the entry (R-REPO-026 steps 2 to 4) are therefore served by
+  the flight they waited for; without this rule a period of `0` would make every waiter fetch
+  again after the holder released the lock.
 - If a refresh has not completed within `metadataRefreshTimeoutSeconds`, the stale entry MUST be
   served (`Cache-Status: trove; fwd=stale; detail=served-stale`); the refresh continues in the
   background, bounded by the read timeout, and updates the entry when it completes. This is the
   stale-if-error behavior of [RFC 5861](https://www.rfc-editor.org/rfc/rfc5861) applied to slow
-  upstreams.
+  upstreams. The background refresh is the flight's fetch and keeps its lock (R-REPO-026). No later
+  request depends on it: one that arrives before it completes finds the entry still expired and
+  joins the flight or starts a new one, on whichever replica it reaches. On shutdown it is
+  cancelled like any other fetch ([architecture.md](architecture.md) R-ARCH-024 step 4) and stores
+  nothing.
 - Format defaults: npm 7200 s; NuGet 300 s for the service index, version lists, registrations
   and vulnerability data ([formats/nuget.md](formats/nuget.md) Q-NUGET-2). The not-found default
   stays 1800 s for both formats (R-REPO-028).
@@ -1535,35 +1714,67 @@ Priority: **MVP** · Covers: RMT-020
   that period requests answer 404 without contacting the upstream. `0` disables negative caching. No
   other status is cached negatively (R-REPO-029). Only requests that passed the cache-fill check
   reach the upstream, so only they create entries.
-- Negative entries are ignored once an invalidation covering their path is newer (R-REPO-045) and are
-  removed by an invalidation with scope `negative` or `all`, by a change of the upstream identity
-  (R-REPO-011) and by expiry.
+- **Where entries live** ([architecture.md](architecture.md) Q-ARCH-16). A negative entry is shared
+  ephemeral state, not a record (INV-3).
+  - It is the Valkey key `trove:<ks>:neg:v1:<repo id>:<f>`, with `<f>` as in R-REPO-026, and the
+    value `{"s": <404 or 410>, "c": <time the upstream request was sent, Unix ms>}`
+    ([architecture.md](architecture.md) R-ARCH-030).
+  - It is written with `SET … PX <notFoundTtlSeconds × 1000>` after the upstream has answered,
+    outside every database transaction, and before the flight's holder releases the flight, so
+    waiters on other replicas find it (R-REPO-026 steps 4 and 5).
+  - Each replica keeps a bounded L1 copy of the entries it wrote or read
+    (`proxy.negative_l1_entries`, least recently used out). A lookup asks the L1 first, then
+    Valkey, and copies a Valkey hit into the L1.
+  - Until 2026-10-28 negative entries were rows of the PostgreSQL table `remote_negative_entries`,
+    with a cleanup job. Both are gone: the entries are small, written on the hot path and disposable,
+    which is the state INV-3 assigns to Valkey.
+- **Readers validate.** An entry counts only while all of the following hold:
+  - `c` lies between now minus the repository's current `notFoundTtlSeconds` and now plus 5 s;
+  - no invalidation of scope `negative` or `all` that covers its path (R-REPO-045) was created
+    later than `c` minus 5 s.
+
+  A malformed entry is ignored and deleted, and the key's own expiry is not trusted. The 5 s are the
+  clock allowance of R-ARCH-030, applied in the invalidation's favour: an entry written in the
+  seconds after an invalidation costs one more upstream request, while an entry from before it
+  never survives it as long as replica and database clocks differ by less than 5 s. Because `c` is
+  the time the request was sent, an upstream answer that crossed an invalidation does not survive
+  it either.
+- **Refusal only.** A negative entry can make trove answer 404 and nothing else. Nothing on this page
+  admits a write, grants access or serves content because of one (R-ARCH-030). In particular, the
+  shadowing check does not read negative entries (R-REPO-048).
+- **Valkey unavailable**: negative caching continues per replica in the L1 alone, so each replica
+  asks the upstream at most once per path and period ([ha-and-helm.md](ha-and-helm.md) R-HA-057).
+  **Valkey lost its data**: one more upstream request per path. Neither case changes an answer that
+  the upstream would give.
+- Negative entries are never deleted to invalidate them: invalidations take effect in the readers
+  (R-REPO-045), and a change of the upstream identity is such an invalidation (R-REPO-011). The
+  entries of a deleted repository expire on their own; repository ids come from an identity column
+  and are never handed out again (R-REPO-013).
 - Requests refused by patterns or claims never reach the upstream and create no negative entry.
-- Expired rows are deleted by a periodic singleton job (advisory-lock lease, INV-12). The table MAY
-  be `UNLOGGED`: its content is disposable, and losing it after a crash or failover only costs
-  upstream requests.
+- Negative entries are not part of a backup. A restore starts without any, because it moves the
+  installation to a new keyspace ([backup-and-restore.md](backup-and-restore.md) R-BAK-022).
 
-Data model:
+Configuration:
 
-```sql
-CREATE TABLE remote_negative_entries (
-  repo_id         bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-  path            text COLLATE "C" NOT NULL,
-  variant         text NOT NULL DEFAULT '',
-  upstream_status smallint NOT NULL CHECK (upstream_status IN (404, 410)),
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  expires_at      timestamptz NOT NULL,
-  PRIMARY KEY (repo_id, path, variant)
-);
-CREATE INDEX remote_negative_entries_expiry ON remote_negative_entries (expires_at);
+```yaml
+proxy:
+  negative_l1_entries: 100000  # default (proposed), per replica; about 10 MiB
 ```
 
 Acceptance criteria:
 
 - `npm view does-not-exist-4711` twice through `npm-remote`: one upstream request; the second
-  response carries `Cache-Status: trove; hit; detail=negative`.
+  response carries `Cache-Status: trove; hit; detail=negative`. With two replicas, the second request
+  on the other replica causes no upstream request either.
 - The stub then publishes the package; within the period it stays invisible; after an invalidation
-  with scope `negative` (R-REPO-045) the next request reaches the stub and succeeds.
+  with scope `negative` (R-REPO-045), the next request on either replica reaches the stub and
+  succeeds.
+- With Valkey stopped, ten sequential requests for the missing path, five per replica, cause at most
+  two upstream requests.
+- `valkey-cli FLUSHALL` after the first request: the next request reaches the stub once and answers
+  404.
+- A negative entry written into Valkey with a creation time older than an invalidation of its path
+  is ignored, and the request reaches the upstream.
 
 ### R-REPO-029 · Upstream failure handling and the assumed-offline circuit
 Priority: **MVP** · Covers: RMT-029, RMT-033
@@ -1602,22 +1813,48 @@ Outcome classification:
   package the upstream withdrew legitimately. A 2xx for the package document clears the mark and
   serves everything again.
 - Each replica MUST hold the gone packages of every remote repository in memory (they are few),
-  loaded at start from the marked package-document entries and reloaded for one repository on a
-  `trove_upstream_state` notification carrying that repository's id, sent after the marking or
-  clearing commit ([architecture.md](architecture.md) R-ARCH-018); a reconnecting listener reloads
-  all of them. Serving a cached artifact therefore costs no extra query.
+  loaded at start from the marked package-document entries. The marking or clearing transaction
+  calls `cluster.Notify("upstream_state", …)` with the repository's id
+  ([architecture.md](architecture.md) R-ARCH-018), and every replica then reloads that repository's
+  gone packages; a replica whose change log has a gap reloads all of them. Serving a cached artifact
+  therefore costs no extra query, and a mark reaches every replica within 2 s, with or without
+  Valkey. `upstream_state` is a change area, not a signal area ([architecture.md](architecture.md)
+  R-ARCH-018): gone marks and circuit transitions are rare, and only a change area keeps the 2 s
+  bound while Valkey is unavailable.
 - A format that tracks removal per version replaces both rules with its own: npm hides removed
   versions and their tarballs, and gone packages, unless `npm.serveRemovedVersions` is on
-  ([formats/npm.md](formats/npm.md), R-NPM-026). Formats that do not track versions leave a
-  version withdrawn from a package that still exists reachable by exact path (H-5).
-- **Circuit.** Each remote repository has a row in `remote_upstream_state`. A counted failure
-  increments `consecutive_failures` atomically (`UPDATE … RETURNING`); at `failureThreshold`,
-  `open_until` is set to now plus `circuitOpenSeconds` and `NOTIFY trove_upstream_state` informs
-  all replicas, which hold the state in memory and reload it when their listener reconnects. While
-  open, no request reaches the upstream (R-REPO-025 step 7). After `open_until`, the first request on
-  each replica probes; success closes the circuit for all replicas, failure reopens it. A success
-  writes only when the counter is non-zero, so healthy traffic causes no writes.
-  `circuitOpenSeconds: 0` disables the circuit.
+  ([formats/npm.md](formats/npm.md), R-NPM-026).
+  - npm reads the core's `upstream_gone_at` of the package document's cache entry in the lookup
+    that serves each request, and keeps no copy of it: neither the in-memory gone packages above
+    nor a mark of its own.
+  - npm serves a cached artifact only after its package document is current: unexpired, and
+    validated after `system_state.restored_at`; otherwise the request revalidates the document
+    first, in one flight ([formats/npm.md](formats/npm.md) R-NPM-025, Q-NPM-13; R-REPO-025 step 4).
+    A lockfile install, which never requests documents, therefore sees a takedown within one
+    metadata period, and while the upstream is reachable a restore cannot make a version servable
+    again that the upstream withdrew after the snapshot.
+
+  Formats that do not track versions leave a version withdrawn from a package that still exists
+  reachable by exact path (H-5).
+- **Circuit.** Each remote repository has a row in `remote_upstream_state`, in PostgreSQL, because
+  every replica must take the same decision ([architecture.md](architecture.md) R-ARCH-030).
+  - A counted failure increments `consecutive_failures` atomically (`UPDATE … RETURNING`), and only
+    while the circuit is closed (`WHERE open_until IS NULL OR open_until <= now()`). At
+    `failureThreshold`, `open_until` is set to now plus `circuitOpenSeconds`.
+  - The writing replica takes the state from `RETURNING` at once. An `UPDATE` that returns no row
+    found the circuit already open: that replica reads `open_until` and holds the open state at
+    once, without waiting for the change log. The opening and the closing transaction call
+    `cluster.Notify("upstream_state", …)` with the repository's id, so every replica holds the
+    state in memory within 2 s, with or without Valkey, and reloads all of it after a gap in its
+    change log. A burst of failures on many replicas therefore stops writing as soon as each replica has
+    seen the opening, at the latest after its first statement that matches no row. The number of
+    counted failures in flight at once is bounded by the fetch budget of R-REPO-040 in any case.
+  - While open, no request reaches the upstream (R-REPO-025 step 7). After `open_until`, the first
+    request on each replica probes, and the replica's other requests answer as while open until
+    that probe ends; success closes the circuit for all replicas, failure reopens it. With n
+    replicas, at most n probes run per period.
+  - A success writes only when the counter is non-zero, so healthy traffic causes no writes.
+    `circuitOpenSeconds: 0` disables the circuit.
 - Any success resets the counter, so a flaky link cannot keep a repository offline. The catalog's ten
   background retries with growing pauses are replaced by this threshold and probe.
 
@@ -1675,9 +1912,10 @@ Priority: **P1** · Covers: RMT-031
   own mode. It is effective when either the configuration key `proxy.global_offline` is true or the
   runtime switch is on; the configuration key cannot be overridden through the API.
 - The runtime switch is a database-backed setting with a revision ([api-and-ui.md](api-and-ui.md)
-  R-API-012), propagated with `NOTIFY` and effective on all replicas within 2 s. It is the kill
-  switch for an incident such as a compromised upstream, which is why it does not wait for a
-  configuration rollout.
+  R-API-012). The changing transaction calls `cluster.Notify("upstream_state", …)`
+  ([architecture.md](architecture.md) R-ARCH-018), so the switch is effective on all replicas
+  within 2 s, with or without Valkey. It is the kill switch for an incident such as a compromised upstream, which is
+  why it does not wait for a configuration rollout, and why its bound must not depend on Valkey.
 - `GET` returns `ETag: "<revision>"`, and `PUT` requires `If-Match` (R-API-012, Q-API-2): 428
   `precondition_required` without it, 412 `precondition_failed` when stale. The guard matters most
   when the switch is turned off: an administrator working from a view loaded before a second
@@ -1690,6 +1928,24 @@ Priority: **P1** · Covers: RMT-031
 | `GET /api/v1/system/proxy-offline` | — | `{"enabled": false, "fromConfiguration": false, "reason": "", "changedAt": …, "changedBy": …}`, `ETag: "<revision>"` | `settings:read` |
 | `PUT /api/v1/system/proxy-offline` | `{"enabled": true, "reason": "upstream incident 2026-10-28"}`, `If-Match` required | 200 with the new `ETag`; 409 `offline_by_configuration`; 412 `precondition_failed`; 428 `precondition_required`; audit `proxy.global_offline_changed` | `settings:write` |
 
+Data model (one row; it arrives with this requirement):
+
+```sql
+CREATE TABLE proxy_offline_switch (
+  singleton  boolean     PRIMARY KEY DEFAULT true CHECK (singleton),
+  enabled    boolean     NOT NULL DEFAULT false,
+  reason     text        NOT NULL DEFAULT '',
+  revision   bigint      NOT NULL DEFAULT 1,      -- ETag (R-API-012); revision column (R-BAK-022)
+  updated_at timestamptz NOT NULL DEFAULT now(),  -- changedAt
+  updated_by uuid                                 -- changedBy
+);
+```
+
+`revision` MUST be registered with `meta.RegisterRevisionColumn`, so a restore raises it above
+every `ETag` the old installation can have issued ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-022). Otherwise a `PUT` carrying an `ETag` read after the snapshot could pass `If-Match`
+against the restored switch, which may hold a different state, and turn it off unnoticed.
+
 Configuration:
 
 ```yaml
@@ -1700,8 +1956,8 @@ proxy:
 Acceptance criteria:
 
 - `curl -X PUT -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -H 'If-Match: *' -d '{"enabled":true,"reason":"upstream incident 2026-10-28"}' https://trove.example.com/api/v1/system/proxy-offline`:
-  within 2 s no replica sends upstream requests, cached installs still succeed, and `GET` reports
-  `enabled: true` with the reason and a new `ETag`.
+  within 2 s no replica sends upstream requests, also with Valkey stopped; cached installs still
+  succeed, and `GET` reports `enabled: true` with the reason and a new `ETag`.
 - A `PUT` with `enabled: false` and the `ETag` read before that change answers 412 and the switch
   stays on; the same `PUT` without `If-Match` answers 428.
 - With `proxy.global_offline: true` in the configuration, a `PUT` with `enabled: false` and the
@@ -2057,10 +2313,27 @@ Priority: **MVP** · Covers: trove-only
   aborting when the limit is crossed. Nothing is stored; the client gets 502
   `upstream_item_too_large`; nothing is negatively cached, so raising the limit takes effect at once.
   The repository value applies when set, else the system value.
-- At most `limits.maxConcurrentFetches` upstream fetches per repository and
-  `proxy.max_concurrent_fetches` per replica are in flight. Further fetches wait up to
-  `proxy.queue_timeout_seconds`, then answer 503 with `Retry-After: 5`. Collapsed requests
-  (R-REPO-026) take no slot. This bounds the burst a large invalidation can send to the upstream.
+- **Fetch slots.** Two limits apply to every upstream fetch, shadowing-check probes included
+  (R-REPO-048):
+  - `proxy.max_concurrent_fetches` protects the replica itself and counts per replica.
+  - `limits.maxConcurrentFetches` protects the upstream. It is a budget for the whole installation
+    (Q-REPO-8), divided among the replicas without coordination between them. Each replica allows
+    `ceil(maxConcurrentFetches ÷ n)` fetches of the repository at a time. n is the number of live
+    replicas that serve client traffic (`web`, or `all` in the local profile) in the replica registry
+    ([operations-and-observability.md](operations-and-observability.md) R-OPS-003), at least 1,
+    refreshed with the registry heartbeat; it is the count the rate-limit fallback of
+    [architecture.md](architecture.md) R-ARCH-034 uses.
+  - The cluster-wide total therefore stays within `maxConcurrentFetches + n − 1` whatever the
+    replica count, once every replica has read the current n, which after a scale event takes one
+    heartbeat. A budget smaller than n admits one fetch per replica. Valkey plays no part, so the
+    bound holds while Valkey is unavailable.
+- A slot is taken by the request that fetches, after it holds the flight or has gone on without
+  the cross-replica lock (R-REPO-026 step 3), and returned when its fetch ends. Requests that fetch
+  outside a flight, shadowing-check probes and pass-through artifact requests (R-REPO-044), take
+  theirs directly. In-process followers and cross-replica waiters take none, so a replica's share
+  is never spent on waiting for another replica's transfer. A fetch that finds no free slot waits up to
+  `proxy.queue_timeout_seconds`, then answers 503 with `Retry-After: 5` and releases its flight with
+  `failed`. This bounds the burst a large invalidation can send to the upstream.
 - Spool admission and its failure answer are those of [R-STOR-004](storage.md).
 
 Configuration:
@@ -2077,8 +2350,13 @@ Acceptance criteria:
 
 - With `limits.maxArtifactBytes: 1048576`, a 2 MiB tarball returns 502 `upstream_item_too_large` and
   leaves no item; after the limit is raised, the same request succeeds at once.
-- With `limits.maxConcurrentFetches: 2` and a slow stub, 10 concurrent requests for distinct uncached
-  tarballs keep at most 2 upstream connections open per replica.
+- With `limits.maxConcurrentFetches: 4` on two replicas and a slow stub, 20 concurrent requests for
+  distinct uncached tarballs, 10 per replica, keep at most 4 upstream connections open in total and
+  at most 2 per replica. After a third replica has registered, the same load keeps at most 6 open
+  (`ceil(4 ÷ 3)` = 2 per replica).
+- With `limits.maxConcurrentFetches: 4` on two replicas, replica A leads two slow fetches. Replica B
+  receives requests for the same two tarballs and for two other uncached tarballs: B fetches the
+  other two at once, without a queue wait, because waiting for A's flights takes no slot.
 
 ### R-REPO-041 · Integrity verification against upstream digests
 Priority: **MVP** · Covers: RMT-022
@@ -2098,7 +2376,9 @@ Priority: **MVP** · Covers: RMT-022
 - A format page MAY make its rule stricter than the policy and say so (npm always verifies,
   R-NPM-026). Digests that are part of a protocol's addressing are always verified.
 - **Withheld tail.** The leader MAY stream the body to its own client while fetching, but MUST withhold
-  the final 64 KiB until verification has passed. On a mismatch it MUST abort the client connection
+  the final 64 KiB until verification has passed and, when the artifact is stored, until its entry
+  has committed: a duplicate flight on another replica may have committed different bytes first,
+  and the upsert then refuses this one (R-REPO-026). On a mismatch it MUST abort the client connection
   without completing the message (HTTP/1.1: close before the announced length or the final chunk;
   HTTP/2: reset the stream), so no client receives a complete response with unverified content
   ([RFC 9112, section 8](https://www.rfc-editor.org/rfc/rfc9112#section-8)). Nothing is stored;
@@ -2231,17 +2511,38 @@ because RMT-026 is. This requirement specifies its semantics and mechanism.
   segments: `@acme` covers `@acme/util` but not `@acmecorp/util`.
 - **Mechanism.** An invalidation is a row (repository, prefix, scope, time). A metadata entry is
   invalid when an invalidation of its repository with a covering prefix and a matching scope is newer
-  than its `validated_at` (for negative entries: than their `created_at`). Each replica keeps the
-  invalidations in memory, loaded at start and updated through `NOTIFY trove_cache_invalidation`, so
-  the effect is immediate on all replicas. A background job later folds each invalidation into the
-  entries in batches (setting `expires_at` to the invalidation time, deleting covered negative
-  entries) and then deletes the row. Invalidating a million entries is therefore one insert, not a
-  long `UPDATE`. The `invalidated` count is the number of covered entries at the time of the call.
+  than its `validated_at`. A negative entry is invalid under the rule of R-REPO-028: its time is its
+  creation time `c`, compared with a 5 s allowance in the invalidation's favour.
+  - Each replica keeps the invalidations in memory, loaded at start. The inserting transaction
+    calls `cluster.Notify("cache_invalidation", …)` with the repository id
+    ([architecture.md](architecture.md) R-ARCH-018), so an invalidation is in force on every
+    replica within milliseconds with Valkey and within `cluster.epoch_poll_interval` without.
+    Until 2026-10-28 this was `NOTIFY trove_cache_invalidation`; trove issues no `NOTIFY` any
+    more ([architecture.md](architecture.md) Q-ARCH-15).
+  - A background job on the `worker` role later folds each invalidation into the metadata entries
+    validated before it, in batches, setting `expires_at` to the invalidation time. An entry
+    refreshed after the invalidation keeps its own expiry. Invalidating a million entries is
+    therefore one insert, not a long `UPDATE`.
+  - Negative entries live in Valkey and are never deleted to invalidate them. Readers apply the
+    invalidation instead, so a row of scope `negative` or `all` MUST stay until no negative entry it
+    covers can still count: 86,405 s after its creation, the largest `notFoundTtlSeconds` plus the
+    clock allowance. A row of scope `metadata` is deleted once it is folded.
+  - The job deletes a row of scope `negative` or `all` once it is folded and that period has
+    passed. Its deletions call `cluster.Notify("cache_invalidation", …)` with the repository id
+    too, so every replica drops deleted rows from memory. The job deletes no negative entry: they
+    are in Valkey and expire on their own (R-REPO-028). A replica never drops a row the database still
+    holds: an `all` row whose fold is late would otherwise let unfolded metadata entries count as
+    fresh again. The in-memory set therefore stays bounded by the rows in PostgreSQL, however often
+    invalidations are made.
+  - The `invalidated` count is the number of covered metadata entries at the time of the call;
+    negative entries in Valkey are not counted, because counting them would need a scan of the
+    keyspace.
 - Each entry is refreshed on its next request under R-REPO-027. A failed refresh serves the stale
   copy, which can show an old package list; the UI therefore shows the circuit state next to the
   result and tells the operator to verify the refresh.
-- On a virtual repository, the merged entries under the prefix are dropped (R-REPO-020); on a local
-  repository the call answers 400.
+- On a virtual repository, the merged entries under the prefix are dropped (R-REPO-020), on every
+  replica through `cluster.Notify("cache_invalidation", …)` with the virtual repository's id and
+  the prefix, as for a reindex (R-REPO-016); on a local repository the call answers 400.
 
 Data model:
 
@@ -2261,7 +2562,11 @@ Acceptance criteria:
 
 - With 1,000,000 cached metadata entries, an invalidation with an empty path returns within one second,
   and the next `npm view` of any cached package causes a conditional upstream request on every
-  replica.
+  replica. With Valkey stopped, the same holds for requests that start `cluster.epoch_poll_interval`
+  plus 1 s after the call returned.
+- With `notFoundTtlSeconds: 86400`, a negative entry for `@acme/late` exists, and `@acme` is
+  invalidated with scope `negative`. After the background job has run and a test clock has moved one
+  hour ahead, the entry still does not count, and the next request reaches the upstream.
 - Invalidating `@acme` refreshes `@acme/util` on its next request but not `@acmecorp/util`.
 - With the stub down, a request after invalidation returns the stale document with
   `detail=served-stale`.
@@ -2279,7 +2584,8 @@ Priority: **P1** · Covers: RMT-021
 - The same job MUST remove metadata entries whose `last_used_at` is older than the period. Replicas
   record metadata use in memory and write `last_used_at` in batches at most once per minute, and only
   when the stored value is more than one hour older, so serving documents causes no per-request
-  writes.
+  writes. No request reads that buffer; it is flushed at shutdown, and a crash loses at most one
+  batch, which the entry's next use records again (R-REPO-049).
 - To keep an item permanently, copy it to a local repository.
 
 Acceptance criteria:
@@ -2287,6 +2593,92 @@ Acceptance criteria:
 - With `unusedRetentionHours: 1`, a tarball last downloaded two hours ago through `npm-all` is
   removed by a cleanup run and fetched from the upstream again on the next install; a tarball
   installed ten minutes ago stays.
+
+## Behavior across replicas
+
+### R-REPO-049 · Repository and proxy state on n replicas, without Valkey and during a drain
+Priority: **MVP** · Covers: trove-only
+
+The Kubernetes Service hands every request to a random `web` replica, without session affinity
+(INV-12; kube-proxy "select[s] a backend Pod at random" by default,
+[virtual IPs](https://kubernetes.io/docs/reference/networking/virtual-ips/)). Valkey may be
+unavailable or lose its data at any time (INV-3), and any replica may be drained (INV-12). This
+requirement lists every piece of state that this page keeps outside PostgreSQL and S3 and fixes how
+it behaves in each of these cases. A new kind needs a row here, and in
+[architecture.md](architecture.md) R-ARCH-032, before it ships.
+
+| State | Where | Across replicas | Valkey unavailable | Valkey lost its data | Drain or crash of the replica |
+|---|---|---|---|---|---|
+| Repository snapshot, claims and pin rules, gone packages, circuit state, global offline switch, cache invalidations (R-REPO-008 to R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045) | In-process copies of PostgreSQL rows | Change areas `repo_config`, `claims`, `upstream_state`, `cache_invalidation` of R-ARCH-018: within 2 s of the commit | Within `cluster.epoch_poll_interval` | As unavailable | Nothing to hand over |
+| Cache entries, gone marks, URL mappings, stale copies (R-REPO-025, R-REPO-029, R-REPO-043) | PostgreSQL and S3 | One copy, read by every replica | Unaffected | Unaffected | Unaffected |
+| Negative entries (R-REPO-028) | Valkey, plus a bounded L1 per replica | Shared through Valkey | L1 only: one upstream request per replica, path and period | One more upstream request per path | L1 ends with the process |
+| Flights (R-REPO-026) | In-process single-flight, lock in Valkey | One upstream fetch per entry; waiters re-check entry, circuit and negative entry before they fetch | One fetch per replica and entry | A duplicate fetch | Leads no new flight once draining; releases with `failed` 5 s before the shutdown deadline; after a crash the lock expires within `cluster.flight_lock_ttl` |
+| Merged metadata (R-REPO-020), metadata bytes (R-REPO-025) | In-process caches | Self-validating: `rev_seq`, member fingerprint, blob digest; a virtual repository's reindex or invalidation drops its entries through the change area `cache_invalidation` (R-REPO-016, R-REPO-045) | The early-eviction signal is lost; a remote refresh made elsewhere appears when the merged entry expires; a reindex or invalidation applies at the next change-log poll | As unavailable | Ends with the process |
+| Fetch slots (R-REPO-040) | Per-replica counters | Shares of a cluster budget, from the replica registry | Unaffected | Unaffected | Ends with the process |
+| Activity and use buffers: `lastActivityAt` (R-REPO-012), metadata `last_used_at` (R-REPO-046) | Per-replica, write-only | No request reads them | Unaffected | Unaffected | Flushed at shutdown; a crash loses at most one batch |
+| Detached fetches and background refreshes (R-REPO-026, R-REPO-027) | In-process | Visible to others only through the committed entry | Unaffected | Unaffected | Cancelled 5 s before the shutdown deadline; nothing partial stored |
+
+Rules:
+
+- **Valkey grants nothing.** This page reads two kinds of value from Valkey: negative entries, which
+  can only make a remote path answer 404 for their checked lifetime, and flight locks, which can
+  only delay a fetch or a refresh, by at most `proxy.fetch_wait_timeout_seconds`; a client that
+  asked for expired metadata is served the stale copy meanwhile (R-REPO-026 step 4). No value read from
+  Valkey admits a write, grants access or is served to a client (R-ARCH-030); R-REPO-048 therefore
+  ignores negative entries.
+- **No request depends on an earlier one's replica** (INV-18). Every protocol of this page that
+  spans requests keeps its state in PostgreSQL:
+  - `If-Match` revisions: `config_version`, `claims_version`, the revision of the proxy-offline
+    switch (R-REPO-011, R-REPO-023, R-REPO-031), all three registered as revision columns, so a
+    restore raises them ([backup-and-restore.md](backup-and-restore.md) R-BAK-022);
+  - job references for delete and reindex (R-REPO-013, R-REPO-016);
+  - paging cursors ([api-and-ui.md](api-and-ui.md) R-API-010);
+  - idempotency keys of batch and quick-setup calls ([api-and-ui.md](api-and-ui.md) R-API-014).
+
+  A client that resumes a cut download with `Range` is served by any replica, because cache entries
+  are shared and the ETag is the content address.
+- **Bounds hold without Valkey.** Every bound this page promises across replicas holds while Valkey
+  is unavailable: 2 s for configuration, claims, circuit, gone packages and the global offline
+  switch, and immediate visibility of local publishes through virtual repositories (R-REPO-020).
+  Valkey only makes them faster.
+- **No shared volume.** A cache fill spools to the pod's own scratch space ([storage.md](storage.md),
+  INV-13). No replica continues another replica's partial transfer, and none needs to.
+- **Backup.** Every table of this page has the export class `data`
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-004). Negative entries and flight locks are
+  in Valkey and are not backed up (INV-19).
+  - **Restore without remote caches** ([backup-and-restore.md](backup-and-restore.md) R-BAK-008). A
+    backup made with `backup.exclude.remote_caches` holds every table but not the blobs that only
+    remote caches reference. Its restore loads everything and then empties each remote
+    repository's cache: it deletes the repository's cached items through the storage delete path
+    with the trash can bypassed ([storage.md](storage.md) R-STOR-018), so format hooks update
+    their indexes and `rev_seq` grows. It deletes the repository's `remote_cache_entries` rows,
+    gone marks included, and then the blob rows that are neither referenced nor in the backup's
+    pool. The restored remote repositories then behave like freshly created ones with their
+    configuration, and the first request for each path fetches from the upstream.
+  - Every restore, with or without remote caches, starts without negative entries, and nothing
+    has to delete any: they live in Valkey under the old keyspace, which the restored installation
+    never reads, and the restore Job holds no Valkey credentials (R-REPO-028, R-BAK-022).
+- **Connections.** Nothing on this page holds a PostgreSQL session or a connection across a wait on
+  a client, an upstream or Valkey; the proxy's database work is transaction-scoped and runs through
+  a transaction-mode pooler ([architecture.md](architecture.md) R-ARCH-019).
+
+Acceptance criteria (e2e profile `scatter` of [architecture.md](architecture.md) R-ARCH-032: three
+`web` replicas, every request balanced round robin, the edge's keep-alive to trove off; counting
+stub upstream):
+
+- `npm view does-not-exist-4711` three times through `npm-remote`: the stub records one request.
+  With Valkey stopped, it records at most three.
+- With Valkey stopped, `nuget-remote` has `Acme.Gone` `1.0.0` cached, and after its period the stub
+  answers 404 for the version list: within 2 s every replica answers 404 for the cached `.nupkg`
+  (R-REPO-029).
+- `npm ci` of a fixture with 400 dependencies through `npm-all` on a cold cache, with
+  `valkey-cli FLUSHALL` run twice during the install: the install succeeds, and the stub records at
+  most three requests for any one path.
+- With Valkey stopped for the whole e2e client suite in this profile, the suite passes, and every
+  replica stays ready with `"degraded":["valkey"]`.
+- `kubectl drain` of the node of one `web` replica during an `npm ci` loop on a cold cache through
+  `npm-all`, while the stub delays every tarball by 2 s: every `npm ci` exits `0` with npm's default
+  retries, and no cache entry exists for a partial body.
 
 ## Observability
 
@@ -2315,7 +2707,8 @@ Priority: **MVP** · Covers: trove-only
 
 | Metric | Type | Labels |
 |---|---|---|
-| `trove_remote_lock_fallbacks_total` | counter | — (R-REPO-026: fetch without the cross-replica lock) |
+| `trove_flight_lock_bypass_total` | counter | `reason`: `valkey_unavailable` ([architecture.md](architecture.md) R-ARCH-033, which defines the metric), `wait_timeout` and `draining` (R-REPO-026). Until 2026-10-28 this row was `trove_remote_lock_fallbacks_total`, for the exhausted lock pool. |
+| `trove_remote_source_network_unavailable_total` | counter | `repo` (R-REPO-024: the replica has no address in `sourceNetwork`) |
 | `trove_remote_fetch_queue_wait_seconds` | histogram | `repo` |
 | `trove_remote_integrity_failures_total` | counter | `repo`, `reason` (`mismatch`, `missing`, `digest_changed`) |
 | `trove_remote_egress_denied_total` | counter | `repo` |
@@ -2422,6 +2815,7 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
 | Repository delete answers with a report (200, 207) | Asynchronous job, 202 (R-REPO-013) | Deleting a large repository outlives an HTTP request |
 | Non-package content accepted into format repositories | Refused for npm and NuGet (R-REPO-001) | Unindexed content is invisible to clients |
 | NTLM proxies; proxy credentials reused for redirect target hosts | Basic proxy authentication only; proxy credentials go to the proxy only (R-REPO-037) | Smaller credential exposure |
+| One local IP address for upstream connections | A network prefix; each replica takes its own address from it (R-REPO-024, Q-REPO-9) | Replicas are interchangeable, and every pod has its own address |
 
 ## Security notes
 
@@ -2464,7 +2858,20 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
   (R-REPO-041). TLS verification cannot be switched off per repository (R-REPO-035).
 - **Cache poisoning through `Host`:** rewriting uses the configured base URLs at serve time
   (R-REPO-043).
-- **Kill switch:** the global offline switch stops all upstream traffic within seconds (R-REPO-031).
+- **Kill switch:** the global offline switch stops all upstream traffic within seconds (R-REPO-031),
+  also while Valkey is unavailable, because it travels through the PostgreSQL change log.
+- **Valkey grants nothing on this page.** The proxy reads negative entries and flight locks from
+  Valkey. A negative entry can only make a remote path answer 404, and a flight lock can only delay
+  a fetch or a metadata refresh until `proxy.fetch_wait_timeout_seconds`, after which the replica
+  fetches without it; meanwhile expired metadata is served stale, so a held lock cannot freeze a
+  package list (R-REPO-026, R-REPO-028). Cache entries, stale copies and merged documents come from PostgreSQL,
+  S3 or the replica's own memory. The shadowing check ignores negative entries, so a forged entry
+  cannot let a `deploy` holder shadow a public package (R-REPO-048). What remains is the denial of
+  service that [architecture.md](architecture.md) H-49 describes.
+- **Duplicate fetches never mix bytes.** Lost or bypassed flight locks lead to concurrent fetches;
+  when they return different bytes for one artifact, the first commit wins, the other leader aborts
+  its client before the tail, which every leader withholds until its entry has committed, and a
+  security event is written (R-REPO-026, R-REPO-041).
 - **Explanations do not leak member keys** to callers who cannot read those members (R-REPO-019).
 
 ## Decisions
@@ -2508,6 +2915,8 @@ a sealed value copied into another repository's row fails with 502 `upstream_sec
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice stays (a). Cross-replica collapse now runs through a Valkey lock (R-REPO-026), so while Valkey is unavailable a repository set to `0` sends up to one conditional request per replica and flight instead of one per cluster; the per-repository fetch limit became a cluster budget (Q-REPO-8), so the bound on the upstream no longer grows with the replica count. The rationale names both. R-REPO-027's rule that serves collapsed waiters under `0` now compares database values instead of a replica clock.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Allow `0` | `metadataTtlSeconds: 0` revalidates on every request | Teams that need a just-published upstream version get it at once; revalidation is a conditional header exchange | More upstream round trips and request latency for repositories set to `0` |
@@ -2517,8 +2926,9 @@ Status: **Decided by the development agent** — selected from the options below
 **Choice:** (a) — `0` is accepted and means "revalidate on every request"; there is no minimum.
 
 **Rationale:** Revalidation is conditional, so a 304 costs headers only. Concurrent requests
-collapse into one flight per cluster (R-REPO-026), and the per-repository and per-replica fetch
-limits (R-REPO-040) plus the circuit (R-REPO-029) bound the load. Both default upstreams send
+collapse into one flight per cluster through the Valkey lock, and into one per replica while Valkey
+is unavailable (R-REPO-026). The per-repository fetch budget, shared out over the replicas, the
+per-replica fetch limit (R-REPO-040) and the circuit (R-REPO-029) bound the load. Both default upstreams send
 validators (checked on 2026-10-28: the npm registry's package documents and nuget.org's version
 lists answer with `ETag` and `Last-Modified`), so (c) would add a branch for upstreams nobody uses
 by default. A floor therefore protects nothing and only takes freshness away from the operator. The
@@ -2526,9 +2936,12 @@ development agent would revisit this if upstreams answer 429 to trove because of
 to `0`; a floor or a save-time warning would then be added.
 
 **Applied in the spec:** R-REPO-027 says that a period of `0` MUST be accepted, with the reasons
-(R-REPO-026, R-REPO-040). It now also says that an entry validated after a request arrived is fresh
-for that request; without that rule, every cross-replica waiter of R-REPO-026 would fetch again
-under `0`, so the collapse that justifies this option would not hold. Its acceptance criterion
+(R-REPO-026, R-REPO-040). It now also says that an entry validated after a request first looked it
+up is fresh for that request; without that rule, every cross-replica waiter of R-REPO-026 would
+fetch again under `0`, so the collapse that justifies this option would not hold. On 2026-10-28
+the rule changed from "validated after the request arrived" to a comparison of the `validated_at`
+values the request read, because the waiters it serves run on other replicas, whose clocks need
+not agree with the database's. Its acceptance criterion
 covers five sequential requests (five conditional upstream requests) and 20 concurrent ones on two
 replicas (one). R-REPO-024 and R-REPO-027 now list the NuGet format default of 300 s that
 [formats/nuget.md](formats/nuget.md) decided (Q-NUGET-2), where they had still said 7200 s. The
@@ -2575,7 +2988,11 @@ package document's negative entry is no longer valid, an artifact request first 
 document, so the mark heals for clients that never request documents. The data model allows the
 mark only on metadata entries and adds a partial index for loading. R-REPO-029: "Upstream gone" is
 split into the document rule and a "Gone packages" rule; replicas hold the gone packages in memory,
-reloaded through `trove_upstream_state`; npm's replacement is restated. The NuGet acceptance
+reloaded through `cluster.Notify("upstream_state", …)`, the change area of
+[architecture.md](architecture.md) R-ARCH-018, which needs neither `NOTIFY` nor Valkey (until
+2026-10-28 the `NOTIFY` channel `trove_upstream_state`); npm's replacement is restated, and since
+2026-10-28 it says that npm reads `upstream_gone_at` per request and serves a cached artifact only
+after its package document is current ([formats/npm.md](formats/npm.md) Q-NPM-13). The NuGet acceptance
 criterion now expects 404 for the cached `.nupkg` on every address and a self-healing request for
 the `.nupkg` alone. R-REPO-032: the cache view answers 404 for gone packages, and their items stay
 listed and copyable. Security notes: new bullet. H-5: narrowed to versions withdrawn from a package
@@ -2643,6 +3060,8 @@ through the cross-page consequences.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice stays (b). Negative entries moved to Valkey (R-REPO-028), and a value read from Valkey may only make trove refuse, never admit a write ([architecture.md](architecture.md) R-ARCH-030). The serve decision of R-REPO-048 therefore no longer reads negative entries: a name for which a remote holds only a negative entry is probed. "Stored state" in option (e) now means PostgreSQL entries only.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Refuse | The first publish of a name that a remote member of a containing virtual repository serves is refused for everyone; shadowing on purpose needs a manual claim created beforehand | Strongest default | Two steps even for an administrator; a patched fork of a public package, a legitimate case, always needs a separate claim first |
@@ -2687,7 +3106,148 @@ acceptance criteria that publish a name the stub already serves now publish as a
 R-REPO-047: metric `trove_shadow_checks_total`, security event
 `repository.remote_package_shadowed`, and probe log records. Security notes: new bullet. H-10:
 rewritten to the remaining gap, with configuration changes and the disclosure of new names to
-upstreams added in this review.
+upstreams added in this review. On 2026-10-28: R-REPO-048 step 2 consults stored gone marks only,
+no negative entries, with a new acceptance criterion in which a hand-written Valkey entry does not
+let `ci-bot` publish; the security notes say so.
+
+### Q-REPO-7 · Remote fetches on a replica that is shutting down
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A node drain, a rolling upgrade or a scale-down sends `SIGTERM` to a `web` replica that may hold
+flights other replicas wait for (R-REPO-026). The replica keeps serving for
+`health.shutdown_drain_delay` (5 s by default) and then gets `server.shutdown_timeout`, derived from
+a 120 s grace period ([architecture.md](architecture.md) R-ARCH-024,
+[ha-and-helm.md](ha-and-helm.md) R-HA-011). A fill spools to the pod's own scratch space, and no
+volume is shared between pods (INV-13), so no other replica can continue a partial transfer. The
+owner requires a drain without outage when the setup is sized for it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Finish, or cancel at the deadline | Running fetches continue detached and are cancelled 5 s before the shutdown deadline, released with `failed`; a draining replica starts and holds new flights like any other | Nothing to build beyond R-ARCH-024 | A flight first requested on the draining replica during its drain delay makes waiters on healthy replicas depend on a pod that is leaving; if it is cut, they start over |
+| (b) (a), and a draining replica holds no new cross-replica flight | Running fetches as in (a). From `SIGTERM` on, a request on the draining replica joins a flight another replica holds, as a waiter, but never acquires the lock; with no flight held elsewhere, it fetches under its in-process single-flight only | Waiters on healthy replicas never start to depend on a pod that is leaving; one flag in the proxy, one bypass reason in the metric | During the drain delay, a path first requested on the draining replica and on another replica is fetched twice |
+| (c) Cancel every fetch at `SIGTERM` | Release `failed` at once; waiters take over | The fastest hand-over | Throws away fetches that would have finished within the grace period, which for npm and NuGet is nearly every fetch; the draining replica's own clients are cut early |
+| (d) Hand partial transfers over | The holder writes its partial body to S3 as a multipart upload, and a waiter continues with an upstream `Range` request | No transfer starts over | Needs `Range` support and validators that pin the bytes at every upstream; unverified partial bodies sit in S3; a large mechanism for MVP artifact sizes |
+| (e) Fetch on the `worker` role | Misses become jobs; `web` replicas wait for them | `web` drains never touch a fetch | Adds queue latency to every miss; `worker` replicas drain too, with their own grace period, so the problem moves rather than goes |
+
+**Choice:** (b) — a draining replica keeps finishing the fetches it holds until 5 s before its
+deadline, then cancels them with `failed`, and from `SIGTERM` on it holds no new cross-replica
+flight.
+
+**Rationale:**
+- npm tarballs and NuGet packages finish well within the grace period, so cancelling early (c) only
+  loses work that was about to complete.
+- A cut transfer cannot continue on another replica without shared storage, and ReadWriteMany is
+  excluded (INV-13). (d) would rebuild that over S3 for artifacts that do not need it. (e) moves
+  the drain problem to another role and slows every miss.
+- (b) costs one flag. It confines duplicate fetches to the drain delay, and it removes the case in
+  which waiters on healthy replicas lose progress to a drain they had no part in. A flight that
+  started before `SIGTERM` can still be cut, and its waiters then take over at once instead of after
+  the lock's TTL.
+- Client facts that bound the damage: npm retries twice by default and allows 5 minutes per
+  request; NuGet makes up to six tries and waits 100 s for response headers
+  ([npm config](https://docs.npmjs.com/cli/v11/using-npm/config),
+  [NuGet `HttpSourceRequest`](https://source.dot.net/NuGet.Protocol/HttpSource/HttpSourceRequest.cs.html)).
+  A waiter whose holder was cut acquires the flight within one poll interval and fetches again, well
+  inside both.
+- Revisit when container-image layers or large generic files (P1) show flights cut at shutdown in
+  `trove_http_transfers_cut_total` and the `draining` bypass count. (d) for those formats, or a
+  dedicated Deployment with a longer grace period ([architecture.md](architecture.md) Q-ARCH-18),
+  is then the next step.
+
+**Applied in the spec:** R-REPO-026: the "Shutdown and drain" bullet, the bypass reason `draining`,
+and acceptance criteria for a graceful delete that outlasts the deadline and for a request during
+the drain delay. R-REPO-027: the background refresh is cancelled at shutdown and stores nothing.
+R-REPO-049: the drain column of its table and a drain acceptance criterion. R-REPO-047: the bypass
+reasons. Cross-page: [architecture.md](architecture.md) R-ARCH-033 (the reasons `draining` and
+`wait_timeout`; `Acquire` is not called while draining) and R-ARCH-024 step 1;
+[ha-and-helm.md](ha-and-helm.md) R-HA-011.
+
+### Q-REPO-8 · Upstream fetch limits when the replica count changes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`limits.maxConcurrentFetches` counted per replica (32 by default), so the upstream saw the
+configured value times the number of `web` replicas. Under the new constraints that number grows
+with the load and changes with autoscaling, while the tolerance of an upstream such as a public
+registry does not.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per replica | The earlier rule | No coordination; upstream capacity grows with trove's | The limit an operator sets is multiplied by a replica count that autoscaling changes; 20 replicas send 640 concurrent fetches to one upstream at the old default |
+| (b) A cluster budget shared out per replica | Each replica allows `ceil(budget ÷ n)` fetches, with n the live client-serving replicas in the replica registry | One meaning whatever the replica count; no shared state, no Valkey round trip, no slot that a killed replica leaks; reuses the count that the rate-limit fallback already keeps (R-ARCH-034) | Rounding up admits up to n − 1 extra fetches, and a budget below n admits one per replica; after a scale event the shares lag by one heartbeat; one busy replica may queue while another has free slots |
+| (c) A cluster-wide semaphore in Valkey | Slots held as Valkey keys with a TTL; (b) as the fallback | Exact bound while Valkey is up | Needs a slot set without scripts, on the command set R-ARCH-031 grants (`GET`, `SET`, `DELIFEQ`, `INCR`, `EXPIRE`, `MULTI`, `EXEC`): one round trip per slot tried, slots of killed holders blocked until their TTL, and one more Valkey dependency on every fetch, to protect a bound that (b) already keeps approximately |
+| (d) A cluster-wide rate limit | The R-ARCH-034 limiter on fetch starts per second | Reuses the limiter | Limits starts, not connections: a slow upstream piles up open fetches anyway; the per-replica slots would still be needed |
+
+**Choice:** (b) — `limits.maxConcurrentFetches` is a budget for the installation, shared out as
+`ceil(budget ÷ n)` per replica from the replica registry; the default becomes 64 for the cluster.
+`proxy.max_concurrent_fetches` stays per replica, because it protects the replica.
+
+**Rationale:**
+- A limit that changes with the replica count is not a limit an operator can set; this is the
+  argument of [architecture.md](architecture.md) Q-ARCH-17 for rate limits, and it holds here for
+  the same reason.
+- (b) keeps the bound within `budget + n − 1` with nothing shared. The overshoot is small against
+  what (a) allowed, and it holds while Valkey is unavailable.
+- (c)'s exactness is not worth a Valkey call and a leak case on every fetch for a bound whose
+  purpose is to stop bursts, not to meter. (d) does not bound open connections.
+- Random distribution by the Service evens out the per-replica shares; an uneven share costs a
+  queued fetch of up to `proxy.queue_timeout_seconds`, and collapsed requests take no slot.
+- The default of 64 for the cluster is a proposal, not a measurement. It is below the earlier
+  per-replica default times three replicas (96), but it does not grow to 640 at 20 replicas.
+- Revisit if upstreams answer 429 to trove under the reference load (the budget is then too high,
+  or (d) is added), if cold-cache builds queue on fetch slots (the default is then too low), or if
+  budgets below the replica count become common ((c) is then the exact form).
+
+**Applied in the spec:** R-REPO-040: fetch slots with the per-replica share, the bound, the queue
+and a new acceptance criterion with two and three replicas. Only the request that fetches takes a
+slot, after it holds the flight (R-REPO-025 step 10, R-REPO-026 step 3), so a replica's small share
+is not spent on waiting for another replica's transfer; a second acceptance criterion checks that.
+R-REPO-024: the settings table row
+(default 64, range 1–4096). R-REPO-049: the fetch-slot row. Q-REPO-2: its rationale.
+Cross-page: [operations-and-observability.md](operations-and-observability.md) R-OPS-003 (the
+replica registry count is read by the proxy as well).
+
+### Q-REPO-9 · Source address for upstream connections with interchangeable replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+RMT-015 lets a remote repository pick the local address of its upstream connections, for a host
+with several interfaces and a firewall that admits one of them. R-REPO-024 stored that as one
+address, `sourceAddress`, in the repository configuration, which every replica shares. Every pod
+gets its own IP address ([Kubernetes network model](https://kubernetes.io/docs/concepts/services-networking/)),
+and every role runs at least two replicas (INV-12).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One address (earlier) | `sourceAddress: 10.99.0.11` | Simple; the catalog's form | Fits one pod at most. Every other replica fails every fetch of the repository, and because the circuit is shared, its failures open the circuit for all replicas |
+| (b) A network prefix | `sourceNetwork: 10.99.0.0/24`; each replica binds the first of its own addresses inside the prefix; a replica without one answers 502 `source_network_unavailable`, not counted toward the circuit | One configuration for all replicas (INV-2); keeps the catalog case of multi-homed pods, for example a secondary network to a partner's VPN; fails closed per replica | A dialer that enumerates interfaces; an error code and a metric |
+| (c) Drop the setting | The platform decides the source: routes, an egress gateway, NAT | Nothing to build | Loses RMT-015's case where one destination is reachable through several interfaces and the kernel's choice is the wrong one |
+| (d) A per-replica address in file configuration | Each pod's configuration names its own address | Exact addresses | Replicas of a role differ in configuration, against INV-2, and a rescheduled pod gets another address, so the mapping breaks on the next drain |
+
+**Choice:** (b) — `remote.sourceNetwork` takes a CIDR prefix; each replica takes its own address in
+it, and a replica without one fails that repository's fetches closed, without opening the shared
+circuit.
+
+**Rationale:**
+- (a) cannot work with two replicas, and it turns one replica's local problem into an outage of
+  the repository on every replica through the shared circuit.
+- (d) breaks the rule that replicas of a role are identical and interchangeable, and node drains
+  reschedule pods to new addresses.
+- (c) is honest, but secondary networks exist exactly where this setting matters, and the dialer
+  already has a hook per connection for the egress rules (R-REPO-038).
+- (b) states the intent ("leave through this network") in a form that every replica can satisfy. A
+  replica that cannot does not fall back to the kernel's choice, which could reach the upstream
+  through an interface its firewall should never see.
+- Revisit if no installation uses the setting by the time the P1 formats ship; (c) would then
+  remove it.
+
+**Applied in the spec:** R-REPO-024: the member is `sourceNetwork`, its bullet, the upstream-test
+field `sourceAddress` and two acceptance criteria. R-REPO-008: `invalid_source_network`, and the
+warning `source_network_single_address`. R-REPO-047: the metric
+`trove_remote_source_network_unavailable_total`. Deliberate deviations: new row. Cross-page:
+[operations-and-observability.md](operations-and-observability.md) metrics catalog (the new
+counter). No other spec page names `sourceAddress` (checked on 2026-10-28).
 
 ## What this does not cover
 
@@ -2732,8 +3292,11 @@ public package of the same name. Names leak; contents do not.
 ### H-8 · The stored-secret key sits on every replica
 
 Every replica holds the key that unseals upstream credentials, client-certificate keys and proxy
-passwords, because every replica makes upstream requests. Exec access to a trove pod, or read
-access to the key's Secret, yields all of them. Integration with an external key management service
+passwords: `web` replicas make upstream requests, and every replica opens the key ring's start-up
+canary ([architecture.md](architecture.md) R-ARCH-021). Exec access to a trove pod, or read access
+to the key's Secret, yields all of them. Adding `web` replicas for load adds copies of the key, not
+new holders of a different kind. Valkey never holds a secret or a value derived from one
+([architecture.md](architecture.md) R-ARCH-030). Integration with an external key management service
 is not specified.
 
 ### H-9 · Member-scoped claims do not protect other virtual repositories

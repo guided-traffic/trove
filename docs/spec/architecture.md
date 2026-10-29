@@ -3,15 +3,17 @@
 Status: specification — not implemented
 
 This page fixes the skeleton of trove. It covers:
-- the components inside the single binary;
+- the components inside the single binary, the process roles and what each role runs;
 - the Go and Angular code layout;
 - the order in which components handle the shared request paths: local download, remote download
   (hit, miss, upstream down), upload, and virtual resolution;
 - the contract every package format implements;
 - the background job framework;
-- the `LISTEN/NOTIFY` plumbing behind in-process caches;
+- cross-replica coordination: which mechanism lives in PostgreSQL and which in Valkey, request
+  collapsing, shared counters, cache invalidation, and the PostgreSQL connection model;
 - configuration loading, encryption of stored secrets and the outbound HTTP client factory;
-- the error model, versioning and compatibility, and proposed performance targets.
+- the error model, the process lifecycle with drain-safe shutdown, versioning and compatibility,
+  and proposed performance targets.
 
 What a feature does for the user is specified on the topic pages listed in
 [README.md](README.md#pages). This page specifies the mechanisms they build on, and it names the
@@ -38,9 +40,11 @@ owns. This page provides only the mechanism the owner builds on.
 | OPS-001 to OPS-004 (probes), OPS-008 (service status), OPS-009 (lock diagnostics) | [operations-and-observability.md](operations-and-observability.md) | Start-up order, shutdown timeout (R-ARCH-024); lock categories and connection naming (R-ARCH-017, R-ARCH-019) |
 | OPS-050 (content types), OPS-065 and ART-051 (tasks and job API), OPS-070 (reindex) | [operations-and-observability.md](operations-and-observability.md) | Job queue and scheduler (R-ARCH-016) |
 | ART-011, ART-029, STOR-003 and the upload/download pipeline | [storage.md](storage.md) | Request order (R-ARCH-011, R-ARCH-014), format storage hooks (R-ARCH-008) |
-| RMT-* settings, collapsing misses, metadata rewriting, merged-metadata cache | [repositories-and-proxy.md](repositories-and-proxy.md) | Request order (R-ARCH-013, R-ARCH-015), lock categories, notification plumbing |
-| HA-022 to HA-071 except those listed below | [ha-and-helm.md](ha-and-helm.md) | Process model, roles, lifecycle and the connection formula |
+| RMT-* settings, collapsing misses, negative cache, metadata rewriting, merged-metadata cache | [repositories-and-proxy.md](repositories-and-proxy.md) | Request order (R-ARCH-013, R-ARCH-015), `FlightLock` on Valkey (R-ARCH-033), negative-cache keys (R-ARCH-030), change areas and signals (R-ARCH-018) |
+| HA-022 to HA-071 except those listed below | [ha-and-helm.md](ha-and-helm.md) | Process model, roles, lifecycle, the connection classes behind the connection formula (R-ARCH-019), the Valkey client settings (R-ARCH-031) |
 | Long-running operations, client setup snippets, UI baseline | [api-and-ui.md](api-and-ui.md) (R-API-015, R-API-033, R-UI-001) | Job columns (R-ARCH-016), snippet templates in the format contract (R-ARCH-008) |
+| BEYOND-030 and the login and exchange limits (rate limits) | [api-and-ui.md](api-and-ui.md) R-API-016, [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-021 | Cluster-wide counters with a per-replica fallback (R-ARCH-034) |
+| Backup and restore (INV-19) | [backup-and-restore.md](backup-and-restore.md) | The `backup` role and its connection class (R-ARCH-001, R-ARCH-019), the export classes of this page's tables (R-ARCH-016, R-ARCH-018), the revision registry entry of `rev_seq` (R-ARCH-009), the runner's restore mode (R-ARCH-026) |
 
 <details>
 <summary>Facts this page relies on, and how they were verified (2026-10-28)</summary>
@@ -61,9 +65,22 @@ owns. This page provides only the mechanism the owner builds on.
 | The versions in the row above are still the latest on 2026-10-28, re-checked when the questions of this page were decided. | `proxy.golang.org/<module>/@latest` |
 | For user content that must not render, current guidance names `nosniff`, `Content-Disposition: attachment`, CSP `sandbox` with `default-src 'none'`, and `Cross-Origin-Resource-Policy: same-site`. It treats a separate sandbox domain as necessary only when active content must render, or when renderer compromise and Spectre-class attacks are in the threat model. Only a domain on the Public Suffix List isolates subdomains from each other. | [web.dev: Securely hosting user data in modern web applications](https://web.dev/articles/securely-hosting-user-data) |
 | A cookie named with the `__Host-` prefix is accepted by the browser only with `Secure`, `Path=/` and no `Domain`. A sibling or parent subdomain therefore cannot set or shadow it. "Same-site" compares scheme and registrable domain, so a subdomain content host is same-site with the UI. | [RFC 6265bis draft](https://datatracker.ietf.org/doc/draft-ietf-httpbis-rfc6265bis/), cookie prefixes and the "same-site" definition |
+| valkey-go v1.0.79 (Apache-2.0) is the latest release. Its Sentinel client resolves the primary through the Sentinels, checks `ROLE` on the instance it connects to, follows `+switch-master`, and reconciles periodically when `SentinelOption.TopologyRefreshInterval` is set; its documentation states that without it a missed `+switch-master` binds the client to the old primary. `SentinelOption` carries its own `TLSConfig`, `Username` and `Password`. `ClientOption.AuthCredentialsFn` supplies credentials on every connection attempt. A Sentinel or standalone client pipelines over 2^`PipelineMultiplex` connections, 4 by default. Server-assisted client-side caching is on by default with 128 MiB per connection and is switched off with `DisableCache`. The command builder has `SET … IFEQ` and `DELIFEQ`. The module requires Go 1.25. | `proxy.golang.org`; source (`valkey.go`, `sentinel.go`, `internal/cmds/gen_string.go`, `go.mod`) |
+| go-redis v9.23.0 (BSD-2-Clause) lists Redis CE 8.0 to 8.10 as its supported servers and calls other servers "not officially supported". Its `FailoverOptions` carry `SentinelUsername` and `SentinelPassword`; its compare-and-delete helper targets Redis's `DELEX`, not Valkey's `DELIFEQ`. | `proxy.golang.org`; source (`README.md`, `sentinel.go`, `string_commands.go`) |
+| The Go client of Valkey GLIDE (v2.5.3) uses cgo to call its Rust core. | [GLIDE Go README](https://github.com/valkey-io/valkey-glide/blob/main/go/README.md) |
+| Valkey 7.2, 8.0, 8.1, 9.0 and 9.1 all received patch releases on 2026-10-26 and 2026-10-27 (9.1.3, 9.0.7, 8.1.11); 9.2.0 is at rc1. Maintenance ends: 9.0 on 2028-10-21, 9.1 on 2029-05-19 (security support until 2031-05-19), 8.1 on 2028-03-31. | GitHub releases API for `valkey-io/valkey`; [Valkey releases](https://valkey.io/topics/releases/) |
+| `SET … IFEQ <value>` exists since Valkey 8.1.0. `DELIFEQ key value` exists since 9.0.0 and deletes the key only if its value matches (ACL categories `@fast @string @write`). | [SET](https://valkey.io/commands/set/), [DELIFEQ](https://valkey.io/commands/delifeq/) |
+| Valkey replication is asynchronous, so Sentinel does not guarantee that acknowledged writes survive a failover. A robust deployment needs at least three Sentinels in independent failure domains. Clients resolve the primary with `SENTINEL get-master-addr-by-name`, verify it with `ROLE`, and resolve again on every reconnection; Sentinel sends `CLIENT KILL type normal` to a reconfigured instance. Sentinel authenticates to ACL-protected instances with `sentinel auth-user` and `sentinel auth-pass`. | [Sentinel](https://valkey.io/topics/sentinel/), [Sentinel clients](https://valkey.io/topics/sentinel-clients/) |
+| Pub/Sub delivery is at most once: a message is lost when the subscriber is disconnected or when no one is subscribed. | [Pub/Sub](https://valkey.io/topics/pubsub/) |
+| A single-instance lock is `SET key <random> NX PX <ttl>`, released by a compare-and-delete. Failover-based setups cannot guarantee mutual exclusion, because a lock written to the primary can be lost before it reaches the promoted replica. | [Distributed locks](https://valkey.io/topics/distlock/) |
+| PgBouncer 1.26.1 (2026-10-14) is current. In transaction pooling, `SET`/`RESET`, `LISTEN`, `WITH HOLD` cursors, SQL `PREPARE`/`DEALLOCATE` and session-level advisory locks never work. Protocol-level prepared statements work when `max_prepared_statements` is non-zero (default 200). `application_name` is a tracked startup parameter. | GitHub releases API for `pgbouncer/pgbouncer`; [features](https://www.pgbouncer.org/features.html), [configuration](https://www.pgbouncer.org/config.html) |
+| Kubernetes starts the kubelet's graceful shutdown and the removal of the pod from EndpointSlices at the same time. A terminating endpoint has `ready: false` and exposes the `serving` condition. The default `terminationGracePeriodSeconds` is 30. A `preStop` hook that overruns the grace period gets a one-off 2 s extension. The `sleep` lifecycle handler runs in the kubelet and is stable since v1.34. | [Pod termination](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination), [container lifecycle hooks](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/), [KEP-3960](https://www.kubernetes.dev/resources/keps/3960/) |
+| npm defaults: `fetch-retries` 2, `fetch-retry-mintimeout` 10 s, `fetch-retry-maxtimeout` 60 s, `fetch-timeout` 5 min. NuGet's enhanced retry defaults: 6 tries, 1,000 ms delay. | [npm config](https://docs.npmjs.com/cli/v11/using-npm/config), [NuGet environment variables](https://learn.microsoft.com/nuget/reference/cli-reference/cli-ref-environment-variables) |
 
-Not verified: the behaviour of specific S3-compatible stores. The performance targets in R-ARCH-027
-are proposals, not measurements.
+Not verified: the behaviour of specific S3-compatible stores; the behaviour of managed Valkey
+offerings, which mostly expose their own failover endpoint instead of Sentinel; the exact
+endpoint-propagation delay of a given Ingress or Gateway controller. The performance targets in
+R-ARCH-027 are proposals, not measurements.
 
 </details>
 
@@ -78,42 +95,106 @@ and the background workers (INV-1, INV-2).
 
 | Invocation | Purpose |
 |---|---|
-| `trove serve [--role all\|api\|worker]` | Runs one replica. |
+| `trove serve --role web\|worker\|all` | Runs one replica of a role. The flag overrides `process.role`. |
 | `trove migrate [up\|status]` | Applies or lists the embedded migrations behind the compatibility gate (R-ARCH-026). |
+| `trove backup create\|list\|verify\|delete\|prune\|restore` | The `backup` role: creates a consistent backup into the configured S3 target, lists, verifies, deletes or prunes the backups there, or restores one into an empty installation, then exits (INV-19, [backup-and-restore.md](backup-and-restore.md) R-BAK-009, R-BAK-016, R-BAK-018 to R-BAK-021). It has no client listener and uses no Valkey. The chart runs `create` as a CronJob and `restore` as a Job. |
 | `trove admin …` | Bootstrap and recovery: break-glass administrator ([identity-and-authentication.md](identity-and-authentication.md)), `admin config validate` ([operations-and-observability.md](operations-and-observability.md)), `admin secrets status` (R-ARCH-021; the same status is served by `GET /api/v1/system/encryption`). |
 | `trove --version` | Version, commit, build date. |
 
-| Role | Client listener `:8080` | Ops listener `:8081` | Job workers and singleton scheduler | `LISTEN` session |
-|---|---|---|---|---|
-| `all` (default, INV-2) | yes | yes | yes | yes |
-| `api` | yes | yes | no | yes |
-| `worker` | no | yes | yes | yes |
+A role is a set of enabled subsystems (INV-2). Every replica of a role runs the same subsystems and
+is interchangeable with any other replica of that role:
 
-- No replica MAY hold state that another replica needs to answer a later request.
-  - Sessions, tokens, upload sessions of multi-request protocols, the job queue, locks and
-    cache-fill state live in PostgreSQL or object storage.
-  - In-process state is limited to caches that can be rebuilt (R-ARCH-018) and to the spool file of
-    the request currently running ([storage.md](storage.md)).
+| Subsystem | `web` | `worker` | `backup` | `all` (local profile only) |
+|---|---|---|---|---|
+| Client listener `:8080`: UI, management API, package protocols, raw files (R-ARCH-005) | yes | no | no | yes |
+| Ops listener `:8081`: probes and metrics | yes | yes | `/metrics` only, while a run lasts ([backup-and-restore.md](backup-and-restore.md) R-BAK-014) | yes |
+| Main pool, transaction-scoped work only (R-ARCH-019) | yes | yes | no | yes |
+| Session-scoped PostgreSQL connections: the lease pool (R-ARCH-017) | no | yes | its own control, snapshot and export connections (R-ARCH-019) | yes |
+| Job claim loop, reaper and scheduler (R-ARCH-016); outbox dispatcher (P1) | no | yes | no | yes |
+| Enqueueing jobs | yes | yes | no | yes |
+| Valkey client (R-ARCH-031) | yes | yes | no | yes |
+| Change-log poll and signal subscriber (R-ARCH-018) | yes | yes | no | yes |
+| Replica registry row and heartbeat ([operations-and-observability.md](operations-and-observability.md) R-OPS-003) | yes | yes | no | yes |
+
+- `process.role` has no default. `trove serve` without a role exits non-zero with
+  `process.role must be web, worker or all`. The chart deploys `web` and `worker` as separate
+  Deployments from the start, each with its own replica count, autoscaler, disruption budget and
+  topology spread ([ha-and-helm.md](ha-and-helm.md)). `all` exists for the local development
+  profile; a replica started with it logs a warning that names the role.
+- A `web` replica MUST NOT:
+  - claim or run jobs, or hold a lease;
+  - open a session-scoped PostgreSQL connection;
+  - run a background loop whose iterations take longer than a request. Its loops are each bounded
+    by a deadline:
+    - the change-log poll and signal subscriber (R-ARCH-018), the Valkey client (R-ARCH-031) and
+      the registry heartbeat;
+    - the flushes of the write-only buffers of R-ARCH-032: download statistics, the activity and
+      use buffers of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012 and
+      R-REPO-046 (P1), and the asynchronous audit buffer
+      ([operations-and-observability.md](operations-and-observability.md) R-OPS-015);
+    - the identity loops of [identity-and-authentication.md](identity-and-authentication.md)
+      R-AUTH-042: the OIDC discovery refresh and JWKS refetch (R-AUTH-004), the re-read of the
+      client-secret and break-glass files including the break-glass rotation check (R-AUTH-014),
+      the last-used flush (R-AUTH-031, P1) and the pending-flow count refresh (R-AUTH-038);
+  - leave work running after a response that a later request depends on.
+
+  Work that a request starts and that outlasts it is enqueued as a job, and the request answers
+  with the job reference ([api-and-ui.md](api-and-ui.md) R-API-015). Examples are reindexing,
+  repository deletion, bulk copy or move, garbage collection and re-encryption. Three bounded
+  exceptions remain on `web`, each ended at shutdown and none leaving anything half-stored
+  (R-ARCH-024):
+  - the remote fetch that collapsed waiters depend on, which runs detached from its initiating
+    client ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026);
+  - the completion of a metadata refresh after the stale copy was served (R-REPO-027);
+  - the replica's own support-bundle part
+    ([operations-and-observability.md](operations-and-observability.md) R-OPS-027, P1). It is
+    bounded by `support.max_cpu_profile_seconds` plus the upload, never runs past
+    `support.collect_timeout`, holds no database connection, and is abandoned at `SIGTERM`; the
+    bundle then ends `partial`.
+- A `worker` replica serves only the ops listener and is not selected by the client Service.
+- Load is shared by adding replicas of a role (INV-12). No code path depends on the number of
+  replicas of a role, and each role scales and drains on its own. A role can be split further, for
+  example package traffic behind its own Service, through configuration and chart values without
+  code changes (INV-2).
+- No replica holds state that another replica needs to answer a later request (INV-18,
+  R-ARCH-032).
+  - Durable state lives in PostgreSQL, the system of record, and in object storage. Shared
+    ephemeral state lives in Valkey (INV-3, R-ARCH-030).
+  - In-process state is limited to caches that can be rebuilt (R-ARCH-018) and to the scratch
+    space of the request or job currently running ([storage.md](storage.md)).
 - There is no primary node. Work that must run once per cluster runs as a job, where the queue
-  guarantees one claimant (R-ARCH-016), or under a named lease (R-ARCH-017).
-- A replica registers itself on start in the replica registry
-  ([operations-and-observability.md](operations-and-observability.md)). It takes traffic and jobs
-  as soon as it is ready. No other step is needed to add or remove a replica.
-- One replica and many run the same code path, and even a single replica uses external PostgreSQL
-  and S3-compatible storage (INV-3, INV-4). Moving to a cluster means raising the replica count. An
-  evaluation setup uses a single-node S3-compatible store (the local profile runs SeaweedFS,
-  [ha-and-helm.md](ha-and-helm.md) R-HA-051) and a small PostgreSQL. The chart bundles no production
-  database (INV-12, [ha-and-helm.md](ha-and-helm.md)).
+  guarantees one claimant (R-ARCH-016), or under a named lease (R-ARCH-017). Both live in
+  PostgreSQL.
+- A `web` or `worker` replica registers itself on start in the replica registry, with its role
+  ([operations-and-observability.md](operations-and-observability.md)). It takes traffic or jobs as
+  soon as it is ready. No other step is needed to add or remove a replica.
+- One replica and many run the same code path. Even a single replica uses external PostgreSQL,
+  Valkey and S3-compatible storage (INV-3, INV-4).
+  - The local profile runs PostgreSQL with a standby (CloudNativePG, two instances), Valkey with
+    Sentinel in the reference topology of [ha-and-helm.md](ha-and-helm.md) R-HA-056, and
+    SeaweedFS (R-HA-051), so failovers can be exercised locally.
+  - Production runs HA PostgreSQL, Valkey with Sentinel and S3 (INV-12).
+  - The chart bundles no production database and no production Valkey.
 - Splitting roles is the trove form of separately scaled workloads (HA-015). The UI is never a
   separate workload because it is embedded (INV-1).
+
+```yaml
+process:
+  role: ""            # no default: web | worker | all; the chart sets it per Deployment
+  # role: web         # example
+```
 
 Acceptance criteria:
 - On Linux, `file trove` reports a statically linked executable, and `go version -m trove`
   shows `CGO_ENABLED=0`.
+- `trove serve` without `--role` and without `process.role` exits non-zero and names
+  `process.role`.
 - A replica started with `--role worker` has no socket on `:8080` (`ss -ltn`). The instance ID of a
-  replica started with `--role api` never appears in `job.locked_by`.
-- One of three pods is deleted with `kubectl delete pod --grace-period=0 --force` during a loop of
-  100 `npm ci` runs through the Service. The loop finishes with npm's default `fetch-retries`.
+  replica started with `--role web` never appears in `job.locked_by`, and `pg_stat_activity` never
+  shows a connection named `trove:<that replica>:lease`.
+- One of three `web` pods is deleted with `kubectl delete pod --grace-period=0 --force` during a
+  loop of 100 `npm ci` runs through the Service. The loop finishes with npm's default
+  `fetch-retries`.
 
 ### R-ARCH-002 · Component model and dependency rules
 Priority: **MVP** · Covers: HA-003, HA-004, HA-006
@@ -138,15 +219,17 @@ flowchart LR
     PX["proxy<br/>freshness, negative cache, collapse"]
     BL["blob<br/>spool, digests, s3"]
     MT["meta<br/>postgres, migrations"]
-    CL["cluster<br/>LISTEN/NOTIFY, leases, locks"]
+    CL["cluster<br/>valkey, change log, signals,<br/>flight lock, counters, leases"]
     CA["cache<br/>in-process"]
     JB["jobs<br/>queue, workers, scheduler"]
     AU["audit"]
+    BK["backup<br/>create, restore (backup role)"]
     OB["observability<br/>slog, metrics, traces, health"]
     OUT["outbound<br/>HTTP client factory"]
     SE["secrets<br/>stored-secret key ring"]
   end
-  PG[("PostgreSQL")]
+  PG[("PostgreSQL<br/>system of record")]
+  VK[("Valkey<br/>primary, replicas, Sentinel")]
   S3[("S3-compatible<br/>object storage")]
   IDP["OIDC provider"]
   GL["GitLab issuer JWKS"]
@@ -175,10 +258,16 @@ flowchart LR
   BL --> S3
   MT --> PG
   CL --> PG
+  CL --> VK
+  PX --> CL
+  HS --> CL
+  JB --> CL
   CA --- CL
   JB --> MT
   AU --> MT
   SE --> MT
+  BK --> MT
+  BK --> BL
 ```
 
 | Component | Package | Responsibility | Behaviour specified in |
@@ -193,10 +282,11 @@ flowchart LR
 | proxy | `internal/proxy` | Remote fetch engine | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | blob | `internal/blob`, `internal/blob/s3` | Spool, digests, content-addressed objects | [storage.md](storage.md) |
 | meta | `internal/meta`, `internal/meta/postgres` | Transactions, generated queries, embedded migrations | [storage.md](storage.md) (schema of items and packages), R-ARCH-016, R-ARCH-019, R-ARCH-026 |
-| cluster | `internal/cluster` | `LISTEN/NOTIFY`, leases, advisory-lock categories | R-ARCH-017, R-ARCH-018 |
+| cluster | `internal/cluster` | Valkey client and key registry, change log and signals, `FlightLock`, shared counters, leases, advisory-lock categories | R-ARCH-017, R-ARCH-018, R-ARCH-030, R-ARCH-031, R-ARCH-033, R-ARCH-034 |
 | cache | `internal/cache` | Bounded in-process caches and their invalidation hooks | R-ARCH-018 |
 | jobs | `internal/jobs` | Queue, workers, scheduler | R-ARCH-016 |
 | audit | `internal/audit` | Audit events | [operations-and-observability.md](operations-and-observability.md) |
+| backup | `internal/backup` | `trove backup` create, restore, list, verify and delete; the table registry | [backup-and-restore.md](backup-and-restore.md) |
 | observability | `internal/observability` | Logs, metrics, traces, health checks | [operations-and-observability.md](operations-and-observability.md) |
 | outbound | `internal/outbound` | Every outbound HTTP client | R-ARCH-022; settings in [repositories-and-proxy.md](repositories-and-proxy.md) |
 | secrets | `internal/secrets` | Stored-secret encryption, sealed-column registry, key-ring status | R-ARCH-021 |
@@ -204,7 +294,9 @@ flowchart LR
 | errs | `internal/errs` | Error kinds and rendering | R-ARCH-023 |
 
 Normative rules:
-- PostgreSQL and S3-compatible object storage are the only stateful dependencies (INV-3, INV-4).
+- PostgreSQL and S3-compatible object storage hold every piece of durable state (INV-3, INV-4).
+  Valkey holds shared ephemeral state only, and nothing in it is the only copy of durable data
+  (R-ARCH-030). There is no other stateful dependency.
 - Shared binary storage (HA-004). The MVP has exactly one binary-store type: S3-compatible object
   storage that every replica reaches over the network.
   - There is no node-local file-system store, no cluster-replicated local store and no redundancy
@@ -215,16 +307,22 @@ Normative rules:
     only (STOR-008, P2 in [storage.md](storage.md)) MUST refuse to start while the replica registry
     shows another live replica.
 - Replicas never talk to each other. There are no peer addresses and no replica-to-replica HTTP.
-  Configuration changes, cache invalidation, locks and job hand-off go through PostgreSQL (INV-12),
-  so the catalog's per-node peer address (HA-006) does not exist in trove.
+  Configuration changes, cache invalidation, locks, counters and job hand-off go through PostgreSQL
+  and Valkey, as R-ARCH-030 assigns each mechanism (INV-12). The catalog's per-node peer address
+  (HA-006) therefore does not exist in trove.
 - Imports form layers:
   1. Edge: `httpserver`, `api/v1`, `webui`, format handlers.
-  2. Domain: `repository`, `proxy`, `authz`, `auth`, `jobs`, `audit`.
+  2. Domain: `repository`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
   3. Infrastructure: `meta/postgres`, `blob/s3`, `cluster`, `outbound`, `secrets`.
 
   No lower layer imports a higher one.
-- Only `meta/postgres` and `cluster` import pgx. Only `blob/s3` imports the S3 SDK. Format
-  packages import neither (R-ARCH-008).
+- Only `meta/postgres` and `cluster` import pgx. Only `cluster` imports the Valkey client
+  (R-ARCH-031). Only `blob/s3` imports the S3 SDK. Format packages import none of them
+  (R-ARCH-008).
+- `backup` follows the same rules: it reaches PostgreSQL through an export and load API of
+  `meta/postgres` (snapshot, table export, restore load), and both the blob store and the backup
+  target through clients built by `blob/s3`, one per bucket and credential
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-015).
 - `internal/archtest` walks `go list -deps -json ./...` and fails on any forbidden import.
 
 Acceptance criteria:
@@ -232,6 +330,74 @@ Acceptance criteria:
   `go test ./internal/archtest` fail and name the edge.
 - `grep -rn "http.Client{\|net.Dial" internal --include=*.go` finds matches only in
   `internal/outbound` and in `_test.go` files.
+- Adding an import of `github.com/valkey-io/valkey-go` to `internal/proxy` makes
+  `go test ./internal/archtest` fail and name the edge.
+
+### R-ARCH-032 · No state between requests on one replica (INV-18)
+Priority: **MVP** · Covers: HA-001, HA-009
+
+The Kubernetes Service distributes requests at random and without session affinity (INV-12). Two
+requests of one client may therefore reach different replicas, even two requests on one keep-alive
+connection through an edge proxy that balances per request.
+
+- No request may depend on state that an earlier request left in one replica's memory or on its
+  local disk. Every kind of per-replica state is listed here; a new kind needs a row in this table
+  before it ships:
+
+| Per-replica state | Lifetime | Why it does not break INV-18 |
+|---|---|---|
+| Registered in-process caches (R-ARCH-018): the repository snapshot; the proxy's copies of the claims and pin-rule trie, gone packages, circuit state, global offline switch and cache invalidations ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045); the grant index; the identity caches `auth_tokens`, `auth_sessions`, `auth_principals` and `auth_settings` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023); the rendition cache; the merged-metadata cache; CI issuer keys | Until evicted, invalidated or `SafetyTTL` | Each is a copy of PostgreSQL state. It is self-validating (`rev_seq`, epochs) or kept within the propagation bound of R-ARCH-018, and a fill never re-inserts a value that a change has already invalidated (R-ARCH-018), so another replica gives the same answer from PostgreSQL. An epoch that went backwards or was reused after a PostgreSQL failover flushes the area on every replica, for every change area (R-ARCH-018, change-area step 5). |
+| Metadata-bytes cache, keyed by blob digest ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025) | Until evicted | Self-validating: which digest a request serves is always read from PostgreSQL, and the key is the content address, so every replica serves the same bytes. |
+| Negative cache of unknown repository keys (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the key shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
+| Negative-cache L1 (R-ARCH-030) | At most the checked lifetime of the Valkey entry it copies | A copy of an upstream `404` or `410`, not of PostgreSQL state. Any replica may answer from such an entry or ask the upstream within `notFoundTtlSeconds` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028), so both answers are the same contract; an invalidation applies to the L1 as to Valkey. |
+| Caches of external documents: OIDC discovery and JWKS of the login providers ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004) | Until their refresh | A copy of what the provider publishes. An unknown `kid` makes the replica refetch, at most once per provider and replica per 60 s, so right after a provider signs with a new key, one replica may reject a login that another accepts, for at most that throttle. A provider that publishes a key before signing with it never opens this window. The GitLab issuer keys live in PostgreSQL and are a registered cache above ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003). On an unknown `kid`, a CI issuer re-reads its `ci_issuer_keys` row at most once per issuer and replica per `cluster.epoch_poll_interval`, then refetches under the same kind of per-replica throttle (`ci.signing_keys.unknown_kid_refresh_interval`). A key that any replica has stored is accepted on every replica within one poll interval, and a forged `kid` costs no PostgreSQL query of its own ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003, Q-CI-12). |
+| Forwarded NuGet search results ([formats/nuget.md](formats/nuget.md) R-NUGET-016) | At most `nuget.search.remote_result_ttl` | A copy of an upstream answer, stored unfiltered; patterns, claims and permissions are applied on every use. Any replica may answer from its copy or ask the upstream within the period, so both answers meet the same contract. |
+| Break-glass verifier and OIDC client secrets read from Secret files, and the loaded break-glass file content ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004, R-AUTH-014) | Until the file changes | Replicas switch at different moments on a rotation. The session end of a break-glass rotation is one PostgreSQL transaction, so no replica keeps a session that another has ended (R-AUTH-014, Q-AUTH-14). |
+| Pending-flow count ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038) | At most 5 s old | A copy of a PostgreSQL count that bounds a `503` decision. |
+| Per session, the newest `last_seen_at` a replica has read ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-010) | While the replica holds the session | A lower bound of the row that only saves touch statements and never decides an end; the session's deadlines are decided from its row. |
+| In-process single-flight groups (R-ARCH-033), and the credential lookups shared while the freshness gate is closed ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023) | One flight; a shared credential lookup at most `auth.revocation_bound` old | Only concurrent requests join; nothing outlives the flight, and a shared lookup is never cached. |
+| Spool and temporary files (`emptyDir` or a generic ephemeral volume, INV-13) | One request or one job | Deleted on every path and at process start ([storage.md](storage.md) R-STOR-004). |
+| Write-only buffers: download statistics (R-ARCH-011), `lastActivityAt` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012), metadata `last_used_at` (R-REPO-046, P1), token last-used times ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031, P1) | Until the next batch flush (the last-used buffer: 60 s) | Requests write them and never read them. They are flushed at shutdown (R-ARCH-024 step 6); a crash loses at most one batch, which the next use records again. |
+| Asynchronous audit buffer and the audit deduplication windows with their open denial summaries ([operations-and-observability.md](operations-and-observability.md) R-OPS-015) | Until the next batch or deduplication window | Written by requests, never read by one; flushed at shutdown. A crash loses what they hold, normally under one second of events, at most `audit.async_buffer`. |
+| Denial aggregation buffer of the CI exchange ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-021) | One minute | Requests write it and never read it; the first denial of an address and reason in a minute is written at once, so a crash loses at most one minute of counts. |
+| De-duplication of `auth.csrf_failed` events ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-041) | One minute | Bounds log volume only; no answer depends on it. |
+| Log ring buffer ([operations-and-observability.md](operations-and-observability.md) R-OPS-009) | The last `log.ring_buffer_records` records | Read only by the replica's own support-bundle part; no request's answer depends on it, and the records also go to the platform's log stack. |
+| Cached values of the gauges read from PostgreSQL ([operations-and-observability.md](operations-and-observability.md) R-OPS-007, Q-OPS-18) | At most `metrics.db_gauge_interval` | A copy of PostgreSQL state served to scrapes only; an age gauge states how old it is. |
+| Sent set of a delivery-log follow stream ([operations-and-observability.md](operations-and-observability.md) R-OPS-044, P1) | One request | Lives and ends with its stream; a reconnect on another replica continues from `Last-Event-ID` ([api-and-ui.md](api-and-ui.md) R-API-051). |
+| The replica's support-bundle part being collected ([operations-and-observability.md](operations-and-observability.md) R-OPS-027, P1) | At most `support.collect_timeout` | Uploaded as a blob when done; abandoned at `SIGTERM`, which leaves the bundle `partial` (R-ARCH-001). |
+| Signal coalescer queue (R-ARCH-018) | At most one coalescing window | Best-effort wake-ups that no request depends on. |
+| Fallback rate-limit buckets (R-ARCH-034) | While Valkey is unavailable | The degraded mode INV-12 names. While Valkey is available, the counters are cluster-wide. |
+| In-flight request counter (`server.max_in_flight`, R-ARCH-005); upstream fetch slots, which only fetching requests take ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040); Argon2id verification slots ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-014) | Concurrent requests | Protect the replica itself: its connections, its upstream share and its memory. A refused request succeeds on retry elsewhere. |
+| Circuit breakers for the object store and for Valkey | Seconds | They describe this replica's own network path ([storage.md](storage.md) R-STOR-033, R-ARCH-031). |
+
+- A protocol that spans requests keeps its state in PostgreSQL and its data in S3. Valkey may hold
+  such state only where its loss costs nothing but one client retry; no protocol below uses it.
+  The protocols, MVP unless marked:
+  - browser login: the `oidc_login_flow` row and the binding cookie
+    ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-006);
+  - npm web login and device login polling (P1): the `cli_login` row (R-AUTH-034, R-AUTH-036);
+  - UI sessions: the session row (R-AUTH-010);
+  - paged lists: cursors that encode their position and never refer to replica memory
+    ([api-and-ui.md](api-and-ui.md));
+  - long-running operations: job rows (R-ARCH-016);
+  - chunked and resumable uploads (P1): the `upload_sessions` and `upload_session_parts` rows and
+    one S3 multipart upload per session ([storage.md](storage.md) R-STOR-011, Q-STOR-11).
+- Neither trove nor the chart configures session affinity: Services keep `sessionAffinity: None`,
+  and the edge route sets no affinity cookie ([ha-and-helm.md](ha-and-helm.md)).
+- No volume is shared between pods (INV-13). A role that needed persistent local state would break
+  this requirement first, so no role has any.
+
+Acceptance criteria:
+- In the e2e profile `scatter`, the edge balances every request round robin across three `web`
+  replicas, with upstream keep-alive switched off. The client suite passes in that profile: npm
+  publish and then install through a virtual repository, `dotnet nuget push` and then
+  `dotnet restore`, the UI login, and a paged `GET /api/v1/…` list walked to its last page. From
+  P1 the same profile also runs `npm login --auth-type=web` and the device login (R-AUTH-034,
+  R-AUTH-036, [formats/npm.md](formats/npm.md) R-NPM-020).
+- A test in `internal/archtest` fails on a package-level variable of map, slice, pointer or
+  `sync.Map` type outside `internal/cache`, `internal/cluster`, `internal/observability` and the
+  registries that are frozen at start-up (`formats`, `jobs`, `errs`, `secrets`, and the
+  revision-column registry of `meta`, R-ARCH-009).
 
 ## Code layout
 
@@ -249,7 +415,7 @@ pin CI reads. Code generators are pinned once, and local builds and CI read the 
 
 ```text
 trove/
-├── cmd/trove/main.go          # subcommands serve, migrate, admin; flag parsing only
+├── cmd/trove/main.go          # subcommands serve, migrate, backup, admin; flag parsing only
 ├── api/openapi.yaml             # OpenAPI 3.1 source of truth, served as /api/v1/openapi.json (INV-6)
 ├── internal/
 │   ├── app/                     # composition root: builds components from config, start/stop order
@@ -275,10 +441,12 @@ trove/
 │   │       ├── queries/         # *.sql inputs for sqlc
 │   │       ├── q/               # sqlc output (generated, committed)
 │   │       └── listq/           # dynamic list/search queries: bound values, allowlisted identifiers (R-ARCH-019)
-│   ├── cluster/                 # notifier, listener, leases, lock categories, FlightLock, channel registry
+│   ├── cluster/                 # Valkey client and key registry, change log and signal areas, FlightLock,
+│   │                            # shared counters, leases, lock categories (R-ARCH-017, R-ARCH-018, R-ARCH-030 to R-ARCH-034)
 │   ├── cache/
 │   ├── jobs/
 │   ├── audit/
+│   ├── backup/                  # trove backup: create, restore, table registry (backup-and-restore.md)
 │   ├── outbound/
 │   ├── secrets/
 │   ├── errs/
@@ -288,7 +456,7 @@ trove/
 ├── web/                         # Angular workspace (R-ARCH-004)
 ├── deploy/helm/trove/         # Helm chart (INV-13)
 ├── test/
-│   ├── integration/             # real PostgreSQL and SeaweedFS (S3) in containers (R-HA-051)
+│   ├── integration/             # real PostgreSQL, PgBouncer, Valkey with Sentinel and SeaweedFS (S3) in containers (R-HA-051)
 │   └── e2e/                     # kind + Helm + real clients (npm, pnpm, yarn, dotnet)
 └── perf/                        # load scripts, reference lockfiles (R-ARCH-027)
 ```
@@ -446,7 +614,10 @@ Middleware, outermost first:
    `Authorization` header carries an ID token, the stage does not evaluate it, and the request
    reaches the handler unauthenticated
    ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-001).
-7. Rate limits on `/api/v1/`, `/files/` and `/auth/` ([api-and-ui.md](api-and-ui.md)).
+7. Rate limits on `/api/v1/`, `/files/` and `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
+   counters are cluster-wide in Valkey wherever the owning page gives a class cluster scope, and
+   fall back to per-replica buckets while Valkey is unavailable (R-ARCH-034). The check never waits
+   longer than `valkey.command_timeout`.
 8. The handler. Authorization runs inside the handler, as soon as the repository and the path or
    package are known ([authorization.md](authorization.md)).
 
@@ -471,7 +642,7 @@ server:
   transfer_stall_timeout: 60s        # default (proposed)
   max_header_bytes: 65536            # default (proposed)
   max_in_flight: 4096                # default (proposed), per replica
-  shutdown_timeout: 25s              # default (proposed), R-ARCH-024
+  shutdown_timeout: 25s              # default (proposed) outside the chart; the chart derives it from the grace period (R-ARCH-024)
   tls:
     cert_file: ""                    # default (proposed): empty = plain HTTP
     key_file: ""                     # default (proposed)
@@ -733,6 +904,10 @@ type Format interface {
 	RemoveVersion(ctx context.Context, tx Tx, v VersionRef) ([]ItemRef, error) // retention and caps
 	VersionGroup(v VersionRef) string                                          // group a cap counts
 
+	// ServeCheck runs before the core serves a stored item on any route. errs.NotFound refuses
+	// the item because of format state the generic item row does not carry. It reads through h.
+	ServeCheck(ctx context.Context, h Host, repo RepoRef, it ItemRef) error
+
 	Remote() RemoteAdapter   // nil when Descriptor().Classes lacks Remote
 	Virtual() VirtualAdapter // nil when Descriptor().Classes lacks Virtual
 	Indexes() IndexBuilder   // nil when the format has no rebuildable derived metadata
@@ -792,6 +967,11 @@ type RemoteAdapter interface {
 	AcceptResponse(p Path, resp *http.Response) error
 	// Rewrite renders a stored upstream document for one response (repositories-and-proxy.md).
 	Rewrite(ctx context.Context, rc RemoteContext, p Path, doc []byte, links LinkBuilder) ([]byte, error)
+	// OnFill runs inside a remote metadata cache-fill transaction, while the core holds the cache
+	// entry's row lock and before it writes the entry. f.Replaces says whether the core's upsert
+	// rule replaces the stored document or keeps a newer stored one (repositories-and-proxy.md
+	// R-REPO-026 step 5). keepStored keeps the stored document and renews only its freshness.
+	OnFill(ctx context.Context, tx Tx, f FillEvent) (keepStored bool, err error)
 }
 
 type VirtualAdapter interface {
@@ -846,8 +1026,30 @@ Normative rules:
 - `Route.Action` is a coarse check that the core runs before the body is read: "may this principal
   do this action anywhere in this repository?". The handler then decides on the concrete path or
   package through `Host.Authorize`.
-- `OnCommit`, `OnItemsRemoved` and `OnItemsRestored` run inside the storage transaction and MUST
-  NOT perform I/O outside PostgreSQL.
+- `OnCommit`, `OnItemsRemoved`, `OnItemsRestored` and `RemoteAdapter.OnFill` run inside the
+  storage transaction and MUST NOT perform I/O outside PostgreSQL.
+- **Remote fill.** The storage hook that runs inside a remote metadata cache-fill transaction,
+  `RemoteAdapter.OnFill` (R-ARCH-012 lists remote cache fill among its triggers), MUST:
+  1. tell the format whether the cache-entry upsert replaces the stored document or keeps the newer
+     stored one ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 5);
+  2. let the format keep the stored document, with only its freshness renewed, when the format's
+     own comparison against a value it recorded for the stored document says the received one is
+     older.
+
+  npm uses this for its stale-copy rule against `npm_remote_packages.doc_modified`
+  ([formats/npm.md](formats/npm.md) R-NPM-024, Q-NPM-5). A format writes its side tables of remote
+  documents in this hook, and only when the stored document is replaced. They then follow the
+  stored document even under duplicate fills, which a lost `FlightLock` or an unavailable Valkey
+  causes (R-ARCH-033).
+- **Serve-time check.** The core calls `ServeCheck` before it serves a stored item on any route:
+  `/files/<repo>/<path>`, a remote's cache view, virtual tier resolution and the format's own
+  routes. Through it a format refuses an item with `404` because of format state the generic item
+  row does not carry. npm refuses items of tombstoned versions, including versions withheld by a
+  restore's replay ([formats/npm.md](formats/npm.md) R-NPM-047, Q-NPM-12), and of versions removed
+  upstream (R-NPM-026).
+  - The hook reads through `Host` like every other format access, and runs no SQL itself.
+  - The in-process state a format's check uses is listed in R-ARCH-032 like any other per-replica
+    state. npm uses none: it reads PostgreSQL per request.
 
 Acceptance criteria:
 - The conformance kit (R-ARCH-010) passes for `npm` and `nuget`.
@@ -869,7 +1071,7 @@ type Host interface {
 	Links() LinkBuilder          // absolute URLs from the request's base URL (R-ARCH-006)
 	Renditions() RenditionCache  // rendered documents (R-ARCH-018)
 	Jobs() JobEnqueuer           // R-ARCH-016
-	Notify(tx Tx, ch Channel, payload any) // attaches to tx; sent as the channel's class says (R-ARCH-018)
+	Notify(tx Tx, a Area, payload any) // attaches to tx; a change area writes the change log in tx, a signal area publishes after commit (R-ARCH-018)
 }
 
 type PackageStore interface {
@@ -889,15 +1091,34 @@ type PackageStore interface {
   - It is incremented in the transaction that changes the package, by every storage hook or format
     write that changes the package's rows. Conformance kit check 9 (R-ARCH-010) catches a write that
     forgets it.
+  - It is the first entry of the revision-column registry below, so a restore raises it above
+    every value the old installation can have issued as an `ETag`
+    ([backup-and-restore.md](backup-and-restore.md) R-BAK-022).
+- **Revision-column registry.** `meta.RegisterRevisionColumn(table, column)` in `internal/meta`
+  registers every `bigint` column whose values clients hold as an `ETag` or send as `If-Match`, or
+  that replicas compare as an epoch. A restore raises every registered column by 2^32, so no such
+  value repeats with different content after a restore
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-022, Q-BAK-5).
+  - `packages.rev_seq` is registered first, by this page. The owning pages register their own:
+    the repository and claims revisions and the revision of the proxy-offline switch of
+    [repositories-and-proxy.md](repositories-and-proxy.md), the revision columns of
+    [gitlab-ci-oidc.md](gitlab-ci-oidc.md), and `cluster_epoch.epoch` (R-ARCH-018).
+  - The registry is frozen at start-up like the other registries (R-ARCH-032), and the restore
+    reads it ([backup-and-restore.md](backup-and-restore.md) R-BAK-021 step 6). No second list of
+    revision columns exists.
 - Copy, move and delete change rows only, never blob content (STOR-002, [storage.md](storage.md)).
 - Everything one client request writes goes through one transaction: items, package rows,
   properties, audit event and job enqueue. Its notifications are attached to that transaction and
-  leave it as their channel's class decides (R-ARCH-018): administrative ones inside it, hot-path
-  ones through the coalescer after commit.
+  leave it as their area's class decides (R-ARCH-018): a change area writes its change-log row
+  inside the transaction, and a signal area is published to Valkey through the coalescer after
+  commit. A rollback sends neither.
 
 Acceptance criteria:
 - `go test ./internal/formats/...` passes with no PostgreSQL and no object store running, using the
   in-memory `Host` in `formattest`.
+- A unit test over the migrated schema fails on a `bigint` column named `rev_seq`, `*_version`,
+  `revision` or `epoch` that is not registered with `meta.RegisterRevisionColumn`
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-022).
 
 ### R-ARCH-010 · Format registry and conformance kit
 Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
@@ -966,25 +1187,48 @@ Priority: **MVP** · Covers: ART-011, REPO-016, STOR-001
 
 1. ServeMux matches `/api/<id>/{repoKey}/…` or `/files/{repoKey}/…`. Middleware resolves the
    client address, base URL and principal.
-2. The repository comes from the in-process snapshot. An unknown key, or a format segment that does
-   not match the repository's format, answers `404` with code `repository_not_found`.
+2. The repository comes from the in-process snapshot. A format segment that does not match the
+   repository's format answers `404` with code `repository_not_found`. A key that the snapshot does
+   not know is handled so that a repository is usable on every replica as soon as its creation has
+   answered ([api-and-ui.md](api-and-ui.md) R-API-052, Q-API-12):
+   - A key that fails INV-5's key pattern answers `404` `repository_not_found` without a query.
+   - Any other key is looked up in PostgreSQL before the replica answers. Concurrent lookups of one
+     key share one query.
+   - If the key exists, the replica triggers one immediate change-log poll (R-ARCH-018,
+     change-area step 3), coalesced with concurrent ones, and waits until the caches that poll
+     invalidates are rebuilt, the grant index of [authorization.md](authorization.md) R-AUTHZ-028
+     included. It then resolves and authorizes the request against them. The wait is bounded like
+     a wait for the database ([ha-and-helm.md](ha-and-helm.md) R-HA-009); if the bound ends first,
+     the request answers `503` with `Retry-After`.
+   - If the key does not exist, the request answers `404` `repository_not_found`, and the miss is
+     recorded in the negative cache of unknown repository keys. It is a registered cache
+     (`repo_key_misses`, R-ARCH-018) bounded by `cache.unknown_repo_keys` per replica, with a
+     `SafetyTTL` of 60 s, and every `repo_config` change evicts it. Repeated misses for one key are
+     answered from it without a query, so a flood of requests for unknown keys costs at most one
+     indexed query per distinct key and entry lifetime.
 3. `Format.Match` selects the route, and `repository.CleanPath` canonicalises the path.
 4. Authorization checks `read` on the repository and the path or package
    ([authorization.md](authorization.md)). Denial answers `401` with a challenge for an anonymous
    caller, and `403` or `404` for an authenticated one, as that page decides.
 5. Include and exclude patterns apply ([repositories-and-proxy.md](repositories-and-proxy.md)).
 6. What happens next depends on the route kind:
-   - `Content`: the item lookup, `HEAD`, conditional, `Range` and streaming rules of
-     [storage.md](storage.md). Conditional requests and `HEAD` never reach object storage.
+   - `Content`: the item lookup, then the format's serve-time check (`ServeCheck`, R-ARCH-008),
+     then the `HEAD`, conditional, `Range` and streaming rules of [storage.md](storage.md).
+     Conditional requests and `HEAD` never reach object storage.
    - `Computed`: R-ARCH-012.
 7. The response carries the content headers (R-ARCH-007).
 8. Download statistics are counted in memory and flushed in batches. The request path never writes
-   them ([storage.md](storage.md)).
+   them ([storage.md](storage.md)), and no request reads the buffer (R-ARCH-032). The buffer is
+   flushed at shutdown (R-ARCH-024).
 
 Acceptance criteria:
 - `npm install @acme/lib@1.0.0 --registry https://trove.example.com/api/npm/npm-local/` succeeds.
 - A conditional request with the item's ETag answers `304`, and the object-store GET counter does
   not move.
+- With Valkey stopped and `cluster.epoch_poll_interval: 10s`, a repository created with
+  `POST /api/v1/repositories` through replica A takes an `npm publish` through replica B at once
+  after the creation answered ([api-and-ui.md](api-and-ui.md) R-API-052). 1,000 requests for one
+  unknown key that matches INV-5's pattern cause one PostgreSQL lookup on a replica.
 
 ### R-ARCH-012 · Read-your-writes package metadata for local repositories
 Priority: **MVP** · Covers: FMT-011
@@ -995,10 +1239,17 @@ Priority: **MVP** · Covers: FMT-011
   background job rebuilds.
 - After a publish has returned 2xx, the next metadata read on any replica MUST include the new
   version.
-- The rendering is cached in the rendition cache under (repository, package, `rev_seq`, base URL,
-  encoding). Each request reads the current `rev_seq` with one indexed query, so a cached rendering
-  can never outlive a commit, whether or not a notification has arrived.
-  [formats/npm.md](formats/npm.md) and [formats/nuget.md](formats/nuget.md) apply this rule.
+- The rendering is cached in the rendition cache under (repository, package, `rev_seq`, variant,
+  base URL, encoding, rendering settings, render version). Each request reads the current `rev_seq`
+  with one indexed query, so a cached rendering can never outlive a commit, whether or not a
+  notification has arrived. [formats/npm.md](formats/npm.md) and [formats/nuget.md](formats/nuget.md)
+  apply this rule.
+  - The rendering settings are the format's `trove.yaml` keys that change the bytes and the serving
+    repository's `config_version`. The render version is a constant of the format that a release
+    increments whenever it changes the rendered bytes (npm: `npmRenderVersion`).
+  - A cached rendering and the `ETag` computed for it use the same inputs, so a client never holds
+    an `ETag` for bytes that a settings change or a new release would render differently
+    ([formats/npm.md](formats/npm.md) R-NPM-013).
 - Every change that reaches package rows through the storage hooks of R-ARCH-008 increments
   `rev_seq` in its own transaction. Those changes are: publish or upload, delete, trash restore,
   copy, move, import, retention removal and remote cache fill. The catalog lists deploy, delete,
@@ -1048,8 +1299,9 @@ status codes are owned by [repositories-and-proxy.md](repositories-and-proxy.md)
 fixes their order and the components involved.
 
 6. `Format.Classify`. A `Volatile` path passes through without being stored.
-7. The proxy looks up the cache entry in PostgreSQL. The outcomes are owned by the proxy page; the
-   codes shown are those it uses:
+7. The proxy looks up the cache entry in PostgreSQL, and on a miss the negative entry in its
+   in-process L1 and then in Valkey (R-ARCH-030). Without Valkey, only the L1 answers. The outcomes
+   are owned by the proxy page; the codes shown are those it uses:
 
 | Case | Owner's behaviour (summary) | Client sees |
 |---|---|---|
@@ -1066,19 +1318,23 @@ fixes their order and the components involved.
 | Destination refused by the egress policy | No connection | `502` `egress_denied` |
 
 The order on a miss:
-1. Single-flight within the replica, then the cross-replica advisory lock (category `fetch`,
-   R-ARCH-017), both per the collapse protocol of the proxy page (INV-11).
+1. Single-flight within the replica, then the cross-replica flight lock in Valkey through
+   `cluster.FlightLock` (R-ARCH-033), both per the collapse protocol of the proxy page (INV-11).
+   While Valkey is unavailable, only the single-flight within the replica applies.
 2. `RemoteAdapter.UpstreamRequest` builds the request. A client from `internal/outbound`
    (R-ARCH-022) sends it.
 3. `RemoteAdapter.AcceptResponse` checks status and declared type before any byte is stored or
    sent.
 4. The body enters the upload pipeline of [storage.md](storage.md): spool and single-pass digests.
-   The leader's own client MAY receive the body while it arrives, under the proxy page's
-   withheld-tail rule, so no client completes an unverified download. Waiters are served from the
-   stored entry.
-5. One short transaction stores the blob reference and the cache entry. The fill-complete
-   notification follows it (R-ARCH-018).
-6. The lock is released. No database transaction is ever open while bytes are transferred.
+   The leader's own client MAY receive the body while it arrives, with its tail withheld until
+   verified and, for a stored artifact, until the entry has committed
+   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-041). No client therefore
+   completes an unverified download, or one whose bytes a duplicate flight's commit has refused.
+   Waiters are served from the stored entry.
+5. One short transaction stores the blob reference and the cache entry.
+6. The lock is released and the fill outcome is published on the flight's channel (R-ARCH-033).
+   No database transaction is open, and no PostgreSQL connection is held, while bytes are
+   transferred.
 
 ```mermaid
 sequenceDiagram
@@ -1086,22 +1342,26 @@ sequenceDiagram
     participant C as npm client
     participant A as Replica A
     participant PG as PostgreSQL
+    participant VK as Valkey
     participant S3 as Object storage
     participant U as registry.npmjs.org
     C->>A: GET /api/npm/npm-remote/left-pad/-/left-pad-1.3.0.tgz
     A->>A: snapshot, Match, CleanPath, authorize read
-    A->>PG: cache entry? negative entry?
+    A->>PG: cache entry?
     PG-->>A: none
+    A->>VK: GET trove:<ks>:neg:v1:<repo id>:<f>
+    VK-->>A: nil
     A->>A: authorize population, single-flight join
-    A->>PG: pg_try_advisory_lock(fetch, h)
-    PG-->>A: true
+    A->>VK: SET trove:<ks>:lock:fetch:v1:<f> <token> NX PX 30000
+    VK-->>A: OK
     A->>PG: re-check cache entry
     A->>U: GET (outbound client, egress policy)
     U-->>A: 200, body
-    A-->>C: body streamed, tail withheld until verified
+    A-->>C: body streamed, tail withheld until verified and, for a stored artifact, until the entry has committed
+    A->>VK: SET … IFEQ <token> PX 30000 (every 10 s while transferring)
     A->>S3: HEAD, then PUT sha256/... if absent
     A->>PG: BEGIN, upsert cache entry, COMMIT
-    A->>PG: pg_advisory_unlock(fetch, h)
+    A->>VK: DELIFEQ trove:<ks>:lock:fetch:v1:<f> <token>, PUBLISH trove:<ks>:fill:v1:<f> stored
     A-->>C: tail
 ```
 
@@ -1110,6 +1370,7 @@ Acceptance criteria (metric names per [operations-and-observability.md](operatio
   fetches from the upstream. A second run after `npm cache clean --force` makes no upstream request.
 - After the metadata cache period has passed and with the upstream unreachable,
   `npm install lodash@4.17.21` still succeeds from stale metadata and the cached tarball.
+- With Valkey stopped, both criteria above still pass.
 
 ### R-ARCH-014 · Request path: upload
 Priority: **MVP** · Covers: ART-002, ART-008, STOR-004, STOR-019, HA-005, REPO-038
@@ -1194,11 +1455,11 @@ Acceptance criteria, with `npm-all` = [`npm-local`, `npm-remote`]:
   `npm view @acme/lib versions --registry …/npm-all/` lists the local ones.
 - A user with `read` on `npm-remote` only cannot see `@acme/lib` through `npm-all`. A user with
   `read` on both can.
-- With the notification coalescer disabled in a test build, the next `npm view @acme/lib versions`
+- With Valkey stopped, so that no signal reaches replica B, the next `npm view @acme/lib versions`
   through `npm-all` on replica B lists a version just published to `npm-local` on replica A. The
   same test passes for `nuget-all` with the registration index, and for the `formattest` fake
   format.
-- With the coalescer disabled and `local.autoClaim: false` on `npm-local` (so no new claim changes
+- With Valkey stopped and `local.autoClaim: false` on `npm-local` (so no new claim changes
   the member fingerprint), `npm view lodash versions --registry …/npm-all/` is cached on replica
   B, then `lodash@99.0.0` is published to `npm-local` on replica A by a caller with `manage`
   ([repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-6). The next `npm view` on B lists
@@ -1242,6 +1503,7 @@ CREATE TABLE job (
     result         jsonb,
     error          jsonb,                                   -- problem object (R-ARCH-023)
     created_by     uuid,                                    -- principal; NULL for system and scheduled runs
+    traceparent    text,                                    -- W3C trace context of the enqueuing request or job, written at enqueue
     created_at     timestamptz NOT NULL DEFAULT now(),
     started_at     timestamptz,
     finished_at    timestamptz,
@@ -1257,7 +1519,9 @@ CREATE UNIQUE INDEX job_one_active ON job (dedup_key)
 CREATE UNIQUE INDEX job_task_slot ON job (task, scheduled_for) WHERE task IS NOT NULL;
 ```
 
-Workers claim jobs on the main pool, in short transactions that work through a transaction pooler:
+Only replicas of role `worker` (or `all`) run the claim loop, the reaper and the scheduler
+(R-ARCH-001). A `web` replica enqueues jobs and never claims one. Workers claim jobs on the main
+pool, in short transactions that work through a transaction-mode pooler (R-ARCH-019):
 
 ```sql
 WITH next AS (
@@ -1278,6 +1542,22 @@ RETURNING job.*;
 Normative rules:
 - Delivery is at least once, so handlers MUST be idempotent. Long handlers, such as garbage
   collection and data migrations, checkpoint into `checkpoint` and resume from it.
+- **Claim only while ready.** The claim loop claims only while the replica is ready, that is while
+  every gating check of [operations-and-observability.md](operations-and-observability.md)
+  R-OPS-001 passes. While it is not ready, for example while PostgreSQL does not answer or the
+  replica drains, the loop claims nothing and still records watchdog progress, so liveness never
+  fails because readiness does.
+- **Kind-specific claim steps.** A kind may add a step that runs inside the claim transaction. The
+  claim of kind `webhook.deliver` ([operations-and-observability.md](operations-and-observability.md)
+  R-OPS-042, P1) locks the subscription row with `FOR UPDATE SKIP LOCKED`, counts the
+  subscription's `in_flight` deliveries whose job is still `running`, and claims only below
+  `webhooks.max_in_flight_per_subscription`; otherwise the job stays `queued`. The row lock
+  serialises the claims of one subscription across every replica, which a count inside the claim
+  query alone would not do under `READ COMMITTED`.
+- **Trace context.** An enqueue writes the `traceparent` of the request or job that enqueues it, so
+  the job's spans link to the web request that started it
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-018). The column holds
+  trace context only, never a credential.
 - A replica claims only the job kinds it knows (`$2`). During a rolling upgrade, an N-1 replica
   never picks up a kind introduced in N.
 - Enqueue modes:
@@ -1294,13 +1574,43 @@ Normative rules:
     only (R-ARCH-017).
   - If a coalesced job returns to `queued` (retry, reaper) while another waits, it ends
     `cancelled` with `error.code = superseded`.
-- The heartbeat extends `locked_until` every `jobs.heartbeat_interval`. A heartbeat that no longer
+- The heartbeat extends `locked_until` every `jobs.heartbeat_interval`. One statement per replica
+  extends all of its running jobs, on the replica's control connection (R-ARCH-019), so a pool
+  drained by busy handlers cannot make a live worker lose its jobs. A heartbeat that no longer
   matches its row cancels the handler's context. So does one that finds the state `cancelling`; the
   handler then ends the job `cancelled` at its next checkpoint.
+- `locked_until` is the job's visibility timeout. A worker that dies without releasing its jobs
+  holds them at most until `locked_until`; the heartbeat keeps it in the future while the handler
+  runs.
 - The reaper runs on every worker replica. Expired `running` jobs go back to `queued` with backoff
   (`run_at = now() + min(2^attempt s, 1 h)` ± 20 % jitter), or to `failed` once `max_attempts` is
   used up.
-- Workers wake on `NOTIFY trove_jobs` (R-ARCH-018) and also poll every `jobs.poll_interval`.
+- **Release on shutdown.** On `SIGTERM` a worker stops claiming at once. Running handlers keep
+  running until 5 s before the shutdown deadline (R-ARCH-024). A handler that has not finished by
+  then is cancelled; it persists its checkpoint if it has one, and its job is released in one
+  statement:
+
+  ```sql
+  UPDATE job SET state = 'queued', locked_by = NULL, locked_until = NULL,
+                 attempt = attempt - 1, run_at = now()
+  WHERE id = $1 AND locked_by = $2 AND state IN ('running', 'cancelling');
+  ```
+
+  A released job does not count the interrupted attempt. Another worker claims it at its next poll
+  or wake-up and resumes from `checkpoint`. A job in `cancelling` ends `cancelled` instead of being
+  released. A drain therefore costs a job its progress since the last checkpoint, never an attempt
+  and never the job itself. A release counts in `trove_jobs_completed_total{outcome="released"}`
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-008).
+  - Before its job is released, a handler cancels its outstanding object-store calls and waits for
+    them to return, so it sends nothing after the release. It may then run one short statement that
+    hands its own claims over: the garbage collector records step 5 for the rows whose delete
+    succeeded and back-dates `state_changed_at` of its unfinished claims
+    ([storage.md](storage.md) R-STOR-024). The hand-over rule of R-STOR-024 depends on both, so
+    the run that continues the job finishes those rows after `storage.gc.delete_settle` instead of
+    `storage.gc.handover_delay`.
+- Workers wake on the signal area `jobs` (R-ARCH-018), published to Valkey after an enqueue
+  commits, and also poll every `jobs.poll_interval`. While Valkey is unavailable, pick-up waits for
+  the poll.
 - The scheduler is a singleton under the `scheduler` lease (R-ARCH-017). Every
   `jobs.schedule_tick` it reads the schedules: `maintenance.tasks.<name>` from configuration, and
   the schedules other pages keep in PostgreSQL, such as cleanup policies in
@@ -1333,7 +1643,10 @@ Normative rules:
   the health check loop, which R-OPS-001 watches itself, the watched loops are:
   - the claim loop `jobs.claim` and the reaper `jobs.reaper`, on replicas whose role runs workers;
   - the scheduler tick `jobs.scheduler`, while this replica holds the `scheduler` lease;
-  - the coordination-session loop `cluster.session` (R-ARCH-017);
+  - the lease loop `cluster.leases`, on replicas whose role runs workers (R-ARCH-017);
+  - the change-log poll `cluster.changes` and the Valkey subscriber `cluster.signals`, on every
+    `web` and `worker` replica (R-ARCH-018, R-ARCH-031). The subscriber records progress while
+    Valkey is unreachable, so a Valkey outage never fails liveness;
   - the outbox dispatcher `webhooks.dispatch` of
     [operations-and-observability.md](operations-and-observability.md) R-OPS-035 (P1), while
     webhooks are enabled.
@@ -1341,7 +1654,7 @@ Normative rules:
   Rules for these loops:
   - The claim loop records progress while every worker is busy. Waiting for a worker slot is
     outside the iteration, so a long job on the single `maintenance` worker never fails liveness.
-    The wait for `NOTIFY trove_jobs` inside an iteration ends after `jobs.poll_interval`.
+    The wait for a `jobs` signal inside an iteration ends after `jobs.poll_interval`.
   - Every call a watched loop makes carries a context deadline shorter than
     `health.watchdog_timeout`: the claim query, the reaper's update, the slot insert and the
     dispatcher's batch. A blackholed PostgreSQL then produces failed iterations, not a stuck loop.
@@ -1358,16 +1671,26 @@ Normative rules:
 
 | Kind | Owner | Registration |
 |---|---|---|
-| `gc`, `gc-full` | [storage.md](storage.md) R-STOR-025 | Dedup key `gc`, shared by both kinds, `exclusive`: one collection run at a time, whichever task started it. `gc-full` checkpoints its keyset position. |
-| `orphan-sweep` | [storage.md](storage.md) R-STOR-026 (P1) | `exclusive`; checkpoints after each prefix |
-| `scrub` | [storage.md](storage.md) R-STOR-027 (P1) | `exclusive` |
-| `remote-cache-cleanup` | [storage.md](storage.md) R-STOR-045 (P1) | `exclusive`; checkpoints after each batch |
-| `build-retention` | [storage.md](storage.md) R-STOR-043 (P1) | Dedup key `build-retention:<build name>`, `coalesce`: one run per build name at a time, and a build published during a run is covered by the waiting one |
-| `retention-run` | [storage.md](storage.md) R-STOR-040 (P1) | Dedup key `retention:<policy key>`, `exclusive`. `MaxAttempts: 1`, so the reaper fails a run whose worker was lost instead of re-queueing it. The kind name is fixed here, because storage.md names none. |
+| `gc`, `gc-full` | [storage.md](storage.md) R-STOR-025 | Queue `maintenance`. Dedup key `gc`, shared by both kinds, `exclusive`: one collection run at a time, whichever task started it. `gc-full` checkpoints its keyset position. |
+| `orphan-sweep` | [storage.md](storage.md) R-STOR-026 (P1) | Queue `maintenance`, `exclusive`; checkpoints after each prefix |
+| `scrub` | [storage.md](storage.md) R-STOR-027 (P1) | Queue `maintenance`, `exclusive` |
+| `remote-cache-cleanup` | [storage.md](storage.md) R-STOR-045 (P1) | Queue `maintenance`, `exclusive`; checkpoints after each batch |
+| `build-retention` | [storage.md](storage.md) R-STOR-043 (P1) | Queue `default`. Dedup key `build-retention:<build name>`, `coalesce`: one run per build name at a time, and a build published during a run is covered by the waiting one |
+| `retention-run` | [storage.md](storage.md) R-STOR-040 (P1) | Queue `default`. Dedup key `retention:<policy key>`, `exclusive`. `MaxAttempts: 1`, so the reaper fails a run whose worker was lost instead of re-queueing it. The kind name is fixed here, because storage.md names none. |
 | `secrets-reencrypt` | R-ARCH-021 | Manual task without a schedule, `exclusive`. It refuses to start while the replicas' key rings are incompatible. |
 | `data_migration_<name>` | R-ARCH-026 | Resumable through `checkpoint` |
+| `nuget-symbol-index` | [formats/nuget.md](formats/nuget.md) R-NUGET-021 (P1) | Queue `index`, dedup key `nuget-symbol-index:<version id>`, `exclusive`: one job per symbol package, enqueued in the symbol push's commit and, for the backfill, by a data migration. The handler re-checks `indexed_at` under the `nuget_symbol_package` row lock, so a released, retried or reindex-started run commits nothing twice; a package that cannot be indexed ends with `index_error` instead of failing the job. |
+| `cluster-change-prune` | R-ARCH-018 | Scheduled every 10 minutes, `exclusive`. Deletes a `cluster_change` row once the next row of its area is older than `cluster.change_retention`. The newest row of each area is therefore always kept, and a replica that polled within the retention still finds the row at its last applied epoch, which change-area step 5 of R-ARCH-018 checks. Idempotent. |
 
 Tasks of other pages, such as those in R-OPS-019's table, register their kinds by the same rule.
+None of the storage kinds above takes an advisory-lock lease: their exclusion is the job key, and
+their safety rests on row locks ([storage.md](storage.md) Q-STOR-13).
+
+The `job` table has the backup export class `data` ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-004). A restore returns its `running` rows to `queued` without counting the attempt, as a
+graceful release does, and turns its `cancelling` rows into `cancelled`, because their
+cancellation was requested before the snapshot ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-022 owns this rule).
 
 ```yaml
 jobs:
@@ -1398,154 +1721,386 @@ Acceptance criteria:
 - In a fault-injection build, the claim query is held by a `pg_sleep` longer than
   `health.watchdog_timeout`. Each claim ends with a deadline error, `jobs.claim` keeps recording
   progress, and `/healthz` stays `200`.
+- `kubectl drain` of the node that runs a `gc-full` job, which checkpoints after every batch: the
+  job is `queued` again before the pod exits, with `attempt` unchanged, and another worker finishes
+  it from its checkpoint.
+- With Valkey stopped, an enqueued job is picked up within `jobs.poll_interval` plus 1 s, and no
+  worker replica turns unready.
 
-### R-ARCH-017 · Coordination session, leases and advisory-lock categories
+### R-ARCH-017 · Session connections, leases and advisory-lock categories
 Priority: **MVP** · Covers: HA-002, HA-006, HA-007
 
-- Each replica keeps one coordination session. It is a dedicated PostgreSQL connection outside the
-  pool, with `application_name` `trove:<replica>:notify`, opened against `cluster.coordination_url`.
-  - It runs `LISTEN` on every registered channel (R-ARCH-018).
-  - It holds the session-level advisory locks behind named leases.
-  - Its state is the `notify` readiness check
-    ([operations-and-observability.md](operations-and-observability.md)).
-- The loop that serves the session is watched by liveness as `cluster.session` (R-ARCH-016,
+Mutual exclusion whose failure would corrupt data stays in PostgreSQL (INV-3): named leases, the
+singleton work of [ha-and-helm.md](ha-and-helm.md) R-HA-006, the migration lock and the
+transaction-scoped configuration locks. Since 2026-10-28 there is no per-replica coordination
+session and no `LISTEN` (Q-ARCH-15), and only replicas that run singleton work hold session
+connections (Q-ARCH-14).
+
+- **Lease pool.** Each replica of role `worker` (or `all`) keeps the lease pool: up to
+  `database.lease_pool_size` session-scoped connections named `trove:<replica>:lease`, opened
+  against the session host. That is `database.session_host` when the main pool goes through a
+  transaction-mode pooler, and the database host otherwise ([ha-and-helm.md](ha-and-helm.md)
+  R-HA-058). A `web` replica opens none (R-ARCH-001).
+  - The `scheduler` lease and every fenced singleton lease of R-HA-006 is a session-level advisory
+    lock held on one of these connections. The singleton's writes run on the same connection
+    (fencing, R-HA-006).
+  - `trove migrate` and `trove backup` open their own session connection against the same endpoint
+    (R-ARCH-019).
+- The loop that checks the held leases is watched by liveness as `cluster.leases` (R-ARCH-016,
   [operations-and-observability.md](operations-and-observability.md) R-OPS-001).
-  - One iteration waits for notifications for at most `cluster.ping_interval`, then pings. It records
-    progress whether the wait, the ping or a reconnect attempt succeeded or failed.
-  - `WaitForNotification`, the ping and every reconnect attempt carry a deadline shorter than
+  - One iteration pings each lease connection with `SELECT 1`, every
+    `database.lease_check_interval`. It records progress whether the ping succeeded or failed.
+  - Every ping and every reconnect attempt carries a deadline shorter than
     `health.watchdog_timeout`.
-  - A lost session therefore produces failed iterations and a failing `notify` check, never a failed
-    liveness probe.
-- When the session is lost, the replica:
-  1. cancels every lease holder's context;
-  2. fails the `notify` check;
-  3. reconnects with backoff and runs `LISTEN` again;
-  4. flushes every registered cache (R-ARCH-018);
-  5. tries the leases again.
+- When a lease connection is lost, the replica cancels the holder's context, records the loss
+  (R-HA-006), and tries the lease again every `cluster.lease_retry_interval`. No cache is flushed,
+  because no cache depends on this session (R-ARCH-018). Readiness is not affected.
+- On shutdown, the replica releases its leases explicitly (`pg_advisory_unlock`) and closes the
+  connections, so another worker takes a lease at its next retry instead of waiting for the
+  session to end (R-ARCH-024).
 - Every advisory lock uses the two-`int4` form, and the first key is a registered category. This
   lets the lock-diagnostics view of
   [operations-and-observability.md](operations-and-observability.md) name every lock:
 
 | classid | Category | objid | Holder |
 |---|---|---|---|
-| 1 | `lease` | registered lease number (`scheduler` = 1) | coordination session for named leases; a lease-pool connection for singleton work with fencing ([ha-and-helm.md](ha-and-helm.md) R-HA-006); session lock |
-| 2 | `fetch` | first 4 bytes of SHA-256(repository id ‖ 0x00 ‖ path ‖ 0x00 ‖ variant) as `int4` | proxy lock pool, session lock ([repositories-and-proxy.md](repositories-and-proxy.md)) |
-| 3 | `migration` | 0 | `trove migrate`, session lock (R-ARCH-026) |
-| 4 | `config` | registered object type (virtual membership = 1) | `pg_advisory_xact_lock` inside configuration transactions |
+| 1 | `lease` | registered lease number (`scheduler` = 1) | a lease-pool connection of a `worker` replica; session lock with fencing ([ha-and-helm.md](ha-and-helm.md) R-HA-006) |
+| 2 | `fetch` (retired) | — | Not used since 2026-10-28: the fetch lock lives in Valkey (R-ARCH-033, Q-ARCH-6). The number stays reserved and is never reused. |
+| 3 | `migration` | 0 | Session locks on the session host: `trove migrate`, exclusive (R-ARCH-026, [ha-and-helm.md](ha-and-helm.md) R-HA-019); the database phase of `trove backup create`, shared `pg_advisory_lock_shared(3, 0)` on the snapshot connection ([backup-and-restore.md](backup-and-restore.md) R-BAK-005); `trove backup restore`, exclusive, until it finishes (R-BAK-021) |
+| 4 | `config` | registered object type (virtual membership = 1, configuration documents = 2) | `pg_advisory_xact_lock` inside configuration transactions; works through a transaction-mode pooler |
 
-- A collision in a hashed `objid` only serializes two unrelated operations. New categories are
-  added in `internal/cluster/locks.go`, never as ad-hoc keys.
+- No category hashes its `objid`. New categories are added in `internal/cluster/locks.go`, never as
+  ad-hoc keys.
 - The single-`bigint` forms of the advisory-lock functions are not used anywhere (Q-ARCH-7). That
   includes transaction-scoped locks such as virtual membership changes, which take
-  `pg_advisory_xact_lock(4, 1)`.
+  `pg_advisory_xact_lock(4, 1)`, and the apply of configuration documents, which takes
+  `pg_advisory_xact_lock(4, 2)` as the first statement of its transaction
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-030, R-OPS-031). Both
+  end with their transaction.
+- The migration lock excludes backups and migrations from each other
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-019): a backup's database phase holds it shared, while
+  `trove migrate` and `trove backup restore` hold it exclusively. A restore holds it until it
+  finishes, and the migration runner it calls runs on that same connection (R-ARCH-026). Whether
+  two backup runs may overlap is decided elsewhere ([backup-and-restore.md](backup-and-restore.md)
+  R-BAK-010), not by this lock.
 - Not every serialisation needs a category. `audit_maintain_partitions()`
   ([operations-and-observability.md](operations-and-observability.md) R-OPS-015) is called by every
   replica at start-up, by `trove migrate` and by the daily task. Concurrent calls serialise on a row
   lock of `audit_policy` (`SELECT … FOR UPDATE`) and take no advisory lock. The category test below
   is therefore unaffected.
-- The `fetch` category is used only through `cluster.FlightLock`, with the operations acquire,
-  wait and release. The proxy never calls the lock functions itself. The lease-row form that
-  Q-ARCH-6 keeps in reserve can therefore replace the advisory lock without changing
-  `internal/proxy`.
-- The coordination session and the proxy lock pool depend on session state, so a transaction-mode
-  pooler breaks them. At start, `trove serve` runs `SELECT pg_backend_pid()` twice on the
-  coordination session. If the values differ, it exits with
-  `coordination connection must keep session state; set cluster.coordination_url to a direct or session-mode endpoint`.
-- Leases are retried every `cluster.lease_retry_interval`. Lease holders are shown in the replica
-  registry ([operations-and-observability.md](operations-and-observability.md)).
+- `cluster.FlightLock` uses no PostgreSQL lock; R-ARCH-033 specifies it.
+- Session-scoped connections depend on session state, so a transaction-mode pooler breaks them.
+  Before a `worker` replica takes its first lease, and before `trove migrate` or `trove backup`
+  starts, the process runs `SELECT pg_backend_pid()` five times, outside a transaction, on its
+  session connection. If the values differ, it exits with
+  `session connection must keep session state; set database.session_host to a direct or session-mode endpoint`.
+  The check is a guard, not a proof. A `web` replica runs no such check: it holds no session state,
+  and its main pool may use a transaction-mode pooler (R-ARCH-019).
+- Lease holders are shown in the replica registry
+  ([operations-and-observability.md](operations-and-observability.md)).
 
 ```yaml
 cluster:
-  coordination_url: ""             # default (proposed): empty = the database URL (storage.md, ha-and-helm.md);
-                                   # secret-typed, with companion coordination_url_file
-  ping_interval: 5s                # default (proposed), SELECT 1 on the coordination session
   lease_retry_interval: 15s        # default (proposed)
+# The session host is database.session_host and database.session_port (ha-and-helm.md R-HA-058).
+# Until 2026-10-28 this section had cluster.coordination_url and cluster.ping_interval; both are gone.
 ```
 
 Acceptance criteria:
-- With three replicas,
+- With three `worker` replicas,
   `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objsubid = 2 AND classid = 1 AND objid = 1`
-  returns 1. After the holder pod is deleted, another replica holds the lease within 15 s.
-- With `cluster.coordination_url` pointing at PgBouncer in transaction mode, `trove serve` exits
-  non-zero with the message above.
+  returns 1. After the holder pod is deleted, another worker holds the lease within 15 s.
+- With six `web` and two `worker` replicas,
+  `SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE 'trove:%:lease'` never exceeds
+  2 × `database.lease_pool_size`, and no row names a `web` replica.
+- With `database.session_host` pointing at PgBouncer in transaction mode, a `worker` replica and
+  `trove migrate` exit non-zero with the message above. A `web` replica whose database URL points
+  at the same PgBouncer starts and becomes ready.
 - A test over `internal/meta/postgres/queries/*.sql` and every Go source fails on any
   `pg_advisory*` or `pg_try_advisory*` call with one argument, or with a first argument that is not
-  a category constant of `internal/cluster/locks.go`.
-- After `SELECT pg_terminate_backend(<notify pid>)`, `/readyz` turns `503`, the replica logs a
-  reconnect and a cache flush, and `/readyz` is back to `200` within two ping intervals.
+  a category constant of `internal/cluster/locks.go`, or with the retired category 2. It accepts
+  the shared form `pg_advisory_lock_shared(3, 0)` in the backup export code and fails on a shared
+  advisory-lock call anywhere else.
+- After `SELECT pg_terminate_backend(<pid of the connection holding the scheduler lease>)`, the
+  replica logs the lease loss, `/readyz` stays `200`, and a worker holds the `scheduler` lease again
+  within `cluster.lease_retry_interval` plus 1 s.
 
-### R-ARCH-018 · In-process caches and LISTEN/NOTIFY plumbing
+### R-ARCH-018 · In-process caches and cross-replica invalidation
 Priority: **MVP** · Covers: HA-006, RMT-026
 
 Each owning page decides what it caches. This page provides the mechanism every cache uses, and
-the rules for it.
+the rules for it. Since 2026-10-28 trove issues no `LISTEN` and no `NOTIFY` (Q-ARCH-15). A change
+reaches the other replicas through a change log in PostgreSQL, which carries correctness, and
+through Valkey, which carries speed.
 
+Caches:
 - A cache is registered with `cache.Register(name, Options{MaxBytes|MaxEntries, SafetyTTL, OnFlush})`.
   `SafetyTTL` is mandatory and bounds staleness if an invalidation is ever missed. Every cache exports
   `trove_cache_requests_total{cache,result}` and its size
   ([operations-and-observability.md](operations-and-observability.md)).
-- Keys that make an entry self-validating are preferred over notifications: a source digest, a
-  `rev_seq`, or an epoch counter like the one in [authorization.md](authorization.md). Notifications
-  then only evict early.
-- Channels are registered in `internal/cluster/channels.go` and named `trove_<area>`. A payload is
-  JSON under 1 KiB. A change that would need more becomes a coarse flush of the affected cache.
-  PostgreSQL's limit is 8000 bytes.
-- Delivery: PostgreSQL serializes the commits of all notifying transactions on one lock held until
-  after commit (`async.c`). The plumbing therefore separates two classes of notification
-  (Q-ARCH-8). Each channel is registered with its class in `internal/cluster/channels.go`.
-  `Host.Notify` and `cluster.Notify` attach a notification to the writing transaction, and the
-  class decides how it leaves:
-  - **Administrative** channels (configuration, policies, revocation, settings): `NOTIFY` runs
-    inside the writing transaction and is delivered on commit.
-  - **Hot-path** channels, whose notifications client traffic produces (publish, delete, cache
-    fill, metadata refresh, and the job wake-ups those transactions enqueue): the notification is
-    handed to the replica's coalescer once the transaction has committed, and dropped if it rolls
-    back. The coalescer sends at most one `NOTIFY` per channel per 50 ms per replica, batching the
-    payloads.
-    - Each coalescer `NOTIFY` runs in its own transaction with `SET LOCAL synchronous_commit = off`.
-      It carries no data, so it does not wait for the WAL flush or a synchronous standby while it
-      holds the notify lock.
-    - Delivery after commit is preserved, and the serialized commit rate stays bounded however many
-      uploads or fills run.
-    - No hot-path transaction issues `NOTIFY` itself. That includes the cache-fill upsert of
-      [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026: its fill-complete
-      notification goes through the coalescer.
-- Only `internal/cluster` issues `NOTIFY` or calls `pg_notify`.
-- The writing replica applies its own invalidation right after commit, without waiting for the round
-  trip.
-- After the coordination session reconnects, every registered cache is flushed through `OnFlush`,
-  because notifications sent in the gap are lost.
+- Keys that make an entry self-validating are preferred over change messages: a source digest, a
+  `rev_seq`, or an epoch counter like the one in [authorization.md](authorization.md). Change
+  messages then only evict early.
+- Caches live in the replica's memory. Valkey holds no shared copy of a cache that serves clients
+  or decides access (R-ARCH-030, Q-ARCH-16).
+- **A fill never re-inserts an invalidated value.** A cache filled from PostgreSQL on a miss reads,
+  before its query, the applied epoch of every change area that invalidates it
+  (`cluster.Applied(area)`), and inserts the result only if those epochs are unchanged after the
+  query. Otherwise the result serves the current request and is not cached. Without this check, a
+  fill whose query ran before a change committed, and whose insert lands after the poll applied
+  that change, would keep the old value until `SafetyTTL`. For the token cache that would be a
+  revoked token accepted for up to `cache_ttl` on one replica. A Valkey message needs no such check:
+  it never advances the applied epoch, so the poll that follows evicts again.
 
-The owning page may move one of its channels to the other class. Until it does, this table holds:
+Areas. Every source of invalidation is an *area*, registered in `internal/cluster/areas.go` with a
+name matching `^[a-z][a-z0-9_]{1,31}$`, its owner and one of two classes. `Host.Notify` and
+`cluster.Notify` attach a notification to the writing transaction, and the class decides how it
+leaves:
 
-| Channel | Owner | Class | Purpose |
+- **Change areas** carry changes whose propagation an owning page bounds: configuration, policies,
+  revocations, settings.
+  1. Inside the writing transaction, `cluster.Notify` runs:
+
+     ```sql
+     UPDATE cluster_epoch SET epoch = epoch + 1, changed_at = now() WHERE area = $1 RETURNING epoch;
+     INSERT INTO cluster_change (area, epoch, payload) VALUES ($1, $2, $3);
+     ```
+
+     The `UPDATE` holds the area's row until commit. A second writer of the same area gets its
+     epoch only after the first has committed
+     ([UPDATE under READ COMMITTED](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)),
+     so each area's epochs become visible in order and without gaps. A rollback leaves neither the
+     row nor the epoch.
+
+     `meta.InTx` runs the two statements last, just before `COMMIT`, whatever point of the
+     transaction called `cluster.Notify`. The row is therefore held for the commit only, and writers
+     of one area serialize on their commits, not on their whole transactions. A change area is
+     written by administrative actions and revocations, never once per package download, upload
+     or cache fill; a change that client traffic produces at that rate uses a signal area and a
+     self-validating key instead. Three writers of
+     [repositories-and-proxy.md](repositories-and-proxy.md) fit this rule at rates of their own:
+     - the auto claim of a name's first publish writes `claims` once per name and repository,
+       never per upload, and it needs the 2 s bound of the change log for dependency-confusion
+       protection (R-REPO-023);
+     - the repository-delete job writes `claims` for each batch that removes claims (R-REPO-013);
+     - the fold job writes `cache_invalidation` when it deletes folded invalidation rows
+       (R-REPO-045).
+
+     Both job writes happen per batch, not per client request.
+
+     A transaction that notifies several change areas updates their `cluster_epoch` rows in
+     area-name order, so two such transactions cannot deadlock. A project repository assignment
+     (P1), for example, notifies both `authz` and `repo_config`
+     ([authorization.md](authorization.md) R-AUTHZ-028).
+  2. After commit, the writer applies its own invalidation at once and publishes
+     `{"a": <area>, "e": <epoch>, "v": <payload version>, "p": <payload>}` on the Valkey channel
+     `trove:<ks>:inv:v1` (R-ARCH-030).
+  3. Every `web` and `worker` replica polls the change log every `cluster.epoch_poll_interval`,
+     on its control connection (R-ARCH-019), so a request pool that is exhausted under load cannot
+     stall the poll.
+     - One query reads `epoch` and `changed_at` of every area from `cluster_epoch`. The poll
+       exposes both values per area to the area's owners, which compare them as
+       [authorization.md](authorization.md) R-AUTHZ-028 does with its index label.
+     - For each area whose epoch is higher than the replica's last applied epoch, a second query
+       reads the `cluster_change` row at the last applied epoch and the rows above it, in epoch
+       order. Before it applies the rows above, the replica checks the row at its last applied
+       epoch against step 5.
+     - The replica applies the rows and advances the area's last applied epoch. With it, it keeps
+       the `created_at` of the row it applied last, which equals the `changed_at` that the same
+       transaction wrote. Only this poll advances the last applied epoch.
+     - Besides the interval, a request may trigger one immediate poll: R-ARCH-011 step 2 does so
+       for a repository key that PostgreSQL knows and the replica's snapshot does not. Concurrent
+       triggers, and a trigger that meets a running poll, coalesce into one poll on the control
+       connection. The triggering request waits until the caches that poll invalidates are
+       rebuilt.
+  4. A message from Valkey is applied at once, as an early eviction, and never advances the last
+     applied epoch. A lost, delayed, duplicated or forged message can therefore neither suppress nor
+     reorder a change: the poll applies every committed change from PostgreSQL within its interval.
+  5. The replica flushes the area's caches through `OnFlush` and takes the database's current
+     epoch of the area, with its `changed_at`, as its new last applied epoch, even when that epoch
+     is lower, in each of these cases:
+     - the rows above the last applied epoch, or the row at it, are no longer there, because
+       `cluster-change-prune` (R-ARCH-016) removed them
+       (`trove_cache_flushes_total{reason="change_log_gap"}`). The replica cannot tell from a
+       missing row whether its history still holds, so a missing row at the last applied epoch is
+       handled like an epoch that went backwards;
+     - a row carries a payload version the replica does not know (a rolling upgrade,
+       [ha-and-helm.md](ha-and-helm.md) R-HA-020; `reason="unknown_payload"`);
+     - **the epoch went backwards** (`reason="epoch_regressed"`). After a PostgreSQL failover that
+       lost committed transactions (asynchronous replication, [ha-and-helm.md](ha-and-helm.md)
+       R-HA-013), or after a point-in-time restore, the area's history in PostgreSQL can differ
+       from the one the replica applied ([ha-and-helm.md](ha-and-helm.md) R-HA-004). It counts as
+       gone backwards when the area's epoch in `cluster_epoch` is lower than the last applied
+       epoch; when it is equal but its `changed_at` differs from the one the replica applied; or
+       when it is higher but the `cluster_change` row at the last applied epoch carries a different
+       `created_at`.
+
+     Taking the lower epoch as the starting point keeps later changes from being skipped as
+     already applied. Comparing `changed_at` and `created_at` catches a *reused* epoch: later
+     writes can raise an area to the same number before the replica's first poll after the
+     failover, so the epoch never looks lower, yet it stands for different changes. Without the
+     check, a token revocation (area `auth`) committed at a reused epoch number would be skipped
+     until `SafetyTTL`. `changed_at` is written by the same statement that raises the epoch, and two
+     transactions separated by a failover never share it. A replica started after a restore starts
+     from the current epochs anyway (R-ARCH-024).
+
+  A committed change is in force on every replica within `cluster.epoch_poll_interval` plus one
+  query and the cache rebuild, whether Valkey is available or not. With Valkey it is typically in
+  force within milliseconds.
+- **Signal areas** carry wake-ups and early evictions that client traffic produces: job enqueues,
+  remote metadata refreshes, the outbox wake-up and the delivery-log wake-up. They write nothing to
+  PostgreSQL.
+  - After commit, the signal goes to the replica's coalescer; a rollback drops it. The coalescer
+    publishes at most one message per area per `cluster.signal_coalesce_window` on
+    `trove:<ks>:sig:v1:<area>`, batching the payloads.
+  - Delivery is at most once ([Pub/Sub](https://valkey.io/topics/pubsub/)). Every consumer of a
+    signal area MUST stay correct without the signal, through self-validating keys, `SafetyTTL` or
+    its own polling (`jobs.poll_interval`, the lock poll of R-ARCH-033). While Valkey is
+    unavailable, signals are dropped and counted in `trove_cluster_signals_dropped_total{area}`.
+  - The completion of a collapsed fetch is not an area. It uses the flight's own channel
+    (R-ARCH-033).
+
+Rules:
+- A payload is versioned JSON under 1 KiB. A change that would need more becomes a coarse flush of
+  the affected cache. A payload never carries a secret, or a value from which a live credential can
+  be derived: it carries IDs, and hashes of credentials that have just ended.
+- Only `internal/cluster` writes `cluster_epoch` and `cluster_change` and publishes to Valkey. No code
+  issues `LISTEN`, `NOTIFY` or `pg_notify`.
+- The `invalidation` readiness check passes while the last successful change-log poll is younger
+  than `cluster.epoch_max_staleness`. It depends on PostgreSQL only; Valkey never gates readiness
+  (INV-12). Because the poll has its own connection, the check fails when PostgreSQL does not
+  answer, not when the replica is merely busy; under overload, replicas do not leave the Service
+  one after another and push their load onto the rest.
+  - **No check undercuts the PostgreSQL window** ([ha-and-helm.md](ha-and-helm.md) R-HA-008).
+    `cluster.epoch_max_staleness` MUST be at least the readiness window of the `database` check
+    (about 15 s), so `invalidation` never turns a replica unready sooner than `database` does. A
+    PostgreSQL switchover of a few seconds, which requests ride out in their retry loop (R-HA-009),
+    then never empties the Service through `invalidation`. The default is 20 s.
+  - Code paths that must fail closed sooner read the change-log freshness directly instead of
+    relying on readiness:
+
+    ```go
+    package cluster
+
+    // ChangesFresh reports whether the last successful change-log poll is younger than
+    // cluster.epoch_max_staleness: the condition of the `invalidation` check.
+    func ChangesFresh() bool
+
+    // ChangesFreshWithin reports whether the replica's last completed change-log poll started
+    // less than d ago, measured on the replica's monotonic clock. A poll reads every change
+    // committed before it started (READ COMMITTED), so a true result proves that every change
+    // older than d is applied.
+    func ChangesFreshWithin(d time.Duration) bool
+    ```
+
+    [authorization.md](authorization.md) R-AUTHZ-028 bounds the staleness of its grant index this
+    way with `authz.cache.max_staleness`, and the freshness gate of
+    [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 uses
+    `cluster.ChangesFreshWithin(auth.revocation_bound)`.
+- After the Valkey subscriber reconnects, the replica runs one change-log poll at once. Caches of
+  signal areas are not flushed, because they never rely on signals for correctness.
+- Metrics ([operations-and-observability.md](operations-and-observability.md) R-OPS-008):
+  `trove_cluster_poll_last_success_timestamp_seconds`, whose age the `invalidation` check compares
+  with `cluster.epoch_max_staleness`; `trove_cluster_changes_applied_total{area,source}`, with
+  `source` = `poll` for changes applied from the change log and `message` for early evictions from
+  Valkey; `trove_cluster_signals_published_total{area}` and
+  `trove_cluster_signals_dropped_total{area}`; and `trove_cache_flushes_total{cache,reason}` for
+  the flushes of change-area step 5.
+- A migration inserts the `cluster_epoch` row of a change area in the release that introduces the
+  area (an expand step).
+- Backup export classes ([backup-and-restore.md](backup-and-restore.md) R-BAK-004): `cluster_change`
+  is `transient`, and `cluster_epoch` is `data`, so the area rows that migrations created survive a
+  restore. `cluster_epoch.epoch` is registered with `meta.RegisterRevisionColumn` (R-BAK-022). The
+  offset is harmless: no replica outlives a restore, and every replica reads the current epochs at
+  start-up (R-ARCH-024).
+
+```sql
+CREATE TABLE cluster_epoch (
+    area       text        PRIMARY KEY,           -- a change area of internal/cluster/areas.go
+    epoch      bigint      NOT NULL DEFAULT 0,
+    changed_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE cluster_change (
+    area       text        NOT NULL REFERENCES cluster_epoch (area),
+    epoch      bigint      NOT NULL,
+    payload    jsonb       NOT NULL,              -- versioned, under 1 KiB
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (area, epoch)
+);
+```
+
+The owning page may move one of its areas to the other class. Until it does, this table holds:
+
+| Area | Owner | Class | Purpose |
 |---|---|---|---|
-| `trove_jobs` | this page | hot-path | Wake workers of a queue |
-| `trove_cache` | this page | administrative | System settings, flush requests |
-| `trove_auth` | [identity-and-authentication.md](identity-and-authentication.md) | administrative | Token, session, membership revocation |
-| `trove_authz` | [authorization.md](authorization.md) | administrative | Policy epoch |
-| `trove_repo_config`, `trove_claims`, `trove_cache_invalidation` | [repositories-and-proxy.md](repositories-and-proxy.md) | administrative | Repository snapshot, claims and pin rules, cache invalidation (RMT-026) |
-| `trove_proxy_fetch`, `trove_metadata_changed`, `trove_upstream_state` | [repositories-and-proxy.md](repositories-and-proxy.md) | hot-path | Fill completion (R-REPO-026); merged-metadata eviction; circuit state and the reload of one repository's gone packages (R-REPO-029), sent after the marking or clearing commit |
-| `trove_system_state`, `trove_support`, `trove_webhooks` | [operations-and-observability.md](operations-and-observability.md) | administrative | Read-only mode, support bundles, webhook configuration |
-| `trove_events` | [operations-and-observability.md](operations-and-observability.md) | hot-path | Outbox dispatch wake-up (R-OPS-035, P1); outbox rows are written in publish and cache-fill transactions, and a five-second poll covers lost notifications |
-| `trove_ci_issuer_keys`, `trove_ci_mappings` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | administrative | Key-set reload (R-CI-003) and mapping reload (R-CI-009); a mapping disable revokes, so it is sent on commit |
+| `jobs` | this page | signal | Wake the workers of a queue; the payload names the queues |
+| `cache` | this page | change | System settings, and flush requests: the installation-wide cache flush of [operations-and-observability.md](operations-and-observability.md) R-OPS-047 (P1) writes the flush entries, counted as `trove_cache_flushes_total{reason="admin"}` |
+| `auth` | [identity-and-authentication.md](identity-and-authentication.md) | change | Token revocation and rotation, session end, principal status (disable, enable, delete), membership changes, runtime auth settings, and the break-glass rotation end. The payload carries the token ID with the hash of the ended credential, the session ID or the principal ID (R-AUTH-023). |
+| `authz` | [authorization.md](authorization.md) | change | Policies (entries, selectors, patterns), role bindings, projects, project administrators and project repository assignments. Its epoch is the authorization epoch of R-AUTHZ-028 and of the `Trove-Authz-Epoch` header (R-AUTHZ-032); the grant index also rebuilds on `repo_config`. |
+| `repo_config`, `claims`, `cache_invalidation` | [repositories-and-proxy.md](repositories-and-proxy.md) | change | Repository snapshot, claims and pin rules, cache invalidation (RMT-026). `claims` is also written by the auto claim of a first publish and by the repository-delete job, `cache_invalidation` by the fold job (change-area step 1 above). |
+| `upstream_state` | [repositories-and-proxy.md](repositories-and-proxy.md) | change | Circuit state, the global offline switch (R-REPO-031) and the reload of one repository's gone packages (R-REPO-029). Moved from the hot-path class: its transitions are rare, and R-REPO-029's 2 s bound then holds without Valkey. |
+| `metadata_changed` | [repositories-and-proxy.md](repositories-and-proxy.md) | signal | Early merged-metadata eviction after a remote refresh; R-ARCH-015's `rev_seq` check keeps local members exact without it |
+| `system_state`, `support`, `webhooks` | [operations-and-observability.md](operations-and-observability.md) | change | Read-only mode, support bundles, webhook configuration |
+| `events` | [operations-and-observability.md](operations-and-observability.md) | signal | Outbox dispatch wake-up (R-OPS-035, P1); outbox rows are written in publish and cache-fill transactions, and a five-second poll covers lost signals |
+| `deliveries` | [operations-and-observability.md](operations-and-observability.md) | signal | Wakes the delivery-log follow stream (R-OPS-044, P1); the payload carries delivery record IDs. The stream's own poll covers lost signals ([api-and-ui.md](api-and-ui.md) R-API-051). |
+| `ci_issuer_keys`, `ci_mappings` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | change | Key-set reload, written only when a stored key set changes (R-CI-003). Issuer and mapping reload, written by every issuer, mapping and delegation write (R-CI-002, R-CI-009). A mapping disable revokes. The exchange does not depend on the timing of either: it re-reads the key row on an unknown `kid` (throttled per replica), and it re-reads the issuer row and checks its `version` and `mappings_version` (R-CI-007). |
+
+The channel `trove_proxy_fetch` of the earlier design no longer exists: fill completion uses the
+flight channel of R-ARCH-033.
 
 ```yaml
+cluster:
+  epoch_poll_interval: 1s          # default (proposed)
+  epoch_max_staleness: 20s         # default (proposed): the `invalidation` readiness check; at least the readiness window of ha-and-helm.md R-HA-008 (about 15 s)
+  change_retention: 1h             # default (proposed): cluster-change-prune
+  signal_coalesce_window: 50ms     # default (proposed)
 cache:
   rendition_bytes: 268435456       # default (proposed), 256 MiB per replica, rendered package documents
   snapshot_safety_ttl: 5m          # default (proposed), full reload of the repository snapshot
+  unknown_repo_keys: 10000         # default (proposed), per replica: negative cache of unknown repository keys (R-ARCH-011 step 2)
 ```
 
 Acceptance criteria:
 - A repository's include pattern is changed through the API on replica A. Within 1 s (p99 over 100
-  trials), a request on replica B honours it.
-- 1,000 cache fills per second across three replicas cause at most 3 × 20 `NOTIFY` commits per
-  second on `trove_proxy_fetch`, as `pg_stat_statements` counts them. The same holds for
-  `trove_jobs` when 1,000 transactions per second each enqueue a job.
-- A test over `internal/meta/postgres/queries/*.sql` and every Go source fails on `NOTIFY` or
-  `pg_notify` outside `internal/cluster`.
-- After the coordination session of replica B is killed and restored, B's `trove_cache_requests_total{result="miss"}`
-  rises for every registered cache, which shows the flush.
+  trials), a request on replica B honours it. With Valkey stopped, the same holds within
+  `cluster.epoch_poll_interval` plus 1 s.
+- With Valkey stopped, a token revoked through replica A is rejected by replica B within 2 s.
+- A fault-injection build drops every second message on `trove:<ks>:inv:v1` and injects forged messages
+  with random epochs and payloads. Over 1,000 policy changes, no replica serves a decision older
+  than `cluster.epoch_poll_interval` plus 1 s after the change committed, and the forged messages
+  cause evictions only.
+- 1,000 transactions per second across three replicas, each enqueueing a job, cause at most
+  3 × 20 `PUBLISH` per second on `trove:<ks>:sig:v1:jobs` (Valkey `INFO commandstats`), and
+  `pg_stat_statements` shows no `NOTIFY`.
+- A test over `internal/meta/postgres/queries/*.sql` and every Go source fails on `LISTEN`,
+  `NOTIFY` or `pg_notify`, and on a write to `cluster_epoch` or `cluster_change` outside
+  `internal/cluster`.
+- A replica is paused for longer than `cluster.change_retention` while changes are made. After it
+  resumes, it flushes the affected areas (`trove_cache_flushes_total{reason="change_log_gap"}`) and
+  serves current data.
+- A test lowers the epoch of area `repo_config` in `cluster_epoch` below the epoch the replicas
+  have applied, as a failover with lost transactions or a point-in-time restore would. Every
+  replica flushes the area's caches (`trove_cache_flushes_total{reason="epoch_regressed"}`) and
+  takes the lower epoch as its starting point, and the next change of the area takes effect on
+  every replica within `cluster.epoch_poll_interval` plus 1 s, with Valkey stopped.
+- A reused epoch in area `auth`: token T1 is revoked through replica A as `auth` epoch `e`, and B
+  applies it. Valkey is then stopped and B's poll paused by a test hook. As a failover that lost
+  the commit would, the test clears T1's revocation, deletes that `cluster_change` row and resets
+  the `auth` row of `cluster_epoch` to `e − 1` with its earlier `changed_at`. Token T2, which B
+  holds in its token cache, is then revoked through A, which commits as epoch `e` again. When the
+  hook is lifted, B flushes its `auth` caches within `cluster.epoch_poll_interval` plus 1 s
+  (`trove_cache_flushes_total{reason="epoch_regressed"}` rises), and B answers a request with T2
+  with `401`.
+- With `cluster.epoch_max_staleness` at its default, a PostgreSQL switchover of 10 s makes no
+  replica fail the `invalidation` check, and `/readyz` answers `200` on every replica throughout
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-008, R-HA-059 variant C).
+- A test build pauses a token-cache fill on replica B between its query and its insert. The token is
+  revoked through replica A, B's poll applies the change, and the fill resumes. The next request
+  with the token on B answers `401`.
+- A test transaction calls `cluster.Notify` on area `cache` and then runs for another 2 s. A second
+  writer of `cache` that starts within those 2 s commits within 100 ms, without waiting for the
+  first.
 
 ### R-ARCH-019 · Database access, connection naming and budget
 Priority: **MVP** · Covers: HA-062
@@ -1560,35 +2115,468 @@ Priority: **MVP** · Covers: HA-062
   - values are always bound parameters;
   - column and sort identifiers come from a per-endpoint allowlist;
   - no other package concatenates SQL.
-- Every connection sets `application_name` to `trove:<replica>:<pool>`, with pool one of `main`,
-  `notify`, `lease`, `locks` or `migrate`. The lock diagnostics of
+- Connection classes (Q-ARCH-14):
+
+| Class (`application_name` suffix) | Opened by | Endpoint | What runs on it | Connections |
+|---|---|---|---|---|
+| `main` | `web`, `worker`, `all` | the database host ([ha-and-helm.md](ha-and-helm.md)); direct, session-mode or transaction-mode pooler. With a transaction-mode pooler, the control connection uses the control endpoint (below). | The request pool: every request-path transaction, job claims and completions, job handlers, the grant-index build. The control connection: the change-log poll, the `database` check, the registry heartbeat, the job heartbeats. | `database.pool.max_conns` per replica, one of them the control connection |
+| `lease` | `worker`, `all` | the session host: `database.session_host` with a transaction-mode pooler, the database host otherwise (R-HA-058); direct or session-mode only | Session-level advisory locks and the fenced writes of singleton work (R-ARCH-017, R-HA-006) | `database.lease_pool_size` per `worker` replica |
+| `migrate` | `trove migrate` | the session host | The migration lock and the migration steps (R-ARCH-026) | 1 |
+| `backup` | `trove backup` | the session host | The control, snapshot and export connections of a backup and the writes of a restore ([backup-and-restore.md](backup-and-restore.md) R-BAK-005, R-BAK-021) | as that page sets |
+
+- **Main-pool rules.** Work on the main pool keeps no state beyond its own transaction, so it works
+  directly, through a session-mode pooler and through a transaction-mode pooler.
+  - Allowed: `SET LOCAL`, `pg_advisory_xact_lock`, `SELECT … FOR UPDATE SKIP LOCKED`, `COPY`
+    inside a transaction, protocol-level prepared statements.
+  - Forbidden: session-level `SET` and `RESET`, `LISTEN`, session-level advisory locks, temporary
+    tables, `WITH HOLD` cursors, SQL `PREPARE` (the PgBouncer feature table lists all of them as
+    never working in transaction pooling).
+  - pgx's default exec mode, `cache_statement`, uses protocol-level prepared statements. PgBouncer
+    supports them in transaction mode when `max_prepared_statements` is non-zero (default 200).
+    Behind a pooler without that support, the main pool's URL sets
+    `default_query_exec_mode=exec`.
+- **No connection is held across a wait.** A request or a job holds a main-pool connection for one
+  query or one transaction only. It never holds one while it reads from or writes to a client, the
+  object store, an upstream or Valkey. The number of concurrent transfers per replica (P-10: 500) is
+  therefore independent of `database.pool.max_conns`, and a slow client never occupies a database
+  connection.
+- **Control connection.** One connection of each replica's main class is reserved, as a pool of
+  size 1 next to the request pool, which gets `database.pool.max_conns` − 1. It carries the loops
+  that readiness and job ownership depend on: the change-log poll (R-ARCH-018), the `database`
+  readiness check ([operations-and-observability.md](operations-and-observability.md) R-OPS-001),
+  the replica-registry heartbeat and, on `worker` replicas, the job heartbeat, one statement for
+  all of the replica's running jobs (R-ARCH-016).
+  - Without the reservation, a request pool exhausted under overload for longer than
+    `cluster.epoch_max_staleness` would fail the `invalidation` check on one replica after another,
+    and each replica leaving the Service would push its load onto the rest. Busy job handlers would
+    likewise delay heartbeats until a live worker lost its jobs.
+  - **Its own server pool behind a pooler** ([ha-and-helm.md](ha-and-helm.md) R-HA-058, Q-HA-20).
+    The client-side reservation does not reach the server through a shared transaction-mode
+    pooler: when every server connection of the request pooler is busy, the control queries of
+    every replica would queue behind request transactions. With a transaction-mode pooler, the
+    control connection therefore connects to `database.control_host`, `database.control_port` and
+    `database.control_name`: a server pool that request traffic cannot exhaust, such as a second
+    pooler or a database entry with its own pool size. Empty keys mean the main endpoint, which is
+    correct without a pooler and with a session-mode pooler, where the control connection has a
+    server backend of its own.
+  - Only these loops run on it. Work of an owning page never does: the grant-index build of
+    [authorization.md](authorization.md) R-AUTHZ-028 and its epoch reads run on the request pool,
+    so authorization work never delays the poll, the checks or the heartbeats.
+  - The control connection is an ordinary `main`-class connection: transaction-scoped, pooler-safe
+    and named `trove:<replica>:main`. The replica's total stays `database.pool.max_conns`, so the
+    budget of R-HA-016 is unchanged. `database.pool.max_conns` must be at least 2; start-up refuses
+    a smaller value and names the key.
+- Every connection sets `application_name` to `trove:<replica>:<class>`. `<replica>` is the pod
+  name; `trove migrate` and `trove backup` use their Job's pod name. PgBouncer tracks
+  `application_name` as a startup parameter, so `pg_stat_activity` shows it on the server
+  connection while that connection serves trove. The lock diagnostics of
   [operations-and-observability.md](operations-and-observability.md) depend on it.
 - Transactions run at `READ COMMITTED`.
+  - Two exceptions run at `REPEATABLE READ READ ONLY`. The first is the backup's snapshot and
+    export transactions on the `backup` class ([backup-and-restore.md](backup-and-restore.md)
+    R-BAK-005). The second is the grant-index build of [authorization.md](authorization.md)
+    R-AUTHZ-028: one transaction on the request pool of the `main` class, never on the control
+    connection. It is transaction-scoped and therefore pooler-safe, and it runs with a context
+    deadline and `SET LOCAL statement_timeout` equal to `authz.cache.max_staleness`. A read-only
+    transaction never meets a serialization failure.
   - `meta.InTx` retries SQLSTATE `40001` and `40P01` up to three times.
-  - No outbound HTTP and no object-store call runs inside a transaction.
+  - No outbound HTTP, no object-store call and no Valkey call runs inside a transaction.
   - Request-path transactions set `SET LOCAL statement_timeout` (5 s, proposed). Jobs set their own
     timeout.
-- Connections per replica = main pool size + lease pool + 1 (coordination session) + the proxy lock
-  pool ([repositories-and-proxy.md](repositories-and-proxy.md)); [ha-and-helm.md](ha-and-helm.md)
-  R-HA-016 gives the formula with its keys. The cluster needs replicas × that sum +
-  1 (migration Job) + headroom. Pool sizes and the database URL are configured in the
-  `database` section of [ha-and-helm.md](ha-and-helm.md), and the chart checks the total (HA-062).
-- In the MVP trove connects directly or through a session-mode pooler; transaction-mode poolers
-  are excluded (ADR-077, [ha-and-helm.md](ha-and-helm.md) Q-HA-6). For the P2 option (b) of Q-HA-6,
-  the main pool's exec mode is set in its URL (`default_query_exec_mode=cache_describe`, `exec` or
-  `simple_protocol`), as the pooler's prepared-statement support requires, and the
-  session-dependent connections (coordination session, lease pool, proxy lock pool) use
-  `cluster.coordination_url` (R-ARCH-017).
+- **Connection count** (INV-12). A `web` replica opens `main` only. A `worker` replica opens `main`
+  and `lease`. There is no listener session and no lock pool (Q-ARCH-14, Q-ARCH-6).
+  - With direct connections, the server sees Σ replicas × `database.pool.max_conns` +
+    Σ `worker` replicas × `database.lease_pool_size` + the one-off connections. That grows with the
+    number of `web` replicas, and the chart's budget check keeps it below `max_connections`
+    ([ha-and-helm.md](ha-and-helm.md) R-HA-016).
+  - With a transaction-mode pooler in front of the `main` class, the server sees the pooler's server
+    pool, which does not depend on the replica count, plus the worker leases and the one-off
+    connections. This is the supported way to scale `web` beyond the direct budget, and the
+    recommended production setup when `web` autoscales.
+  - [ha-and-helm.md](ha-and-helm.md) R-HA-016 owns the formula, its keys and the chart check.
+- Transaction-mode poolers are supported for the `main` class from the MVP on. The session classes
+  refuse to run behind them (R-ARCH-017). Statement-mode poolers are not supported for any class:
+  they refuse transactions of more than one statement, and trove's write paths run exactly such
+  transactions (R-ARCH-009).
 
 Acceptance criteria:
+- Three `web` and two `worker` replicas run with the database URL pointing at PgBouncer
+  (`pool_mode = transaction`, `max_prepared_statements = 200`, `default_pool_size = 40`) and with
+  `database.session_host` direct. The client suite and the job suite pass. While `web` scales
+  from 3 to 12 replicas under the reference load, the server connections of the `main` class never
+  exceed 40.
 - Under a 500-connection load test,
   `SELECT application_name, count(*) FROM pg_stat_activity WHERE application_name LIKE 'trove:%' GROUP BY 1`
-  shows only the five pool names and never more connections than the formula allows.
+  shows only the classes `main`, `lease`, `migrate` and `backup`, never more connections than the
+  formula allows, and no `lease` connection of a `web` replica.
+- A test over `internal/meta/postgres/queries/*.sql` and every Go source fails:
+  - on a session-level `SET` or `RESET` (anything but `SET LOCAL`) and on a session-level
+    advisory-lock function, outside the code of the session classes: the lease code of
+    `internal/cluster`, the migration runner, and the backup export and restore load
+    ([backup-and-restore.md](backup-and-restore.md) R-BAK-005, R-BAK-021);
+  - on `CREATE TEMP` outside the restore load, which fills `CycleBreak` columns from a temporary
+    table (R-BAK-021);
+  - on an isolation level other than `READ COMMITTED` (`REPEATABLE READ`, `SERIALIZABLE`) outside
+    the backup snapshot and export code and the grant-index build of
+    [authorization.md](authorization.md) R-AUTHZ-028;
+  - on `LISTEN` and `WITH HOLD` anywhere.
+- A load test exhausts the request pool of every `web` replica for 30 s. `/readyz` stays `200` on
+  every replica throughout, and no job of a `worker` replica returns to `queued` because a
+  heartbeat was late.
+- In the pooler profile of [ha-and-helm.md](ha-and-helm.md) R-HA-058, a test build holds every
+  server connection of the request pooler busy for 60 s. `/readyz` stays `200` on every replica
+  throughout, and `pg_stat_activity` shows each replica's `trove:<replica>:main` control queries
+  on the control pooler's server connections.
 - A request-path query held up by an injected `pg_sleep(10)` returns `503` with code
   `database_timeout` after 5 s.
 - A list request whose `sort` names a column outside the endpoint's allowlist answers `400` and
   sends no SQL. A unit test fails if any package other than `listq` builds SQL with `fmt.Sprintf`
   or with string concatenation.
+
+## Shared ephemeral state (Valkey)
+
+### R-ARCH-030 · Valkey usage map
+Priority: **MVP** · Covers: HA-006, HA-007
+
+Valkey holds shared ephemeral state (INV-3). This requirement assigns every cross-replica mechanism
+to PostgreSQL or Valkey, and fixes the keys, their lifetimes and what happens when Valkey is
+unavailable or loses its data. Two rules decide where a mechanism lives:
+1. State whose loss would cost correctness or data lives in PostgreSQL. That includes every mutual
+   exclusion whose failure would corrupt data (INV-3).
+2. No content, metadata or credential that trove serves to a client, and no positive
+   authentication or authorization result, is read from Valkey (Q-ARCH-16). A value read from
+   Valkey can at most make trove refuse: a negative entry answers `404` for a remote path, and a
+   counter answers `429`. A throttle exemption marker can only lift the throttle for one
+   credential, which then costs one PostgreSQL lookup; it never accepts a credential. Valkey's
+   content can therefore cost availability, never access or integrity (H-49).
+
+The keys are shown with the default prefix `trove:`.
+
+| Mechanism | Lives in | Keys and channels | Lifetime | Valkey unavailable | Valkey lost its data (failover, flush, restart) | Specified in |
+|---|---|---|---|---|---|---|
+| Collapsing of remote fetches | Valkey, behind the in-process single-flight | `trove:<ks>:lock:fetch:v1:<f>`; channel `trove:<ks>:fill:v1:<f>` | `cluster.flight_lock_ttl` (30 s), extended while the fetch runs | Single-flight per replica only: at most one upstream fetch per replica and flight | A second replica may fetch too; content addressing and the entry upsert rules make the duplicate harmless | R-ARCH-033, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 |
+| Negative cache of remote repositories | Valkey, behind a bounded per-replica L1 (`proxy.negative_l1_entries`, 100,000 entries per replica by default) | `trove:<ks>:neg:v1:<repo id>:<f>` → `{"s": 404 or 410, "c": <time the upstream request was sent, Unix ms, replica clock>}`; written by the flight's holder before it releases the flight | the repository's `notFoundTtlSeconds` | L1 only: more upstream requests for missing paths | More upstream requests. An entry that an older primary brings back is ignored when a newer invalidation covers it | R-REPO-028, R-REPO-045 |
+| Rate-limit counters with cluster scope | Valkey | `trove:<ks>:rl:v1:<limiter>:<b>:<window>` | 2 × the window | Per-replica buckets at the configured values divided by the live replicas of the role | Counters restart: at most one extra window of budget | R-ARCH-034 |
+| Throttle exemption markers of recently validated credentials | Valkey | `trove:<ks>:tokseen:v1:<t>` | `auth.rate_limit.recent_token_window` (10 min) | Only the replica's own cache exempts | Colleagues behind a throttled address may get `429` until they are revalidated | R-AUTH-038 |
+| Change messages, the fast path of change areas | Valkey Pub/Sub; correctness lies in the PostgreSQL change log | channel `trove:<ks>:inv:v1` | none (Pub/Sub) | Changes apply at the next change-log poll | Lost messages: as unavailable | R-ARCH-018 |
+| Signals: job wake-ups, remote metadata refreshes, outbox wake-up | Valkey Pub/Sub only | channel `trove:<ks>:sig:v1:<area>` | none | Dropped; consumers poll | Lost; consumers poll | R-ARCH-018 |
+| Valkey health probe | Valkey | `trove:<ks>:probe:v1:<instance uid>` | 30 s | `valkey` reported as degraded | Recreated by the next probe | R-ARCH-031 |
+| Cache entries and stale copies of remote repositories, upstream circuit state | PostgreSQL and S3 | — | — | Unaffected | Unaffected | R-REPO-026 to R-REPO-029 |
+| Rendered package documents, merged metadata | In-process only | — | Self-validating keys (R-ARCH-012, R-ARCH-015) | Unaffected | Unaffected | R-ARCH-018 |
+| Token, session, permission, CI-mapping and issuer-key caches | In-process only; Valkey carries only their change messages | — | The owner's `SafetyTTL` | Unaffected: the change-log poll keeps the bound | Unaffected | R-AUTH-023, R-AUTHZ-028, R-CI-003 |
+| Browser login flows, npm web login and device login polling, UI sessions | PostgreSQL | — | — | Unaffected | Unaffected | R-AUTH-006, R-AUTH-010, R-AUTH-034, R-AUTH-036 |
+| Job queue, scheduler slots, named and singleton leases, migration lock, configuration locks | PostgreSQL | — | — | Unaffected | Unaffected | R-ARCH-016, R-ARCH-017 |
+| Replica registry, break-glass lockout and rotation hold (R-AUTH-014, R-AUTH-038), multi-request upload sessions (P1), download statistics, CI subject-token replay set, its restore cut-off and CI issuance records | PostgreSQL | — | — | Unaffected | Unaffected | R-OPS-003, R-AUTH-014, R-AUTH-038, R-STOR-011, [storage.md](storage.md), [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018, R-CI-020 |
+
+`<ks>` is the keyspace: the first 12 hex digits of `system_state.keyspace_id`
+([backup-and-restore.md](backup-and-restore.md) R-BAK-022), read from PostgreSQL at start-up. `<f>`
+is the lowercase hex SHA-256 of `repository id ‖ 0x00 ‖ canonical path ‖ 0x00 ‖ variant`, the
+flight key of R-REPO-026. `<b>` is the lowercase hex of the first 16 bytes of the SHA-256 of the
+limiter's bucket key. `<t>` is the lowercase hex of the first 16 bytes of
+SHA-256(`"tokseen"` ‖ 0x00 ‖ `secret_sha256`), where `secret_sha256` is the stored hash of the
+credential ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038).
+
+Normative rules:
+- **Prefix.** Every key and every channel starts with `valkey.key_prefix` (default `trove:`, which
+  must end in `:`), followed by the keyspace and `:`. Installations that share one Valkey use
+  different prefixes and different ACL users (R-ARCH-031).
+- **Keyspace.** A restore gives the installation a new keyspace ID (R-BAK-022). The restored
+  installation therefore never reads a key or message of the installation it was restored from,
+  even on the same Valkey, and nothing needs to be flushed; the old keys expire by their TTLs. A
+  replica reads the keyspace once, at start-up, after any restore has finished (R-ARCH-024), so it
+  never changes keyspace while it runs.
+- **Versioned areas.** The segment after the mechanism name (`v1`) is the encoding version. A
+  release that changes the encoding of a value or payload uses a new version segment, so N and N-1
+  replicas never misread each other's entries during a rolling upgrade; they only miss them.
+- **No raw identifiers.** Keys hold IDs and hashes only: never package names, paths, principal
+  names, token values or client addresses.
+- **Every key expires.** Every write sets an expiry. A key without one is a defect.
+- **Readers validate.** A value read from Valkey is checked before use, and a malformed one is
+  ignored and deleted.
+  - A negative entry counts only while `c`, the time its upstream request was sent by the
+    replica clock, lies between now minus `notFoundTtlSeconds` and now plus 5 s, and no covering
+    invalidation of scope `negative` or `all` was created later than `c` minus 5 s (R-REPO-028,
+    R-REPO-045). The 5 s are the clock allowance, applied in the invalidation's favour. The key's
+    own expiry is not trusted. Invalidation rows of scope `negative` or `all` are therefore kept
+    86,405 s, the largest `notFoundTtlSeconds` plus the allowance, so readers can apply them to
+    every entry that could still count.
+  - A rate-limit counter cannot block a bucket for longer than its window, because each window has
+    its own key.
+- **Small values.** No value or payload exceeds 1 KiB.
+- **One gateway.** Only `internal/cluster` talks to Valkey. Key and channel names are registered in
+  `internal/cluster/keys.go`. Other packages use `FlightLock`, the negative-cache store, the limiter
+  and `Notify`.
+- **No persistence assumed.** trove treats every Valkey restart as a loss of all its data. AOF and
+  RDB persistence are the operator's choice. trove works under every `maxmemory-policy`: an
+  eviction counts as an expiry. A Valkey that refuses a write (`noeviction` at its memory limit, a
+  demoted primary) counts as unavailable for that call.
+- **Primary only.** Every command goes to the primary. Replicas are never read, because their state
+  lags behind the primary's (asynchronous replication).
+- **Not backed up.** A backup holds no Valkey data (INV-19). A restore needs no access to Valkey:
+  the new keyspace starts empty ([backup-and-restore.md](backup-and-restore.md) R-BAK-022).
+
+Acceptance criteria:
+- After the integration suite, `valkey-cli --scan` lists only keys that start with the prefix, and
+  `TTL` returns a positive value for each of them.
+- With Valkey stopped for the whole e2e client suite, the suite passes, and every replica stays
+  ready with `"degraded":["valkey"]`.
+- `valkey-cli FLUSHALL` in the middle of the reference load test makes no client request fail.
+- A negative entry for `left-pad` is written into Valkey with a creation time one hour in the
+  future, and another with a creation time older than an invalidation of `left-pad`. Both are
+  ignored, and the request reaches the upstream.
+
+### R-ARCH-031 · Valkey client, Sentinel discovery, TLS, ACL and degradation
+Priority: **MVP** · Covers: trove-only
+
+[ha-and-helm.md](ha-and-helm.md) R-HA-056 owns the keys of the `valkey` configuration section, the
+supported topologies and the server settings; R-HA-057 owns the degraded-mode contract, the circuit
+breaker and the metrics. This requirement fixes the client that implements them and its behaviour
+inside the process.
+
+- **Library.** valkey-go (Q-ARCH-13), pinned once in `go.mod`. Server-assisted client-side caching
+  is switched off (`DisableCache`), because trove's caches are its own (R-ARCH-018). trove uses no
+  blocking command, so the client opens no blocking-pool connection. Only `internal/cluster` imports
+  it (R-ARCH-002).
+- **Servers.** Valkey 9.0 and every later minor line (Q-ARCH-13). The integration tier tests the
+  newest patch of each supported line: 9.0 and 9.1 today, 9.2 from its release. At connect, trove
+  reads the server version from the `HELLO` reply. Below 9.0 it logs
+  `valkey <version> is not supported; trove requires 9.0 or later` and treats Valkey as
+  unavailable. Valkey cluster mode and other servers are not supported.
+- **Sentinel protocol.** The client follows R-HA-056's discovery steps. It asks the Sentinels of
+  `valkey.sentinel.addresses` for `valkey.sentinel.primary_name`, checks `ROLE` on the instance it
+  connects to, and resolves again after every reconnection, timeout, closed connection and
+  `READONLY` error. In addition, it reconciles with the Sentinels every
+  `valkey.sentinel.refresh_interval` (valkey-go's `TopologyRefreshInterval`). A demoted primary can
+  keep its connections open, and valkey-go's documentation states that a client which missed
+  `+switch-master` then stays bound to it; the reconciliation bounds that case.
+- **Subscriptions follow the primary.** After every primary change, whether learned from
+  `+switch-master`, from a failed call or from the reconciliation, the Pub/Sub connection is
+  re-established on the new primary and re-subscribes every channel the replica listens on. The
+  replica then runs one change-log poll (R-ARCH-018), and every flight-lock waiter re-checks its key
+  (R-ARCH-033). A subscriber left on a demoted primary would otherwise hear nothing until its
+  connection breaks. Correctness never depends on these messages, but P-13 and P-14 do.
+- **Primary only.** Every command goes to the primary. Replicas are never read (R-ARCH-030).
+- **Connections.** Per replica: four pipelined connections to the primary (valkey-go's default for
+  Sentinel clients), one Pub/Sub connection and one connection to the current Sentinel, each named
+  `trove:<pod name>:<purpose>` (R-HA-056). Commands are pipelined automatically, so the count does
+  not grow with the request rate.
+- **Calls.** Every call carries `valkey.command_timeout` as its deadline, and no call runs inside a
+  PostgreSQL transaction (R-ARCH-019). Every call passes the replica's circuit breaker of R-HA-057
+  (`valkey.circuit_breaker`). While the breaker is open, every call returns `cluster.ErrUnavailable`
+  at once, without network I/O.
+- **Degradation.** `cluster.ErrUnavailable` is never returned to a client and never fails a
+  request; each mechanism degrades as R-ARCH-030 states. Valkey being unreachable never makes a
+  replica unready (INV-12): `/readyz` lists `valkey` under `degraded`, and start-up does not wait
+  for Valkey (R-ARCH-024). A configuration error found at a replica's first connection (an unknown
+  primary name, rejected credentials, a rejected certificate) is handled as
+  [ha-and-helm.md](ha-and-helm.md) Q-HA-13 decides.
+- **TLS.** `valkey.tls` applies to the data nodes and, with `valkey.sentinel.tls`, to the Sentinels.
+  Certificates are verified as `valkey.tls.mode` says, `verify-full` by default; `disable` needs
+  `valkey.allow_insecure` (R-HA-056).
+- **Credentials.** The username and password files of the data nodes and of the Sentinels
+  (R-HA-056) are read in `AuthCredentialsFn` on every connection attempt, and connections are
+  recycled after `valkey.max_conn_lifetime`. A rotated Secret therefore takes effect without a
+  restart. Passwords never appear in the configuration file, in logs or in metrics.
+- **Least privilege.** trove needs only these commands, on keys and channels under its prefix:
+  `GET`, `SET`, `DELIFEQ`, `INCR`, `EXPIRE`, `MULTI`, `EXEC`, `PUBLISH`, `SUBSCRIBE`,
+  `UNSUBSCRIBE`, `PING`, `HELLO`, `ROLE`, `CLIENT SETNAME` and `CLIENT SETINFO`. It runs no
+  scripts. An example ACL rule, which the integration tier uses:
+
+  ```text
+  user trove on >… resetkeys ~trove:* resetchannels &trove:* -@all +get +set +delifeq +incr +expire +multi +exec +publish +subscribe +unsubscribe +ping +hello +role +client|setname +client|setinfo
+  ```
+
+- **Metrics.** Those of R-HA-057 (`trove_valkey_available`, `trove_valkey_circuit_open`,
+  `trove_valkey_primary_changes_total`, `trove_valkey_errors_total{kind}`), plus
+  `trove_valkey_command_duration_seconds{command}`, per mechanism that ran its fallback
+  `trove_valkey_degraded_total{mechanism}`, `trove_valkey_pubsub_subscribed` (1 while the Pub/Sub
+  connection is subscribed on the current primary) and `trove_valkey_cache_lookups_total{cache,result}`
+  for lookups in Valkey after an L1 miss ([operations-and-observability.md](operations-and-observability.md)
+  R-OPS-045).
+- **Logs.** The client logs one record per transition of the `valkey` check, `WARN` when it turns
+  degraded and `INFO` when it recovers, and one `INFO` record per primary change with the old and
+  the new address. It never logs one record per failed call; failed calls are counted in
+  `trove_valkey_errors_total{kind}`.
+- **Configuration.** One key joins R-HA-056's `valkey` block (cross-page):
+
+  ```yaml
+  valkey:
+    sentinel:
+      refresh_interval: 5s         # default (proposed): periodic reconciliation with the Sentinels
+  ```
+
+Acceptance criteria:
+- Against a Valkey 8.1 server, trove logs the unsupported-version message and runs degraded.
+- With the example ACL rule in place, the integration suite passes and `ACL LOG` shows no denial.
+- A failover is forced while the Sentinels' Pub/Sub traffic to trove is blocked, so that no
+  `+switch-master` arrives and the old primary keeps its connections. Every replica writes to the
+  new primary within `valkey.sentinel.refresh_interval` plus 1 s. Within the same bound,
+  `CLIENT LIST TYPE pubsub` on the new primary shows every replica's Pub/Sub connection. With
+  `cluster.epoch_poll_interval` raised to 60 s for this test, a change made through replica A is
+  then applied on replica B within 1 s, which only the Valkey message can achieve.
+- During a client-suite run, `CLIENT LIST` on the primary shows at most six connections per
+  replica, whatever the request rate.
+
+### R-ARCH-033 · Cross-replica request collapsing through Valkey (`FlightLock`)
+Priority: **MVP** · Covers: HA-007
+
+[repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 owns the collapse protocol and
+its settings. This requirement specifies `cluster.FlightLock`, the only way the proxy reaches the
+cross-replica lock (INV-11, Q-ARCH-6).
+
+```go
+package cluster
+
+type FlightLock interface {
+	// Acquire tries once. ok is false while another holder has the flight.
+	// ErrUnavailable means: go on without the cross-replica lock.
+	Acquire(ctx context.Context, f FlightKey) (h *FlightHold, ok bool, err error)
+	// Wait returns when the holder publishes an outcome, when the lock is gone,
+	// or when ctx ends. The caller then repeats the proxy's checks and may call Acquire again.
+	Wait(ctx context.Context, f FlightKey) (Outcome, error)
+}
+
+// Release deletes the lock if this hold still owns it and publishes the outcome.
+func (h *FlightHold) Release(ctx context.Context, o Outcome) error
+```
+
+- **Acquire.** `SET trove:<ks>:lock:fetch:v1:<f> <token> NX PX <cluster.flight_lock_ttl>`. The token is
+  `<instance uid>.<16 random bytes, base64url>`, unique for each acquisition.
+- **Hold.** While the holder fetches, verifies and commits, the hold extends the lock every third
+  of the TTL with `SET <key> <token> IFEQ <token> PX <ttl>`. If an extension finds the key gone or
+  owned by another token, the holder carries on, because its fetch stays correct. It stops
+  extending, counts `trove_flight_lock_lost_total`, and never deletes the other holder's key.
+- **Release.** After the entry has committed, after an upstream `404` or `410` has been recorded
+  as a negative entry, or after the fetch has failed, the hold runs `DELIFEQ <key> <token>` and then
+  `PUBLISH trove:<ks>:fill:v1:<f> <stored|failed>`. Both run even when the initiating client is gone,
+  since R-REPO-026 runs the fetch detached. The outcome message may also carry the leader's
+  `traceparent`, still under 1 KiB, so waiters on other replicas can add a span link
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-018). On shutdown, a
+  fetch still running 5 s before the deadline is cancelled and released with `failed`
+  (R-ARCH-024 step 4; [storage.md](storage.md) R-STOR-004 step 8).
+- **Wait.** The waiter first subscribes to `trove:<ks>:fill:v1:<f>`, then checks that the lock key still
+  exists, so a release between its failed `Acquire` and the subscription is not missed. It then
+  waits for the outcome, for `proxy.lock_poll_interval_ms` (after which it checks the key again), or
+  for its context deadline (`proxy.fetch_wait_timeout_seconds`). When `Wait` returns, the caller
+  repeats the proxy's checks (the entry, the circuit and the negative entry;
+  [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 4) and answers from them,
+  or calls `Acquire` again.
+- **Expiry instead of session end.** A holder that dies without releasing (process killed, node
+  lost) frees the flight when the key expires, after at most `cluster.flight_lock_ttl`. A holder
+  that shuts down gracefully releases at once.
+- **Unavailable.** When the breaker is open or a call fails, `Acquire` and `Wait` return
+  `ErrUnavailable` at once. The proxy then fetches under its in-process single-flight only and
+  counts `trove_flight_lock_bypass_total{reason="valkey_unavailable"}`.
+- **Bypass reasons.** `trove_flight_lock_bypass_total{reason}` counts every fetch that goes on
+  without the cross-replica lock:
+  - `valkey_unavailable`: above;
+  - `wait_timeout`: the wait bound `proxy.fetch_wait_timeout_seconds` ended without a valid entry,
+    and the proxy fetches without the lock (R-REPO-026 step 4);
+  - `draining`: the replica is shutting down and no other replica holds the flight.
+- **Draining.** A replica whose readiness is `draining` never calls `FlightLock.Acquire`, so it
+  leads no new cross-replica flight (R-ARCH-024 shutdown step 1). It may still call `Wait` and join
+  a flight that another replica holds ([repositories-and-proxy.md](repositories-and-proxy.md)
+  R-REPO-026, Q-REPO-7).
+- **Lost lock.** If a failover loses the key, a second replica may acquire the flight while the
+  first still fetches. Both fetches are correct: blob commits are idempotent by content address,
+  and the entry upsert keeps the newer metadata and refuses a different digest for an artifact
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-041). A leader withholds its
+  client's tail until its entry has committed (R-REPO-041), so the losing side of a duplicate fetch
+  aborts before that client completes. Correctness never relies on mutual exclusion here (INV-11).
+- **No PostgreSQL connection is held** while acquiring, waiting, transferring or extending. The lock
+  uses none.
+- **Clock.** Valkey measures the TTL; no replica clock decides expiry.
+
+```yaml
+cluster:
+  flight_lock_ttl: 30s             # default (proposed); extended every ttl/3 while the fetch runs
+```
+
+Acceptance criteria (two replicas, a counting stub upstream that delays every response by 2 s):
+- 100 concurrent requests for one uncached tarball, 50 per replica: the stub records exactly one
+  `GET`, and all 100 responses are `200` with identical bytes. Meanwhile `pg_stat_activity` shows
+  no trove connection in state `idle in transaction`, and `pg_locks` shows no advisory lock.
+- The stub streams a 200 MiB artifact slowly, and the holder's pod is killed with `SIGKILL`
+  mid-transfer. A waiter on the other replica acquires the flight within `cluster.flight_lock_ttl`
+  plus `proxy.lock_poll_interval_ms`, fetches, and completes every waiting request. No entry for a
+  partial body exists at any time.
+- The same with a graceful `kubectl delete pod`: the waiter acquires within
+  `proxy.lock_poll_interval_ms`, because the holder released with `failed`.
+- With Valkey stopped, all 100 requests succeed, and the stub records at most one `GET` per
+  replica.
+- A Sentinel failover is forced while the holder transfers, and the lock key is deleted on the new
+  primary to simulate the lost write. The stub records at most two `GET`s, the responses are
+  identical, and exactly one cache entry exists.
+- A test over `internal/proxy` fails on an import of the Valkey client and on any `pg_advisory*`
+  call.
+
+### R-ARCH-034 · Cluster-wide rate-limit counters
+Priority: **MVP** · Covers: trove-only
+
+The owning pages define the limit classes, their bucket keys and their values
+([api-and-ui.md](api-and-ui.md) R-API-016,
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038,
+[gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-021). This requirement provides the limiter they use
+(Q-ARCH-17).
+
+- A limiter is registered with `cluster.NewLimiter(name, scope, rate, burst)`. Scope `cluster`
+  counts across all replicas. Scope `replica` counts in the replica's memory and is meant for limits
+  that protect the replica itself.
+- **Cluster scope** uses a sliding-window counter in Valkey.
+  - The window is `W = burst ÷ rate` seconds, at least 1 s, and at most `burst` requests are
+    admitted per window.
+  - A check is one round trip: `MULTI`, `INCR` of the current window's key,
+    `EXPIRE <key> <2W> NX`, `GET` of the previous window's key, `EXEC`.
+  - A request is admitted when `previous × (1 − elapsed ÷ W) + current ≤ burst`. Otherwise it is
+    refused, and the owning page renders the `429` with its `Retry-After`.
+  - The `INCR` runs before the decision, so refused requests count too. A caller that keeps sending
+    while refused stays refused until its rate drops below the limit; a caller that honours
+    `Retry-After` gets the configured rate.
+  - No script is used.
+- **Count-only form.** Some limits count failures, not requests: a request is checked before it
+  is processed, and only a failed one is counted afterwards. For these the limiter offers two
+  calls with the same sliding-window arithmetic and the same per-replica fallback:
+
+  ```go
+  // Exceeded pipelines a GET of the current and the previous window's key, without INCR, and
+  // reports whether previous × (1 − elapsed ÷ W) + current exceeds burst.
+  func (l *Limiter) Exceeded(ctx context.Context, bucket string) bool
+  // Count records one failure: MULTI, INCR of the current window's key, EXPIRE <key> <2W> NX, EXEC.
+  func (l *Limiter) Count(ctx context.Context, bucket string)
+  ```
+
+  [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038 registers
+  `auth.credential_failures`, `auth.flow_starts` and `auth.device_code_failures`, each with burst
+  = the configured value and a window of one minute, or `auth.cli_login.ttl` for wrong device
+  codes; the first and the last use the count-only form.
+- **Fallback.** While Valkey is unavailable, a cluster-scoped limiter answers from an in-memory token
+  bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`. `n` is the number of live replicas of
+  the replica's role in the replica registry, at least 1, refreshed with the heartbeat. The
+  cluster-wide budget thus stays close to the configured one. This is the per-replica degradation
+  INV-12 names; `trove_ratelimit_fallback{limiter}` is 1 while it lasts.
+- A limiter never fails a request because Valkey failed, and its check waits at most
+  `valkey.command_timeout` (R-ARCH-031).
+- Every decision counts in `trove_ratelimit_decisions_total{limiter,mode,outcome}`, with `mode` =
+  `cluster`, `fallback` or `replica` and `outcome` = `admitted` or `refused`
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-008).
+- Further cluster-scoped limiters are registered by their owners, for example `webhook_test`, 10
+  test deliveries per minute per principal
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-043, P1).
+- Bucket keys are hashed (R-ARCH-030). A counter lost in a failover restarts, which admits at most
+  one extra window of requests.
+- The cluster-wide break-glass lockout stays in PostgreSQL
+  ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038). It guards a
+  credential, so it must survive a loss of Valkey's data.
+
+Acceptance criteria:
+- Three `web` replicas run one limiter with cluster scope, rate 50 and burst 200. 1,000 requests
+  with one token, sent round robin over the replicas within 2 s, are admitted at most 300 times.
+  The same test against one replica gives the same bound.
+- With Valkey stopped, the same test is admitted at most 300 times as well, and
+  `trove_ratelimit_fallback` is 1 on every replica.
+- With 1 s of latency injected in front of Valkey, the limiter adds at most `valkey.command_timeout`
+  to at most `valkey.circuit_breaker.failure_threshold` checks per replica, and nothing once the breaker is
+  open.
 
 ## Configuration, secrets and outbound connections
 
@@ -1605,13 +2593,14 @@ schema is built and which data belongs in the file.
   Schema and the redacted effective-configuration view are generated from that tree. No key exists
   outside it.
 - File or database: if a value is needed before the database is reachable, or is specific to a
-  deployment, it goes in the file. That covers listeners, database and object-store connections,
-  OIDC provider connection, base URL, pools, caches, jobs, logging and schedules of maintenance
-  tasks. If a value must be identical on every replica and can change without a restart, it goes in
+  deployment, it goes in the file. That covers the process role, listeners, database, Valkey and
+  object-store connections, OIDC provider connection, base URL, pools, caches, jobs, logging and
+  schedules of maintenance tasks. If a value must be identical on every replica and can change without a restart, it goes in
   PostgreSQL. That covers repositories, permission policies, users, groups, tokens, CI identity
   mappings and runtime settings (INV-15).
-- Sections owned by this page: `server` (listeners, timeouts, shutdown), `jobs`, `cluster`,
-  `cache`, `secrets`.
+- Sections owned by this page: `process` (role), `server` (listeners, timeouts, shutdown), `jobs`,
+  `cluster`, `cache`, `secrets`. The `valkey` section belongs to [ha-and-helm.md](ha-and-helm.md)
+  R-HA-056, and R-ARCH-031 implements it.
 
 Acceptance criteria:
 - A unit test fails if two keys derive the same environment variable name, or if a struct field has
@@ -1690,9 +2679,14 @@ before they are written. Examples are remote upstream credentials and webhook se
   - A PostgreSQL backup holds sealed values only. The configuration export of
     [operations-and-observability.md](operations-and-observability.md) R-OPS-032 replaces every
     secret with a `secretRef` and never exports a value, sealed or plain.
-  - The operator backs up the key ring with the Kubernetes Secret, outside the cluster
-    ([ha-and-helm.md](ha-and-helm.md) backup requirement).
-  - A database restored without its key ring is refused by the canary above, before any request is
+  - The backup job of INV-19 copies sealed values only and never the key ring. The operator keeps
+    the key ring Secret in escrow, outside the cluster and outside the target's credential domain,
+    including every retired key that a retained backup still lists
+    ([backup-and-restore.md](backup-and-restore.md) R-BAK-028).
+  - `trove backup restore` opens the backup's canary rows with the configured key ring before it
+    loads anything, and refuses with `key ring does not match backup: missing key <id>`
+    ([backup-and-restore.md](backup-and-restore.md) R-BAK-020 check 3). A database restored by
+    other means without its key ring is refused by the start-up canary above, before any request is
     served. There is no import path that carries a key.
 
 ```sql
@@ -1832,8 +2826,10 @@ Acceptance criteria:
 Priority: **MVP** · Covers: HA-047, OPS-002, OPS-003
 
 The probe endpoints, the readiness checks and the drain delay are owned by
-[operations-and-observability.md](operations-and-observability.md). This page owns the order of
-start-up and the server shutdown timeout.
+[operations-and-observability.md](operations-and-observability.md), and the pod's grace period by
+[ha-and-helm.md](ha-and-helm.md) R-HA-011. This page owns the order of start-up, the order of
+shutdown and the server shutdown timeout. Together they make a node drain cause no outage when
+every role runs at least two replicas on different nodes (INV-12).
 
 Start-up order:
 1. Load and validate the configuration. Stop on any error.
@@ -1843,7 +2839,9 @@ Start-up order:
    R-OPS-001). Loops register with the watchdog when they start, so a step below that is still
    retrying never fails liveness.
 3. Connect the main pool and run the schema compatibility check (R-ARCH-026), retrying until
-   `startup` passes or the process exits.
+   `startup` passes or the process exits. While `system_state` marks a restore in progress
+   ([backup-and-restore.md](backup-and-restore.md)), the replica waits at this step: it stays not
+   ready and claims no jobs.
 4. Call `audit_maintain_partitions()`
    ([operations-and-observability.md](operations-and-observability.md) R-OPS-015). In single-role
    mode, the replica first writes `audit_policy` itself. The call is repeated with backoff until
@@ -1851,36 +2849,131 @@ Start-up order:
    left to its next call and is not a failure.
 5. Run the key-ring canary (R-ARCH-021).
 6. Run the object-store check ([storage.md](storage.md)).
-7. Open the coordination session, `LISTEN`, and register in the replica registry (R-ARCH-017).
+7. Read the keyspace ID (R-ARCH-030) and start the Valkey client in the background (R-ARCH-031).
+   Start-up never waits for Valkey, and an unreachable Valkey never gates readiness; a
+   configuration error at the first connection is handled as [ha-and-helm.md](ha-and-helm.md)
+   Q-HA-13 decides. Run the first change-log poll (R-ARCH-018). Register in the replica registry
+   with the role. On a `worker` replica, open the lease pool (R-ARCH-017).
 8. Load the snapshots and initialise the registered caches.
-9. Open the client listener and start the job workers, as the role allows.
+9. Open the client listener (`web`) or start the job workers (`worker`), as the role allows.
 10. The `startup` readiness check passes. It requires that steps 3 to 9 have completed and that the
-    audit partitions for the current and the next month exist (R-OPS-001).
+    audit partitions for the current and the next month exist (R-OPS-001). It does not require a
+    reachable Valkey.
 
-Shutdown on `SIGTERM`:
-1. Readiness fails at once (`draining`).
-2. The replica keeps serving for `health.shutdown_drain_delay`.
-3. `http.Server.Shutdown` runs with deadline `server.shutdown_timeout`: no new connections are
-   accepted, and in-flight requests finish.
-4. Workers stop claiming. Every watched loop that stops leaves the watchdog first (R-ARCH-016), so
-   the stop does not fail liveness. Handlers still running 5 s before the deadline are cancelled,
-   and their jobs return to `queued` without counting the attempt.
-5. Statistics and coalesced notifications are flushed, leases released, the replica's registry row
-   deleted, and the pools closed. The process exits `0`.
+Shutdown on `SIGTERM`. Kubernetes removes the pod from the EndpointSlices at the same time as it
+sends the signal, and every proxy in front of trove (kube-proxy, the Ingress or Gateway controller)
+learns of the removal with a delay. The steps cover that delay first:
+1. Readiness fails at once (`draining`), and the registry row turns `draining`.
+   - A `worker` stops claiming jobs at once. If it holds the `scheduler` lease, it stops its
+     scheduler tick and releases that lease at once (`pg_advisory_unlock`), so another worker
+     schedules from its next retry instead of after this drain
+     ([operations-and-observability.md](operations-and-observability.md) R-OPS-001, R-OPS-019).
+     Its other leases stay until step 6.
+   - A `web` replica holds no new cross-replica flight from now on
+     ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026, Q-REPO-7; R-ARCH-033).
+   - A support-bundle part this replica is still collecting is abandoned (R-OPS-027, P1).
+2. A `web` replica keeps serving normally for `health.shutdown_drain_delay`, so that requests a
+   proxy still routes to it succeed. Every response it completes from now on carries
+   `Connection: close` on HTTP/1.1, so clients and proxies reconnect through the Service to another
+   replica. The drain delay must cover the endpoint-propagation time of the edge in use; the drain
+   test below measures it.
+3. At the start of this step, before `http.Server.Shutdown` waits for idle connections, the
+   replica sends `retry: 1000` on every open event stream and ends it, through
+   `http.Server.RegisterOnShutdown` ([api-and-ui.md](api-and-ui.md) R-API-051,
+   [operations-and-observability.md](operations-and-observability.md) R-OPS-001 step 3). This
+   covers every long-lived stream, such as the delivery-log follow stream of R-OPS-044 (P1):
+   `Shutdown` waits for connections to become idle and never ends such a stream itself, so it
+   would hold the replica until the deadline and then be cut. Its client reconnects through the
+   Service to another replica with `Last-Event-ID`. Then `http.Server.Shutdown` runs with deadline
+   `server.shutdown_timeout`. The listeners close, idle connections close, HTTP/2 connections
+   receive `GOAWAY`, and in-flight requests finish. The change-log poll and the grant-index
+   rebuilds keep running through this step and until step 6, because the requests still in flight
+   and the commit-time re-checks of uploads that complete now depend on them
+   ([authorization.md](authorization.md) R-AUTHZ-028, "Drain").
+4. Every watched loop that stops leaves the watchdog first (R-ARCH-016), so the stop does not fail
+   liveness. Job handlers still running 5 s before the deadline are cancelled and their jobs
+   released without counting the attempt (R-ARCH-016). Remote fetches still running then are
+   cancelled, and their flight locks released with `failed` (R-ARCH-033).
+5. At the deadline, the requests still running are cut by closing their connections, with one
+   exception. A request whose request body has been read completely is storing and committing an
+   upload, and it is never cut between its commit and its status line. It runs on into the 5 s
+   margin of the grace period, for at most 4 s, so the process still exits before the kubelet's
+   `SIGKILL`. P-11 bounds that work (1 s plus size ÷ 150 MiB/s, proposed). Without the exception, a
+   publish cut after its commit would be retried by its client and refused as an existing version
+   (`409 npm_version_exists`, [formats/npm.md](formats/npm.md)), although it had succeeded. npm
+   additionally acknowledges an identical retry by the same principal, with the same bytes and
+   dist-tag, within `npm.publish.retry_window`, which also covers answers lost outside trove; and a
+   revisioned unpublish or deprecation retried with a stale revision succeeds when it would change
+   nothing ([formats/npm.md](formats/npm.md) R-NPM-007 step 4, R-NPM-009, Q-NPM-11).
+   - A download cut this way is detectable by the client, because every response with a blob body
+     carries `Content-Length`. A client that resumes sends `Range` with `If-Range: <ETag>` and is
+     served `206` by whichever replica it reaches, because the ETag is the content address
+     ([storage.md](storage.md) R-STOR-012). npm and NuGet clients retry the whole request instead
+     (npm `fetch-retries` 2, NuGet 6 tries); their files are small against the grace period.
+   - A streamed download whose length depends on the data, such as the audit export, is cut the
+     same way. Its client sees an incomplete response and resumes on any replica as
+     [api-and-ui.md](api-and-ui.md) R-API-051 specifies.
+   - An upload cut this way, while its body was still arriving, leaves nothing committed
+     ([storage.md](storage.md) R-STOR-004). The client retries it.
+     - A cut request of an upload session (P1) keeps the parts it has recorded and never aborts
+       the session's multipart upload. It cancels its outstanding part upload, waits for the call
+       to return, and releases its writer claim in one short transaction before the process exits
+       ([storage.md](storage.md) R-STOR-004 step 8, R-STOR-011). The client then resumes on
+       another replica at once, instead of meeting `416` until the claim expires.
+   - Each cut is counted in `trove_http_transfers_cut_total{direction}`. How long a single
+     transfer may run without being cut is decided in Q-ARCH-18.
+6. After the last request has finished, the write-only buffers of R-ARCH-032 are flushed before
+   the pools close: download statistics, the `lastActivityAt` buffer
+   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012), the metadata
+   `last_used_at` buffer (R-REPO-046, P1) and the token last-used buffer
+   ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031, P1). The open
+   audit deduplication summaries, denial summaries included, are written and the asynchronous
+   audit buffer is flushed ([operations-and-observability.md](operations-and-observability.md)
+   R-OPS-015). Pending signals are published. Then the remaining leases are released (R-ARCH-017),
+   the registry row is deleted, the change-log poll and the grant-index rebuilds stop, and the
+   Valkey client and the pools close. The process exits `0`.
 
-The pod's termination grace period must exceed the drain delay plus `server.shutdown_timeout`, and
-the chart sets it ([ha-and-helm.md](ha-and-helm.md)). A transfer that outlasts it is cut off
-(HA-047).
+The pod's termination grace period must exceed `health.shutdown_drain_delay` plus
+`server.shutdown_timeout` plus 5 s. The chart passes the grace period to the process and derives
+`server.shutdown_timeout` from it ([ha-and-helm.md](ha-and-helm.md) R-HA-011), so the two cannot
+drift apart. A transfer that outlasts it is cut off (HA-047).
+
+No-outage drain needs, for each of the roles `web` and `worker`, at least two replicas on different
+nodes and a disruption budget that evicts one pod at a time (INV-12,
+[ha-and-helm.md](ha-and-helm.md) R-HA-032). A replica holds nothing the others need: its requests
+are retried elsewhere (R-ARCH-032), its jobs are released or expire (R-ARCH-016), its leases are
+released, or end with their sessions if it is killed (R-ARCH-017), and its flight locks are
+released or expire (R-ARCH-033).
+
+The `backup` role serves no client. A `trove backup create` on a drained node exits `75`, and its
+Job retries it; a retried run copies only the blobs that are still missing
+([backup-and-restore.md](backup-and-restore.md) R-BAK-013). Its garbage-collection hold counts only
+while the run's lease is valid, so it cannot outlive the run (R-BAK-007, R-BAK-010).
 
 Acceptance criteria:
-- `kubectl rollout restart deployment/trove` runs during a
+- With two `web` and two `worker` replicas on four nodes and the chart's disruption budgets,
+  `kubectl drain` of a node that hosts one `web` and one `worker` replica runs during a loop of
+  100 `npm ci`, 20 `npm publish`, 100 `dotnet restore` and 20 `dotnet nuget push` through the
+  Service, all with their default retry settings. No client operation fails, and every published
+  version is installable afterwards.
+- `kubectl rollout restart deployment/trove-web` runs during a
   `curl --limit-rate 20M -o f.bin …/files/generic-local/400MiB.bin` (about 20 s). curl exits `0`,
   and `sha256sum f.bin` matches.
+- A `curl --limit-rate 2M -o f.bin …/files/generic-local/400MiB.bin` (about 200 s, longer than the
+  grace period) runs while the serving pod is deleted. The transfer is cut at the deadline.
+  `curl -C - --limit-rate 20M -o f.bin` with the same URL resumes with `206` from another replica,
+  and `sha256sum f.bin` matches.
+- A test build delays the commit of an `npm publish` by 2 s, and the serving pod is deleted so that
+  the publish body completes 1 s before the shutdown deadline. The publish answers `201`, the
+  version is installable through another replica, and the kubelet events show no `SIGKILL`.
 - The PostgreSQL primary is stopped for 30 s. `/healthz` stays `200` and `/readyz` turns `503`.
   Afterwards `/readyz` is back to `200`, and no restart count has increased.
 - A replica started while PostgreSQL is unreachable answers `/healthz` with `200` and `/readyz`
   with `503` until the database is back. When `/readyz` first answers `200`, `pg_inherits` lists
   `audit_event` partitions for the current and the next month.
+- A replica started while Valkey is unreachable becomes ready, and `/readyz` answers `200` with
+  `"degraded":["valkey"]`. The Valkey primary is then killed without a failover for 60 s: no
+  replica turns unready and no restart count increases.
 
 ### R-ARCH-025 · Versioning and compatibility policy
 Priority: **MVP** · Covers: OPS-072, EVT-072
@@ -1933,11 +3026,21 @@ Files:
 Runner. It is trove's own code in `internal/meta/postgres` on the native pgx API; no migration
 library and no `database/sql` are involved (Q-ARCH-3). `trove migrate up` runs these steps:
 1. Take `pg_advisory_lock(3, 0)` (category `migration`, R-ARCH-017) and run every later step on
-   that same connection.
-2. Verify the SHA-256 of every applied step in `schema_migration` against the embedded file. On a
+   that same connection. A running backup's database phase holds the lock shared, and a running
+   restore holds it exclusively, so the runner waits for either up to `migrate.advisory_lock_wait`
+   ([ha-and-helm.md](ha-and-helm.md) R-HA-019).
+2. Refuse a half-restored database. While the schema carries a restore anchor
+   (`COMMENT ON SCHEMA <database.schema> IS 'trove-restore <backup-id>'`) or `system_state` holds
+   `restore_in_progress` ([backup-and-restore.md](backup-and-restore.md) R-BAK-021), the runner
+   exits with status `3`, applies nothing and names the backup ID. An interrupted restore is then
+   resumed instead of being overtaken: steps applied beyond the backup's step before the load
+   would make the resumed load fail its column comparison. The check runs after step 1, because
+   the restore holds the lock while it runs. The runner's internal restore mode (below) does not
+   run this check.
+3. Verify the SHA-256 of every applied step in `schema_migration` against the embedded file. On a
    mismatch, stop before applying anything (R-HA-018).
-3. Run the contract guard (gates below).
-4. Apply each pending file in order:
+4. Run the contract guard (gates below).
+5. Apply each pending file in order:
    - A transactional step runs as `BEGIN`, then `SET LOCAL lock_timeout` to
      `migrate.ddl_lock_timeout`, then the whole file as one `Exec` without arguments, then the
      step's `schema_migration` row, then `COMMIT`. pgx sends an argument-less `Exec` through the
@@ -1948,9 +3051,31 @@ library and no `database/sql` are involved (Q-ARCH-3). `trove migrate up` runs t
      (R-HA-018).
    - A lock timeout (SQLSTATE `55P03`) retries the step up to `migrate.ddl_lock_retries` times with
      backoff.
-5. Update `schema_state`, release the lock, and print the summary of R-HA-019.
+6. Update `schema_state`, release the lock, and print the summary of R-HA-019.
 
 `trove migrate status` lists applied and pending steps without taking the lock.
+
+Restore mode. The runner offers an internal "migrate up to step N" mode for `trove backup restore`
+alone, which loads a backup into exactly the schema it was exported from and then applies the
+remaining steps ([backup-and-restore.md](backup-and-restore.md) R-BAK-021, R-BAK-023, Q-BAK-8).
+`trove migrate` exposes no such flag.
+- It runs on a connection that already holds `pg_advisory_lock(3, 0)`: the restore's session
+  connection, which holds the lock from its first check to its finish. The runner neither takes
+  nor releases the lock in this mode.
+- It applies the embedded steps up to step N, or all remaining steps when the restore brings the
+  schema forward after the load, with the same checksums, lock timeouts and retries as above. It
+  skips the half-restored refusal of step 2, because the restore is the operation that set the
+  anchor.
+- It lets the caller add statements to the transaction of its final `schema_state` update. The
+  restore commits `restore_in_progress` there, so a replica's schema check never finds a servable
+  schema without the marker (R-BAK-021 step 2, R-ARCH-024 start-up step 3).
+- During a restore no replica is registered (`replica` is a `transient` table, and the replicas
+  wait at start-up step 3 of R-ARCH-024), so the contract guard has nothing to wait for.
+
+Migration files are not squashed or removed within a major, in addition to never being edited
+once applied (R-HA-018). Every later release of a major can therefore restore every earlier backup
+of it. A major release that drops old steps names, in its release notes, the last release that
+restores older backups (R-BAK-023).
 
 Gates:
 - **Gate in `trove migrate`** (R-HA-018's contract guard). Before a contract step is applied, the
@@ -1981,6 +3106,12 @@ Acceptance criteria:
   objects nor its `schema_migration` row, and the next run applies the step.
 - After an applied migration file is edited, `trove migrate up` exits non-zero, names the file and
   applies nothing.
+- Against a database whose schema carries the restore anchor of backup `20261028T020000Z-7f3a`,
+  and once more against one whose `system_state` holds `restore_in_progress`, `trove migrate up`
+  exits `3`, names the backup ID and applies nothing. A restore of that backup then resumes and
+  finishes (R-BAK-021).
+- A CI check compares the embedded migration files with those of the latest release of the same
+  major and fails when one of them is missing, renamed or changed.
 - A unit test fails on a migration file without a valid `phase` header, on a contract step without
   `requires-app`, and on a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`) in an expand
   file.
@@ -1993,10 +3124,15 @@ Acceptance criteria:
 Priority: **MVP** · Covers: trove-only
 
 Reference environment (proposed):
-- 3 replicas, each limited to 2 vCPU and 4 GiB;
-- PostgreSQL with 4 vCPU and 16 GiB on SSD, at most 1 ms round trip;
+- 3 `web` replicas and 2 `worker` replicas, each limited to 2 vCPU and 4 GiB;
+- PostgreSQL with 4 vCPU and 16 GiB on SSD, at most 1 ms round trip, with PgBouncer in
+  transaction mode in front of the `main` class (R-ARCH-019);
+- Valkey 9.1 with one primary, two replicas and three Sentinels, 1 vCPU each, in the same cluster;
 - S3-compatible storage in the same region;
 - the load generator inside the cluster.
+
+The expected load exceeds what one replica can carry (INV-12). The per-replica targets below are
+therefore only half of the picture; P-16 checks that capacity grows with the replica count.
 
 Latencies are measured at the replica.
 
@@ -2013,26 +3149,37 @@ Latencies are measured at the replica.
 | P-9 | Streaming, files ≥ 100 MiB | ≥ 300 MiB/s per replica at ≤ 1.5 cores |
 | P-10 | Concurrency | ≥ 5,000 open connections and ≥ 500 concurrent transfers per replica; ≤ 256 KiB memory per transfer |
 | P-11 | Upload finish after the last byte arrives | ≤ 1 s + size ÷ 150 MiB/s |
-| P-12 | Collapsing | N concurrent identical misses → 1 upstream request in the cluster |
-| P-13 | Propagation of administrative invalidations | p99 ≤ 1 s with a healthy coordination session |
-| P-14 | Job pick-up after enqueue | p99 ≤ 1 s |
+| P-12 | Collapsing | N concurrent identical misses → 1 upstream request in the cluster while Valkey is available; at most 1 per replica while it is not |
+| P-13 | Propagation of changes in change areas (R-ARCH-018) | p99 ≤ 100 ms while Valkey is available; p99 ≤ `cluster.epoch_poll_interval` + 1 s while it is not |
+| P-14 | Job pick-up after enqueue | p99 ≤ 1 s while Valkey is available; p99 ≤ `jobs.poll_interval` + 1 s while it is not |
 | P-15 | Process start to ready (10,000 repositories, 50,000 policy grants) | ≤ 15 s |
+| P-16 | Scale-out: throughput of P-7 and P-8 with 6 `web` replicas compared with 3 | ≥ 1.8 × at the same p99 |
+| P-17 | Latency added by a Valkey outage, after the breaker has opened | p99 of P-1 and P-3 within 5 % of the baseline |
 
 Database budget per request, used to size P-1 to P-8:
 - local download: 1 query;
 - remote hit: 1 query;
 - computed local document: 1 query (`rev_seq`) when the rendition is cached;
 - virtual merge: 1 query for local `rev_seq` values, plus 1 per remote member;
-- token and policy checks: 0 queries while their caches are valid.
+- token and policy checks: 0 queries while their caches are valid;
+- per replica, not per request: one change-log poll per `cluster.epoch_poll_interval`.
+
+Valkey budget per request: local download and remote hit 0 round trips; remote miss up to 3
+(negative-cache lookup, lock acquire, release with the outcome); a route with a cluster-scoped rate
+limit 1. A credential that misses the replica's cache costs 1 round trip before the PostgreSQL
+lookup (the throttle check, pipelined with the exemption-marker read) and 1 after the PostgreSQL
+answer (the failure count or the marker refresh;
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038). A credential that
+the replica's cache answers costs none.
 
 Measurement:
 - `perf/` holds k6 scripts and a Go driver for P-12. A nightly job runs them on a staging cluster
-  sized like the reference.
+  sized like the reference, and runs P-16 with the `web` Deployment scaled from 3 to 6 replicas.
 - Pull requests run Go micro-benchmarks for `Match`, `Rewrite`, `Merge` and `authz.Decide`. A
   `benchstat` regression above 10 % produces a warning.
 
 Acceptance criteria:
-- The nightly report shows P-1 to P-15. Two consecutive misses of a target open a regression issue.
+- The nightly report shows P-1 to P-17. Two consecutive misses of a target open a regression issue.
 
 ### R-ARCH-028 · Resource limits for untrusted package content
 Priority: **MVP** · Covers: trove-only
@@ -2085,7 +3232,7 @@ Acceptance criteria:
 | REPO-039 | P2 | Uncached retrieval through a virtual repository for requests from other instances. |
 | OPS-041 | P2 | Advanced runtime properties: every key is in the schema (R-ARCH-020); there are no hidden knobs. |
 | OPS-042 | P2 | Central configuration descriptor: configuration is split between the file and PostgreSQL by rule (R-ARCH-020). |
-| OPS-064 | P2 | Load protection per activity: the MVP has the global in-flight limit (R-ARCH-005) and the API rate limits of [api-and-ui.md](api-and-ui.md). |
+| OPS-064 | P2 | Load protection per activity: the MVP has the per-replica in-flight limit (R-ARCH-005) and the rate limits of [api-and-ui.md](api-and-ui.md), whose counters can be cluster-wide (R-ARCH-034). |
 
 ## Security notes
 
@@ -2118,10 +3265,28 @@ Acceptance criteria:
 - **Egress at connect time.** The egress policy runs in the dialer (R-ARCH-022). A repository
   manager (`manage` can be delegated, INV-9) cannot reach the cloud metadata address through DNS
   rebinding.
-- **Notifications are early eviction, not correctness.** Revocation-sensitive caches belong to
-  their pages, which give them self-validating keys or short safety TTLs. The `notify` readiness
-  check takes a replica that has lost its `LISTEN` session out of the Service. Revocations use
-  administrative channels, which deliver on commit rather than through the coalescer (R-ARCH-018).
+- **Change messages are early eviction, not correctness.** Revocation-sensitive caches belong to
+  their pages, which give them self-validating keys or short safety TTLs. Revocations use change
+  areas: the PostgreSQL change log applies them on every replica within
+  `cluster.epoch_poll_interval`, whatever Valkey does, and the `invalidation` readiness check takes a
+  replica whose poll has stalled out of the Service (R-ARCH-018).
+- **Valkey is outside the trust path.** No content, metadata or credential that trove serves, no
+  positive authentication or authorization result and no key material is read from Valkey
+  (R-ARCH-030, Q-ARCH-16); a Valkey value can at most make trove refuse with `404` or `429`, or,
+  as a throttle exemption marker, cost one more PostgreSQL lookup for one credential. A message
+  from Valkey can only evict early; it never advances a replica's applied change epoch, so a forged
+  or suppressed message cannot hide a revocation (R-ARCH-018). Values read from Valkey are validated
+  before use. What remains is availability: H-49.
+- **Valkey credentials and transport.** trove connects to Valkey and to the Sentinels with TLS by
+  default and verifies the server certificate, with its host name under the default `verify-full`
+  and without it under `verify-ca`. There is no mode that encrypts without verifying; TLS can be
+  switched off only as `valkey.tls.mode: disable` together with `valkey.allow_insecure: true`
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-056). trove authenticates as an ACL user that can reach
+  only its own key and channel prefix and is denied scripting (R-ARCH-031). Passwords come from
+  mounted files and are re-read on reconnection.
+- **No session state on the request path.** The `main` class keeps no state beyond its transaction
+  (R-ARCH-019), so a transaction-mode pooler cannot leak one request's session settings into
+  another's.
 
 ## Decisions
 
@@ -2167,18 +3332,21 @@ Status: **Decided by the development agent** — selected from the options below
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice is unchanged. trove no longer uses `LISTEN` (Q-ARCH-15), so `WaitForNotification` drops out of the rationale; pgx's exec modes now also let the `main` class run through a transaction-mode pooler (Q-ARCH-14).
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) pgx + sqlc for every query | pgx v5.11.0 native API; every query is a `.sql` file compiled by sqlc v1.31.1 | SQL is checked against the migrations at generation time. Locking-sensitive SQL stays reviewable. | Optional filters need `sqlc.narg` and `col = $1 OR $1 IS NULL` patterns, which a cached generic plan cannot prune. A sort key chosen by the caller needs `CASE` in `ORDER BY`, which no index can serve for a cursor. |
 | (b) pgx, handwritten | pgx native API, every query written by hand in Go | Full control | No generation-time check of the large majority of queries, which are static |
-| (c) `database/sql` + ORM | GORM, ent or bun | Fast CRUD | Hides exactly the SQL this design depends on (`SKIP LOCKED`, advisory locks, `ON CONFLICT`). Loses `WaitForNotification`, COPY and pgx's exec modes. |
+| (c) `database/sql` + ORM | GORM, ent or bun | Fast CRUD | Hides exactly the SQL this design depends on (`SKIP LOCKED`, advisory locks, `ON CONFLICT`). Loses COPY and pgx's exec modes. |
 | (d) pgx + sqlc + a small list builder | sqlc for every static query; dynamic list and search queries built in one package with bound values and allowlisted identifiers | Keeps the generation-time check where it fits and plain SQL where it does not. Injection is ruled out by construction. | A second, small query path to maintain and test |
 
 **Choice:** (d) — pgx's native API, with sqlc for every static query and one confined builder, `listq`, for the dynamic list and search queries.
 
 **Rationale:**
-- pgx provides what the design needs: `WaitForNotification`, `pgxpool`, COPY and the exec modes
-  (verified in its source).
+- pgx provides what the design needs: `pgxpool`, COPY and the exec modes (verified in its source).
+  The exec modes let the `main` class work behind a transaction-mode pooler, including one without
+  prepared-statement support (`default_query_exec_mode=exec`, R-ARCH-019).
 - sqlc keeps the static, locking-sensitive SQL checked and readable in review.
 - The cursor-paged, filterable lists of [api-and-ui.md](api-and-ui.md) (Q-API-6) are where (a)
   breaks down: each combination of filters and sort key needs its own plan and its own index order.
@@ -2198,6 +3366,8 @@ Status: **Decided by the development agent** — selected from the options below
   bound values, allowlisted identifiers, no SQL concatenation elsewhere), and has an acceptance
   criterion for both rules.
 - R-ARCH-003's layout tree shows `listq/`.
+- 2026-10-28: the rationale no longer names `WaitForNotification`, and option (c) no longer counts
+  its loss; R-ARCH-019 states the exec-mode setting for poolers without prepared-statement support.
 
 ### Q-ARCH-3 · Migration runner
 
@@ -2295,10 +3465,13 @@ Status: **Decided by the development agent** — selected from the options below
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice is unchanged. A Valkey-based queue was added as option (c) and rejected. Only the `worker` role claims jobs, wake-ups come from Valkey with polling as the bound, and the release of running jobs on shutdown is spelled out.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The queue of R-ARCH-016 | One `job` table, claimed with `FOR UPDATE SKIP LOCKED`; migrations in trove's single migration path | Carries the operation columns of [api-and-ui.md](api-and-ui.md) and the task slots of [operations-and-observability.md](operations-and-observability.md). Rolling-upgrade safe through claiming by known kind. | trove owns the reaper, backoff and scheduler code |
+| (a) The queue of R-ARCH-016 | One `job` table, claimed with `FOR UPDATE SKIP LOCKED`; migrations in trove's single migration path | Carries the operation columns of [api-and-ui.md](api-and-ui.md) and the task slots of [operations-and-observability.md](operations-and-observability.md). Rolling-upgrade safe through claiming by known kind. Claims are short transactions that work through a transaction-mode pooler (R-ARCH-019). | trove owns the reaper, backoff and scheduler code |
 | (b) River v0.50.0 | pgx-native queue library (MPL-2.0) | Mature features, an admin UI | Pre-1.0. It manages its own tables and migrations (`rivermigrate`), a second migration path next to INV-3's single one. Its schema does not hold the operation and task-slot columns. |
+| (c) A queue in Valkey (Streams with consumer groups) | Jobs are stream entries; workers read them through a consumer group and acknowledge them | Pushes jobs to workers without polling; takes the claim load off PostgreSQL | INV-3 puts the durable job queue in PostgreSQL: a Sentinel failover can lose acknowledged writes ([Sentinel](https://valkey.io/topics/sentinel/)), and a lost job is lost work. An enqueue could no longer commit atomically with the change that causes it. The operation and task-slot columns would need PostgreSQL anyway. |
 
 **Choice:** (a) — the PostgreSQL job table and claim query of R-ARCH-016, owned by trove.
 
@@ -2306,131 +3479,157 @@ Status: **Decided by the development agent** — selected from the options below
 - INV-3 has one migration path, and the job row is shared by three consumers: maintenance tasks,
   long-running API operations and internal work.
 - (b) would split the schema and still need a side table for those columns.
+- (c) breaks INV-3 for the one piece of state where loss means lost work, and it gives up the
+  enqueue in the same transaction as the change.
 - The queue code is small, and the claim query is given in full on this page.
+- The horizontal-scale constraint does not press on the queue: `web` replicas only insert rows, and
+  only the few `worker` replicas claim. `locked_until` already is the visibility timeout, and the
+  heartbeat keeps it current, so a drained or lost worker gives its jobs back without coordination.
 - Revisit if webhook delivery (P1) produces job volumes far above maintenance work and the claim
   query shows up in `pg_stat_statements` as a top consumer.
 
-**Applied in the spec:** No change; the requirement text already follows this option (R-ARCH-016).
+**Applied in the spec:**
+- 2026-10-28, R-ARCH-016:
+  - only `worker` (or `all`) replicas run the claim loop, the reaper and the scheduler;
+  - `locked_until` is named as the visibility timeout;
+  - the release statement on shutdown, which does not count the interrupted attempt;
+  - wake-ups through the signal area `jobs` in Valkey, with `jobs.poll_interval` as the bound;
+  - the watched loops `cluster.leases`, `cluster.changes` and `cluster.signals`;
+  - the kind `cluster-change-prune`;
+  - acceptance criteria for a drain during `gc-full` and for pick-up without Valkey.
+- R-ARCH-001's role table lists which role runs the queue's loops.
 
 ### Q-ARCH-6 · Cross-replica collapse holds a connection for the whole upstream transfer
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice changed from (a), the PostgreSQL session advisory lock on a lock pool, to (d), a lock in Valkey with a TTL that the holder extends. No PostgreSQL connection is held during a fetch any more, and the lock pool is gone.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Advisory lock, bounded pool, bypass | Keep INV-11's session lock on a dedicated lock pool. When the pool stays exhausted for 100 ms, fetch without the cross-replica lock and count it ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026). | Released by PostgreSQL as soon as the holder's connection closes. No heartbeat. Simple. | Pins one connection for the whole transfer. That is harmless for npm and NuGet files and costly for multi-gigabyte container layers (P1). |
-| (b) Lease row with heartbeat | A `fetch_lease` row, renewed while the transfer runs; waiters watch the row | Holds no connection | Crash detection only after the lease expires. A heartbeat per active fetch. More code. |
-| (c) Collapse within a replica only | Single-flight per process, no cross-replica lock | No database cost | N replicas cause up to N identical upstream fetches, which breaks P-12 and multiplies upstream rate-limit use |
+| (a) Advisory lock, bounded pool, bypass | The earlier choice: INV-11's session lock on a dedicated lock pool. When the pool stays exhausted for 100 ms, fetch without the cross-replica lock and count it. | Released by PostgreSQL as soon as the holder's connection closes. No heartbeat. | Pins one PostgreSQL session for the whole transfer. Every `web` replica needs `proxy.lock_pool_size` (16) direct session connections, so connections grow with the replica count, against INV-12, and a transaction-mode pooler cannot carry them. INV-11 now names a Valkey lock. |
+| (b) Lease row with heartbeat | A `fetch_lease` row, renewed while the transfer runs; waiters watch the row | Holds no connection | A PostgreSQL write per fetch start, per heartbeat and per release: hot-path writes and row churn on the system of record, for an optimization |
+| (c) Collapse within a replica only | Single-flight per process, no cross-replica lock | No shared state | n replicas cause up to n identical upstream fetches, and n grows with the load. Breaks P-12 and multiplies upstream rate-limit use. |
+| (d) Valkey lock with TTL and extension | `SET … NX PX` to acquire, `SET … IFEQ` to extend every third of the TTL, `DELIFEQ` to release; waiters subscribe to the flight's channel and poll; the in-process single-flight stays in front; without Valkey, (c) | Holds no PostgreSQL connection while acquiring, waiting or transferring. Works with any pooler. A crashed holder frees the flight within the TTL. Valkey's own commands do compare-and-extend and compare-and-delete, so no script is needed. | A holder killed without shutdown delays waiters by up to the TTL, where (a) released at once on a closed socket. A failover can lose the lock (asynchronous replication, [distributed locks](https://valkey.io/topics/distlock/)); the result is a duplicate fetch. |
 
-**Choice:** (a) — the session advisory lock on a bounded lock pool with a bypass, behind `cluster.FlightLock` so that (b) can replace it later without touching the proxy.
+**Choice:** (d) — a Valkey lock per flight with a 30 s TTL that the holder extends, behind `cluster.FlightLock`, with the in-process single-flight in front and collapsing per replica as the fallback.
 
 **Rationale:**
-- The MVP formats move small files, so (a)'s connection cost is bounded by `proxy.lock_pool_size`
-  and the bypass.
-- (a) frees the lock the moment the holder's connection closes. That covers the common failures, a
-  process crash and a pod deletion, without any heartbeat.
-- On node loss without a closed socket, the server's TCP keepalive frees the lock
-  ([ha-and-helm.md](ha-and-helm.md) R-HA-013, about 2 minutes with the recommended settings).
-  Waiters are bounded meanwhile by `proxy.fetch_wait_timeout_seconds` (R-REPO-026). (b) would
-  detect that case after its lease period, but it pays a heartbeat per active fetch for that.
-- (c) gives up a measurable target (P-12).
-- Putting the lock behind `cluster.FlightLock` makes (b) a local change in `internal/cluster`.
-- Revisit as soon as OCI or Docker remotes exist: if the bypass counter rises under normal load,
-  INV-11 is refined to (b).
+- Connections decide it. Under (a) every `web` replica holds up to 16 lock-pool connections plus a
+  listener, all of them direct sessions: at 20 replicas that is 340 connections a pooler cannot
+  absorb. (d) needs none, which is what lets the `main` class run behind a transaction-mode pooler
+  (Q-ARCH-14).
+- The lock is an optimization and stays one (R-REPO-026): blob commits are idempotent by content
+  address, and the entry upsert keeps the newer metadata and refuses a different digest. Losing the
+  lock in a failover therefore costs one duplicate upstream fetch. That is exactly the loss INV-3
+  allows Valkey to cause.
+- Failure timing is comparable. A graceful shutdown releases at once (R-ARCH-024). A killed holder
+  frees the flight after at most 30 s. Under (a), node loss freed it only after the server's TCP
+  keepalive, about 2 minutes (R-HA-013); only a process crash with a closed socket was faster.
+- (b) moves the cost into PostgreSQL writes on the hot path. (c) gives up P-12 exactly when the load
+  needs many replicas.
+- `cluster.FlightLock` keeps the proxy independent of the mechanism, as before.
+- Revisit if `trove_flight_lock_lost_total` or the bypass counter rises under normal load, or if
+  container-layer remotes (P1) show waiters timing out behind killed holders; the TTL is then the
+  first lever.
 
 **Applied in the spec:**
-- R-ARCH-017: the `fetch` category is used only through `cluster.FlightLock`, and the proxy never
-  calls the lock functions itself.
-- R-ARCH-003's layout tree names `FlightLock` in `internal/cluster`.
+- New R-ARCH-033 specifies `FlightLock` on Valkey: acquire, extension, release with the outcome,
+  waiting through the flight channel and polling, expiry, the bypass without Valkey, the lost-lock
+  case and acceptance criteria.
+- R-ARCH-013 orders the miss through the Valkey lock, and its sequence diagram shows the Valkey
+  calls.
+- R-ARCH-017 retires the advisory-lock category 2 `fetch` and keeps its number reserved.
+- R-ARCH-019 has no lock pool, and R-ARCH-030 lists the keys and the degradation.
+- R-ARCH-003's layout tree still names `FlightLock` in `internal/cluster`.
+- Cross-page: [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 (steps 1, 3, 4, 5
+  and 6, the lock pool and `proxy.lock_pool_size`), [ha-and-helm.md](ha-and-helm.md) R-HA-006,
+  R-HA-012 and R-HA-016, and INV-11 is already worded for this choice.
 
 ### Q-ARCH-7 · Lock key form for cache fills
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the fetch lock moved to Valkey (Q-ARCH-6), so its key is now the full SHA-256 of the flight key in a Valkey key (option (c)). Option (a), the two-key form with a registered category, stays the rule for every remaining PostgreSQL advisory lock, and the category `fetch` is retired.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Two-key form, category `fetch` | `pg_try_advisory_lock(2, <first 4 bytes of SHA-256 of the flight key>)` | `pg_locks` shows `classid = 2`, so the lock-diagnostics view of [operations-and-observability.md](operations-and-observability.md) and any operator can name every lock. One key space for all of trove's locks. | 32-bit hash: a collision makes two unrelated fetches wait for each other |
+| (a) Two-key form, category `fetch` | `pg_try_advisory_lock(2, <first 4 bytes of SHA-256 of the flight key>)` | `pg_locks` shows `classid = 2`, so the lock-diagnostics view of [operations-and-observability.md](operations-and-observability.md) and any operator can name every lock. One key space for all of trove's locks. | 32-bit hash: a collision makes two unrelated fetches wait for each other. Needs the PostgreSQL lock that Q-ARCH-6 gave up. |
 | (b) Single 64-bit hash | `pg_try_advisory_lock(<bigint>)` | Collisions are practically impossible | Anonymous in `pg_locks`. A second key space next to the categories, which must never be mixed up with them. |
+| (c) Valkey key with the full hash | `trove:<ks>:lock:fetch:v1:<64 hex of SHA-256 of the flight key>` | No collisions to reason about; the key says what it locks; listed by `SCAN` on the prefix | Not visible in `pg_locks`; diagnostics read the Valkey prefix instead |
 
-**Choice:** (a) — every advisory lock uses the two-key form with a registered category, and the fetch lock is `(2, <32-bit hash of the flight key>)`.
+**Choice:** (c) for the fetch lock — the Valkey key `trove:<ks>:lock:fetch:v1:<SHA-256 hex of the flight key>`; every remaining PostgreSQL advisory lock keeps (a)'s two-key form with a registered category.
 
 **Rationale:**
-- A collision under (a) only serializes two fetches, and correctness never depends on the lock
-  (R-REPO-026 calls it an optimization). The chance that two of k concurrent fills collide is
-  about k²/2³³: for 1,000 concurrent fills, about 1 in 8,600.
-- Every lock can be named. The lock view of [operations-and-observability.md](operations-and-observability.md)
-  R-OPS-026 (P1) depends on it, and from the MVP on an operator reads `pg_locks` with the same
-  categories. (b) cannot offer that.
-- Revisit only if the bypass or wait metrics show contention that traces back to hash collisions,
-  which needs on the order of tens of thousands of concurrent fills.
+- The 32-bit hash was a concession to PostgreSQL's advisory-lock key width. A Valkey key has no such
+  limit, so the full SHA-256 removes the collision case altogether.
+- The categories stay valuable for the locks that remain in PostgreSQL (lease, migration, config):
+  every one of them is still named in `pg_locks`, and the category test still rejects ad-hoc keys.
+- Retiring category 2 without reusing its number keeps old dashboards and runbooks from misreading
+  a new lock.
+- Revisit if a later mechanism needs a hashed PostgreSQL advisory lock again; it then follows (a).
 
 **Applied in the spec:**
-- The text across pages agrees, as checked on 2026-10-28:
-  - R-ARCH-017's category table;
-  - [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026, with
-    `pg_try_advisory_lock(2, <lock id>)` and the same hash input;
-  - [ha-and-helm.md](ha-and-helm.md) R-HA-006's lock-key registry and R-HA-019's
-    `pg_advisory_lock(3, 0)`;
-  - the lock view of [operations-and-observability.md](operations-and-observability.md) R-OPS-026.
-- R-ARCH-017 forbids the single-`bigint` forms everywhere and names the transaction-scoped
-  membership lock `pg_advisory_xact_lock(4, 1)`. It adds a test that fails on any one-argument or
-  uncategorized advisory-lock call. That rule also excludes migration libraries with a fixed
-  single-`bigint` lock (Q-ARCH-3).
-- R-ARCH-016 states that neither a manual reindex nor an automatic rebuild takes a lease, because
-  leases carry registered numbers only.
-- Two places on [repositories-and-proxy.md](repositories-and-proxy.md) still word it differently
-  and get cross-page edits: R-REPO-018 ("one fixed key") and R-REPO-016 ("advisory-lock lease"
-  for reindexing).
+- R-ARCH-017's category table marks category 2 `fetch` as retired and reserved. Its test also
+  rejects category 2, and it states that no category hashes its `objid` any more.
+- R-ARCH-030 and R-ARCH-033 define the Valkey key with the full hash.
+- The two-key rule, the single-`bigint` ban and `pg_advisory_xact_lock(4, 1)` are unchanged in
+  R-ARCH-017.
+- Cross-page: [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 1,
+  [ha-and-helm.md](ha-and-helm.md) R-HA-006's lock-key registry (row `fetch`), and the lock view of
+  [operations-and-observability.md](operations-and-observability.md) R-OPS-026, which shows flight
+  locks from Valkey or not at all.
 
 ### Q-ARCH-8 · NOTIFY on hot-path commits
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice changed from (a), a post-commit coalescer that sends `NOTIFY`, to (d), the same coalescer publishing to Valkey. trove sends no `NOTIFY` at all now; administrative changes moved to the change log of Q-ARCH-15.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Post-commit coalescer | Hot-path changes are handed to a per-replica coalescer after commit. It sends at most one `NOTIFY` per channel per 50 ms, with batched payloads. | Delivery after commit is kept. Wake-up within 50 ms. Notifying commits are capped at 20 per second per channel and replica, whatever the load. | A crash between commit and flush loses those notifications. Self-validating keys and waiter polling already cover that case (R-ARCH-018, R-REPO-026). |
-| (b) `NOTIFY` inside each writing transaction | The textbook pattern | Simplest; exactly one notification per change | PostgreSQL serializes the commits of notifying transactions on one lock (`async.c`), so upload and fill throughput becomes bound to that lock |
-| (c) No `NOTIFY` for fills | Waiters only poll the lock | No notification traffic | Adds up to one poll interval (1 s by default) to every collapsed request |
+| (a) Post-commit coalescer with `NOTIFY` | The earlier choice. Hot-path changes are handed to a per-replica coalescer after commit; it sends at most one `NOTIFY` per channel per 50 ms. | Delivery after commit; bounded notifying commits | Needs a `LISTEN` session on every replica: one direct session connection each, which a transaction-mode pooler cannot carry and which grows with the replica count (INV-12). Every coalescer `NOTIFY` still takes PostgreSQL's notify commit lock (`async.c`). |
+| (b) `NOTIFY` inside each writing transaction | The textbook pattern | Simplest; exactly one notification per change | PostgreSQL serializes the commits of notifying transactions on one lock (`async.c`), so upload and fill throughput becomes bound to that lock. Same `LISTEN` sessions as (a). |
+| (c) No notification for hot-path changes | Consumers only poll | No notification traffic | Adds up to one poll interval to every job pick-up and collapsed request |
+| (d) Post-commit coalescer publishing to Valkey | The coalescer of (a), but it publishes on `trove:<ks>:sig:v1:<area>`; fill completion uses the flight's own channel (R-ARCH-033) | No PostgreSQL work at all for a signal; no session connection; wake-ups in milliseconds; fan-out bounded by the coalescer | At-most-once delivery, and nothing while Valkey is unavailable. Every consumer already stays correct without the signal (self-validating keys, polling). |
 
-**Choice:** (a) — every notification that client traffic produces, cache fills and job wake-ups included, leaves through a per-replica post-commit coalescer, while administrative notifications stay inside their transaction.
+**Choice:** (d) — signals that client traffic produces leave through the per-replica coalescer to Valkey Pub/Sub after commit; trove issues no `NOTIFY`.
 
 **Rationale:**
-- Cold-cache CI runs produce hundreds of fills per second. Under (b) each fill becomes a notifying
-  commit, and those commits run one at a time across the whole cluster.
-- With the synchronous standby that [ha-and-helm.md](ha-and-helm.md) R-HA-013 recommends, each such
-  commit holds the lock across its WAL flush and the standby round trip (verified in the
-  PostgreSQL 18 source). That makes the cap roughly the inverse of the commit latency, for every
-  publish and fill in the cluster together.
-- (a) bounds the notifying commits per replica and keeps the latency within 50 ms. The coalescer's
-  own commits run with `synchronous_commit = off`: they carry no data, so they need not wait for the
-  WAL flush while they hold the lock.
-- Registering the class with each channel makes the rule structural: a format or page calls
-  `Host.Notify` the same way for both classes and cannot put a hot-path `NOTIFY` into its
-  transaction by mistake.
-- (c) adds latency to every collapsed request for no gain over (a).
-- Revisit if a hot-path consumer turns out to need per-change ordering that batching breaks. None
-  does today: every consumer re-reads the database.
+- The reason for (a) was PostgreSQL's notify lock. (d) removes the lock from the picture entirely
+  and also removes the `LISTEN` session, which Q-ARCH-14 needs gone so that `web` replicas hold no
+  session connection.
+- Hot-path signals were already best effort under (a): a crash between commit and flush lost them,
+  and every consumer covered that with self-validating keys or polling. Valkey's at-most-once
+  delivery changes nothing for them, and a Valkey outage degrades them to their polling bound, as
+  INV-12 asks.
+- The coalescer stays, because it bounds the fan-out: with n publishing replicas and m subscribers,
+  at most n × 20 × m deliveries per second per area, whatever the commit rate.
+- Fill completion leaves the shared channel. A per-flight channel (R-ARCH-033) reaches only the
+  replicas that wait for that flight, instead of every replica on every fill.
+- (c) adds latency that (d) avoids at almost no cost.
+- Revisit if a signal consumer turns out to need delivery guarantees. It then becomes a change area
+  (Q-ARCH-15) instead of a signal.
 
 **Applied in the spec:**
-- R-ARCH-018:
-  - each channel is registered with a class, administrative or hot-path, and the channel table shows
-    it, with the exact channel names of [repositories-and-proxy.md](repositories-and-proxy.md);
-  - `Host.Notify` and `cluster.Notify` attach a notification to the transaction, and the class
-    decides whether it is sent inside the transaction or through the coalescer after commit;
-  - job wake-ups enqueued by hot-path transactions are hot-path;
-  - coalescer commits use `synchronous_commit = off`;
-  - only `internal/cluster` issues `NOTIFY`, with a test for that;
-  - the cache-fill upsert of R-REPO-026 issues no `NOTIFY`;
-  - the `trove_jobs` bound has an acceptance criterion.
-- R-ARCH-009 states that notifications are attached to the request's transaction and leave it as
-  their channel's class decides.
-- The security notes state that revocations use administrative channels.
-- [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 still shows `NOTIFY` inside the
-  upsert transaction and gets the matching cross-page edit.
+- R-ARCH-018: signal areas, the coalescer publishing to Valkey, at-most-once delivery and the rule
+  that every consumer stays correct without the signal. The area table replaces the channel table,
+  `trove_proxy_fetch` is gone, `upstream_state` moves to the change class, and no code issues
+  `LISTEN`, `NOTIFY` or `pg_notify` (with a test).
+- R-ARCH-009: `Host.Notify` takes an area, and its comment and the transaction rule say how each
+  class leaves.
+- R-ARCH-016: workers wake on the signal area `jobs`.
+- R-ARCH-015's acceptance criteria run with Valkey stopped instead of with the coalescer disabled.
+- Cross-page: [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 5 and the
+  channel names of R-REPO-029 and R-REPO-045;
+  [operations-and-observability.md](operations-and-observability.md) R-OPS-035 (signal `events`);
+  [ha-and-helm.md](ha-and-helm.md) R-HA-004.
 
 ### Q-ARCH-9 · Freshness of merged metadata for local members
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice is unchanged and gains weight, because requests now reach replicas at random and no signal is guaranteed. R-ARCH-015's acceptance criteria run with Valkey stopped instead of with the coalescer disabled.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -2458,8 +3657,9 @@ Status: **Decided by the development agent** — selected from the options below
   - raises the rule from SHOULD to MUST for every format;
   - places the check in the core's merged-metadata cache;
   - records every eligible local member, with 0 for a member without the package;
-  - has acceptance criteria with the coalescer disabled for npm, NuGet, the `formattest` fake
-    format and a first local publish of a name a remote member serves.
+  - has acceptance criteria for npm, NuGet, the `formattest` fake format and a first local publish
+    of a name a remote member serves, run without any cross-replica signal (since 2026-10-28: with
+    Valkey stopped).
 - R-ARCH-009 places `rev_seq` on [storage.md](storage.md)'s `packages` row, and `RevSeqs` documents
   the 0 for an absent package.
 - R-ARCH-010 adds kit check 9, which fails a write that forgets to increment `rev_seq`.
@@ -2637,6 +3837,321 @@ minute, and leaves open whether any format holds the publish response until its 
 - Settled alongside, under FMT-011: R-ARCH-015 fixes one virtual metadata period for every format
   (`mergedMetadataTtlSeconds`, R-REPO-020), which settles the catalog's competing defaults.
 
+### Q-ARCH-13 · Valkey client library and supported Valkey versions
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-3 and INV-12 make Valkey with Sentinel part of every production installation. The client must
+follow Sentinel failovers, speak TLS and ACL to the data nodes and to the Sentinels, and fit
+R-ARCH-001's static binary without cgo. The supported server versions decide whether the flight
+lock needs a script.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) valkey-go v1.0.79, Valkey 9.0 and later | The Valkey project's Go client (Apache-2.0), against servers of the 9.0 line and later | Its Sentinel client checks `ROLE`, follows `+switch-master` and reconciles periodically. TLS and an ACL user for data nodes and for Sentinels. Credentials are read on every connection attempt. Builders for `SET … IFEQ` and `DELIFEQ` (all verified in its source). From 9.0, `DELIFEQ` exists, so the lock needs no script and the ACL user needs no scripting. | Frequent patch releases (v1.0.79). Client-side caching is on by default and has to be switched off. An installation on Valkey 8.x has to upgrade. |
+| (b) valkey-go, Valkey 8.1 and later | The same client, one more server line | Covers 8.1 installations (maintained until 2028-03-31) | 8.1 has `SET … IFEQ` but no `DELIFEQ`. The release then needs a script, so the ACL user must be allowed scripting, and two code paths exist until 8.1 is dropped. |
+| (c) go-redis v9.23.0 | Redis Inc.'s client (BSD-2-Clause) with `FailoverClient` for Sentinel | Large user base; Sentinel with an ACL user | Its supported servers are Redis CE 8.0 to 8.10, and other servers are "not officially supported". Its compare-and-delete helper targets Redis's `DELEX`, not Valkey's `DELIFEQ`. Divergence between the servers would surface in trove's tests, not upstream's. |
+| (d) Valkey GLIDE for Go v2.5.3 | The Valkey project's multi-language client on a Rust core | Official Valkey client with one core across languages | Needs cgo, which R-ARCH-001's `CGO_ENABLED=0` static binary rules out. Its Go documentation names no Sentinel mode. |
+
+**Choice:** (a) — valkey-go, against Valkey 9.0 and every later minor line, in Sentinel mode for production.
+
+**Rationale:**
+- (d) is ruled out by the static binary. Between (a) and (c), (a) is maintained by the Valkey
+  project and tested against Valkey, while (c) is tested against Redis CE, whose commands are
+  diverging from Valkey's (`DELEX` against `DELIFEQ`).
+- (a)'s Sentinel client does what the Valkey client guide asks for: resolve through the Sentinels,
+  verify with `ROLE`, resolve again on every reconnection. Its periodic reconciliation covers a
+  missed `+switch-master`, the failure mode its own documentation names.
+- Reading credentials on every connection attempt lets a rotated Secret take effect without a
+  restart (R-ARCH-031).
+- Floor 9.0 rather than 8.1: the flight lock is the only place that needs compare-and-delete. With
+  `DELIFEQ` and `SET … IFEQ`, trove runs no scripts, so its ACL user can be denied scripting, which
+  narrows what a stolen trove credential can do inside Valkey. 9.0 is maintained until 2028-10-21
+  and 9.1 until 2029-05-19, which covers the prototype and the first releases. Valkey enters trove
+  with this change, so no installation is already bound to an older line.
+- Revisit if a target installation must run Valkey 8.1 (then (b), with a script for the release
+  only), if valkey-go stops following Valkey releases, or if GLIDE ships a Go client without cgo
+  and with Sentinel support.
+
+**Applied in the spec:**
+- New R-ARCH-031 implements [ha-and-helm.md](ha-and-helm.md) R-HA-056 and R-HA-057 with this
+  library: the server floor and its check at connect, the Sentinel protocol plus periodic
+  reconciliation, primary-only commands, the connection count, the breaker path, TLS, credentials
+  read per connection attempt, the least-privilege command list with an example ACL rule, and
+  acceptance criteria.
+- R-ARCH-002: only `cluster` imports the Valkey client, with an archtest criterion.
+- The verified-facts table lists the client, server and Sentinel facts this choice rests on.
+- Cross-page: [ha-and-helm.md](ha-and-helm.md) R-HA-056 (version floor 9.0 instead of 8.0, CI on
+  9.0 and 9.1, the new key `valkey.sentinel.refresh_interval`, the local profile on Valkey 9.1).
+
+### Q-ARCH-14 · PostgreSQL connection model for n replicas and transaction-mode poolers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-12 says the load exceeds one replica, and PostgreSQL connections must not grow without bound
+with the replica count. Until 2026-10-28 every replica opened the main pool (20), the lease pool (4),
+the fetch lock pool (16) and one `LISTEN` session, all as direct or session-mode connections, and
+transaction-mode poolers were excluded ([ha-and-helm.md](ha-and-helm.md) Q-HA-6). The example below
+uses 20 `web` and 3 `worker` replicas plus one surge pod.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Direct or session-mode only | The earlier model: every replica opens main, lease, lock pool and listener | Nothing to change; session features everywhere | 24 × 41 = 984 server connections in the example, growing by 41 per replica. Violates INV-12 at the scale the owner expects. |
+| (b) Split by class and role | The `main` class keeps no session state and may run through a transaction-mode pooler. Session connections exist only on `worker` replicas (the lease pool) and in `trove migrate` and `trove backup`. No listener (Q-ARCH-15), no lock pool (Q-ARCH-6). | With a pooler, the server sees the pooler's pool (for example 40) plus 4 × 4 lease connections plus the one-off ones, about 60 in the example, whatever the `web` count. Without a pooler, still 24 × 20 + 4 × 4 = 496 instead of 984. Fencing of singleton work is unchanged. | Two endpoints to configure where a pooler is used. Every request-path query must stay transaction-scoped, which a test enforces. |
+| (c) Everything through a transaction-mode pooler | (b), and leases become table rows with fencing tokens, so no session connection remains | Zero session connections | Gives up R-HA-006's fencing on the lease's own session and the immediate release on session end. `worker` replicas are few, so it saves a dozen connections. |
+| (d) (b) plus one `LISTEN` session per replica | Pooled main pool, but invalidation stays on `LISTEN/NOTIFY` | Delivery on commit as before | Still one direct session per replica, growing with the count; every `web` replica needs a direct endpoint, and readiness depends on that session |
+
+**Choice:** (b) — the `main` class is transaction-scoped and may run through a transaction-mode pooler from the MVP on; session connections exist only for the lease pool on `worker` replicas and for `trove migrate` and `trove backup`.
+
+**Rationale:**
+- Only (b) and (c) keep server connections independent of the number of `web` replicas, which is
+  the number that grows with load. (c) pays for a dozen saved connections with weaker fencing, the
+  property that keeps a partitioned worker from committing the scheduler's slots and the writes of
+  the singleton work that remains under a lease in [ha-and-helm.md](ha-and-helm.md) R-HA-006, such
+  as background migrations. Garbage collection holds no lease ([storage.md](storage.md) Q-STOR-13).
+- The main pool's work is already transaction-scoped: job claims, `InTx` with `SET LOCAL`, and
+  `pg_advisory_xact_lock(4, 1)`. What needed a session was the listener, the lock pool and the
+  leases. Q-ARCH-15 and Q-ARCH-6 remove the first two, and the leases move to the role that runs
+  singleton work.
+- PgBouncer's feature table confirms the boundary: in transaction pooling, session `SET`, `LISTEN`,
+  SQL `PREPARE`, `WITH HOLD` cursors and session-level advisory locks never work, while
+  protocol-level prepared statements work with `max_prepared_statements` (default 200). pgx's
+  default exec mode uses exactly those, and `default_query_exec_mode=exec` covers poolers without
+  them.
+- Direct connections stay supported. The chart's budget check (R-HA-016) bounds them, and an
+  installation whose `web` autoscaling would exceed the budget adds a pooler instead of raising
+  `max_connections`.
+- Moving the change-log poll from a dedicated session onto the main class must not tie readiness to
+  request load. One reserved control connection inside `database.pool.max_conns` keeps the poll
+  and the heartbeats independent of a saturated request pool without adding a connection
+  (R-ARCH-019).
+- Revisit if a managed PostgreSQL's pooler supports neither prepared statements nor `exec` mode
+  without measurable latency, or if `worker` counts grow so large that their lease sessions matter;
+  (c) is then the next step.
+
+**Applied in the spec:**
+- R-ARCH-019: the connection classes, the main-pool rules, the exec-mode setting, the connection
+  count with and without a pooler, and acceptance criteria with PgBouncer in transaction mode and
+  a source test against session state.
+- R-ARCH-017: the lease pool exists only on `worker` replicas; the session check runs in the
+  processes that hold sessions; a `web` replica starts behind a transaction-mode pooler.
+- R-ARCH-001: the role table shows which role opens which class.
+- R-ARCH-027: the reference environment has PgBouncer in transaction mode.
+- R-ARCH-019, after review on 2026-10-28: one control connection per replica is reserved inside
+  `database.pool.max_conns` for the change-log poll and the heartbeats, so a request pool saturated
+  under overload cannot fail readiness on one replica after another, and the connection budget is
+  unchanged. No connection is held across a wait on a client, the object store, an upstream or
+  Valkey. Statement-mode poolers are excluded. The backup's snapshot transactions are the one
+  exception to `READ COMMITTED`, and session-scoped statements are confined to the code of the
+  session classes.
+- After cross-page review on 2026-10-28: behind a transaction-mode pooler, the control connection
+  uses a control endpoint with a server pool of its own and also carries the `database` check
+  (R-ARCH-019, [ha-and-helm.md](ha-and-helm.md) Q-HA-20); the grant-index build of
+  [authorization.md](authorization.md) R-AUTHZ-028 is a second `REPEATABLE READ READ ONLY`
+  exception on the request pool; the first rationale bullet no longer names garbage collection as
+  lease-fenced work ([storage.md](storage.md) Q-STOR-13).
+- Cross-page: [ha-and-helm.md](ha-and-helm.md) Q-HA-6 (option (b) becomes supported in the MVP,
+  and the P2 Deferred row goes), R-HA-006 item 5, R-HA-016 (formula without the lock pool and the
+  listener, per role, with a pooler form), R-HA-004 and R-HA-017 step 3 (no listener);
+  [operations-and-observability.md](operations-and-observability.md) R-OPS-001 and R-OPS-026;
+  ADR-077 in [docs/decisions.md](../decisions.md).
+
+### Q-ARCH-15 · Cross-replica invalidation without LISTEN/NOTIFY
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Caches on n replicas must learn of changes within the bounds that pages promise, for example a
+revoked token rejected within 2 s (R-AUTH-023). INV-3 says that losing Valkey's data must not cost
+correctness. INV-12 says that a Valkey outage must not make replicas unready. Q-ARCH-14 needs `web`
+replicas without session connections.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep `LISTEN/NOTIFY` for administrative changes | One direct `LISTEN` session per replica, `NOTIFY` in the writing transaction | Delivery on commit, already specified | One direct session per replica, which a transaction-mode pooler cannot carry and which grows with the count. A lost session makes the replica unready (`notify` check). |
+| (b) Valkey Pub/Sub only | Changes are published after commit; nothing in PostgreSQL | Fast; no PostgreSQL work | Delivery is at most once. A message lost in an outage or a failover leaves a revoked token valid until `SafetyTTL`. Correctness would depend on Valkey, against INV-3. |
+| (c) Change log in PostgreSQL, polled, with Valkey as the fast path | Each change area has an epoch row; the writing transaction increments it and inserts a change row. Every replica polls the log on a reserved main-class connection. Valkey carries the same change at once, as an early eviction that never advances the applied epoch. | Correct from PostgreSQL alone, within the poll interval; fast with Valkey. No session connection. The area's row lock orders the commits, so epochs have no gaps. Lost, duplicated or forged messages cannot hide a change. | One small query per replica per poll interval (100 replicas at 1 s: 100 queries per second). Writers of one area serialize on its row, for their commits only, because the row is written last. Each change is applied twice, once from the message and once from the poll. |
+| (d) Outbox with one global sequence, polled | Change rows numbered from one sequence, polled by "greater than the last seen" | One query for all areas | Concurrent transactions commit out of sequence order, so the poll can skip a row that commits late. That needs gap tracking or a delay window. |
+
+**Choice:** (c) — a per-area epoch and change log in PostgreSQL, polled by every replica, with Valkey Pub/Sub as the fast path that can only evict early.
+
+**Rationale:**
+- (c) keeps correctness where INV-3 puts it and speed where INV-12 allows it. With Valkey, a change
+  takes effect within milliseconds. Without Valkey, it takes effect within the poll interval, which
+  also bounds revocations that R-AUTH-023 requires within 2 s.
+- Ordering comes for free. The `UPDATE` of the area's epoch row holds that row until commit, so the
+  next writer of the same area gets its epoch only after the previous one committed. Polling by
+  "epoch greater than the last applied" therefore cannot miss a committed change. (d) needs extra
+  machinery for the same guarantee.
+- Because only the poll advances the applied epoch, a forged or suppressed Valkey message can never
+  hide a revocation; it can at most cause an extra eviction. That keeps Valkey outside the trust
+  path (Q-ARCH-16).
+- The cost is small: change areas carry administrative changes only (configuration, policies,
+  revocations), and the poll reads a table with one row per area. [authorization.md](authorization.md)
+  R-AUTHZ-028 uses the `authz` area itself and has no epoch row or poll of its own
+  ([authorization.md](authorization.md) Q-AUTHZ-11).
+- Readiness keeps a guard that depends on PostgreSQL alone: the `invalidation` check fails when the
+  poll has stalled.
+- Revisit if the poll load matters (beyond about 200 replicas), with a longer interval for areas
+  without a tight bound, or if one area's write rate makes its row contend, for example CI token
+  revocations at the end of every job at thousands per second; that area then splits into shards.
+
+**Applied in the spec:**
+- R-ARCH-018 is rewritten: change and signal areas, the `cluster_epoch` and `cluster_change`
+  tables, the poll, the rule that only the poll advances the applied epoch, the `invalidation`
+  readiness check, the area table and acceptance criteria with Valkey stopped and with forged
+  messages.
+- R-ARCH-016: the watched loops `cluster.changes` and `cluster.signals`, and the job kind
+  `cluster-change-prune`.
+- R-ARCH-017: there is no per-replica coordination session, and a lost lease connection flushes no
+  cache.
+- R-ARCH-024: start-up runs the first poll; R-ARCH-027: P-13 with and without Valkey; the security
+  notes.
+- R-ARCH-018, after review on 2026-10-28: `cluster.Notify` writes the epoch row as the last
+  statements before `COMMIT`, so writers of an area serialize on their commits only; change areas
+  are never written per package request; a cache fill checks the applied epochs around its query, so
+  it cannot re-insert a value the poll has just invalidated (a revoked token, for example); the poll
+  runs on the control connection of R-ARCH-019; `cluster_change` is `transient` for backups and
+  `cluster_epoch.epoch` is a registered revision column.
+- R-ARCH-018, after cross-page review on 2026-10-28: the poll reads `changed_at` with each epoch
+  and checks the row at the last applied epoch, so an epoch that went backwards or was reused
+  after a failover or a point-in-time restore flushes the area, for every change area
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-004, [authorization.md](authorization.md) R-AUTHZ-028);
+  `cluster-change-prune` keeps a row until its successor is older than the retention;
+  `cluster.epoch_max_staleness` defaults to 20 s, at least the readiness window of R-HA-008, and
+  fail-closed paths read `cluster.ChangesFresh()` or `cluster.ChangesFreshWithin(d)`; writers of
+  several areas update them in area-name order.
+- Cross-page: [operations-and-observability.md](operations-and-observability.md) R-OPS-001
+  (`notify` becomes `invalidation`, and the watched loops); [ha-and-helm.md](ha-and-helm.md)
+  R-HA-004 (rewritten onto the change log) and R-HA-001;
+  [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023;
+  [authorization.md](authorization.md) R-AUTHZ-028; [repositories-and-proxy.md](repositories-and-proxy.md)
+  R-REPO-045; [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003 and R-CI-009.
+
+### Q-ARCH-16 · What Valkey may hold
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-3 lists shared caches among Valkey's uses. The question is which caches, given that whoever can
+write to Valkey can change what a shared cache returns.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Coordination only | Locks, counters and signals in Valkey; every cache in process or in PostgreSQL | Smallest trust surface | The negative cache stays an `UNLOGGED` PostgreSQL table: an insert per upstream 404 and a cleanup job on the system of record, for state its own page calls disposable |
+| (b) Coordination plus caches that serve nothing | (a) plus the negative cache. Token, session, permission, rendered and merged documents stay in process; Valkey carries only their change messages. | Disposable write load leaves PostgreSQL. Valkey's content can cost availability, never access or integrity. | A remote miss gains one Valkey round trip. Forged negative entries can hide packages for their checked lifetime (H-49). |
+| (c) A shared second level for every cache | Also token validation results, permission decisions, rendered package documents and merged metadata in Valkey | Fewer database reads and less rendering per replica | Anyone who can write to Valkey could grant access or serve altered package metadata, for example a tarball URL with a matching integrity hash. Rendered documents of several MiB per entry load Valkey's network. A token check miss costs one indexed query, so the saving is small. |
+
+**Choice:** (b) — Valkey holds coordination state and the negative cache; nothing served to a client and no positive authentication or authorization result is ever read from Valkey.
+
+**Rationale:**
+- The line follows the trust boundary. Under (b), a compromised Valkey can make trove slower or
+  make packages temporarily unavailable, but it cannot grant access or change what a client
+  installs. Under (c), Valkey would become part of the supply chain.
+- The negative cache is the one cache whose entries are small, written on the hot path and
+  disposable by their owner's own words (R-REPO-028). Moving it takes those writes off PostgreSQL,
+  and its readers validate creation time and invalidations, so even a forged entry is bounded.
+- The in-process caches lose little. Their entries are self-validating (`rev_seq`, epochs) or cheap
+  to refill, and their invalidation stays exact through the change log (Q-ARCH-15).
+- Revisit if profiling at the reference load shows rendering (P-4, P-5) as the limit on scale-out.
+  A shared rendition cache would then need integrity protection, an HMAC under a key Valkey never
+  sees, before it could be considered.
+
+**Applied in the spec:**
+- R-ARCH-030: the two placement rules, the usage table and the reader-validation rule.
+- R-ARCH-018: caches live in process. R-ARCH-013: the negative entry is looked up in the L1, then
+  in Valkey.
+- The security notes and H-49.
+- Cross-page: [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028 (the negative cache
+  moves to Valkey and its table and cleanup job go) and R-REPO-045 (the fold job no longer deletes
+  negative entries; readers apply the invalidation time);
+  [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 (the token cache
+  stays in process by rule).
+
+### Q-ARCH-17 · Rate-limit counters across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-016, R-AUTH-038 and R-CI-021 keep their buckets in each replica's memory
+([api-and-ui.md](api-and-ui.md) Q-API-3), so the cluster-wide budget is the configured value times
+the replica count (H-43). Under the new constraints the replica count grows with the load and
+changes with autoscaling, and requests reach replicas at random. INV-12 names per-replica limits as
+the degraded mode while Valkey is unavailable, which makes cluster-wide limits the normal mode.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per replica, in memory | The earlier model | No network round trip; the budget grows with capacity | The effective limit is the configured value times a replica count that autoscaling changes. A throttled address is unthrottled on the next replica, so the failed-credential throttle weakens with every replica, and the answer depends on the replica a request reaches (INV-18). |
+| (b) Cluster scope in Valkey, per-replica fallback | A sliding-window counter per bucket in Valkey; while Valkey is unavailable, local buckets at the configured value divided by the live replicas of the role | One budget whatever the replica count; the same answer on every replica; the fallback stays close to the budget | One Valkey round trip on each limited request; the sliding window is an approximation |
+| (c) Cluster scope in PostgreSQL | Counter rows | Durable | A write per request on the system of record |
+| (d) Per replica at the configured value divided by the replica count | No shared state | No round trip | kube-proxy balances connections, not requests: a client with keep-alive stays on one replica and gets 1/n of its budget. Small bursts round down to nothing. |
+
+**Choice:** (b) — the limiter of R-ARCH-034 counts cluster-wide in Valkey and falls back to per-replica shares; the owning pages choose the scope per class, and every class that limits callers uses cluster scope.
+
+**Rationale:**
+- A limit that changes with the replica count is not a limit an operator can set. With the load
+  spread over many replicas by design, (a) multiplies every budget, and it hands a credential
+  guesser one fresh throttle per replica.
+- The fallback divides by the live replicas of the role, so a Valkey outage keeps the cluster-wide
+  budget roughly where it was instead of multiplying it. That is the "per replica" INV-12 names.
+- The round trip is pipelined, bounded by `valkey.command_timeout`, and skipped while the breaker is
+  open (R-ARCH-031). It is budgeted in R-ARCH-027.
+- Limits that protect the replica itself, such as `server.max_in_flight`, stay per replica.
+- The break-glass lockout stays in PostgreSQL: it guards a credential and must survive a loss of
+  Valkey's data.
+- Revisit if the limiter's round trip shows up in P-2. Read classes could then check a local bucket
+  first and consult Valkey only near the limit.
+
+**Applied in the spec:**
+- New R-ARCH-034: the limiter, its scopes, the sliding-window algorithm without scripts, the
+  fallback, and acceptance criteria with and without Valkey.
+- R-ARCH-005 step 7, R-ARCH-030's usage table, R-ARCH-032's state table and the Deferred row of
+  OPS-064.
+- Cross-page: [api-and-ui.md](api-and-ui.md) Q-API-3, R-API-016 and H-43 (per-replica budgets only
+  while Valkey is unavailable); [identity-and-authentication.md](identity-and-authentication.md)
+  R-AUTH-038 (the failed-credential throttle and the start limits count cluster-wide);
+  [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-021.
+
+### Q-ARCH-18 · Transfers that outlast the termination grace period
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A node drain or a rollout sends `SIGTERM`. The grace period of [ha-and-helm.md](ha-and-helm.md)
+R-HA-011 (120 s by default for `web` pods) bounds how long a replica may finish its transfers. A
+slow client or a large file can need longer. The owner requires a drain without outage when the
+setup is sized for it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Cut at the deadline; clients resume or retry | The grace period is sized to the p99 transfer. Every blob response carries `Content-Length`, a strong `ETag` and `Accept-Ranges`, so a cut is detectable and resumable on any replica. | Drains stay bounded. No new component. npm and NuGet retry by default, and resuming works on any replica because the ETag is the content address. | A client that neither retries nor resumes fails a transfer longer than the grace period |
+| (b) A grace period as long as the longest transfer | For example one hour | No transfer is cut | Each drained pod blocks for up to the grace period. With a disruption budget of one pod at a time, a node-pool upgrade takes hours, and one stuck connection holds a node. |
+| (c) Hand large downloads to the object store | Presigned redirects ([storage.md](storage.md) R-STOR-014, P2) | Transfers bypass the replicas, so a drain never cuts them | Clients and networks must reach the store directly, which private stores often prevent. A presigned URL is a bearer capability until it expires, and authorization at use and the content headers move to the store. P2 today. |
+| (d) Move live connections to another replica | — | — | Not possible for TCP without a connection-migrating proxy in front, which the platform does not offer |
+
+**Choice:** (a) — a transfer still running at the shutdown deadline is cut, and clients resume with `Range` and `If-Range` or retry; (c) remains the later path for formats with very large artifacts.
+
+**Rationale:**
+- The MVP formats move small files. At 1 MiB/s, 120 s cover 120 MiB, far above a typical npm
+  tarball or `.nupkg`. npm retries twice and NuGet six times by default.
+- Statelessness makes resuming work: any replica serves the `206`, because the ETag is the content
+  address and the item lookup is in PostgreSQL (INV-18).
+- Uploads are atomic (R-STOR-004), so a cut upload costs one retry, never a corrupt or partial
+  package. An upload whose body has fully arrived is not cut before its status line, because a
+  commit whose answer is lost turns the client's retry into a version conflict.
+- (b) trades a bounded drain for an unbounded one. (c) has its own security trade-offs and is P2.
+- Revisit when container-image or generic large-file repositories (P1) show transfers cut at
+  shutdown in `trove_http_transfers_cut_total`; (c) for those formats, or a longer grace period for
+  a dedicated `web` Deployment that serves them, is then the next step.
+
+**Applied in the spec:**
+- R-ARCH-024: shutdown step 5 cuts the remaining transfers at the deadline, states how downloads
+  resume and uploads retry, and counts the cuts; an acceptance criterion resumes a cut download on
+  another replica.
+- R-ARCH-024, after review on 2026-10-28: an upload whose body has arrived completely is never cut
+  between its commit and its status line. It runs on for at most 4 s of the grace period's 5 s
+  margin, so a retried publish never meets its own committed version as a conflict; an acceptance
+  criterion publishes across the deadline.
+- Cross-page: [storage.md](storage.md) R-STOR-012 (`Content-Length` on every blob response and
+  `If-Range` support); [ha-and-helm.md](ha-and-helm.md) R-HA-011 (size the grace period to the p99
+  transfer, and name this decision).
+
 ## What this does not cover
 
 ### H-1 · Format code runs in-process without isolation
@@ -2692,3 +4207,39 @@ Q-ARCH-10). A content origin on the UI's registrable domain keeps the cookies ou
 trove cookie carries the `__Host-` prefix
 ([identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-2). It also stays
 same-site with the UI, which R-ARCH-029 reports with a start-up warning.
+
+### H-49 · Write access to Valkey denies service
+
+Stage: the keys and channels under trove's Valkey prefix (R-ARCH-030): negative entries, flight
+locks, rate-limit counters, throttle exemption markers, change messages and signals.
+
+Live in the MVP for every installation, because Valkey is part of every production topology
+(INV-12). Subject: the availability of remote repositories and of rate-limited routes, and cache
+efficiency, for every repository and principal.
+
+An attacker who can write under the prefix can:
+- write negative entries, so that a package or file of a remote repository answers `404` until the
+  entry's checked lifetime ends (`notFoundTtlSeconds`, 30 minutes by default) or an invalidation
+  covers it. Repeated writes keep it hidden;
+- hold flight locks, so that collapsed requests wait up to `proxy.fetch_wait_timeout_seconds`
+  before the proxy goes on without the lock. For expired metadata the client is served the stale
+  copy meanwhile, and the refresh follows without the lock, so a held lock cannot keep a document
+  stale beyond `proxy.fetch_wait_timeout_seconds`
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 4);
+- raise rate-limit counters to refuse a principal or address with `429`, or delete them to lift the
+  cluster-wide budget. The per-replica in-flight limit still applies;
+- set throttle exemption markers for credentials it guesses
+  ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038). The effect equals
+  deleting the failure counter: more PostgreSQL lookups, and no credential is accepted, because a
+  marker only lets a credential be validated;
+- publish change messages and signals, which cause extra evictions and wake-ups. They cannot
+  suppress or reorder a change, because only the PostgreSQL change log advances a replica's applied
+  epoch (R-ARCH-018).
+
+Valkey grants nothing: no access decision, no served content or metadata and no credential is read
+from it (R-ARCH-030). It holds IDs and hashes only. The rate-limit bucket keys of client addresses
+are unkeyed SHA-256 hashes, so a reader can recover an address by enumerating the address space.
+
+What makes it real: a Valkey reachable from other workloads, without a NetworkPolicy that limits it
+to trove's pods and the Sentinels; an ACL user shared with other applications, or the `default`
+user; TLS switched off on a network an attacker can observe, which exposes the ACL password.

@@ -9,7 +9,10 @@ token it installs dependencies and publishes the packages it builds. The page co
 issuer configuration, ID-token validation, identity mappings (the ordered rules that turn
 verified claims into grants), grant templating and package-ownership binding, token lifetime,
 replay protection, audit, the optional `CI_JOB_TOKEN` fallback (P2), and GitHub Actions and generic
-OIDC issuers as later uses of the same mechanism. The page specifies only the CI side of these
+OIDC issuers as later uses of the same mechanism. Every `web` replica serves the exchange and every
+`worker` replica runs its background tasks (INV-2); R-CI-029 states where each piece of CI state
+lives, so that any replica can answer any request (INV-18) and a Valkey outage or a restore changes
+no security property (INV-3, INV-19). The page specifies only the CI side of these
 features. Other spec pages own the token store and token presentation
 ([identity-and-authentication.md](identity-and-authentication.md)), the permission model,
 permission policies and the package-ownership store ([authorization.md](authorization.md)), the
@@ -49,25 +52,33 @@ sequenceDiagram
     autonumber
     participant GL as GitLab instance
     participant J as GitLab job (runner)
-    participant A as trove (any replica)
+    participant A as trove (any web replica)
+    participant VK as Valkey
     participant PG as PostgreSQL
     participant C as npm / dotnet in the job
     GL->>J: start job, inject TROVE_ID_TOKEN (JWT, aud = trove base URL)
     J->>A: POST /api/v1/auth/oidc/token (RFC 8693, subject_token = ID token)
+    A->>VK: per-address rate-limit counter (cluster scope; replica share if Valkey is down)
     A->>A: parse JWT without trusting it, select CI issuer by iss
-    A->>PG: load CI issuer and cached signing keys
-    opt kid unknown or key set due for refresh
-        A->>GL: GET /.well-known/openid-configuration, GET jwks_uri
-        A->>PG: store key set, NOTIFY other replicas
+    A->>A: CI issuer, mappings and signing keys from the in-process copies of PostgreSQL rows
+    opt kid unknown
+        A->>PG: re-read the issuer's key row (at most once per poll interval and replica)
+        A->>GL: still unknown and fetch throttle open: GET discovery document, GET jwks_uri
+        A->>PG: store key set (key row only), change area ci_issuer_keys
     end
     A->>A: verify alg, signature, iss, aud, exp/nbf/iat, required claims
+    A->>VK: per-subject rate-limit counter
     A->>A: cross-project (fork) guard, evaluate mappings in order, render grants, compute TTL
-    A->>PG: one transaction: record jti, insert token hash, issuance record, audit event
+    A->>PG: one transaction: re-check issuer and mappings (validate again if changed), restore cut-off, record jti, insert token hash, issuance record, audit event
     A-->>J: 200 access_token = trv_cit_..., expires_in, scope
     J->>C: export TROVE_TOKEN (.npmrc / nuget.config read it from the environment)
-    C->>A: npm publish / dotnet nuget push (Bearer or X-NuGet-ApiKey)
+    C->>A: npm publish / dotnet nuget push (Bearer or X-NuGet-ApiKey), any web replica
     A->>PG: resolve token hash, authorize (grants, ownership), audit with token_id
 ```
+
+Valkey appears in the flow only as a rate-limit counter. It never holds a signing key, a mapping, a
+replay entry or a token, so its loss or a forged entry can refuse an exchange with 429 but cannot
+make trove accept one (R-CI-029, [architecture.md](architecture.md) R-ARCH-030).
 
 Terms used on this page:
 
@@ -182,10 +193,19 @@ CREATE TABLE ci_issuers (
   enabled                    boolean NOT NULL DEFAULT true,
   description                text NOT NULL DEFAULT '',
   version                    bigint NOT NULL DEFAULT 1,
+  mappings_version           bigint NOT NULL DEFAULT 0,     -- R-CI-009: bumped by every write of one of its mappings
   created_at                 timestamptz NOT NULL DEFAULT now(),
   updated_at                 timestamptz NOT NULL DEFAULT now()
 );
 ```
+
+`version` is the issuer's `ETag` (R-CI-002). `mappings_version` is internal and never shown in the
+API; the exchange compares it to detect a mapping cache that lags behind PostgreSQL (R-CI-007,
+Q-CI-15). Both, and the `version` columns of `ci_mappings` and `ci_delegations`, are registered with
+`meta.RegisterRevisionColumn`, so a restore lifts them above every value the old installation
+issued ([backup-and-restore.md](backup-and-restore.md) R-BAK-022). Without that, an `If-Match`
+taken before a restore could match a different record of the same number afterwards, and a stale
+`PUT` could restore grants another administrator had narrowed.
 
 **Acceptance criteria**
 
@@ -265,8 +285,16 @@ usable.
 Disabling (`enabled: false`) or deleting a CI issuer revokes all unexpired CI tokens issued
 through it, in the same transaction (R-CI-017). Deleting with `?cascade=true` deletes its mappings
 and their principals in that transaction (R-CI-009). The change writes `ci.issuer.disabled` or
-`ci.issuer.deleted`, and a cascade one `ci.mapping.deleted` per mapping; from P1 the revocation
-journal keeps these across a database restore (R-CI-020).
+`ci.issuer.deleted`, and a cascade one `ci.mapping.deleted` per mapping; the revocation journal
+keeps these across a point-in-time restore and across the restore of a trove backup (R-CI-020).
+
+Creating an issuer with `"validate": true` and `POST …/keys/refresh` fetch on the `web` replica that
+serves the request, outside any database transaction, and then store the key set as R-CI-003's
+write rule says; the other replicas pick it up through the change area `ci_issuer_keys`. Every
+create, update, disable, enable and delete of an issuer calls `cluster.Notify` on the change area
+`ci_mappings` in its transaction, so every replica reloads the issuer together with its mappings
+within the bound of [architecture.md](architecture.md) R-ARCH-018. The exchange does not depend on
+that timing: it re-reads the issuer row and validates again when its copy is behind (R-CI-007).
 
 **Configuration documents (P1).** A configuration document
 ([operations-and-observability.md](operations-and-observability.md) R-OPS-029) declares CI issuers
@@ -286,7 +314,10 @@ declare login providers; a CI issuer only ever serves the token exchange (INV-10
   with the request above returns 201, and `GET .../keys` lists at least one RSA key.
 - A non-administrator PAT receives 403 on every operation in the table.
 - After `PUT` with `"enabled": false` and the current `If-Match`, a CI token issued earlier
-  through the issuer gets 401 on `npm view @acme-billing/invoice-client` against trove.
+  through the issuer gets 401 on `npm view @acme-billing/invoice-client` against trove, on every
+  `web` replica within the revocation bound of
+  [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 (2 s), with Valkey
+  running or stopped.
 - `POST /api/v1/ci/issuers` with `"kind": "GitHub"` answers 422 with pointer `/kind`. A `PUT`
   with `If-Match: "1"` after another `PUT` raised the version to 2 answers 412 with
   `currentEtag` `"2"`.
@@ -319,26 +350,75 @@ meet all of these conditions:
 
 Other keys are ignored and reported in the key status.
 
-Caching and refresh:
+Caching and refresh (Q-CI-12):
 
-- The last good key set of each CI issuer is stored in PostgreSQL and held in memory on every
-  replica. A refresh on any replica sends `NOTIFY trove_ci_issuer_keys` and the other replicas reload
-  from the database (INV-12). A restarted replica validates tokens without contacting GitLab.
-- Scheduled refresh: a background job refreshes keys whose `next_refresh_at` has passed. It
-  claims rows with `FOR UPDATE SKIP LOCKED`, so exactly one replica fetches. The next refresh
-  time follows the response's `Cache-Control: max-age`, clamped to
+- **One shared copy, in PostgreSQL.** The last good key set of each CI issuer is its row in
+  `ci_issuer_keys`. Every replica holds an in-process copy, registered as a cache with the
+  `SafetyTTL` `ci.signing_keys.cache_safety_ttl` ([architecture.md](architecture.md) R-ARCH-018).
+  Storing a changed key set writes the change area `ci_issuer_keys` through `cluster.Notify`. The
+  other replicas reload the row at once from the change message on Valkey, and within
+  `cluster.epoch_poll_interval` from the change-log poll when Valkey is unavailable. trove issues no
+  `NOTIFY` (R-ARCH-018). A restarted replica validates tokens without contacting GitLab.
+- **Never in Valkey.** A key set decides whether a token is accepted. No copy of it, and nothing
+  that selects one, is read from Valkey ([architecture.md](architecture.md) R-ARCH-030 rule 2): a
+  key forged into Valkey would let anyone mint CI tokens.
+- **Write rule.** Every fetch, whatever triggered it, runs outside any database transaction and
+  holds no database connection while it waits for the issuer (R-ARCH-019). Its result is then
+  written in one short transaction on the issuer's `ci_issuer_keys` row alone: it inserts the row
+  or locks it `FOR UPDATE`, and keeps the stored set if a concurrent fetch has already stored one
+  with a later `fetched_at`. It never locks the `ci_issuers` row, which every exchange holds
+  `FOR SHARE` (R-CI-007), so a key store never waits for exchanges and never blocks them. It also
+  sets `next_refresh_at`, and calls `cluster.Notify` only when the content of the key set changed.
+  Several replicas that fetch the same set at once therefore cause no extra reload anywhere.
+- **Scheduled refresh** is the task `ci-keys-refresh` (R-CI-030), which runs on `worker` replicas.
+  It fetches every enabled CI issuer whose `next_refresh_at` has passed or that has no row yet. Its
+  `exclusive` enqueue mode ([architecture.md](architecture.md) R-ARCH-016) keeps two runs from
+  overlapping, so one replica fetches each due issuer. The next refresh time follows the response's
+  `Cache-Control: max-age`, clamped to
   `[ci.signing_keys.min_refresh_interval, ci.signing_keys.max_refresh_interval]`, and is
-  `default_refresh_interval` when no `max-age` is present.
-- Unknown `kid`: trove MUST refresh on demand, at most once per
-  `ci.signing_keys.unknown_kid_refresh_interval` per CI issuer and replica. If the `kid` is
-  still unknown, it rejects the token with `unknown_signing_key`. This lets a key rotation take
-  effect within seconds. Random `kid` values cannot turn trove into a request amplifier
-  against GitLab.
-- Removed keys: a key that is missing from the latest successful fetch is no longer accepted.
-  Removing a key from the JWKS is how an issuer revokes it.
-- Fetch failures: trove keeps using the last good key set. Once it is older than
-  `ci.signing_keys.max_stale`, trove fails closed: exchanges answer 503
-  `signing_keys_unavailable`. Failures are recorded in `last_error` and in metrics (R-CI-020).
+  `default_refresh_interval` when no `max-age` is present. After a failed fetch, the next attempt
+  is due after `min_refresh_interval`.
+- **Unknown `kid`.** On the `web` replica that validates the token (a token without `kid`, for an
+  issuer that has no stored key set yet, counts as an unknown `kid`):
+  1. The replica re-reads the issuer's row from PostgreSQL, bypassing its copy, at most once per
+     CI issuer and replica per `cluster.epoch_poll_interval`. Concurrent requests on one replica
+     share one re-read (in-process single-flight), and a request that finds a re-read younger than
+     the interval uses its result. A key that any replica or the task has stored is therefore
+     accepted on every replica within that interval, whether or not the change message has
+     arrived, and the change-log poll would apply it within the same interval anyway.
+  2. If the `kid` is still unknown, the replica MUST refresh on demand, at most once per
+     `ci.signing_keys.unknown_kid_refresh_interval` per CI issuer and replica. Concurrent requests
+     on one replica share one fetch (in-process single-flight).
+  3. If the `kid` is still unknown, or the throttle refused the fetch, the token is rejected with
+     `unknown_signing_key`.
+
+  This lets a key rotation take effect within seconds. A forged token chooses its `kid` freely and
+  is refused only by the signature check, so neither step runs once per request: random `kid`
+  values cause at most one row read per CI issuer, replica and `cluster.epoch_poll_interval`, and at
+  most one fetch per CI issuer, replica and `unknown_kid_refresh_interval`, n of each with n `web`
+  replicas. They can neither turn trove into a request amplifier against GitLab nor turn anonymous
+  requests into PostgreSQL load. Both throttles are per-replica state that can change an answer
+  ([architecture.md](architecture.md) R-ARCH-032): a replica whose re-read is younger than the
+  interval rejects a key that another replica stored meanwhile, for at most
+  `cluster.epoch_poll_interval`; a replica whose fetch throttle an earlier request has spent rejects
+  a new key until some replica has stored it, for at most `unknown_kid_refresh_interval`.
+- Removed keys: a key that is missing from the latest successful fetch is no longer accepted, on
+  every replica within the change-area bound of R-ARCH-018. Removing a key from the JWKS is how an
+  issuer revokes it.
+- Fetch failures: trove keeps using the last good key set. Its age is `now − fetched_at` of the
+  shared row: once the set is older than `ci.signing_keys.max_stale`, exchanges answer 503
+  `signing_keys_unavailable`. A refresh that stored an unchanged set sends no change message, so a
+  replica's copy can carry an older `fetched_at` than the row; before answering 503, the replica
+  re-reads the row as in step 1 above. Every replica therefore fails closed at the same moment,
+  within one `cluster.epoch_poll_interval`. Failures are
+  recorded in `last_error` and in metrics (R-CI-020). The scheduled refresh runs only on `worker`
+  replicas, so a `worker` role that is down for longer than `max_stale` stops exchanges until it is
+  back; INV-12 keeps at least two `worker` replicas on different nodes.
+- **Restore.** `ci_issuer_keys` has the backup export class `transient`
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-004). A restored installation starts without
+  key sets; the first exchange per issuer (as an unknown `kid`) or the next `ci-keys-refresh` run
+  fetches the current set. A restored copy would accept, until its next refresh, a key that the
+  issuer removed after the snapshot, which undoes the issuer's revocation of that key.
 - Outbound requests use TLS with the system roots plus `ca_bundle_ref`. They follow at most 3
   redirects, and only to `https` URLs. Responses are limited to
   `ci.signing_keys.max_response_bytes` and requests time out after
@@ -381,13 +461,28 @@ ci:
     max_stale: 24h                      # default (proposed)
     fetch_timeout: 5s                   # default (proposed)
     max_response_bytes: 1048576         # default (proposed)
+    cache_safety_ttl: 10m               # default (proposed); SafetyTTL of the in-process copy
 ```
 
 **Acceptance criteria**
 
-- In a test with a local OIDC issuer double, rotating to a new key and signing a token with it
-  causes exactly one on-demand fetch. The token is accepted. 100 further tokens with random
-  `kid` values within 60 s cause no further fetch.
+- In a test with a local OIDC issuer double and one `web` replica, rotating to a new key and
+  signing a token with it causes exactly one on-demand fetch. The token is accepted. 100 further
+  tokens with random `kid` values within 60 s cause no further fetch from that replica, and
+  `pg_stat_statements` shows at most one read of the `ci_issuer_keys` row per
+  `cluster.epoch_poll_interval` for them.
+- With three `web` replicas and Valkey stopped, a token signed with a new key is exchanged through
+  replica A, which fetches once. The same token's next exchange on replicas B and C succeeds at
+  once, without a further fetch.
+- While `ci-keys-refresh` runs against an issuer double that delays its key response by 4 s,
+  `pg_stat_activity` shows no trove connection `idle in transaction`. Two replicas that fetch an
+  unchanged key set at the same moment leave the epoch of area `ci_issuer_keys` unchanged. A key
+  store held open by a test build for 2 s delays no concurrent exchange of the same issuer.
+- With the stored set 1 s short of `max_stale` on every replica's copy, a `ci-keys-refresh` run
+  stores the unchanged set. Exchanges on every replica keep succeeding after the copies' age has
+  passed `max_stale`.
+- After the restore of a trove backup, `GET …/keys` of every issuer lists no key until the first
+  exchange or the first `ci-keys-refresh` run has fetched one.
 - Removing a key from the double's JWKS and forcing a refresh makes tokens signed with that key
   fail with `unknown_signing_key`.
 - With the double unreachable, exchanges keep working on cached keys until `max_stale`, then
@@ -616,17 +711,43 @@ Processing order:
 10. Issue the token.
 
 Step 3 and step 10 run in one PostgreSQL transaction together with the issuance record and the
-audit event. A failed transaction leaves no trace of the `jti`, so a client retry is safe even
-with single-use enforcement.
+audit event. Steps 4 to 9 compute in memory inside it and make no call to Valkey, an issuer or any
+other service ([architecture.md](architecture.md) R-ARCH-019). A failed transaction leaves no trace
+of the `jti`, so a client retry is safe even with single-use enforcement, and the retry may reach
+any `web` replica (INV-18). The rate limits of R-CI-021 are checked outside that transaction: the
+per-address limit before step 1, the per-subject limit after step 2.
 
 In that transaction trove MUST re-read the CI issuer row and every matched mapping row with
-`FOR SHARE` and confirm that each is still enabled and still carries the `version` the evaluation
-used. Disabling, deleting or editing a CI issuer or mapping takes `FOR UPDATE` on its row. If a row
-changed, the exchange discards its result, reloads the configuration and evaluates once more; a
-second mismatch answers 503 [`configuration_changed`]. Without this check, a replica whose mapping
-cache has not yet received the `NOTIFY` (R-CI-009) could issue a token under a mapping that was
-just disabled, deleted or narrowed, and the revocation of R-CI-017 would not catch it, because the
-token did not exist when the revocation ran.
+`FOR SHARE` and confirm that each is still enabled, that each still carries the `version` the
+evaluation used, and that the issuer's `mappings_version` equals the one of the mapping set the
+evaluation used (Q-CI-15). Disabling, deleting or editing a CI issuer or mapping takes `FOR UPDATE`
+on its row. Every write of a mapping also takes `FOR UPDATE` on its issuer's row and increments
+`mappings_version` (R-CI-009). If anything changed, the exchange discards its result and evaluates
+once more inside the transaction from PostgreSQL:
+
+- When the issuer's `version` changed, it first runs R-CI-004 steps 5 to 9 again against the
+  re-read issuer row, with the key set the replica holds. Audiences, algorithms, `typ`, clock skew,
+  required claims and `enabled` are issuer settings, and a token validated under settings that an
+  administrator has since narrowed must not be issued. A failure there answers with that step's
+  reason; single use, `max_ttl` and the restore cut-off of R-CI-018 also follow the re-read row.
+- It reloads the issuer's mappings from PostgreSQL and repeats steps 4 to 9.
+
+A second mismatch answers 503 [`configuration_changed`]. The replica replaces its cached issuer and
+mappings with what it read, under the fill rule of [architecture.md](architecture.md) R-ARCH-018.
+Without this check, a replica whose caches have not yet applied a change
+of area `ci_mappings` (R-CI-002, R-CI-009) could:
+
+- issue a token under a mapping that was just disabled, deleted or narrowed, which the revocation of
+  R-CI-017 would not catch, because the token did not exist when the revocation ran;
+- miss a mapping that was just created, enabled or moved to a lower `priority` number and now
+  matches first, so that the job receives the grants of a broader mapping the administrator meant
+  to shadow (R-CI-009);
+- accept a token under issuer settings that were just narrowed, for example an audience removed
+  because another service was found to request it, or single use switched on.
+
+With the check, a token reflects the issuer settings and the mapping set committed when its
+transaction ran, whether or not the change message has reached the replica, Valkey is available, or
+the replica's change-log poll is behind.
 
 Success response (200, `Content-Type: application/json`, `Cache-Control: no-store`,
 `Pragma: no-cache` per [RFC 6749 §5.1](https://www.rfc-editor.org/rfc/rfc6749#section-5.1)):
@@ -681,9 +802,17 @@ ci:
   `npm publish`. `scope=manage:npm-internal` returns 400 `scope_malformed`.
 - Two parallel exchanges of one ID token on two replicas both succeed under
   `single_use_subject_tokens: false`. Under `true`, exactly one succeeds.
-- With the `LISTEN` session of replica B blocked, mapping `acme-release-publish` is disabled
-  through replica A. An exchange on B whose claims match that mapping issues no token carrying its
-  grants: after the reload it answers `no_matching_mapping`, or the grants of a later mapping.
+- With replica B's change-log poll and its Valkey subscription blocked, mapping
+  `acme-release-publish` is disabled through replica A. An exchange on B whose claims match that
+  mapping issues no token carrying its grants: after the reload it answers `no_matching_mapping`,
+  or the grants of a later mapping.
+- With the same blocks, replica A creates `acme-mr-readonly` at priority 10 above
+  `acme-release-publish` (100). The next exchange on B of a merge request pipeline from a protected
+  source branch receives only the read-only grants, and `trove_ci_mapping_set_stale_total` counts
+  one reload on B.
+- With the same blocks, replica A removes `https://vault.example.com` from the issuer's
+  `allowed_audiences`. The next exchange on B of a token whose `aud` is
+  `https://vault.example.com` answers 400 `audience_invalid` and issues no token.
 
 ### R-CI-008 · Exchange errors and diagnostics
 Priority: **MVP** · Covers: CIOIDC-018
@@ -707,7 +836,7 @@ response header (R-API-019) and links the answer to the audit event:
 
 | HTTP | `error` | `reason` values |
 |---|---|---|
-| 400 | `invalid_request` | `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `job_token_rejected`, `job_not_running` |
+| 400 | `invalid_request` | `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `job_token_rejected`, `job_not_running` |
 | 400 | `unsupported_grant_type` | `grant_type_unsupported` |
 | 400 | `invalid_scope` | `scope_malformed`, `scope_not_granted` |
 | 400 | `invalid_target` | `audience_not_this_server` |
@@ -719,6 +848,8 @@ response header (R-API-019) and links the answer to the audit event:
   event (R-CI-020).
 - With `ci.exchange.expose_reason: false`, every 400 answers `invalid_request` without `reason`
   and with a generic description, still with `requestId`. Logs and audit still record the reason.
+- No reason names Valkey. An unavailable Valkey changes no answer of this endpoint; only the 429
+  budget changes to the per-replica shares of R-CI-021 (R-CI-029).
 
 **Acceptance criteria**
 
@@ -809,16 +940,29 @@ CREATE TABLE ci_mappings (
 );
 ```
 
-Mappings are cached in memory per replica and invalidated with `NOTIFY trove_ci_mappings` (INV-12),
-an administrative channel of [architecture.md](architecture.md) R-ARCH-018, so a disable reaches
-every replica on commit.
+Mappings are cached in memory per replica, per CI issuer, together with the issuer's
+`mappings_version` they were read at. The cache is invalidated through the change area
+`ci_mappings` of [architecture.md](architecture.md) R-ARCH-018: at once through Valkey, and within
+`cluster.epoch_poll_interval` through the change-log poll when Valkey is unavailable. Its
+`SafetyTTL` is `ci.mappings.cache_safety_ttl`. Correctness does not rest on that propagation:
+
+- Every create, update, enable, disable and delete of a mapping, of either tier and including the
+  cascades of an issuer or delegation deletion, takes `FOR UPDATE` on the issuer's row and
+  increments its `mappings_version` in the same transaction, and calls `cluster.Notify` on
+  `ci_mappings`.
+- The exchange compares that counter under its `FOR SHARE` re-read and evaluates again from
+  PostgreSQL when the cache lags behind (R-CI-007, Q-CI-15).
+
+A mapping change therefore governs the next exchange on every replica, and mapping writes of one
+issuer serialize with each other and with that issuer's exchange transactions.
 
 **Configuration**
 
 ```yaml
 ci:
   mappings:
-    max_per_issuer: 1000   # default (proposed)
+    max_per_issuer: 1000     # default (proposed)
+    cache_safety_ttl: 10m    # default (proposed); SafetyTTL of the in-process mapping cache
 ```
 
 **Acceptance criteria**
@@ -1327,8 +1471,14 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   Editing a mapping does not revoke its tokens. The inline grants of existing tokens stay frozen
   until they expire, and policy and group grants follow live changes.
 
-  Every revocation writes `ci.token.revoked` (R-CI-020). From P1 the revocation journal keeps it
-  across a database restore, so a CI token revoked after the restore point stays revoked.
+  Every revocation writes `ci.token.revoked` (R-CI-020). The revocation journal keeps it across a
+  point-in-time restore and across the restore of a trove backup, so a CI token revoked after the
+  restore point stays revoked.
+- A revocation is a change of the area `auth` ([architecture.md](architecture.md) R-ARCH-018) and
+  takes effect on every `web` replica within the bound of
+  [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023, whether Valkey is
+  available or not. A job's self-revocation, its package requests and its exchange may each reach a
+  different replica (INV-18).
 - The `principal` row of a mapping (kind `ci_mapping`, name `<CI issuer name>/<mapping name>`,
   R-CI-009; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-016) mirrors
   `enabled`: disabling the mapping sets the principal's `status` to `disabled` in the same
@@ -1341,8 +1491,8 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
 
 - The CI token works with `npm whoami --registry …` (Bearer), with a NuGet source configured
   through Basic credentials, and with `dotnet nuget push -k`.
-- Disabling a mapping makes its unexpired tokens fail with 401 on the next request on every
-  replica.
+- Disabling a mapping through replica A makes its unexpired tokens fail with 401 on replicas B and
+  C within 2 s, with Valkey running and with Valkey stopped.
 - `DELETE /api/v1/tokens/current` with a CI token answers 204, and the token gets 401 on the next
   `npm view`.
 
@@ -1352,6 +1502,42 @@ Priority: **MVP** · Covers: CIOIDC-018, CIOIDC-019
 - trove MUST record every exchanged subject token by (`ci_issuer`, `jti`) with the exchange
   count and the subject's `exp`. This happens in the exchange transaction as an atomic upsert,
   so all replicas see the same count (INV-12).
+- **Only PostgreSQL holds the replay set (Q-CI-13).** No replica keeps replay state in memory,
+  Valkey holds none, and no exchange consults Valkey about a `jti`. PostgreSQL's
+  `ON CONFLICT DO UPDATE` "guarantees an atomic `INSERT` or `UPDATE` outcome … even under high
+  concurrency" ([INSERT](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT)),
+  so concurrent exchanges of one `jti` on different replicas serialize on its row, and with single
+  use on exactly one of them commits. Single use is a security property, and Valkey replicates
+  asynchronously: "acknowledged writes can still be lost during a failover"
+  ([replication](https://valkey.io/topics/replication/)). A replay set there would reopen used
+  tokens after a failover, a flush or a restart (INV-3,
+  [architecture.md](architecture.md) R-ARCH-030 rule 1).
+- **After a restore.** `ci_subject_token_uses` is backed up as `data`
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-004), so a `jti` exchanged before the
+  snapshot stays used. Exchanges after the snapshot are lost with the rest of the database. While
+  `single_use_subject_tokens` is `true`, trove therefore rejects a subject token whose `iat` is not
+  later than `restored_at + clock_skew` [`subject_token_predates_restore`]. `restored_at` is the
+  `system_state` key that records when the last restore finished:
+  - `trove backup restore` sets it in the finishing transaction of
+    [backup-and-restore.md](backup-and-restore.md) R-BAK-021 step 9, which also lets replicas
+    start serving (R-BAK-022). `trove admin post-restore` sets it in
+    [ha-and-helm.md](ha-and-helm.md) R-HA-025 step 4, after every writer was stopped in step 1.
+  - The exchange transaction reads it for single-use issuers, next to the `jti` upsert. No replica
+    keeps it from start-up, so the cut-off also holds on a replica that was already running when
+    `post-restore` ran, as in the failover of R-HA-026 (P1).
+  - The leeway lies on the refusing side. A token that the old installation accepted before the
+    restore finished has `iat ≤ now + clock_skew` at that moment (R-CI-004 step 8), so it is
+    refused whatever the issuer's clock offset within `clock_skew`. The price: for up to
+    2 × `clock_skew` after the restore finished, a fresh token from an issuer whose clock lags is
+    refused too, and the client requests another.
+  - A client that obtains a fresh subject token for each exchange, which single use requires
+    anyway, is unaffected after that; a job that held a token across the restore requests a new
+    one. Issuers with single use off are not affected; their exchange counts continue from the
+    snapshot's.
+  - Not covered: an old installation that still serves exchanges after the restore finished keeps
+    its own replay set, so a token it accepts then can also be exchanged at the restored one.
+    R-BAK-021 has the operator stop the old installation's Deployments before clients switch over;
+    R-HA-025 stops them before the restore starts.
 - With `single_use_subject_tokens: true`, a second exchange of the same `jti` fails
   [`subject_token_replayed`] and creates audit event `ci.exchange.replayed`. A subject token
   without `jti` is then rejected [`required_claim_missing`].
@@ -1360,8 +1546,9 @@ Priority: **MVP** · Covers: CIOIDC-018, CIOIDC-019
   `ci.exchange.repeated` audit event.
 - Defaults by kind (Q-CI-4): `false` for `gitlab`, `true` for `github` and `generic`. An
   administrator may override either way per CI issuer.
-- Rows are deleted by a cleanup job once `exp + clock_skew + ci.replay.retention_after_expiry`
-  has passed. After that the token fails the time check anyway.
+- Rows are deleted by the task `ci-replay-cleanup` (R-CI-030) once
+  `exp + clock_skew + ci.replay.retention_after_expiry` has passed. After that the token fails the
+  time check anyway.
 - Why the default is off for GitLab: a GitLab job receives its ID tokens as the variables its
   `id_tokens:` block declares and has no documented way to request another one during the run.
   A job that exchanges in several steps, retries after a network error or outlives its first CI
@@ -1413,6 +1600,16 @@ ci:
   `github` or `generic` one (P1) reads back `true`.
 - A failed exchange (for example the database rejects the token insert) does not increment the
   count, so a retry succeeds.
+- With single use on, 1,000 ID tokens of a test issuer are each sent to two replicas at once while
+  Valkey is stopped, then again while a Sentinel failover is forced, then again around
+  `valkey-cli FLUSHALL`. Every `jti` yields exactly one 200, and no exchange answers 5xx.
+- With single use on, a token issued ten minutes before the restore of a trove backup finished and
+  never exchanged answers 400 `subject_token_predates_restore` after the restore; a token issued
+  more than `clock_skew` after the restore finished is exchanged. With single use off, the older
+  token is exchanged.
+- With single use on and the default 60-second skew, a token with `iat` 30 s before the restore
+  finished is refused. The same holds after `trove admin post-restore` on a replica that was
+  already running when the command ran.
 
 ### R-CI-019 · Mapping management API and dry-run evaluation
 Priority: **MVP** · Covers: CIOIDC-017, ADMAPI-029
@@ -1486,8 +1683,10 @@ the time claims are given, issues nothing and records no `jti`:
 ```
 
 Every create, update, disable, enable and delete emits an audit event with the before and after
-record (R-CI-020). From P1, disables, deletions and updates also enter the revocation journal, and
-its replay after a database restore disables, never deletes, a mapping (R-CI-020).
+record (R-CI-020). Disables, deletions and updates also enter the revocation journal, and its
+replay after a point-in-time restore or the restore of a trove backup disables, never deletes, a
+mapping (R-CI-020). Every one of these writes increments the issuer's `mappings_version`
+(R-CI-009).
 
 **Configuration documents (P1).** A configuration document
 ([operations-and-observability.md](operations-and-observability.md) R-OPS-029) declares mappings
@@ -1507,8 +1706,10 @@ events as the API.
 
 - The dry run for the claim set above names `acme-release-publish` and renders
   `@acme-billing/*`. The same claim set with `"ref_protected": "false"` shows the failing leaf.
-- A mapping created through the API is used by the next exchange on every replica within 1 s
-  (cache invalidation through `NOTIFY`).
+- A mapping created through the API on replica A is used by the next exchange on replica B, also
+  while B's change-log poll and Valkey subscription are blocked (the mapping-set check of
+  R-CI-007). Without blocks, B's mapping cache holds the new mapping within 1 s (p99 over 100
+  trials); with Valkey stopped, within `cluster.epoch_poll_interval` plus 1 s.
 
 ### R-CI-020 · Issuance records, audit and metrics
 Priority: **MVP** · Covers: CIOIDC-018, CIOIDC-023
@@ -1593,12 +1794,14 @@ changed with it. Applying a configuration document (R-OPS-030) writes the same e
 trove never logs the subject token, the job token or the issued token, at any log level. The
 HTTP client used for GitLab calls redacts the `JOB-TOKEN` and `Authorization` headers.
 
-**Revocation journal (P1).** A database restore to time *t* undoes every access removal made
-after *t* ([ha-and-helm.md](ha-and-helm.md) H-37). The events below are therefore flagged
+**Revocation journal (MVP).** A database restore to time *t* undoes every access removal made
+after *t* ([ha-and-helm.md](ha-and-helm.md) H-37), and the restore of a trove backup does the same
+for every removal after its snapshot. The events below are therefore flagged
 `journal: revocation` in the event registry
 ([operations-and-observability.md](operations-and-observability.md) R-OPS-014). The audit writer
 copies each one into the revocation journal of [ha-and-helm.md](ha-and-helm.md) R-HA-054, and
-`trove admin post-restore` re-applies it (Q-HA-9). An entry carries IDs and records, never a token
+`trove admin post-restore` and `trove backup restore` re-apply it (Q-HA-9,
+[backup-and-restore.md](backup-and-restore.md) R-BAK-024). An entry carries IDs and records, never a token
 value, hash or other secret. CI issuer and mapping records hold no secret: `ca_bundle_ref` is a
 reference to a PEM bundle, not key material.
 
@@ -1672,9 +1875,17 @@ mapping.
 
 - `trove_ci_exchanges_total{issuer,outcome,reason}`
 - `trove_ci_exchange_duration_seconds{issuer}` (histogram)
-- `trove_ci_signing_keys_refresh_total{issuer,outcome}`
-- `trove_ci_signing_keys_age_seconds{issuer}`
-- `trove_ci_tokens_active{issuer}` (refreshed by a periodic count)
+- `trove_ci_signing_keys_refresh_total{issuer,trigger,outcome}`, `trigger` one of `scheduled`,
+  `unknown_kid`, `admin`
+- `trove_ci_signing_keys_age_seconds{issuer}`: a gauge read from PostgreSQL (the shared row's
+  `fetched_at`) under the rule of [operations-and-observability.md](operations-and-observability.md)
+  R-OPS-007, so every replica reports the same value and dashboards aggregate it with `max`
+- `trove_ci_mapping_set_stale_total{issuer}`: exchanges whose mapping cache lagged behind the
+  issuer's `mappings_version` and that evaluated again from PostgreSQL (R-CI-007). A steady rate
+  means change propagation is slow on that replica.
+- `trove_ci_tokens_active{issuer}`: unexpired, unrevoked CI tokens, a gauge read from PostgreSQL
+  under the same rule (evaluated once per `metrics.db_gauge_interval` per replica, aggregated with
+  `max`, never summed across replicas)
 - `trove_ci_job_token_lookups_total{issuer,outcome}`
 - `trove_ci_job_token_lookup_duration_seconds{issuer}`
 
@@ -1685,6 +1896,9 @@ ci:
   issuances:
     retention: 8760h   # default (proposed): one year; Go durations have no day unit
 ```
+
+The task `ci-issuance-retention` (R-CI-030) deletes issuance records whose `expires_at` is older than
+`ci.issuances.retention`.
 
 **Acceptance criteria**
 
@@ -1697,8 +1911,9 @@ ci:
   `ci.exchange.denied` event without `project_path`.
 - `PUT` of a mapping that changes only `enabled` from `true` to `false` writes one
   `ci.mapping.disabled` event and no `ci.mapping.updated` event.
-- From P1, each of the following is made after the restore point *t*, followed by a restore to *t*
-  and `post-restore` (R-HA-025):
+- Each of the following is made after the restore point *t*, followed by a restore to *t* and
+  `post-restore` (R-HA-025), and again after a backup's snapshot, followed by `trove backup restore`
+  of that backup (R-BAK-024):
   - A CI token issued with `ttl=3600` and revoked through `POST /api/v1/ci/issuances/revoke` is
     rejected as revoked, not as expired, and the output lists `ci.token.revoked … applied`.
   - Mappings `acme-mr-readonly` (priority 10), `acme-release-publish` (100) and `acme-read` (900)
@@ -1719,16 +1934,40 @@ The endpoint is reachable without credentials, so the work an anonymous caller c
 bounded:
 
 - Body limit `ci.exchange.max_body_bytes`; subject-token limit (R-CI-004).
-- Rate limits: a token bucket per client IP and one per CI issuer. Exceeding either answers 429
-  with `Retry-After`. The client IP comes from the trusted-proxy handling of
-  [architecture.md](architecture.md). Buckets are in memory per replica, so the cluster-wide
-  limit is the per-replica limit times the number of replicas. This is a deliberate trade-off
-  against a PostgreSQL round trip per request.
-- Cost bounds: key refetch throttling (R-CI-003); bounded condition size and RE2 (R-CI-010);
-  at most `ci.mappings.max_per_issuer` mappings.
+- Rate limits (Q-CI-14). Both limiters use the cluster scope of
+  [architecture.md](architecture.md) R-ARCH-034, so one budget holds whatever the number of `web`
+  replicas, and every replica gives the same answer (INV-18):
+  - `ci_exchange_address`: per client address, checked first for every request to the endpoint,
+    before the body is read. The address comes from the trusted-proxy handling of
+    [architecture.md](architecture.md) R-ARCH-006. Addresses in `exempt_cidrs` skip this limiter.
+    An installation whose runners reach trove through a few NAT addresses lists the runner
+    networks there, because one address then carries every job of the fleet.
+  - `ci_exchange_subject`: per CI issuer and subject, checked after the subject token has passed
+    R-CI-004 and before the exchange transaction (R-CI-007). The subject is the value of the
+    first claim of the issuer's `pin_claims` that the token carries (`project_id` for GitLab,
+    `repository_id` for GitHub), or `sub` when it carries none; in the job-token fallback (P2) it
+    is the synthesized `project_id`. Forged tokens never reach this limiter. On a public issuer,
+    an outsider's own project spends only its own budget, never that of the projects trove
+    serves. The limiter also bounds the PostgreSQL writes that one runaway pipeline can cause.
+  - Exceeding either answers 429 `slow_down` [`rate_limited`] with `Retry-After`. Both run before
+    the `jti` is recorded, so a retry of a single-use token after a 429 is still accepted.
+  - While Valkey is unavailable, each replica answers from its share of each budget: rate and
+    burst divided by the number of live `web` replicas (R-ARCH-034). No exchange fails because
+    Valkey failed. A writer under trove's Valkey prefix can refuse exchanges with 429, but cannot
+    make trove accept one ([architecture.md](architecture.md) H-49).
+- Cost bounds: the key-row re-read and key refetch throttles (R-CI-003), so a forged `kid` costs
+  no PostgreSQL query of its own; bounded condition size and RE2 (R-CI-010);
+  at most `ci.mappings.max_per_issuer` mappings. Requests from an exempt address are bounded by
+  the replica's `server.max_in_flight` ([architecture.md](architecture.md) R-ARCH-005) until their
+  token is validated, and by the per-subject budget after that.
 - Signature verification happens before any database write. An unauthenticated caller can make
-  trove write only an audit row for a denial. Audit rows for identical denials from one client
-  IP are rate limited and aggregated: one `ci.exchange.denied` with a count per minute.
+  trove write only an audit row for a denial. Denials are aggregated per replica: the first
+  denial of a client address and reason in a minute writes its `ci.exchange.denied` event at once,
+  and the later ones of that minute are written as one event with their count when the minute
+  ends. With n `web` replicas, that is at most 2n events per address, reason and minute. The
+  aggregation buffer is per-replica state that requests write and never read
+  ([architecture.md](architecture.md) R-ARCH-032). A crashed replica loses at most one minute of
+  counts, never the first denial's event.
 
 **Configuration**
 
@@ -1736,15 +1975,27 @@ bounded:
 ci:
   exchange:
     rate_limit:
-      per_client_ip_per_minute: 60    # default (proposed)
-      per_client_ip_burst: 20         # default (proposed)
-      per_issuer_per_second: 100      # default (proposed)
+      per_client_ip_per_minute: 600   # default (proposed); cluster-wide since 2026-10-28
+      per_client_ip_burst: 100        # default (proposed)
+      per_subject_per_minute: 300     # default (proposed); per CI issuer and subject (first pin claim), cluster-wide
+      per_subject_burst: 100          # default (proposed)
+      exempt_cidrs: []                # default (proposed); example: ["10.20.0.0/16"], a runner network
 ```
+
+`per_issuer_per_second` of the earlier per-replica design no longer exists; trove refuses to start
+when it is set and names the key and its replacement.
 
 **Acceptance criteria**
 
-- 200 exchange requests from one IP within a minute: the first 20 to 80 (burst plus refill) get
-  a 200 or 400 status, the rest get 429 with `Retry-After`.
+- Three `web` replicas, every request balanced round robin: 1,000 exchange requests from one
+  address within 5 s get a 200 or 400 status at most 200 times; the rest get 429 with
+  `Retry-After`. The same test against one replica gives the same bound, and so does the test with
+  Valkey stopped.
+- An address in `exempt_cidrs` is never refused by the address limiter. Its requests with valid
+  tokens of one project are refused once that project's budget is spent, while a second project's
+  exchanges from the same address succeed.
+- 2,000 tokens with `iss: https://gitlab.com` and invalid signatures, sent from 20 addresses
+  within one minute, leave the exchanges of a legitimate `gitlab-com` project unaffected.
 - 10 000 requests with garbage subject tokens produce no outbound request to GitLab and fewer
   than 100 audit rows.
 
@@ -1826,7 +2077,9 @@ Behavior:
 - TTL: `min(ci.job_token_fallback.max_ttl, other bounds of R-CI-016 except the subject exp)`.
 - Replay key: `jti = "job:" + hex(SHA-256(token))`. The raw token is never stored. Concurrent
   exchanges of the same token on one replica share one GitLab call (single-flight). Lookups are
-  not cached across exchanges, so every exchange confirms that the job is still running.
+  not cached across exchanges, so every exchange confirms that the job is still running. Exchanges
+  of the same token that reach different replicas each make their own call; nothing about a job
+  token is shared through Valkey or kept for a later request (INV-18).
 
 Risks, per case, and their mitigations:
 
@@ -2089,7 +2342,10 @@ The examples in [Examples](#examples) are part of the specification. trove's end
 suite runs them against a GitLab test instance and a trove deployment from the Helm chart
 (INV-13), with the repositories `npm-internal` (local), `npm-all` (virtual), `nuget-internal`
 (local), `nuget-all` (virtual), the policy `ci-read-internal` and the CI issuer and mapping shown
-there.
+there. The deployment has at least two `web` and two `worker` replicas on different nodes, and the
+edge balances every request across the `web` replicas (the `scatter` profile of
+[architecture.md](architecture.md) R-ARCH-032), so a job's exchange, installs, publish and
+self-revocation reach different replicas.
 
 **Acceptance criteria**
 
@@ -2104,6 +2360,107 @@ there.
 - After both jobs pass, their CI tokens are revoked (`token.revoked`, reason `owner`) and get 401
   on `npm view`, although their `expires_in` has not passed.
 - No job log contains a `trv_cit_` value or the ID token.
+- The pipeline passes while the node of one `web` replica is drained with `kubectl drain` during
+  its run, and again with Valkey stopped for the whole run.
+
+### R-CI-029 · CI state across replicas, Valkey outages and restores
+Priority: **MVP** · Covers: trove-only
+
+The exchange and every request made with a CI token run on `web` replicas. Any request of a job
+may reach any of them, because the Kubernetes Service distributes requests at random and without
+session affinity (INV-12, INV-18). CI work that outlasts a request runs as tasks on `worker`
+replicas (R-CI-030). This requirement fixes where each piece of CI state lives. A new piece of CI
+state needs a row here before it ships.
+
+| State | Lives in | Copy on a replica | Valkey unavailable | Valkey lost its data | After a restore | Specified in |
+|---|---|---|---|---|---|---|
+| CI issuers, mappings, delegations | PostgreSQL | In-process caches, invalidated through the change area `ci_mappings` (R-CI-002, R-CI-009) | Changes reach the cache at the next change-log poll; the exchange re-reads the issuer row and checks its `version` and `mappings_version` against PostgreSQL in any case | Unaffected | Restored (`data`); `version` and `mappings_version` lifted above the old installation's values (R-BAK-022); disables, deletions and narrowings after the snapshot replayed from the journal (R-CI-020) | R-CI-001, R-CI-007, R-CI-009, R-CI-019 |
+| Signing key sets | PostgreSQL, `ci_issuer_keys` | In-process copy, change area `ci_issuer_keys` | Reloads at the next poll; an unknown `kid` re-reads the row at once | Unaffected | Not restored (`transient`); fetched again | R-CI-003 |
+| Replay set | PostgreSQL, `ci_subject_token_uses`; restore cut-off in the `system_state` key `restored_at` | None; both are read in the exchange transaction | Unaffected | Unaffected | Restored as of the snapshot; single-use issuers refuse subject tokens issued up to `clock_skew` after the restore finished | R-CI-018 |
+| CI tokens, issuance records | PostgreSQL | Token cache of [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 | Revocations apply within R-AUTH-023's bound through the poll | Unaffected | Restored; tokens issued after the snapshot answer 401; revocations after it replayed | R-CI-017, R-CI-020 |
+| Exchange rate-limit counters | Valkey, cluster scope | Fallback buckets | Per-replica shares of each budget | Counters restart: at most one extra window of budget | New keyspace; counters start empty | R-CI-021 |
+| Unknown-`kid` re-read and refetch throttles | Replica memory; a different answer on another replica lasts at most `cluster.epoch_poll_interval` (re-read) or `unknown_kid_refresh_interval` (fetch) | — | Unaffected | Unaffected | Starts empty with the replica | R-CI-003 |
+| Denial aggregation buffer | Replica memory; requests write it and never read it | — | Unaffected | Unaffected | Starts empty with the replica | R-CI-021 |
+| Job-token lookups (P2) | Nowhere; concurrent exchanges on one replica share one call | — | Unaffected | Unaffected | — | R-CI-022 |
+
+- Valkey holds no signing key, mapping, replay entry, CI token or token hash, and no exchange reads
+  a positive result from it ([architecture.md](architecture.md) R-ARCH-030). This page's only
+  Valkey keys are the counters of R-CI-021, and its only Valkey messages are the change messages
+  of the areas `ci_issuer_keys` and `ci_mappings`.
+- A Valkey outage changes no answer of the exchange except the 429 budget, and it never makes a
+  replica unready (INV-12). The exchange needs PostgreSQL. It never touches object storage.
+- **Drain.** An exchange is one short request. A `web` replica that receives `SIGTERM` finishes it
+  within the shutdown sequence of [architecture.md](architecture.md) R-ARCH-024 like any other
+  request. An on-demand key fetch still running at the deadline is cancelled, and the stored key set
+  stays as it was. A retry after a refused or cut exchange may reach any replica (R-CI-007). A
+  `worker` replica that drains while it runs a CI task releases the job
+  ([architecture.md](architecture.md) R-ARCH-016), and the task is idempotent (R-CI-030).
+- Nothing on this page needs session affinity, a volume, or a session-scoped PostgreSQL connection.
+  Every PostgreSQL access of this page is transaction-scoped and works through a transaction-mode
+  pooler ([architecture.md](architecture.md) R-ARCH-019).
+
+**Acceptance criteria**
+
+- The acceptance criteria of R-CI-001 to R-CI-021 pass in the `scatter` profile with three `web`
+  replicas ([architecture.md](architecture.md) R-ARCH-032), once with Valkey running and once with
+  Valkey stopped. During the second run, every replica stays ready and reports
+  `"degraded":["valkey"]`.
+- During 500 exchanges and 500 package requests with CI tokens, a Sentinel failover is forced and
+  `valkey-cli FLUSHALL` runs on the new primary. No request answers 5xx, and every exchange answers
+  as in a run without the failover, apart from 429 answers.
+- After the CI suite, `valkey-cli --scan --pattern 'trove:*'` lists, for this page, only counter
+  keys of the limiters `ci_exchange_address` and `ci_exchange_subject`.
+- A `web` pod is deleted gracefully while 50 jobs exchange in a loop. Every exchange answers 200,
+  and no client sees a reset connection or a 5xx.
+
+### R-CI-030 · Background tasks of the CI exchange
+Priority: **MVP** · Covers: trove-only
+
+Recurring CI work runs as maintenance tasks of
+[operations-and-observability.md](operations-and-observability.md) R-OPS-019 on the job queue. Only
+`worker` replicas run it ([architecture.md](architecture.md) R-ARCH-001, R-ARCH-016), and a `web`
+replica runs no background loop for this page. The two gauges of R-CI-020 that are read from
+PostgreSQL follow the metrics rule of [operations-and-observability.md](operations-and-observability.md)
+R-OPS-007, which evaluates them on every replica, and the cache reloads are those of
+[architecture.md](architecture.md) R-ARCH-018.
+
+| Task and job kind | What one run does | Default schedule | Enqueue mode |
+|---|---|---|---|
+| `ci-keys-refresh` | Fetches discovery and key set of every enabled CI issuer whose `next_refresh_at` has passed or that has no row in `ci_issuer_keys`, and stores them by R-CI-003's write rule | `*/5 * * * *` | `exclusive` |
+| `ci-replay-cleanup` | Deletes `ci_subject_token_uses` rows whose `subject_expires_at + clock_skew + ci.replay.retention_after_expiry` has passed (R-CI-018) | `7 * * * *` | `exclusive` |
+| `ci-issuance-retention` | Deletes `ci_token_issuances` rows whose `expires_at` is older than `ci.issuances.retention` (R-CI-020) | `40 3 * * *` | `exclusive` |
+
+- `ci-keys-refresh` fetches each issuer outside any transaction, within
+  `ci.signing_keys.fetch_timeout`. A failure is recorded in that issuer's `last_error` and does not
+  stop the run for the other issuers.
+- The deletions run in batches of at most 1,000 rows, each in its own transaction, in the order of
+  the expiry index. No transaction is long, and a run that stops part-way leaves only rows that the
+  next run deletes.
+- All three tasks are idempotent. A run released at shutdown (R-ARCH-016) is repeated by another
+  worker with no other effect. A run that overlaps an on-demand fetch on a `web` replica is safe
+  through R-CI-003's write rule.
+- The schedules are `maintenance.tasks.<name>` entries and use R-OPS-019's cron dialect.
+- Readiness does not depend on these tasks. A key set that `ci-keys-refresh` cannot refresh fails
+  closed after `ci.signing_keys.max_stale` (R-CI-003).
+
+**Configuration**
+
+```yaml
+maintenance:
+  tasks:
+    ci-keys-refresh: {enabled: true, schedule: "*/5 * * * *"}        # default (proposed)
+    ci-replay-cleanup: {enabled: true, schedule: "7 * * * *"}        # default (proposed)
+    ci-issuance-retention: {enabled: true, schedule: "40 3 * * *"}   # default (proposed)
+```
+
+**Acceptance criteria**
+
+- `GET /api/v1/system/tasks` lists the three tasks, and `job.locked_by` never names a `web`
+  replica for one of their jobs.
+- With three `worker` replicas, an issuer whose `next_refresh_at` lies in the past is fetched
+  exactly once by the next `ci-keys-refresh` run.
+- The node of the worker running `ci-replay-cleanup` over 100,000 expired rows is drained. The job
+  is released, another worker finishes it, and no expired row remains when it ends.
 
 ## Examples
 
@@ -2226,7 +2583,7 @@ variables:
         apt-get update -qq && apt-get install -y -qq --no-install-recommends curl jq ca-certificates >/dev/null
       fi
     - |
-      response="$(printf '%s' "$TROVE_ID_TOKEN" | curl -sS \
+      response="$(printf '%s' "$TROVE_ID_TOKEN" | curl -sS --retry 3 \
         --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
         --data-urlencode 'subject_token_type=urn:ietf:params:oauth:token-type:id_token' \
         --data-urlencode 'subject_token@-' \
@@ -2299,6 +2656,13 @@ Notes on the examples:
 - `printf … | curl --data-urlencode 'subject_token@-'` keeps the ID token out of the process
   list. `printf` is a shell builtin. The closing revocation reads its header from standard input
   (`-H @-`, curl 7.55 and later) for the same reason.
+- `--retry 3` repeats the exchange after a 429 or 503, waiting as `Retry-After` says (curl 7.66
+  and later; [`--retry`](https://curl.se/docs/manpage.html#--retry), read 2026-10-28). A 429 comes
+  from the cluster-wide budgets of R-CI-021, a 503 from a transient condition such as
+  `configuration_changed`. Neither records the `jti`, so the repeated request is accepted even
+  under single use. curl reads `subject_token@-` into memory while it parses its options
+  (`data_urlencode()` in curl's `src/tool_getparam.c`, read 2026-10-28), so a retry sends the same
+  body again.
 - The revocation is the last line of `script`, not an `after_script`: `after_script` runs in a
   separate shell that does not see variables exported in `before_script` or `script`, so it never
   holds the CI token. It also does not run for jobs that time out, unless the runner's script
@@ -2372,13 +2736,27 @@ Notes on the examples:
   API in fallback mode (P2). Tokens cannot make trove fetch other URLs.
 - Package ownership (R-CI-015) keeps overlapping name patterns and reused project paths from
   turning into package takeover.
-- Rate limits are per replica (R-CI-021). An attacker can get roughly `replicas × limit`
-  exchange attempts. That is acceptable because each attempt costs one signature check.
-- A database restore would revive CI tokens, issuers and mappings that were revoked, disabled or
-  narrowed after the restore point ([ha-and-helm.md](ha-and-helm.md) H-37). From P1 the revocation
-  journal replays those changes (R-CI-020). Replay disables but never deletes, and it suspends the
-  later mappings of a disabled mapping's tier, so a forged journal entry can deny CI access but
-  cannot lift a first-match shadow and grant more (Q-CI-11).
+- Rate limits count cluster-wide (R-CI-021), so adding `web` replicas does not multiply an
+  attacker's attempts. While Valkey is unavailable, the per-replica shares keep the total close to
+  the configured budget. Each attempt costs at most one signature check before it is refused; an
+  unknown `kid` adds no PostgreSQL query or GitLab request beyond the per-replica throttles of
+  R-CI-003.
+- Valkey is outside the CI trust path. It holds no signing key, mapping, replay entry, token or
+  token hash, and no exchange reads a positive result from it (R-CI-029). Whoever can write under
+  trove's prefix can refuse exchanges with 429 or cause extra cache reloads
+  ([architecture.md](architecture.md) H-49), but cannot make trove accept a token, reopen a used
+  single-use `jti` or hide a mapping change (R-CI-007, R-CI-018).
+- A database restore, whether to a point in time or from a trove backup, would revive CI tokens,
+  issuers and mappings that were revoked, disabled or narrowed after the restore point
+  ([ha-and-helm.md](ha-and-helm.md) H-37). The revocation journal replays those changes (R-CI-020).
+  Replay disables but never deletes, and it suspends the later mappings of a disabled mapping's
+  tier, so a forged journal entry can deny CI access but cannot lift a first-match shadow and
+  grant more (Q-CI-11). Signing keys are not restored (R-CI-003), and single-use issuers refuse
+  subject tokens issued before the restore finished (R-CI-018), so a restore cannot bring back a key
+  the issuer removed or reopen a token used after the snapshot. The one exception is an old
+  installation that keeps serving after the restore finished; both restore procedures have the
+  operator stop it ([backup-and-restore.md](backup-and-restore.md) R-BAK-021,
+  [ha-and-helm.md](ha-and-helm.md) R-HA-025).
 
 ## Decisions
 
@@ -2736,10 +3114,210 @@ this towards (c) if restore drills show suspensions that administrators routinel
 
 **Applied in the spec:** R-CI-020: the revocation journal section (flagged events, entry content,
 replay per event, "every path writes the event", suspended means disabled, this rule, the
-comparators with the pure-removal rule for grants) and P1 acceptance criteria, including a deleted
-shadowing mapping. R-CI-019, R-CI-002, R-CI-017 and R-CI-023 point to it. Cross-page:
+comparators with the pure-removal rule for grants) and acceptance criteria, including a deleted
+shadowing mapping. The journal and these criteria are MVP since [ha-and-helm.md](ha-and-helm.md)
+Q-HA-9 was revisited on 2026-10-28; this choice did not change with it. R-CI-019, R-CI-002, R-CI-017 and R-CI-023 point to it. Cross-page:
 [ha-and-helm.md](ha-and-helm.md) R-HA-054, whose table row for mapping disables and deletions
 names this extra step and whose rule on forged entries refers to it.
+
+### Q-CI-12 · CI issuer key sets across replicas and restores
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This question was raised on 2026-10-28 by the owner's Valkey, horizontal-scale, backup and
+storage-class constraints. Until then every replica held the key set from PostgreSQL and reloaded
+it on `NOTIFY trove_ci_issuer_keys`, and the scheduled refresh claimed rows with
+`FOR UPDATE SKIP LOCKED` while it fetched. Four things changed. trove issues no `NOTIFY` any more
+([architecture.md](architecture.md) Q-ARCH-15), and no transaction may wait on an outbound call
+(R-ARCH-019). `web` replicas run no background work (INV-2). And a restore from a scheduled backup
+is an MVP path (INV-19).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Shared row in PostgreSQL, in-process copies, not restored | The row of `ci_issuer_keys` is the key set; each replica holds a copy, reloaded through the change area `ci_issuer_keys`. The scheduled refresh is a `worker` task that fetches outside any transaction, and a key store locks only the key row. On an unknown `kid` a replica re-reads the row, at most once per issuer and `cluster.epoch_poll_interval`, then fetches under a per-replica throttle. The row is `transient` for backups. | Acceptance rests on PostgreSQL alone. A key that any replica has stored is accepted everywhere within one poll interval. No Valkey dependency. Forged `kid` values cause neither a query nor a fetch per request. A restore cannot revive a key the issuer removed. | With n `web` replicas, a random-`kid` flood causes up to n row reads per poll interval and n fetches per fetch interval. A replica whose throttle an attacker spent rejects a new key until another replica has stored it, for at most one interval. After a restore, the first exchange per issuer waits for a fetch and fails closed if the issuer is unreachable then. |
+| (b) Shared copy in Valkey | Replicas read the key set from Valkey | One fetch for the whole cluster; no PostgreSQL row | A key written into Valkey would let anyone mint CI tokens ([architecture.md](architecture.md) R-ARCH-030 rule 2). A Valkey outage would stop exchanges or need a second copy anyway. |
+| (c) (a) with a cluster-wide refetch claim in the PostgreSQL row | A conditional update claims the right to fetch; replicas that lose the claim poll the row until the winner has stored its result | At most one on-demand fetch per issuer and interval in the cluster | A wait loop on the request path that polls PostgreSQL several times per waiting request, to save fetches of a small static document. A random-`kid` flood still delays the pickup of a new key by one interval. |
+| (d) (a) with the on-demand fetch collapsed through `cluster.FlightLock` | A Valkey lock and completion channel per issuer, as for proxy fetches (R-ARCH-033) | One fetch per rotation while Valkey works | A new Valkey key class and a waiter path for an event that occurs only on key rotation or under attack. The throttle cannot reuse R-ARCH-034's limiter, whose fallback would divide one fetch per interval among n replicas. |
+| (e) (a), but the key row is backed up as `data` | A restored installation starts with the snapshot's keys | Exchanges work right after a restore without contacting the issuer | Until its next refresh, the restored installation accepts a key that the issuer removed after the snapshot, and removing a key is how an issuer revokes it |
+
+**Choice:** (a) — the key set lives in one PostgreSQL row per CI issuer with in-process copies on
+every replica. A worker task refreshes it outside any transaction, and a key store locks only the
+key row. An unknown `kid` re-reads the row, throttled per issuer and replica to one read per
+`cluster.epoch_poll_interval`, before a throttled per-replica fetch. Backups do not contain it.
+
+**Rationale:** A key set decides whether a token is accepted, so it belongs where INV-3 puts
+correctness, and R-ARCH-030 forbids reading a positive result from Valkey. That rules out (b) and
+leaves (d) as an optimization. The re-read on an unknown `kid` is what keeps the per-replica
+throttle harmless for INV-18. Once any replica or the task has stored a new key, every replica
+accepts it within one `cluster.epoch_poll_interval`, without waiting for the change message. The
+re-read itself is throttled, because a forged token picks its `kid` freely and reaches this point
+before any signature has been checked; an unthrottled re-read would turn every anonymous request
+into a PostgreSQL query. What remains per replica is the number of fetches: at most n per issuer
+and interval, for a static document that GitLab serves to every relying party. A key store locks
+only the key row, because the `ci_issuers` row is held `FOR SHARE` by every exchange (R-CI-007). (c) and (d) would remove that cost with a waiting path on the request side that runs
+only during rotations and attacks. The earlier scheduled refresh held a row lock across an HTTP
+fetch, which R-ARCH-019 now forbids for every transaction; an `exclusive` task gets the same "one
+replica fetches" result without it. (e) loses to `transient` because a restore must not undo an
+issuer's key revocation, the reasoning that moved the revocation journal to the MVP
+([ha-and-helm.md](ha-and-helm.md) Q-HA-9); the cost is one fetch per issuer after a restore. The
+development agent would revisit this if an issuer limits key-set requests per client address so
+that n replicas behind one egress address reach that limit, or if `web` replica counts grow beyond
+about 100; (c) is then the next step.
+
+**Applied in the spec:** R-CI-003: caching and refresh rewritten (the shared row, the in-process
+copy with `ci.signing_keys.cache_safety_ttl`, the change area instead of `NOTIFY`, never in Valkey,
+the write rule outside transactions on the key row alone, the scheduled task, the throttled re-read
+and per-replica fetch throttle for an unknown `kid`, fail-closed from the shared `fetched_at` with a
+re-read before the 503, the restore), new acceptance criteria. R-CI-021 and the security notes: a
+forged `kid` costs no query of its own.
+R-CI-002: issuer creation and the forced refresh fetch outside transactions. R-CI-030: the task
+`ci-keys-refresh`. R-CI-020: the `trigger` label. R-CI-029: the table rows. The flow diagram.
+Cross-page: [architecture.md](architecture.md) R-ARCH-032 (the per-replica throttle),
+[backup-and-restore.md](backup-and-restore.md) R-BAK-004 (`ci_issuer_keys` is `transient`),
+[operations-and-observability.md](operations-and-observability.md) R-OPS-019 (the task).
+
+### Q-CI-13 · Where the replay set lives
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This question was raised on 2026-10-28 by the same constraints. Single use (R-CI-018, Q-CI-4) is a
+security property: it is the replay control of GitHub and generic issuers, and for a generic issuer
+with a shared audience the only one. Requests reach n replicas at random, Valkey can lose
+acknowledged writes in a failover, and installations restore from scheduled backups. The set of
+used `jti` values must hold under all three.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) PostgreSQL only, in the exchange transaction | The upsert of R-CI-018, as before | Exact on every replica; survives any loss of Valkey; atomic with the issuance | A restore loses the uses recorded after the snapshot, so a single-use token used then can be exchanged again while it is still valid |
+| (b) PostgreSQL plus a Valkey marker | After commit, a marker per `jti` in Valkey; later exchanges check it before their transaction | A replay is refused one step earlier | Saves nothing: an accepted exchange runs its transaction anyway, and the refusal of a replay costs that same transaction. Adds a Valkey round trip to every exchange. |
+| (c) Valkey only | `SET … NX` per `jti`, expiring with the subject token | No database write for the replay check | Valkey replicates asynchronously and "acknowledged writes can still be lost during a failover" ([replication](https://valkey.io/topics/replication/)); a flush or restart erases the set. A used token would work again, a security property in a store whose loss INV-3 allows to cost performance only. |
+| (d) In replica memory | Each replica remembers the `jti` values it has seen | No round trip | The next exchange reaches another replica (INV-18); single use would hold per replica only |
+| (e) (a) plus a restore cut-off | While single use is on, a subject token whose `iat` is not later than the end of the last restore plus `clock_skew` is refused; the exchange transaction reads that time | (a)'s properties, and a restore cannot reopen a token used after the snapshot, whatever the issuer's clock offset within `clock_skew`. Costs a correct single-use client nothing once the first 2 × `clock_skew` after the restore have passed, because it requests a fresh token for each exchange. | Needs the `system_state` key `restored_at` from both restore paths. A job that held a single-use token across a restore must request a new one. An old installation that keeps serving after the restore finished is not covered. |
+
+**Choice:** (e) — the replay set lives in PostgreSQL only, in the exchange transaction, and after a
+restore single-use issuers refuse subject tokens issued before it finished, with the clock leeway on
+the refusing side.
+
+**Rationale:** (c) and (d) put a security property where INV-3 and INV-18 forbid it. (b) is an
+optimization without a gain, because the transaction it would save runs for every accepted
+exchange anyway. That leaves (a), whose gap INV-19 makes real. A subject token used between a
+backup's snapshot and the incident is unknown to the restored database, and it stays usable for
+the rest of its lifetime. For GitHub that is minutes; a generic issuer chooses its own lifetime,
+which can be an hour or more. The cut-off closes that gap with data trove already has: `iat` is a
+required claim (R-CI-004), and the restore paths know when they finished. The leeway is added to
+the cut-off rather than subtracted from it: subtracting it would accept a token issued in the last
+`clock_skew` before the restore and already used by the old installation. The exchange transaction
+reads the cut-off instead of each replica reading it at start-up, so it also holds on a replica that
+outlives a `post-restore`, as in the cross-site failover of [ha-and-helm.md](ha-and-helm.md) R-HA-026.
+It leaves issuers with single use off untouched, so a GitLab job's renewal by re-exchange (Q-CI-4)
+keeps working. The
+development agent would revisit this if a single-use client turns out to reuse one subject token
+for a whole job that can span a restore; the cut-off would then need an issuer setting.
+
+**Applied in the spec:** R-CI-018: the bullet on where the replay set lives, with the PostgreSQL and
+Valkey sources; the restore cut-off (who sets it, read in the exchange transaction, leeway on the
+refusing side, the uncovered old installation); the cleanup task; three acceptance criteria
+(failover, flush and outage; restore; skew direction). R-CI-007: the cut-off follows the re-read
+issuer row. R-CI-008: the reason `subject_token_predates_restore`. R-CI-029: the table row. The
+security notes. Cross-page: [backup-and-restore.md](backup-and-restore.md) R-BAK-021 step 9 and
+R-BAK-022 (`system_state` key `restored_at`), [ha-and-helm.md](ha-and-helm.md) R-HA-025 step 4
+(`post-restore` sets it too), [architecture.md](architecture.md) R-ARCH-030 (the replay set and
+issuance records in the PostgreSQL rows of the usage map).
+
+### Q-CI-14 · Exchange rate limits across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This question was raised on 2026-10-28 by the same constraints. R-CI-021 kept its buckets in each
+replica's memory, so the cluster-wide limit was the configured value times the replica count.
+[architecture.md](architecture.md) Q-ARCH-17 makes cluster scope the normal mode for every limit
+that limits callers. Two consequences are specific to this endpoint:
+
+- GitLab runner fleets often reach trove through a few NAT addresses, so one address carries every
+  job of the fleet. The multiplication by the replica count had hidden how small the per-address
+  budget was.
+- A bucket per CI issuer, counted before the token is verified, becomes n times cheaper to exhaust.
+  Forged tokens that name `https://gitlab.com` would refuse every pipeline of that issuer.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per replica, as before | In-memory buckets per address and per issuer | No round trip | The budget is the configured value times a replica count that autoscaling changes, and the answer depends on the replica (INV-18); contradicts Q-ARCH-17 |
+| (b) Cluster scope with the earlier buckets and values | 60 per minute and address (burst 20), 100 per second and issuer, counted across replicas | Smallest change | A runner fleet behind one NAT address gets 60 exchanges a minute in total. Anyone can exhaust a public issuer's bucket with forged tokens from a handful of addresses. |
+| (c) Cluster scope; an address bucket sized for runner fleets with exempt networks, and a per-subject bucket after validation instead of the per-issuer bucket | Per address 600 per minute (burst 100) with `exempt_cidrs`; per CI issuer and project (the first pin claim) 300 per minute (burst 100), counted only for tokens that passed R-CI-004 | One budget whatever the replica count. Forged tokens, and outsiders' projects on a public issuer, cannot spend a project's budget. A runaway pipeline is bounded per project. | Two more settings. One source address gets more attempts than one replica used to give it. |
+| (d) Cluster scope, per address only | No second bucket | Simplest | Nothing bounds one project's PostgreSQL writes, and an exempt network is bounded only by the replicas' in-flight limits |
+
+**Choice:** (c) — cluster-wide limiters per client address, with exempt networks, and per CI
+issuer and subject after validation; the per-issuer bucket goes.
+
+**Rationale:** Cluster scope follows Q-ARCH-17: a limit that changes with the replica count is not
+a limit an operator can set. The new per-address default equals what the old per-replica value gave
+a deployment of ten replicas, and `exempt_cidrs` serves fleets that are larger still, the same
+remedy [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038 offers for its
+throttle. Moving the second bucket behind validation removes the lever that (b) would hand to anyone
+with a few addresses: every request that reaches it carries a valid signature of a configured
+issuer. Keying it by project instead of issuer means that an outsider's project on a public issuer
+spends only its own budget. (d) would leave a runaway pipeline bounded by nothing but the replicas'
+in-flight limits. Both limiters run before the `jti` is recorded, so a client that retries after a
+429 loses nothing under single use. The development agent would revisit this if legitimate
+monorepo pipelines hit the per-subject budget, which would call for a per-mapping override, or if
+floods of validly signed tokens from many projects of a public issuer show up as load, which would
+call for an issuer-wide bucket that counts only signed tokens.
+
+**Applied in the spec:** R-CI-021 rewritten: the two limiters, their keys and placement, the
+defaults, `exempt_cidrs`, the fallback shares, the per-replica denial aggregation, the removed key
+`per_issuer_per_second`, new acceptance criteria. R-CI-007: where the checks run. R-CI-008: no
+reason names Valkey. The security notes. The examples: `--retry 3` on the exchange, with the note.
+R-CI-029: the table rows. Cross-page: [architecture.md](architecture.md) R-ARCH-032 (the denial
+aggregation buffer).
+
+### Q-CI-15 · Exchange against a mapping cache that lags behind PostgreSQL
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+This question was raised on 2026-10-28 by the same constraints. Mapping changes used to reach the
+other replicas through `NOTIFY` on commit. Since [architecture.md](architecture.md) Q-ARCH-15 they
+arrive through a Valkey message within milliseconds, or through the change-log poll within
+`cluster.epoch_poll_interval` when Valkey is unavailable. R-CI-007 already re-checked the matched
+mappings in the exchange transaction, which catches a disable or an edit of a matched mapping. It
+does not catch a mapping that was created, enabled or moved to a lower `priority` number and would
+now match first. Under first match (Q-CI-1) that is how an administrator narrows what a job gets,
+and a lagging replica would hand out the broader grant. It also re-evaluated only the mappings when
+the issuer row's `version` had changed, so a token validated under issuer settings that had just
+been narrowed (an audience removed, single use switched on) was still issued. INV-3 says that
+losing Valkey costs performance, never correctness.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the matched-row check | Other mapping changes apply within the propagation bound | No change | A narrowing by a new shadowing mapping waits for the change message or the poll: milliseconds with Valkey, up to the poll interval without it |
+| (b) A mapping-set counter per issuer | Every mapping write takes `FOR UPDATE` on the issuer row and increments `mappings_version`; the exchange compares it under its `FOR SHARE` re-read and evaluates again from PostgreSQL on a mismatch | Every exchange evaluates the committed mapping set, whatever the state of Valkey or the poll. One integer comparison on a row the exchange already reads. | Mapping writes of one issuer serialize with each other and wait for that issuer's running exchange transactions, which last milliseconds |
+| (c) No mapping cache | Read the issuer's mappings in every exchange | Nothing to keep consistent | Up to 1,000 mapping rows with JSON conditions per exchange |
+| (d) Fail closed while the change-log poll is stale | `cluster.ChangesFresh()` gates the exchange, as R-AUTHZ-028 does for policies | Bounds the window by the readiness threshold | Still leaves a window of up to the poll interval, and refuses exchanges during a PostgreSQL hiccup that (b) would serve correctly |
+
+**Choice:** (b) — the issuer row carries `mappings_version`, every mapping write increments it, and
+the exchange evaluates again from PostgreSQL when its cache is behind. When the issuer row's own
+`version` differs, the exchange also validates the subject token again against the re-read row
+(R-CI-004 steps 5 to 9) before it evaluates the mappings.
+
+**Rationale:** (b) costs one comparison on a row the exchange already locks, and it closes the
+window instead of shortening it. (a) would make the speed of a security-relevant narrowing depend
+on Valkey, which INV-3 says must not matter. (c) pays a large read on every exchange for what (b)
+gets almost for free. (d) shortens the window and adds a new refusal. The serialization that (b)
+adds touches only administrative writes, which are rare, and the locks it adds to exchanges are the
+`FOR SHARE` re-read R-CI-007 already takes. Validating again on an issuer change needs no I/O, so
+it fits inside the transaction under R-ARCH-019. The development agent would revisit this if
+mapping writes on an issuer with a very high exchange rate wait measurably for its exchange
+transactions, or if the concurrent `FOR SHARE` locks of many exchanges on one issuer row show up as
+MultiXact or lock-wait load in PostgreSQL; a transaction-scoped shared advisory lock per issuer,
+which works through a transaction-mode pooler (R-ARCH-019), would then replace the row lock.
+
+**Applied in the spec:** R-CI-001: the column `mappings_version` and the registration of the CI
+`version` columns as revision columns. R-CI-007: the re-check names the counter, validates again on
+an issuer change, the second and third bullets of what it prevents, and two new acceptance
+criteria. R-CI-002: every issuer write notifies the change area `ci_mappings`. R-CI-009: the cache paragraph and
+`ci.mappings.cache_safety_ttl`. R-CI-019: every mapping write increments the counter; the
+acceptance criterion no longer relies on `NOTIFY`. R-CI-020: the metric
+`trove_ci_mapping_set_stale_total`. Cross-page: [backup-and-restore.md](backup-and-restore.md)
+R-BAK-022 (the four CI revision columns in the initial registry).
 
 ## What this does not cover
 

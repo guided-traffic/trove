@@ -5,12 +5,14 @@ Status: specification — not implemented
 This page specifies trove's management HTTP API and the Angular UI built on it. Part A fixes the
 conventions every management endpoint follows: base path and versioning, the OpenAPI 3.1 contract,
 JSON rules, authentication and CSRF handling on the API, problem-details errors, cursor
-pagination, filtering, optimistic concurrency, idempotency keys, long-running work, rate limits
-and response headers. Part B is the endpoint surface of the MVP and P1: one table per resource
-family with method, path, purpose and required permission, pointing at the page that owns the
-resource's semantics and payloads. Part C specifies the UI: routes, screens, sign-in,
-permission-driven rendering, client setup, the permission explainer, the CI claim tester,
-accessibility, internationalization, state management and testing. What a resource *means* (a
+pagination, filtering, optimistic concurrency, idempotency keys, long-running work, cluster-wide
+rate limits, response headers, requests that span several replicas, and when a write becomes
+visible on the other replicas. Part B is the endpoint surface of the MVP and P1: one table per
+resource family with method, path, purpose and required permission, pointing at the page that owns
+the resource's semantics and payloads. Part C specifies the UI: routes, screens, sign-in,
+permission-driven rendering, client setup, the permission explainer, the CI claim tester, the
+system status with roles, Valkey and backups, accessibility, internationalization, state
+management and testing. What a resource *means* (a
 repository, a permission policy, an identity mapping, a token scope) and its payload fields are
 owned by the page named in the [ownership table](README.md#pages); this page fixes how resources
 are exposed over HTTP, keeps the surface consistent across those pages, and specifies how the UI
@@ -27,7 +29,8 @@ ART-049), [identity-and-access.md](../features/identity-and-access.md) (IAM-030,
 IAM-032), [authentication-providers.md](../features/authentication-providers.md) (AUTHN-037 to
 AUTHN-040), [access-tokens.md](../features/access-tokens.md) (TOK-026),
 [oidc-ci-integration.md](../features/oidc-ci-integration.md) (CIOIDC-024),
-[operations-and-monitoring.md](../features/operations-and-monitoring.md) (OPS-008, OPS-023),
+[operations-and-monitoring.md](../features/operations-and-monitoring.md) (OPS-008, OPS-023,
+OPS-032),
 [search-and-query.md](../features/search-and-query.md) (SRCH-048, SRCH-058),
 [repositories.md](../features/repositories.md) (REPO-007, REPO-008),
 [ha-and-deployment.md](../features/ha-and-deployment.md) (HA-016) and
@@ -35,8 +38,11 @@ AUTHN-040), [access-tokens.md](../features/access-tokens.md) (TOK-026),
 
 ## Reading this page
 
-- Part A (R-API-001 to R-API-019): conventions. Part B (R-API-020 to R-API-049): endpoint surface.
-  Part C (R-UI-001 to R-UI-047): UI.
+- Part A (R-API-001 to R-API-019, R-API-051, R-API-052): conventions. Part B (R-API-020 to
+  R-API-050): endpoint surface. Part C (R-UI-001 to R-UI-048): UI.
+- Every `web` replica answers every request, and the Kubernetes Service picks one at random without
+  session affinity (INV-2, INV-12). "A request" on this page therefore never means "the same
+  replica as the previous request" (INV-18, R-API-051).
 - Path notation: `{key}` is one path segment. Every path is relative to the public base URL
   (R-OPS-005 in [operations-and-observability.md](operations-and-observability.md)).
 - Permission column vocabulary: the repository actions of INV-9 (`read`, `annotate`, `deploy`,
@@ -114,7 +120,7 @@ Every operation MUST declare:
 | `x-trove-permission` | The repository action or role that admits the caller, machine-readable, e.g. `{"action": "deploy", "repository": "query.repository", "path": "query.path"}` or `{"role": "admin"}`; R-API-008 enforces from it |
 | `x-trove-system-scope` | The token system scope item that admits the caller instead of a role, where one exists (R-AUTH-025) |
 | `x-trove-recent-auth` | `true` for operations that require recent authentication through a session (R-API-007) |
-| `x-trove-idempotency-key` | `optional` on creating POSTs (R-API-014) |
+| `x-trove-idempotency-key` | `optional` on creating and job-starting POSTs and on DELETEs that answer 202 with a job (R-API-014) |
 | `x-trove-if-match` | `required` on PUT and PATCH of a resource that carries a revision ETag (R-API-012) |
 | Responses | Success schema with an example; every possible 4xx and 5xx as a reference to the shared problem schema (R-API-009) |
 | Pagination | List operations reference the shared cursor parameters and envelope (R-API-010) |
@@ -419,6 +425,7 @@ R-UI-045); API text stays English.
 | 400 | `malformed_request` | Unparsable JSON, wrong JSON types, unknown or duplicate field, unknown query parameter |
 | 400 | `invalid_path` | Item path violates R-API-004 |
 | 400 | `invalid_cursor` | Cursor not issued by the server, or issued for other filters or sort (R-API-010) |
+| 400 | `invalid_header` | A trove request header with an invalid value, today `Trove-Authz-Min-Epoch` that is not a decimal integer between 1 and 2^63 − 1 (R-API-052, [authorization.md](authorization.md) R-AUTHZ-032); the `detail` names the header |
 | 400 | `filter_required` | A search without any selective filter (R-API-028) |
 | 401 | `unauthenticated` | Missing, invalid, expired or revoked credential |
 | 401 | `reauthentication_required` | R-API-007 |
@@ -431,6 +438,7 @@ R-UI-045); API text stays English.
 | 409 | `conflict` | State conflict; owning pages define specific codes (`project_not_empty`, `last_admin`, …) |
 | 409 | `idempotency_in_progress`, `token_already_issued` | R-API-014 |
 | 412 | `precondition_failed` | `If-Match` does not match; extension `currentEtag` |
+| 412 | `authz_epoch_unknown` | `Trove-Authz-Min-Epoch` names an authorization epoch the database has not reached, for example because a PostgreSQL failover lost the commit that returned it (R-API-052, R-AUTHZ-032); the client drops that epoch and re-reads the object it changed |
 | 413 | `payload_too_large` | R-API-017 |
 | 415 | `unsupported_media_type` | Wrong `Content-Type` |
 | 422 | `validation_failed` | Semantically invalid input; `errors[]` lists the fields |
@@ -440,7 +448,8 @@ R-UI-045); API text stays English.
 | 429 | `rate_limited` | R-API-016; `Retry-After` set |
 | 500 | `internal` | Unexpected failure (R-ARCH-023) |
 | 502 | `upstream_error` | A synchronous action that calls an upstream or issuer failed |
-| 503 | `unavailable` | A dependency is unreachable or maintenance mode refuses the write; `Retry-After` set |
+| 503 | `unavailable` | A dependency is unreachable or maintenance mode refuses the write; `Retry-After` set. An unavailable Valkey never causes it: every use of Valkey has a fallback ([architecture.md](architecture.md) R-ARCH-031) |
+| 503 | `authz_stale` | The replica could not confirm a grant index that is current, or at least as new as `Trove-Authz-Min-Epoch`, within the wait of [authorization.md](authorization.md) R-AUTHZ-028; the request was refused and changed nothing; `Retry-After` set (R-AUTHZ-016, R-AUTHZ-032) |
 
 Success statuses used: 200, 201 (with `Location`), 202 (with `Location` of the job), 204, 304.
 207 is not used; partial failures of bulk work are reported in the job result or the per-item
@@ -475,8 +484,21 @@ Every list endpoint is paginated by keyset (cursor) pagination; SCIM is the only
 - The cursor is opaque: a versioned base64url encoding of the sort-key values of the last item and
   a fingerprint of the filters and sort order. A cursor that does not decode, or that was issued
   for other filters or another sort, answers 400 `invalid_cursor`. A cursor grants nothing: every
-  page is filtered by the caller's permissions again. After an upgrade that changes the encoding
-  version, old cursors answer 400 and the client restarts.
+  page is filtered by the caller's permissions again.
+- The cursor is self-contained (INV-18). Each page is one keyset query in its own transaction, and
+  the cursor holds everything the next query needs, so the next page may come from any `web`
+  replica. There is no server-side cursor (`WITH HOLD` cursors are forbidden by R-ARCH-019 in
+  [architecture.md](architecture.md)), no stored result set and no per-replica key. The filter
+  fingerprint is a SHA-256 over a canonical form of the filters the request actually uses, so a
+  release that adds an optional filter does not change the fingerprint of requests that do not use
+  it.
+- Cursor versions follow expand/contract, because the pages of one traversal may alternate between
+  replicas of release N and N-1 during a rolling upgrade (INV-3, R-HA-020 in
+  [ha-and-helm.md](ha-and-helm.md)). A release that introduces a new cursor version decodes it but
+  still emits the previous one; the next minor release emits it. Every release therefore decodes
+  every version the previous minor release emits, and a traversal never fails because a rollout is
+  in progress. A cursor of an older version answers 400 `invalid_cursor`, and the client restarts
+  the traversal.
 - Every sort order ends with the item's unique identifier as tie-breaker, so a traversal returns
   no duplicates and skips nothing among items that do not change during it; items created or
   deleted meanwhile may or may not appear.
@@ -500,6 +522,11 @@ Acceptance criteria:
 - Reusing a cursor with a different `sort` answers 400 `invalid_cursor`.
 - A cursor obtained by an administrator, replayed by a user without read on those repositories,
   returns only repositories that user can read.
+- In the e2e profile `scatter` ([architecture.md](architecture.md) R-ARCH-032: three `web`
+  replicas, round robin per request), paging the 120 groups with `limit=1` yields 120 distinct
+  names, each page from another replica than the one before (`X-Trove-Replica`).
+- A test drives one traversal with `limit=1` through a release N-1 and a release N replica in
+  turn, where the test build of N adds a cursor version; it ends without `invalid_cursor`.
 
 ### R-API-011 · Filtering and sorting
 Priority: **MVP** · Covers: API-001
@@ -547,6 +574,21 @@ Priority: **MVP** · Covers: trove-only
 - The UI sends the ETag it loaded on every write and never sends `If-Match: *` on its own
   (R-UI-042).
 - GET supports `If-None-Match` and answers 304.
+- **Revision columns survive a restore without repeating.** Every column whose value is served as
+  an `ETag` or compared with `If-Match` or `If-None-Match` (`revision`, `version`,
+  `config_version`, …, whatever name the owning page gives it) is registered with
+  `meta.RegisterRevisionColumn`, the revision-column registry of `internal/meta`
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-022). A restore adds 2^32 to every
+  registered column, so each restored value lies above every value the old installation can have
+  issued. An `If-Match` taken before a restore, including one for a version written after the
+  backup's snapshot, therefore never matches different content of the same number, and a stale
+  `PUT` cannot overwrite a record its sender never saw, for example a permission policy or a CI
+  mapping another administrator has narrowed since. This generalizes what
+  [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-001 states for the CI tables and
+  [authorization.md](authorization.md) for `authz_policy.version` and `project.version`. This
+  page's own revisioned table, `user_preferences` (R-API-021), is registered too. R-BAK-022's unit
+  test fails on an unregistered `bigint` column named `rev_seq`, `*_version`, `revision` or
+  `epoch`; an owning page that names a revision column otherwise registers it all the same.
 - File content on `/files` uses the SHA-256 ETag of [storage.md](storage.md); `If-None-Match: *` on PUT makes a
   deploy create-only (412 when the path exists), so CI can publish without the risk of replacing a
   released file.
@@ -572,6 +614,10 @@ Acceptance criteria:
   above.
 - `curl -X PUT -T app.tgz -H 'If-None-Match: *' -u "ci:$TROVE_TOKEN" "$TROVE_URL/files/generic-local/app/1.0/app.tgz"`
   answers 201 the first time and 412 the second time.
+- A repository at `ETag: "4"` is backed up, then patched twice on the old installation
+  (`ETag: "6"`). After a restore of that backup into a new installation and two patches there, a
+  `PATCH` with `If-Match: "6"` answers 412, and `currentEtag` is above 2^32. The same holds for a
+  permission policy.
 
 ### R-API-013 · Partial updates with JSON Merge Patch
 Priority: **MVP** · Covers: ADMAPI-007, ADMAPI-016, ADMAPI-024
@@ -600,8 +646,8 @@ Acceptance criteria:
 ### R-API-014 · Idempotency keys for creates
 Priority: **MVP** · Covers: trove-only
 
-POST endpoints that create a resource or start a job accept the `Idempotency-Key` request header
-of the IETF draft
+POST endpoints that create a resource or start a job, and DELETE endpoints that answer 202 with a
+job (R-API-015), accept the `Idempotency-Key` request header of the IETF draft
 [The Idempotency-Key HTTP Header Field](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)
 (draft-07 at the time of writing; revisited when it becomes an RFC). Clients SHOULD send a UUID;
 the server accepts 1 to 255 printable ASCII characters. The header is optional.
@@ -615,8 +661,17 @@ the server accepts 1 to 255 printable ASCII characters. The header is optional.
   the transaction back and stores nothing, so a retry runs again.
 - Same key with a different method, route or body: 422 `idempotency_key_reused`.
 - Concurrent duplicate: the second request blocks on the row inserted by the first (primary-key
-  conflict) for at most 5 seconds, then replays the outcome or answers 409
-  `idempotency_in_progress`.
+  conflict) for at most 1 second (`SET LOCAL lock_timeout`, below the 5 s statement timeout of
+  R-ARCH-019 in [architecture.md](architecture.md), so the wait never ends as a
+  `database_timeout`), then replays the outcome or answers 409 `idempotency_in_progress` with
+  `Retry-After: 1`, as the draft asks for a request still in progress. The wait holds a main-pool
+  connection, so it is kept short: a client that sends the same key many times at once cannot
+  occupy a replica's request pool, and the duplicates count against the `write` limit of R-API-016.
+  A create transaction finishes far within the second; a first request that takes longer is
+  answered for its duplicates by the 409, and their retries replay its outcome.
+- The row is the only state, and it lives in PostgreSQL, so a retry behaves the same on every
+  replica (INV-18). A first request whose replica is cut off during a drain or crash rolls back
+  and stores nothing, and its retry, on whichever replica it reaches, runs again.
 - Responses that contain a secret are never stored. A replayed token creation answers 409
   `token_already_issued` with the extension `tokenId`, so the client can revoke that token and
   retry with a new key; the secret is not reproduced.
@@ -658,6 +713,10 @@ Acceptance criteria:
 - The same key with a different body answers 422 `idempotency_key_reused`.
 - A replayed `POST /api/v1/tokens` answers 409 `token_already_issued` with `tokenId`, and no
   table row contains the token secret.
+- A test build holds the first request's transaction open for 3 s. 50 concurrent duplicates with
+  the same key each answer 409 `idempotency_in_progress` with `Retry-After: 1` within 1.5 s, and
+  `pg_stat_activity` shows no trove connection waiting on a lock (`wait_event_type = 'Lock'`) for
+  longer than 1.5 s. A retry after the first request committed replays its outcome.
 
 ### R-API-015 · Long-running work as jobs
 Priority: **MVP** · Covers: ADMAPI-002, API-063
@@ -668,9 +727,12 @@ answers 202 with `Location` of the job and the job representation as body. Jobs,
 their API (`GET /api/v1/system/jobs`, `GET /api/v1/system/jobs/{id}`,
 `POST /api/v1/system/jobs/{id}/cancel`) are R-ARCH-016 in [architecture.md](architecture.md)
 (model) and R-OPS-019 in [operations-and-observability.md](operations-and-observability.md) (API).
-Jobs survive replica restarts and are visible from every replica. Owning pages MAY additionally
-expose a domain view of their runs (garbage-collection runs, retention runs) that references the
-job.
+Jobs survive replica restarts and are visible from every replica. The `web` replica that answers
+202 only enqueues the job; `worker` replicas run it (INV-2, R-ARCH-001). Draining or losing the
+`web` replica therefore loses nothing, and a drained `worker` releases the job to another one
+(R-ARCH-016, R-ARCH-024). While no `worker` replica is live, jobs stay `queued`, and the system
+status screen says so (R-UI-038). Owning pages MAY additionally expose a domain view of their runs
+(garbage-collection runs, retention runs) that references the job.
 
 Rules this page adds:
 
@@ -685,36 +747,65 @@ Acceptance criteria:
 
 - `DELETE /api/v1/repositories/npm-old` on a repository with 10,000 items answers 202; polling
   `Location` ends in `succeeded`; afterwards `GET /api/v1/repositories/npm-old` answers 404.
-- Killing the replica that runs the job lets another replica finish it.
+- Deleting the `worker` pod that runs the job, gracefully or with `--grace-period=0 --force`, lets
+  another `worker` replica finish it. Deleting the `web` pod that answered 202 right after the
+  answer changes nothing: the job still ends in `succeeded`.
 
 ### R-API-016 · Rate limits
 Priority: **MVP** · Covers: BEYOND-030
 
-Rate limits on the management API protect replica resources from one runaway script or UI tab.
-The limits for login, token validation and token revocation are R-AUTH-038 in
+Rate limits on the management API give every caller a fair share of the service, so one runaway
+script or UI tab cannot take the capacity other callers need. They count across the whole
+installation (Q-API-3): a bucket admits the same budget whichever `web` replica a request reaches
+and however many replicas run, so a configured value means the same at three replicas and at
+thirty. Protecting one replica's own CPU and memory is the job of `server.max_in_flight`
+([architecture.md](architecture.md) R-ARCH-005), which stays per replica. The limits for login,
+token validation and token revocation are R-AUTH-038 in
 [identity-and-authentication.md](identity-and-authentication.md); those of the CI exchange are
 R-CI-021 in [gitlab-ci-oidc.md](gitlab-ci-oidc.md). This requirement adds the general classes for
 `/api/v1/` and `/files/`:
 
-| Class | Applies to | Bucket key |
-|---|---|---|
-| `read` | Safe methods | Principal (token ID, or session user) |
-| `write` | Unsafe methods | Principal |
-| `anonymous` | Requests without credentials | Client address (R-ARCH-006, R-OPS-005) |
+| Class | Applies to | Bucket key | Limiter name |
+|---|---|---|---|
+| `read` | Safe methods | Principal (token ID, or session user) | `api_read` |
+| `write` | Unsafe methods | Principal | `api_write` |
+| `anonymous` | Requests without credentials | Client address (R-ARCH-006, R-OPS-005) | `api_anonymous` |
 
-An exhausted bucket answers 429 `rate_limited` with `Retry-After` (seconds) and the
-`RateLimit-Policy` and `RateLimit` fields of
-[draft-ietf-httpapi-ratelimit-headers](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)
-(draft-11 at the time of writing; the syntax follows the draft until it is published). Buckets are
-kept in memory per replica, like those of the identity and CI pages, by design (Q-API-3): these
-classes protect the resources of the replica that serves the request, so the effective
-cluster-wide budget is the configured value times the number of replicas (H-43). The one
-guessable credential, the break-glass password, is counted cluster-wide in PostgreSQL by R-AUTH-038
-in [identity-and-authentication.md](identity-and-authentication.md). Administrators are not exempt
-by default. Rejections are counted in
-`trove_api_rate_limited_total{class}`.
+- **Limiter.** Each class is a limiter of R-ARCH-034 ([architecture.md](architecture.md)) with
+  scope `cluster`: a sliding-window counter in Valkey with the window `W = burst ÷ rate`, which
+  admits at most `burst` requests per window. With the defaults below, `W` is 4 s for `read`, 5 s
+  for `write` and 4 s for `anonymous`. Bucket keys reach Valkey only as hashes (R-ARCH-030). One
+  check is one pipelined round trip, bounded by `valkey.command_timeout`.
+- **Refused requests count too.** The limiter increments the window's counter before it decides
+  (R-ARCH-034), so a `429` uses up budget like an admitted request. A caller that keeps sending
+  while refused stays refused until its rate drops below the limit; a caller that waits for
+  `Retry-After` gets the configured rate. A retry loop that ignores `Retry-After` therefore cannot
+  win back a share of the budget by hammering.
+- **Valkey unavailable.** While a replica cannot reach Valkey (its circuit breaker is open, or a
+  call failed), the limiter answers from a local bucket with rate `rate ÷ n` and burst
+  `max(1, burst ÷ n)`, where `n` is the number of live `web` replicas in the replica registry, at
+  least 1, refreshed with the heartbeat (R-ARCH-034). The cluster-wide budget then holds
+  approximately; a client whose keep-alive connection stays on one replica gets about `1/n` of it.
+  `trove_ratelimit_fallback{limiter}` is 1 while this lasts. A limiter never fails a request because Valkey failed, and never delays it by
+  more than `valkey.command_timeout`. H-43 records what stays open.
+- **Answer.** An exhausted bucket answers 429 `rate_limited` with `Retry-After`: the whole seconds
+  after which the next request would be admitted if the caller sent nothing more, computed from the
+  same counters, at least 1.
+- **Fields.** Every answer on a limited route carries the `RateLimit-Policy` and `RateLimit` fields
+  of [draft-ietf-httpapi-ratelimit-headers](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)
+  (draft-11 of 23 May 2026, checked 2026-10-28; the syntax follows the draft until it is published):
+  `RateLimit-Policy: "<class>";q=<burst>;w=<W>` and
+  `RateLimit: "<class>";r=<available>;t=<seconds until the current window ends>`, where
+  `available` is `burst` minus the window's estimate, at least 0. During the fallback, `q` and `r`
+  describe the replica's share. The draft does not address several servers; it lets the available
+  quota change between responses and tells clients not to expect the same fields on the next
+  response, which covers a request that reaches a replica in fallback.
+- The one guessable credential, the break-glass password, is counted cluster-wide in PostgreSQL by
+  R-AUTH-038 in [identity-and-authentication.md](identity-and-authentication.md), because a lockout
+  must survive a loss of Valkey's data. Administrators are not exempt by default. Rejections are
+  counted in `trove_api_rate_limited_total{class}`.
 
-Configuration:
+Configuration (each value is the budget of one bucket across the whole installation):
 
 ```yaml
 api:
@@ -730,6 +821,16 @@ Acceptance criteria:
 
 - A loop of 300 `GET /api/v1/repositories` with one token receives 429 answers after the burst,
   each with `Retry-After`; a second token is not slowed down.
+- With the defaults, a client that sends 100 reads per second with one token for 10 s and ignores
+  `Retry-After` is admitted at most 250 times, because its refused requests keep the window full
+  after the first burst. A second client with another token that waits for each `Retry-After`
+  before it sends again is admitted more often over the same 10 s.
+- In the e2e profile `scatter` (three `web` replicas, round robin per request), 1,000
+  `GET /api/v1/repositories` with one token within 2 s are admitted at most 300 times, the same
+  bound as against one replica. With Valkey stopped, the same run is admitted at most 300 times,
+  and `trove_ratelimit_fallback{limiter="api_read"}` is 1 on every replica.
+- With the defaults, a `200` answer of `GET /api/v1/repositories` carries
+  `RateLimit-Policy: "read";q=200;w=4`.
 
 ### R-API-017 · Request limits, timeouts and response headers
 Priority: **MVP** · Covers: trove-only
@@ -738,7 +839,14 @@ Priority: **MVP** · Covers: trove-only
   `api.max_configuration_body_bytes`. Larger bodies answer 413. Uploads on `/files` are limited by
   [storage.md](storage.md), not by this rule.
 - A synchronous `/api/v1/` handler MUST finish within 30 seconds; work that can take longer is a
-  job (R-API-015). Server-wide timeouts are owned by [architecture.md](architecture.md).
+  job (R-API-015). Server-wide timeouts are owned by [architecture.md](architecture.md). The bound
+  is far below the `web` shutdown timeout the chart derives from the grace period (110 s with the
+  defaults, R-HA-011 in [ha-and-helm.md](ha-and-helm.md)), so a node drain never cuts a management
+  request that keeps it. Two kinds of response may last longer, and R-API-051 states how each
+  survives a drain: event streams, which a draining replica ends at once so the client reconnects
+  elsewhere, and streamed downloads whose length depends on the data (the audit export of
+  R-API-039; from P1 retention reports and the support-bundle download), which a client resumes or
+  repeats when a drain cuts them.
 - Response headers on `/api/v1/`: `Cache-Control: no-store` (personal data and secrets must not be
   cached by browsers or intermediaries), `X-Content-Type-Options: nosniff`,
   `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (a JSON answer can never
@@ -769,8 +877,9 @@ The UI is same-origin; CORS is off by default and the server emits no `Access-Co
 headers. `api.cors.allowed_origins` (exact origins, no wildcards) enables CORS for requests that
 carry an `Authorization` header. `Access-Control-Allow-Credentials` is never sent, so a session
 cookie is never usable cross-origin. Allowed request headers: `Authorization`, `Content-Type`,
-`If-Match`, `If-None-Match`, `Idempotency-Key`. Exposed response headers: `ETag`, `Location`,
-`Link`, `Retry-After`, `RateLimit`, `RateLimit-Policy`, `X-Request-Id`, `Deprecation`, `Sunset`.
+`If-Match`, `If-None-Match`, `Idempotency-Key`, `Trove-Authz-Min-Epoch`. Exposed response headers:
+`ETag`, `Location`, `Link`, `Retry-After`, `RateLimit`, `RateLimit-Policy`, `X-Request-Id`,
+`Deprecation`, `Sunset`, `Trove-Authz-Epoch` (R-API-052).
 
 ```yaml
 api:
@@ -805,6 +914,198 @@ Acceptance criteria:
   `X-Request-Id`.
 - A rejected policy change (403) produces an audit event with outcome `denied`.
 
+### R-API-051 · Requests that span replicas
+Priority: **MVP** · Covers: trove-only
+
+The Service distributes requests at random and without session affinity (INV-12), so consecutive
+requests of one client, a UI tab included, reach different `web` replicas, and any of them may be
+draining. No management request may depend on state that an earlier request left in one replica's
+memory or on its local disk (INV-18, R-ARCH-032 in [architecture.md](architecture.md)). Every
+management protocol that spans requests keeps its state in PostgreSQL or in what the client sends
+back:
+
+| Protocol | Where its state lives | Rule |
+|---|---|---|
+| Paged lists (R-API-010) | In the cursor | One keyset query per page; no server-side cursor, no stored result set; versions follow expand/contract |
+| Idempotent creates and job starts (R-API-014) | `api_idempotency_keys` in PostgreSQL | A retry replays, answers 409 `idempotency_in_progress`, or runs again on whichever replica it reaches |
+| Long-running work (R-API-015) | Job rows | Enqueued by the answering `web` replica, run by `worker` replicas |
+| Optimistic concurrency (R-API-012) | Revision columns in PostgreSQL | Every replica computes the same `ETag`; a restore lifts every revision column, so an `ETag` from before it never matches |
+| Seeing one's own grant change (R-API-052) | The epoch the client sends in `Trove-Authz-Min-Epoch`, checked against `cluster_epoch` in PostgreSQL | Any replica waits for a grant index at least that new, or answers `412` when the database never reached it |
+| UI sessions, CSRF tokens, recent authentication, browser sign-in | Session and login-flow rows ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-006, R-AUTH-010, R-AUTH-011, R-AUTH-012) | A CSRF token or a re-authentication obtained through one replica counts on every other |
+| Command-line login approval and polling (P1) | The `cli_login` row (R-AUTH-034, R-AUTH-036) | The UI's 2 s refresh (R-UI-004) and the client's polls may each reach another replica |
+| Event streams (`text/event-stream`) | The event `id` | Below |
+| A resumed audit export | The client's `from` and the event IDs it already holds | Below |
+
+- **Event streams.** An endpoint that answers `text/event-stream`
+  ([Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)), today
+  only the webhook delivery log of R-API-041 (P1), follows these rules:
+  - Every event carries an `id` that encodes its position in an order the owning page defines in
+    PostgreSQL, and a request with `Last-Event-ID` continues after that position on any replica.
+    The position must not skip a committed event. A position taken from a sequence must allow for
+    transactions that commit out of sequence order, which [architecture.md](architecture.md)
+    Q-ARCH-15 describes, for example by re-reading a short window behind the position and dropping
+    events already sent by record and version.
+  - New events reach the stream from PostgreSQL. The stream queries PostgreSQL at least once every
+    5 s, takes a main-pool connection for each query only and holds none between them
+    (R-ARCH-019), so open streams never add database connections, however many there are. It
+    never waits for an event held in another replica's memory. An owning page MAY register a
+    signal area of R-ARCH-018 that wakes its streams earlier; signals are delivered at most once,
+    so the poll alone must meet the stream's contract, and a stream works without Valkey.
+  - When `health.shutdown_drain_delay` has passed (between steps 2 and 3 of the shutdown in
+    R-ARCH-024), the replica sends `retry: 1000` and ends every open stream. By then the proxies
+    have stopped routing to it, so the reconnect reaches another replica. A browser's
+    `EventSource` re-establishes a connection whose body ended and sends the last `id` as
+    `Last-Event-ID`, as the WHATWG processing model specifies. Without this, a stream would hold
+    the draining replica until `server.shutdown_timeout` and then be cut.
+  - A stream also ends after `api.event_stream_max_age`, so that streams move onto replicas added
+    since they opened.
+- **Streamed downloads.** A download whose length depends on the data (the audit export
+  `/api/v1/audit/events/export`; from P1 retention reports and the support-bundle download) may
+  outlast `server.shutdown_timeout` and is then cut at the deadline (Q-ARCH-18 in
+  [architecture.md](architecture.md)). These rules make the cut harmless:
+  - The handler reads in keyset batches in the export's order, each one query on a main-pool
+    connection that it returns before it writes the batch to the client (R-ARCH-019). A slow
+    reader therefore holds no database connection and no long transaction, and concurrent exports
+    do not grow the connection count.
+  - An answer whose length is not known in advance is sent with chunked transfer coding on
+    HTTP/1.1 or as an HTTP/2 stream. A cut answer then lacks the final chunk
+    ([RFC 9112 §7.1](https://www.rfc-editor.org/rfc/rfc9112#section-7.1)) or the end of its
+    stream, and the client sees an incomplete response instead of a short file.
+  - The audit export is ordered by occurrence time and event ID, and every line carries both. A
+    client that was cut resumes on any replica with `from` set to the occurrence time of the last
+    complete line (`from` is inclusive, R-API-011) and drops the lines whose `id` it already has.
+    Other streamed downloads are repeated whole.
+  - Batches are separate snapshots. An event whose transaction commits after the batch that
+    covers its occurrence time is not in that export; a range whose `to` lies further in the past
+    than the longest write transaction is complete.
+- **No affinity, anywhere.** Neither the API nor the UI sets a cookie, header or token whose
+  purpose is to reach the same replica again. `X-Trove-Replica` (R-OPS-002) is diagnostic only;
+  the UI shows it in error details and never sends it back.
+
+Configuration:
+
+```yaml
+api:
+  event_stream_max_age: 10m   # default (proposed)
+```
+
+Acceptance criteria:
+
+- In the e2e profile `scatter`, the Playwright journeys of R-UI-047 pass, every list operation of
+  the OpenAPI document is walked to its last page with `limit=1` over a fixture with at least
+  three items each, and an `Idempotency-Key` replayed through another replica returns the stored
+  outcome with `Idempotency-Replayed: true`.
+- (P1, with R-API-041) A subscription with `recordSuccessfulDeliveries` delivers 100 events while a
+  client follows `GET /api/v1/webhooks/deliveries?follow=true`, and the serving `web` pod is
+  deleted gracefully in the middle. The client reconnects to another replica with
+  `Last-Event-ID`, and receives for each of the 100 delivery records an event with its final state.
+  Events for versions written within the re-read window before the cut may arrive a second time;
+  the client drops them by `id` and `changeSeq`, and after that no record and version appears
+  twice and none is missing. The deleted pod's stream ends within
+  `health.shutdown_drain_delay` plus 1 s.
+- An audit export of 200,000 events read with `curl --limit-rate 200K` is cut by deleting the
+  serving pod. curl reports an incomplete transfer. A second request with `from` set to the last
+  complete line's `occurredAt`, with already received IDs dropped, completes the export; the union
+  holds each event of the range exactly once. During the slow read, `pg_stat_activity` shows no
+  connection of that pod in state `idle in transaction` and none held for longer than one batch
+  query.
+
+### R-API-052 · Visibility of a management write on other replicas
+Priority: **MVP** · Covers: trove-only
+
+A client that writes through one replica and then calls another must know what the second replica
+sees (Q-API-12). The propagation mechanism is R-ARCH-018 in [architecture.md](architecture.md);
+this requirement states the contract for API clients.
+
+- **Committed means durable.** A 2xx answer to a write means the change and its audit event are
+  committed on the PostgreSQL primary (R-API-019). It survives a PostgreSQL failover when the
+  platform replicates synchronously, as [ha-and-helm.md](ha-and-helm.md) R-HA-013 recommends;
+  without that, a failover can lose the last acknowledged writes, and no replica can tell.
+- **Management reads see every committed write at once.** A `GET` under `/api/v1/` of a
+  configuration resource or a list of them reads the resource from PostgreSQL, never from an
+  in-process cache, so it shows the change and its new `ETag` on every replica as soon as the write
+  has answered. What the caller is allowed to see, and reads that are enforcement decisions about
+  the caller (`/api/v1/auth/whoami`, `/api/v1/authz/me`, `/api/v1/authz/check`), follow the next
+  bullet.
+- **Enforcement follows within a bound.** The effect of a change on authentication,
+  authorization, package protocols and raw file access (repository snapshot, grant index, token
+  and session caches, CI mappings, settings) applies on the answering replica at once and on every
+  other replica within the propagation bound of R-ARCH-018: typically milliseconds while Valkey is
+  available, at most `cluster.epoch_poll_interval` plus one query and the cache rebuild without it
+  (R-ARCH-018 tests 2 s with the defaults). Revocations of tokens and sessions and the disabling of
+  a principal are in force everywhere within `auth.revocation_bound` (2 s by default), with or
+  without Valkey; a replica that cannot prove a fresh change-log poll answers from PostgreSQL or
+  with `503`, never from a stale cache (R-AUTH-023 in
+  [identity-and-authentication.md](identity-and-authentication.md)).
+- **A new repository is usable at once.** A repository key that a replica's snapshot does not know
+  is looked up in PostgreSQL before the replica answers `404`; when the key exists, the replica
+  runs one change-log poll and waits until the caches it invalidates are rebuilt, the grant index
+  of [authorization.md](authorization.md) R-AUTHZ-028 included, so the request is resolved and
+  authorized against a state that knows the repository ([architecture.md](architecture.md)
+  R-ARCH-011 step 2, cross-page). A key that does not match the pattern of INV-5 answers `404`
+  without a query; concurrent lookups of one key share one query, and concurrent polls share one
+  poll. A script that creates a repository and then publishes to it through the Service
+  therefore never meets a `404` from a replica that has not heard of it yet. This matters because
+  npm does not retry a `404` (its fetch layer retries `408`, `420`, `429` and `5xx` only), so a
+  bounded delay would fail the publish instead of slowing it down. The one exception: a key that
+  was requested and missed on a replica shortly before it was created may still answer `404` there
+  within the bound of the previous bullet, because repeated misses for one key are answered from a
+  short-lived negative entry that the creation's change evicts. The negative entries are a
+  registered, size-bounded per-replica cache (R-ARCH-018), so a flood of requests for unknown keys
+  costs at most one indexed query per distinct key and entry lifetime, as an unknown token does
+  (R-AUTH-023), and never more memory than the cache's bound.
+- Deletions and changes of existing repositories follow that bound: for up to that bound, another
+  replica may still serve a deleted repository. Grant changes follow it too for every client that
+  does not send the header of the next bullet; such a client may meet a refusal of an action a new
+  policy allows, or an allow of one a removed grant refused, and waits for the bound or retries.
+- **Waiting for one's own permission change** ([authorization.md](authorization.md) R-AUTHZ-032,
+  Q-AUTHZ-12). Two headers carry the authorization epoch, the epoch of the `authz` change area
+  (R-AUTHZ-028), so that a client can see its own grant change on whichever replica answers next,
+  without affinity:
+  - Response header `Trove-Authz-Epoch: <n>`: sent by the writes that change grants, which are
+    policy writes and role bindings (R-API-033) and, from P1, project writes with their
+    administrators and repository assignments (R-API-047). `n` is the epoch the write's transaction
+    produced.
+  - Request header `Trove-Authz-Min-Epoch: <n>`: honoured on every authenticated request on the
+    client listener, `/api/v1/`, `/files/` and the package protocols alike. It is read only after
+    authentication succeeded, so an invalid or revoked credential gets its `401` first, and a
+    request without a credential ignores it, which keeps anonymous callers from probing the epoch.
+    The replica then decides the request on a grant index whose epoch is at least `n`, waiting for
+    a build if needed, and answers `412` `authz_epoch_unknown` when the database has
+    not reached `n`, `503` `authz_stale` with `Retry-After` when the wait runs out, and `400`
+    `invalid_header` for a value that is not a decimal integer between 1 and 2^63 − 1 (R-API-009).
+  - The header covers added and removed grants alike. It does not cover a new repository reached
+    through a pattern grant, which the lookup of the previous bullets handles.
+  - A `412` is a hint, not a proof: the client stops sending that epoch, because the database may
+    take long to reach it, and re-reads the changed object; its `ETag` tells whether the change is
+    stored (R-API-012). Epochs from before a restore lie below every restored one and pass at once
+    ([backup-and-restore.md](backup-and-restore.md) R-BAK-022).
+  - The OpenAPI document (R-API-002) declares `Trove-Authz-Min-Epoch` as an optional header
+    parameter of every authenticated operation, and `Trove-Authz-Epoch` on the responses of the
+    writes above. The UI sends the request header after its own permission changes (R-UI-042).
+
+Acceptance criteria:
+
+- In the e2e profile `scatter` with Valkey stopped and `cluster.epoch_poll_interval: 10s` (a test
+  setting that makes a stale snapshot visible), 100 runs of `POST /api/v1/repositories` creating
+  `npm-new-<n>` followed at once by `npm publish --registry "$TROVE_URL/api/npm/npm-new-<n>/"`
+  through the Service all succeed on the first attempt.
+- In the same profile, a `PATCH` of a repository followed at once by a `GET` through another
+  replica returns the new `ETag` in 100 of 100 trials.
+- With Valkey running, a policy change made through one replica is enforced by every replica
+  within 1 s (p99 over 100 trials), as R-ARCH-018's criterion measures.
+- In the same profile, with an existing policy that grants `deploy` on `npm-*` to the publishing
+  token, the publish of the first criterion succeeds although the replica it reaches learns of the
+  new repository only through the lookup. 10,000 requests for random unknown keys on one replica
+  cause at most 10,000 repository lookups and no change-log poll beyond the scheduled ones.
+- In the profile `scatter` with the test settings of [authorization.md](authorization.md)
+  R-AUTHZ-032's acceptance criteria (Valkey stopped, a long change-log poll interval), a
+  `PUT /api/v1/permission-policies/{name}` that grants a group `deploy` on a local repository
+  answers `Trove-Authz-Epoch: n`; 20 uploads of a member to `/files/…` through the Service with
+  `Trove-Authz-Min-Epoch: n` all succeed on the first attempt. The value `abc` answers `400`
+  `invalid_header`, the current epoch plus 1,000 answers `412` `authz_epoch_unknown`, and the same
+  header without a credential gets the answer it would get without the header.
+
 ## Part B — Endpoint surface
 
 ### R-API-020 · Resource map and routing
@@ -823,7 +1124,7 @@ Priority: **MVP** · Covers: trove-only
 | `/api/v1/auth/cli-logins/…`, `/api/v1/auth/device/…` | Command-line login approval and device flow (P1; screens in R-UI-004) | R-AUTH-034, R-AUTH-036 | [identity-and-authentication.md](identity-and-authentication.md) |
 | `/api/v1/ci/…`, `/api/v1/auth/oidc/token` | CI identity | R-API-035 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
 | `/api/v1/settings/…`, `/api/v1/system/banner`, `/api/v1/system/maintenance`, `/api/v1/system/proxy-offline` | Settings | R-API-037 | the page per setting |
-| `/api/v1/system/…` | Version, information, jobs, tasks, diagnostics, stored-secret key ring | R-API-038, R-API-045, R-API-049 | [operations-and-observability.md](operations-and-observability.md), [architecture.md](architecture.md) |
+| `/api/v1/system/…` | Version, information, replicas, jobs, tasks, diagnostics, cache flush (P1), stored-secret key ring, backup runs | R-API-038, R-API-024, R-API-045, R-API-049, R-API-050 | [operations-and-observability.md](operations-and-observability.md), [architecture.md](architecture.md), [backup-and-restore.md](backup-and-restore.md) |
 | `/api/v1/audit/…` | Audit events | R-API-039 | [operations-and-observability.md](operations-and-observability.md) |
 | `/api/v1/storage/…` (summary, damaged-blobs; storage tasks run through `/api/v1/system/tasks/…`) | Garbage collection, orphan sweep, scrub, storage summary, damaged blobs | R-API-040 | [storage.md](storage.md) |
 | `/api/v1/webhooks…` | Webhooks (P1) | R-API-041 | [operations-and-observability.md](operations-and-observability.md) |
@@ -881,7 +1182,9 @@ Preferences are owned here:
 
 `locale` is `en`, `de` or `null` (browser decides); `theme` is `light`, `dark` or `null` (system);
 `projectFilter` is a project key or `null` (P1, R-UI-041). PATCH takes a merge patch with
-`If-Match`.
+`If-Match`. `user_preferences.revision` is the `ETag` and is registered with
+`meta.RegisterRevisionColumn` (R-API-012, [backup-and-restore.md](backup-and-restore.md)
+R-BAK-022).
 
 Data model:
 
@@ -930,8 +1233,8 @@ Acceptance criteria:
 
 - Creating an npm remote repository with
   `curl -s -X POST -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/json' -d @npm-remote.json "$TROVE_URL/api/v1/repositories"`
-  answers 201; then `npm view lodash version --registry "$TROVE_URL/api/npm/npm-remote/"`
-  prints a version.
+  answers 201; then `npm view lodash version --registry "$TROVE_URL/api/npm/npm-remote/"`, sent
+  at once through the Service to whichever replica it reaches, prints a version (R-API-052).
 - A reader without `repositories:read-config` gets no upstream configuration in the answer.
 
 ### R-API-023 · Repository batch operations and quick setup
@@ -957,20 +1260,31 @@ Acceptance criteria:
   and creates nothing.
 
 ### R-API-024 · Repository maintenance actions
-Priority: **P1** · Covers: API-028, API-040, API-041, API-043, API-045, API-050
+Priority: **MVP** · Covers: API-028, API-040, API-041, API-043, API-045, API-050
 
-| Method | Path | Purpose | Permission | Owner |
-|---|---|---|---|---|
-| POST | `/api/v1/repositories/{key}/reindex` | Rebuild the format's index and metadata from stored packages (npm package documents, NuGet indexes; later Maven metadata, PyPI simple index, Helm `index.yaml`); 202 with a job; 409 when the format has no index | `manage` | R-OPS-022, format pages |
-| POST | `/api/v1/repositories/{key}/cache/invalidate` | Mark cached metadata of a remote repository under a path prefix as stale; binaries stay cached (INV-11) | `manage` or `delete` | R-OPS-021, [repositories-and-proxy.md](repositories-and-proxy.md) |
-| GET | `/api/v1/repositories/{key}/cache/entries` | Cached metadata entries for diagnosis | `manage` | [repositories-and-proxy.md](repositories-and-proxy.md) |
+The requirement is MVP because cache invalidation is:
+[operations-and-observability.md](operations-and-observability.md) R-OPS-021 and
+[repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045 are MVP, and
+invalidation is the one way to cut a wrong or forged negative entry in Valkey short without a
+Valkey credential (H-49 in [architecture.md](architecture.md)). The other rows keep the priority
+of their owners:
+
+| Method | Path | Purpose | Permission | Priority | Owner |
+|---|---|---|---|---|---|
+| POST | `/api/v1/repositories/{key}/reindex` | Rebuild the format's index and metadata from stored packages (npm package documents, NuGet indexes; later Maven metadata, PyPI simple index, Helm `index.yaml`); 202 with a job; 409 when the format has no index | `manage` | P1 | R-OPS-022, format pages |
+| POST | `/api/v1/repositories/{key}/cache/invalidate` | Mark cached metadata (`scope` `metadata`), cached misses (`negative`) or both (`all`) of a remote or virtual repository under a path prefix as stale, on every replica within `cluster.epoch_poll_interval` plus 1 s, with or without Valkey; binaries stay cached (INV-11); `400` on a local repository | `manage`, or `admin` | MVP | R-OPS-021, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045 |
+| GET | `/api/v1/repositories/{key}/cache/entries` | Cached metadata entries for diagnosis | `repositories:read-config` or `manage` | MVP | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-032 |
+| POST | `/api/v1/system/caches/flush` | Installation-wide: flush every registered in-process cache on every `web` and `worker` replica and invalidate the negative entries of every remote repository; deletes no Valkey key; a synchronous action, not a task of R-OPS-019 | `admin` | P1 | R-OPS-047 |
 
 Acceptance criteria:
 
 - After a test removes a computed npm package document, `POST …/npm-local/reindex` restores it and
   `npm view @team-a/ui versions` lists every stored version.
 - `POST …/npm-remote/cache/invalidate` followed by `npm view lodash` makes trove fetch the package
-  document from the upstream again (visible in the upstream mock's request log).
+  document from the upstream again (visible in the upstream mock's request log). With Valkey
+  stopped, the same holds on another replica within `cluster.epoch_poll_interval` plus 1 s.
+- The same invalidation with the token of a user who holds `read` and `delete` but not `manage` on
+  `npm-remote` answers 403.
 
 ### R-API-025 · Items and raw file transfer
 Priority: **MVP** · Covers: API-003, API-004, API-005, API-013, API-016, API-022, ART-027, ART-028
@@ -1227,7 +1541,7 @@ Acceptance criteria:
 - `GET /api/v1/users?q=jdoe` as administrator returns the user; as a non-administrator without
   `identities:read`, 403.
 - `POST /api/v1/users/jdoe/disable` with `{"revokeTokens": true}` makes `jdoe`'s tokens fail with
-  401.
+  401 on every replica within 2 s (R-AUTH-023, R-API-052).
 
 ### R-API-032 · Access tokens
 Priority: **MVP** · Covers: ADMAPI-039, ADMAPI-040, ADMAPI-043, ADMAPI-044, ADMAPI-045, ADMAPI-046
@@ -1258,7 +1572,7 @@ Acceptance criteria:
   never contains it.
 - `POST /api/v1/tokens/revoke` without credentials and with a valid token value revokes it.
 - `DELETE /api/v1/tokens/current` with a `trv_cit_` token answers 204, and the same token then gets
-  401.
+  401 on every replica within 2 s (R-AUTH-023, R-API-052).
 - A token whose scope is `{"system": ["tokens:revoke"]}` gets 403 `forbidden` from
   `POST /api/v1/tokens/{id of another user's PAT}/rotate` and 204 from `DELETE` of the same ID
   (P1, with rotation).
@@ -1279,6 +1593,10 @@ Owned by [authorization.md](authorization.md):
 | GET | `/api/v1/roles` | The fixed system roles and their capabilities | authenticated |
 | GET | `/api/v1/role-bindings` | List bindings; filters `role`, `principal` | `roles:read` |
 | PUT, DELETE | `/api/v1/role-bindings/{role}/{principalRef}` | Bind (idempotent) or unbind; 409 `last_admin` | `roles:write`; recent authentication |
+
+Every successful write of a policy or a role binding answers with `Trove-Authz-Epoch`, which a
+later request names in `Trove-Authz-Min-Epoch` to see the change on any replica (R-API-052,
+R-AUTHZ-032).
 
 Acceptance criteria:
 
@@ -1399,18 +1717,77 @@ Owned by [operations-and-observability.md](operations-and-observability.md) and
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
 | GET | `/api/v1/system/version` | Version and revision | per [operations-and-observability.md](operations-and-observability.md) |
-| GET | `/api/v1/system/info` | Installation facts: version, base URL and source, maintenance mode, replicas, database and schema versions | `system.read` |
-| GET | `/api/v1/system/replicas` | Replicas with version, roles, heartbeat | `system.read` |
+| GET | `/api/v1/system/info` | Installation facts: version, base URL and source, maintenance mode, replicas per role (live, ready, degraded, nodes) and per version, database and schema versions, Valkey installation facts (mode, primary name, number of configured Sentinels, TLS mode, key prefix, keyspace, degraded replicas), backup status | `system.read` |
+| GET | `/api/v1/system/replicas` | Replicas with version, roles, node, state, heartbeat, readiness checks and each replica's view of Valkey (state, reason, circuit, primary, Sentinels reachable and configured, server version, last primary change) | `system.read` |
 | GET | `/api/v1/system/tasks`, POST `/api/v1/system/tasks/{name}/run` | Scheduled tasks and manual runs (R-OPS-019) | `system.read`; `admin` to run |
 | GET | `/api/v1/system/jobs`, `/api/v1/system/jobs/{id}`, POST `…/cancel` | Jobs (R-OPS-019, R-API-015) | `system.read`; `admin` to cancel |
 
 Liveness, readiness and Prometheus metrics stay on the operations listener (INV-6) and are not
 duplicated under `/api/v1/`; this covers ADMAPI-069 and API-033 by reference.
 
+The replica registry and the system information are owned by
+[operations-and-observability.md](operations-and-observability.md) R-OPS-003 and R-OPS-004, which
+define their shapes; this page adopts them unchanged and lists what the system status screen
+(R-UI-038, Q-UI-7) reads. A disagreement between this list and those requirements is settled in
+their favour.
+
+- **Per replica** (`/system/replicas`, R-OPS-003):
+  - `roles`: `["web"]`, `["worker"]`, or `["all"]` for the development role (INV-2); from P1 also
+    the pool of [ha-and-helm.md](ha-and-helm.md) R-HA-062;
+  - `state` (`starting`, `ready`, `unready`, `draining`) and `lost`;
+  - `node`, the Kubernetes node name from the downward API (`spec.nodeName` through the
+    environment variable `TROVE_NODE_NAME`), `null` outside Kubernetes;
+  - `checks`, the status of each gating and reported check (`pass`, `fail`, `degraded`), and
+    `degraded`, the reported checks that fail (R-OPS-001);
+  - `valkey`, the replica's view of Valkey as one nested object:
+
+    | Field | Content |
+    |---|---|
+    | `state` | `available` or `degraded` |
+    | `reason` | `null`, or the reason of the `valkey` check in R-OPS-001's vocabulary: an error kind of `trove_valkey_errors_total` (`timeout`, `connection`, `readonly`, `auth`, `tls`, `oom`), `no_primary` or `unsupported_version` |
+    | `circuit` | The state of the replica's Valkey circuit breaker ([ha-and-helm.md](ha-and-helm.md) R-HA-057), for example `closed` or `open` |
+    | `primary` | The primary address (host and port) the replica's client currently uses; `null` while it has none |
+    | `sentinelsReachable`, `sentinelsConfigured` | The Sentinels this replica reaches, and the number configured |
+    | `serverVersion` | The Valkey server version the replica's client sees |
+    | `lastPrimaryChangeAt` | The replica's last change of primary |
+
+  No credential, ACL user name or key appears. The nested object replaces the flat fields
+  `valkeyPrimary`, `valkeyPrimarySince` and `valkeySentinelsReachable` of an earlier revision of
+  this page, and R-OPS-001's reasons replace `unreachable`, `circuit_open` and `rejected`: an open
+  circuit is `circuit: "open"`, not a reason.
+- **Per installation** (`/system/info`, R-OPS-004):
+  - `replicas.live`, `replicas.ready`, `replicas.versions`, and `replicas.roles.<role>` with
+    `live`, `ready`, `degraded` and `nodes` for each role; this replaces `replicas.byRole`;
+  - the `valkey` block with installation facts only: `mode`, `primaryName`, `sentinels` (the
+    number configured), `tls`, `keyPrefix`, `keyspace` and `degradedReplicas`. `serverVersion` and
+    each replica's client state are not in it; they live in the registry above. No Sentinel
+    address and no credential appears in either answer;
+  - the `backup` block: `expectedInterval` (in R-OPS-004's documented duration form, for example
+    `"24h"`), `lastSuccessAt`, `overdue` and `lastRunState`, read from `backup_run`. `overdue`
+    follows the rule of R-API-050 (1.5 × the expected interval), so this block, the backup summary
+    of R-API-050, the UI and `TroveBackupStale` agree.
+- **Drain safety.** The screen decides whether a role is drain-safe from the items of
+  `/system/replicas`: its ready replicas that are not `lost`, and their distinct nodes (R-UI-038).
+  `replicas.roles.<role>.nodes` is the installation-wide summary for scripts and monitoring.
+
 Acceptance criteria:
 
-- With two replicas running, `GET /api/v1/system/replicas` lists both; the system status screen
-  (R-UI-038) renders from these answers without other endpoints.
+- With two `web` and two `worker` replicas running, `GET /api/v1/system/replicas` lists all four
+  with their roles and nodes, and `GET /api/v1/system/info` reports `replicas.roles.web.live` and
+  `replicas.roles.worker.live` as `2`; the system status screen (R-UI-038) renders from these
+  answers, the task and job API, R-API-049 and R-API-050 without other endpoints.
+- A replica started with the development role lists `"roles": ["all"]`.
+- With Valkey stopped, every item lists `valkey` under `degraded`, with `valkey.state`
+  `degraded` and `valkey.reason` `connection` or `timeout`, within `health.failure_threshold` ×
+  `valkey.health_check_interval` plus `system.heartbeat_interval` plus 1 s; every item's `state`
+  stays `ready`; and `/system/info` reports `valkey.degradedReplicas` equal to `replicas.live`.
+- With three Sentinels configured and two of them stopped, every item's
+  `valkey.sentinelsReachable` is 1 and `valkey.sentinelsConfigured` 3 within
+  `valkey.sentinel.refresh_interval` plus `system.heartbeat_interval`, while `valkey.state` stays
+  `available` and the `valkey` check `pass`, because the primary still answers.
+- No answer of `/system/info` contains `serverVersion` under `valkey`, and the OpenAPI document
+  contains none of `valkeyPrimary`, `valkeyPrimarySince`, `valkeySentinelsReachable` and
+  `replicas.byRole`.
 
 ### R-API-039 · Audit events
 Priority: **MVP** · Covers: OPS-023
@@ -1534,8 +1911,13 @@ Priority: **P1** · Covers: ADMAPI-078, ADMAPI-080, ADMAPI-081
 Owned by [operations-and-observability.md](operations-and-observability.md):
 `GET /api/v1/system/locks`; `GET /api/v1/system/log-levels`,
 `PUT` and `DELETE /api/v1/system/log-levels/override`; `/api/v1/system/support-bundles` (create,
-list) with `/{id}`, `/{id}/download` and DELETE. Because every replica's locks live in PostgreSQL
-(INV-12), one query answers for the whole cluster.
+list) with `/{id}`, `/{id}/download` and DELETE. Leases and the other advisory locks live in
+PostgreSQL ([architecture.md](architecture.md) R-ARCH-017), so one query answers for the whole
+cluster. The flight locks that collapse remote fetches live in Valkey (R-ARCH-033), last at most
+`cluster.flight_lock_ttl` past their holder's last extension and carry only hashes, so the lock
+list does not show them; their metrics (`trove_flight_lock_lost_total`,
+`trove_flight_lock_bypass_total`) are the diagnostic. R-OPS-026 lists the PostgreSQL category
+`fetch` as retired, and R-ARCH-017 keeps its number reserved.
 
 Acceptance criteria:
 
@@ -1566,7 +1948,8 @@ covers the user and group membership operations of ADMAPI-064 and ADMAPI-065 in 
 model), and `/api/v1/projects/{key}/repositories/{repoKey}` (assign with `?move=true`, unassign).
 List endpoints of repositories, permission policies, webhooks and retention policies accept
 `project=` when projects exist. Project roles, global custom roles and environments are P2 there
-(see Deferred).
+(see Deferred). Project writes, administrators and repository assignments included, answer with
+`Trove-Authz-Epoch` (R-API-052, R-AUTHZ-032).
 
 Acceptance criteria:
 
@@ -1606,28 +1989,37 @@ share one implementation in `internal/secrets`; this page owns the payload.
 
 ```json
 {
+  "answeredBy": "trove-web-6f9c7d8b5-x2v4q",
   "activeKeyId": "2026-10",
   "keys": [
     {"id": "2026-10", "active": true, "sealedValues": 14, "canary": "ok"},
     {"id": "2026-04", "active": false, "sealedValues": 3, "canary": "ok"}
   ],
   "replicas": [
-    {"name": "trove-6f9c7d8b5-x2v4q", "activeKeyId": "2026-10", "keyIds": ["2026-04", "2026-10"]},
-    {"name": "trove-6f9c7d8b5-q8n2m", "activeKeyId": "2026-10", "keyIds": ["2026-04", "2026-10"]}
+    {"name": "trove-web-6f9c7d8b5-x2v4q", "role": "web", "activeKeyId": "2026-10", "keyIds": ["2026-04", "2026-10"]},
+    {"name": "trove-worker-7d4b9c6f8-q8n2m", "role": "worker", "activeKeyId": "2026-10", "keyIds": ["2026-04", "2026-10"]}
   ],
   "ringsCompatible": true,
   "lastReencryption": {"jobId": "01933b2a-7c41-7d1e-9a52-3f0e4b8c2d11", "state": "succeeded", "finishedAt": "2026-10-28T12:40:02.118Z"}
 }
 ```
 
-- `activeKeyId` and `keys[].canary` are the answering replica's view; `canary` is `ok`, `failed`
-  or `absent` (no canary row for that key ID yet). `keys` lists the union of the answering
+- `activeKeyId` and `keys[].canary` are the answering replica's view, and `answeredBy` names that
+  replica, as in R-OPS-004. Requests reach replicas at random, so during a rotation two refreshes
+  can show different values; the UI therefore shows each replica's active key from `replicas` and
+  labels the top-level values with `answeredBy`. `canary` is `ok`, `failed` or `absent` (no canary
+  row for that key ID yet). `keys` lists the union of the answering
   replica's ring and every key ID that sealed values reference. `sealedValues` counts sealed values
   per key ID over every sealed column registered with `internal/secrets`, the same registry the
   re-encryption job walks.
 - `replicas` comes from the replica registry (R-OPS-003 in
-  [operations-and-observability.md](operations-and-observability.md)): each replica publishes the
-  key IDs of its ring and its active key ID with its heartbeat. Lost replicas are left out.
+  [operations-and-observability.md](operations-and-observability.md)): each `web` and `worker`
+  replica publishes its role, the key IDs of its ring and its active key ID with its heartbeat.
+  Both roles open sealed values (`web` for upstream credentials on remote fetches, `worker` for
+  webhook secrets and re-encryption), so both count. Lost replicas are left out. Backup and restore
+  pods do not register (R-HA-003 in [ha-and-helm.md](ha-and-helm.md)); a backup copies sealed
+  values without the ring, and a restore checks the ring itself
+  ([backup-and-restore.md](backup-and-restore.md) R-BAK-020).
 - `ringsCompatible` is true when every live replica's ring holds every key ID that is active on
   any live replica or referenced by a sealed value. False is the state in which a value sealed by
   one replica cannot be opened by another, for example when step 2 of R-HA-027 rolls out before
@@ -1651,6 +2043,133 @@ Acceptance criteria:
 - After the rotation steps of R-HA-027 and a successful re-encryption run, `keys` reports
   `sealedValues: 0` for the old key ID, the same count that `trove admin secrets status` prints.
 - No answer of the endpoint contains the base64 content of any key file.
+
+### R-API-050 · Backup runs, status and stored backups
+Priority: **MVP** · Covers: OPS-032
+
+The backup job (INV-19) runs in the `backup` role as a Kubernetes CronJob; its runs, holds and
+retention are [backup-and-restore.md](backup-and-restore.md) (R-BAK-009 to R-BAK-017). This
+requirement owns the read-only API through which the UI (R-UI-038, R-UI-048) and scripts see them.
+Every value comes from PostgreSQL (`backup_run`, `system_state`) and the replica's configuration;
+`web` replicas hold no target credential and never read the target (R-BAK-015, Q-API-11).
+
+| Method | Path | Purpose | Permission |
+|---|---|---|---|
+| GET | `/api/v1/system/backups` | Runs, newest first; filters `operation` (`create`, `delete`, `verify`), `state`, `trigger`, `startedFrom`, `startedTo`; cursor-paged (R-API-010), `includeTotal` allowed | `system.read` |
+| GET | `/api/v1/system/backups/{runId}` | One run | `system.read` |
+| GET | `/api/v1/system/backups/summary` | Status of the backup job: last success, overdue, last failure, active run, stored backups and the retention that produced them, target, restore origin, manual-run command | `system.read` |
+
+No endpoint starts, deletes, verifies or restores a backup, in any priority (Q-API-10); a manual
+run is `kubectl create job --from=cronjob/<name>`, which R-UI-048 shows. `{runId}` is a
+server-generated UUID, so `summary` needs no reservation (R-API-004). The `backup` block of
+`/api/v1/system/info` (R-OPS-004, R-API-038) repeats the last success, the overdue mark and the
+state of the newest run in short form, under the same overdue rule.
+
+Run (an item of the list):
+
+```json
+{
+  "id": "01933c4e-2f10-7b3a-9c1d-5e8f7a6b4c21",
+  "operation": "create",
+  "backupId": "20261028T020000Z-7f3a",
+  "state": "copying",
+  "trigger": "schedule",
+  "pod": "trove-backup-29885880-x7k2q",
+  "troveVersion": "0.4.0",
+  "target": "s3://trove-backups/trove",
+  "startedAt": "2026-10-28T02:00:04.112Z",
+  "heartbeatAt": "2026-10-28T02:41:19.870Z",
+  "leaseExpired": false,
+  "finishedAt": null,
+  "snapshotAt": "2026-10-28T02:00:09.448Z",
+  "progress": {"phase": "copying", "tablesDone": 41, "tablesTotal": 58, "blobsToCopy": 1204, "blobsCopied": 830, "bytesCopied": 9123456789},
+  "result": null,
+  "error": null
+}
+```
+
+- The fields are the columns of `backup_run` (R-BAK-009) in the names of R-API-003. `target` is
+  the column as recorded (bucket, prefix and endpoint host, never a credential). `pod` tells a run
+  started by hand from a scheduled one, because a Job created with
+  `kubectl create job --from=cronjob/…` carries the name its creator chose (R-BAK-012).
+- `leaseExpired` is true for a run in an active state whose `lease_expires_at` has passed: its
+  process has stopped, and the next run will mark it `abandoned` (R-BAK-010). The API never changes
+  the row itself.
+- `error` is the stored problem object; the UI translates its `code` (R-UI-042).
+
+Summary:
+
+```json
+{
+  "expectedIntervalSeconds": 86400,
+  "lastSuccessAt": "2026-10-27T02:47:31.009Z",
+  "overdue": false,
+  "lastFailure": null,
+  "active": {"id": "01933c4e-2f10-7b3a-9c1d-5e8f7a6b4c21", "operation": "create", "state": "copying", "startedAt": "2026-10-28T02:00:04.112Z", "leaseExpired": false},
+  "target": "s3://trove-backups/trove",
+  "retention": {"keepLast": 7, "keepWithinSeconds": 0},
+  "storedBackups": {
+    "asOf": "2026-10-27T02:47:31.009Z",
+    "runId": "01933a1b-8c22-7e41-b0f3-2a6d9e4c7b10",
+    "items": [
+      {"backupId": "20261027T020000Z-1c9e", "snapshotAt": "2026-10-27T02:00:08.913Z", "troveVersion": "0.4.0", "schemaStep": 42, "databaseBytes": 183500800, "blobCount": 51234, "blobBytes": 412316860416, "damaged": false}
+    ]
+  },
+  "restoredFrom": null,
+  "manualRun": {"namespace": "trove", "cronJob": "trove-backup"}
+}
+```
+
+- `expectedIntervalSeconds` is `backup.expected_interval`, the value behind
+  `trove_backup_expected_interval_seconds` and the alert `TroveBackupStale` (R-BAK-014).
+- `lastSuccessAt` is `finished_at` of the newest `completed` or `completed_with_warnings` create
+  run. `overdue` is true when it is older than 1.5 × the expected interval, the condition on which
+  `TroveBackupStale` fires, so API, UI and alert agree. A mark at 1 × would flap on every
+  schedule whose runs vary in length: a daily run that finishes a few minutes later than the day
+  before is older than 24 h for those minutes. With no successful run at all, `lastSuccessAt` and
+  `overdue` are `null`, and the UI shows "No backup yet" as a warning.
+- `lastFailure` (`runId`, `at`, `code`) is the newest `failed` or `abandoned` create run, or an
+  active create run whose lease has expired, when it is newer than the last success; `interrupted`
+  runs never count, because a drain is not a failure. This is the same rule as
+  `trove_backup_last_failure_timestamp_seconds` and `TroveBackupFailed`.
+- `storedBackups` and `retention` come from the newest create or delete run that listed the
+  target: the complete backups it found after its own deletions, and the `keep_last` and
+  `keep_within` it applied (Q-API-11; the run result's `retained` and `retention`, cross-page to
+  R-BAK-016). `asOf` and `runId` name that run, so the view says how old it is. Backups written or
+  removed outside trove appear only after the next run; `trove backup list` reads the target
+  itself (R-BAK-018). `null` until such a run exists.
+- `restoredFrom` is `system_state.restored_from` (`installationId`, `incarnation`, `backupId`,
+  `snapshotAt`) after a restore (R-BAK-022), otherwise `null`.
+- `manualRun` holds the namespace and the CronJob name that the chart renders into the
+  configuration (`backup.manual_run`, cross-page), so the UI can show the exact command; each is
+  `null` when unset.
+
+```yaml
+backup:
+  manual_run:
+    namespace: ""        # default (proposed): empty; the chart sets the release namespace, example: trove
+    cronjob: ""          # default (proposed): empty; the chart sets <fullname>-backup, example: trove-backup
+```
+
+Acceptance criteria:
+
+- During a run, `GET /api/v1/system/backups?state=copying` lists it with growing
+  `progress.blobsCopied` (the criterion of R-BAK-009).
+- With `backup.retention.keep_last: 1`, after two completed runs A and B, the summary's
+  `storedBackups.items` lists B's backup only, and `storedBackups.runId` is B.
+- A backup pod deleted with `--grace-period=0 --force` during `copying`: once its lease has passed,
+  the run shows `leaseExpired: true`, and the summary's `lastFailure` names it, until a later run
+  succeeds.
+- A run ended `interrupted` by a drain, followed by a successful retry, never appears as
+  `lastFailure`.
+- With `backup.expected_interval: 1h` and a test clock, `overdue` is `false` 80 minutes after the
+  last success and `true` at 91 minutes, the same moments at which a `promtool` test of
+  `TroveBackupStale` is silent and fires.
+- `GET /api/v1/system/backups/summary` without `system.read` answers 403. No answer of these
+  endpoints contains a value of the target's credentials (a test greps for the fixture's access
+  key ID and secret).
+- The OpenAPI document contains no POST, PUT, PATCH or DELETE operation under
+  `/api/v1/system/backups`.
 
 ## Part C — UI
 
@@ -1799,7 +2318,7 @@ selected tab and selected version live in query parameters.
 | `/admin/tokens` | Token administration | R-UI-030 |
 | `/admin/ci`, `/admin/ci/{issuer}`, `/admin/ci/{issuer}/mappings/{mapping}`, `/admin/ci/{issuer}/test` | CI identity, claim tester | R-UI-035, R-UI-036 |
 | `/admin/audit` | Audit log | R-UI-037 |
-| `/admin/system`, `/admin/system/jobs` | System status, jobs | R-UI-038 |
+| `/admin/system`, `/admin/system/jobs`, `/admin/system/backups` | System status, jobs, backups | R-UI-038, R-UI-048 |
 | `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
 | `/admin/projects…` | Projects (P1) | R-UI-041 |
 | `/login` (`?local=1`), `/logged-out` | Sign-in, signed out | R-UI-004 |
@@ -2086,7 +2605,7 @@ Priority: **MVP** · Covers: UI-012, UI-016
 | Delete | File, folder | `delete` | MVP |
 | Client setup | Repository | `read` | MVP |
 | Reindex | Repository | `manage` | P1 |
-| Invalidate cache | Remote repository | `manage` or `delete` | P1 |
+| Invalidate cache (scope metadata, negative or all, R-API-024) | Remote or virtual repository | `manage` | MVP |
 | Copy, move | File, folder | R-API-027 | P1 |
 | Edit properties | File, folder | `annotate` | P1 |
 | Deploy | Toolbar | `deploy` | P1 |
@@ -2121,6 +2640,12 @@ Priority: **P1** · Covers: UI-013
 - Files up to 256 MiB are hashed in the browser (Web Crypto SHA-256) and sent with `Repr-Digest`;
   larger files rely on the server's own digest.
 - Several files upload one after another with per-file status; "Cancel" aborts the current one.
+- An upload cut without an answer (a drain that reaches the shutdown deadline, R-API-051, Q-ARCH-18
+  in [architecture.md](architecture.md)) has stored nothing ([storage.md](storage.md) R-STOR-004).
+  The dialog sends it once more from the start through the Service, from the `File` object it
+  still holds; a raw deploy of identical content to the same path is idempotent. If the retry
+  answers that the path exists, the dialog compares the item's SHA-256 with the digest it computed
+  and reports success when they match.
 
 Configuration:
 
@@ -2366,8 +2891,8 @@ Priority: **MVP** · Covers: UI-030, REPO-007
 
 - Table: key, format, class, description, client URL with copy button, created. Filters: format,
   class, text. Sort by key or creation. "Recently viewed" (browser storage, 20).
-- Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote, P1), delete.
-  Delete requires typing the key, offers the `detach` choice of
+- Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
+  delete. Delete requires typing the key, offers the `detach` choice of
   [repositories-and-proxy.md](repositories-and-proxy.md) when other repositories reference it, and
   shows that deletion runs as a job.
 - "Create repository" (when the caller may create repositories) opens the wizard.
@@ -2469,8 +2994,8 @@ Priority: **MVP** · Covers: UI-035, UI-036
 
 Acceptance criteria:
 
-- Disabling a user with "revoke tokens" makes that user's next API call with a token fail with 401,
-  and the audit log shows the change.
+- Disabling a user with "revoke tokens" makes that user's API calls with a token fail with 401 on
+  every replica within 2 s (R-API-052), and the audit log shows the change.
 
 ### R-UI-025 · Groups
 Priority: **MVP** · Covers: UI-037
@@ -2584,7 +3109,8 @@ Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
 Acceptance criteria:
 
 - A created token works in `curl -H "Authorization: Bearer …" "$TROVE_URL/api/v1/auth/whoami"`;
-  reopening the profile never shows it again; revoking it makes the same call answer 401.
+  reopening the profile never shows it again; revoking it makes the same call answer 401 on every
+  replica within 2 s (R-API-052).
 - Ending all other sessions signs out a second browser.
 - The profile page contains no password field, no unlock control and no editable email or display
   name; after the identity provider changes the user's email, the next login shows the new value.
@@ -2740,36 +3266,90 @@ Acceptance criteria:
 Priority: **MVP** · Covers: OPS-008
 
 The screen is MVP because every endpoint it renders from is MVP (the replica registry API of
-R-OPS-003, R-OPS-004, the task and job API of R-OPS-019, R-API-049), so it adds no backend work,
-and it is the only UI view of the replicas, the scheduled tasks and the key ring.
+R-OPS-003, R-OPS-004, the task and job API of R-OPS-019, R-API-049, R-API-050), and it is the only
+UI view of the replicas per role, of Valkey, of the backup job, of the scheduled tasks and of the
+key ring. It needs a little backend work beyond those endpoints: the registry's `node` and its
+nested `valkey` view (R-OPS-003, adopted by R-API-038), the per-role counts and the `backup` block
+of the system information (R-OPS-004), and the backup summary of R-API-050, which are MVP because
+INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
 
 - Cards from `GET /api/v1/system/info` and `/system/replicas`: version and revision; base URL and
   source; maintenance mode; database (server version, schema version against the supported ones);
-  replicas (id, version, roles, heartbeat age, status) with a mixed-version warning; scheduled tasks
-  (`/system/tasks`: next run, last outcome) with "Run now"; recent jobs (`/system/jobs`) with
-  cancel.
+  scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
+  `worker` replica; recent jobs (`/system/jobs`) with cancel.
+- **Replicas by role** (Q-UI-7). One group per role (`web`, `worker`; a replica with roles
+  `["all"]` of the development role forms a group `all`; from P1 one group per pool of R-HA-062),
+  headed with the role's `live`, `ready` and `degraded` counts from `replicas.roles` of
+  `/system/info`, each listing its replicas with name, node, version, state (`starting`, `ready`,
+  `unready`, `draining`, `lost`), heartbeat age and Valkey view. Each group states whether the role
+  is drain-safe right now: its `ready` replicas, not `lost`, run on at least two distinct nodes, so
+  draining any one node leaves a ready replica (INV-12, R-HA-059). The group shows, with icon and
+  text:
+  - "Fewer than two ready replicas": a node drain or the loss of one pod interrupts this role;
+  - "All ready replicas on one node": a drain of that node interrupts this role (shown only when
+    every replica reports a node);
+  - for `worker`, "No live worker replica": jobs and scheduled tasks are queued but nothing runs
+    them (R-API-015);
+  - while replicas of two versions are live, an information notice naming both versions, because N
+    and N-1 run side by side during every rolling upgrade (INV-3); it is not a warning.
+
+  The screen says what it cannot see: disruption budgets, free capacity on other nodes and whether
+  the remaining replicas carry the peak (the N + 1 rule of R-HA-059), because trove holds no
+  Kubernetes permissions (R-HA-033).
 - Readiness checks per replica, from the `checks` of `/system/replicas` (R-OPS-001, R-OPS-003; Q-OPS-2
   in [operations-and-observability.md](operations-and-observability.md)), in two kinds that the
   screen never merges:
-  - **failing**: a gating check fails and the replica is `unready`; shown as an error with the
-    check names;
-  - **degraded**: the replica is `ready` while a reported check fails, today only `objectStore`
-    after the first readiness unless `health.require_object_store` is set. This is the state that
-    `/readyz` answers as `200` with `"degraded":["objectStore"]` and that the gauge
-    `trove_health_check_passing{name="objectStore"}` shows as `0`. It is shown as a warning that
-    names the check and says what it means: blob requests on that replica fail with a retryable
-    `503`, everything else keeps working.
+  - **failing**: a gating check fails (for example `database`, `schema` or `invalidation`) and the
+    replica is `unready`; shown as an error with the check names;
+  - **degraded**: the replica is `ready` while a reported check fails. Two checks can be in this
+    state; `/readyz` answers `200` and lists them under `degraded`, and
+    `trove_health_check_passing{name=…}` shows `0`:
+    - `objectStore`, after the first readiness unless `health.require_object_store` is set: blob
+      requests on that replica fail with a retryable `503`, everything else keeps working;
+    - `valkey`, whenever Valkey is unreachable from that replica ([architecture.md](architecture.md)
+      R-ARCH-031, [ha-and-helm.md](ha-and-helm.md) Q-HA-13): no request fails, but remote fetches
+      are collapsed per replica only, the negative cache is per replica, rate limits fall back to
+      per-replica shares of the budget (R-API-016), and changes reach that replica through the
+      change-log poll instead of within milliseconds.
 
-  Both use icon plus text, never colour alone (R-UI-044). The page header summarises the service as
-  "all ready", "degraded" or "replicas unready".
+    Each is shown as a warning that names the check and says, in the words above, what it means.
+
+  Both kinds use icon plus text, never colour alone (R-UI-044). The page header summarises the
+  service as "all ready", "degraded" or "replicas unready"; a role that is not drain-safe adds
+  "not drain-safe" to the summary.
+- **Valkey card**, from the `valkey` block of `/system/info` (installation facts: mode, primary
+  name, configured Sentinels, TLS mode, key prefix and keyspace) and each replica's nested `valkey`
+  view of `/system/replicas` (R-API-038): per replica its state with the reason in R-OPS-001's
+  vocabulary, each reason translated, the circuit (an open circuit is shown as such), the primary
+  address, the reachable against the configured Sentinels and the server version. The card
+  summarises with icon and text:
+  - "Available on every replica", or "Degraded on k of n replicas" with the reasons, where k is
+    `valkey.degradedReplicas` and n is `replicas.live`;
+  - "Replicas disagree about the primary" when replicas whose `valkey.state` is `available` report
+    different `valkey.primary` addresses for longer than `valkey.sentinel.refresh_interval` plus
+    one heartbeat: a replica bound to a demoted primary, the case R-ARCH-031's reconciliation
+    bounds;
+  - "Sentinels unreachable" when a replica's `valkey.sentinelsReachable` is below a majority of its
+    `valkey.sentinelsConfigured`, the condition on which `TroveValkeySentinelsDegraded` fires
+    ([ha-and-helm.md](ha-and-helm.md) R-HA-007): no failover can happen while it lasts, so the next
+    primary failure would leave trove degraded until someone acts. The `valkey` check stays `pass`
+    meanwhile, because the primary still answers (R-HA-056 step 6);
+  - the time of the last primary change (the newest `valkey.lastPrimaryChangeAt` of the
+    replicas);
+  - the server version, or each version with its replicas when the replicas report different ones,
+    as an information notice.
+- **Backups card**, from `GET /api/v1/system/backups/summary` (R-API-050): the last success and its
+  age, an "Overdue" mark under the rule of R-API-050 (1.5 × the expected interval), "No backup
+  yet", the last failure when it is newer than the last success, the active run with its phase and
+  progress, and a link to the backups screen (R-UI-048).
 - Jobs (`/admin/system/jobs`): the list of `GET /api/v1/system/jobs` with filters for `kind` and
   `state`. The state filter offers every job state of R-ARCH-016: `queued`, `running`,
   `succeeded`, `failed`, `cancelling`, `cancelled`. A cancelled job shows `cancelling` until it
   stops at its next checkpoint (R-OPS-019), and "Cancel" is offered only for `queued` and
   `running` jobs.
-- A "Stored-secret keys" card from `GET /api/v1/system/encryption` (R-API-049): active key ID,
-  sealed values per key ID, canary state, the key IDs each replica holds, and whether the rings are
-  compatible (icon plus text). A key ID that is no longer active but still seals values is marked
+- A "Stored-secret keys" card from `GET /api/v1/system/encryption` (R-API-049): the active key ID
+  and the key IDs of each replica, sealed values per key ID, the canary state labelled with the
+  replica that reported it, and whether the rings are compatible (icon plus text). A key ID that is no longer active but still seals values is marked
   "re-encryption pending" with "Re-encrypt now" for administrators (the task trigger of
   R-API-049), disabled with its reason while the rings are incompatible. The card names the next
   rotation step of R-HA-027 that the state allows, for example "No values left under 2026-04: its
@@ -2785,6 +3365,19 @@ Acceptance criteria:
   `objectStore` within 40 seconds, and neither as unready (default `health.require_object_store`).
 - Cancelling a running `gc-full` job lists it under the state filter `cancelling` until it stops,
   then under `cancelled`.
+- With two `web` and two `worker` replicas, stopping Valkey shows every replica as degraded with
+  `valkey` and the explanation within 40 seconds, the header reads "degraded", no replica is shown
+  unready, and the Valkey card reads "Degraded on 4 of 4 replicas".
+- `SENTINEL FAILOVER trove` updates the last primary change on the Valkey card within 40 seconds,
+  and every replica reports the new primary.
+- Scaling `worker` to 0 shows "No live worker replica" within `system.heartbeat_stale_after` plus
+  15 seconds. A test that pins both `web` replicas to one node shows "All ready replicas on one
+  node" and "not drain-safe" in the header.
+- With `backup.expected_interval: 1h` and the last successful backup two hours old (test clock),
+  the Backups card shows "Overdue"; at 80 minutes it does not.
+- With two of three Sentinels stopped, the Valkey card shows "Sentinels unreachable" within
+  40 seconds, while every replica's `valkey` check stays `pass` and the header does not read
+  "degraded".
 
 ### R-UI-039 · Webhooks
 Priority: **P1** · Covers: UI-046, UI-047, EVT-034
@@ -2847,13 +3440,45 @@ Priority: **MVP** · Covers: trove-only
 - One HTTP interceptor (R-ARCH-004 `core/http`) maps problem `code` values to translated messages and
   `errors[].pointer` to form controls. Unknown codes show the English `detail` and the `requestId`
   with a copy button ("give this ID to your administrator").
-- 412: a conflict dialog "Changed by someone else since you opened it", showing their version against
-  yours field by field, with "Reload (discard mine)", "Overwrite" (re-sends with the new ETag after
-  showing the diff) and "Copy my changes".
+- 412 `precondition_failed`: a conflict dialog "Changed by someone else since you opened it",
+  showing their version against yours field by field, with "Reload (discard mine)", "Overwrite"
+  (re-sends with the new ETag after showing the diff) and "Copy my changes".
+- **Own permission changes** (INV-17, R-API-052, [authorization.md](authorization.md)
+  R-AUTHZ-032). After a write that answers `Trove-Authz-Epoch` (a policy, a role binding, from P1
+  a project), the session store (R-UI-046) keeps the highest such epoch of the tab, and the
+  interceptor sends it as `Trove-Authz-Min-Epoch` on every request that follows, so the next
+  screen, the `authz/me` and `authz/check` refresh included, shows the change on whichever replica
+  answers. The epoch lives in memory only, never in browser storage, and is cleared on 401 and on
+  sign-out.
+  - 412 `authz_epoch_unknown`: the UI drops that epoch at once (otherwise every later request
+    would fail the same way), re-reads the changed object by its `ETag` (R-API-012), and tells the
+    user that the change may not have been saved, showing the object as now stored; when the
+    stored object matches the user's draft, as for a retried write below, the message says that
+    the change is stored. A GET that met the `412` is sent again without the header; any other
+    request is offered again with "Retry".
+  - 503 `authz_stale`: a GET is retried once after `Retry-After`; any other request shows the 503
+    notice below with "Retry".
 - 401 `reauthentication_required`: a dialog explains why, keeps the draft of non-secret forms in
   session storage keyed by route, and starts the re-authentication flow of R-AUTH-011; after return
   the draft is restored and the action can be repeated. Forms holding secrets are not kept.
 - 429: idempotent GETs retry once after `Retry-After`; otherwise a message with the wait time.
+- The UI sends an `Idempotency-Key` on every request that accepts one (R-API-014): creates, job
+  starts and job-starting deletes. The key is generated when the form or dialog opens and kept
+  until it closes.
+- A network error without an answer (for example a request cut at the end of a replica's drain,
+  R-API-051) is retried once through the Service, which picks another replica: a GET as it is; a
+  request that carries an `Idempotency-Key` with the same key (R-API-014), so it cannot create or
+  start twice; a PUT or PATCH with the same `If-Match`. A retried write that answers 412 because
+  its first attempt did commit is recognised by comparing the current resource with the user's
+  draft: when they match, the UI reports success instead of opening the conflict dialog. A retried
+  DELETE that answers 404 counts as done. Any other unsafe request (a POST action without an
+  idempotency key, such as a revocation or a rotation) is not retried automatically: the UI says
+  that the action may or may not have run, reloads the affected resource, and offers "Retry".
+- 409 `idempotency_in_progress`: the UI waits `Retry-After` and sends the same request with the same
+  key once more, which replays the first request's outcome.
+- 409 `token_already_issued` on a retried token creation: the first attempt created a token whose
+  secret was lost with its answer. The UI revokes it (`DELETE /api/v1/tokens/{tokenId}`), creates
+  the token again with a new key, and shows only the new one, so no unseen token stays valid.
 - 503: a page-level notice with "Retry"; in maintenance mode the notice shows the operator's
   message.
 - Confirmations use a polite live region (`role="status"`), errors `role="alert"`; notifications
@@ -2863,9 +3488,22 @@ Priority: **MVP** · Covers: trove-only
 
 Acceptance criteria:
 
-- A forced 412 in a Playwright test opens the conflict dialog, and "Overwrite" stores the user's
-  version.
+- A forced 412 `precondition_failed` in a Playwright test opens the conflict dialog, and
+  "Overwrite" stores the user's version.
+- After saving a policy in the e2e profile `scatter`, the network log shows
+  `Trove-Authz-Min-Epoch` with the epoch of the `PUT` on the requests that follow it. A test proxy
+  that answers one of them `412` `authz_epoch_unknown` makes the UI show "may not have been saved",
+  re-read the policy, and send no `Trove-Authz-Min-Epoch` on later requests until its next
+  permission change; the conflict dialog does not open.
 - An unknown `code` shows the request ID.
+- A test proxy resets the connection of the wizard's `POST /api/v1/repositories` after the server
+  has committed it. The UI retries with the same `Idempotency-Key`, reports success, and exactly one
+  repository exists. The same with a `PATCH` of the edit form reports success without the conflict
+  dialog.
+- The same proxy resets the connection of a token creation after the commit. The UI ends with one
+  displayed token; `GET /api/v1/tokens` lists it and the first token as revoked.
+- The same proxy resets a `POST /api/v1/users/{username}/disable`. The UI sends it once only and
+  shows the user's state as reloaded afterwards.
 
 ### R-UI-043 · Secrets in the browser
 Priority: **MVP** · Covers: trove-only
@@ -2985,8 +3623,11 @@ thin hand-written clients in `src/app/api/`):
   inputs through the router's component input binding; changing a filter navigates with
   `replaceUrl`.
 - Shared state of a feature lives in an injectable store service exposing read-only signals and
-  methods; no third-party state library in the MVP. A session store holds `whoami`, `authz/me` and the
-  check cache, and is reset on 401, on 403 for a cached decision, and on sign-out.
+  methods; no third-party state library in the MVP. A session store holds `whoami`, `authz/me`, the
+  check cache and the authorization epoch of the tab's last own permission change (R-UI-042), and
+  is reset on 401, on 403 for a cached decision, and on sign-out; a reset on 403 keeps the epoch,
+  so the reload it causes still carries it. A permission change made in the tab also reloads
+  `authz/me` and clears the check cache, with that epoch sent.
 - Forms use Signal Forms (stable since v22,
   [Angular guide](https://angular.dev/guide/forms/signals/overview)) with validators derived from the
   OpenAPI constraints (patterns, lengths) where the generator emits them.
@@ -3008,7 +3649,7 @@ Priority: **MVP** · Covers: trove-only
 | Unit | Vitest through Angular's unit-test builder | Pure logic: token substitution, JWT decoding, token checksum validation, pattern preview, problem mapping, stores | Every pull request |
 | Component | Vitest browser mode with `TestBed`; API answers from the OpenAPI examples | Screens and widgets including keyboard behavior | Every pull request |
 | Contract | TypeScript compile against the generated types; mock answers validated against the document | Drift between UI and API | Every pull request |
-| End-to-end | Playwright against the real binary with PostgreSQL, an S3-compatible store (SeaweedFS, as in [ha-and-helm.md](ha-and-helm.md) R-HA-051), a test OIDC provider and a test CI token issuer | Journeys: sign-in, client setup followed by real `npm` and `dotnet` commands, repository wizard, policy edit, claim tester, token create and revoke, audit entry | Smoke on every pull request; full nightly |
+| End-to-end | Playwright against the chart-installed build in the local profile of [ha-and-helm.md](ha-and-helm.md) R-HA-051: two `web` and two `worker` pods, PostgreSQL with a standby, Valkey with a replica and three Sentinels, an S3-compatible store (SeaweedFS), the backup CronJob, plus a test OIDC provider and a test CI token issuer | Journeys: sign-in, client setup followed by real `npm` and `dotnet` commands, repository wizard, policy edit, claim tester, token create and revoke, audit entry, system status and backups screens | Smoke on every pull request; full nightly, once in the `scatter` profile (three `web` replicas, round robin per request, R-ARCH-032), once with Valkey stopped, and once while the node drain of R-HA-059 variant A runs, where no journey may fail |
 | Accessibility | axe-core in Playwright, plus the manual pass of R-UI-044 | Every route × theme × locale | Every pull request; manual per release |
 | Internationalization | Build with missing-translation error | Both locales | Every pull request |
 | Security | README XSS corpus; any `securitypolicyviolation` event fails an end-to-end test | Renderer, CSP | Every pull request |
@@ -3022,6 +3663,59 @@ Acceptance criteria:
 
 - The CI workflow runs every tier at the stated cadence, and a deliberately broken snippet template
   fails the end-to-end client-setup test.
+
+### R-UI-048 · Backups
+Priority: **MVP** · Covers: OPS-032
+
+`/admin/system/backups`, for callers with `system.read`, renders R-API-050. It shows the backup job
+of INV-19 and changes nothing: backups are started by the CronJob or by hand with `kubectl`,
+configured through the chart and the configuration file, and restored by a Helm hook Job
+([backup-and-restore.md](backup-and-restore.md) R-BAK-011, R-BAK-012; Q-API-10).
+
+- **Status.** Last success with its age, the expected interval, "Overdue" (R-API-050's rule) or
+  "No backup yet", and
+  the last failure with its translated `code` when it is newer than the last success. A run in
+  progress shows its phase (`starting`, `snapshot`, `copying`, `finalizing`, `pruning`), tables
+  exported, blobs and bytes copied against the totals, its pod and its start time, refreshed with
+  the status screen's interval and pause control (R-UI-038). A run whose lease has expired is
+  shown as "stopped without finishing; the next run marks it abandoned".
+- **Runs.** The list of `GET /api/v1/system/backups` with filters for operation and state and
+  "Load more": start, operation, pod, state, backup ID, snapshot time, duration, database bytes,
+  blobs copied and warnings. State labels carry icon and text. `interrupted` reads "interrupted by
+  a drain or eviction; the Job retries it" and is not shown as a failure (R-BAK-012). A detail panel
+  shows the result and the error.
+- **Stored backups.** The complete backups that the newest listing run found in the target, with
+  backup ID, snapshot time, trove version, schema step, database and blob sizes and a "damaged"
+  mark, headed "as recorded by run <id> at <time>" and the note that `trove backup list` reads the
+  target itself (Q-API-11). Next to it, read-only: the target, `keep_last` and `keep_within` as
+  that run applied them, and the expected interval.
+- **Start a backup now.** No button starts one. A panel shows the command with a copy button,
+  filled from `manualRun`:
+  `kubectl -n trove create job --from=cronjob/trove-backup trove-backup-manual-<timestamp>`
+  (# example), with `<timestamp>` (Unix seconds) filled in by the browser when the panel opens.
+  A Job name may have at most 63 characters
+  ([Job](https://kubernetes.io/docs/concepts/workloads/controllers/job/)), so the browser shortens
+  the CronJob part when a long release name would exceed it. Without `manualRun`, the namespace
+  and CronJob name appear as placeholders. The panel says that the run appears in the list once its
+  pod has started, that it records `trigger: schedule` and is told apart by its pod name
+  (R-BAK-012), and that one backup runs at a time (R-BAK-010).
+- **Restore.** When `restoredFrom` is set, a notice names the backup ID and snapshot time this
+  installation was restored from. Restoring is a Helm operation on an empty installation
+  (R-BAK-020, R-BAK-021); the screen links to the operator documentation and offers no restore
+  action.
+
+Acceptance criteria:
+
+- During a run, the screen shows phase `copying` and a growing count of copied blobs without a
+  reload.
+- A run ended `interrupted` by a drain, then completed by the Job's next pod, shows the first as
+  interrupted, not failed, and the status shows no failure.
+- After two runs with `keep_last: 1`, "Stored backups" lists one backup, recorded by the second
+  run.
+- The network log of a visit to the screen, including a click on the copy button, contains no
+  request with a method other than GET or HEAD.
+- With `manualRun.cronJob` set to a 52-character name, the copied command, run with `kubectl`,
+  creates the Job, and its name has at most 63 characters.
 
 ## Deferred
 
@@ -3174,7 +3868,10 @@ whose owning page defers them. None has a requirement here.
 - ADMAPI-077 · Re-index paths in the package metadata service — P2
 - ADMAPI-079 · Upstream curation availability setting — Later
 - ADMAPI-082 · Support bundles of the distribution service — Later
-- ADMAPI-083 · System and repository import and export — P2
+- ADMAPI-083 · System and repository import and export — P2 as API operations. The whole-installation
+  backup and restore are MVP, but as `trove backup create` and `trove backup restore` in the
+  `backup` role (INV-19, [backup-and-restore.md](backup-and-restore.md)); the API only reports
+  their runs (R-API-050, Q-API-10)
 - ADMAPI-087 · Release-set cleanup policy operations — Later
 - ADMAPI-089 · Package archive policy operations — Later
 - ADMAPI-090 · Older artifact-level archive operations — Later
@@ -3243,7 +3940,8 @@ whose owning page defers them. None has a requirement here.
 - **Lost updates of grants.** PUT and PATCH of revisioned resources require `If-Match`, with
   `If-Match: *` as the explicit blind write (R-API-012), so a stale editor or script cannot
   silently revert a permission policy, a CI identity mapping or the member order of a virtual
-  repository.
+  repository. A restore lifts every revision column (R-API-012), so an `If-Match` taken before it
+  cannot match a record its sender never saw.
 - **Key-ring status without pod access.** Rotation of the stored-secret key ring can be checked and
   finished through the API (R-API-049), which reports key IDs and counts only; operators need no
   shell in a pod, where the key files are readable.
@@ -3261,6 +3959,23 @@ whose owning page defers them. None has a requirement here.
   (R-API-009).
 - **Dependency confusion.** The NuGet snippet clears other package sources (R-UI-018); the scoped npm
   variant routes a scope to trove (R-UI-017).
+- **Authorization epoch header.** `Trove-Authz-Min-Epoch` is read only after authentication
+  succeeded, and ignored without a credential, so an anonymous caller can neither probe the epoch
+  nor make a replica wait (R-API-052). A forged high value costs one coalesced epoch read and
+  answers `412` at once ([authorization.md](authorization.md) R-AUTHZ-032). Neither a `412` nor a
+  header that passes proves whether a change is stored; the object's `ETag` does.
+- **Rate limits across replicas.** The general limits count per caller across all replicas in
+  Valkey (R-API-016), so adding replicas does not multiply a caller's budget. Valkey's content can
+  raise or lower a budget but never grants access; a Valkey outage falls back to per-replica shares
+  (H-43, H-49 in [architecture.md](architecture.md)). The break-glass lockout stays in PostgreSQL.
+- **Backups through the API.** The API and UI only read backup runs from PostgreSQL. `web` replicas
+  never hold the backup target's credentials, and no endpoint starts, deletes or restores a backup
+  (R-API-050, Q-API-10), so neither a hijacked session nor a compromised `web` replica can read or
+  destroy backups through trove, and the chart grants trove no Kubernetes permission that could
+  start a pod with the backup role's identity.
+- **Status payloads.** The system status answers show internal facts (node names, the Valkey
+  primary's address, the backup target's bucket and prefix) to `system.read` holders only, and
+  never credentials, ACL user names or key material (R-API-038, R-API-050).
 
 ## Decisions
 
@@ -3303,18 +4018,40 @@ Status: **Decided by the development agent** — selected from the options below
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (a), per-replica buckets by design, to the new option (e), cluster-wide counters in Valkey with a per-replica fallback, the limiter of [architecture.md](architecture.md) R-ARCH-034 (Q-ARCH-17 there); H-43 now covers only the fallback and lost counters.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Per replica, in memory, for every class | Token buckets in each replica's memory, as R-API-016 and the identity and CI pages specify | No database work per request; the limit protects exactly what it is for, the replica serving the request; budget and capacity grow together when replicas are added | The cluster-wide budget is the configured value times the replica count (H-43) |
-| (b) Shared PostgreSQL counters for unauthenticated classes, per replica for the rest | Login starts, revoke-by-value, the CI exchange and anonymous requests counted in PostgreSQL | A cluster-wide ceiling for callers without credentials | A database write on every unauthenticated request, so a flood lands on the database the HA design depends on; no gain against credential guessing (see rationale) |
-| (c) Shared counters for every class | Every API request updates a counter row | One exact cluster-wide limit | A write per request on the hottest path and row contention on the counter of a busy token; the limiter becomes a denial-of-service lever |
-| (d) Per replica, sized as cluster limit ÷ live replica count | Each replica divides the configured budget by the replica count of the registry | Approximates a cluster-wide limit without per-request writes | Uneven load balancing and long-lived connections make one replica refuse what the cluster could serve; the limit shifts with every scale event |
+| (a) Per replica, in memory, for every class | Token buckets in each replica's memory, as R-API-016 and the identity and CI pages specified until 2026-10-28 | No shared state and no round trip per request | The cluster-wide budget is the configured value times a replica count that grows with the load and changes with autoscaling; the Service spreads one client's requests over every replica, so the client gets that multiple; the answer depends on the replica a request reaches (INV-18) |
+| (b) Shared PostgreSQL counters for unauthenticated classes, per replica for the rest | Login starts, revoke-by-value, the CI exchange and anonymous requests counted in PostgreSQL | A cluster-wide ceiling for callers without credentials | A database write on every unauthenticated request, so a flood lands on the system of record |
+| (c) Shared PostgreSQL counters for every class | Every API request updates a counter row | One exact cluster-wide limit | A write per request on the hottest path and row contention on the counter of a busy token; the limiter becomes a denial-of-service lever against PostgreSQL |
+| (d) Per replica, sized as cluster limit ÷ live replica count | Each replica divides the configured budget by the replica count of the registry | Approximates a cluster-wide limit without shared state | kube-proxy balances connections, not requests: a client whose keep-alive connection stays on one replica gets 1/n of its budget; small bursts round down to nothing; the limit moves with every scale event |
+| (e) Cluster scope in Valkey, per-replica fallback | A sliding-window counter per bucket in Valkey (R-ARCH-034); while Valkey is unavailable, (d) as the fallback | One budget at any replica count and the same answer on every replica; no write on PostgreSQL; Valkey is part of every production topology (INV-12) | One pipelined Valkey round trip per limited request; the sliding window approximates; during a Valkey outage the fallback has (d)'s weaknesses |
 
-**Choice:** (a) — every general rate-limit class stays per replica and in memory, permanently, and H-43 records the consequence.
+**Choice:** (e) — the classes `read`, `write` and `anonymous` count cluster-wide in Valkey through the limiter of R-ARCH-034 and fall back to per-replica shares of the budget while Valkey is unavailable.
 
-**Rationale:** The general classes protect replica resources (CPU, connections, memory), and a per-replica bucket is the right unit for that. The case for shared counters would be credential guessing, and it does not apply: guessing a 256-bit random token is infeasible at any request rate (the checksum only filters random input before the database is asked), and the one guessable credential, the break-glass password, is already counted cluster-wide in PostgreSQL by R-AUTH-038. (b) and (c) add a write on the request path of the only stateful dependency besides object storage, so the limiter itself would turn a flood into database load; (d) trades a predictable limit for one that moves with every scale event and penalizes clients pinned to one replica. The development agent revisits this when a requirement needs a true cluster-wide quota, such as a per-tenant budget or an upstream registry's rate limit that all replicas must share together; that quota then gets shared counters on its owning page, not the general classes.
+**Rationale:**
+- The earlier choice rested on two premises that no longer hold. The classes were to protect the
+  resources of one replica, and shared counters would have written to PostgreSQL. Under the owner's
+  constraints the load exceeds one replica, the replica count follows the load, and the Service
+  spreads one client's requests over all replicas. Under (a), a budget of 50 reads per second would
+  mean 150 at three replicas and 1,500 at thirty: not a value an operator can set. Valkey is now
+  part of every production topology and takes the counter writes off PostgreSQL, which removes the
+  reason (b) and (c) were rejected for.
+- Replica protection does not need these classes: `server.max_in_flight` stays per replica
+  (R-ARCH-005) and is the right unit for CPU and memory.
+- The fallback divides by the live `web` replicas, so a Valkey outage keeps the budget near its
+  configured value instead of multiplying it, and the identity and CI pages use the same limiter,
+  so one rule covers every class.
+- Credential guessing is still no argument either way: tokens are 256-bit random values, and the
+  break-glass lockout counts in PostgreSQL (R-AUTH-038) because it must survive a loss of Valkey's
+  data.
+- The development agent revisits this if the limiter's round trip shows up in P-2
+  ([architecture.md](architecture.md) R-ARCH-027): read classes would then check a local bucket
+  first and ask Valkey only near the limit. A per-tenant quota (BEYOND-030, P2) that needs exact
+  counts would get a limiter of its own.
 
-**Applied in the spec:** R-API-016 states that the buckets are per replica by design and names the cluster-wide break-glass counter. H-43 is rewritten with component, subject, live status and what makes it real, and records that shared counters were rejected. No configuration change.
+**Applied in the spec:** R-API-016 is rewritten: purpose (fair share, not replica protection), the limiter names, the sliding window and its fallback at the budget ÷ live `web` replicas, refused requests counting against the window as R-ARCH-034 specifies, `Retry-After` and the `RateLimit` fields with sliding-window values, and acceptance criteria across three replicas with and without Valkey and for a client that ignores `Retry-After`. The earlier statement that the buckets are kept in memory per replica by design is removed. H-43 is narrowed to Valkey outages and to counters lost in a failover; tampering with the counters is H-49 in [architecture.md](architecture.md). The security notes gain "Rate limits across replicas". No configuration key changes; the values are now cluster-wide budgets. Cross-page: none beyond those of Q-ARCH-17 in [architecture.md](architecture.md), which already names R-API-016, this question and H-43.
 
 ### Q-API-4 · INV-17's wording and byte transfers on `/files`
 
@@ -3419,6 +4156,66 @@ The owning pages specified two paths for the same functions: [storage.md](storag
 
 **Applied in the spec:** R-API-020 replaces the "until review settles them" paragraph with the rule, its scope (singleton tasks; per-resource actions and retention runs keep their paths) and an acceptance criterion; R-API-040 starts garbage collection (tasks `gc` and `gc-full`, as [storage.md](storage.md) now defines them), the orphan sweep, the scrub and the storage-summary refresh through the task trigger, stops runs through job cancel, lists runs through `GET /api/v1/system/jobs?kind=…`, and keeps `GET /api/v1/storage/summary` and `GET /api/v1/storage/damaged-blobs` as the read paths; R-API-049 starts re-encryption the same way. Cross-page edits to [storage.md](storage.md), [operations-and-observability.md](operations-and-observability.md) and the GC acceptance criterion of [ha-and-helm.md](ha-and-helm.md) R-HA-002.
 
+### Q-API-10 · Starting a backup from the API or the UI
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The owner requires a configurable backup job, comparable to GitLab's, that writes a consistent backup to S3 when it runs (INV-19). It runs as a CronJob of the `backup` role, and only backup and restore pods hold the target's credentials ([backup-and-restore.md](backup-and-restore.md) R-BAK-015). The chart renders no RBAC for trove, and trove never calls the Kubernetes API ([ha-and-helm.md](ha-and-helm.md) R-HA-033). The catalog's backup screen (OPS-032) edits schedules and starts backups from the UI. The question is whether trove's API and UI may start a backup.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No start endpoint; the UI shows the command | Runs and status are read-only (R-API-050); the UI shows `kubectl create job --from=cronjob/<name>` filled with the namespace and the CronJob's name | No new privilege anywhere; a manual run is the same Job as a scheduled one and lands in the same run list. GitLab's chart documents the same model: a `kubectl exec … backup-utility` command for a manual backup and `gitlab.toolbox.backups.cron.*` values for scheduled ones ([GitLab chart backups](https://docs.gitlab.com/charts/backup-restore/backup/), checked 2026-10-28) | Starting a backup needs `kubectl` access to the namespace |
+| (b) `web` replicas create the Job through the Kubernetes API | A Role with `create` on Jobs and `get` on the CronJob for the replicas' ServiceAccount, a mounted token, a "Back up now" button | One click | Kubernetes' RBAC guidance states that permission to create workloads in a namespace implicitly grants access to the Secrets, ConfigMaps and PersistentVolumes that a pod there can mount, and the API access of any ServiceAccount there ([RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices/#workload-creation)). A compromised `web` pod could start a pod with the backup ServiceAccount and read the target credentials and the database owner Secret. Breaks R-HA-033 |
+| (c) A request row picked up by a backup-role poller | The API inserts a request in PostgreSQL; a short-interval CronJob, or a long-running backup Deployment, starts a run when it finds one | No Kubernetes permission for the replicas | A pod every few minutes only to read a table, or a permanently running pod holding target credentials, against R-BAK-015's short-lived holders; the CronJob of INV-13 turns into a dispatcher; the start waits up to the poll interval |
+| (d) The `worker` role runs backups as jobs | Backups become ordinary jobs | The job framework exists | Every `worker` pod would hold the target credentials and read access to every table (H-47 would grow to the whole role); a run of several hours on a Deployment pod conflicts with the drain rules of R-HA-059 |
+
+**Choice:** (a) — the API and UI start, delete, verify and restore no backup, in any priority; the UI shows the `kubectl` command for a manual run, filled with the namespace and the CronJob's name that the chart renders into the configuration.
+
+**Rationale:** The boundary of R-BAK-015 is what makes the backups trustworthy: only short-lived backup pods hold the target's credentials, and a compromised replica can neither read nor delete backups. (b) and (d) move that boundary into the pods that face the network, and (c) keeps it at the price of a polling dispatcher for a convenience that one copyable command already gives. Whoever runs the backup schedule already works with `kubectl` or Helm in that namespace. The schedule is a chart value of the CronJob and the retention a configuration key of the `backup` role (R-BAK-011), so the UI shows both read-only for the same reason. The owner's requirement, a configurable job that produces a consistent backup in S3 when it runs, is met by the CronJob and its values; nothing in it asks for a button. The development agent revisits this if installations need backups started by people without access to the namespace, for example as a step of a change ticket: (c) with a request row and a short-interval CronJob is then the next step, because it keeps the credentials in backup pods.
+
+**Applied in the spec:** R-API-050 (read-only endpoints, `manualRun` in the summary, the `backup.manual_run` keys, an acceptance criterion against write operations), R-UI-048 (the command panel and no write control), R-UI-038's Backups card, the Deferred entry ADMAPI-083 and the security notes. Cross-page: [backup-and-restore.md](backup-and-restore.md) R-BAK-011 (`web` and `worker` also read `backup.manual_run`) and [ha-and-helm.md](ha-and-helm.md) R-HA-030 and R-HA-060 (the chart renders `config.backup.manual_run` with the release namespace and `<fullname>-backup`).
+
+### Q-API-11 · Where the API's list of stored backups comes from
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-014 gives the API the run records only, and `trove backup list` reads the target with the target-reader credential. An operator in the UI wants to know which backups exist and what the retention kept, without target credentials in `web` pods.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Runs only | The UI lists create runs; which backups still exist is left to the reader | Nothing new | Retention's effect is invisible; `backup_run` rows older than `backup.run_history` disappear while their backups may still be kept by `keep_within` |
+| (b) `web` replicas read the target | A target-reader credential in every `web` pod | The live truth | Every `web` pod could read every backup, a full copy of the database with token hashes and personal data (H-48); breaks R-BAK-015 |
+| (c) Each target-writing run records what it found | After its deletions, a create or delete run stores in its result the complete backups left in the target and the retention it applied | No new credential and no new table; the run already lists the complete backups to apply retention (R-BAK-016) and to build the sweep's keep set (R-BAK-017); the view states its own age | As fresh as the last create or delete run; a backup removed outside trove shows until the next run |
+| (d) A catalog table kept by the backup role | One row per backup in the target, updated by every run | Survives history pruning by design; queryable | A second copy of what (c) records, with its own consistency rules, grants for the backup role and a backup export class |
+
+**Choice:** (c) — the newest create or delete run that listed the target is the source of `storedBackups` and `retention` in R-API-050.
+
+**Rationale:** The question is how to show the target's state without giving `web` pods a key to it, and the backup run is the one place that already sees the target with the right credential at the right moment, right after it applied retention. Recording that list costs one field in a row the run writes anyway, and the newest run is never pruned, because history pruning removes only old rows. A view that is a day old is honest when it says so, and when runs stop, the overdue mark and `TroveBackupStale` are the signal that matters. (b) trades the credential separation for freshness, (d) duplicates (c) with more machinery, and (a) leaves retention unverifiable from the UI. The development agent revisits this if frequent backups with a long `keep_within` make the recorded list grow beyond about 1,000 entries per run, where (d) becomes cheaper than repeating the list in every result.
+
+**Applied in the spec:** R-API-050 (`storedBackups` with `asOf` and `runId`, `retention`, acceptance criteria), R-UI-048 ("Stored backups", headed with the recording run). Cross-page: [backup-and-restore.md](backup-and-restore.md) R-BAK-016 ("Reporting": the result also carries `retention` with `keepLast` and `keepWithinSeconds`, and `retained`, the complete backups left after the run's deletions with ID, snapshot time, trove version, schema step, database bytes, blob count, blob bytes and the damaged flag) and R-BAK-014 (its API table points to R-API-050, and `expectedInterval` and `lastSuccessAt` move from the list answer into the summary as `expectedIntervalSeconds` and `lastSuccessAt`, because R-API-010 gives every list the same envelope and R-API-003 puts the unit into a duration's name).
+
+### Q-API-12 · Visibility of a management write on the other replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (c) to the new option (e). Under random distribution, [authorization.md](authorization.md) Q-AUTHZ-12 gave grant changes a request header, `Trove-Authz-Min-Epoch`, which is option (b) restricted to the `authz` area; this page registers both headers and the codes `invalid_header`, `authz_epoch_unknown` and `authz_stale`, and a client that changed grants no longer has to wait for the bound.
+
+Requests reach `web` replicas at random (INV-12), and each replica answers package and file requests from an in-process repository snapshot that learns of changes through the change log ([architecture.md](architecture.md) R-ARCH-018): within milliseconds with Valkey, within the poll interval without it. A script that creates a repository through one replica and publishes to it in the next step can reach a replica that does not know the repository yet. npm answers that `404` with a failure, because its fetch layer retries `408`, `420`, `429` and `5xx` only (`make-fetch-happen`, `lib/remote.js`, checked 2026-10-28).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Document the bound | Changes apply everywhere within the propagation bound; clients wait or retry | Nothing to build | npm and NuGet clients cannot be told to wait; a create-then-publish script fails intermittently, more often during a Valkey outage |
+| (b) A consistency token | Writes answer with the change area's epoch; a request carrying `Trove-Min-Change-Epoch` waits up to 2 s until its replica has applied it | Exact read-your-writes for every kind of change, without affinity | Package clients cannot send the header, so the most common case stays open; one more header in the contract |
+| (c) Management reads from PostgreSQL, an unknown repository key checked in PostgreSQL, the bound for the rest | API reads of configuration never come from a cache; a key the snapshot lacks is looked up before `404`, and a found key brings the snapshot up to date | Creation, the case package clients meet, is visible at once on every replica; management reads are exact; nothing for clients to learn | A request for an unknown key costs one indexed query, as an unknown token does (R-AUTH-023); changes to existing grants and repositories still follow the bound |
+| (d) Session affinity | The edge keeps a client on one replica | Read-your-writes on that replica | Forbidden by INV-12 and R-ARCH-032; it defeats random load sharing and breaks at every drain |
+| (e) (c), plus (b) for grant changes only | As (c); in addition, grant writes answer `Trove-Authz-Epoch`, and an authenticated request carrying `Trove-Authz-Min-Epoch` is decided on a grant index at least that new, or answered `412` when the database never reached the epoch ([authorization.md](authorization.md) R-AUTHZ-032) | (c)'s strengths; the UI and automation see their own grant changes, added or removed, on whichever replica answers next; one header with one owner instead of a token per change area | Two headers and three codes in the contract; package clients still rely on the bound for grant changes |
+
+**Choice:** (e) — management reads come from PostgreSQL, an unknown repository key is looked up in PostgreSQL before `404`, a client that changed grants may name the authorization epoch in `Trove-Authz-Min-Epoch`, and every other effect on enforcement follows the propagation bound of R-ARCH-018, which R-API-052 states as the contract.
+
+**Rationale:** The bound is short and well defined, so the only cases worth extra machinery are those where a client cannot wait. Package clients are that case, and what they meet in practice is a repository created a moment earlier by a setup script or a pipeline. (c) closes exactly that case with a lookup the replica would otherwise answer from its snapshot, while changes to existing configuration keep the bound, which R-ARCH-018 tests. Management reads cost little and are made by administrators and scripts that compare `ETag`s, so reading them from PostgreSQL makes `GET` after `PATCH` exact on every replica. The second case that cannot simply wait is a client that changes grants and uses them in the next step: the UI after a policy edit, a provisioning pipeline, and trove's own end-to-end tests in the `scatter` profile. Under random distribution it cannot pick the replica that answers next, so the epoch has to travel with the request, and [authorization.md](authorization.md) Q-AUTHZ-12 made that the `authz` area's header; (e) adopts it here instead of a general token, because the grant index is the one enforcement cache whose change a management client acts on at once. A general token for every area, (b), still helps scripts but not package clients, and (d) is ruled out. The development agent revisits this if scripts that create a repository and use it at once through a pattern grant fail in practice: the `repo_config` epoch then joins the same header, as Q-AUTHZ-12 foresees.
+
+**Applied in the spec:** New requirement R-API-052; R-API-022's acceptance criterion sends its `npm view` through the Service; the acceptance criteria of R-API-031, R-API-032, R-UI-024 and R-UI-029 name the 2 s revocation bound, which [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 already states as `auth.revocation_bound`. Cross-page: [architecture.md](architecture.md) R-ARCH-011 step 2 (a key that matches INV-5's pattern but is unknown to the snapshot is looked up in PostgreSQL before `404 repository_not_found`; a found key triggers an immediate change-log poll, coalesced with concurrent ones, and the request waits until the caches it invalidates, the grant index of R-AUTHZ-028 included, are rebuilt; repeated misses for one key are answered from a size-bounded per-replica negative cache that every `repo_config` change evicts), with R-ARCH-018 noting the poll a request may trigger and R-ARCH-032's state table gaining the negative cache. The revisit adds: R-API-052's bullet "Waiting for one's own permission change" with the two headers and an acceptance criterion; R-API-009's codes `invalid_header` (400), `authz_epoch_unknown` (412) and `authz_stale` (503 with `Retry-After`); R-API-018's CORS header lists; the epoch notes in R-API-033 and R-API-047; R-UI-042's handling of the header and of the two codes, with an acceptance criterion; R-UI-046's session store holding the epoch. No cross-page edit beyond those that [authorization.md](authorization.md) Q-AUTHZ-12 already lists.
+
 ### Q-UI-1 · Component library
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3517,20 +4314,55 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-UI-008: the `img` rule, the origin-validation and cache bullet, the configuration key `ui.readme.external_image_origins` replacing `external_images`, and the acceptance criterion; R-UI-001: `img-src` takes the listed origins and the foreign-request rule names the exception; R-API-029: the README cache stores the hash of the list; the security notes describe the rule.
 
+### Q-UI-7 · Roles, drain readiness and Valkey on the system status screen
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Since 2026-10-28 every installation runs separate `web` and `worker` Deployments, needs at least two replicas per role on different nodes for a drain without outage, and runs on Valkey with Sentinel, which can degrade trove without making a replica unready (INV-2, INV-12). The status screen of R-UI-038 showed a flat list of replicas and treated `objectStore` as the only degraded check. The question is what the screen shows about roles, drains and Valkey, and from which data.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Readiness checks only | Each replica shows its checks, `valkey` among the degraded ones | No new data | Nobody sees from the UI that a role has one ready replica left, that both `web` pods share a node, or that replicas disagree about the Valkey primary |
+| (b) Registry-based role and Valkey view | The registry carries role, node (downward API `spec.nodeName`) and each replica's Valkey view (its `valkey` check, the primary it uses, the Sentinels it reaches); the screen groups by role, states drain safety per role and summarises Valkey | Shows the two conditions of a safe drain that trove can observe, and the Valkey states an operator must act on, from data the replicas already have; the catalog's status screen lists a node per service instance (OPS-008) | Two more registry columns per heartbeat; the screen cannot see disruption budgets or free capacity |
+| (c) Read Kubernetes objects | The replicas read Deployments, PodDisruptionBudgets and nodes through the Kubernetes API | Desired replicas, PDB state and node capacity | Needs a ServiceAccount token and read RBAC, which R-HA-033 rules out, for data that `kubectl` and the cluster's monitoring already show |
+| (d) Leave it to dashboards | The screen links to Prometheus and Grafana | Nothing to build in the UI | Installations without dashboards see nothing, and the status screen keeps claiming "all ready" while a role is one pod from an outage |
+
+**Choice:** (b) — the replica registry gains the node name and the number of Sentinels each replica reaches, next to the Valkey primary and check it already records, and the status screen groups replicas by role, states drain safety per role, and summarises Valkey from the replicas' views.
+
+**Rationale:** The owner requires a drain without outage "when the setup is designed for it", and the screen is where an operator without cluster access sees whether it currently is. Two of the conditions are visible to trove: at least two ready replicas per role, and on different nodes. The node name costs one environment variable from the downward API (`spec.nodeName` is offered as an environment variable only, [downward API](https://kubernetes.io/docs/concepts/workloads/pods/downward-api/), checked 2026-10-28), and every replica already computes its Valkey state, circuit, Sentinel reachability and primary for the metrics of R-HA-057. Showing the primary each replica uses exposes the one Valkey fault that metrics aggregated with `max` hide: a replica still bound to a demoted primary. (c) needs Kubernetes permissions that trove deliberately lacks, and (d) leaves the UI silent about the requirement the owner stressed. The screen states what it cannot see (budgets, capacity, the N + 1 rule). The development agent revisits this if trove ever gets read access to the Kubernetes API for another reason, which would let the screen show desired replicas and budgets too.
+
+**Applied in the spec:** R-UI-038 (replicas by role with drain safety, the `valkey` degraded check, the Valkey card, the Backups card, the header's "not drain-safe", new acceptance criteria, and the MVP note that names the added registry fields), R-API-038 (the registry and system-information fields the screen reads, adopted unchanged from [operations-and-observability.md](operations-and-observability.md) R-OPS-003 and R-OPS-004, which own their shapes: per replica `roles` (`["all"]` for the development role), `state`, `node`, `checks`, `degraded` and the nested `valkey` view with `state`, `reason` in R-OPS-001's vocabulary, `circuit`, `primary`, `sentinelsReachable`, `sentinelsConfigured`, `serverVersion` and `lastPrimaryChangeAt`; per installation `replicas.roles.<role>` with `live`, `ready`, `degraded` and `nodes`, the `valkey` block of installation facts and the `backup` block). An earlier revision of this block named flat fields (`valkeyPrimary`, `valkeyPrimarySince`, `valkeySentinelsReachable`), `replicas.byRole` and other reason names; the choice is unchanged, only the field shapes follow their owner. Cross-page: [operations-and-observability.md](operations-and-observability.md) R-OPS-003 (column `node` and the `valkey` view column); [ha-and-helm.md](ha-and-helm.md) R-HA-030 (the chart sets `TROVE_NODE_NAME` from `spec.nodeName` for `web` and `worker` pods), R-HA-057 (`trove_valkey_sentinels_reachable` counts the Sentinels that answer a periodic probe of all configured ones) and Q-HA-12 (the status screen now needs these registry fields and the backup summary, so "adds no backend work" no longer holds).
+
 ## What this does not cover
 
 ### H-43 · General API rate limits are per replica
 
-Component: the rate limiter of the management API (R-API-016). Subject: every caller of `/api/v1/`
-and `/files/`. Live from the MVP, by design (Q-API-3). The `read`, `write` and `anonymous` buckets
-live in each replica's memory. Behind a load balancer the effective limit is the configured limit
-times the number of replicas, and a client that spreads requests across replicas gets more than one
-replica's budget. The same applies to the identity and CI limits on their pages. What makes it
-real: an anonymous or token-holding client that wants more throughput than one replica's budget,
-for example to scrape package metadata. It does not weaken credential guessing: tokens are 256-bit
-random values, and the break-glass lockout counts failures cluster-wide in PostgreSQL (R-AUTH-038).
-A cluster-wide limiter would need shared counters in PostgreSQL (INV-3 rules out Redis), which
-Q-API-3 rejected.
+Component: the limiter of the management API (R-API-016) on top of R-ARCH-034 in
+[architecture.md](architecture.md). Subject: every caller of `/api/v1/` and `/files/`, by token,
+session user or client address. Since 2026-10-28 the `read`, `write` and `anonymous` buckets count
+cluster-wide in Valkey (Q-API-3), so the configured budget no longer multiplies with the replica
+count. What remains is narrower than the heading: counting per replica while Valkey is unavailable,
+and counters lost in a failover. Live in the MVP in these cases:
+
+- **Valkey outage.** While a replica cannot reach Valkey, its buckets are local, with the budget
+  divided by the live `web` replicas of the registry. If only some replicas lose Valkey, the others
+  still count the full budget in Valkey, so a client that spreads its requests gets up to one share
+  more than the budget per cut-off replica. After a scale-up during an outage, every replica
+  divides by the old count until its next registry read, for at most `system.heartbeat_interval`.
+- **Counters lost after a failover.** A Sentinel failover that loses recent writes resets the
+  counters it lost, which admits at most one extra window per bucket (R-ARCH-034). A Valkey
+  restart without persistence has the same effect. trove's own cache flush leaves the counters
+  alone ([operations-and-observability.md](operations-and-observability.md) R-OPS-047).
+
+Tampering is not part of this gap: whoever can write under trove's Valkey prefix can delete
+counters and lift every budget, or raise them and refuse a caller with `429`, and that is H-49 in
+[architecture.md](architecture.md), which covers every value trove keeps in Valkey.
+
+What makes it real: a client that wants more throughput than its budget, for example to scrape
+package metadata, and that can time its traffic to a Valkey outage or failover. It does not weaken
+credential guessing: tokens are 256-bit random values, and the break-glass lockout counts failures
+in PostgreSQL (R-AUTH-038), which survives a loss of Valkey's data. Per-replica in-flight limits (`server.max_in_flight`) still protect each replica in
+every case.
 
 ### H-44 · Credentials displayed in the browser are outside trove's control
 

@@ -61,6 +61,14 @@ Conventions on this page:
 - Paths are relative to the external base URL (R-AUTH-003). `https://trove.test` is the
   example host in acceptance criteria.
 
+**Replicas.** The Kubernetes Service hands every request to a random `web` replica (INV-12), and a
+node drain removes replicas at any time. Every flow on this page therefore works when its
+consecutive requests reach different replicas. Its state lives in PostgreSQL, and Valkey never
+decides who a caller is: it carries change messages and the cluster-wide counters and throttle
+exemption markers of R-AUTH-038. Its loss costs nothing but per-replica limits and a narrower
+throttle exemption (INV-3, INV-18). R-AUTH-042 maps every piece of state, and R-AUTH-043 assigns
+the background work to the `worker` role.
+
 ## Request authentication
 
 ### R-AUTH-001 · Credential sources and precedence
@@ -121,6 +129,10 @@ Normative rules:
   ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-004). The header is still redacted in logs (below).
 - A storage outage during validation MUST answer 503, not 401, so clients do not discard or
   re-prompt for working credentials.
+- Valkey being unavailable or emptied MUST NOT turn a rejection into an acceptance, and MUST NOT
+  delay a revocation. It removes the fast path of change messages, turns the limits of R-AUTH-038
+  into per-replica shares, and narrows the throttle exemption to the replica's own cache, nothing
+  else (R-AUTH-023, R-AUTH-038, R-AUTH-042).
 - The request log and every other log MUST redact the following before writing: the
   `Authorization` header, the `X-NuGet-ApiKey` header, the `__Host-trv_session`,
   `__Host-trv_csrf` and `__Host-trv_oidc_binding` cookies, every substring matching the token
@@ -235,11 +247,20 @@ Priority: **MVP** · Covers: AUTHN-007, AUTHN-008
   `private_key_jwt` is deferred.
 - Discovery follows [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)
   §4:
-  - Each replica fetches `<issuer>/.well-known/openid-configuration`. The `issuer` in the
-    document MUST be identical to the configured issuer (§4.3), or the provider is unusable.
+  - Each replica that serves the client listener (`web`, and `all` in the local profile) fetches
+    `<issuer>/.well-known/openid-configuration`. A `worker` replica serves no login and loads no
+    provider (R-AUTH-042). The `issuer` in the document MUST be identical to the configured issuer
+    (§4.3), or the provider is unusable.
   - The document is refreshed every `discovery_refresh`.
   - JWKS are fetched from `jwks_uri` and cached. An ID token with an unknown `kid` triggers at
-    most one JWKS refetch per provider and replica per 60 s.
+    most one JWKS refetch per provider and replica per 60 s. Each replica keeps its own copy, so
+    right after a provider starts signing with an unpublished key, one replica may reject a login
+    that another accepts, for at most that throttle ([architecture.md](architecture.md)
+    R-ARCH-032); the user retries the login.
+  - Every call to a provider (discovery, JWKS, token endpoint, userinfo) goes through the outbound
+    client of [architecture.md](architecture.md) R-ARCH-022 with a 10 s timeout. A JWKS refetch
+    for an unknown `kid` runs inside the callback that needs it (R-AUTH-006 step 7) and is bounded
+    by the same timeout.
 - If the discovery document advertises `code_challenge_methods_supported` without `S256`,
   configuration MUST be rejected. A provider that omits the field is accepted.
 - A provider whose discovery fails MUST NOT block startup or readiness. Its login button is
@@ -325,7 +346,9 @@ whose value is 32 random bytes:
 This is the CSRF defense of [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) §4.7.
 
 **Flow state.** The flow state lives in PostgreSQL, so the callback may land on any replica and
-the load balancer needs no session affinity (AUTHN-011). A cleanup job deletes expired rows.
+the load balancer needs no session affinity (AUTHN-011, INV-18). No part of it is kept in a
+replica's memory or in Valkey (Q-AUTH-12). The `session-cleanup` task deletes expired rows
+(R-AUTH-043).
 
 **`return_to`.** It MUST be a relative path that starts with `/ui/`, contains no `//`, no `\`
 and no scheme. Any other value is replaced by `/ui/`. This is the open-redirect defense,
@@ -349,6 +372,9 @@ CREATE TABLE oidc_login_flow (
 CREATE INDEX oidc_login_flow_expires ON oidc_login_flow (expires_at);
 ```
 
+The table has the backup export class `transient` ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-004): it holds PKCE verifiers in clear, and a restore ends every flow in progress.
+
 API:
 
 | Method and path | Response |
@@ -362,8 +388,11 @@ Acceptance criteria:
     `nonce` of 43 characters each;
   - the response sets `__Host-trv_oidc_binding` with `Secure`, `HttpOnly`, `SameSite=Lax`,
     `Path=/` and no `Domain`.
-- Run with two replicas behind a round-robin Service and no affinity. 50 consecutive logins
-  against the test IdP all succeed.
+- In the e2e profile `scatter` ([architecture.md](architecture.md) R-ARCH-032: three `web`
+  replicas, every request to another replica), 50 consecutive logins against the test IdP all
+  succeed. With `server.replica_header: always`
+  ([operations-and-observability.md](operations-and-observability.md)), the `X-Trove-Replica`
+  headers show that start and callback of each login were served by different replicas.
 - `return_to=https://evil.test/` and `return_to=//evil.test` both end the login at `/ui/`.
 
 ### R-AUTH-006 · Callback handling and ID-token validation
@@ -376,7 +405,10 @@ login with an error page (HTTP 400, or 502 for IdP errors) and the audit event
 **Validating the response (steps 1–5):**
 
 1. Delete and return the flow row whose `state_sha256` matches the `state` parameter (`DELETE …
-   RETURNING`). This makes the flow single-use. Missing or expired gives `flow_expired`.
+   RETURNING`). This makes the flow single-use, also when the same callback reaches two replicas
+   at once: only one of them gets the row. Missing or expired gives `flow_expired`. The delete
+   commits on its own, before step 6, because no outbound call runs inside a transaction
+   ([architecture.md](architecture.md) R-ARCH-019).
 2. The flow's provider MUST equal the path's provider. Otherwise `provider_mismatch`.
 3. The SHA-256 of the `__Host-trv_oidc_binding` cookie MUST equal the flow's binding. Otherwise
    `browser_mismatch`.
@@ -412,7 +444,7 @@ login with an error page (HTTP 400, or 502 for IdP errors) and the audit event
 **Completing the login (steps 8–10):**
 
 8. If `use_user_info` is set and discovery lists a `userinfo_endpoint`, call it with the access
-   token:
+   token, using a 10 s timeout:
    - The response's `sub` MUST equal the ID token's `sub`
      ([OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) §5.3.2).
      Otherwise `userinfo_mismatch`.
@@ -420,12 +452,26 @@ login with an error page (HTTP 400, or 502 for IdP errors) and the audit event
    - For each mapped claim, the ID-token value wins and userinfo fills the gaps.
 9. The IdP's access token and refresh token MUST be discarded after step 8. They are never
    stored and never accepted as credentials (INV-8).
-10. Continue with R-AUTH-007 (user resolution), R-AUTH-008 (group sync) and R-AUTH-010 (session).
-    Then redirect with 302 to the flow's `return_to`.
+10. Continue with R-AUTH-007 (user resolution), R-AUTH-008 (group sync) and R-AUTH-010 (session),
+    in one transaction that starts after step 8. For a returning identity, that transaction first
+    locks the user's `principal` row (`SELECT … FOR UPDATE`), so concurrent logins of one user whose
+    callbacks reach different replicas apply their claims, memberships and session limit one after
+    the other. A first login has no row to lock yet; R-AUTH-007 resolves its race. Then redirect
+    with 302 to the flow's `return_to`.
+
+At most three outbound calls (the token endpoint in step 6, a JWKS refetch for an unknown `kid` in
+step 7, userinfo in step 8), each bounded by the 10 s timeout of R-AUTH-004, bound the callback to
+about 30 s plus two short transactions. That fits the `server.shutdown_timeout` of a `web` replica
+with the chart's defaults (110 s, [ha-and-helm.md](ha-and-helm.md) R-HA-011), so a replica that is
+drained finishes it ([architecture.md](architecture.md) R-ARCH-024). A replica killed, or cut at a
+shorter deadline, between step 1 and step 10 leaves no session and no half-created user; the user
+starts the login again.
 
 Acceptance criteria:
 
 - Replaying a callback URL that already succeeded gives 400 `flow_expired`.
+- With the test IdP's token endpoint delayed by 5 s, `pg_stat_activity` shows no trove connection
+  in state `idle in transaction` during the callback.
 - A callback opened in a second browser without the binding cookie gives 400 `browser_mismatch`.
 - The test IdP is switched to issue tokens:
   - with a wrong `nonce`, the login gives `nonce_mismatch`;
@@ -483,6 +529,14 @@ break-glass username of `anonymous`, `authenticated`, `system` or `me` makes sta
 3. **Just-in-time creation.** `jit` is true. A user with origin `jit` is created and linked, and
    auto-join groups are applied (R-AUTH-019).
 4. **Not provisioned.** None of the above holds. The login fails with `not_provisioned`.
+
+Concurrent first logins of one identity, for example from two browser tabs whose callbacks reach
+different replicas, race on `UNIQUE (issuer, subject)` and on the username. The losing transaction
+fails with a unique violation and is retried once from the start of R-AUTH-006 step 10. The retry
+finds the identity linked and continues as a returning login, or fails with `username_taken` if a
+different identity holds the name. A pending link is completed with a conditional update
+(`… SET subject = $1 WHERE id = $2 AND subject IS NULL`), so two concurrent logins cannot both use
+it.
 
 **Every login.** On each login trove:
 
@@ -586,13 +640,16 @@ reads the configured group claim:
 **Missing target groups.** If a target group does not exist:
 
 - with `create_groups: false`, it is skipped;
-- otherwise it is created with origin `oidc`.
+- otherwise it is created with origin `oidc`. The insert uses `ON CONFLICT DO NOTHING` and then
+  reads the group, so two logins on different replicas that create the same group at the same
+  moment both end up with the one group.
 
 **Writing the memberships.** In one transaction, trove sets the user's memberships whose
 source is `oidc:<providerId>` to exactly the target set. Memberships with source `manual`,
-`auto` or `scim` are never touched. Afterwards a cache invalidation is published (`NOTIFY`,
-INV-12) and, if anything changed, a `user.groups.synced` event is written with the added and
-removed groups.
+`auto` or `scim` are never touched. If anything changed, the same transaction records the change
+in the change area `auth` ([architecture.md](architecture.md) R-ARCH-018, R-AUTH-023), so every
+replica applies the new memberships within `auth.revocation_bound`, and writes a
+`user.groups.synced` event with the added and removed groups.
 
 **Missing claim.** The behavior follows `on_missing_claim` (default `clear`, decided in
 Q-AUTH-4). It applies to all three cases above alike, including the overage marker:
@@ -720,14 +777,49 @@ Set-Cookie: __Host-trv_session=<secret>; Secure; HttpOnly; SameSite=Lax; Path=/
   trove cookies carry the prefix: `__Host-trv_session`, `__Host-trv_csrf` (R-AUTH-012) and
   `__Host-trv_oidc_binding` (R-AUTH-005). This amends the cookie name in INV-8.
 
-**Validation.** Lookup follows the token path of R-AUTH-023: a per-replica cache with
-`NOTIFY` invalidation and the same latency bound. The principal must still be active.
+**Validation.** Lookup follows the token path of R-AUTH-023: the replica's in-process session
+cache, invalidated through the change area `auth`, with the same revocation bound and the same
+freshness gate. No session is read from or written to Valkey (Q-AUTH-9). The principal must still
+be active.
+
+**Deadlines are decided from the row (Q-AUTH-13).** Every replica ends a session at the same
+moment, whichever replica the request reaches:
+- `absolute_expires_at` never changes, so a cached entry decides it.
+- The idle deadline is `last_seen_at + idle_timeout` as stored in PostgreSQL. A cached entry whose
+  idle deadline has passed is not trusted: the replica reads the row again. Only if the row's
+  deadline has passed too does the session end, with reason `idle`
+  (`UPDATE … SET ended_at = now(), end_reason = 'idle' WHERE id = $1 AND ended_at IS NULL`), and
+  the request gets 401 `session_expired`. A replica that has not seen the session for an hour
+  therefore never ends it while the user works through other replicas.
+
+**Activity.** A request with a valid session counts as activity. The touch is this statement:
+`UPDATE ui_session SET last_seen_at = now() WHERE id = $1 AND ended_at IS NULL AND last_seen_at < now() - interval '60 seconds'`.
+- The condition keeps the row at one change per minute whatever the number of replicas.
+- The statement returns the row's `last_seen_at` whether or not it changed it (a data-modifying
+  CTE). The replica keeps the newest `last_seen_at` it has read for the session, from that result
+  or from a cache fill, and sends the touch only for a request that arrives 60 s or more after that
+  value.
+- The kept value never exceeds the row's, so a replica never skips a touch that the row needs. The
+  value only saves statements, never decides that a session has ended, and no later request
+  depends on it. The time of the replica's own last touch is not used for this decision: after a
+  touch that changed nothing, the row may be up to 60 s older than that time.
+- A failed write is counted in `trove_auth_session_touch_failures_total` and never fails the
+  request; the kept value stays as it was, so the next request sends the touch again.
+
+After any request at time *L* whose touch did not fail, the row's `last_seen_at` is at least
+*L* − 60 s. A session therefore
+ends between `idle_timeout` − 60 s and `idle_timeout` after its last request, on every replica
+alike.
 
 **Concurrency.** A user may hold up to `max_per_user` concurrent sessions. Creating one more ends
-the oldest with reason `evicted`.
+the oldest with reason `evicted`. The creating transaction locks the user's `principal` row
+(`SELECT … FOR UPDATE`) before it counts: an OIDC login takes the lock at the start of R-AUTH-006
+step 10, the break-glass login before it creates the session. Concurrent logins of one user on
+different replicas therefore cannot exceed the limit.
 
-**Housekeeping.** `last_seen_at` is written at most once per 60 s per session. Ended and expired
-rows are deleted 30 days after their end.
+**Housekeeping.** The `session-cleanup` task (R-AUTH-043) deletes ended and expired rows 30 days
+after their end. A session that expired without a request has no `ended_at`; its end is the
+earlier of its idle and absolute deadlines.
 
 Data model:
 
@@ -754,6 +846,9 @@ CREATE TABLE ui_session (
 );
 CREATE INDEX ui_session_principal ON ui_session (principal_id) WHERE ended_at IS NULL;
 ```
+
+The table has the backup export class `transient` ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-004): it holds raw ID tokens, and a restore ends every session.
 
 API:
 
@@ -783,14 +878,20 @@ Acceptance criteria:
 - A response from a sibling host that sets `trv_session` or `__Host-trv_session` with
   `Domain=<parent domain>` leaves the browser's cookie for trove unchanged (browser test).
 - Ending a session through the API makes the next request with that cookie fail with 401
-  `session_expired` within the latency bound of R-AUTH-023. This holds on every replica.
-- A 21st login of the same user ends the oldest session.
+  `session_expired` within the revocation bound of R-AUTH-023. This holds on every replica, also
+  with Valkey stopped.
+- A 21st login of the same user ends the oldest session. 30 concurrent logins of one user, spread
+  over three `web` replicas, leave exactly `max_per_user` active sessions.
+- In the `scatter` profile with `idle_timeout: 5m`, a session used every 30 s for 20 minutes, each
+  request on another replica, stays valid. After 6 minutes without a request, every replica
+  answers 401 `session_expired`, and the row's `end_reason` is `idle`.
 
 ### R-AUTH-011 · Session timeouts and recent authentication
 Priority: **MVP** · Covers: AUTHN-038
 
 **Timeouts.** A session ends at whichever comes first: `last_seen_at + idle_timeout` or
-`absolute_expires_at`. Break-glass sessions use their own shorter values (R-AUTH-014). Startup
+`absolute_expires_at`, both as stored in the session row (R-AUTH-010), so every replica ends it
+at the same time. Break-glass sessions use their own shorter values (R-AUTH-014). Startup
 MUST reject configured timeouts above the upper bounds of R-AUTH-010.
 
 **Recent authentication.** Some actions mint long-lived credentials:
@@ -883,7 +984,8 @@ Priority: **MVP** · Covers: AUTHN-038
 
 **Logout.** `POST /auth/logout` (cookie plus CSRF) does the following:
 
-- ends the session (reason `logout`) and publishes the invalidation;
+- ends the session (reason `logout`) and records the end in the change area `auth` in the same
+  transaction (R-AUTH-023);
 - clears `__Host-trv_session` and `__Host-trv_csrf` with `Max-Age=0`, `Secure` and `Path=/`
   and without `Domain`. The browser ignores a `__Host-` Set-Cookie that lacks these attributes,
   so a bare `Max-Age=0` would leave the cookie in place;
@@ -915,7 +1017,8 @@ Acceptance criteria:
 
 - Logout against a Keycloak test IdP ends the IdP session too. A new `/auth/oidc/corp/start`
   asks for credentials again.
-- After logout, the old cookie gets 401 on every replica within the latency bound.
+- After logout, the old cookie gets 401 on every replica within the revocation bound of
+  R-AUTH-023.
 
 ## Break-glass administrator
 
@@ -934,25 +1037,64 @@ without a role binding, so that recovery cannot depend on the state it recovers.
   cluster);
 - a plaintext password, which each replica hashes in memory at startup.
 
+Only replicas that serve the client listener read the file: `web`, and `all` in the local profile.
+A `worker` replica serves no login, neither needs nor reads the file, and does not get the Secret
+mounted (R-AUTH-042). The rules below that make a replica refuse to start apply to `web` replicas.
+
 **Hashing.** Verification uses Argon2id ([RFC 9106](https://www.rfc-editor.org/rfc/rfc9106)) with
 at least `m=65536` (KiB), `t=3` and `p=4`, which is the second recommended option of §4.
+
+Each verification holds the memory its parameters name, at least 64 MiB. A replica therefore runs
+at most `max_concurrent_verifications` of them at a time. An attempt that cannot start one within 1 s answers 503 `server_busy` with
+`Retry-After: 1`, like the in-flight limit of [architecture.md](architecture.md) R-ARCH-005, and
+is counted in `trove_auth_ratelimited_total{limit="break_glass_verifications"}`. Without this
+bound, concurrent attempts from many addresses, each within its per-address limit (R-AUTH-038),
+could exhaust a `web` replica's memory, and random distribution would carry them to every replica.
 
 **Password strength.** A plaintext password MUST have at least 20 characters and MUST NOT appear
 in an embedded list of the 10,000 most common passwords. Otherwise the replica refuses to start
 (IAM-069). The strength of a supplied hash cannot be checked; the replica logs a warning.
 
-**Password rotation.** The file is re-read when its modification time changes. A changed
-password ends all break-glass sessions (reason `password_changed`).
+**Password rotation (Q-AUTH-14).** The file is re-read when its modification time changes. The
+kubelet of each node delivers a rotated Secret to its pods on its own schedule, within its sync
+period plus the cache propagation delay
+([Secrets](https://kubernetes.io/docs/concepts/configuration/secret/); `syncFrequency` defaults to
+1 min in the
+[kubelet configuration](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/)),
+so replicas switch to the new password at different moments, within the Secret propagation time
+of [ha-and-helm.md](ha-and-helm.md) R-HA-030 (2 minutes). A changed password ends all break-glass
+sessions (reason `password_changed`). The change is coordinated in PostgreSQL, so it does not
+depend on the replica that noticed it staying alive:
+- A `web` replica whose file content changes upserts the `break-glass` row of `auth_lockout`
+  (R-AUTH-038) with `password_changed_at = now()`, unless a rotation hold opened less than
+  `rotation_hold` ago. If it opened a hold, the same transaction ends every break-glass session
+  created before it and records the ends in the change area `auth` (R-AUTH-023). Concurrent
+  detections serialize on the row, so one rotation opens one hold.
+- For `rotation_hold` after `password_changed_at`, the local login answers 503
+  `break_glass_rotating` with `Retry-After` on every replica, whichever file the replica holds.
+  Every attempt reads that row anyway (R-AUTH-038), so this costs no query. Neither the old nor the
+  new password opens a session while the replicas disagree.
+- After the hold, every replica holds the new file within the propagation time, so only the new
+  password works. A replica that notices the change later than the hold opens a new hold, which
+  ends every break-glass session again; a session opened with the new password before that has to
+  sign in again.
+- The ends are one committed transaction, so they hold when the replica that noticed the change is
+  drained right afterwards. A rotation that no running replica notices is H-52.
 
 **Disabled account.** If `enabled` is false, the local login is refused with 403
-`local_login_disabled`. Startup ends any remaining break-glass sessions. With `enabled` true and
-no readable password file, the replica refuses to start.
+`local_login_disabled`, and a replica rejects every break-glass session presented to it with 401
+`session_expired` and ends it. The rule is checked on every request, so a session that a replica
+still running with `enabled: true` opened during the rollout of the change is ended on its next
+request to an updated replica. Startup also ends any remaining break-glass sessions. With
+`enabled` true and no readable password file, the replica refuses to start.
 
 **Login.** The local login is `POST /auth/local/login` with `{"username": "...", "password":
 "..."}`:
 
 - The request must pass the origin check of R-AUTH-012.
-- The answer is 204 with the session cookies, or 401 `invalid_credentials`.
+- The answer is 204 with the session cookies, or 401 `invalid_credentials`. During a rotation
+  hold it is 503 `break_glass_rotating`, and while the replica's verification slots are taken
+  503 `server_busy` (above).
 - Argon2 verification always runs, also for unknown usernames, so response time does not reveal
   the account name.
 - Lockout follows R-AUTH-038.
@@ -984,6 +1126,8 @@ auth:
     show_on_login_page: false                       # default (proposed)
     idle_timeout: 15m                               # default (proposed)
     absolute_timeout: 1h                            # default (proposed)
+    rotation_hold: 2m                               # default (proposed); the Secret propagation time of ha-and-helm.md R-HA-030
+    max_concurrent_verifications: 2                 # default (proposed); Argon2id verifications per replica at a time
 ```
 
 Acceptance criteria:
@@ -993,22 +1137,41 @@ Acceptance criteria:
 - Start a replica with a 12-character plaintext password. It exits with a non-zero status and
   names the strength rule.
 - `POST /api/v1/tokens` from a break-glass session gets 403 `break_glass_restricted`.
-- Rotate the Secret. Within 60 s the old password fails on every replica, and existing
-  break-glass sessions are ended.
+- Rotate the Secret while three `web` replicas run and two break-glass sessions are open. From
+  the moment the first replica notices the new file, the local login answers 503
+  `break_glass_rotating` on every replica for `rotation_hold`. Afterwards the new password
+  succeeds and the old one gets 401 on every replica, and both earlier sessions get 401
+  `session_expired` on every replica. The same holds when the replica that noticed the change
+  first is deleted with `--grace-period=0 --force` right after it noticed.
+- A break-glass session is open, and `enabled: false` is rolled out. After the rollout, the
+  session's next request gets 401 `session_expired` on every replica.
+- 20 concurrent local-login attempts against one replica run at most 2 Argon2id verifications at
+  a time; attempts that wait longer than 1 s get 503 `server_busy`, and the pod is not killed for
+  memory.
+- A `worker` pod rendered by the chart has no break-glass Secret mounted and starts with
+  `auth.break_glass.enabled: true`.
 
 ### R-AUTH-015 · Bootstrap and recovery commands
 Priority: **MVP** · Covers: TOK-041, IAM-010
 
 The `trove admin` subcommands (INV-2) give an operator who can run commands in a replica pod
-(`kubectl exec`) the bootstrap and recovery operations. They use that replica's configuration
-and database connection; someone with that access already holds the database credentials.
+(`kubectl exec deploy/trove-web`, [ha-and-helm.md](ha-and-helm.md) R-HA-030) the bootstrap and
+recovery operations. They use that pod's configuration and open their own short-lived database
+connection; someone with that access already holds the database credentials. They load neither
+the OIDC providers nor the break-glass password, so they also run in `worker` pods, which have
+neither Secret (R-AUTH-042). They need no Valkey:
+a revocation, a disable or a session end commits through the change log
+([architecture.md](architecture.md) R-ARCH-018) and is in force on every replica within
+`auth.revocation_bound` (R-AUTH-023), whichever pod ran the command. A role binding written by
+`--admin` commits through the change area `authz` and is in force within the bound of
+[authorization.md](authorization.md) R-AUTHZ-028.
 
 | Command | Effect |
 |---|---|
-| `trove admin service-account create <name> [--description …] [--admin]` | Creates a service account. `--admin` binds the system-administrator role ([authorization.md](authorization.md)). |
+| `trove admin service-account create <name> [--description …] [--admin]` | Creates a service account. `--admin` binds the system role `admin` ([authorization.md](authorization.md) R-AUTHZ-010) in the transaction that creates the account, and that transaction calls `cluster.Notify("authz", …)` exactly as the role-binding API does (R-AUTHZ-022, R-AUTHZ-028), so every replica rebuilds its grant index. The command is one of the writes of R-AUTHZ-028's completeness test. |
 | `trove admin token create --service-account <name> [--ttl 15m] [--scope-file scope.json]` | Creates a SAT and prints it once to stdout. The TTL defaults to 15 min; the maximum is the SAT maximum (R-AUTH-026). |
 | `trove admin token revoke --id <uuid>` or `--value-stdin` | Revokes a token (R-AUTH-029). |
-| `trove admin break-glass status` or `unlock` or `end-sessions` | Shows the lockout state and sessions, clears a lockout, or ends break-glass sessions. |
+| `trove admin break-glass status` or `unlock` or `end-sessions` | Shows the lockout state, the rotation hold (R-AUTH-014) and the sessions, clears a lockout, or ends every break-glass session (reason `revoked`). |
 | `trove admin user disable <username> [--keep-tokens]` | Disables a user (R-AUTH-016). |
 | `trove admin sessions end --user <username>` or `--all` | Ends sessions. |
 
@@ -1019,18 +1182,38 @@ ran the command; how such a Job feeds a Secret is up to [ha-and-helm.md](ha-and-
 Every command writes an audit event with actor `admin-cli`, the pod name and the OS user. Token
 values are never logged.
 
+**After a restore.** `ui_session` (R-AUTH-010), `oidc_login_flow` (R-AUTH-005) and `cli_login`
+(R-AUTH-034) have the backup export class `transient`: no backup ever contains them
+([backup-and-restore.md](backup-and-restore.md) R-BAK-004), and a restore leaves them empty
+(R-BAK-022). A restore therefore ends every UI session, break-glass sessions included, and every
+browser, npm web or device login in progress. Every user signs in again; a session cookie issued
+before the restore names no row and gets 401 (R-AUTH-001). Tokens and principals are `data` and
+come back as they were at the snapshot, and the access removals made after it are re-applied from
+the revocation journal (R-AUTH-041, R-BAK-024).
+
 Acceptance criteria:
 
 - On a fresh installation, the following lets `$T` create a repository through
   `POST /api/v1/repositories`:
 
   ```shell
-  kubectl exec deploy/trove -- trove admin service-account create bootstrap --admin
-  T=$(kubectl exec deploy/trove -- trove admin token create --service-account bootstrap)
+  kubectl exec deploy/trove-web -- trove admin service-account create bootstrap --admin
+  T=$(kubectl exec deploy/trove-web -- trove admin token create --service-account bootstrap)
   ```
 
   After 15 minutes `$T` gets 401.
-- `trove admin break-glass unlock` clears an active lockout immediately, on all replicas.
+- `trove admin break-glass unlock` clears an active lockout immediately, on all replicas, because
+  every login attempt reads the lockout row (R-AUTH-038).
+- `kubectl exec deploy/trove-worker -- trove admin token revoke --id <id>`, run with Valkey
+  stopped, makes the token fail on every `web` replica within `auth.revocation_bound`.
+- `trove admin service-account create ops --admin` advances the `authz` epoch in `cluster_epoch`
+  in the transaction that inserts the `authz_role_binding` row. Run with Valkey stopped, a token of
+  `ops` then creates a repository through every `web` replica within the bound of
+  [authorization.md](authorization.md) R-AUTHZ-028.
+- A user signed in when a backup was taken, and still signed in when that backup is restored with
+  `trove backup restore`, gets 401 with the same session cookie on every `web` replica afterwards.
+  `ui_session`, `oidc_login_flow` and `cli_login` are empty, and the user's PAT created before the
+  snapshot still authenticates.
 
 ## Principals
 
@@ -1112,7 +1295,8 @@ CREATE TABLE app_user (
   last_login_at             timestamptz,
   last_interactive_auth_at  timestamptz,
   disabled_reason           text CHECK (disabled_reason IN ('admin', 'dormant', 'scim')),
-  disabled_at               timestamptz
+  disabled_at               timestamptz,
+  dormancy_warned_at        timestamptz                  -- R-AUTH-021 (P1): last user.dormancy_warning
 );
 CREATE UNIQUE INDEX app_user_one_break_glass ON app_user (is_break_glass) WHERE is_break_glass;
 ```
@@ -1154,7 +1338,7 @@ Acceptance criteria:
 
 - Disabling `alice` with the defaults:
   - `npm whoami` with her PAT gets 401;
-  - her open UI session gets 401 within the latency bound;
+  - her open UI session gets 401 within the revocation bound of R-AUTH-023, on every replica;
   - re-enabling her does not make the old PAT valid again.
 - Deleting `alice` and logging in again creates a user with a different `id`. Policies bound to
   the old principal do not apply.
@@ -1239,8 +1423,9 @@ the remaining sources, so the caller sees why the member is still in the group.
   [authorization.md](authorization.md) (IAM-016). The group record shows them read-only as
   `roles`.
 
-**Effect of changes.** Every membership change publishes a cache invalidation. Tokens and
-sessions see the new membership within the latency bound of R-AUTH-023.
+**Effect of changes.** Every membership change records itself in the change area `auth` in its
+own transaction. Tokens and sessions see the new membership on every replica within the
+revocation bound of R-AUTH-023, with or without Valkey.
 
 Data model:
 
@@ -1373,15 +1558,20 @@ Priority: **P1** · Covers: trove-only
 Without SCIM, deactivating a person at the IdP does not reach trove; their PATs keep working.
 Dormancy bounds that window:
 
-- A daily singleton job (advisory-lock lease, INV-12) disables every active user with origin
-  `jit` or `admin` whose `last_interactive_auth_at` (or `created_at` if they never logged in)
-  is older than `dormancy_period`. The disable uses reason `dormant` and keeps the tokens.
+- The daily task `user-dormancy` (R-AUTH-043), which runs once per slot on a `worker` replica,
+  disables every active user with origin `jit` or `admin` whose `last_interactive_auth_at` (or
+  `created_at` if they never logged in) is older than `dormancy_period`. The disable uses reason
+  `dormant` and keeps the tokens.
 - Users managed by SCIM and the break-glass account are exempt.
 - While a user is disabled, their tokens fail with `principal_disabled`.
 - A successful OIDC login re-enables a dormant user automatically, because the IdP has just
   vouched for the account. A user disabled by an administrator stays disabled.
-- `user.dormancy_warning` is emitted `dormancy_warning` before the deadline. Webhooks can carry
-  it ([operations-and-observability.md](operations-and-observability.md)), and email is P2.
+- `user.dormancy_warning` is emitted `dormancy_warning` before the deadline, once per user and
+  dormancy period. The task sets `dormancy_warned_at` with a conditional update (null, or older
+  than the user's last interactive authentication) and writes the event in the same transaction
+  only when the update changed the row, so a run that is resumed on another worker or repeated
+  emits it once. Webhooks can carry it
+  ([operations-and-observability.md](operations-and-observability.md)), and email is P2.
 - `dormancy_period: 0` switches the job off. The default is on, with 90 days (decided in
   Q-AUTH-5). It matches the default PAT lifetime (R-AUTH-026): a user who renews tokens at the
   default cadence logs in through the UI anyway, because creating a token needs a session.
@@ -1487,8 +1677,9 @@ bits of entropy, a salt or a slow hash adds nothing, and a single indexed lookup
 
 1. Syntax: the prefix is known, the length is 57, the alphabet is base62, and the checksum
    matches. Failure gives 401 with no database access.
-2. The per-replica cache, keyed by the hash. On a miss, `SELECT … FROM api_token WHERE
-   secret_sha256 = $1`.
+2. The replica's token cache (below), keyed by the hash. On a miss, or while the freshness gate
+   below bypasses the cache, the failed-credential throttle of R-AUTH-038 is checked first, then
+   `SELECT … FROM api_token WHERE secret_sha256 = $1`, joined with the owner's status.
 3. The token is rejected unless all of the following hold:
    - `revoked_at IS NULL`;
    - `expires_at IS NULL OR expires_at > now()`;
@@ -1496,19 +1687,80 @@ bits of entropy, a salt or a slow hash adds nothing, and a single indexed lookup
 
    The type in the prefix must equal the row's `type`.
 4. A use of a revoked or expired token whose row still exists writes `token.rejected` with the
-   reason, at most once per token per hour (R-AUTH-041).
+   reason, at most once per token per hour (R-AUTH-041). The hour is kept in the row, not in a
+   replica: `UPDATE api_token SET rejection_logged_at = now() WHERE id = $1 AND
+   (rejection_logged_at IS NULL OR rejection_logged_at < now() - interval '1 hour')`, and the event
+   is written in the same transaction only when the update changed the row. The cluster as a whole
+   therefore writes one event per token and hour, whatever the number of replicas. The statement
+   runs only when the row read in step 2 shows `rejection_logged_at` null or older than one hour,
+   so a client that keeps presenting a revoked token causes one write per hour, not one per
+   request.
 
-**Cache.** The cache holds positive results only, for at most `cache_ttl`. It is invalidated
-through `LISTEN/NOTIFY` (INV-12) on channel `trove_auth`; the payload names the token,
-session or principal that changed. Revocation, rotation, principal disable or delete,
-membership changes and settings changes all notify. When the `LISTEN` connection drops, the
-replica empties the cache and bypasses it until it has re-subscribed.
+**Caches.** Each replica keeps four registered in-process caches
+([architecture.md](architecture.md) R-ARCH-018):
 
-**Revocation latency.** A revoked token or ended session MUST be rejected by every replica
-within 2 s while notifications flow, and never later than `cache_ttl` (15 s).
+| Cache | Key | Holds |
+|---|---|---|
+| `auth_tokens` | secret hash | the token row and its owner's status |
+| `auth_sessions` | secret hash | the session row and its principal's status (R-AUTH-010) |
+| `auth_principals` | principal ID | status and group memberships |
+| `auth_settings` | — | the row of R-AUTH-040 |
 
-**Retention.** A singleton cleanup job deletes token rows `retention_after_end` after expiry or
-revocation. A deleted row means an unknown token. The audit trail keeps the history.
+- They hold positive results only. `SafetyTTL` is `cache_ttl`, which bounds staleness only if an
+  invalidation were ever lost through a defect; the revocation bound below does not depend on it.
+- The caches never move to Valkey, the token cache included: no entry is ever read from or written
+  to Valkey, and Valkey holds no shared second level of them (Q-AUTH-9). Each replica fills its own
+  caches from PostgreSQL. Valkey carries only the change messages of the area `auth` below.
+
+**Invalidation.** Every change that ends, narrows or alters a credential, a principal or a setting
+records itself in the change area `auth` ([architecture.md](architecture.md) R-ARCH-018) in its
+own transaction. That covers revocation, rotation, a session's end, principal disable, enable or
+delete, membership changes and settings changes.
+- The payload names the token ID with the hash of the ended credential, the session ID or the
+  principal ID; it never carries a live secret (R-ARCH-018 rules).
+- After commit, the writing replica evicts at once, and Valkey carries the change to the other
+  replicas as an early eviction. The change-log poll applies it on every replica whatever Valkey
+  does. Only the poll advances the replica's applied epoch, so a lost, delayed or forged Valkey
+  message can neither hide nor delay a revocation.
+- A fill reads the applied epoch of `auth`, and of every other area that invalidates the cache,
+  before its query, and caches the result only if the epochs are unchanged afterwards
+  (R-ARCH-018). A fill that raced a revocation therefore serves its one request and is never
+  cached.
+
+**Freshness gate (Q-AUTH-10).** A replica answers from these caches only while its last completed
+change-log poll started less than `auth.revocation_bound` ago
+(`cluster.ChangesFreshWithin(auth.revocation_bound)`, measured on the replica's monotonic clock).
+Otherwise every lookup goes to PostgreSQL as on a miss and is not cached. A lookup that
+PostgreSQL does not answer within the request's retry budget
+([ha-and-helm.md](ha-and-helm.md) R-HA-009) gives 503 (R-AUTH-001), never an answer from the cache.
+`trove_auth_cache_bypassed_total{reason="changes_stale"}` counts these lookups.
+
+The gate is deliberately stricter than the `invalidation` readiness check of R-ARCH-018, which
+takes a replica out of the Service only once its poll is older than `cluster.epoch_max_staleness`
+(at least the PostgreSQL readiness window of about 15 s, [ha-and-helm.md](ha-and-helm.md)
+R-HA-008). The caches are bypassed from `auth.revocation_bound` on, so a replica that is still in
+the Service never answers from a cache older than the bound (Q-AUTH-10).
+
+While the gate bypasses the caches, concurrent lookups of one credential on one replica share one
+query, provided that query started less than `auth.revocation_bound` before the joining request
+arrived; the shared result is not cached either. The query then started after every change older
+than the bound, so sharing keeps the revocation bound. While lookups finish within the bound, a
+replica therefore has one lookup per credential in flight, and a gate that trips on every replica
+during a slow PostgreSQL does not multiply the database's load by the request rate.
+
+**Revocation latency.** A revoked token, an ended session or a disabled principal MUST be rejected
+by every replica within `auth.revocation_bound` (2 s) after the change committed. The bound holds
+whatever Valkey does: available, unavailable, failed over, emptied, partitioned from one replica
+or carrying forged messages. It also holds for a replica cut off from PostgreSQL, which answers
+503 instead. While Valkey works, a change typically applies within 100 ms
+([architecture.md](architecture.md) R-ARCH-027, P-13). A poll reads every change committed before
+it started ([READ COMMITTED](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)),
+which is why a poll younger than the bound proves it. Startup MUST fail, naming both keys, if
+`auth.revocation_bound` is below 2 × `cluster.epoch_poll_interval` or above 10 s.
+
+**Retention.** The `token-cleanup` task (R-AUTH-043) deletes token rows `retention_after_end`
+after expiry or revocation. A deleted row means an unknown token. The audit trail keeps the
+history.
 
 Data model:
 
@@ -1536,6 +1788,7 @@ CREATE TABLE api_token (
   derived_from       uuid        REFERENCES api_token (id) ON DELETE SET NULL,  -- R-AUTH-027 derivation rule
   last_used_at       timestamptz,
   last_used_addr     inet,
+  rejection_logged_at timestamptz,                                   -- step 4: token.rejected once per hour, cluster-wide
   expiry_notified_at timestamptz,
   ci_context         jsonb,                                          -- owned by gitlab-ci-oidc.md
   CHECK (type = 'sat' OR expires_at IS NOT NULL)
@@ -1548,16 +1801,25 @@ Configuration:
 
 ```yaml
 auth:
+  revocation_bound: 2s            # default (proposed); at least 2 × cluster.epoch_poll_interval, at most 10s (Q-AUTH-10)
   tokens:
-    cache_ttl: 15s                # default (proposed); upper bound 60s
+    cache_ttl: 15s                # default (proposed); upper bound 60s; SafetyTTL of the four auth caches
     retention_after_end: 2160h    # default (proposed): 90 days
 ```
 
 Acceptance criteria:
 
 - Revoke a token through replica A while replica B serves a request loop with it. B rejects the
-  token within 2 s.
-- With `LISTEN` artificially blocked on B, B rejects the token within 15 s.
+  token within 2 s; with Valkey available, within 200 ms at p99 over 100 trials.
+- B rejects the token within 2 s in each of these cases: Valkey stopped; B's Pub/Sub connection
+  killed (`CLIENT KILL TYPE pubsub`); every message on the change channel dropped and forged
+  messages injected (the fault-injection build of R-ARCH-018); a Sentinel failover during the
+  revocation.
+- B caches the token, then a NetworkPolicy denies B's egress to PostgreSQL, and the token is
+  revoked through A. From 2 s after the policy applied, B answers requests with the token with 503
+  and never with 200. After the policy is removed, B answers 401.
+- `auth.revocation_bound: 1s` with `cluster.epoch_poll_interval: 1s` makes startup fail and names
+  both keys.
 - A database dump contains no token value. `SELECT count(*) FROM api_token WHERE
   encode(secret_sha256, 'hex') = '<sha256 of a live token>'` returns 1.
 
@@ -1645,8 +1907,8 @@ Acceptance criteria:
   `npm-local`, and `npm publish` with it gets 403.
 - An administrator's PAT created with the default scope gets 403 on
   `POST /api/v1/repositories`. One created with `{"inherit": true, "admin": true}` succeeds.
-- `alice`'s group loses deploy on `npm-local`. Within the latency bound her `inherit` token can
-  no longer publish.
+- `alice`'s group loses deploy on `npm-local`. Within the bound of
+  [authorization.md](authorization.md) R-AUTHZ-028 her `inherit` token can no longer publish.
 - Creating a token whose scope element carries `"include": ["@acme/*"]` at the top level answers
   400 `invalid_scope`. The same pattern as `"packages": {"include": ["@acme/*"]}` is accepted.
 - (P1) `alice` may deploy build records named `acme/**`. Her token with scope
@@ -1858,6 +2120,10 @@ token is revoked.
 | 403 | The codes above, `derivation_exceeds_parent` (derivation rule violated), `non_expiring_restricted` (R-AUTH-026), and `pat_not_allowed` (R-AUTH-017) |
 | 409 | `token_limit_reached` (R-AUTH-026) |
 
+The creating transaction locks the owner's `principal` row (`SELECT … FOR UPDATE`) before it
+counts the owner's active tokens against `max_active_per_principal` (R-AUTH-026), so concurrent
+creates on different replicas cannot exceed the limit.
+
 Each success writes `token.created` with ID, type, owner, scope, expiry and `createdVia`, never
 the secret.
 
@@ -1941,7 +2207,9 @@ already rotated value revoke the live successor; that is deliberate. Its rules:
 
 **Common rules:**
 
-- Revocation is immediate within the latency bound of R-AUTH-023.
+- Revocation is in force on every replica within the revocation bound of R-AUTH-023
+  (`auth.revocation_bound`), with or without Valkey. The revoking transaction records the change
+  in the change area `auth`, the cascade below included.
 - **Cascade.** Revoking a token MUST revoke, in the same transaction, every unrevoked token whose
   `derived_from` chain leads to it, with reason `parent_revoked`. A revocation with reason
   `leaked` (revocation by value) additionally follows `rotated_from` forward and revokes the
@@ -1973,11 +2241,11 @@ Acceptance criteria:
 - `DELETE /api/v1/tokens/current` with a CIT answers 204, the CIT gets 401 on its next request,
   and the audit trail shows `token.revoked` with reason `owner`.
 - A PAT derives a child PAT through `POST /api/v1/tokens`. Revoking the parent by value makes the
-  child fail with 401 within the latency bound, and the audit trail shows `token.revoked` with
+  child fail with 401 within the revocation bound, and the audit trail shows `token.revoked` with
   reason `parent_revoked` for the child.
 - A SAT is rotated with `overlapSeconds: 0`, so the predecessor is already revoked with reason
   `rotated`. Posting the predecessor's value to `POST /api/v1/tokens/revoke` answers 202, and the
-  successor fails with 401 within the latency bound.
+  successor fails with 401 within the revocation bound.
 
 ### R-AUTH-030 · Token rotation
 Priority: **P1** · Covers: TOK-024
@@ -2046,11 +2314,14 @@ NuGet API-key presentations count alike.
 
 **Write strategy.** Writes are coarsened and batched:
 
-- each replica aggregates uses in memory;
-- it flushes every 60 s with one `UPDATE … WHERE last_used_at IS NULL OR last_used_at <
-  $ts − granularity`;
+- each replica aggregates uses in memory. Requests write this buffer and never read it, so it is
+  per-replica state that no answer depends on (R-AUTH-042);
+- it flushes every 60 s, and at shutdown before the pools close
+  ([architecture.md](architecture.md) R-ARCH-024), with one `UPDATE … WHERE last_used_at IS NULL
+  OR last_used_at < $ts − granularity`. The condition keeps each token's row at one change per
+  `granularity`, whatever the number of replicas that saw it;
 - updates are best effort. A failed flush is dropped and counted in a metric, and never fails a
-  request.
+  request. A replica killed without a drain loses at most one interval of uses.
 
 **Use.** `lastUsedBefore` in R-AUTH-028 finds stale tokens. A token that was never used has
 `lastUsedAt: null`.
@@ -2066,16 +2337,22 @@ auth:
 Acceptance criteria:
 
 - After `npm install` with a PAT, the token's `lastUsedAt` is within the last 6 minutes. After
-  100 further requests within one minute, the database has seen at most one update for it.
+  100 further requests within one minute, spread over three `web` replicas, the token's row has
+  changed at most once.
+- A `web` pod deleted gracefully 10 s after the only use of a token writes that use before it
+  exits.
 
 ### R-AUTH-032 · Token expiry notifications
 Priority: **MVP** · Covers: IAM-038
 
-**Daily job.** A daily singleton job finds active PATs and SATs whose `expires_at` falls within
-`expiry_notice` and whose `expiry_notified_at` is null. For each one it:
+**Daily task.** The task `token-expiry-notice` (R-AUTH-043), which runs once per slot on a
+`worker` replica, finds active PATs and SATs whose `expires_at` falls within `expiry_notice` and
+whose `expiry_notified_at` is null. For each one, in one transaction, it:
 
-- writes the event `token.expiring` (owner, token ID, hint, description, `expiresAt`);
-- sets `expiry_notified_at`.
+- sets `expiry_notified_at` with `UPDATE … WHERE id = $1 AND expiry_notified_at IS NULL`;
+- writes the event `token.expiring` (owner, token ID, hint, description, `expiresAt`), only when
+  that update changed the row, so two runs that overlap (a job resumed on another worker while
+  its first claimant still runs) write one event.
 
 The event goes to the audit trail and to webhook subscribers
 ([operations-and-observability.md](operations-and-observability.md)). Rotation creates a new
@@ -2100,8 +2377,9 @@ auth:
 
 Acceptance criteria:
 
-- A PAT expiring in 3 days produces exactly one `token.expiring` event across two job runs and
-  two replicas.
+- A PAT expiring in 3 days produces exactly one `token.expiring` event across two task runs on
+  two `worker` replicas, also when the first run's pod is deleted mid-run and the second worker
+  resumes it.
 
 ## Client authentication
 
@@ -2239,7 +2517,8 @@ OIDC session.
    - a warning to approve only a login the user just started;
    - an additional prominent warning if the browser's address differs from the requesting
      address;
-   - every refused poll (address binding below): its address and time, with the text "trove
+   - the refused polls (address binding below): their count and the address and time of the last
+     one, with the text "trove
      refused to hand the token to a poll from <address>, outside the network that started this
      login. If that was your own npm, your network uses several egress addresses: create a token
      in your profile and enter it at npm's password prompt, or ask an administrator to list the
@@ -2258,6 +2537,12 @@ OIDC session.
 | Approved | Mint the PAT (`createdVia: npm-web-login`, description `npm login from <addr> on <date>`), mark the row consumed, answer 200 `{"token": "trv_pat_…"}`. The secret is generated at this moment and is never stored. |
 | Denied | 403 `{"error": "denied"}` |
 | Expired, consumed or unknown | 404 `{"error": "not_found"}` |
+
+**Polls on any replica.** Each poll reads the row from PostgreSQL; no replica keeps a login's state
+(R-AUTH-042, Q-AUTH-12). An approved login is consumed with
+`UPDATE cli_login SET status = 'consumed' WHERE id = $1 AND status = 'approved' RETURNING …`, in the
+same transaction that inserts the PAT. Two polls of one `doneUrl` that reach two replicas at the
+same moment therefore mint one token: the second finds no approved row and gets 404.
 
 npm treats any 4xx answer, on the start call or on a poll, as "web login unsupported" and falls
 back to the username and password prompt. There, a user can still type a PAT as password
@@ -2283,10 +2568,12 @@ Rules:
   back to legacy login (R-AUTH-035), so a legitimate client whose poll leaves the network gets a
   password prompt where it can enter a PAT.
 - Each refused poll increments `refused_poll_count` and records `last_refused_addr` and
-  `last_refused_at` on the row. The approval page shows it (step 2), and trove writes
-  `cli_login.poll_refused` (R-AUTH-041), at most once per login and address. The metric
-  `trove_auth_cli_poll_refused_total` counts refusals, so operators see how often their network
-  defeats the binding.
+  `last_refused_at` on the row, under the row's lock (`SELECT … FOR UPDATE`). The approval page
+  shows it (step 2). trove writes `cli_login.poll_refused` (R-AUTH-041) in the same transaction
+  when the refused address differs from the previous `last_refused_addr`, so concurrent refusals
+  on several replicas write one event per new address, and no replica keeps a record of its own.
+  The metric `trove_auth_cli_poll_refused_total` counts refusals, so operators see how often their
+  network defeats the binding.
 - `equivalent_ranges` lists CIDR blocks of the operator's egress pools whose addresses are not
   contiguous within the prefix. Startup MUST fail for an invalid entry, for an IPv4 entry wider
   than `/16`, and for an IPv6 entry wider than `/32`; switching the binding off takes `mode:
@@ -2329,10 +2616,15 @@ CREATE TABLE cli_login (
   refused_poll_count integer     NOT NULL DEFAULT 0,  -- address binding, npm only
   last_refused_addr  inet,
   last_refused_at    timestamptz,
+  last_polled_at     timestamptz,                  -- device flow: slow_down across replicas (R-AUTH-036)
   created_at         timestamptz NOT NULL DEFAULT now(),
   expires_at         timestamptz NOT NULL
 );
+CREATE INDEX cli_login_expires ON cli_login (expires_at);  -- session-cleanup, pending-flow count (R-AUTH-038)
 ```
+
+The table has the backup export class `transient` ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-004): a restore ends every command-line login in progress.
 
 Configuration:
 
@@ -2355,6 +2647,9 @@ Acceptance criteria:
   in through the test IdP and approving lets the command finish. `~/.npmrc` then contains
   `//trove.test/api/npm/npm-all/:_authToken=trv_pat_`, and `npm whoami` prints the user.
 - Polling the same `doneUrl` after success gives 404. A denied login makes npm stop polling.
+- Two polls of one approved `doneUrl`, sent at the same moment to two different `web` replicas:
+  exactly one gets 200 with a token, the other 404, and
+  `SELECT count(*) FROM api_token WHERE created_via = 'npm-web-login'` grows by one.
 - The login starts from `198.51.100.10`. After the approval, a poll of the `doneUrl` from
   `203.0.113.7` gets 404, and the next poll from `198.51.100.10` receives the token. The approval
   page shows the refused address, and one `cli_login.poll_refused` event is written. The request
@@ -2424,8 +2719,20 @@ the terminal they are looking at.
 | `POST /api/v1/auth/device/token` | `grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=…` | 200 `{"access_token": "trv_pat_…", "token_type": "Bearer", "expires_in": …}`; 400 `authorization_pending`, `slow_down`, `access_denied` or `expired_token` (§3.5) |
 
 **Codes.** The user code has 8 characters from `BCDFGHJKLMNPQRSTVWXZ` (§6.1) and is compared
-case-insensitively. Entering a wrong code 5 times invalidates the request. The device code is
-the `pollSecret`.
+case-insensitively. The device code is the `pollSecret`.
+
+**Wrong user codes.** §5.1 recommends rate-limiting user-code attempts. A wrong code does not name
+a request, so attempts are counted per signed-in user, in the cluster-scoped limiter
+`auth.device_code_failures` (R-AUTH-038). After `auth.rate_limit.device_code_failures` wrong codes
+(5) within `auth.cli_login.ttl`, the page refuses further codes from that user with 429 until the
+window ends, on every replica alike. While Valkey is unavailable, the limiter's per-replica share
+applies ([architecture.md](architecture.md) R-ARCH-034).
+
+**Polling pace.** `interval` is 5 s. Each poll reads and updates `last_polled_at` of its row in one
+statement. A poll that arrives less than `interval` after the previous poll of the same device
+code, on whichever replica, answers `slow_down`; §3.5 then makes the client add 5 s to its interval
+for every later poll. An approved request is consumed with the conditional update of R-AUTH-034,
+so it yields exactly one token however many replicas the polls reach.
 
 **Approval.** The approval page requires the typed user code, a session, CSRF protection and
 recent authentication.
@@ -2444,7 +2751,10 @@ Acceptance criteria:
 
 - A test client using a standard RFC 8628 library (for example `golang.org/x/oauth2`
   `DeviceAuth`) obtains a PAT after the approval in the browser. The PAT then works with `curl`.
-- Polling faster than `interval` gets `slow_down`.
+- Polling faster than `interval` gets `slow_down`. Two polls of one device code 1 s apart, sent to
+  two different `web` replicas, get `authorization_pending` and then `slow_down`.
+- Six wrong user codes typed by one user, each submitted to another replica, get 429 for the sixth.
+- The approval polled at the same moment on two replicas yields one token, as in R-AUTH-034.
 - The token response contains no `refresh_token`. A PAT from a request with
   `self_rotatable=true` that the approver kept can call `POST /api/v1/tokens/current/rotate`; one
   whose approver declined it gets 403.
@@ -2510,7 +2820,8 @@ the grants that policies give that principal ([authorization.md](authorization.m
 - whatever [api-and-ui.md](api-and-ui.md) declares public, for example the OpenAPI document.
 
 **Switching it off.** Turning anonymous access off takes effect on every replica within the
-latency bound.
+revocation bound of R-AUTH-023, because the runtime setting is a cached row invalidated through
+the change area `auth`.
 
 Acceptance criteria:
 
@@ -2528,10 +2839,37 @@ input before any database access. The limits below protect three things: the one
 the system, the database from floods of well-formed fake tokens, and the endpoints that create
 rows without authentication.
 
-**Break-glass lockout (cluster-wide).** Failures are counted in PostgreSQL:
+**Where the counters live (Q-AUTH-11).** Requests reach replicas at random and the replica count
+changes with autoscaling, so every limit on callers on this page counts cluster-wide and gives
+the same answer on every replica. The break-glass lockout counts in PostgreSQL; every other limit
+on callers is a cluster-scoped limiter of [architecture.md](architecture.md) R-ARCH-034, counted in
+Valkey. Only the Argon2id verification slots of R-AUTH-014 count per replica, because they protect
+the replica's own memory, as `server.max_in_flight` does.
+
+| Limiter | Bucket | Counts | Rate and burst |
+|---|---|---|---|
+| `auth.credential_failures` | client address | rejected credentials (count-only: checked before validation, counted after a rejection) | `failures_per_address` per minute |
+| `auth.flow_starts` | client address | every request to the endpoints listed below | `starts_per_address` per minute |
+| `auth.device_code_failures` | principal ID | wrong user codes (count-only, R-AUTH-036) | `device_code_failures` per `auth.cli_login.ttl` |
+
+Each limiter is registered with the configured value as burst and that value divided by its window
+as rate, so R-ARCH-034's window *W* is one minute, or `auth.cli_login.ttl` for wrong device codes.
+
+While Valkey is unavailable, each limiter answers from per-replica buckets at the configured value
+divided by the live `web` replicas (R-ARCH-034), so the cluster-wide budget stays close to the
+configured one, and `trove_ratelimit_fallback{limiter}` is 1. A limiter never fails a request
+because Valkey failed, and Valkey being unavailable never makes a replica unready (INV-12).
+
+**Break-glass lockout (cluster-wide, in PostgreSQL).** Failures are counted in PostgreSQL, not in
+Valkey: the lockout guards a credential, and a Valkey failover or flush must not hand a guesser a
+fresh threshold (INV-3, R-ARCH-034):
 
 - `lockout.threshold` failures within `lockout.window` lock the account until
   `now + lockout.duration`;
+- each failure is counted with one `INSERT … ON CONFLICT (account_key) DO UPDATE` statement, so
+  failures arriving on several replicas at the same moment are all counted;
+- every attempt reads the row, and no replica caches it, so a lock or an unlock is in force on
+  every replica at once;
 - during the lock, the local login answers 429 with `Retry-After`, even for the correct
   password;
 - locks expire on their own, so nobody can lock out the recovery account permanently;
@@ -2543,27 +2881,37 @@ rows without authentication.
 
 The per-node counting weakness of the catalog's suspension mechanism does not apply.
 
-**Failed-credential throttle (per replica, in memory):**
+**Failed-credential throttle (cluster-wide):**
 
-- More than `failures_per_address` rejected credentials from one client address within 1 minute
-  switch that address into throttled mode for the rest of the window.
-- In throttled mode, requests that carry a credential not already in the positive validation
-  cache get 429 with `Retry-After` and are not validated. Tokens already validated recently keep
-  working, so colleagues behind the same NAT are not cut off.
+- More than `failures_per_address` rejected credentials from one client address within the
+  limiter's one-minute window, counted on all replicas together, put that address into throttled
+  mode until the windowed count falls below the limit.
+- The throttle is consulted only for a credential that the replica cannot answer from its caches
+  (R-AUTH-023 step 2). A cache hit costs no Valkey round trip.
+- In throttled mode, a request whose credential is neither in this replica's cache nor marked as
+  recently validated gets 429 with `Retry-After` and is not validated. A successful validation
+  from PostgreSQL marks the credential in Valkey for `recent_token_window`, under a key derived
+  from its secret hash ([architecture.md](architecture.md) R-ARCH-030). Tokens validated recently
+  on any replica therefore keep working on every replica, so colleagues behind the same NAT are not
+  cut off, whichever replica their requests reach.
+- A marker only lets a credential be validated. Validation itself still reads PostgreSQL or the
+  replica's own cache (R-AUTH-023), so a marker never authenticates anyone.
+- While Valkey is unavailable, only the replica's own cache exempts a credential, and the
+  limiter's per-replica share applies (above).
 - Addresses in `exempt_cidrs` are never throttled.
-- The effective cluster-wide limit is this value multiplied by the number of replicas, by
-  design.
 
-**Unauthenticated row-creating endpoints.** These are limited to `starts_per_address` per minute
-and address:
+**Unauthenticated endpoints that create rows or run the password hash.** These are limited to
+`starts_per_address` per minute and address, cluster-wide:
 
 - `/auth/oidc/*/start`;
 - npm `-/v1/login`;
 - `/api/v1/auth/device/authorize`;
-- `POST /api/v1/tokens/revoke`.
+- `POST /api/v1/tokens/revoke`;
+- `POST /auth/local/login`, whose Argon2id verification runs for every attempt (R-AUTH-014).
 
-In addition, more than `max_pending_flows` pending rows in `oidc_login_flow` and `cli_login`
-together answer 503.
+In addition, more than `max_pending_flows` unexpired pending rows in `oidc_login_flow` and
+`cli_login` together answer 503. Each `web` replica reads that count from PostgreSQL at most every
+5 s, so the decision is at most 5 s behind the table on every replica.
 
 **Client address.** It is determined per [architecture.md](architecture.md), with a trusted
 proxy list. Without that list, forwarded headers are ignored, so a spoofed `X-Forwarded-For`
@@ -2573,10 +2921,11 @@ Data model:
 
 ```sql
 CREATE TABLE auth_lockout (
-  account_key       text        PRIMARY KEY,   -- 'break-glass'
-  failures          integer     NOT NULL DEFAULT 0,
-  window_started_at timestamptz NOT NULL,
-  locked_until      timestamptz
+  account_key         text        PRIMARY KEY,   -- 'break-glass'
+  failures            integer     NOT NULL DEFAULT 0,
+  window_started_at   timestamptz NOT NULL,
+  locked_until        timestamptz,
+  password_changed_at timestamptz                -- start of the last rotation hold (R-AUTH-014)
 );
 ```
 
@@ -2590,19 +2939,29 @@ auth:
       window: 15m           # default (proposed)
       duration: 15m         # default (proposed)
   rate_limit:
-    failures_per_address: 300  # default (proposed); per replica and minute
-    starts_per_address: 30  # default (proposed); per replica and minute
+    failures_per_address: 300  # default (proposed); per minute and address, cluster-wide; per-replica share while Valkey is unavailable
+    starts_per_address: 30     # default (proposed); per minute and address, cluster-wide; per-replica share while Valkey is unavailable
+    device_code_failures: 5    # default (proposed); per user within auth.cli_login.ttl, cluster-wide; per-replica share while Valkey is unavailable (R-AUTH-036)
+    recent_token_window: 10m   # default (proposed); throttle exemption of a credential validated on any replica
     max_pending_flows: 100000  # default (proposed)
-    exempt_cidrs: []        # default (proposed)
+    exempt_cidrs: []           # default (proposed)
 ```
 
 Acceptance criteria:
 
 - Five wrong break-glass passwords, spread across two replicas, lock the account on both. The
-  correct password then gets 429 until `trove admin break-glass unlock` runs.
-- 400 requests with random well-formed tokens from one address within a minute yield 429 after
-  the 300th. A PAT that was used successfully from that address before the burst still works
-  during it.
+  correct password then gets 429 until `trove admin break-glass unlock` runs. Five wrong passwords
+  sent at the same moment to three replicas lock it as well, and `valkey-cli FLUSHALL` does not
+  unlock it.
+- 400 requests with random well-formed tokens from one address within a minute, sent one after
+  another, round robin over three `web` replicas, are validated at most 300 times; the rest get
+  429. A PAT that was used
+  successfully from that address on one replica within the previous 10 minutes still works during
+  the burst on all three.
+- With Valkey stopped, the same burst is validated at most 300 times across the three replicas,
+  and `trove_ratelimit_fallback{limiter="auth.credential_failures"}` is 1 on each of them.
+- 40 `GET /auth/oidc/corp/start` from one address within a minute, sent one after another, round
+  robin over three replicas, get 429 from the 31st on.
 
 ## Provisioning
 
@@ -2711,8 +3070,9 @@ token with `admin: true`) accepts:
 - Each value must be at most its YAML ceiling, and each default at most its maximum. Otherwise
   400 `exceeds_ceiling` or 400 `default_above_maximum`.
 - Enabling anonymous access while the ceiling forbids it answers 409 `anonymous_not_allowed`.
-- Every change writes `settings.auth.changed` with the before and after values, and publishes a
-  cache invalidation.
+- Every change writes `settings.auth.changed` with the before and after values, and records
+  itself in the change area `auth` in the same transaction, so every replica applies it within
+  the revocation bound of R-AUTH-023.
 
 The declarative configuration-as-code file (P1,
 [operations-and-observability.md](operations-and-observability.md)) may set these values. It
@@ -2738,7 +3098,8 @@ Acceptance criteria:
 
 - `PATCH` with `maxTTLSeconds` above the YAML ceiling gets 400 `exceeds_ceiling`.
 - Switching `anonymousAccess` on takes effect for anonymous requests on every replica within
-  the latency bound, and one audit event records the change.
+  the revocation bound, and one audit event records the change. Switching it off takes effect
+  within the same bound with Valkey stopped.
 
 ### R-AUTH-041 · Authentication audit events
 Priority: **MVP** · Covers: OPS-022, OPS-023
@@ -2766,9 +3127,9 @@ or authorization codes.
 | `auth.login.succeeded`, `auth.login.failed` | R-AUTH-006, R-AUTH-007; reasons from those pages | yes |
 | `auth.breakglass.login`, `auth.breakglass.locked` | R-AUTH-014, R-AUTH-038; severity `high` | yes |
 | `auth.logout`, `auth.session.ended` (admin, evicted, principal disabled) | R-AUTH-010, R-AUTH-013 | yes; idle and absolute expiry are not recorded |
-| `auth.csrf_failed` | R-AUTH-012 | yes, at most one per session and minute |
+| `auth.csrf_failed` | R-AUTH-012 | yes, at most one per session and minute on each replica; a log-volume bound, not a count |
 | `auth.credential.rejected` | R-AUTH-001 for malformed or unknown credentials | log stream and metric only, because of volume |
-| `token.rejected` | R-AUTH-023 for a revoked or expired token whose row exists | yes, at most one per token and hour; signals a leak or a stale client |
+| `token.rejected` | R-AUTH-023 for a revoked or expired token whose row exists | yes, at most one per token and hour in the whole cluster (R-AUTH-023 step 4); signals a leak or a stale client |
 | `token.created`, `token.rotated`, `token.revoked`, `token.expiring` | R-AUTH-027 to R-AUTH-032 | yes |
 | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning` | R-AUTH-007, R-AUTH-016, R-AUTH-021, R-AUTH-039 | yes; `details.source` is `jit`, `admin`, `scim`, `dormancy` or `admin-cli` |
 | `user.groups.synced` | R-AUTH-008, with added and removed lists | yes, only when something changed |
@@ -2776,16 +3137,18 @@ or authorization codes.
 | `group.created`, `group.updated`, `group.deleted`, `group.members.changed` | R-AUTH-018, R-AUTH-039 | yes |
 | `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` | R-AUTH-020 | yes |
 | `cli_login.approved`, `cli_login.denied` | R-AUTH-034, R-AUTH-036 | yes |
-| `cli_login.poll_refused` | R-AUTH-034 address binding, with the refused and the requesting address | yes, at most once per login and address |
+| `cli_login.poll_refused` | R-AUTH-034 address binding, with the refused and the requesting address | yes, once per change of the refused address within a login, decided under the row's lock (R-AUTH-034) |
 | `settings.auth.changed` | R-AUTH-040 | yes |
 
-**Revocation journal (P1).** A database restore to time *t* undoes every access removal made
+**Revocation journal (MVP).** A database restore to time *t* undoes every access removal made
 after *t* (H-37 in [ha-and-helm.md](ha-and-helm.md)). The events below are therefore flagged
 `journal: revocation` in the event registry
 ([operations-and-observability.md](operations-and-observability.md) R-OPS-014). The audit writer
-copies each one into the revocation journal of [ha-and-helm.md](ha-and-helm.md) R-HA-054, and
-`trove admin post-restore` re-applies it (Q-HA-9). An entry carries IDs and states, never a token
-value, hash or other secret.
+copies each one into the revocation journal of [ha-and-helm.md](ha-and-helm.md) R-HA-054, which
+is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-9), and
+`trove backup restore` re-applies it after a restore of a trove backup
+([backup-and-restore.md](backup-and-restore.md) R-BAK-024), with the backup's snapshot time as
+*t*. An entry carries IDs and states, never a token value, hash or other secret.
 
 | Event | The journal entry carries | Replay (R-HA-054) |
 |---|---|---|
@@ -2822,7 +3185,11 @@ value, hash or other secret.
 - `trove_tokens_active{type}`
 - `trove_tokens_expiring{type}`
 - `trove_auth_cache_invalidations_total`
-- `trove_auth_ratelimited_total{limit}`
+- `trove_auth_cache_bypassed_total{reason}` (`changes_stale`, R-AUTH-023)
+- `trove_auth_ratelimited_total{limit}` (`credential_failures`, `flow_starts`,
+  `device_code_failures`, `break_glass_lockout`, `break_glass_verifications`, `pending_flows`)
+- `trove_auth_throttle_exempt_total{via}` (`cache`, `marker`; R-AUTH-038)
+- `trove_auth_session_touch_failures_total` (R-AUTH-010)
 - `trove_auth_lastused_flush_failures_total`
 - `trove_auth_group_claim_missing_total{provider,reason}`
 - `trove_auth_cli_poll_refused_total`
@@ -2833,6 +3200,116 @@ Acceptance criteria:
   JWT) or the break-glass password.
 - A failed OIDC login with a wrong nonce produces exactly one `auth.login.failed` with
   `reason=nonce_mismatch` and the client address.
+
+## Operation across replicas
+
+### R-AUTH-042 · Authentication across replicas and roles
+Priority: **MVP** · Covers: AUTHN-011, HA-001, HA-009
+
+The Kubernetes Service hands every request to a random `web` replica, and a node drain can remove
+any replica at any time (INV-12). Authentication therefore keeps nothing on a replica that a later
+request needs (INV-18, [architecture.md](architecture.md) R-ARCH-032). This table is the complete
+list of authentication state; a new kind needs a row here before it ships:
+
+| State | System of record | What one replica keeps | Valkey's part | Valkey unavailable or emptied |
+|---|---|---|---|---|
+| Browser login flow: state, nonce, PKCE verifier, browser binding (R-AUTH-005) | `oidc_login_flow` | nothing | none | unaffected |
+| npm web login and device login: approval, poll pacing, refused polls (R-AUTH-034, R-AUTH-036) | `cli_login` | nothing | none | unaffected |
+| UI sessions, CSRF hashes, idle deadline (R-AUTH-010) | `ui_session` | cache entries (R-AUTH-023); per session the newest `last_seen_at` it has read, a lower bound of the row that only saves touch statements | change messages only | revocation bound kept by the change-log poll |
+| Tokens, principal status, memberships, runtime settings | PostgreSQL | cache entries (R-AUTH-023) | change messages only | same |
+| Credential lookups while the freshness gate bypasses the caches (R-AUTH-023) | PostgreSQL | a query shared by concurrent requests for at most `auth.revocation_bound`; nothing outlives it | none | unaffected |
+| Break-glass lockout and rotation hold (R-AUTH-014, R-AUTH-038) | `auth_lockout` | nothing | none | unaffected |
+| Failed-credential throttle, flow starts, wrong device codes (R-AUTH-038) | none: disposable counters | fallback buckets while Valkey is unavailable | the counters | per-replica shares of each limit |
+| Throttle exemption of recently validated credentials (R-AUTH-038) | none | its own cache | markers | only its own cache exempts |
+| Last-used times (R-AUTH-031, P1) | `api_token` | a write-only buffer until the next flush | none | unaffected |
+| OIDC discovery documents and JWKS (R-AUTH-004) | the provider | its own copy | none | unaffected |
+| Break-glass verifier and OIDC client secrets (R-AUTH-004, R-AUTH-014) | Kubernetes Secrets | read from the mounted files; the loaded break-glass file content, to notice a rotation | none | unaffected |
+| Argon2id verification slots (R-AUTH-014) | none | the number of verifications running | none | unaffected; it protects the replica's own memory |
+| Count of pending flows (R-AUTH-038) | PostgreSQL | a copy at most 5 s old | none | unaffected |
+| De-duplication of `auth.csrf_failed` events (R-AUTH-041) | none | the minute of the last event per session | none | unaffected; it bounds log volume only |
+
+Rules:
+- **Every step on any replica.** A step of a multi-request flow reads its state from PostgreSQL and
+  changes it with a conditional statement, so two replicas serving two steps of one flow at the
+  same moment cannot both succeed: a flow row is consumed once (R-AUTH-006 step 1), an approval
+  mints one token (R-AUTH-034, R-AUTH-036), a first login links its identity once (R-AUTH-007),
+  logins of one user and the session and token limits run under the principal's row lock
+  (R-AUTH-006 step 10, R-AUTH-010, R-AUTH-027), a session's deadlines are decided from its row
+  (R-AUTH-010), and a break-glass rotation opens one hold (R-AUTH-014).
+- **Valkey never decides who a caller is** (Q-AUTH-9, Q-AUTH-12). No session, token, flow, approval
+  or lookup result is read from Valkey. What Valkey holds can make trove answer 429 or run one more
+  PostgreSQL lookup; it never turns a rejection into an acceptance and never keeps a revoked
+  credential alive ([architecture.md](architecture.md) R-ARCH-030, H-49). A Valkey outage never
+  makes a replica unready (INV-12).
+- **Roles** (INV-2). The routes of this page are served by the client listener, which runs on
+  `web` replicas (and on `all` in the local profile). Only those replicas load the OIDC providers
+  and the break-glass password, and the chart mounts the OIDC client-secret and break-glass Secrets
+  into `web` pods only. `worker` replicas run the scheduled tasks of R-AUTH-043. `trove admin`
+  (R-AUTH-015) runs in any pod and writes through the change log.
+- **Background loops on `web` replicas** ([architecture.md](architecture.md) R-ARCH-001): the
+  discovery refresh and JWKS refetch (R-AUTH-004), the re-read of the client-secret and break-glass
+  files with the rotation check of R-AUTH-014 (R-AUTH-004, R-AUTH-014), the last-used flush
+  (R-AUTH-031, P1) and the pending-flow count (R-AUTH-038). Every iteration carries a deadline, and
+  none holds a database connection across an outbound call or a Valkey call.
+- **Drain.** Every request of this page is short; the longest, the OIDC callback, is bounded by the
+  three 10 s timeouts of R-AUTH-004 and R-AUTH-006 and finishes within the default drain of
+  [architecture.md](architecture.md) R-ARCH-024. No flow needs a hand-over, and no rotation or
+  limit depends on the replica that started it. A replica killed without a drain loses the
+  callbacks it was serving, whose users start the login again, and one interval of last-used
+  times (P1).
+
+Acceptance criteria:
+- In the `scatter` profile ([architecture.md](architecture.md) R-ARCH-032: three `web` replicas,
+  every request to another replica), each of these completes: 50 browser logins, a
+  re-authentication (R-AUTH-011), a logout, an npm web login, a device login, a token revocation
+  followed by a request with the revoked token (401 on every replica), and a break-glass lockout.
+- The same suite passes with Valkey stopped for its whole duration, and every replica stays ready
+  with `"degraded":["valkey"]`.
+- `valkey-cli FLUSHALL` in the middle of the suite makes no login, session or token request fail
+  and revives no revoked token.
+- The drain test of [architecture.md](architecture.md) R-ARCH-024, with a loop of 20 browser logins
+  and 20 npm web logins added, completes every login.
+
+### R-AUTH-043 · Scheduled authentication tasks
+Priority: **MVP** · Covers: trove-only
+
+The background work of this page runs as maintenance tasks of the job queue
+([architecture.md](architecture.md) R-ARCH-016) on `worker` replicas, never on `web` replicas
+(INV-2). The scheduler enqueues one job per slot, and the queue gives each job one claimant, so a
+slot runs once in the cluster whatever the number of `worker` replicas. Each task works in batches
+of at most 1,000 rows per transaction, is idempotent, and resumes on another worker when a drain
+releases its job.
+
+| Task | Does | Default schedule (proposed) | Owning requirement |
+|---|---|---|---|
+| `session-cleanup` | Deletes `oidc_login_flow` and `cli_login` rows past `expires_at`, and `ui_session` rows 30 days after their end | `*/10 * * * *` | R-AUTH-005, R-AUTH-010, R-AUTH-034 |
+| `token-cleanup` | Deletes `api_token` rows `retention_after_end` after expiry or revocation | `40 3 * * *` | R-AUTH-023 |
+| `token-expiry-notice` | Writes `token.expiring` for tokens entering the notice period | `0 6 * * *` | R-AUTH-032 |
+| `user-dormancy` (P1) | Disables dormant users and emits the dormancy warnings | `30 4 * * *` | R-AUTH-021 |
+
+The schedules are keys of `maintenance.tasks.<name>`
+([operations-and-observability.md](operations-and-observability.md) R-OPS-019). Expired flow rows
+that wait for the next cleanup are never served: every read checks `expires_at`, and the
+pending-flow count of R-AUTH-038 counts unexpired rows only. A task whose run overlaps another run
+of itself, because a job was resumed while its first claimant still ran, changes every row with a
+conditional statement and writes events only for rows it changed (R-AUTH-021, R-AUTH-032).
+
+Configuration:
+
+```yaml
+maintenance:
+  tasks:
+    session-cleanup: {enabled: true, schedule: "*/10 * * * *"}      # default (proposed)
+    token-cleanup: {enabled: true, schedule: "40 3 * * *"}          # default (proposed)
+    token-expiry-notice: {enabled: true, schedule: "0 6 * * *"}     # default (proposed)
+    user-dormancy: {enabled: true, schedule: "30 4 * * *"}          # default (proposed); P1, R-AUTH-021
+```
+
+Acceptance criteria:
+- With three `worker` replicas, one day of schedules produces exactly one job per slot of each
+  task, and no `web` replica's instance ID appears in `job.locked_by` for them.
+- A `worker` pod deleted gracefully during `token-cleanup` releases the job; another worker finishes
+  it, and every row past retention is gone afterwards.
 
 ## Deferred
 
@@ -2928,14 +3405,24 @@ Handed to other pages, not deferred:
   owner, never the presented username (R-AUTH-001, R-AUTH-033).
 - **Tokens in URLs.** Only npm logout puts a token into a path. Logs redact the token pattern
   everywhere, and query-string tokens are refused (R-AUTH-001, R-AUTH-035).
-- **Revocation latency is a bounded promise**: ≤ 2 s with notifications, ≤ 15 s worst case
-  (R-AUTH-023). Incident runbooks can rely on it.
+- **Revocation latency is a bounded promise**: ≤ `auth.revocation_bound` (2 s) on every replica,
+  with or without Valkey. A replica that cannot prove the bound answers from PostgreSQL or with
+  503, never from a stale cache (R-AUTH-023, Q-AUTH-10). Incident runbooks can rely on it.
+- **Valkey is outside the authentication trust path.** No session, token, login flow, approval or
+  lookup result is read from Valkey (Q-AUTH-9, Q-AUTH-12, R-AUTH-042). Someone who can write under
+  trove's Valkey prefix can make trove refuse callers with 429, lift the cluster-wide throttle, or
+  cause extra PostgreSQL lookups; they cannot authenticate anyone or keep a revoked credential
+  alive ([architecture.md](architecture.md) H-49). The break-glass lockout lives in PostgreSQL, so
+  a Valkey flush does not reset it (R-AUTH-038).
 - **Anonymous access fails toward 401.** Probing unknown repository keys reveals nothing, and
   anonymous callers can never write through the management API, whatever a policy says
   (R-AUTH-037).
 - **The break-glass account** is password-only and administrator by construction. It is
   disabled by configuration in normal operation, restricted (no tokens), loud in the audit
-  trail, and locked out cluster-wide on guessing (R-AUTH-014, R-AUTH-038). Residual risk: H-17.
+  trail, and locked out cluster-wide on guessing (R-AUTH-014, R-AUTH-038). Its Secret is mounted
+  into `web` pods only (R-AUTH-042). A password rotation ends its sessions through PostgreSQL, so a
+  drain of the replica that noticed it does not undo the end (R-AUTH-014, Q-AUTH-14). Residual
+  risks: H-17, H-52.
 - **Credential-minting needs a recent IdP round trip** (R-AUTH-011), and token-authenticated
   minting is bounded by the derivation rule (R-AUTH-027). Rotation counts as minting: it follows
   the same rules, and nobody but the owner can rotate a PAT (R-AUTH-030). A hijacked session or a
@@ -3231,6 +3718,263 @@ is `off`, and when it is not `off` while `server.trusted_proxies` is empty. R-AU
 `cli_login.poll_refused` and the metric. H-20 describes the residual risk of network binding and
 of an untrusted client address.
 
+### Q-AUTH-9 · Shared Valkey cache for session and token lookups
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+INV-3 lets Valkey hold caches shared across replicas. Each `web` replica fills its own session,
+token and principal caches from PostgreSQL (R-AUTH-023). With n replicas and random distribution,
+one credential in continuous use is therefore looked up by up to n replicas per `cache_ttl`; a
+second level in Valkey would bring that down to about one.
+[architecture.md](architecture.md) Q-ARCH-16 decided that no positive authentication result is
+read from Valkey. This question checks that rule against its cost on this page.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In-process only | Each replica caches; Valkey carries only the change messages of area `auth` | Valkey can never authenticate anyone; a cache hit needs no network round trip; nothing to distribute | Lookups grow with replicas × credentials in use: 20 replicas and 1,000 credentials in continuous use cost at most about 1,300 indexed lookups per second |
+| (b) Valkey second level, plain entries | Replicas read validation results from Valkey before PostgreSQL | About one lookup per credential and `cache_ttl` in the cluster | Whoever can write under the prefix can store an entry for a secret hash of their choosing and then authenticate with that secret as any principal. Violates Q-ARCH-16. |
+| (c) Valkey second level, sealed entries | Entries carry an HMAC under a key Valkey never sees | Forged entries are rejected | A writer can still put back an older sealed entry of a token revoked since. Binding each entry to the current epoch of area `auth` prevents that, but then every revocation, including each CI job's closing self-revocation, invalidates every entry. One more key to distribute and rotate; a miss costs a Valkey round trip and then still a PostgreSQL query. |
+| (d) Sessions in Valkey | Valkey is the session store; PostgreSQL keeps no session rows | No session writes on PostgreSQL | A failover with asynchronous replication loses sessions or brings back ended ones. INV-3 forbids Valkey as the only copy of state whose loss costs correctness. The session list of R-AUTH-010 and the restore rule of [backup-and-restore.md](backup-and-restore.md) R-BAK-022 lose their source. |
+
+**Choice:** (a) — sessions, tokens, principals and runtime settings are cached in each replica's
+memory only; Valkey carries their change messages and nothing else.
+
+**Rationale:**
+- (b) hands authentication to anyone who can write to Valkey, and (d) makes a security decision
+  depend on asynchronous replication. Both conflict with INV-3 and Q-ARCH-16.
+- (c) closes forgery but not replay unless each entry is bound to the `auth` epoch, and with that
+  binding every revocation empties the shared level. What it saves is small: a lookup by a unique
+  32-byte key on an indexed column, through the main pool and the pooler
+  ([architecture.md](architecture.md) R-ARCH-019).
+- The cost of (a) grows with replicas × credentials in use, not with requests. The reference budget
+  already counts 0 queries per request while caches are valid
+  ([architecture.md](architecture.md) R-ARCH-027).
+- Revisit if profiling at the reference load shows credential lookups above 10 % of PostgreSQL
+  CPU. The first step is a longer `cache_ttl`, up to its 60 s ceiling, which costs no revocation
+  latency since Q-AUTH-10; (c) with epoch binding is the second.
+
+**Applied in the spec:** R-AUTH-023 names the four in-process caches and states that no entry is
+read from or written to Valkey; R-AUTH-010 refers to it for sessions; R-AUTH-042 lists the state;
+the security notes state that Valkey is outside the authentication trust path.
+
+### Q-AUTH-10 · Revocation bound when a replica cannot read the change log
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Until 2026-10-28, R-AUTH-023 promised 2 s while `LISTEN/NOTIFY` delivered and `cache_ttl` (15 s)
+otherwise. Since [architecture.md](architecture.md) Q-ARCH-15, changes reach replicas through a
+change log in PostgreSQL that every replica polls every second, with Valkey as a fast path that
+can only evict early. Valkey's state therefore no longer affects the bound. What remains is a
+replica that cannot poll, because PostgreSQL is unreachable from it or the poll has stalled.
+Readiness removes such a replica only after `cluster.epoch_max_staleness`, which must be at least
+the PostgreSQL readiness window of about 15 s ([ha-and-helm.md](ha-and-helm.md) R-HA-008).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Serve cache hits until `cache_ttl` | The earlier fallback | Cached credentials keep working through short PostgreSQL trouble | A token revoked through another replica stays usable on a cut-off replica for up to 15 s; the promise depends on the failure mode |
+| (b) Fail closed at the revocation bound | A replica answers from its auth caches only while its last completed change-log poll started less than `auth.revocation_bound` (2 s) ago; otherwise it asks PostgreSQL, and a failed lookup gives 503 | One bound in every failure mode; the same principle as authorization's fail-closed rule ([authorization.md](authorization.md) R-AUTHZ-028) | During a PostgreSQL switchover, requests that would have been cache hits wait in the retry loop or get 503 |
+| (c) Rely on readiness | Serve until the `invalidation` check removes the replica | No extra code | A gap of at least 15 s, and an edge proxy that still routes to the replica keeps getting answers |
+| (d) Revocation hints in Valkey | Every hit checks a deny-list in Valkey | Fast | A Valkey outage or flush removes the hints, so the bound depends on Valkey again (INV-3); one round trip per request |
+
+**Choice:** (b) — the auth caches answer only while the replica's view of the change log is younger
+than `auth.revocation_bound` (2 s by default); otherwise the lookup goes to PostgreSQL, and a
+failed lookup gives 503, never a cached acceptance.
+
+**Rationale:**
+- Revocation is the promise incident runbooks rely on. (b) is the only option under which it holds
+  in every failure mode: Valkey down, failed over, flushed, partitioned from one replica or
+  forging messages, and a replica cut off from PostgreSQL.
+- The availability cost is small. Almost every request needs PostgreSQL anyway, for the item or
+  package lookup ([architecture.md](architecture.md) R-ARCH-027), so a replica that cannot reach
+  it does little useful work with a valid cache. Switchovers shorter than the retry budget are
+  ridden out by the retry loop for the credential lookup as for the item query
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-009).
+- The load cost is bounded. When a slow PostgreSQL delays the poll, the gate can trip on every
+  replica at once. Concurrent lookups of one credential then share one query that is younger than
+  the bound (R-AUTH-023), so the extra load grows with replicas × credentials in use, not with the
+  request rate.
+- The check needs no clock comparison. A poll reads every change committed before it started
+  ([READ COMMITTED](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)),
+  and the replica measures the poll's age on its own monotonic clock.
+- (c) leaves a gap of 15 s or more; (d) puts correctness into Valkey.
+- Revisit if the gate trips in normal operation, that is if
+  `trove_auth_cache_bypassed_total{reason="changes_stale"}` rises without a database incident.
+  The poll's latency, not the bound, is then the problem to fix.
+
+**Applied in the spec:** R-AUTH-023 (freshness gate, stated as stricter than the `invalidation`
+readiness check at `cluster.epoch_max_staleness`; lookups of one credential shared while the
+gate is closed, so a gate that trips everywhere does not multiply PostgreSQL's load; the bound in
+every failure mode; the key `auth.revocation_bound` with its start-up check; acceptance criteria with Valkey stopped, the
+Pub/Sub connection killed, forged messages, a failover, and PostgreSQL cut off); R-AUTH-010
+(sessions follow the gate); R-AUTH-015, R-AUTH-018, R-AUTH-029, R-AUTH-037 and R-AUTH-040 name the
+bound; the security notes. Cross-page: [architecture.md](architecture.md) R-ARCH-018 provides
+`cluster.ChangesFreshWithin(d)`.
+
+### Q-AUTH-11 · Brute-force counters and the failed-credential throttle across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-038 counted rejected credentials and flow starts per replica in memory, and accepted that
+"the effective cluster-wide limit is this value multiplied by the number of replicas". It exempted
+credentials found in the replica's own positive cache. With the load spread at random over a
+replica count that autoscaling changes, both broke. The limit moved with the replica count, and
+whether a colleague behind a throttled NAT got 429 depended on the replica a request reached
+(INV-18). [architecture.md](architecture.md) Q-ARCH-17 decided cluster-scoped counters in Valkey,
+with per-replica shares as the fallback, for every class that limits callers.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per replica, in memory | The earlier rule | No round trip | The budget is multiplied by the replica count; a guesser gets a fresh throttle per replica; the exemption depends on the replica |
+| (b) Cluster-wide counters in Valkey, exemption by the local cache only | Limiters of R-ARCH-034 | One budget on every replica | A colleague's token cached on one replica gets 429 on the others, so the answer still depends on the replica |
+| (c) As (b), plus a Valkey marker for credentials validated on any replica in the last 10 minutes; the break-glass lockout stays in PostgreSQL | A successful validation from PostgreSQL sets a short-lived marker keyed by a hash of the secret hash; a throttled address may still validate a cached or marked credential | The same answer on every replica; a marker never authenticates, because validation still reads PostgreSQL or the own cache; Valkey round trips only on cache misses | One small Valkey key per credential in use; markers lost in a failover cost colleagues 429s, and only while an attack throttles their address |
+| (d) (c) with the break-glass lockout in Valkey too | One store for every counter | Simpler | A failover or flush resets the count and gives a guesser a fresh threshold against the one password; INV-3 keeps state whose loss costs correctness in PostgreSQL |
+| (e) Every counter in PostgreSQL | Counter rows | Durable | A write per rejected credential on the system of record, during exactly the flood the throttle exists to absorb |
+
+**Choice:** (c) — the failed-credential throttle, the flow-start limit and the wrong-device-code
+limit count cluster-wide in Valkey through R-ARCH-034, with per-replica shares while Valkey is
+unavailable. Credentials validated on any replica within `recent_token_window` stay exempt through
+a Valkey marker. The break-glass lockout stays in PostgreSQL, counted atomically and never cached.
+
+**Rationale:**
+- A limit that changes with the replica count is not a limit an operator can set, and a throttle
+  whose exemption depends on the replica gives two answers to one request (INV-18). (c) fixes both.
+- The marker stays inside Q-ARCH-16's trust line. It can lift the throttle for one credential and
+  so cause one PostgreSQL lookup; it never accepts a credential. A writer under the prefix gains
+  nothing by forging markers that deleting the counter would not give them as well
+  ([architecture.md](architecture.md) H-49).
+- The lockout guards a password that a person chose, and its count must survive Valkey's loss;
+  (d) would weaken it for a little simplicity. (e) moves the flood onto the database.
+- The wrong-device-code limit may live in Valkey, unlike the lockout. It guards a code of 20^8
+  values that lives for 10 minutes and is typed by a signed-in user. A failover that resets the
+  count gives that user five more guesses, which does not matter at that size.
+- The throttle is consulted only on cache misses, so legitimate traffic, which hits the caches,
+  pays no Valkey round trip ([architecture.md](architecture.md) R-ARCH-027).
+- Revisit if markers show up in Valkey's memory (one key of under 100 bytes per credential in use)
+  or if the miss path's round trip shows up in P-2.
+
+**Applied in the spec:** R-AUTH-038 (the limiter table, each limiter's burst and window, cluster
+scope and fallback, the marker, the local login under the per-address limit, the atomic and
+uncached lockout, the configuration comments, acceptance criteria with and without Valkey); R-AUTH-036 (wrong user codes counted per
+user, cluster-wide); R-AUTH-023 step 2. Cross-page: [architecture.md](architecture.md) R-ARCH-034
+(a count-only form for limits that count failures), R-ARCH-030 (the marker key), H-49 and
+R-ARCH-027.
+
+### Q-AUTH-12 · Where multi-request login flows keep their state
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Three flows span several requests: the browser login (start, IdP, callback), the npm web login
+(start, approval, polls) and the device login (authorize, approval, polls). Under random
+distribution each step may reach another replica, and INV-18 allows PostgreSQL or Valkey for the
+state such a protocol keeps.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) PostgreSQL rows | `oidc_login_flow` and `cli_login`; every poll reads the row; poll pacing and refused polls are columns of the row | Unaffected by Valkey's loss; conditional updates make every step single-use across replicas; the approval, which mints a credential, is recorded where audit and restore see it | One read per poll (every 2 s for npm, 5 s for the device flow) and a cleanup task |
+| (b) Valkey keys that expire with the flow | Flow state as keys with a TTL | No cleanup task; poll reads leave PostgreSQL | The browser flow holds the PKCE verifier in clear and the command-line flows hold the approval that mints a PAT: a writer under the prefix could approve a pending login for an account of its choosing. A failover loses flows in progress. Valkey would decide access ([architecture.md](architecture.md) Q-ARCH-16). |
+| (c) Rows in PostgreSQL, poll pacing and refusal counts in Valkey | A hybrid | A few writes less | Two stores for one flow, for the gain of one small write per poll |
+| (d) Session affinity on `/auth/` | The edge routes a flow's requests to one replica, the assumption behind AUTHN-011 | No shared state | INV-12 forbids affinity, and a drain would break every flow pinned to the drained replica |
+
+**Choice:** (a) — every multi-request login flow keeps its state in PostgreSQL, changes it with
+conditional statements, and keeps nothing in a replica's memory or in Valkey.
+
+**Rationale:**
+- The flows carry secrets and decisions that mint credentials, so their state belongs where Valkey
+  cannot change it (Q-ARCH-16), and where a Valkey failover cannot lose it (INV-3).
+- The load is small. 100 logins pending at the same time cost at most 50 poll reads per second, each
+  a lookup by a unique hash.
+- Conditional statements make concurrent steps on different replicas safe: the callback consumes
+  its flow once, and an approval mints one token.
+- (d) is ruled out by INV-12 and by the drain requirement.
+- Revisit if poll reads ever show up in PostgreSQL's load; (c) would then move the pacing column.
+
+**Applied in the spec:** R-AUTH-005 (no state outside PostgreSQL; the `scatter` acceptance
+criterion); R-AUTH-006 (the flow delete commits before the outbound calls, user and session in
+one transaction after them); R-AUTH-034 (conditional consume; two concurrent polls mint one
+token); R-AUTH-036 (`last_polled_at` makes `slow_down` work across replicas); R-AUTH-042; the
+`session-cleanup` task of R-AUTH-043.
+
+### Q-AUTH-13 · Idle-timeout tracking across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-010 wrote `last_seen_at` at most once per 60 s per session and checked the idle timeout
+against the session cache of the replica a request reached. With n replicas, each with its own
+view, a replica that had not seen a session for an hour could end it as idle while the user
+worked through the others.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Conditional touch; deadline decided from the row | A replica sends a conditional `UPDATE` of `last_seen_at` when a request arrives 60 s or more after the newest `last_seen_at` it has read; a cached entry whose idle deadline has passed is re-read before the session ends | At most one row change per session and minute whatever the replica count; every replica ends a session at the same moment | A session can end up to 60 s before its idle timeout after the last request |
+| (b) Write on every request | `last_seen_at` on every authenticated UI request | Exact | One write per UI request on the system of record |
+| (c) Sliding expiry key in Valkey | `SET … PX <idle_timeout>` per request decides idleness | Exact and cheap | A writer under the prefix could keep a stolen session alive, and a flush either ends every session or switches idle expiry off; session lifetime would depend on Valkey (Q-ARCH-16, INV-3) |
+| (d) Each replica's own view | The earlier behaviour | No extra reads | Answers differ by replica (INV-18) |
+
+**Choice:** (a) — `last_seen_at` is touched conditionally at most once per minute and session, and
+idle expiry is decided from the row, never from one replica's view.
+
+**Rationale:**
+- (a) gives every replica the same answer at the cost of one write per active session and minute.
+  (b) multiplies writes by the request rate, (c) hands a security property to Valkey, and (d) breaks
+  INV-18.
+- A 60 s imprecision on a timeout of an hour is below what a user notices. It never lengthens a
+  session beyond `idle_timeout`, so the timeout stays an upper bound an operator can rely on; it
+  can shorten a session by at most 60 s.
+- The replica decides when to touch from the newest `last_seen_at` it has read, not from the time
+  of its own last touch. That value is a lower bound of the row, so no touch the row needs is
+  skipped; deciding from the own last touch would let the row fall up to 120 s behind and end
+  sessions that early. The value only saves statements and never decides that a session has
+  ended, so it is not state a later request depends on.
+- Revisit if an installation needs idle timeouts below 5 minutes; the touch interval would then
+  become a fraction of `idle_timeout`.
+
+**Applied in the spec:** R-AUTH-010 (deadlines decided from the row, the conditional touch that
+returns the row's value, the end window of `idle_timeout` − 60 s to `idle_timeout`, the principal
+row lock for `max_per_user`, acceptance criteria across replicas); R-AUTH-011 (both deadlines from
+the row); R-AUTH-041 (`trove_auth_session_touch_failures_total`); R-AUTH-042 (the kept value as
+per-replica state).
+
+### Q-AUTH-14 · Break-glass password rotation across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A rotated break-glass Secret reaches each node on that node's kubelet schedule, within the 2 minutes
+of [ha-and-helm.md](ha-and-helm.md) R-HA-030, so replicas hold the old and the new password side by
+side for a while. Ending the sessions that the old password opened must therefore not depend on one
+replica staying alive: a node drain can remove any replica at any time (INV-12).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each replica ends the sessions when it notices the change | Every replica that sees its file change ends every break-glass session created before that moment | No extra state | A session that a replica still holding the old file opens is ended only if that replica, or another still-old one, later notices the change; a drain that removes it first leaves the session alive until its absolute timeout (1 h by default), and the old password keeps working on lagging replicas until each switches |
+| (b) Rotation hold recorded in PostgreSQL | The first replica that notices the change records `password_changed_at` in the lockout row and ends every earlier break-glass session in the same transaction; every replica refuses the local login for `rotation_hold` (2 min) | The end is one committed transaction, independent of the noticing replica; no replica, old file or new, opens a session while replicas disagree; the check rides on the lockout row every attempt reads anyway | Break-glass login is unavailable for 2 minutes after a rotation; a kubelet slower than the hold, or a rollout that replaces every pod before any notices, escapes it (H-52) |
+| (c) Verifier fingerprint in PostgreSQL | Each session records a fingerprint of the password file it was opened with; replicas accept only sessions with the newest fingerprint | Also catches a rotation that no running replica notices | A fingerprint of a plaintext password file is an offline-guessable verifier in the database unless it is keyed; keying it with the stored-secret key ring makes it change on key rotation and differ between replicas during step 2 of that rotation ([architecture.md](architecture.md) R-ARCH-021). "The password is never stored in PostgreSQL" would hold only in letter. |
+| (d) No automatic end | The operator runs `trove admin break-glass end-sessions` after rotating | Nothing to build | A manual step forgotten in exactly the incident in which the rotation matters |
+
+**Choice:** (b) — the first replica that notices a changed break-glass password opens a rotation
+hold in PostgreSQL and ends every earlier break-glass session in the same transaction; every
+replica refuses the local login with 503 `break_glass_rotating` until the hold ends.
+
+**Rationale:**
+- (a) depends on the replicas that held the old file surviving until they notice, which a drain
+  does not guarantee. (b) makes the end one transaction, so it holds whichever replica disappears.
+- The hold closes the window in which a replica still holding the old file accepts the old
+  password, for as long as the kubelet keeps the 2 minutes of R-HA-030. Refusing the new password
+  too keeps the rule simple and costs a 2-minute wait on a rare operator action; `Retry-After`
+  says how long.
+- (c) would catch more, but it puts a password-derived verifier into the database, which
+  R-AUTH-014 keeps free of the password, or ties it to the key ring's own rotation. (d) is the fallback the operator keeps for
+  H-52.
+- Revisit if the chart starts rolling the pods on Secret changes, which makes the case of H-52 the
+  normal one; then (c) with a fingerprint keyed by a dedicated key, not the key ring, would be
+  weighed.
+
+**Applied in the spec:** R-AUTH-014 (rotation coordinated in PostgreSQL, the 503 during the hold,
+`rotation_hold`, acceptance criteria with the noticing replica force-deleted; also the per-request
+rejection of break-glass sessions when the account is disabled, and the Argon2id verification
+slots); R-AUTH-015 (`status` shows the hold); R-AUTH-038 (`password_changed_at` in
+`auth_lockout`); R-AUTH-042; H-52. Cross-page: [architecture.md](architecture.md) R-ARCH-030
+lists the rotation hold with the break-glass lockout in PostgreSQL.
+
 ## What this does not cover
 
 ### H-15 · Consent phishing of command-line browser login
@@ -3295,3 +4039,23 @@ who polls through the same proxy instance, because every poll then carries the p
 (R-AUTH-034 rules, R-AUTH-040 warning). What makes it real: access logs that record request
 paths and that people other than the user can read while the 10-minute flow is open, for
 example through log streaming or shared dashboards.
+
+### H-52 · A break-glass rotation that no running replica notices
+
+Component: break-glass password rotation (R-AUTH-014, Q-AUTH-14). Subject: break-glass sessions
+opened with the old password, and the old password itself. Live in the MVP whenever the break-glass
+account is enabled. The rotation hold opens when a running `web` replica sees its mounted file
+change. Two cases escape it:
+
+- Every `web` pod that held the old file is replaced before any of them sees the new one, for
+  example by a rollout started together with the Secret change. No hold opens, and sessions opened
+  before the rotation run until their absolute timeout (1 h by default).
+- A node's kubelet delivers the Secret later than `rotation_hold`. The replica on that node accepts
+  the old password after the hold, until it notices the change itself and opens a new hold. If it
+  is drained before that, the sessions it opened with the old password run until their absolute
+  timeout.
+
+What makes it real: someone who knows the old password, which is usually why it was rotated, and
+reaches the login page during one of these windows. An operator who rotates because of a suspected
+leak runs `trove admin break-glass end-sessions` after the rotation has reached every pod
+(R-AUTH-015); it ends every break-glass session whatever file the replicas hold.

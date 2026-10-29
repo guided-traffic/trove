@@ -1,6 +1,6 @@
 # Coverage
 
-> **As of:** 2026-10-28 · **Stage:** specification, every question decided, no code yet · **Yardstick:**
+> **As of:** 2026-10-29 · **Stage:** specification, every question decided, no code yet · **Yardstick:**
 > [feature catalog](../features/README.md) · **Design:** [specification](../spec/README.md)
 
 This page answers two questions: how much of the feature catalog trove implements, and how much
@@ -12,7 +12,7 @@ The tables between the `coverage-gen` markers are generated from the catalog and
 written by hand, carries the date above, and has to be re-read whenever the tables are
 regenerated.
 
-## Headline (2026-10-28)
+## Headline (2026-10-29)
 
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
@@ -20,11 +20,25 @@ regenerated.
 | **Implemented** | **0%** (0 of 2,239 catalog features) | fact, not computed: the repository holds no code yet |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.3% (286 of 508) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 30.4% (658 of 2,167) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 30.5% (662 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 491 on 11 pages (342 MVP, 147 P1, 2 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 54 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 553 on 12 pages (408 MVP, 143 P1, 2 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 81 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
+
+**What the owner constraints of 2026-10-28 changed.** The tables were regenerated on 2026-10-29,
+after the spec pages took in the constraints of that day: HA PostgreSQL, HA Valkey with Sentinel
+and S3; a load spread over many replicas with node drains that cause no outage; a configurable
+backup job; and no ReadWriteMany volume ([docs/spec/README.md](../spec/README.md#owner-constraints)).
+Against the previous generation of 2026-10-28:
+
+- spec requirements: 553 on 12 pages, up from 491 on 11; the new page is
+  [backup-and-restore.md](../spec/backup-and-restore.md);
+- requirements covering no catalog feature: 81, up from 54;
+- catalog features listed in a `Covers:` line: 662, up from 658. The four new ones are P2 backup
+  and migration entries (OPS-032, OPS-034, OPS-035 and OPS-039);
+- features covered by an MVP requirement: 55 P1 and 10 P2, up from 48 and 6;
+- unchanged: MVP 359 of 359, P1 286 of 508, implemented 0.
 
 In short: nothing is built yet, every MVP catalog entry is claimed by a requirement, and little
 beyond P1 is designed. All 359 MVP features are covered by at least one requirement. For each of
@@ -38,17 +52,20 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 359 | 359 | 0 | 100% | 359 | 0 |
-| **P1** | 508 | 286 | 222 | 56.3% | 48 | 0 |
-| **P2** | 909 | 13 | 896 | 1.4% | 6 | 0 |
+| **P1** | 508 | 286 | 222 | 56.3% | 55 | 0 |
+| **P2** | 909 | 17 | 892 | 1.9% | 10 | 0 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 658 | 1,581 | 29.4% | 413 | 0 |
+| **Total** | 2,239 | 662 | 1,577 | 29.6% | 424 | 0 |
 <!-- coverage-gen:end priority -->
 
-The column *Covered by an MVP requirement* shows where the spec pulls work forward. On 2026-10-28,
-48 P1 features and 6 P2 features are covered by at least one MVP requirement, so in those places
-the first release does more than the priority rubric asks. Every table on this page counts them
-under their catalog priority.
+The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
+and 10 P2 features are covered by at least one MVP requirement (48 and 6 before 2026-10-28). In
+those places the first release does more than the priority rubric asks. The new ones come from the owner constraints of 2026-10-28: the backup job and restore
+(OPS-032, OPS-034, OPS-035, OPS-039), the monitoring integration that alerts on a Valkey outage
+(HA-055), and the repository maintenance operations whose cache invalidation became MVP (API-028,
+API-040, API-041, API-043, API-045, API-050). Every table on this page counts them under their
+catalog priority.
 
 ### By catalog page
 
@@ -70,7 +87,7 @@ Each page name links to that page's section of the checklist.
 | [Storage and blob providers](checklist.md#storage-and-blob-providers-stor) | 41 | 12 | 7 | 20 | 1 | 1 | 21 | 20 |
 | [Retention, cleanup and archiving](checklist.md#retention-cleanup-and-archiving-ret) | 42 | 0 | 26 | 3 | 11 | 2 | 26 | 16 |
 | [High availability and deployment](checklist.md#high-availability-and-deployment-ha) | 79 | 49 | 14 | 10 | 3 | 3 | 60 | 19 |
-| [Operations, monitoring and configuration](checklist.md#operations-monitoring-and-configuration-ops) | 100 | 17 | 23 | 34 | 1 | 25 | 40 | 60 |
+| [Operations, monitoring and configuration](checklist.md#operations-monitoring-and-configuration-ops) | 100 | 17 | 23 | 34 | 1 | 25 | 44 | 56 |
 | [Events and extensibility](checklist.md#events-and-extensibility-evt) | 82 | 1 | 24 | 12 | 43 | 2 | 26 | 56 |
 | [Distribution and release lifecycle](checklist.md#distribution-and-release-lifecycle-dist) | 70 | 0 | 0 | 0 | 69 | 1 | 0 | 70 |
 | [Security scanning and curation](checklist.md#security-scanning-and-curation-sec) | 98 | 0 | 22 | 18 | 56 | 2 | 0 | 98 |
@@ -141,15 +158,20 @@ in the catalog defines it, and the summary here is no substitute:
   trove tokens;
 - PostgreSQL for metadata, S3-compatible object storage for binaries, high availability, and
   deployment through a Helm chart;
+- since 2026-10-28, by owner constraint: HA PostgreSQL, HA Valkey with Sentinel and S3; `web` and
+  `worker` replicas that share a load one replica cannot carry, with any request on any replica
+  and node drains without an outage; trove's own backup job with restore into an empty
+  installation; and no ReadWriteMany volume;
 - the UI and the management API needed to operate all of the above.
 
 P1 is the work directly after the MVP: Docker/OCI, Maven, PyPI, Go, Helm charts and generic
 repositories, webhooks, retention and cleanup policies, the search API, build metadata basics,
-configuration as code and further CI OIDC providers. Two P1 items ship in the first release
-anyway, because MVP acceptance tests depend on them:
-
-- the local class of generic repositories ([roadmap Q-ROAD-1](roadmap.md#q-road-1--generic-local-repositories-in-m1));
-- backup and restore ([roadmap Q-ROAD-2](roadmap.md#q-road-2--backup-and-restore-in-10)).
+configuration as code and further CI OIDC providers. One P1 item ships in the first release
+anyway, because MVP acceptance tests depend on it: the local class of generic repositories
+([roadmap Q-ROAD-1](roadmap.md#q-road-1--generic-local-repositories-in-m1)). Backup and restore
+used to be the second such item. Since 2026-10-28 they are MVP, together with the platform backup
+layer and the revocation journal
+([roadmap Q-ROAD-2](roadmap.md#q-road-2--backup-and-restore-in-10)).
 
 P2, *Later* and *Out of scope* are defined by the same rubric.
 *Out of scope* entries stay in the catalog only so its inventory is complete. Nothing is planned
@@ -180,7 +202,7 @@ Pages counted per audience:
 Pages counted for no audience (41, 233 MVP and P1 entries): [Security scanning and curation](checklist.md#security-scanning-and-curation-sec), [Content API operation catalog](checklist.md#content-api-operation-catalog-api), [Docker image format](checklist.md#docker-image-format-pkg-docker), [OCI images and artifacts](checklist.md#oci-images-and-artifacts-pkg-oci), [Helm chart format](checklist.md#helm-chart-format-pkg-helm), [Maven package format](checklist.md#maven-package-format-pkg-maven), [PyPI package format](checklist.md#pypi-package-format-pkg-pypi), [Go modules format](checklist.md#go-modules-format-pkg-go), [Generic format](checklist.md#generic-format-pkg-generic), [Bazel modules package format](checklist.md#bazel-modules-package-format-pkg-bazel), [Gradle, Ivy, sbt and Eclipse P2 formats](checklist.md#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm), [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond); plus 29 pages without MVP or P1 entries.
 <!-- coverage-gen:end audiences -->
 
-What the open entries are, on 2026-10-28:
+What the open entries are, on 2026-10-29:
 
 - **npm-only team.** All MVP entries on its pages are specified. The npm page itself is fully
   specified at MVP and P1. All 48 open entries are P1, and most of them fall into two groups:
@@ -243,7 +265,7 @@ What the open entries are, on 2026-10-28:
    - A feature is implemented only when every requirement that lists it in its `Covers:` line is
      implemented. A feature that is partly built stays *specified*.
 
-   On 2026-10-28 the generator reports 0, because the repository holds documentation and no code.
+   On 2026-10-29 the generator reports 0, because the repository holds documentation and no code.
 4. **Shares.** Plain counts: each feature counts once, whatever its size. The in-scope share
    leaves out *Out of scope* entries.
 5. **Audiences.** For each audience: the MVP and P1 entries of the pages in its row of the
@@ -293,12 +315,19 @@ exit criterion E0.8).
   behavior that documentation leaves out is missing from it. Entries differ in granularity by
   page: one per operation on the API pages, one per protocol capability on the format pages. If
   the catalog grows, every share on this page moves without any change to trove. The catalog is
-  also a measure of breadth, not of design quality. The 54 `trove-only` requirements are design
-  work it does not measure at all, for example R-REPO-038 *Egress address rules for remote
-  repositories* and R-STOR-013 *Download integrity verification*.
+  also a measure of breadth, not of design quality. The 81 `trove-only` requirements
+  (54 before 2026-10-28) are design work it does not measure at all, for example
+  R-REPO-038 *Egress address rules for remote repositories*, R-STOR-013 *Download integrity
+  verification* and R-HA-057 *Valkey failover, outage and degraded mode*. 27 of the 62
+  requirements that the owner constraints of 2026-10-28 added are of this kind, among them the
+  Valkey client with its degraded mode and each page's rules for its state across replicas and in
+  backups, for example R-NPM-046 and R-NPM-047.
 - **Priorities are trove's own judgement** and can change. When a priority changes, the MVP
-  share changes with it, even if no design or code changes. The catalog is not consistent about
-  projects, roles and environments:
+  share changes with it, even if no design or code changes. The owner constraints of 2026-10-28
+  are such a case: they raised eight requirements from P1 to MVP, among them the platform backup
+  layer, the point-in-time restore and the revocation journal (R-HA-023, R-HA-025, R-HA-054),
+  without any change to the catalog. The catalog is not consistent about projects, roles and
+  environments:
 
   | Concept | On the identity page | Elsewhere in the catalog |
   |---|---|---|
@@ -342,11 +371,17 @@ A defensible estimate needs two steps:
 2. Record agent-hours per implemented requirement, by spec page. Extrapolate to the remaining
    requirements of each page, and use the observed spread as the range.
 
-The size basis on 2026-10-28, from the tables above:
+The size basis on 2026-10-29, from the tables above:
 
-- 342 MVP, 147 P1 and 2 P2 requirements on 11 spec pages, plus the MVP requirements of the
+- 408 MVP, 143 P1 and 2 P2 requirements on 12 spec pages, plus the MVP requirements of the
   generic local class that M1 adds (roadmap Q-ROAD-1);
 - 222 P1 catalog entries that no requirement covers yet.
+
+The 66 MVP requirements that the owner constraints of 2026-10-28 added or raised (Valkey, the
+role split, statelessness, drains, backup and restore, the revocation journal) are mostly
+cross-cutting. Their cost per requirement is likely to differ from that of a protocol
+requirement, so the first slice should include one of them, for example R-ARCH-033 (request
+collapsing through Valkey), before any extrapolation.
 
 ## Related pages
 

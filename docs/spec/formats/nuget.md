@@ -7,14 +7,17 @@ and virtual repositories under `/api/nuget/<repoKey>/`, package ingestion and `.
 version normalization and SemVer 2.0.0 handling, the NuGet additions to the storage schema, push,
 unlist, relist and delete, symbol packages and the symbol server, proxying nuget.org with URL
 rewriting, merging of members in virtual repositories, the NuGet side of client authentication and
-authorization, client compatibility and the acceptance tests. NuGet v2 (OData) is deferred
-(INV-14). Mechanisms shared by all formats are owned by other pages and only refined here:
-repository model, virtual resolution and the pull-through proxy by
+authorization, client compatibility, NuGet on interchangeable replicas with and without Valkey,
+pushes across drains and retries, NuGet data in backups and restores, and the acceptance tests.
+NuGet v2 (OData) is deferred (INV-14). Mechanisms shared by all formats are owned by other pages and
+only refined here: repository model, virtual resolution and the pull-through proxy by
 [repositories-and-proxy.md](../repositories-and-proxy.md); items, blobs, uploads and the trash can
 by [storage.md](../storage.md); credentials by
 [identity-and-authentication.md](../identity-and-authentication.md); permissions and package
 ownership by [authorization.md](../authorization.md); audit and metrics by
-[operations-and-observability.md](../operations-and-observability.md).
+[operations-and-observability.md](../operations-and-observability.md); roles, caches, Valkey and
+the request lifecycle by [architecture.md](../architecture.md); the backup format and the restore
+procedure by [backup-and-restore.md](../backup-and-restore.md).
 
 Covers: this page draws on [formats/nuget.md](../../features/formats/nuget.md) (`PKG-NUGET-*`),
 [remote-repositories.md](../../features/remote-repositories.md) (`RMT-*`) and
@@ -139,13 +142,31 @@ HTTP conventions for every NuGet endpoint:
 - GET and HEAD are supported on every read resource; HEAD returns the GET headers without a body.
 - JSON responses use `Content-Type: application/json; charset=utf-8`. Unknown query parameters
   are ignored.
-- The service index, flat container and registration documents carry a strong `ETag`;
-  `If-None-Match` with a matching value answers 304. For documents rendered from local rows the
-  ETag derives from the package's `packages.rev_seq` ([architecture.md](../architecture.md)
-  R-ARCH-009), the hive and `<base>`; for remote
-  documents from the stored upstream document's digest and the serving address (R-REPO-043);
-  through a virtual repository it also covers the fingerprint of the contributing members
-  (R-REPO-020). Package files follow [storage.md](../storage.md) (R-STOR-012). Search and
+- Rendered documents (the service index, the flat-container version list and the registration
+  documents) carry a weak `ETag`, `W/"…"` (Q-NUGET-9); `If-None-Match` with a matching value
+  answers 304, because it uses the weak comparison
+  ([RFC 9110, section 13.1.2](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.2)). The value
+  covers the NuGet plug-in's render version and the document's inputs:
+  - from local rows: the package's `packages.rev_seq` ([architecture.md](../architecture.md)
+    R-ARCH-009), the hive and `<base>`;
+  - for remote documents: the stored upstream document's digest and the serving address
+    (R-REPO-043);
+  - through a virtual repository: the fingerprint of the members that contribute to the ID
+    (R-REPO-020's fingerprint, taken after permission filtering and after the pin rules and claims
+    of R-NUGET-017), the `rev_seq` of every eligible local member and the stored digest of every
+    contributing remote document. A push to a local member therefore changes the virtual
+    document's ETag, and so does a claim or pin rule that drops a member for the ID without any
+    push;
+  - for the service index: the repository's configuration version and `<base>`; from P1, for a
+    remote or virtual repository also the stored digests of the upstream service indexes and the
+    member fingerprint that decide whether the vulnerability entry is listed (R-NUGET-023).
+
+  The same value is sent with and without gzip content coding, and replicas of two releases send
+  the same value for documents built from the same inputs; RFC 9110 calls such a shared validator
+  weak ([section 8.8.1](https://www.rfc-editor.org/rfc/rfc9110#section-8.8.1)). The gzip hives
+  answer with `Vary: Accept-Encoding`. A release that must make clients drop documents they cached
+  raises the render version. Package files and other stored files keep the strong ETag of
+  [storage.md](../storage.md) (R-STOR-012), which `Range` with `If-Range` needs. Search and
   autocomplete responses carry no `ETag`.
 - Status codes follow the protocol: 200, 201, 204, 304, 400 invalid parameters or package, 401
   missing or invalid credentials, 403 or 404 per [authorization.md](../authorization.md)
@@ -153,6 +174,11 @@ HTTP conventions for every NuGet endpoint:
   502 or 503 for upstream and storage failures as [repositories-and-proxy.md](../repositories-and-proxy.md)
   and [storage.md](../storage.md) define them, 507 for a reached quota or capacity limit
   ([storage.md](../storage.md) R-STOR-029, P1).
+- `Retry-After` on a NuGet protocol endpoint is at most 30 s (proposed), whatever value the owning
+  page computes. The NuGet clients wait for the `Retry-After` of any
+  answer before their next attempt, and that wait counts against the one `--timeout` budget of the
+  whole command (R-NUGET-032). A longer value would spend a push's budget on waiting, or stall a
+  restore for minutes, before the client's last attempt.
 - Error bodies on NuGet protocol endpoints are one line of `text/plain; charset=utf-8` in the form
   `<code>: <message>`, using the codes of the owning pages (for example `credentials_required`,
   `invalid_token`, `deny.ownership`, `no_deploy_target`). NuGet clients print status and reason
@@ -197,9 +223,16 @@ Acceptance criteria:
   `nuget-org` lists no `PackagePublish/2.0.0` or `SymbolPackagePublish/4.9.0`; a virtual
   repository without deploy target lists neither.
 - `curl -sI -H "If-None-Match: <etag>" <feed>/registration-semver2/acme.widgets/index.json`
-  answers 304.
+  answers 304, and the ETag starts with `W/`.
 - `curl -I` on every read resource returns the same `Content-Type`, `ETag` and `Content-Length`
-  as the corresponding GET.
+  as the corresponding GET, on any replica of the same release (R-NUGET-030).
+- After a push of a new version of `Acme.Widgets` to `nuget-local`, a conditional request to
+  `nuget-all`'s registration index with the ETag obtained before the push answers 200.
+- `Contoso.Util` comes only from `nuget-org` through `nuget-all`. After a claim on `Contoso.*` is
+  created for `nuget-local` through the management API, with no push, a conditional request with
+  the earlier ETag of `nuget-all`'s version list for `contoso.util` answers 404 (R-NUGET-017), not
+  304. With a pin rule that sends `Contoso.*` to `nuget-org` and a local copy of `Contoso.Util`
+  2.0.0, adding `nuget-local` to the rule changes the ETag of the version list.
 
 ### R-NUGET-003 · Package IDs, versions and normalization
 Priority: **MVP** · Covers: PKG-NUGET-008, PKG-NUGET-009, PKG-NUGET-011, PKG-NUGET-042, REPO-030, REPO-031
@@ -378,16 +411,20 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 6. In the commit transaction (R-STOR-005): create the `packages` row if absent and the
    `package_versions` row (its unique index on the URL form makes a duplicate answer 409); create
    the item of the `.nupkg` as lead item and the derived items with `generated = true`; insert
-   the NuGet side rows below; increment `packages.rev_seq` (R-ARCH-009); publish the change
-   notification of R-REPO-020 so merged caches drop.
+   the NuGet side rows below; increment `packages.rev_seq` (R-ARCH-009). After the commit, the
+   early-eviction signal of R-REPO-020 goes to the post-commit coalescer of
+   [architecture.md](../architecture.md) R-ARCH-018. It travels through Valkey, is best-effort, and
+   nothing below waits for it.
 
 - The `.nupkg` is stored byte for byte as received; trove never rewrites a package, because
   package signatures and lock-file hashes would fail on the client
   ([implementation guide](https://learn.microsoft.com/en-us/nuget/api/implementation-guide)). A
   `.signature.p7s` entry is kept and not verified (H-36).
 - Metadata is complete when the ingestion request returns: a client that pushes and immediately
-  restores or searches sees the new version, on any replica (R-ARCH-012 in
-  [architecture.md](../architecture.md)). There is no asynchronous metadata calculation for NuGet;
+  restores or searches sees the new version, on any replica and whether or not Valkey is
+  available (R-ARCH-012 in [architecture.md](../architecture.md), R-NUGET-030). Every metadata
+  request reads the current `rev_seq`, and search runs in SQL per request, so no replica can keep
+  serving a document from before the push. There is no asynchronous metadata calculation for NuGet;
   every protocol document is rendered from the rows below, and the generic `packages.rev_seq`
   (R-ARCH-009) is the package's change sequence that keys R-ARCH-012's rendition cache and the
   ETags of R-NUGET-002. NuGet keeps no counter of its own: the core reads `rev_seq` without format
@@ -527,19 +564,31 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
 
 | Request | Body | Responses | Permission |
 |---|---|---|---|
-| `PUT <feed>/package` | `multipart/form-data`; the first part is the raw `.nupkg`; further parts, part names and part headers are ignored | 201 pushed (empty body); 400 invalid package; 401; 403 (including `deny.ownership` and `shadows_remote_package`); 409 `nuget_version_exists` or `nuget_version_deleted` (URL form compared); 413 too large; 503 `shadow_check_unavailable`; 507 Insufficient Storage `quota_exceeded` when a repository quota or the system capacity limit is reached ([storage.md](../storage.md) R-STOR-029, P1) | `deploy` on the ID, ownership (R-AUTHZ-007, R-AUTHZ-018) |
+| `PUT <feed>/package` | `multipart/form-data`; the first part is the raw `.nupkg`; further parts, part names and part headers are ignored | 201 pushed, or the identical package was already stored (empty body); 400 invalid package; 401; 403 (including `deny.ownership` and `shadows_remote_package`); 409 `nuget_version_exists`, `nuget_version_deleted` or `nuget_version_reserved` (URL form compared); 413 too large; 503 `shadow_check_unavailable`; 507 Insufficient Storage `quota_exceeded` when a repository quota or the system capacity limit is reached ([storage.md](../storage.md) R-STOR-029, P1) | `deploy` on the ID, ownership (R-AUTHZ-007, R-AUTHZ-018) |
 
 - The request runs the ingestion pipeline of R-NUGET-005. A body that is not
   `multipart/form-data` MAY be accepted as the raw `.nupkg`, for scripted uploads with `curl`.
 - This is an API-key endpoint (R-NUGET-012).
-- Versions are immutable for the lifetime of the repository (Q-NUGET-6). A push whose URL form
-  exists in the repository answers 409 `nuget_version_exists`; a push whose URL form is tombstoned
-  answers 409 `nuget_version_deleted`. Both hold whatever the content and whatever permissions the
-  caller holds, `overwrite` included (R-AUTHZ-006 lets a format refuse overwrites), and for every
-  ingestion path into a local repository (protocol push, raw deploy, upload; copy and move report
-  them per item, R-NUGET-005). The NuGet clients' skip-duplicate option (`--skip-duplicate`,
-  `-SkipDuplicate`) relies on 409; it also skips a tombstoned version, whose restore then fails
-  with 404.
+- Versions are immutable for the lifetime of the repository (Q-NUGET-6). These rules hold
+  whatever permissions the caller holds, `overwrite` included (R-AUTHZ-006 lets a format refuse
+  overwrites), and for every ingestion path into a local repository (protocol push, raw deploy,
+  upload; copy and move report them per item, R-NUGET-005):
+  - A push whose URL form exists in the repository with other bytes answers 409
+    `nuget_version_exists`.
+  - A protocol push (`PUT <feed>/package`) of the identical `.nupkg`, compared by SHA-256 with the
+    stored lead item, answers 201 and changes nothing: no row is written, `rev_seq` stays, no
+    `package.published` event is written, and `trove_nuget_push_replayed_total` counts it
+    (Q-NUGET-6). The NuGet clients repeat a push on their own after a transport failure
+    (R-NUGET-032), and this rule makes such a repeat succeed when its first attempt had committed.
+    Raw deploy and upload keep answering 409 for an existing version.
+  - A push whose URL form is tombstoned answers 409 `nuget_version_deleted`, identical bytes
+    included. The one exception is a tombstone of kind `reserved`, which a restore's journal
+    replay writes for a version published after the backup's snapshot (R-NUGET-033, Q-NUGET-10):
+    it admits the `.nupkg` whose SHA-512 it records, removes itself in that push's commit
+    transaction, and answers 409 `nuget_version_reserved` to any other bytes.
+
+  The NuGet clients' skip-duplicate option (`--skip-duplicate`, `-SkipDuplicate`) relies on 409;
+  it also skips a tombstoned version, whose restore then fails with 404.
 - **Tombstones.** Every removal of a version from a local repository writes a `nuget_tombstone`
   row with the SHA-512 of the removed `.nupkg`, in the transaction that removes the version: hard
   delete through the protocol (R-NUGET-007), raw and management deletes (R-NUGET-005), a move to
@@ -548,8 +597,9 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
   Tombstones survive the trash can and its purge. Restoring the version from the trash can
   (R-STOR-023) removes its tombstone in the restore transaction, because the original bytes come
   back. No API, UI or `trove admin` operation removes a tombstone, and a push of identical bytes is
-  refused like any other; only that restore and the deletion of the whole repository remove one,
-  as for npm (R-NPM-008).
+  refused like any other; only that restore, the identical push against a `reserved` tombstone
+  (above) and the deletion of the whole repository remove one, as for npm (R-NPM-008). Every
+  backup exports the tombstones (R-NUGET-033).
 - **Shadowing check** ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-048,
   Q-REPO-6). The first push of an ID into a local repository that holds no version of it and no
   claim covering it runs the check, whether the push is addressed to the repository or to a
@@ -564,11 +614,20 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
   the code is in the one-line body of R-NUGET-002 for `curl` and in the audit event
   (`deny.shadowing`). A symbol push never runs the check, because it needs the version to exist
   already (R-NUGET-020).
-- Two concurrent pushes of the same version, on the same or different replicas, end with exactly
-  one 201 and 409 for the others (unique index in the commit transaction). Pushes and deletions
-  first create or lock the package's `packages` row (`FOR UPDATE`) and check versions and
-  tombstones only after that, so a push racing a hard delete of the same version sees either the
-  version or its tombstone, never neither.
+- Concurrent pushes of the same version, on the same or different replicas, create exactly one
+  version (unique index in the commit transaction): the first to commit answers 201, later pushes
+  of other bytes answer 409, and later protocol pushes of the same bytes answer 201 without change.
+  Pushes and deletions first create or lock the package's `packages` row (`FOR UPDATE`) and check
+  versions and tombstones only after that, so a push racing a hard delete of the same version sees
+  either the version or its tombstone, never neither. The rule holds whichever replica each request
+  reaches, because nothing in it is replica state (R-NUGET-030).
+- The row lock and the version and tombstone checks run inside the commit transaction of R-STOR-005,
+  after the body has been spooled and the blob written. No database connection or lock is held
+  while the body streams, the shadowing check asks an upstream or the blob goes to object storage
+  ([architecture.md](../architecture.md) R-ARCH-019). A push of other bytes to an existing version
+  therefore spools and stores its body before it gets its 409. An object written for it has no
+  committed blob row; it is an orphan, which the orphan sweep removes from P1 on
+  ([storage.md](../storage.md) R-STOR-026).
 - A push to a remote repository answers 405. A push to a virtual repository is R-NUGET-019.
 
 Data model:
@@ -578,9 +637,11 @@ CREATE TABLE nuget_tombstone (           -- outlives the trash can and its purge
     repository_id bigint      NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
     lower_id      text        NOT NULL,
     lower_version text        NOT NULL,  -- URL form (R-NUGET-003)
-    sha512        bytea       NOT NULL,  -- of the removed .nupkg
+    sha512        bytea       NOT NULL,  -- of the removed .nupkg; for 'reserved' the journaled one
     deleted_at    timestamptz NOT NULL,
-    deleted_by    uuid        NOT NULL,
+    deleted_by    uuid        NOT NULL,  -- for 'reserved' the system principal of the restore
+    kind          text        NOT NULL DEFAULT 'removed'
+                  CHECK (kind IN ('removed', 'reserved')),  -- 'reserved': R-NUGET-033, Q-NUGET-10
     PRIMARY KEY (repository_id, lower_id, lower_version)
 );
 ```
@@ -588,10 +649,14 @@ CREATE TABLE nuget_tombstone (           -- outlives the trash can and its purge
 Acceptance criteria:
 
 - `dotnet nuget push out/Acme.Widgets.1.2.3.nupkg --source trove-local --api-key "$TOKEN"` (dotnet
-  10 SDK) succeeds; the same command again fails with 409; with `--skip-duplicate` it exits 0.
+  10 SDK) succeeds; the same command with the same file again exits 0 and changes nothing (one
+  version row, one `package.published` event); a rebuilt `Acme.Widgets.1.2.3.nupkg` with other
+  bytes fails with 409, and with `--skip-duplicate` it exits 0.
 - `nuget push Acme.Widgets.1.2.4.nupkg -Source trove-local -ApiKey %TOKEN%` (nuget.exe) succeeds.
-- Ten parallel `curl -X PUT -F package=@Acme.Widgets.2.0.0.nupkg` requests spread across two
-  replicas yield one 201 and nine 409.
+- Ten parallel `curl -X PUT -F package=@Acme.Widgets.2.0.0.nupkg` requests of one file, spread
+  across two replicas, all answer 201 and leave one version row and one `package.published`
+  event. Ten parallel pushes of ten different builds of `Acme.Widgets` 2.0.0 yield one 201 and nine
+  409.
 - `curl -X PUT … <base>/api/nuget/nuget-org/v3/package` answers 405.
 - After a hard delete of `Acme.Widgets` 1.2.3 (R-NUGET-007), pushing a rebuilt 1.2.3 answers 409
   `nuget_version_deleted`, also for a token holding `overwrite` and also after the trash can was
@@ -626,12 +691,20 @@ API (both are API-key endpoints, R-NUGET-012):
   the UI; a raw delete of the `.nupkg`, R-NUGET-005) removes or trashes the version as a unit per
   [storage.md](../storage.md) (R-STOR-018, R-STOR-022) and writes its tombstone (R-NUGET-006), so
   the version number can never return with other bytes. Management, UI and raw deletes are hard
-  deletes whatever `deleteMode` says; they need the same `delete` permission and ownership. Relisting
-  or deleting a hard-deleted version answers 404.
+  deletes whatever `deleteMode` says; they need the same `delete` permission and ownership.
+  Relisting a hard-deleted version answers 404. A protocol `DELETE` of a version for which the
+  repository holds a tombstone answers 204 without change, in either mode, so a delete that the
+  client repeats after its first attempt had committed does not fail (R-NUGET-032). The
+  permission and ownership checks of the table run first, so the 204 tells nothing to a caller
+  who could not delete the version. One exception changes something: in `delete` mode, a
+  `reserved` tombstone (R-NUGET-033) becomes `removed`, so the journaled bytes are refused too.
+  Other `DELETE` requests for a version the repository does not hold answer 404.
 - The repository settings page in the UI shows the effective `deleteMode`, so users know what
   `dotnet nuget delete` does in that repository.
-- Unlist and relist increment `packages.rev_seq` (R-ARCH-009) and publish the change notification
-  of R-REPO-020.
+- Unlist and relist increment `packages.rev_seq` (R-ARCH-009), so the next search, version list or
+  registration request on any replica shows the change, through virtual repositories too
+  (R-ARCH-012, R-ARCH-015). The early-eviction signal of R-REPO-020 follows the commit and is
+  best-effort (R-NUGET-005 step 6).
 
 Configuration (per local repository: the format member `nuget` of the repository document,
 [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-004; not the `nuget` section of
@@ -1132,10 +1205,12 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
 - Metadata cache period (Q-NUGET-2): the NuGet format registers a default metadata period of
   300 s (`cache.metadataTtlSeconds`, R-REPO-024) for the upstream service index, version lists,
   registrations and vulnerability data, and keeps the not-found period at 1800 s. A refresh is a
-  conditional request collapsed across replicas (R-REPO-026, R-REPO-027), so an unchanged document
-  costs one 304 per period per remote repository, not one per client. Administrators may set any
-  period in the range of R-REPO-024 per remote. `.nupkg`, `.nuspec`, icons and symbol files are
-  immutable.
+  conditional request, collapsed within a replica and, through the Valkey flight lock, across
+  replicas (R-REPO-026, R-REPO-027, [architecture.md](../architecture.md) R-ARCH-033), so an
+  unchanged document costs one 304 per period per remote repository, not one per client. While
+  Valkey is unavailable, the collapse works per replica, and the cost rises to one 304 per period
+  per `web` replica (R-NUGET-031). Administrators may set any period in the range of R-REPO-024 per
+  remote. `.nupkg`, `.nuspec`, icons and symbol files are immutable.
 - Push, delete and relist are not offered (405).
 
 Acceptance criteria (against a stub v3 upstream in CI and, in a nightly job, against nuget.org):
@@ -1153,9 +1228,9 @@ Acceptance criteria (against a stub v3 upstream in CI and, in a nightly job, aga
 - With default settings, a version the stub upstream adds to an already cached version list is
   restorable through `nuget-org` at most 300 s (plus the refresh) later; while nothing changes,
   the stub records only conditional requests answered 304, at most one per document per 300 s
-  across both replicas.
+  across both replicas (Valkey available; R-NUGET-031 states the bound without it).
 - 50 concurrent restores of the same uncached package across two replicas cause one upstream
-  `.nupkg` request.
+  `.nupkg` request (Valkey available; at most one per replica without it, R-NUGET-031).
 - The SHA-512 of a `.nupkg` served by the remote equals the one served by the upstream.
 - A stub upstream that serves `Other.Pkg 1.0.0` at the content URL of `acme.widgets` 1.0.0 causes
   502 `upstream_package_mismatch`, and no item exists afterwards.
@@ -1190,10 +1265,25 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   protected when it equals the literal part of such a prefix pattern without the `*` and without a
   trailing `.`, `-` or `_` (for `Acme.*`: `acme`). Include patterns do not protect terms: they
   restrict what a remote serves, not what is sensitive. The check uses the in-memory claim trie of
-  R-REPO-023 and adds no database query. Withheld requests are counted (R-NUGET-028).
-- Forwarded responses are kept in an in-process cache for `nuget.search.remote_result_ttl`; they are
-  not persisted. Forwarding needs `read` on the remote; it caches nothing, so the cache fill rule
-  does not apply.
+  R-REPO-023 and adds no database query. Every replica keeps that trie current from the
+  PostgreSQL change log (area `claims`, [architecture.md](../architecture.md) R-ARCH-018), so after a
+  claim change two replicas can disagree about one query for at most that propagation bound, with
+  or without Valkey. Withheld requests are counted (R-NUGET-028).
+- Forwarded responses are kept in the registered in-process cache `nuget_remote_search` of each
+  `web` replica (Q-NUGET-8, [architecture.md](../architecture.md) R-ARCH-018), for
+  `nuget.search.remote_result_ttl` and within `nuget.search.remote_result_cache_bytes`.
+  - The key is the remote repository and the upstream request URL with its parameters. The entry is
+    the upstream response as received.
+  - Pattern, claim, pin-rule and permission filtering and the URL rewriting run on every use, so a
+    claim or grant change applies to cached results as soon as the replica has applied it. A
+    change of the remote's configuration flushes its entries (area `repo_config`).
+  - Nothing is persisted and nothing is written to Valkey: search results are content served to
+    clients ([architecture.md](../architecture.md) Q-ARCH-16).
+  - Two replicas may answer one query from copies fetched up to `remote_result_ttl` apart, and
+    either may ask the upstream instead. Both answers meet the same contract, which is why this
+    per-replica state does not break INV-18 (R-NUGET-030).
+  - Forwarding needs `read` on the remote. It stores nothing in the repository, so the cache fill
+    rule does not apply.
 - When the upstream search fails or the circuit is open (R-REPO-029), the remote answers from its
   cache-only search.
 - `forwardSearch: false`: the remote answers with the cache-only search, which is R-NUGET-010 over
@@ -1205,7 +1295,8 @@ Configuration (system file):
 ```yaml
 nuget:
   search:
-    remote_result_ttl: 60s     # default (proposed)
+    remote_result_ttl: 60s                 # default (proposed)
+    remote_result_cache_bytes: 33554432    # default (proposed), 32 MiB per web replica
 ```
 
 Acceptance criteria:
@@ -1219,6 +1310,10 @@ Acceptance criteria:
   `q=acme`, `q=acme.payments` and `q=packageid:Acme.Widgets` answer 200 and the stub upstream
   records no search request; `q=newtonsoft` is forwarded. With `excludePatterns: ["Contoso.*"]` on
   `nuget-org`, `q=contoso.secret` sent to `nuget-org` directly is not forwarded either.
+- `q=partner` through `nuget-all` is answered and cached on both replicas; then `nuget-local`
+  claims `Partner.*`. Within 1 s, and with Valkey stopped within `cluster.epoch_poll_interval`
+  plus 1 s, neither replica returns a `Partner.*` result from `nuget-org` for `q=partner`, although
+  both still hold the cached upstream response.
 
 ### R-NUGET-017 · Virtual repository: merged package content and metadata
 Priority: **MVP** · Covers: PKG-NUGET-026, REPO-035, REPO-036, REPO-037
@@ -1253,8 +1348,11 @@ metadata cache (R-REPO-020) and dependency-confusion protection (R-REPO-023) are
     effect in a containing virtual repository covers the ID (R-REPO-023).
 - A publish to a member is visible through the virtual repository at once, on every replica: the
   core's merged-metadata cache checks the `packages.rev_seq` of every eligible local member on each
-  hit, notification or not ([architecture.md](../architecture.md) R-ARCH-015, Q-ARCH-9), and
-  R-REPO-020 also drops the merged entries. A merge without a transiently failing remote member is served
+  hit, notification or not ([architecture.md](../architecture.md) R-ARCH-015, Q-ARCH-9). The
+  early eviction of R-REPO-020, a best-effort signal through Valkey, only drops entries sooner; a
+  merged entry whose remote input was refreshed expires with that entry when the signal is lost.
+  A claim that the first push creates (`local.autoClaim`) reaches the other replicas through the
+  change log within the bound of R-ARCH-018. A merge without a transiently failing remote member is served
   with `Cache-Status: trove; detail=partial` and not cached (R-REPO-020).
 
 Configuration (per virtual repository; `virtual` belongs to
@@ -1286,7 +1384,7 @@ Acceptance criteria:
 - A pin rule `{"packages": ["Partner.*"], "members": ["nuget-org"]}` in `nuget-all` resolves
   `Partner.Sdk` from `nuget-org` although `nuget-local` claims `Partner.*`.
 - Push through `nuget-all`, then `dotnet restore --no-http-cache` through `nuget-all` on the other
-  replica within one second sees the new version.
+  replica within one second sees the new version, also with Valkey stopped.
 - With the stub upstream down and nothing cached, local packages still restore through
   `nuget-all`, and the version list of a remote-only ID answers 502, not 404 (R-REPO-019).
 
@@ -1381,8 +1479,14 @@ an API-key endpoint (R-NUGET-012):
 - NuGet clients push a `.snupkg` lying next to the pushed `.nupkg` automatically, the package first;
   each push hits its own resource.
 - Symbol packages are removed with their package version (R-NUGET-005, R-NUGET-007).
-- Serving PDBs to debuggers is P1 (R-NUGET-021); its backfill job indexes symbol packages stored
-  before it ships.
+- The symbol push is one request. The client sends it only after the package push has succeeded
+  (R-NUGET-032), and the matching `.nupkg` is looked up in PostgreSQL, so the two pushes may reach
+  different replicas (R-NUGET-030). The push extracts nothing: it validates, stores the
+  `.snupkg` and commits.
+- Serving PDBs to debuggers is P1 (R-NUGET-021). From then on, the symbol push's commit
+  transaction enqueues the indexing job of that one symbol package (Q-NUGET-11). The release that
+  ships R-NUGET-021 enqueues the same job for every symbol package stored before, through a data
+  migration ([architecture.md](../architecture.md) R-ARCH-026).
 
 Data model:
 
@@ -1390,7 +1494,8 @@ Data model:
 CREATE TABLE nuget_symbol_package (
     version_id  bigint PRIMARY KEY REFERENCES package_versions (id) ON DELETE CASCADE,
     item_id     bigint NOT NULL REFERENCES items (id) ON DELETE CASCADE,   -- the .snupkg
-    indexed_at  timestamptz                                                -- set by R-NUGET-021
+    indexed_at  timestamptz,                                               -- set by R-NUGET-021
+    index_error text                                                       -- R-NUGET-021: why a package could not be indexed
 );
 ```
 
@@ -1416,11 +1521,34 @@ Protocol ([SSQP](https://github.com/dotnet/symstore/blob/main/docs/specs/Simple_
 | Portable PDB | GUID (32 lowercase hex) followed by `FFFFFFFF` | the PDB ID in the `#Pdb` stream |
 | Windows PDB | GUID (32 lowercase hex) followed by the age in hex without leading zeros | the PDB info stream of the MSF container |
 
-- Indexing runs at symbol push (and as a backfill job for symbol packages stored earlier): each
-  `.pdb` is extracted to a generated item (storage layout of R-NUGET-005), its key is computed and
-  stored lowercased, and for Portable PDBs its checksum is computed as SHA-256 over the file with
-  the 20-byte PDB ID zeroed
-  ([PE/COFF PDB checksum entry](https://github.com/dotnet/runtime/blob/main/docs/design/specs/PE-COFF.md)).
+- Indexing runs as a job on the `worker` role, never in the push request (Q-NUGET-11).
+  - One job per symbol package. The symbol push's commit transaction enqueues kind
+    `nuget-symbol-index` on queue `index`, with dedup key `nuget-symbol-index:<version id>` in mode
+    `exclusive` ([architecture.md](../architecture.md) R-ARCH-016). The jobs of one repository
+    therefore spread over every `worker` replica; no repository's indexing waits for one replica.
+  - The job reads the `.snupkg` from object storage with ranged reads: the central directory
+    first, then each `.pdb` entry. It spools one extracted PDB at a time, with the spool
+    reservation of [storage.md](../storage.md) R-STOR-004, and never the whole archive, so a symbol
+    package larger than the worker's spool ([ha-and-helm.md](../ha-and-helm.md) R-HA-035) can
+    still be indexed. Each `.pdb` becomes a generated item (storage layout of R-NUGET-005), and its
+    key is computed and stored lowercased. For a Portable PDB the job also computes the checksum:
+    SHA-256 over the file with the 20-byte PDB ID zeroed
+    ([PE/COFF PDB checksum entry](https://github.com/dotnet/runtime/blob/main/docs/design/specs/PE-COFF.md)).
+  - One transaction inserts the package's rows and sets `indexed_at`. It first locks the
+    `nuget_symbol_package` row and skips the package when `indexed_at` is already set. A job
+    released by a drain ([ha-and-helm.md](../ha-and-helm.md) R-HA-011), retried after a crash or
+    started by a reindex therefore commits nothing twice. Objects written by a run that did not
+    commit are orphans, removed by the orphan sweep from P1 on
+    ([storage.md](../storage.md) R-STOR-026).
+  - A package that cannot be indexed is not retried forever. A `.pdb` whose streams cannot be
+    parsed, or one larger than the worker's spool can reserve, sets `index_error` (`unparseable`,
+    `too_large`) together with `indexed_at`, is logged and counted (R-NUGET-028), and the job
+    succeeds; that package's keys answer 404. Transient failures (object storage, a spool
+    reservation that may succeed later) fail the attempt, and R-ARCH-016 retries it with backoff.
+    A reindex (R-NUGET-025) clears `index_error` and tries again.
+  - Until its symbol package is indexed, a key answers 404. Proposed bound: a key is servable
+    within 30 s at p99 after the symbol push's 201, under the reference load of
+    [architecture.md](../architecture.md) R-ARCH-027.
 - Keys are compared case-insensitively. When several versions hold the same key, the newest
   version's file is served.
 - When the request carries a `SymbolChecksum` header (`SHA256:<hex>`, several separated by `;`)
@@ -1451,6 +1579,17 @@ Acceptance criteria:
   PDB whose bytes equal the entry in the `.snupkg`; `dotnet-symbol --server-path <feed>/symbols/
   -o out Acme.Widgets.dll` against a repository with anonymous read does the same.
 - The same request with a wrong `SymbolChecksum` answers 404; with the right one 200.
+- After `dotnet nuget push` of a `.nupkg` with its `.snupkg`, the PDB's key answers 200 within
+  30 s. With the `worker` Deployment scaled to zero, the push still answers 201 and the key answers
+  404; after scaling back, the key answers 200 without another push.
+- 200 symbol packages are pushed to `nuget-local` within one minute, and the node of one `worker`
+  is drained while their jobs run. Every key answers 200 afterwards, no job counts the interrupted
+  attempt, and no `nuget_symbol_file` row exists twice. Before the drain,
+  `trove_jobs_running{kind="nuget-symbol-index"}` is above 0 on both `worker` replicas at the same
+  time.
+- A `.snupkg` whose `.pdb` carries a valid Portable PDB signature but a corrupt `#Pdb` stream ends
+  with `index_error = 'unparseable'`; a valid symbol package pushed after it is servable within the
+  bound above.
 - Visual Studio 2022 with Just My Code off and `<feed>/symbols/` as symbol location steps into
   `Acme.Widgets` source when debugging a consumer (manual check, recorded per release).
 
@@ -1467,6 +1606,12 @@ Priority: **P1** · Covers: PKG-NUGET-031, PKG-NUGET-032
 - An upstream 404 enters the negative cache only for requests that carried a `SymbolChecksum`
   header or for Windows PDB keys, so a probe without header cannot hide a file from a later
   request with header.
+- The descriptor's variant (R-REPO-026) is the request's `SymbolChecksum` value, normalized
+  (lowercased, the checksums sorted and joined with `;`; empty without the header). Flight locks
+  and negative entries, which live in Valkey under keys hashed from it
+  ([architecture.md](../architecture.md) R-ARCH-030), are therefore kept apart per checksum. A miss
+  under one checksum never hides the file from a request with another. A cached file is served to
+  every request whose checksum it matches (R-NUGET-021).
 - Patterns, claims and pin rules see the routing name of a symbol request (the key's first segment
   without its last extension, R-NUGET-015). A remote with `excludePatterns: ["Acme.*"]`, or a
   virtual repository in which `Acme.*` is claimed or pinned to local members, never asks the
@@ -1560,11 +1705,18 @@ NuGet repositories the plug-in:
 - re-parses every `.nupkg` of a local repository, or every cached `.nupkg` of a remote repository,
   and rewrites `metadata`, `search_doc`, `is_prerelease`, `is_semver2`, `package_types`,
   `declared_id` and `sort_key` of `nuget_version` in batches, keeping listing state, publish time
-  and download counts;
+  and download counts. It reads each archive with ranged reads from object storage (central
+  directory, `.nuspec`, embedded files) and never spools a whole package, so the worker's spool
+  bounds no package size;
 - creates missing NuGet rows for `.nupkg` items that have none (for example after an import);
-- extracts missing embedded files (R-NUGET-024) and indexes symbol packages without
-  `indexed_at` (R-NUGET-021);
-- checkpoints progress per `lower_id`, so a job resumed on another replica skips finished IDs;
+- extracts missing embedded files (R-NUGET-024);
+- enqueues the `nuget-symbol-index` job (R-NUGET-021) of every symbol package without
+  `indexed_at`, and of every one with `index_error` after clearing it. It does not index symbols
+  itself, so a reindex and symbol indexing never wait for each other;
+- runs as a job on the `worker` role ([architecture.md](../architecture.md) R-ARCH-016), never on
+  a `web` replica, and checkpoints progress per `lower_id`. A job released at a drain keeps
+  `attempt` unchanged ([ha-and-helm.md](../ha-and-helm.md) R-HA-011), and a job resumed on another
+  replica skips finished IDs;
 - increments `packages.rev_seq` (R-ARCH-009) of every package whose rows it changed, in the batch's
   transaction, so no rendition cached under the old value is served again (R-ARCH-012);
 - never changes stored bytes.
@@ -1576,6 +1728,8 @@ Acceptance criteria:
 - After corrupting `metadata` of a fixture version in the database, the reindex restores it and
   search returns the original description.
 - Killing the replica that runs the job resumes it elsewhere without reprocessing finished IDs.
+- `kubectl drain` of the node that runs the job: the job is `queued` again before its pod exits,
+  with `attempt` unchanged, and another `worker` finishes it from its checkpoint.
 
 ### R-NUGET-026 · Client compatibility and client setup instructions
 Priority: **MVP** · Covers: PKG-NUGET-033, PKG-NUGET-034, PKG-NUGET-035, PKG-NUGET-036, UI-025
@@ -1641,17 +1795,30 @@ Acceptance criteria:
 ### R-NUGET-027 · Acceptance test suite
 Priority: **MVP** · Covers: trove-only
 
-The NuGet acceptance suite runs the client commands of this page against a running trove (two
-replicas, PostgreSQL, S3-compatible storage, deployed by the Helm chart of
-[ha-and-helm.md](../ha-and-helm.md)).
+The NuGet acceptance suite runs the client commands of this page against a running trove in the
+production shape: the local profile of [ha-and-helm.md](../ha-and-helm.md) R-HA-051, deployed by
+the Helm chart.
+- two `web` and two `worker` replicas on different nodes;
+- PostgreSQL with a standby;
+- Valkey with Sentinel, in the reference topology of R-HA-056;
+- S3-compatible storage.
 
 | Runner | Client | Scope |
 |---|---|---|
 | Linux | .NET 10 SDK, version pinned in the harness | every MVP criterion of this page |
+| Linux, `scatter` profile ([architecture.md](../architecture.md) R-ARCH-032) | .NET 10 SDK | R-NUGET-030, on every change that touches the NuGet plug-in |
+| Linux, Valkey stopped | .NET 10 SDK | R-NUGET-031, nightly |
+| Linux, pooler overlay (`POOLER=1`, R-HA-051: transaction-mode pooler) | .NET 10 SDK | every MVP criterion, nightly, so no NuGet path depends on session state ([architecture.md](../architecture.md) R-ARCH-019) |
 | Windows | nuget.exe, version pinned in the harness, and .NET 10 SDK | push, install, delete, search, `nuget.config` with credentials |
 | Linux, nightly | .NET 10 SDK | remote and symbol criteria against nuget.org and its symbol server |
 | Manual, per release | Visual Studio 2022 | criteria marked manual |
 
+- The NuGet loads of the node-drain test ([ha-and-helm.md](../ha-and-helm.md) R-HA-059) and the
+  NuGet packages of the backup suite ([backup-and-restore.md](../backup-and-restore.md) R-BAK-029)
+  come from this suite's fixtures. The drain load runs, in parallel: pushes of packages with symbol
+  packages; restores through `nuget-all` of local packages and of remote packages not yet cached,
+  from a stub upstream that delays every response by 2 s; search walks; and, from P1, symbol
+  requests. Every `dotnet` command of it exits 0 while a node of each role is drained.
 - Upstream behavior in CI comes from a counting stub v3 server with recorded nuget.org responses
   (non-inlined registration pages, unlisted versions, deprecations, vulnerabilities), so CI does
   not depend on the public internet.
@@ -1671,6 +1838,7 @@ Event catalog, schema and metric conventions are owned by
 | Operation | Audit event |
 |---|---|
 | Push accepted | `package.published` and `artifact.deployed` for the `.nupkg` |
+| Push of the identical bytes of a stored version (R-NUGET-006) | none; counted in `trove_nuget_push_replayed_total` |
 | Symbol push accepted | `artifact.deployed` for the `.snupkg` |
 | Unlist, relist | `package.metadata_changed` with `change` = `unlist` or `relist` |
 | Hard delete | `package.deleted` and `artifact.deleted` |
@@ -1683,7 +1851,19 @@ Event catalog, schema and metric conventions are owned by
 - Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repository,reason}`,
   `trove_nuget_remote_unparseable_packages_total{repository}`,
   `trove_nuget_search_forward_failures_total{repository}`,
-  `trove_nuget_search_withheld_total{repository}` (R-NUGET-016).
+  `trove_nuget_search_withheld_total{repository}` (R-NUGET-016),
+  `trove_nuget_push_replayed_total{repository}` (R-NUGET-006) and, from P1,
+  `trove_nuget_symbol_index_lag_seconds` (age of the oldest symbol package without `indexed_at`,
+  R-NUGET-021) and `trove_nuget_symbol_index_failures_total{repository,reason}` (packages that
+  ended with `index_error`). The forwarded-search cache reports through the core's
+  `trove_cache_requests_total{cache="nuget_remote_search"}`.
+- `package.published` and `package.deleted` of local NuGet repositories go to the revocation
+  journal of [ha-and-helm.md](../ha-and-helm.md) R-HA-054, with the entry of R-NUGET-033. Both
+  event types are shared with npm, which journals neither ([formats/npm.md](npm.md) Q-NPM-12), and
+  the registry flag of R-OPS-014 is per event type. The flag on these two types therefore means
+  "journaled when the producer supplies an entry": the NuGet plug-in supplies one for local
+  repositories, npm supplies none, and no outbox row is written without an entry (cross-page,
+  R-OPS-014, R-OPS-015).
 
 Acceptance criteria:
 
@@ -1716,6 +1896,248 @@ Acceptance criteria:
   increments.
 - In the nightly job, restoring 50 popular nuget.org packages through a remote with
   `remote.integrity.checksumPolicy: require` succeeds.
+
+### R-NUGET-030 · NuGet on interchangeable replicas (INV-18)
+Priority: **MVP** · Covers: trove-only
+
+The Kubernetes Service spreads NuGet requests over the `web` replicas at random and without session
+affinity (INV-12, [architecture.md](../architecture.md) R-ARCH-032). A restore, a push or a
+debugging session is a series of independent requests. Any of them may reach any replica, including,
+during a rolling upgrade, a replica of the previous release. The NuGet plug-in keeps no state between
+requests on a replica:
+
+| Flow | Consecutive requests | Where the state between them lives |
+|---|---|---|
+| Push, then symbol push | `PUT <feed>/package`, then `PUT <feed>/symbolpackage`, sent only after the first succeeded (R-NUGET-032) | The committed version rows; the symbol push looks the `.nupkg` up in PostgreSQL (R-NUGET-020) |
+| Push, unlist, relist or delete, then restore or search | the write, then version list, registration documents or search | The committed rows and `packages.rev_seq`, which every metadata request reads (R-ARCH-012); search runs in SQL per request (R-NUGET-010) |
+| The same through a virtual repository | the write through `nuget-all`, then reads through `nuget-all` | As above, plus the merged cache's `rev_seq` check of every local member (R-ARCH-015) |
+| First push of an ID with `local.autoClaim` | the push, then reads of that ID through a virtual repository | The claim row, which other replicas apply from the change log within the bound of R-ARCH-018. The pushed version itself is visible at once. |
+| Registration paging | the index, then page URLs | The page bounds in the URL; a page is answered from rows at request time (R-NUGET-009) |
+| Search and autocomplete paging | one request per page, `skip` and `take` | None. Every page is computed again: from SQL with `lower_id` as tie-breaker (R-NUGET-010), from the upstream (R-NUGET-016), or as a fresh merge window (R-NUGET-018). |
+| Removal, then a push of the same version | the delete or move, then the push | The `nuget_tombstone` row, checked under the `packages` row lock (R-NUGET-006) |
+| Concurrent misses of one remote document | parallel requests on several replicas | The cache entry in PostgreSQL; the Valkey flight lock only saves upstream requests (R-NUGET-015, R-NUGET-031) |
+| Credential challenge | `401`, then the same request with credentials | None; the credential travels with every request (R-NUGET-012) |
+| Debugger symbol probes (P1) | one request per module and key | The `nuget_symbol_file` rows (R-NUGET-021) |
+| Reindex and symbol indexing (P1) | jobs | The job row and its `checkpoint`, or `indexed_at` (R-NUGET-025, R-NUGET-021) |
+
+- `X-NuGet-Session-Id` is only logged (R-NUGET-002), and nothing is keyed on it.
+- The plug-in adds one kind of per-replica state to the table of R-ARCH-032: the cache of forwarded
+  search results (R-NUGET-016, Q-NUGET-8). It declares no package-level mutable variable. Every
+  other cache it uses is a registered core cache keyed by `rev_seq`, a stored digest or an epoch.
+- **Same answer on every replica.** A rendered NuGet document (service index, version list,
+  registration index, page and leaf) or search response is a function of these inputs only:
+  - PostgreSQL rows and stored upstream documents;
+  - the base URL and the hive;
+  - the content coding;
+  - the trove release.
+
+  Nothing replica-specific enters the body: no replica name, no clock reading other than stored
+  timestamps, no map iteration order (objects are written with a fixed key order). Replicas of one
+  release therefore return byte-identical bodies with equal ETags. Replicas of two releases return
+  equal weak ETags for documents built from the same inputs (Q-NUGET-9).
+- A push uses the spool of the replica that received it, for that one request (R-HA-035, INV-13).
+  NuGet has no multi-request upload: a package or a symbol package travels whole in one `PUT`, and
+  the `multipart/form-data` envelope is parsed while it streams (R-NUGET-006, R-NUGET-020).
+
+Acceptance criteria, in the `scatter` profile of R-ARCH-032 (three `web` replicas, every request to
+the next replica in turn, upstream keep-alive off):
+- 50 iterations of `dotnet nuget push` of a `.nupkg` with its `.snupkg`, each followed at once by
+  `dotnet restore --no-http-cache` through `nuget-all`, all succeed, with Valkey running and again
+  with Valkey stopped.
+- A `curl` walk of the search of `nuget-local` with `take=25`, continued until `data` is empty,
+  returns every package exactly once and the same `totalHits` on every page. The same walk on
+  `nuget-all` returns no package twice.
+- For a fixture package with 130 versions, the SemVer 2 registration index and its three pages,
+  fetched in sequence, contain each version once.
+- These documents are fetched once from each replica: the service index, a version list, the
+  index, a page and a leaf of each of the three registration hives (with and without
+  `Accept-Encoding: gzip`), and one search page. Each document has the same body SHA-256 and the same
+  `ETag` on all three replicas.
+
+### R-NUGET-031 · Valkey unavailable or emptied
+Priority: **MVP** · Covers: trove-only
+
+NuGet keeps nothing of its own in Valkey. It reads no document, search result, symbol file or
+authorization result from it ([architecture.md](../architecture.md) R-ARCH-030, Q-ARCH-16). It uses
+core mechanisms that Valkey speeds up, and each degrades as R-ARCH-030 states. A NuGet request
+never fails because Valkey failed (R-ARCH-031).
+
+| Mechanism NuGet uses | With Valkey | Valkey unavailable | Valkey lost its data (failover, flush, restart) |
+|---|---|---|---|
+| Collapsing remote misses and conditional refreshes: upstream service index, version lists, registrations, `.nupkg`, symbol files, vulnerability documents (R-NUGET-015) | One upstream request per document and flight, across all replicas | At most one per document and flight per `web` replica. An unchanged document costs up to one 304 per period per replica (Q-NUGET-2). | A flight in progress may be fetched twice; content addressing makes the duplicate harmless (R-ARCH-033) |
+| Negative cache: unknown IDs' version lists, missing packages, symbol misses (R-NUGET-015, R-NUGET-022) | One upstream request per missing path per not-found period | The per-replica L1 only: up to one upstream request per missing path, period and replica | The next request for each path asks the upstream once |
+| Early eviction of merged documents after a remote refresh (R-NUGET-017) | Within milliseconds | Merged entries expire with the remote entries they were built from (R-REPO-020). Local members stay exact through `rev_seq`. | As unavailable |
+| Claims, pin rules, patterns and repository settings that routing and the withheld-query rule read (R-NUGET-016, R-NUGET-017) | Applied within milliseconds | Applied within the change-log bound of R-ARCH-018 | Unaffected |
+| Rate limits that apply to NuGet requests, such as the failed-credential throttle ([identity-and-authentication.md](../identity-and-authentication.md) R-AUTH-038, R-ARCH-034) | Cluster-wide | Per-replica shares | The counters restart |
+
+- **Gone IDs are not Valkey state.** The `upstream_gone` mark of a version list is a PostgreSQL row
+  (R-REPO-029). A flushed or failed-over Valkey therefore never makes a package that the upstream
+  withdrew downloadable again. It costs at most one upstream request for the version list, which
+  answers 404 again.
+- Push, symbol push, unlist, relist and delete use Valkey only for best-effort signals after their
+  commit, and behave the same without it.
+
+Acceptance criteria:
+- With Valkey stopped for the whole run, the MVP criteria of this page pass, and every replica stays
+  ready with `"degraded":["valkey"]`.
+- With Valkey stopped, 50 concurrent restores of one uncached package, 25 per replica on two
+  replicas, cause at most two upstream `.nupkg` requests. An unchanged version list costs at most one
+  conditional request per replica per 300 s.
+- `valkey-cli FLUSHALL` during the NuGet loads of the drain test of
+  [ha-and-helm.md](../ha-and-helm.md) R-HA-059 makes no `dotnet` command fail. Neither does a
+  Sentinel failover forced with `SENTINEL FAILOVER trove` during those loads; afterwards
+  `trove_flight_lock_bypass_total` stops rising within `valkey.sentinel.refresh_interval`, so the
+  replicas collapse across replicas again on the new primary.
+- After `FLUSHALL`, the `.nupkg` of `Acme.Gone` from R-NUGET-015's criterion still answers 404
+  through `nuget-org`. The stub records no `.nupkg` request and at most one version-list request per
+  replica.
+
+### R-NUGET-032 · Pushes and deletes across drains, restarts and client retries
+Priority: **MVP** · Covers: trove-only
+
+How the NuGet clients send writes. Read on 2026-10-28 in the NuGet.Client sources on the `dev`
+branch
+([`PackageUpdateResource.cs`](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Protocol/Resources/PackageUpdateResource.cs),
+[`HttpRetryHandler.cs`](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Protocol/HttpSource/HttpRetryHandler.cs),
+[`HttpRetryHandlerRequest.cs`](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Protocol/HttpSource/HttpRetryHandlerRequest.cs),
+[`EnhancedHttpRetryHelper.cs`](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Protocol/EnhancedHttpRetryHelper.cs),
+[`TimeoutUtility.cs`](https://github.com/NuGet/NuGet.Client/blob/dev/src/NuGet.Core/NuGet.Protocol/Utility/TimeoutUtility.cs)):
+- Package and symbol pushes are `PUT` requests with `Transfer-Encoding: chunked`, so they declare
+  no `Content-Length`.
+- A push to any host but the public gallery's symbol host, and a `DELETE`, are tried up to three
+  times (`DefaultMaxTries = 3`, the first attempt included). Every attempt builds a new request
+  from the file.
+- A retry follows a 5xx status, a transport exception, and 408 or 429 unless `NUGET_RETRY_HTTP_429`
+  is `false`.
+- A `Retry-After` on any answer is waited for before the next attempt, capped at one hour by
+  default (`NUGET_OBSERVE_RETRY_AFTER` switches the wait off).
+- `--timeout` is one budget for the whole command: every package, every attempt and every wait.
+  When it runs out, the command fails without a further attempt.
+- The symbol package is pushed only after the package push has succeeded.
+- A `DELETE` answered 404 fails the command.
+
+Not verified: which released client versions carry exactly this code; the acceptance criteria below
+run against the versions pinned in R-NUGET-027.
+
+trove's side:
+- **Post-body work is bounded.** After the body of a push has arrived, the NuGet plug-in reads the
+  central directory, every local header name, the `.nuspec` (at most `max_nuspec_bytes`) and, for a
+  symbol package, the first bytes of each `.pdb`; from P1 it extracts at most three embedded files
+  of 1 MiB each (R-NUGET-024). None of it grows with the archive's uncompressed size, so a push
+  stays within the bound P-11 that R-ARCH-024 step 5 relies on. Symbol indexing is a job
+  (R-NUGET-021).
+- **Spool.** A chunked push reserves spool budget in increments while it streams
+  ([storage.md](../storage.md) R-STOR-004). It can therefore neither exceed the role's spool budget
+  nor make the kubelet evict the pod for an overfull `emptyDir` (R-HA-035). A push that cannot
+  reserve its next increment fails with 503 and `Retry-After` (at most 30 s, R-NUGET-002); the
+  client waits that long and retries it, through the Service and so possibly on another replica.
+- **Drain.** A push or symbol push that is running when its replica receives `SIGTERM` has until
+  `server.shutdown_timeout` to complete ([architecture.md](../architecture.md) R-ARCH-024). If one is
+  cut while its body still arrives, nothing is committed, and the client's next attempt reaches
+  another replica through the Service. One whose body has arrived is not cut between its commit and
+  its status line (R-ARCH-024 step 5).
+- **Answer lost after the commit.** The answer to a committed push can still be lost: the process
+  or node is lost, the network fails, or a commit overruns the shutdown margin. The client's next
+  attempt then carries the same bytes and answers 201 without changing anything (R-NUGET-006,
+  Q-NUGET-6). A symbol push behaves the same (R-NUGET-020).
+- **Unlist, relist and delete are repeatable.** A repeated unlist answers 204 and a repeated relist
+  200 (R-NUGET-007). A hard delete of a version that the repository has already tombstoned answers
+  204, so a delete repeated after its first attempt committed does not fail.
+
+Acceptance criteria:
+- A fault-injection build drops the connection of a push after its commit and before its status
+  line. `dotnet nuget push` with default settings exits 0. The repository holds one version row and
+  one `package.published` event for it, and `trove_nuget_push_replayed_total` has risen by 1.
+- `dotnet nuget push` of a 300 MiB package over a link limited to 10 MiB/s runs while the `web` pod
+  receiving it is deleted. The command exits 0, and the version restores through another replica.
+- With `web.spool.sizeLimit: 3Gi` and `spool.headroom: 1GiB`, three concurrent pushes of 1 GiB
+  packages: two `dotnet nuget push` commands exit 0. The third exits 0 or reports
+  `503 (Service Unavailable)`, and in that case succeeds when run again. `kubectl get events` shows
+  no eviction.
+- With `deleteMode: delete`, `dotnet nuget delete` of the same version, run twice, exits 0 both
+  times. A fault-injection build that drops the connection after the delete's commit makes the
+  command exit 0 as well.
+
+### R-NUGET-033 · NuGet data in backups and restores
+Priority: **MVP** · Covers: trove-only
+
+The backup format, its consistency and the restore procedure belong to
+[backup-and-restore.md](../backup-and-restore.md) (INV-19). NuGet contributes the following.
+
+- **Export classes** (R-BAK-004). `nuget_version`, `nuget_tombstone`, `nuget_symbol_package` and,
+  from P1, `nuget_symbol_file` are `data`, and NuGet has no `transient` table. Tombstones must
+  survive a restore, because they keep a deleted version number from returning (Q-NUGET-6). No
+  NuGet table is part of a foreign-key cycle, so none needs a `CycleBreak`.
+- **Blobs.** Every NuGet file is an item with a blob reference, so a backup holds all of them
+  (R-BAK-006):
+  - the `.nupkg` and the `.snupkg`;
+  - the generated `.nuspec`, and from P1 the extracted PDBs and embedded files;
+  - the cached files of remote repositories.
+
+  After a restore, nothing NuGet serves has to be rebuilt; only the in-process caches of every
+  replica start empty.
+- **ETags after a restore.** The ETags of local documents contain `packages.rev_seq`, and that of
+  the service index `repositories.config_version` (R-NUGET-002). The restore raises both by 2^32
+  (R-BAK-022). A client that cached a document from the old installation after the snapshot
+  therefore gets 200, not 304. Remote documents take their ETags from stored upstream digests and
+  need nothing.
+- **Remote caches excluded** (`backup.exclude.remote_caches`, R-BAK-008). Emptying a NuGet remote's
+  cache removes its `origin = 'cache'` rows and items through the storage hooks. It writes no
+  tombstone, because tombstones belong to local repositories (R-NUGET-006). The upstream service
+  index (`.nuget/index.json`) is fetched again on first use.
+- **Versions changed after the snapshot** (Q-NUGET-10). Two kinds of audit events on local NuGet
+  repositories are flagged for the revocation journal ([ha-and-helm.md](../ha-and-helm.md)
+  R-HA-054):
+  - every event that adds a version (`package.published`; from P1 also the copy and move events
+    of [storage.md](../storage.md) R-STOR-019);
+  - every event that removes one (`package.deleted`, and the source side of a move).
+
+  Each entry is `{"repository": <id>, "id": <lower_id>, "version": <URL form>, "sha512": <hex of the
+  .nupkg>}`. The replay that every restore runs (R-BAK-024) applies the entries newer than the
+  snapshot as follows:
+
+| Journaled after the snapshot | State in the restored database | Replay outcome |
+|---|---|---|
+| A version entered the repository | Absent, without a tombstone | A tombstone of kind `reserved` with the journaled SHA-512 is written (`applied`) |
+| A version entered the repository | Present, or tombstoned | Nothing (`already in effect`) |
+| A version was removed | Present with the journaled SHA-512 | Nothing is deleted. The version is reported `revived` in the replay output and counted in `system.restore.journal_replayed` (H-50). |
+| A version was removed | Present with other bytes | Nothing (`subject unknown`) |
+| A version was removed | Absent, with a `reserved` tombstone | The tombstone becomes `removed` (`applied`), so the deleted bytes stay refused as they were before the restore |
+| A version was removed | Absent, without a tombstone | A `removed` tombstone with the journaled SHA-512 is written (`applied`) |
+| A version was removed | Absent, with a `removed` tombstone | Nothing (`already in effect`) |
+| Any | The repository is unknown | `subject unknown` |
+
+  Entries are applied in the order of R-HA-054. A version published and then deleted after the
+  snapshot therefore ends with a `removed` tombstone, as in the old installation; a `reserved`
+  one would have admitted the deleted bytes again.
+
+  A `reserved` tombstone refuses a push of other bytes with 409 `nuget_version_reserved` and admits
+  the identical `.nupkg` (R-NUGET-006). A pipeline that rebuilds a lost version byte-identically
+  therefore restores it. One example is .NET 11 and later with the original
+  `DeterministicTimestamp` ([deterministic packages](https://learn.microsoft.com/en-us/nuget/create-packages/deterministic-packages)).
+  Any other build has to take a new version number.
+
+  Without the replay, nothing is reserved: a restore run with `--skip-revocation-journal`
+  (R-BAK-024, for the disaster in which the source bucket and its journal are gone), an
+  installation that ran with `backup.revocation_journal.enabled: false`, and entries not yet
+  shipped when the old database stopped all leave lost version numbers free (H-50).
+
+Acceptance criteria, run in the suite of [backup-and-restore.md](../backup-and-restore.md)
+R-BAK-029:
+- Backup B is taken. Afterwards `Acme.Widgets` 3.0.0 is pushed and `Acme.Widgets` 2.0.0 is
+  hard-deleted, and B is restored. A push of a rebuilt 3.0.0 answers 409 `nuget_version_reserved`.
+  A push of the original 3.0.0 file answers 201, and the version restores through `nuget-all`. The
+  replay output lists 3.0.0 as `applied` and 2.0.0 as `revived`.
+- After B, `Acme.Widgets` 3.1.0 is pushed and then hard-deleted. After B is restored, a push of the
+  original 3.1.0 file answers 409 `nuget_version_deleted`.
+- The same restore run with `--skip-revocation-journal` prints, besides H-37's warning, that NuGet
+  version numbers published after the snapshot are not reserved; a rebuilt 3.0.0 then answers 201.
+- After B is restored, `dotnet package search Acme --source <restored nuget-all> --exact-match`
+  lists exactly the versions of B's snapshot. A conditional request with an ETag that the old
+  installation issued after B's snapshot answers 200.
+- After a restore with `backup.exclude.remote_caches: true`, `nuget_tombstone` holds no row of a
+  remote repository, and `dotnet restore` of `Newtonsoft.Json 13.0.3` through `nuget-org` fetches
+  it from the stub upstream once.
 
 ## Deferred
 
@@ -1793,6 +2215,27 @@ Acceptance criteria:
   Windows; elsewhere the instructions use environment-variable references.
 - **Symbol files can disclose source.** PDBs may contain source paths and embedded source; they
   are protected by the same `read` permission as the package (R-NUGET-013).
+- **Valkey never decides what a NuGet client receives.** No NuGet document, search result, symbol
+  file or permission is read from Valkey (R-NUGET-031). Whoever can write under trove's Valkey
+  prefix can do two things ([architecture.md](../architecture.md) H-49):
+  - hide a remote's version list, package or symbol file behind a forged negative entry, for that
+    entry's checked lifetime;
+  - delay collapsed fetches.
+
+  They cannot change bytes or metadata. They also cannot make a package the upstream withdrew
+  downloadable again, because the gone mark lives in PostgreSQL.
+- **Forwarded search results stay in the replica.** Upstream search responses are cached only in
+  each `web` replica's memory, and filtered for patterns, claims and permissions on every use
+  (R-NUGET-016, Q-NUGET-8). A cached response can therefore never show a caller an ID that a claim
+  or grant made since then hides.
+- **Restores keep version numbers reserved.** A version published after a backup's snapshot is
+  absent after a restore, and while the journal replay runs, its number stays reserved for the
+  identical bytes (R-NUGET-033, Q-NUGET-10), so a rebuild cannot silently replace what clients
+  cached from the old installation. A version published and deleted after the snapshot stays
+  refused. Whoever holds the runtime object-store credential can forge journal entries. A forged
+  entry can reserve a version number for good or report a version as `revived`; it cannot delete or
+  replace a package. A version deleted after the snapshot comes back with the restore, and a restore
+  without the journal reserves nothing (H-50).
 
 ## Decisions
 
@@ -1836,10 +2279,12 @@ R-NUGET-022 and R-NUGET-023 use the same member for `forwardSearch`, `symbolServ
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice stands. Refreshes are now collapsed across replicas through the Valkey flight lock instead of a PostgreSQL lock ([architecture.md](../architecture.md) R-ARCH-033). While Valkey is unavailable, each `web` replica refreshes on its own, so an unchanged document costs up to one 304 per period per replica instead of one per remote (R-NUGET-031). Option (b), the rationale and R-NUGET-015 now say so.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) 7200 s | Keep the generic default of R-REPO-024 for the service index, version lists, registrations and vulnerability data | Fewest upstream requests; same value as npm | A version released upstream stays unresolvable through trove for up to two hours, so automated dependency-update merge requests opened minutes after a release fail CI |
-| (b) 300 s as the NuGet format default | The NuGet plug-in registers 300 s for those documents; the not-found period stays 1800 s | New upstream versions resolve within five minutes; each refresh is a conditional request collapsed across replicas, so an unchanged document costs one 304 per period per remote | About 24 times more revalidations of hot documents than (a); upstream latency is felt more often, bounded by the refresh timeout that serves the stale copy (R-REPO-027) |
+| (b) 300 s as the NuGet format default | The NuGet plug-in registers 300 s for those documents; the not-found period stays 1800 s | New upstream versions resolve within five minutes. Each refresh is a conditional request collapsed across replicas through Valkey, so an unchanged document costs one 304 per period per remote; while Valkey is unavailable, one per period per `web` replica | About 24 times more revalidations of hot documents than (a); upstream latency is felt more often, bounded by the refresh timeout that serves the stale copy (R-REPO-027) |
 | (c) 0 s | Revalidate on every use | Always current | Every package of every restore waits for an upstream round trip; an upstream slowdown slows every restore up to the refresh timeout |
 | (d) Long period plus catalog-driven invalidation | Keep 7200 s, and let a singleton job follow the upstream's catalog resource with a cursor, dropping cached documents of IDs that changed (the pattern the NuGet implementation guide suggests for feeds that mirror nuget.org) | Freshness within the polling interval at the lowest request count per cached ID | Works only for upstreams that offer a catalog; other v3 feeds, trove instances among them, fall back to 7200 s; a cursor, a scheduler lease and catalog parsing are new scope, and trove consumes catalog leaves only from P1 on (R-NUGET-029) |
 
@@ -1848,8 +2293,10 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** A restore asks for the version list first. With (a), the time between an upstream
 release and its first successful restore through trove is up to two hours, which is exactly the
 window in which update bots open merge requests. 300 s keeps that window short. The extra load is
-small because refreshes are conditional, collapsed in-process and across replicas (R-REPO-026), and
-mostly answered with 304. A merged virtual entry never outlives the remote entries it was built
+small because refreshes are conditional, collapsed in-process and, through Valkey, across replicas
+(R-REPO-026, R-ARCH-033), and mostly answered with 304. Even with Valkey down and, for example, 20
+`web` replicas, a hot document costs at most 20 conditional requests per 300 s, far below one per
+client, and the outage is alerted on (R-HA-057). A merged virtual entry never outlives the remote entries it was built
 from (R-REPO-020), so the virtual period adds nothing. (c) puts the upstream on the critical path of
 every restore and gains about five minutes of freshness. (d) is the efficient answer for nuget.org,
 but it works for one kind of upstream only and needs new machinery; (b) behaves the same for every
@@ -1861,13 +2308,16 @@ public ID requested before it existed upstream becomes visible when the entry ex
 after an invalidation (R-REPO-045). The development agent would revisit this if upstream request
 metrics show rate limiting by the upstream, in which case (d) would be added on top of (b) for
 upstreams with a catalog, or if users need newly created public IDs faster than the not-found period
-allows.
+allows. The same holds if the per-replica refreshes of a Valkey outage, at the replica count an
+installation runs, are what draws the upstream's rate limiting.
 
 **Applied in the spec:** R-NUGET-001 lists the 300 s and 1800 s defaults in the format
 registration; R-NUGET-015 states the period, the documents it covers and the conditional refresh,
 and gains an acceptance criterion for upstream changes within 300 s.
 [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-024 and R-REPO-027 list the
-300 s NuGet default as well (Q-REPO-2).
+300 s NuGet default as well (Q-REPO-2). Revisited on 2026-10-28: R-NUGET-015 names the Valkey
+flight lock and the per-replica cost while Valkey is unavailable, and its criteria state that
+they assume Valkey; R-NUGET-031 holds the degraded bounds and their criteria.
 
 ### Q-NUGET-3 · Non-ASCII package IDs
 
@@ -1963,13 +2413,16 @@ for a push in other casing.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-28 after the owner added the Valkey, horizontal-scale, backup and storage-class constraints: the choice moves from (c) to (d). Requests now reach replicas at random, and replicas are drained and replaced at any time. The NuGet clients repeat a push on their own after a transport failure (R-NUGET-032). Under (c), a repeat whose first attempt had committed failed with 409, so a lost answer failed a CI job although its package was stored. Under (d), a protocol push of the identical `.nupkg` to a stored version answers 201 without change; everything else of (c) stays. A restore's effect on version numbers is the separate question Q-NUGET-10.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Immutable while stored | A repeated push answers 409; after a hard delete the version number is free again | Simple; no extra table | Delete and re-push replace a version in two steps: client caches and lock files that recorded the old bytes silently diverge or fail |
 | (b) Opt-in overwrite | A per-repository setting lets callers with `overwrite` replace a version | Convenient for scratch feeds that reuse versions | NuGet clients cache by ID and version in the global packages folder and lock files record content hashes, so a replaced package diverges between machines; the implementation guide forbids modifying packages because lock files and signature validation report changed bytes as tampering |
-| (c) Immutable for good, with tombstones | A repeated push answers 409; every removal of a version from a local repository (hard delete, raw delete, move, cleanup) leaves a tombstone, so the number never returns with other bytes; restoring from the trash can brings the original back | One ID and version mean one content forever, as for npm (R-NPM-008); hard delete through the protocol becomes safe to offer | A version deleted by mistake cannot be pushed again after the trash can was purged (in the MVP, which has no trash can, at once); the next version number has to be used; tombstone rows accumulate with every cleanup deletion and are never purged (one small row per version) |
+| (c) Immutable for good, with tombstones | A repeated push answers 409; every removal of a version from a local repository (hard delete, raw delete, move, cleanup) leaves a tombstone, so the number never returns with other bytes; restoring from the trash can brings the original back | One ID and version mean one content forever, as for npm (R-NPM-008); hard delete through the protocol becomes safe to offer | A version deleted by mistake cannot be pushed again after the trash can was purged (in the MVP, which has no trash can, at once); the next version number has to be used; tombstone rows accumulate with every cleanup deletion and are never purged (one small row per version); a client's automatic repeat of a push whose answer was lost after the commit fails with 409 |
+| (d) (c), and a repeated protocol push of identical bytes succeeds | As (c), but `PUT <feed>/package` with the `.nupkg` already stored for that version (same SHA-256) answers 201 and changes nothing. Other bytes still answer 409. A tombstone still refuses identical bytes, except a `reserved` one (Q-NUGET-10). Raw deploy and upload keep 409. | Every guarantee of (c). A push stays safe to repeat across drains, crashes and network failures, which is the case the clients' own retry exists for. | A second principal holding `deploy` and ownership on the ID gets 201 for bytes someone else pushed (it learns nothing it did not already have); two answers for "already there", depending on the bytes |
 
-**Choice:** (c) — versions are immutable for the lifetime of the repository; every removal, a move included, leaves a tombstone, and only a trash-can restore brings a version back.
+**Choice:** (d) — versions are immutable for the lifetime of the repository; every removal, a move included, leaves a tombstone, and only a trash-can restore brings a version back; a protocol push of the identical bytes of a stored version answers 201 without change.
 
 **Rationale:** (b) breaks what every NuGet client relies on: the global packages folder and lock
 files treat one ID and version as one content. (a) still lets anyone with `deploy` and `delete`
@@ -1980,10 +2433,26 @@ clients of the source repository may have cached the version, so a rebuilt versi
 number there would diverge exactly as after a delete. Development feeds get unique versions from
 pre-release counters instead. INV-9's `overwrite` action has no effect on NuGet repositories, which
 R-AUTHZ-006 allows. As on the npm page (Q-NPM-8, decided without a purge), no operation purges a
-tombstone and a push of identical bytes is refused. The development agent would revisit this if an
-import from another system needs to reuse deleted version numbers, or if tombstone growth from
-cleanup policies becomes measurable; a system-administrator-only, audited purge would be the
-addition then, for both formats at once.
+tombstone and a push of identical bytes against a tombstone is refused.
+
+(d) adds one case. The dotnet CLI and nuget.exe try a push up to three times on a 5xx answer or a
+transport exception, and build each attempt from the same file (R-NUGET-032, read in the
+NuGet.Client sources). The answer to a committed push can be lost in several ways: R-ARCH-024
+avoids it for a drain, but a crash, a node loss, a network failure or a commit that overruns the
+shutdown margin still lose it. The automatic repeat then carries exactly the stored bytes. Under (c)
+it fails with 409, and the CI job fails although the package is stored. Drains and pod
+replacements are routine under the owner's constraints, and R-ARCH-024 protects a push only within
+its shutdown margin; every loss that remains would surface as a failed job. Answering 201 for
+identical bytes keeps "one ID and version, one content" intact, because nothing changes. A
+tombstone still refuses them, because a deletion is a decision that a push must not undo. Raw
+deploy and upload keep 409: no client repeats them on its own, and their existing-path rules belong
+to [storage.md](../storage.md).
+
+The development agent would revisit this if an import from another system needs to reuse deleted
+version numbers, or if tombstone growth from cleanup policies becomes measurable; a
+system-administrator-only, audited purge would be the addition then, for both formats at once. It
+would also revisit (d) if users rely on 409 to detect that a pipeline re-ran with an unchanged
+package.
 
 **Applied in the spec:** R-NUGET-006 states lifetime immutability with the codes
 `nuget_version_exists` and `nuget_version_deleted`, defines tombstones (which removals write them,
@@ -1992,7 +2461,12 @@ removes them; that identical bytes are refused too), adds the `nuget_tombstone` 
 that orders a push against a concurrent delete, and acceptance criteria for a hard delete and a
 move; R-NUGET-005 reports copy and move conflicts per item with the same codes (identical bytes
 count as `unchanged`, R-STOR-019) and writes the source tombstone on a move; R-NUGET-007 (hard
-delete) refers to it; the Security notes gain "Deleted versions stay reserved".
+delete) refers to it; the Security notes gain "Deleted versions stay reserved". Revisited on
+2026-10-28 (option (d)): R-NUGET-006 answers a protocol push of a stored version's identical bytes
+with 201 and no change, splits the 409 cases, and rewrites the concurrency rule and two criteria;
+the response table lists the new outcome; R-NUGET-028 adds `trove_nuget_push_replayed_total`;
+R-NUGET-032 states the client retry behavior this rests on and tests a push whose answer was lost
+after the commit.
 
 ### Q-NUGET-7 · Patterns and repository-level upstream documents
 
@@ -2031,6 +2505,198 @@ package-less documents repository-level, defines the routing name for every symb
 updates its pattern criteria; R-NUGET-022 replaces the `.symbols/**` rule and gains a criterion; the
 Security notes name the residual symbol-probe disclosure.
 
+### Q-NUGET-8 · Forwarded search results across replicas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-016 caches the upstream's answers to forwarded searches for `remote_result_ttl` (60 s). The
+load is now spread over n `web` replicas at random (INV-12), so a per-replica cache hits about 1/n
+as often for one user's consecutive pages. The upstream may then see up to n requests per distinct
+query and period. Valkey must not hold content that trove serves ([architecture.md](../architecture.md)
+Q-ARCH-16), and its values are limited to 1 KiB (R-ARCH-030).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per-replica cache, registered and bounded | A registered in-process cache per `web` replica holds the upstream response as received; patterns, claims, pin rules, permissions and URL rewriting apply on every use | No shared state and nothing served from Valkey. INV-18 holds: any replica may answer from its copy or ask the upstream, within the same period. Claim and grant changes act on cached results at once. | The hit rate falls with the replica count; the upstream sees at most n × distinct queries per period |
+| (b) Shared cache in Valkey | One copy per query for all replicas | One upstream request per query and period | Search results are served content. A writer to Valkey could inject package IDs, download counts or `verified` flags into the list developers choose from (Q-ARCH-16), which would need an integrity MAC under a key Valkey never sees. A page of up to 1000 results exceeds the 1 KiB value limit of R-ARCH-030. |
+| (c) Shared cache in PostgreSQL | An unlogged table of responses with a cleanup job | One upstream request per query and period; not served from Valkey | A write per distinct query on the system of record, for data that is worthless after a minute |
+| (d) No cache | Every search is forwarded | Simplest; always current | Every search and every page that Visual Studio's browse tab loads reaches the upstream, and an upstream slowdown slows every search |
+
+**Choice:** (a) — forwarded search results are cached in each `web` replica's memory, unfiltered, and filtered on every use; nothing is shared through Valkey or PostgreSQL.
+
+**Rationale:**
+- (b) would make Valkey part of what developers pick packages from, the line Q-ARCH-16 drew, and
+  its values could not even hold a full result page.
+- (c) puts disposable write load on the system of record, which the move of the negative cache to
+  Valkey has just taken off it.
+- The upstream cost of (a) is bounded by n × distinct queries per minute, and for the default
+  upstream it hits no documented rate limit. Microsoft's rate-limit page names nuget.org's v3
+  search as "not rate limited currently" (page last updated in 2020,
+  [rate limits](https://learn.microsoft.com/en-us/nuget/api/rate-limits)).
+- Keeping the entry unfiltered and filtering on every use makes a new claim protect cached results
+  as soon as the replica applies it, which (b) and (c) would need as well.
+- (d) gives up the hits that (a) still has for popular queries across many users, for no gain in
+  correctness.
+- The development agent would revisit this if `trove_nuget_search_forward_failures_total` shows the
+  upstream answering 429 to forwarded searches, or if an upstream other than nuget.org suffers from
+  the per-replica fan-out. (b) with a MAC on each entry, and pages split below the value limit, is
+  then the next step.
+
+**Applied in the spec:** R-NUGET-016: the cache is the registered core cache `nuget_remote_search`
+with the new key `nuget.search.remote_result_cache_bytes`, holds unfiltered upstream responses,
+filters and rewrites on every use, is flushed by repository configuration changes, and is
+named as the plug-in's per-replica state; it gains a criterion for a claim that hides cached results.
+R-NUGET-030 lists it. R-NUGET-028: its metrics come from the core cache. Security notes: "Forwarded
+search results stay in the replica". Cross-page: a row in [architecture.md](../architecture.md)
+R-ARCH-032's state table.
+
+### Q-NUGET-9 · ETags of rendered documents on replicas of different releases
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-002 gave rendered documents a strong ETag derived from `rev_seq` or the stored upstream
+digest, the hive and the base URL. Requests now reach any replica at random, including replicas of
+the previous release during every rolling upgrade (R-ARCH-025). The gzip hives also send the same
+value with and without content coding. RFC 9110 calls a validator weak if it is shared by
+representations with different bytes, naming gzip explicitly
+([section 8.8.1](https://www.rfc-editor.org/rfc/rfc9110#section-8.8.1)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Strong ETag from the inputs, as before | `rev_seq` or digest, hive, base URL | No change | Wrong by RFC 9110 for the gzip hives. During every rolling upgrade, N and N-1 may render different bytes under one strong value, and a cache that combines ranges or trusts byte equality is misled. |
+| (b) Strong ETag that also covers content coding and trove release | As (a), plus the coding and the release version | Strictly correct | Every upgrade turns every cached validator stale. During a rollout the value differs between replicas, so roughly every second conditional request answers 200. |
+| (c) Weak ETag `W/"…"` over a render version and the inputs | The plug-in's render version, `rev_seq` or digest, hive, base URL; for virtual documents the member fingerprint, every local member's `rev_seq` and every remote input's digest | `If-None-Match` uses the weak comparison, so 304s keep working across replicas, codings and releases. A release that must invalidate documents raises the render version. | Clients cannot use the value for `Range` with `If-Range`, which no NuGet client does on metadata. Someone has to remember to raise the render version when a fix must reach cached documents. |
+| (d) No ETag on rendered documents | — | Simplest | Proxies and scripts lose 304s; every revalidation transfers the whole document |
+
+**Choice:** (c) — rendered NuGet documents carry a weak ETag over a render version and their inputs; stored files keep the strong, content-addressed ETag.
+
+**Rationale:**
+- A weak validator says "semantically the same", which is exactly what holds when two replicas
+  render one package's rows, whatever their release and coding.
+- 304s are what the ETag is for here. RFC 9110 evaluates `If-None-Match` with the weak comparison
+  ([section 13.1.2](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.2)), so (c) keeps them at
+  the cost of nothing a NuGet client uses.
+- (b) is correct but throws the 304s away at every upgrade and during every rollout.
+- Writing out the inputs of a virtual document's value fixes an ambiguity of the earlier text: a
+  value over the member fingerprint alone would have answered 304 after a push to a local member.
+  R-REPO-020's fingerprint covers permission filtering only, so the value takes it after the pin
+  rules and claims of R-NUGET-017; otherwise a new claim, which removes a remote member's versions
+  without any push, would have answered 304 with the old version list.
+- Package files keep their strong ETags, because resuming a download needs them (R-STOR-012).
+- The development agent would revisit this if a client or proxy in use mishandles weak ETags on
+  JSON documents. (b) is the fallback.
+
+**Applied in the spec:** R-NUGET-002: weak ETags for rendered documents, their inputs including
+those of virtual documents (the member fingerprint after pin rules and claims) and of the service
+index (from P1 also the inputs of the vulnerability entry), the same value for both codings,
+`Vary: Accept-Encoding` on the gzip hives, the render version; three new criteria. R-NUGET-030: the
+same-answer rule and its criterion across three replicas. R-NUGET-033: ETags after a restore.
+
+### Q-NUGET-10 · Versions changed after a backup's snapshot
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A restore (INV-19, MVP) returns an installation to its backup's snapshot. Versions pushed after the
+snapshot are gone, and their numbers have no tombstone. A pipeline that runs again then pushes the
+same number, generally with other bytes, which breaks the promise of Q-NUGET-6 for every client that
+fetched the old bytes. Versions deleted after the snapshot come back. The revocation journal
+([ha-and-helm.md](../ha-and-helm.md) R-HA-054) already records chosen audit events outside
+PostgreSQL and replays them after every restore (R-BAK-024).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Accept the snapshot as it is | Nothing is journaled; the gap is documented | No new mechanism | A rebuilt version reuses a number that clients already resolved. Projects with lock files fail with a content-hash mismatch; others silently use different bytes on different machines. |
+| (b) Journal additions and removals; replay reserves lost numbers and reports revived versions | Additions and removals on local NuGet repositories are journaled. Replay writes a `reserved` tombstone for each version that entered after the snapshot and is absent now; it admits only the journaled SHA-512. A removal of a version that is absent turns or writes its tombstone into `removed`; a removal of a version that is present is reported as `revived`, not applied. | Q-NUGET-6 holds across a restore, including for a version published and deleted after the snapshot. A pipeline that rebuilds byte-identically restores the version, and any other build takes a new number. Replay only restricts, so a forged entry cannot add or change content. Reuses an existing mechanism, with one table row on R-HA-054. | One journal object per push or delete; a forged entry can reserve a number for good; revived versions stay until an administrator acts; nothing is reserved when the replay does not run (journal skipped or disabled, entries not yet shipped) (H-50) |
+| (c) As (b), and replay deletes revived versions again | Removals are applied | No revived versions | Whoever holds the runtime object-store credential could forge entries that delete package versions during a restore and tombstone their numbers. The MVP has no trash can to undo that (R-STOR-022, P1); R-HA-054 disables principals instead of deleting them for the same reason. |
+| (d) Recover lost versions from the old blob store | The restore copies post-snapshot packages from the source bucket | Nothing is lost | The source may be what was lost, and INV-19 restores into an empty installation; it would need the old database to know what to copy |
+
+**Choice:** (b) — publishes and deletions on local NuGet repositories are journaled; replay reserves the numbers of lost versions for their exact bytes and reports revived versions without deleting them.
+
+**Rationale:**
+- Restore is an MVP operation now, so the window in which a lost version number is reused is no
+  longer an edge case.
+- NuGet clients treat one ID and version as one content in the global packages folder and in lock
+  files. A reused number is therefore worse than a missing one: a missing version fails loudly with
+  404, while a reused one fails with a hash mismatch or not at all.
+- Since .NET 11, `dotnet pack` builds byte-identical packages when the timestamp is fixed
+  ([deterministic packages](https://learn.microsoft.com/en-us/nuget/create-packages/deterministic-packages)),
+  so admitting the journaled SHA-512 lets reproducible pipelines restore what was lost.
+- (c) would let a forged entry delete package versions and tombstone their numbers, and nothing in
+  the MVP undoes that. Where R-HA-054 removes principals, it disables them rather than deleting
+  them so that a forged entry stays reversible; a NuGet version has no such reversible state
+  before the trash can exists.
+- The cost of a forged entry under (b) is a reserved number, which availability alone pays. The
+  runtime object-store credential needed to forge one can already delete blobs.
+- npm answers the removal half differently. [formats/npm.md](npm.md) Q-NPM-12 replays an
+  unpublish by withholding the restored version: replay tombstones it and deletes nothing, and
+  `trove admin npm reinstate` reverses it. It reserves no lost numbers (npm's H-51). Both decisions
+  wait for the trash can (P1, R-STOR-022, R-STOR-023), where one rule for both formats is
+  preferable. Until then the difference is a cross-page item for the owner's walkthrough.
+- The development agent would revisit this when the trash can (P1) exists. Replay could then move
+  revived versions to the trash instead of only reporting them, which keeps them reversible and
+  closes the revival half of H-50. It would also revisit it if the npm rule is settled differently
+  for both formats.
+
+**Applied in the spec:** R-NUGET-033: the export classes, the journal entry, the replay table
+(including removals of absent versions, so a version published and deleted after the snapshot
+stays refused) and criteria; R-NUGET-006: the `reserved` tombstone kind, the code
+`nuget_version_reserved` and the identical-bytes exception; R-NUGET-007: a delete in `delete` mode
+turns a `reserved` tombstone into `removed`; R-NUGET-028: the journal flag; the Security notes;
+H-50. Cross-page: [ha-and-helm.md](../ha-and-helm.md) R-HA-054 (a row for these events and the
+outcome `revived`), [operations-and-observability.md](../operations-and-observability.md) R-OPS-014
+(a journal flag that only NuGet's producer fills for these shared event types).
+
+### Q-NUGET-11 · Where symbol indexing runs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-021 (P1) indexed symbol packages at push time. That means extracting every PDB, writing it to
+object storage and computing its key and checksum before the 201. Pushes now run on `web` replicas
+that may be drained at any time. R-ARCH-024 keeps a push from being cut between its commit and its
+status line only for work bounded by P-11 (1 s plus size ÷ 150 MiB/s). It also moves work that
+outlasts a request to jobs on the `worker` role (R-ARCH-001).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In the symbol push request | Extract, key and checksum before the 201 | A key is servable as soon as the push returns | After the body has arrived, the push writes every extracted PDB to object storage, which typically holds more bytes than the compressed `.snupkg`. Large symbol packages exceed P-11, so a drain can cut them after the commit, and heavy work lands on `web`. |
+| (b) One job per symbol package on the `worker` role | The push's commit enqueues `nuget-symbol-index` for that package (dedup key per version, `exclusive`); the job extracts and indexes; keys answer 404 until it commits | The push stays a plain upload within P-11. Indexing scales and drains with `worker`: the packages of one repository are indexed on every `worker` replica at once. A package that cannot be indexed fails alone. The same kind serves the backfill and the reindex. | A key becomes servable after a delay (proposed bound 30 s at p99); a debugger that loads a module right after the push misses its symbols once. One job row per symbol push. |
+| (c) No extraction; serve PDBs from the `.snupkg` | Keys are computed at push from the spool; PDB bytes are served by ranged reads of the stored `.snupkg` and inflated per request | No extra objects | The key and the Portable PDB checksum need each PDB inflated in full at push, so post-body work still grows with size. Every debugger request inflates, and raw access to PDBs through `/files/` disappears. |
+| (d) One coalesced job per repository on the `worker` role | As (b), but the dedup key is `index:<repository id>` in mode `coalesce`, and the job indexes every package of the repository that is not yet indexed | Fewer job rows during a burst of pushes; never runs alongside a reindex of the same repository | All indexing of a repository runs on one `worker` at a time, so the busiest repository, often the only NuGet local repository of an organization, is bounded by one replica. One package that fails parsing fails the repository's job until `max_attempts` and holds back every package pushed after it. A manual reindex answers 409 while a symbol job waits under the shared key (R-ARCH-016). |
+
+**Choice:** (b) — the symbol push only validates and stores the `.snupkg`; one `nuget-symbol-index` job per symbol package on the `worker` role extracts and indexes it.
+
+**Rationale:**
+- The owner's drain constraint and the role split both point to a job: the request does what every
+  upload does, and the unbounded part moves to the role that is built for long work and releases it
+  cleanly at a drain.
+- The owner expects load beyond one replica. (d) would bound each repository's indexing by one
+  `worker`, and in a typical installation that is all NuGet indexing. (b) spreads it over every
+  `worker` replica.
+- A per-package job isolates failures. A crafted or broken PDB ends its own job with
+  `index_error`, never the indexing of everything pushed after it.
+- Without a shared dedup key, (b) needs another guard against two runs of one package. The row lock
+  and the `indexed_at` check in the indexing transaction are that guard. A reindex only enqueues
+  jobs, so it never extracts a package itself.
+- The delay costs little. Debuggers fetch symbols when a module loads, typically long after the
+  package was built.
+- (c) does not remove the size-proportional work from the push and adds work to every symbol
+  request.
+- The development agent would revisit this if users need symbols the moment a push returns. A
+  synchronous fast path for symbol packages far below P-11's size bound would then be added on top
+  of (b). It would also revisit it if the job rows of busy CI feeds weigh on the queue, in which case
+  a batch per repository with per-package claims would replace one row per push.
+
+**Applied in the spec:** R-NUGET-021: indexing as one job per symbol package with kind, queue,
+dedup key and mode; ranged reads of the archive and one spooled PDB at a time; the per-package
+transaction with its row lock and `indexed_at` check; `index_error` for packages that cannot be
+indexed; the 404 until indexed; the delay bound; criteria for the delay, for `worker` at zero
+replicas, for a drain with jobs on both `worker` replicas, and for a broken PDB. R-NUGET-020: the
+push extracts nothing; the `index_error` column; a data migration enqueues the backfill.
+R-NUGET-025: a reindex enqueues jobs instead of indexing symbols. R-NUGET-028:
+`trove_nuget_symbol_index_lag_seconds` and `trove_nuget_symbol_index_failures_total`. Cross-page:
+a row for `nuget-symbol-index` in [architecture.md](../architecture.md) R-ARCH-016's kind table;
+the worker spool note in [ha-and-helm.md](../ha-and-helm.md).
+
 ## What this does not cover
 
 ### H-35 · Cached NuGet packages are not checked against an upstream digest
@@ -2050,3 +2716,42 @@ on push or on caching, and it offers no repository signing and no repository sig
 (PKG-NUGET-052, P2). A local repository accepts an unsigned or wrongly signed package from anyone
 who passes `deploy` and ownership for the ID; trust decisions about signers rest entirely on client
 configuration.
+
+### H-50 · A restore revives NuGet versions deleted after the backup's snapshot and can free lost version numbers
+
+Stage: `trove backup restore` ([backup-and-restore.md](../backup-and-restore.md) R-BAK-021) and
+platform restores ([ha-and-helm.md](../ha-and-helm.md) R-HA-025), with the journal replay of
+R-HA-054 as R-NUGET-033 applies it.
+
+**Revived versions.** Subject: every local NuGet repository; versions hard-deleted after the
+snapshot or restore point, and from P1 versions moved away. Every principal with `read` on the ID
+can download such a version again.
+
+Live in the MVP whenever a restore runs, because INV-19 makes restore an MVP operation. The
+restored database holds the version again. Replay lists it as `revived` but does not delete it
+(Q-NUGET-10): a journal entry can be forged by whoever holds the runtime object-store credential,
+and the MVP has no trash can that would make such a deletion reversible
+([storage.md](../storage.md) R-STOR-022, P1).
+
+What makes it real:
+- a version that was deleted because it was malicious or contained a secret;
+- an administrator who restores and does not act on the `revived` list;
+- deletions whose journal entries had not been shipped when the old database stopped. R-HA-054
+  names this residual gap, and these deletions are not reported at all.
+
+**Free version numbers.** Subject: every local NuGet repository; versions published after the
+snapshot whose journal entry the replay never sees. Their numbers carry no tombstone after the
+restore, so a rebuild can publish other bytes under a number that clients already resolved, which
+Q-NUGET-6 exists to prevent.
+
+Live in the MVP in three cases (R-NUGET-033):
+- a restore with `--skip-revocation-journal`, which [backup-and-restore.md](../backup-and-restore.md)
+  R-BAK-024 provides for the disaster in which the source bucket, and with it the journal, is gone,
+  one of the disasters a backup exists for;
+- an installation that ran with `backup.revocation_journal.enabled: false` during the interval;
+- publishes whose entries had not been shipped when the old database stopped (normally less than
+  one `backup.revocation_journal.ship_interval`).
+
+What makes it real: a pipeline that runs again after the restore and builds the lost version with
+other bytes. Projects with lock files fail with a content-hash mismatch; projects without them, and
+machines whose global packages folder holds the old bytes, use different content under one version.
