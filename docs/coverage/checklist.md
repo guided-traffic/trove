@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 216 of 592 spec requirements are implemented: a passing test names them and no
+**Status.** 219 of 592 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 675 specified (147 of them implemented), 1,564 open.
+**Totals.** 2,239 catalog features on 60 pages: 675 specified (149 of them implemented), 1,564 open.
 592 spec requirements: 498 cover catalog features, 94 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -32,8 +32,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 9 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 34 | 35 | 18 |
-| [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 9 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 34 | 35 | 19 |
+| [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 19 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 11 |
@@ -521,7 +521,7 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 20 of 20 · P1 11 of 11 · P2 3 of 26 · Later 0 of 7 · Out of scope 0 of 5
 
 <details>
-<summary>69 features: 34 specified, 35 open, 18 implemented</summary>
+<summary>69 features: 34 specified, 35 open, 19 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -530,7 +530,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-003 | Per-user options | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented), [R-AUTH-020](../spec/identity-and-authentication.md) (implemented) |
 | IAM-004 | User status and disabling | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented) |
 | IAM-005 | Anonymous user | MVP | specified | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
-| IAM-006 | Auditor role | P1 | specified | [R-AUTHZ-011](../spec/authorization.md) |
+| IAM-006 | Auditor role | P1 | implemented | [R-AUTHZ-011](../spec/authorization.md) (implemented) |
 | IAM-007 | Delegated system roles: resource manager and webhook manager | P1 | implemented | [R-AUTHZ-012](../spec/authorization.md) (implemented) |
 | IAM-008 | Scan-related roles | Later | open | – |
 | IAM-009 | User management operations | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented) |
@@ -602,7 +602,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 Catalog page: [authentication-providers.md](../features/authentication-providers.md) · specified by priority: MVP 13 of 13 · P1 5 of 5 · P2 0 of 25 · Out of scope 0 of 1
 
 <details>
-<summary>44 features: 18 specified, 26 open, 9 implemented</summary>
+<summary>44 features: 18 specified, 26 open, 10 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -611,7 +611,7 @@ Catalog page: [authentication-providers.md](../features/authentication-providers
 | AUTHN-003 | Internal password login and the basic-authentication switch | MVP | implemented | [R-AUTH-014](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-004 | Fallback from an external directory to the internal password | P2 | open | – |
 | AUTHN-005 | Just-in-time user creation and transient users | MVP | implemented | [R-AUTH-007](../spec/identity-and-authentication.md) (implemented) |
-| AUTHN-006 | Profile access for externally created users | MVP | specified | [R-AUTH-007](../spec/identity-and-authentication.md) (implemented), [R-AUTH-017](../spec/identity-and-authentication.md) |
+| AUTHN-006 | Profile access for externally created users | MVP | implemented | [R-AUTH-007](../spec/identity-and-authentication.md) (implemented), [R-AUTH-017](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-007 | OAuth single sign-on general settings | MVP | implemented | [R-AUTH-004](../spec/identity-and-authentication.md) (implemented), [R-AUTH-009](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-008 | OpenID Connect provider definition | MVP | implemented | [R-AUTH-004](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-009 | Authorization code flow with PKCE | MVP | implemented | [R-AUTH-005](../spec/identity-and-authentication.md) (implemented), [R-AUTH-006](../spec/identity-and-authentication.md) (implemented) |
@@ -644,8 +644,8 @@ Catalog page: [authentication-providers.md](../features/authentication-providers
 | AUTHN-036 | Anonymous access | P1 | implemented | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented), [R-AUTH-040](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-037 | Login page presentation | MVP | specified | [R-UI-004](../spec/api-and-ui.md), [R-AUTH-009](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-038 | UI session behavior | MVP | specified | [R-UI-004](../spec/api-and-ui.md), [R-AUTH-010](../spec/identity-and-authentication.md) (implemented), [R-AUTH-011](../spec/identity-and-authentication.md) (implemented), [R-AUTH-013](../spec/identity-and-authentication.md) (implemented) |
-| AUTHN-039 | User profile page | MVP | specified | [R-UI-029](../spec/api-and-ui.md), [R-AUTH-017](../spec/identity-and-authentication.md) |
-| AUTHN-040 | Personal identity tokens | MVP | specified | [R-UI-029](../spec/api-and-ui.md), [R-AUTH-017](../spec/identity-and-authentication.md), [R-AUTH-027](../spec/identity-and-authentication.md) (implemented) |
+| AUTHN-039 | User profile page | MVP | specified | [R-UI-029](../spec/api-and-ui.md), [R-AUTH-017](../spec/identity-and-authentication.md) (implemented) |
+| AUTHN-040 | Personal identity tokens | MVP | specified | [R-UI-029](../spec/api-and-ui.md), [R-AUTH-017](../spec/identity-and-authentication.md) (implemented), [R-AUTH-027](../spec/identity-and-authentication.md) (implemented) |
 | AUTHN-041 | SSH public keys | P2 | open | – |
 | AUTHN-042 | Password self-service and reset | P2 | open | – |
 | AUTHN-043 | Legacy API key | P2 | open | – |
@@ -675,7 +675,7 @@ Catalog page: [access-tokens.md](../features/access-tokens.md) · specified by p
 | TOK-011 | Project-role scope | P2 | open | – |
 | TOK-012 | Resource permission scope | MVP | implemented | [R-AUTHZ-013](../spec/authorization.md) (implemented), [R-AUTH-024](../spec/identity-and-authentication.md) (implemented) |
 | TOK-013 | Project membership read scopes | P2 | open | – |
-| TOK-014 | System scopes | P1 | specified | [R-AUTHZ-011](../spec/authorization.md), [R-AUTH-025](../spec/identity-and-authentication.md) |
+| TOK-014 | System scopes | P1 | specified | [R-AUTHZ-011](../spec/authorization.md) (implemented), [R-AUTH-025](../spec/identity-and-authentication.md) |
 | TOK-015 | Transient subjects and automatic group membership | MVP | implemented | [R-AUTHZ-002](../spec/authorization.md) (implemented), [R-AUTHZ-014](../spec/authorization.md) (implemented), [R-AUTH-020](../spec/identity-and-authentication.md) (implemented) |
 | TOK-016 | Audience restriction | P2 | open | – |
 | TOK-017 | Token lifetime and non-expiring tokens | MVP | implemented | [R-AUTH-026](../spec/identity-and-authentication.md) (implemented) |
@@ -1662,7 +1662,7 @@ Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · 
 | ADMAPI-038 | Cloud IAM role binding operations | P2 | open | – |
 | ADMAPI-039 | Create or refresh an access token | MVP | specified | [R-API-032](../spec/api-and-ui.md), [R-AUTH-027](../spec/identity-and-authentication.md) (implemented) |
 | ADMAPI-040 | Scope expressions accepted by token creation | MVP | specified | [R-API-032](../spec/api-and-ui.md), [R-AUTHZ-013](../spec/authorization.md) (implemented), [R-AUTH-024](../spec/identity-and-authentication.md) (implemented) |
-| ADMAPI-041 | Read operations open to non-administrators through system scopes | P1 | specified | [R-API-008](../spec/api-and-ui.md) (implemented), [R-AUTHZ-011](../spec/authorization.md), [R-AUTH-025](../spec/identity-and-authentication.md) |
+| ADMAPI-041 | Read operations open to non-administrators through system scopes | P1 | specified | [R-API-008](../spec/api-and-ui.md) (implemented), [R-AUTHZ-011](../spec/authorization.md) (implemented), [R-AUTH-025](../spec/identity-and-authentication.md) |
 | ADMAPI-042 | Token lifetime policy settings | MVP | specified | [R-API-037](../spec/api-and-ui.md), [R-AUTH-026](../spec/identity-and-authentication.md) (implemented) |
 | ADMAPI-043 | List tokens | MVP | specified | [R-API-032](../spec/api-and-ui.md), [R-AUTH-028](../spec/identity-and-authentication.md) (implemented) |
 | ADMAPI-044 | Get token details | MVP | specified | [R-API-032](../spec/api-and-ui.md), [R-AUTH-028](../spec/identity-and-authentication.md) (implemented) |
@@ -2974,7 +2974,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
 | R-API-006 | CSRF protection on the management API | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
-| R-API-007 | Recent authentication for sensitive actions | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-007 (implemented) | Recent authentication for sensitive actions | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-012 (implemented) | Optimistic concurrency with ETag and If-Match | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-014 (implemented) | Idempotency keys for creates | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-017 (implemented) | Request limits, timeouts and response headers | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
