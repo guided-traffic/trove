@@ -1,0 +1,3 @@
+# Built locale directories (dist/<locale>/) come from `npm run build:embed` in web/ and are
+# never committed. dist/index.html is the committed placeholder.
+/dist/*/

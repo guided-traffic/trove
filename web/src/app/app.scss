@@ -1,0 +1,46 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.skip-link {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  z-index: 1000;
+  padding: var(--trove-space-2) var(--trove-space-4);
+  background: var(--trove-surface);
+  color: var(--trove-on-surface);
+  transform: translateY(-100%);
+
+  &:focus {
+    transform: translateY(0);
+  }
+}
+
+.header {
+  flex: none;
+  gap: var(--trove-space-2);
+}
+
+.product {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.content {
+  container-type: inline-size;
+  container-name: content;
+  padding: var(--trove-space-4);
+  outline: none;
+}
+
+.active {
+  font-weight: 600;
+}

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<xliff version="2.0" xmlns="urn:oasis:names:tc:xliff:document:2.0" srcLang="en" trgLang="de">
+  <file id="ngi18n" original="ng.template">
+    <unit id="shell.skip">
+      <notes>
+        <note category="location">src/app/app.html:1,3</note>
+      </notes>
+      <segment>
+        <source>Skip to main content</source>
+        <target>Zum Hauptinhalt springen</target>
+      </segment>
+    </unit>
+    <unit id="shell.menu">
+      <notes>
+        <note category="location">src/app/app.html:10,11</note>
+      </notes>
+      <segment>
+        <source>Open navigation</source>
+        <target>Navigation öffnen</target>
+      </segment>
+    </unit>
+    <unit id="shell.nav">
+      <notes>
+        <note category="location">src/app/app.html:26,28</note>
+      </notes>
+      <segment>
+        <source>Main navigation</source>
+        <target>Hauptnavigation</target>
+      </segment>
+    </unit>
+    <unit id="shell.nav.status">
+      <notes>
+        <note category="location">src/app/app.html:36,38</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+        <target>Status</target>
+      </segment>
+    </unit>
+    <unit id="route.home.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:8</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+        <target>Status</target>
+      </segment>
+    </unit>
+    <unit id="route.notfound.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:13</note>
+      </notes>
+      <segment>
+        <source>Page not found</source>
+        <target>Seite nicht gefunden</target>
+      </segment>
+    </unit>
+    <unit id="home.heading">
+      <notes>
+        <note category="location">src/app/features/home/home.ts:7,8</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+        <target>Status</target>
+      </segment>
+    </unit>
+    <unit id="home.placeholder">
+      <notes>
+        <note category="location">src/app/features/home/home.ts:9,13</note>
+      </notes>
+      <segment>
+        <source> The system status appears here once the management API is available. </source>
+        <target>Der Systemstatus erscheint hier, sobald die Management-API verfügbar ist.</target>
+      </segment>
+    </unit>
+    <unit id="notfound.heading">
+      <notes>
+        <note category="location">src/app/features/not-found/not-found.ts:8,9</note>
+      </notes>
+      <segment>
+        <source>Page not found</source>
+        <target>Seite nicht gefunden</target>
+      </segment>
+    </unit>
+    <unit id="notfound.text">
+      <notes>
+        <note category="location">src/app/features/not-found/not-found.ts:9,10</note>
+      </notes>
+      <segment>
+        <source>This address does not lead to a page of this application.</source>
+        <target>Diese Adresse führt zu keiner Seite dieser Anwendung.</target>
+      </segment>
+    </unit>
+    <unit id="notfound.home">
+      <notes>
+        <note category="location">src/app/features/not-found/not-found.ts:10,13</note>
+      </notes>
+      <segment>
+        <source>Back to the start page</source>
+        <target>Zurück zur Startseite</target>
+      </segment>
+    </unit>
+    <unit id="banner.label">
+      <notes>
+        <note category="location">src/app/shared/banner.ts:9,11</note>
+      </notes>
+      <segment>
+        <source>System notice</source>
+        <target>Systemhinweis</target>
+      </segment>
+    </unit>
+  </file>
+</xliff>

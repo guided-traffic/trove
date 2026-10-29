@@ -1,0 +1,50 @@
+<a class="skip-link" href="#main" (click)="skipToMain($event)" i18n="@@shell.skip"
+  >Skip to main content</a
+>
+
+<mat-toolbar class="header">
+  @if (!layout.pinned()) {
+    <button
+      mat-icon-button
+      type="button"
+      (click)="drawer.toggle()"
+      i18n-aria-label="@@shell.menu"
+      aria-label="Open navigation"
+      [attr.aria-expanded]="drawer.opened"
+    >
+      <span class="material-icons" aria-hidden="true">menu</span>
+    </button>
+  }
+  <span class="product">trove</span>
+</mat-toolbar>
+
+<mat-sidenav-container class="frame">
+  <mat-sidenav
+    #drawer
+    [mode]="layout.pinned() ? 'side' : 'over'"
+    [opened]="layout.pinned()"
+    [fixedInViewport]="false"
+  >
+    <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
+      <mat-nav-list>
+        <a
+          mat-list-item
+          routerLink="/"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          [routerLinkActiveOptions]="{ exact: true }"
+          (click)="closeDrawer(drawer)"
+          i18n="@@shell.nav.status"
+          >Status</a
+        >
+      </mat-nav-list>
+    </nav>
+  </mat-sidenav>
+
+  <mat-sidenav-content>
+    <trove-banner />
+    <main #main id="main" tabindex="-1" class="content">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>

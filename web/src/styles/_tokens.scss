@@ -1,0 +1,28 @@
+// trove design tokens. Components read these custom properties and never a literal colour or
+// length, so both themes and the density stay one-place changes. The Material system tokens
+// (--mat-sys-*) come from mat.theme in main.scss.
+
+:root {
+  color-scheme: light dark;
+
+  --trove-space-1: 4px;
+  --trove-space-2: 8px;
+  --trove-space-3: 12px;
+  --trove-space-4: 16px;
+  --trove-space-6: 24px;
+
+  --trove-surface: var(--mat-sys-surface);
+  --trove-on-surface: var(--mat-sys-on-surface);
+  --trove-banner-bg: var(--mat-sys-tertiary-container);
+  --trove-banner-fg: var(--mat-sys-on-tertiary-container);
+}
+
+// An explicit user choice (R-API-021) overrides prefers-color-scheme by setting data-theme on
+// the root element; without the attribute the browser setting decides.
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

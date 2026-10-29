@@ -1,0 +1,38 @@
+@use 'sass:string';
+@use '@angular/material' as mat;
+@use 'tokens';
+@use 'icons';
+
+// Material is themed through its design tokens and mapped to trove's custom properties in
+// tokens. Compact density (-2) everywhere (Q-UI-2). `color-scheme: light dark` makes the
+// generated tokens follow prefers-color-scheme; a user preference sets color-scheme on <html>
+// (see tokens).
+html {
+  @include mat.theme(
+    (
+      color: mat.$azure-palette,
+      typography: (
+        plain-family: string.unquote('system-ui, -apple-system, "Segoe UI", sans-serif'),
+        brand-family: string.unquote('system-ui, -apple-system, "Segoe UI", sans-serif'),
+      ),
+      density: -2,
+    )
+  );
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--trove-surface);
+  color: var(--trove-on-surface);
+  font: var(--mat-sys-body-medium);
+}
+
+h1 {
+  font: var(--mat-sys-headline-small);
+  margin-block: 0 var(--trove-space-4);
+}

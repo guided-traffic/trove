@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "@angular/localize"]
+  },
+  "include": ["src/**/*.d.ts", "src/**/*.ts"]
+}
