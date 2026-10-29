@@ -265,6 +265,57 @@
       },
       "type": "object"
     },
+    "authz": {
+      "additionalProperties": false,
+      "properties": {
+        "audit": {
+          "additionalProperties": false,
+          "properties": {
+            "reads": {
+              "default": "denied",
+              "description": "Which reads are audited: none, denied (refused reads) or all (allowed reads too; the volume follows the downloads, Q-AUTHZ-5).",
+              "enum": [
+                "none",
+                "denied",
+                "all"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_AUTHZ_AUDIT_READS"
+            }
+          },
+          "type": "object"
+        },
+        "cache": {
+          "additionalProperties": false,
+          "properties": {
+            "max_staleness": {
+              "default": "10s",
+              "description": "No decision is made on a grant index that was not confirmed current for longer; a request waits for a confirmation, then is answered 503 authz_stale (Q-AUTHZ-13). At least three times cluster.epoch_poll_interval; start-up refuses a lower value.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTHZ_CACHE_MAX_STALENESS",
+              "x-trove-type": "duration"
+            },
+            "safety_ttl": {
+              "default": "10m",
+              "description": "Full rebuild of the grant index at least this often, jittered by up to 10 percent; it bounds a write path that changed an input without notifying.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTHZ_CACHE_SAFETY_TTL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "hide_existence": {
+          "default": true,
+          "description": "A refused read answers 404, indistinguishable from a missing resource (R-AUTHZ-016, R-AUTHZ-017); false answers 403 for a resource that exists, for troubleshooting only. A repository's hideExistence overrides it.",
+          "type": "boolean",
+          "x-trove-env": "TROVE_AUTHZ_HIDE_EXISTENCE"
+        }
+      },
+      "type": "object"
+    },
     "cache": {
       "additionalProperties": false,
       "properties": {

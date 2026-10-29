@@ -345,6 +345,11 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 login
 	//
 	// >>> M1 authz
+	if infra && a.sub.MainPool {
+		if err := a.wireAuthz(ctx); err != nil {
+			return err
+		}
+	}
 	// <<< M1 authz
 	//
 	// >>> M1 files

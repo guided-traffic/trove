@@ -88,6 +88,28 @@ const (
 // <<< M1 login
 //
 // >>> M1 authz
+
+// Codes of authorization (R-AUTHZ-016, R-AUTHZ-021, R-AUTHZ-022, R-AUTHZ-030,
+// R-AUTHZ-032). The 422 codes name a rule of a policy entry or a role binding.
+const (
+	CodeAuthzStale                 = "authz_stale"
+	CodeAuthzEpochUnknown          = "authz_epoch_unknown"
+	CodeInvalidHeader              = "invalid_header"
+	CodeRoleNotAllowed             = "role_not_allowed"
+	CodeUnknownRole                = "unknown_role"
+	CodeAuthenticatedWriteAction   = "authenticated_write_action"
+	CodeAnonymousWriteAction       = "anonymous_write_action"
+	CodeAnonymousDynamicSelector   = "anonymous_dynamic_selector"
+	CodeActionNotAllowed           = "action_not_allowed"
+	CodeInvalidAction              = "invalid_action"
+	CodeInvalidPattern             = "invalid_pattern"
+	CodeUnknownPrincipal           = "unknown_principal"
+	CodeUnknownRepository          = "unknown_repository"
+	CodeUnknownFormat              = "unknown_format"
+	CodeDuplicatePrincipal         = "duplicate_principal"
+	CodeVirtualActionNotApplicable = "virtual_action_not_applicable"
+)
+
 // <<< M1 authz
 //
 // >>> M1 repository
@@ -103,7 +125,6 @@ const (
 	CodeInvalidMember        = "invalid_member"
 	CodeInvalidDocument      = "invalid_document"
 	CodeNotApplicable        = "not_applicable"
-	CodeUnknownFormat        = "unknown_format"
 	CodeUnsupportedClass     = "unsupported_class"
 	CodeUnsupportedLayout    = "unsupported_layout"
 	CodeBatchTooLarge        = "batch_too_large"
@@ -194,6 +215,21 @@ var registry = []CodeInfo{
 	// <<< M1 login
 	//
 	// >>> M1 authz
+	{CodeAuthzStale, Unavailable, "Authorization state not confirmed", "The replica could not confirm that its grant index is current within the wait of R-AUTHZ-028; retry after the Retry-After period, the request can succeed on another replica."},
+	{CodeAuthzEpochUnknown, PreconditionFailed, "Authorization epoch unknown", "Trove-Authz-Min-Epoch names an epoch the database has not reached. Stop sending that epoch and read the changed object again."},
+	{CodeInvalidHeader, Invalid, "Invalid header", "A request header holds a value of the wrong form, for example a Trove-Authz-Min-Epoch that is not a decimal integer between 1 and 2^63-1."},
+	{CodeRoleNotAllowed, Invalid, "Role not allowed", "System roles are bound to users, groups and service accounts only; never to anonymous, authenticated or CI identity mappings."},
+	{CodeUnknownRole, Invalid, "Unknown role", "The role is not one of admin, security-admin, auditor, repository-admin, webhook-admin."},
+	{CodeAuthenticatedWriteAction, Invalid, "Authenticated principal may only read", "Policy entries for the built-in principal authenticated hold only read."},
+	{CodeAnonymousWriteAction, Invalid, "Anonymous principal may only read", "Policy entries for anonymous hold only read."},
+	{CodeAnonymousDynamicSelector, Invalid, "Anonymous grants need explicit repositories", "A policy with entries for anonymous selects repositories by key only; patterns and classes would expose repositories created later."},
+	{CodeActionNotAllowed, Invalid, "Action not allowed for this principal", "The principal kind cannot hold the action, for example manage for a CI identity mapping."},
+	{CodeInvalidAction, Invalid, "Invalid action", "The name is neither one of the six repository actions nor a preset (read, write, maintain, full)."},
+	{CodeInvalidPattern, Invalid, "Invalid pattern or selector", "A package-name pattern, path pattern or repository selector has invalid syntax or exceeds the limits of R-AUTHZ-005."},
+	{CodeUnknownPrincipal, Invalid, "Unknown principal", "No principal of this reference exists."},
+	{CodeUnknownRepository, Invalid, "Unknown repository", "A key selector names a repository that does not exist."},
+	{CodeDuplicatePrincipal, Invalid, "Duplicate principal", "A policy holds at most one entry per principal."},
+	{CodeVirtualActionNotApplicable, Invalid, "Action not applicable to a virtual repository", "A key selector that names a virtual repository accepts only read and manage."},
 	// <<< M1 authz
 	//
 	// >>> M1 repository

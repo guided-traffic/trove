@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
@@ -22,8 +24,20 @@ type Requirement struct {
 	// operation is public while that configuration switch is on.
 	Authenticated bool
 	PublicSwitch  string
-	// Permission is the permission Access.Require must grant: {permission: <name>}.
+	// Permission is the capability Access.Require must grant:
+	// {permission: <capability>}, a name of R-AUTHZ-010.
 	Permission string
+	// Role is the system role the caller must hold: {role: admin}.
+	Role string
+	// Action is a repository action on the coordinate the request names:
+	// {action: deploy, repository: query.repository, path: query.path}. The
+	// sources of the coordinate are value expressions, "query.<name>" for a query
+	// parameter and "path.<name>" for a route wildcard. Repository is required;
+	// Package and Path are optional.
+	Action     authz.Action
+	Repository string
+	Package    string
+	Path       string
 }
 
 // String renders the declaration for error texts.
@@ -37,6 +51,10 @@ func (q Requirement) String() string {
 		return "authenticated"
 	case q.Permission != "":
 		return "permission " + q.Permission
+	case q.Role != "":
+		return "role " + q.Role
+	case q.Action != "":
+		return "action " + string(q.Action) + " on repository " + q.Repository
 	}
 	return "nothing (deny)"
 }
@@ -44,16 +62,23 @@ func (q Requirement) String() string {
 // publicSwitches are the configuration switches a declaration may name.
 func publicSwitches() []string { return []string{"system.public_version"} }
 
-// parseRequirement decodes one declaration. The forms of R-API-008 that need
-// authorization data that does not exist yet (repository actions, roles,
-// system scopes) are refused here, so an operation can never ship with a
-// declaration the enforcement step would not understand.
+// sourceRE is a value expression of the action form: "query.<name>" or
+// "path.<name>".
+var sourceRE = regexp.MustCompile(`^(query|path)\.[A-Za-z][A-Za-z0-9_]*$`)
+
+// parseRequirement decodes one declaration. The forms of R-API-008 that the
+// authorization data does not support (system scopes beyond the capability
+// names) are refused here, so an operation can never ship with a declaration the
+// enforcement step would not understand.
 func parseRequirement(raw map[string]any) (Requirement, error) {
 	keys := make([]string, 0, len(raw))
 	for k := range raw {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	if _, has := raw["action"]; has {
+		return parseActionForm(raw)
+	}
 	switch strings.Join(keys, ",") {
 	case "public":
 		if v, ok := raw["public"].(bool); ok && v {
@@ -78,9 +103,53 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 		if !ok || name == "" {
 			return Requirement{}, fmt.Errorf("permission must name a permission")
 		}
+		if !authz.Capability(name).Valid() {
+			return Requirement{}, fmt.Errorf("permission %q is not a capability of R-AUTHZ-010", name)
+		}
 		return Requirement{Permission: name}, nil
+	case "role":
+		name, ok := raw["role"].(string)
+		if !ok || !authz.Role(name).Valid() {
+			return Requirement{}, fmt.Errorf("role %v is not a system role (R-AUTHZ-010)", raw["role"])
+		}
+		return Requirement{Role: name}, nil
 	}
-	return Requirement{}, fmt.Errorf("the declaration %v has a form this build does not enforce (M0 knows public, authenticated[+publicSwitch], permission)", raw)
+	return Requirement{}, fmt.Errorf("the declaration %v has a form this build does not enforce (public, authenticated[+publicSwitch], permission, role, action+repository[+package][+path])", raw)
+}
+
+// parseActionForm decodes {action, repository[, package][, path]}.
+func parseActionForm(raw map[string]any) (Requirement, error) {
+	var q Requirement
+	for k := range raw {
+		switch k {
+		case "action", "repository", "package", "path":
+		default:
+			return Requirement{}, fmt.Errorf("the action form has no member %q (action, repository, package, path)", k)
+		}
+	}
+	a, _ := raw["action"].(string)
+	q.Action = authz.Action(a)
+	if !q.Action.Valid() {
+		return Requirement{}, fmt.Errorf("action %v is not one of the six repository actions", raw["action"])
+	}
+	for _, f := range []struct {
+		key string
+		dst *string
+	}{{"repository", &q.Repository}, {"package", &q.Package}, {"path", &q.Path}} {
+		v, present := raw[f.key]
+		if !present {
+			continue
+		}
+		str, _ := v.(string)
+		if !sourceRE.MatchString(str) {
+			return Requirement{}, fmt.Errorf("%s %v is not a value expression (query.<name> or path.<name>)", f.key, v)
+		}
+		*f.dst = str
+	}
+	if q.Repository == "" {
+		return Requirement{}, fmt.Errorf("the action form needs a repository source")
+	}
+	return q, nil
 }
 
 func contains(list []string, s string) bool {
@@ -122,7 +191,7 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 			httpserver.Problem(w, r, errs.E(errs.Forbidden, errs.CodeForbidden, "The operation has no permission declaration."))
 			return
 		}
-		if err := s.decide(r.Context(), op.Requirement); err != nil {
+		if err := s.decide(r, op.Requirement); err != nil {
 			httpserver.Problem(w, r, err)
 			return
 		}
@@ -130,11 +199,27 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 	})
 }
 
-// decide applies one declaration to the caller of ctx.
-func (s *Server) decide(ctx context.Context, q Requirement) error {
+// ActionAccess is implemented by an [Access] that also decides the action form
+// of x-trove-permission: a repository action on the coordinate a request names.
+// [NewAccess] returns one.
+type ActionAccess interface {
+	// RequireAction decides the coordinate for the caller of ctx and returns nil
+	// or the error of R-AUTHZ-016 (401, 404 hidden, 403, 503).
+	RequireAction(ctx context.Context, c authz.Coordinate) error
+}
+
+// decide applies one declaration to the caller of the request.
+func (s *Server) decide(r *http.Request, q Requirement) error {
+	ctx := r.Context()
 	anonymous := httpserver.PrincipalFrom(ctx).Anonymous
 	unauthenticated := errs.E(errs.Unauthenticated, errs.CodeUnauthenticated,
 		"This endpoint requires an authenticated caller.", errs.WithChallenge("Bearer"))
+	refuse := func() error {
+		if anonymous {
+			return unauthenticated
+		}
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+	}
 	switch {
 	case q.Public:
 		return nil
@@ -148,14 +233,51 @@ func (s *Server) decide(ctx context.Context, q Requirement) error {
 		return nil
 	case q.Permission != "":
 		if s.o.Access == nil {
-			if anonymous {
-				return unauthenticated
-			}
-			return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+			return refuse()
 		}
 		return s.o.Access.Require(ctx, q.Permission)
+	case q.Role != "":
+		if s.o.Access == nil {
+			return refuse()
+		}
+		return s.o.Access.Require(ctx, authz.RolePermission(authz.Role(q.Role)))
+	case q.Action != "":
+		aa, ok := s.o.Access.(ActionAccess)
+		if !ok {
+			return refuse()
+		}
+		return aa.RequireAction(ctx, coordinateOf(r, q))
 	}
 	return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+}
+
+// coordinateOf builds the coordinate an action declaration names from the
+// request. A source that is absent from the request is the empty string, which
+// names no repository: authorization then refuses, and the handler never runs.
+func coordinateOf(r *http.Request, q Requirement) authz.Coordinate {
+	c := authz.Coordinate{
+		Repository: valueOf(r, q.Repository), Package: valueOf(r, q.Package), Path: valueOf(r, q.Path),
+		Kind: authz.KindWrite, Actions: []authz.Action{q.Action},
+	}
+	if q.Action == authz.Read {
+		c.Kind = authz.KindMetadata
+	}
+	return c
+}
+
+// valueOf reads a value expression: "query.<name>" or "path.<name>".
+func valueOf(r *http.Request, src string) string {
+	kind, name, ok := strings.Cut(src, ".")
+	if !ok {
+		return ""
+	}
+	switch kind {
+	case "query":
+		return r.URL.Query().Get(name)
+	case "path":
+		return r.PathValue(name)
+	}
+	return ""
 }
 
 // switchOn reports the value of a public switch; an unknown switch is off.

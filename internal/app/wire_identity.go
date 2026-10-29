@@ -118,6 +118,12 @@ func (a *App) wireIdentity() error {
 	a.mu.Lock()
 	a.m1.principals, a.m1.principalManager, a.m1.provisioner = principals, manager, provisioner
 	a.m1.tokens, a.m1.authSettings, a.m1.authenticator = tokens, settings, stage
+	// The decision point reads the runtime anonymous switch (R-AUTH-037) from the
+	// same cached settings row the stage reads.
+	a.m1.anonymousAccess = func() bool {
+		eff, err := settings.Effective(context.Background())
+		return err == nil && eff.AnonymousAccess
+	}
 	a.mu.Unlock()
 	return nil
 }

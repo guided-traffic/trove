@@ -164,7 +164,7 @@ that is `health.Transient` (a connectivity failure, `postgres.IsOutage`; a check
 The run of failures starts at its first failing answer and ends only when the check passes again; one answer that is
 not transient ends the grace for the rest of the run (CR2-1), and the first readiness never gets a grace. `invalidation`
 carries the same grace: `Changes.Check` reports a stale poll whose last error is an outage as transient, so it cannot gate
-before `database` does (Q-OPS-34). `bootstrapAccess` opens `system.read` anonymously on the default endpoint only.
+before `database` does (Q-OPS-34). With `system.bootstrap_anonymous_read`, `bridgeAccess` ([access.go](../../internal/app/access.go)) opens the capability `settings:read` to anonymous callers on the default endpoint only; every other decision is the authz engine's.
 `Health.Serving()` is what `GET /api/v1/system/ping` answers from: no gating check other than `draining` fails, and a
 draining replica had been ready (Q-OPS-30), so the drain delay answers every request; `Ready()` stays the readiness. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
 `Stop()` when it ends on purpose.
@@ -239,9 +239,6 @@ compiles it and sends a real `SIGTERM` while a request is in flight. No release 
 
 ## Known gaps
 
-- Authentication and authorization are stand-ins ([access.go](../../internal/app/access.go)): any
-  presented credential is a 401, and `system.read` is held by nobody unless
-  `system.bootstrap_anonymous_read: true`.
 - The key-ring canary and the cache snapshots (step 8) are `WIRING POINT`s in
   `bootstrap`; their packages do not exist yet. The trash purge and the upload-session expiry that R-STOR-025 puts at the
   start of a collection run are not part of the `gc` handler yet.

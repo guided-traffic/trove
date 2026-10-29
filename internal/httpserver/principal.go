@@ -146,6 +146,10 @@ type Principal struct {
 	Mappings []string
 	// Credential is what proved the principal.
 	Credential Credential
+	// MinEpoch is the value of the request header Trove-Authz-Min-Epoch of an
+	// authenticated request, 0 when absent or anonymous (R-AUTHZ-032). The
+	// composition root fills it after authentication succeeded.
+	MinEpoch int64
 }
 
 // AnonymousPrincipal returns the caller without a credential.

@@ -2863,6 +2863,159 @@ key selector, as R-AUTHZ-004 allows the filter on patterns and classes only.
 
 **Applied in the spec:** R-AUTHZ-028 data model (a note under the sketch).
 
+### Q-AUTHZ-15 · Where the grant index reads the repositories from
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-028 builds the index from policies, role bindings and repositories in one `REPEATABLE READ` snapshot
+that carries the epochs of `authz` and `repo_config`. The repository area also offers `repository.Reader`, which
+answers from its own in-memory snapshot of `repo_config`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `repository.Reader` | The build lists the repositories through the contract interface | No SQL on the repository table in authz; one decoding of the document | The reader's snapshot is a different moment than the build's snapshot, so an index could combine a policy with selectors expanded over another repository list; the label would not describe the content |
+| (b) Rows in the build snapshot | The build selects `id, key, class, format, config` of active repositories in its own transaction and reads the five settings it needs (`requireAuthentication`, `hideExistence`, `virtual.members`, `virtual.deployTarget`, `remote.cacheFillAction`) from `config` | The index is the state of one moment, as the acceptance criteria require ("grants exactly what a database snapshot at its epochs grants"); no dependency on another replica-local cache being current | authz reads five members of the repository document and must follow it if their place moves |
+
+**Choice:** (b). Validation of a policy (key selectors, `unknown_repository`, the listing behind `selector_matches_nothing`) uses `repository.Reader`, because a write is validated against the current repository list and checks nothing that a snapshot must agree with.
+
+**Rationale:** The consistency of the build is a stated property of R-AUTHZ-028; a reader that is current to a different epoch breaks it. The five settings are decoded by one function (`parseRepoConfig` in `internal/authz/index.go`), and an unreadable document is treated as `requireAuthentication: true`, so a malformed row only removes rights. The development agent would revisit this if the repository area publishes a typed snapshot with an epoch, which the build could then take instead of the rows.
+
+**Applied in the spec:** none (the requirement already says the repositories are read in the build's transaction). Developer page: [authorization.md](../developer/authorization.md).
+
+### Q-AUTHZ-16 · The dev-profile bridge `system.bootstrap_anonymous_read` in the new engine
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+M0 ships `system.bootstrap_anonymous_read` (default `false`, refused with an `https` base URL) as the explicit switch that lets the dev profile and its load test read the replica registry before any identity exists. The permission it opens was `system.read`, now the capability `settings:read`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An anonymous grant in the index | The engine treats the switch as a compiled grant of `settings:read` to `anonymous` | One decision point for everything | The engine would need the endpoint of the request in `Require`, which the domain package does not see, and a grant that appears in no policy and no audit trail |
+| (b) A check in front of the engine | The composition root's `Access` answers `settings:read` for an anonymous caller on the default endpoint while that endpoint admits anonymous requests (R-EP-010), and asks the engine for everything else | The M0 semantics are kept as they were, including the endpoint condition; nothing in the engine or the index depends on a development switch; removing the bridge is deleting one type | A second place that can answer "allowed" |
+| (c) Remove the switch | Identity makes it unnecessary | No bridge | The dev profile and the E0.13 load read the registry anonymously today; removing it belongs to the identity merge |
+
+**Choice:** (b), in `internal/app/access.go` (`bridgeAccess`). It opens exactly `settings:read`, for anonymous callers, on the default endpoint, only while `system.bootstrap_anonymous_read` is true; it never opens a repository action, and every other permission and every authenticated caller go to the engine. The configuration check that refuses the switch with an `https` base URL stays.
+
+**Rationale:** The bridge exists to make a development profile work and must not become a path inside the production engine. The condition that matters (the endpoint) is edge knowledge. The development agent would revisit this when the dev profile can sign in, at which point the switch and `bridgeAccess` are removed together.
+
+**Applied in the spec:** none. The gap stays [H-63](../security/roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships).
+
+### Q-AUTHZ-17 · How `Trove-Authz-Min-Epoch` reaches the engine
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`Subject.MinEpoch` exists in the contract, but nothing built it: `v1.SubjectFrom` converts a `httpserver.Principal`, which had no such field, and the files and format handlers call `SubjectFrom(PrincipalFrom(ctx))` without the request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A field of `httpserver.Principal` | The composition root's authentication wrapper reads the header after authentication succeeded and stores the parsed value; `SubjectFrom` copies it | Every caller of `SubjectFrom` gets the header for free; "authenticated first, header second" is the order of the wrapper; an anonymous principal never carries it | A contract type gains a field |
+| (b) A context value | A middleware stores the raw header | No contract change | A second implicit input, parsed in a place the chain does not own |
+| (c) Each handler reads the header | | Local | Every handler must remember; the 400 for a malformed value is repeated |
+
+**Choice:** (a). `app.withMinEpoch` wraps the authentication stage: a failed authentication answers its 401 first, an anonymous principal is returned untouched, and an authenticated one gets `MinEpoch` from `authz.ParseMinEpoch` (a malformed value answers 400 `invalid_header`).
+
+**Rationale:** R-AUTHZ-032 puts the header behind authentication; the wrapper is the smallest place that is. The development agent would revisit this if more per-request authorization hints appear, which would then travel together in one struct.
+
+**Applied in the spec:** none. Contract change recorded in [m1-contracts.md](../developer/m1-contracts.md).
+
+### Q-AUTHZ-18 · Event names of the decision audit
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-029 names one event, `authz.decision`, with three deliveries: transactional for an allowed write, asynchronous for a refusal and for reads. The event registry fixes the delivery per event type (R-OPS-014), and the contract of the milestone already names `authz.denied`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One type | `authz.decision` with a delivery chosen per record | One name, as in the requirement | The registry cannot express it; one type would have to be transactional or asynchronous for all |
+| (b) One type per delivery | `authz.denied` (asynchronous: refused reads, writes and management operations), `authz.read.allowed` (asynchronous, only with `authz.audit.reads: all`), `authz.write.allowed` (transactional, recorded by the writer in the transaction of the change) | Fits the registry; the names say what happened; `authz.denied` is the contract's name | Three names for one fact in the requirement text |
+
+**Choice:** (b). The fields of R-AUTHZ-029 are carried as `details` (reason, status, actions, repository, class, format, package, path, credential kind, endpoint, replica, epoch, sources); the actor is the event's actor. `authz.policy.created` is transactional; `authz.policy.updated`, `authz.policy.deleted` and `authz.role.unbound` are transactional and flagged `journal: revocation` with the entry required, as are `authz.settings.changed` (written by the repository update, R-AUTHZ-031) and the entries of R-AUTHZ-031; `authz.role.bound` is transactional without the flag. The ownership events wait for package ownership.
+
+**Rationale:** the registry is the contract with audit export and webhooks (R-OPS-014). The development agent would revisit this if subscribers want one decision stream, which a view over the three types gives without a rename.
+
+**Applied in the spec:** none; the names are in [events_authz.go](../../internal/audit/events_authz.go).
+
+### Q-AUTHZ-19 · Where the denial deduplication lives
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-OPS-015 deduplicates `authz.denied` per replica, principal, action, repository and path within `audit.denial_dedup_window`, and writes a summary with the exact count when the window closes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In the recorder | The audit area collapses events of a type by a key it derives | One mechanism for `token.rejected` as well | The recorder would parse authz details to build a key |
+| (b) In the producer | `internal/authz` keeps the open keys in memory, writes the first occurrence at once and one summary per window with `details.count`, and writes the open summaries when it stops | The key is known where the event is made; the audit area stays generic | A second implementation next to a recorder that may deduplicate, and `Event` has no ID, so a summary cannot carry `repeat_of` |
+
+**Choice:** (b), at most 10,000 open keys per replica (past that a refusal is written without being collapsed). The window is `audit.denial_dedup_window`; zero turns it off. An anonymous refusal is keyed by repository and path, because the client address is not part of the subject.
+
+**Rationale:** Nothing in the audit contract says the recorder deduplicates, and R-AUTHZ-029 puts the obligation on authorization. The development agent would revisit this when the audit area exposes a deduplicating recorder: the producer then passes the key and deletes its own state. The two gaps that follow are [H-101](../security/permissions.md#h-101--anonymous-denials-are-deduplicated-by-repository-and-path-not-by-client-address) and the missing `repeat_of`.
+
+**Applied in the spec:** none.
+
+### Q-AUTHZ-20 · Details of the pattern syntax that R-AUTHZ-005 leaves open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| Does `releases/**` match `releases` itself? | (a) yes, `**` is zero or more segments; (b) no, at least one | (a), as in common glob libraries; a file named `releases` is rare, and a stricter rule would make `a/**/c` fail to match `a/c` |
+| May `**` be part of a path segment (`a**b/c`)? | (a) as a run of characters; (b) invalid | (b): R-AUTHZ-005 says "as a whole segment", and a pattern that reads like a name glob but behaves differently is the kind of surprise a grant must not have; `422 invalid_pattern` names it. In package-name patterns `**` is allowed anywhere |
+| Does a package-name `*` cross a slash? | (a) yes; (b) no | (b), per the table of R-AUTHZ-005 (`@acme/*` must not match `@acme/a/b`; `*` matches one unscoped name) |
+| Case folding | (a) all formats; (b) NuGet only | (b): the pattern and the name are lower-cased for repositories of the format `nuget`, decided per repository at the build |
+
+**Rationale:** each choice is the narrower reading where the text is silent, because a grant that matches too much cannot be seen from the policy. The development agent would revisit the first row if a format page defines paths where a directory and a file share a name.
+
+**Applied in the spec:** none.
+
+### Q-AUTHZ-21 · What a virtual repository does with `manage` and with a refused gate on a write
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-009 sends writes through a virtual repository to its deploy target and lets a policy give `manage` on a virtual repository (to invalidate its merged-metadata cache). R-AUTHZ-016 answers a refused write with 403 and a refused read with 404.
+
+| Question | Options | Choice |
+|---|---|---|
+| Is a `manage` request on a virtual repository a write "through" it? | (a) yes, decided on the deploy target; (b) no, decided on the virtual repository | (b): a request is rerouted to the deploy target only when it asks for an action other than `read` and `manage` |
+| What does a write answer when the caller lacks the gate? | (a) 404 as for a refused read; (b) 403 | (b): the acceptance criterion of R-AUTHZ-009 ("without `read` on `npm-all`, the same command gets 403") and the rule that a refused write is 403 whether or not the target exists |
+
+**Rationale:** both follow the text where it is explicit and keep the answer independent of what exists. The development agent would revisit the first row if a format defines a `manage` operation that acts on content.
+
+**Applied in the spec:** none.
+
+### Q-AUTHZ-22 · The permission names of the management API
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+M0 declared `{permission: system.read}`. R-AUTHZ-010 says that pages calling it `system.read` mean the capability `settings:read`, and the action and role forms of R-API-008 need a place in `Require`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the alias | `Require` accepts `system.read` for `settings:read` | The document needs no change | Two names for one capability; an undeclared alias is how a typo becomes a permission |
+| (b) Migrate and remove the alias | `api/openapi.yaml` names the capability; `parseRequirement` refuses a `permission` that is not a capability of R-AUTHZ-010 | One name; a typo stops start-up (`LoadDocument`) | One edit of the document and of the tests that named the old string |
+
+**Choice:** (b). The role form `{role: admin}` is checked by `Require` as `"role:admin"`: the subject holds the role (or is the break-glass administrator) and its credential exercises roles (a session, or a token with `admin: true`). The action form `{action: deploy, repository: query.repository, path: query.path}` is decided by `ActionAccess.RequireAction`, whose sources are `query.<name>` and `path.<name>`; a source the request lacks names no repository and is refused. `authz.LegacySystemRead` is removed.
+
+**Rationale:** (b) makes the declaration language closed in both directions: every name that can be written is enforceable, every enforced form can be written. The development agent would revisit the source language when the first operation needs the request body (the target repository of a copy), which the spec leaves to the handler.
+
+**Applied in the spec:** none; [m1-contracts.md](../developer/m1-contracts.md) no longer announces the alias.
+
+### Q-AUTHZ-23 · `authz.hide_existence` in M1
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-017 is P1, but the 404 row of R-AUTHZ-016, the repository members `hideExistence` and the configuration key `authz.hide_existence` are one switch with the answer the milestone already builds.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave the switch for P1 | 404 always | Less to test | The hook for the troubleshooting mode would have to be added across `Decide` later |
+| (b) Implement the switch in the refusal | `authz.hide_existence` (default `true`) and the repository's `hideExistence` choose between the 404 and a 403 for a refused read of an existing repository; the endpoint exposure 404 and the anonymous 401 are not affected; a repository the index does not know is always 404 | The rule of R-AUTHZ-017 in one place (`Engine.refusal`); cheap | A switch that weakens the model exists in the build before its P1 test plan |
+
+**Choice:** (b). The decision only chooses the status; whether the resource exists is known to the caller, which answers 404 for a missing one even with hiding off. Deployments keep the default.
+
+**Rationale:** the decision point is where the status is made. The development agent would revisit this if the walkthrough prefers the switch to appear with P1.
+
+**Applied in the spec:** none.
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

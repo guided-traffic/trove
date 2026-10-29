@@ -134,7 +134,7 @@ paths:
         that answered, because requests reach replicas at random and replicas never ask each other.
         A block whose source is not available on this replica is `null`.
       x-trove-permission:
-        permission: system.read
+        permission: settings:read
       responses:
         "200":
           description: The installation facts.
@@ -159,7 +159,7 @@ paths:
         Every replica with its roles, node, state, heartbeat, readiness checks and its own view of
         Valkey. A replica whose heartbeat is older than `system.heartbeat_stale_after` is `lost`.
       x-trove-permission:
-        permission: system.read
+        permission: settings:read
       responses:
         "200":
           description: The replicas.

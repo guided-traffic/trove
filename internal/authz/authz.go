@@ -52,11 +52,6 @@ const (
 	EndpointsWrite        Capability = "endpoints:write"
 )
 
-// LegacySystemRead is the M0 permission name "system.read". R-AUTHZ-010 defines
-// it as the capability SettingsRead; Require accepts the old name as an alias
-// until the OpenAPI document is migrated.
-const LegacySystemRead = "system.read"
-
 // RequestKind is the request kind of the request descriptor (R-REPO-003).
 type RequestKind string
 
@@ -131,6 +126,9 @@ const (
 	// DenyStale: 503 authz_stale with Retry-After (the grant index is not
 	// confirmed current).
 	DenyStale
+	// DenyEpochUnknown: 412 authz_epoch_unknown (Trove-Authz-Min-Epoch names an
+	// epoch the database has not reached, R-AUTHZ-032).
+	DenyEpochUnknown
 )
 
 // Decision is the result of Decide.
@@ -142,6 +140,13 @@ type Decision struct {
 	Missing Action
 	// Epoch is the epoch of the index that decided (R-AUTHZ-032).
 	Epoch int64
+	// Target names the coordinate the caller sent, for the text of a 403: the
+	// repository, and the package or path when there is one. It never holds
+	// anything the caller did not send.
+	Target string
+	// Sources names what allowed the request on Allow: policy names, "role:admin"
+	// for content:bypass (R-AUTHZ-029).
+	Sources []string
 }
 
 // Authorizer is the decision point. The implementation is WP1.3's.

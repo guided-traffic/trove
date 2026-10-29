@@ -774,7 +774,7 @@ The OpenAPI 3.1 document is [api/openapi.yaml](api/openapi.yaml); the binary ser
 |---|---|---|
 | `GET /api/v1/system/ping` | Answers on the client port | as declared in [api/openapi.yaml](api/openapi.yaml) |
 | `GET /api/v1/system/version` | Version and revision | public only with `system.public_version: true`, otherwise as declared |
-| `GET /api/v1/system/info` | Installation facts: version, base URL, replicas per role, database and schema versions, Valkey facts | `system.read`, which nobody holds in M0: anonymous only with `system.bootstrap_anonymous_read` |
+| `GET /api/v1/system/info` | Installation facts: version, base URL, replicas per role, database and schema versions, Valkey facts | the capability `settings:read` ([R-AUTHZ-010](docs/spec/authorization.md)); anonymous on the default endpoint only with `system.bootstrap_anonymous_read` |
 | `GET /api/v1/system/replicas` | Replica registry: name, instance, node, version, revision, roles, state, checks, degraded checks, leases and the Valkey view of each replica | the same as `info` |
 | `GET /api/v1/problems/{code}` | Description of a problem code | as declared |
 

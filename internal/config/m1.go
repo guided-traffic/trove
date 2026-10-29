@@ -34,6 +34,10 @@ type Auth struct {
 type Authz struct {
 	// >>> M1 authz
 
+	HideExistence bool       `yaml:"hide_existence" default:"true" doc:"A refused read answers 404, indistinguishable from a missing resource (R-AUTHZ-016, R-AUTHZ-017); false answers 403 for a resource that exists, for troubleshooting only. A repository's hideExistence overrides it."`
+	Cache         AuthzCache `yaml:"cache"`
+	Audit         AuthzAudit `yaml:"audit"`
+
 	// <<< M1 authz
 }
 

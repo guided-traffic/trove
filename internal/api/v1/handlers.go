@@ -13,9 +13,10 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
-// PermissionSystemRead is the permission of the installation facts and the
-// replica registry (R-API-038).
-const PermissionSystemRead = "system.read"
+// PermissionSystemRead is the capability that admits the installation facts and
+// the replica registry (R-API-038): settings:read of R-AUTHZ-010, called
+// system.read in M0.
+const PermissionSystemRead = "settings:read"
 
 // Identity names the replica that answers.
 type Identity struct {
@@ -146,7 +147,7 @@ func (s *Server) version() gen.Version {
 	return gen.Version{Version: bi.Version, Revision: bi.Commit, BuildTime: bi.Date, GoVersion: bi.GoVersion, Formats: formats}
 }
 
-// GetSystemInfo implements GET /api/v1/system/info (R-OPS-004); system.read is
+// GetSystemInfo implements GET /api/v1/system/info (R-OPS-004); settings:read is
 // enforced before it runs.
 func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -227,8 +228,8 @@ func Summarise(replicas []gen.Replica) gen.ReplicaSummary {
 	return sum
 }
 
-// ListReplicas implements GET /api/v1/system/replicas (R-OPS-003); system.read
-// is enforced before it runs.
+// ListReplicas implements GET /api/v1/system/replicas (R-OPS-003);
+// settings:read is enforced before it runs.
 func (s *Server) ListReplicas(w http.ResponseWriter, r *http.Request) {
 	items, err := s.o.Replicas.Replicas(r.Context())
 	if err != nil {

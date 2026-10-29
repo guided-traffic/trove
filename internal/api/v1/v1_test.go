@@ -247,7 +247,7 @@ func TestSystemInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("R-OPS-004 info requires system.read", func(t *testing.T) {
+	t.Run("R-OPS-004 info requires settings:read", func(t *testing.T) {
 		s := newSetup(t, func(o *Options) { o.Access = denyAnonymous{} }, nil)
 		for _, path := range []string{"/api/v1/system/info", "/api/v1/system/replicas"} {
 			if w := s.get(path); w.Code != 401 {
@@ -391,7 +391,7 @@ func TestDocument(t *testing.T) {
 	})
 
 	t.Run("R-API-002 an operation without x-trove-permission is refused at load", func(t *testing.T) {
-		raw := strings.Replace(string(EmbeddedYAML()), "      x-trove-permission:\n        permission: system.read\n      responses:\n        \"200\":\n          description: The installation facts.", "      responses:\n        \"200\":\n          description: The installation facts.", 1)
+		raw := strings.Replace(string(EmbeddedYAML()), "      x-trove-permission:\n        permission: settings:read\n      responses:\n        \"200\":\n          description: The installation facts.", "      responses:\n        \"200\":\n          description: The installation facts.", 1)
 		if raw == string(EmbeddedYAML()) {
 			t.Fatal("test setup: replacement did not apply")
 		}
@@ -403,7 +403,7 @@ func TestDocument(t *testing.T) {
 
 	t.Run("R-API-002 the authorization table is keyed by route pattern", func(t *testing.T) {
 		op, ok := s.doc.Operations()["GET /api/v1/system/info"]
-		if !ok || op.ID != "getSystemInfo" || op.Permission["permission"] != "system.read" {
+		if !ok || op.ID != "getSystemInfo" || op.Permission["permission"] != "settings:read" {
 			t.Fatalf("%+v", op)
 		}
 	})
@@ -543,7 +543,7 @@ func TestAuthorizationStep(t *testing.T) {
 		for pattern, op := range doc.Operations() {
 			q := op.Requirement
 			n := 0
-			for _, set := range []bool{q.Public, q.Authenticated, q.Permission != ""} {
+			for _, set := range []bool{q.Public, q.Authenticated, q.Permission != "", q.Role != "", q.Action != ""} {
 				if set {
 					n++
 				}
@@ -585,8 +585,8 @@ func TestAuthorizationStep(t *testing.T) {
 	})
 
 	t.Run("R-API-002 a declaration in a form the step does not enforce is refused at load", func(t *testing.T) {
-		for _, form := range []string{"role: admin", "public: false", "permission: \"\"", "authenticated: true\n        publicSwitch: system.anything", "public: true\n        permission: system.read"} {
-			raw := strings.Replace(string(EmbeddedYAML()), "      x-trove-permission:\n        permission: system.read\n      responses:\n        \"200\":\n          description: The installation facts.",
+		for _, form := range []string{"role: root", "public: false", "permission: \"\"", "permission: system.read", "authenticated: true\n        publicSwitch: system.anything", "public: true\n        permission: settings:read"} {
+			raw := strings.Replace(string(EmbeddedYAML()), "      x-trove-permission:\n        permission: settings:read\n      responses:\n        \"200\":\n          description: The installation facts.",
 				"      x-trove-permission:\n        "+form+"\n      responses:\n        \"200\":\n          description: The installation facts.", 1)
 			if raw == string(EmbeddedYAML()) {
 				t.Fatal("test setup: replacement did not apply")

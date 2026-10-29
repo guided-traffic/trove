@@ -22,6 +22,7 @@ func SubjectFrom(p httpserver.Principal) authz.Subject {
 		Mappings:  p.Mappings,
 		TokenID:   p.Credential.TokenID,
 		SessionID: p.Credential.SessionID,
+		MinEpoch:  p.MinEpoch,
 	}
 	for _, g := range p.Groups {
 		s.Groups = append(s.Groups, principal.GroupRef{ID: g.ID, Name: g.Name})
@@ -52,3 +53,16 @@ type authzAccess struct{ a authz.Authorizer }
 func (x authzAccess) Require(ctx context.Context, permission string) error {
 	return x.a.Require(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), permission)
 }
+
+// RequireAction decides a repository action on the coordinate an operation's
+// declaration names, for the caller of the request (the action form of
+// x-trove-permission). The endpoint the request arrived on is part of the
+// coordinate, because the exposure of an endpoint is a ceiling (R-EP-013).
+func (x authzAccess) RequireAction(ctx context.Context, c authz.Coordinate) error {
+	if ep := httpserver.EndpointFrom(ctx); ep != nil {
+		c.Endpoint = ep.Name()
+	}
+	return x.a.Decide(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), c).Err()
+}
+
+var _ ActionAccess = authzAccess{}

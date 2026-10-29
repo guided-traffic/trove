@@ -98,17 +98,30 @@ request ─► chain stage 6 (httpserver.Chain.Authenticate)
                               v1.NewAccess -> authz.Authorizer.Require(ctx, SubjectFrom(principal), permission)
             files / formats: sub := v1.SubjectFrom(httpserver.PrincipalFrom(ctx))
                               authz.Authorizer.Decide(ctx, sub, Coordinate{...}) -> Decision
-                              Allow | DenyUnauthenticated 401 | DenyHidden 404 | DenyVisible 403 | DenyStale 503 (R-AUTHZ-016)
+                              Allow | DenyUnauthenticated 401 | DenyHidden 404 | DenyVisible 403 | DenyStale 503 | DenyEpochUnknown 412 (R-AUTHZ-016)
 ```
 
 `Decision.Outcome` maps one to one to the status rows of R-AUTHZ-016. Authorization runs before the existence
 lookup, so `DenyHidden` is byte-identical to a missing resource. The mapping from `Decision` to an `*errs.Error`
-(`Decision.Err`) is added by WP1.3 in `internal/authz/errors.go`; the other areas call it.
+(`Decision.Err`) is in `internal/authz/errors.go`; the other areas call it, and build the answer for a missing
+resource from `authz.NotFound()` so that hidden and missing are the same bytes.
 
-The M0 permission name `system.read` is `settings:read` (R-AUTHZ-010). WP1.3 migrates `api/openapi.yaml` to the
-capability names and makes `Require` accept the old name until then (`authz.LegacySystemRead`). WP1.3 also
-extends `Requirement` and `parseRequirement` in [authorize.go](../../internal/api/v1/authorize.go) for the
-`action`/`repository`/`path` and `role` forms of R-API-008; no other area edits that file.
+The M0 permission name `system.read` is the capability `settings:read` (R-AUTHZ-010); `api/openapi.yaml` declares the
+capability name and the alias is gone. `parseRequirement` in [authorize.go](../../internal/api/v1/authorize.go) accepts
+`public`, `authenticated`, `permission: <capability>`, `role: <role>` and `action` with `repository` (and `package`,
+`path`) sources (R-API-008, Q-AUTHZ-22); no other area edits that file.
+
+Changes WP1.3 made to the contracts above (see [authorization.md](authorization.md)):
+
+| Contract | Change |
+|---|---|
+| `authz.Outcome` | `DenyEpochUnknown` (412 `authz_epoch_unknown`) appended after `DenyStale` |
+| `authz.Decision` | `Target` (the coordinate as the caller sent it) and `Sources` (policy names or `role:admin`) added; `Err()`, `Status()` and `Allowed()` are in [errors.go](../../internal/authz/errors.go) |
+| `authz.Authorizer` implementation | `*authz.Engine` also offers `Begin`/`DecideOn` (one index per request), `Check`, `Effective` and `RecordAllowed`; `authz.NotFound()` is the one 404 for hidden and missing resources |
+| `httpserver.Principal` | `MinEpoch int64`, the parsed `Trove-Authz-Min-Epoch` of an authenticated request (Q-AUTHZ-17); `v1.SubjectFrom` copies it |
+| `v1.Access` | unchanged; `v1.ActionAccess` (`RequireAction`) is the optional second interface that `v1.NewAccess` implements for the action form |
+| `m1Wiring` | `authzEngine` and `anonymousAccess func() bool` (set by identity before the authz wiring; nil: off) in the authz marker |
+| `permission` strings of `Require` | capability names, and `role:<role>` for the role form |
 
 ## Marked sections in shared files
 

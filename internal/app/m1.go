@@ -61,6 +61,13 @@ type m1Wiring struct {
 
 	// >>> M1 authz
 	authorizer authz.Authorizer
+	// authzEngine is the same component with the methods beyond the contract
+	// (Check, Effective, RecordAllowed); the policy service of wave 2 reads it.
+	authzEngine *authz.Engine
+	// anonymousAccess is the runtime switch of R-AUTH-037 (YAML ceiling and
+	// auth_settings.anonymous_access); the identity area sets it before the authz
+	// wiring runs. Nil means anonymous access is off.
+	anonymousAccess func() bool
 	// <<< M1 authz
 
 	// >>> M1 repository
@@ -86,7 +93,7 @@ type m1Wiring struct {
 func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
 	rules := endpointRules(rt)
 	rules.PublicRoute = a.publicRoute(rt)
-	return func(r *http.Request) (httpserver.Principal, error) {
+	return withMinEpoch(func(r *http.Request) (httpserver.Principal, error) {
 		a.mu.Lock()
 		stage := a.m1.authenticator
 		a.mu.Unlock()
@@ -100,14 +107,13 @@ func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.
 			return httpserver.Principal{}, err
 		}
 		return principalFromResult(res), nil
-	}
+	})
 }
 
 // access returns the permission check of the management API: the decision point
-// of the authz area, or the M0 stand-in while it is not wired.
+// of the authz area behind the dev-profile bridge of system.bootstrap_anonymous_read
+// (access.go). While the decision point is not wired (a replica without
+// PostgreSQL), nobody holds a permission.
 func (a *App) access() v1.Access {
-	if a.m1.authorizer == nil {
-		return bootstrapAccess{anonymousRead: a.cfg.System.BootstrapAnonymousRead}
-	}
-	return v1.NewAccess(a.m1.authorizer)
+	return newBridgeAccess(a.m1.authorizer, a.cfg.System.BootstrapAnonymousRead)
 }

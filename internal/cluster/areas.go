@@ -103,6 +103,7 @@ func init() {
 	// <<< M1 identity
 	//
 	// >>> M1 authz
+	RegisterArea(Area{Name: AreaAuthz, Owner: "R-AUTHZ-028", Class: ChangeArea, PayloadVersion: 1})
 	// <<< M1 authz
 	//
 	// >>> M1 repository
@@ -131,6 +132,11 @@ const AreaAuth = "auth"
 // <<< M1 identity
 //
 // >>> M1 authz
+
+// AreaAuthz carries policy, role-binding, exposure-rule and authorization-setting
+// changes; its epoch is the authorization epoch (R-AUTHZ-028).
+const AreaAuthz = "authz"
+
 // <<< M1 authz
 //
 // >>> M1 repository

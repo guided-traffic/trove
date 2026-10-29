@@ -55,6 +55,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
+| [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
@@ -102,7 +103,7 @@ trove/
 │   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
 │   ├── auth/                 # the authentication stage and the failed-credential throttle; principal/ (users, groups,
 │   │                         # service accounts, provisioner), token/ (format, store, scopes, lifetime, revocation), session/, oidc/
-│   ├── authz/                # decision point contract: Subject, Coordinate, Decision, Authorizer (M1, WP1.3)
+│   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
 │   ├── buildinfo/            # version, commit and build date from -ldflags
