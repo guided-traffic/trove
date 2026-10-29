@@ -3,6 +3,8 @@ package principal
 import (
 	"context"
 	"errors"
+
+	"github.com/guided-traffic/trove/internal/audit"
 )
 
 // Kind is the kind of a principal-table row (R-AUTHZ-002). The values match
@@ -70,19 +72,64 @@ type Store interface {
 	Groups(ctx context.Context, id string) ([]GroupRef, error)
 }
 
+// GroupClaimState says whether the provider's group claim was usable
+// (R-AUTH-008).
+type GroupClaimState string
+
+// The states of the group claim.
+const (
+	// ClaimPresent: the claim was a string or an array of strings, possibly empty.
+	ClaimPresent GroupClaimState = ""
+	// ClaimAbsent: the claim is in neither the ID token nor userinfo.
+	ClaimAbsent GroupClaimState = "absent"
+	// ClaimWrongType: the claim has another type.
+	ClaimWrongType GroupClaimState = "wrong_type"
+	// ClaimOverage: the claim is replaced by an overage marker.
+	ClaimOverage GroupClaimState = "overage"
+)
+
 // LoginClaims is what an OIDC login hands to the provisioner (R-AUTH-006,
-// R-AUTH-007, R-AUTH-008).
+// R-AUTH-007, R-AUTH-008). The login flow has applied the provider's claim
+// mapping, the gates that need the raw claims (require_verified_email,
+// login_requires_groups) and the group mapping rules; the provisioner applies the
+// result to the principal tables. The fields after Groups carry the provider
+// policy the provisioner needs; they are additions to the first contract.
 type LoginClaims struct {
-	// Provider is the provider ID; Subject is the stable "sub" of the provider.
+	// Provider is the provider ID; Issuer is its issuer and Subject the stable
+	// "sub": the pair is the identity key (R-AUTH-007).
 	Provider string
+	Issuer   string
 	Subject  string
-	Username string
-	Email    string
+	// Username is the mapped username (NFC, lower case, prefix applied).
+	Username      string
+	Email         string
+	EmailVerified bool
 	// DisplayName is the user's name for display.
 	DisplayName string
-	// Groups are the values of the configured group claim; the provisioner
-	// synchronizes them (R-AUTH-008).
+	// Groups are the trove group names the provider's mapping rules produced from
+	// the group claim (R-AUTH-008); the provisioner makes the user's
+	// oidc:<provider> memberships exactly this set.
 	Groups []string
+
+	// GroupSync is false when group_sync.enabled is off for the provider: the
+	// memberships are not touched.
+	GroupSync bool
+	// ClaimState says whether the group claim was usable. With a missing claim
+	// the memberships are cleared, or kept with KeepOnMissing (on_missing_claim),
+	// and user.groups.claim_missing is recorded. The deny policy is the login
+	// flow's: it never calls the provisioner.
+	ClaimState    GroupClaimState
+	KeepOnMissing bool
+	// CreateGroups creates a missing target group with origin oidc
+	// (group_sync.create_groups).
+	CreateGroups bool
+	// JIT lets an unknown identity become a user (provider jit).
+	JIT bool
+	// SyncUsername renames the user to a changed mapped username (sync_username).
+	SyncUsername bool
+
+	// Source is where the login came from, for the audit events.
+	Source audit.Source
 }
 
 // Provisioner is the seam between the login flow (WP1.1) and the identity

@@ -35,6 +35,9 @@ func (a *App) jobRegistry() (*jobs.Registry, error) {
 	jobs.RegisterProbeKind(r)
 	a.registerGC(r)
 	a.registerRepositoryJobs(r)
+	// >>> M1 identity
+	a.registerIdentityJobs(r)
+	// <<< M1 identity
 	if err := jobs.ValidateSchedules(a.cfg.Maintenance); err != nil {
 		return nil, err
 	}

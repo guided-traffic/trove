@@ -103,11 +103,18 @@ func TestEndpoints(t *testing.T) {
 		return rec
 	}
 
+	// refused is the answer to a request without a credential: customers admits no
+	// anonymous request (R-EP-010 item 4) and anonymous access is off on the default
+	// endpoint (R-AUTH-037). It comes after the host check, so it also shows that
+	// the check passed where a foreign host would get 421; the routes behind the
+	// authentication stage are covered with credentials by the endpoint tests of M1.
+	const refused = 401
+
 	t.Run("R-EP-002 one replica opens the default listener and the customers listener, both before it is ready", func(t *testing.T) {
 		if code, _, body := web.get(t, "/api/v1/system/ping"); code != 200 || body != "OK" {
 			t.Fatalf("default ping: %d %q", code, body)
 		}
-		if code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", "/does-not-exist"); code != 404 {
+		if code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", "/does-not-exist"); code != refused {
 			t.Fatalf("customers unknown path: %d %s", code, body)
 		}
 		_, metrics := opsGet(web.ops, "/metrics")
@@ -131,13 +138,13 @@ func TestEndpoints(t *testing.T) {
 			}
 		}
 		// 127.0.0.0/8 is a trusted proxy here: a forwarded host within the set is honoured, one outside it is ignored.
-		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "evil.example", "/does-not-exist", "X-Forwarded-Host", "packages.trove.localhost"); code != 404 {
-			t.Errorf("trusted proxy, forwarded host in the set: %d (404 means the host check passed)", code)
+		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "evil.example", "/does-not-exist", "X-Forwarded-Host", "packages.trove.localhost"); code != refused {
+			t.Errorf("trusted proxy, forwarded host in the set: %d (401 means the host check passed)", code)
 		}
-		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", "/does-not-exist", "X-Forwarded-Host", "evil.example"); code != 404 {
+		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", "/does-not-exist", "X-Forwarded-Host", "evil.example"); code != refused {
 			t.Errorf("trusted proxy, forwarded host outside the set: %d", code)
 		}
-		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "docker-all.registry.example.com", "/does-not-exist"); code != 404 {
+		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "docker-all.registry.example.com", "/does-not-exist"); code != refused {
 			t.Errorf("wildcard host: %d", code)
 		}
 		_, metrics := opsGet(web.ops, "/metrics")
@@ -164,7 +171,7 @@ func TestEndpoints(t *testing.T) {
 			t.Errorf("421 record = %v", mis)
 		}
 		own := requestRecord(func(m map[string]any) bool {
-			return m["endpoint"] == "customers" && m["status"] == float64(404) && m["host"] == "docker-all.registry.example.com"
+			return m["endpoint"] == "customers" && m["status"] == float64(refused) && m["host"] == "docker-all.registry.example.com"
 		})
 		if own["handler"] != "unmatched" {
 			t.Errorf("record = %v", own)
@@ -183,7 +190,7 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("R-EP-005 the customers endpoint answers 404 for the UI, the API and the management API, and keeps /v2/ and /.well-known/ reserved", func(t *testing.T) {
+	t.Run("R-EP-005 R-EP-010 the customers endpoint answers a request without a credential with the same 401 on every path, the UI, the API, the management API and the reserved /v2/ and /.well-known/ included", func(t *testing.T) {
 		var want string
 		for _, p := range []string{"/does-not-exist", "/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/system/info", "/api/v1/system/replicas", "/api/v1/openapi.json", "/files/generic-local/x", "/v2/", "/v2/docker-all/manifests/latest", "/.well-known/terraform.json"} {
 			code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", p)
@@ -192,7 +199,7 @@ func TestEndpoints(t *testing.T) {
 			delete(pr, "instance")
 			delete(pr, "requestId")
 			b, _ := json.Marshal(pr)
-			if code != 404 || pr["code"] != "not_found" {
+			if code != refused || pr["code"] != "credentials_required" {
 				t.Errorf("%s: %d %s", p, code, body)
 			}
 			if want == "" {
@@ -210,14 +217,14 @@ func TestEndpoints(t *testing.T) {
 		if code, _, _ := web.get(t, "/", "Accept", "text/html"); code != 302 && code != 200 {
 			t.Errorf("default root: %d", code)
 		}
-		if code, _, _ := web.get(t, "/v2/"); code != 404 {
+		if code, _, _ := web.get(t, "/v2/"); code != refused {
 			t.Errorf("default /v2/: %d", code)
 		}
 	})
 
 	t.Run("R-EP-006 a host-root binding is accepted and reserved: bound-host paths route like any other host", func(t *testing.T) {
 		for _, p := range []string{"/v2/", "/.well-known/terraform.json"} {
-			if code, _ := endpointGet(t, ca, custAddr, "pkgs.example.org", "pkgs.example.org", p); code != 404 {
+			if code, _ := endpointGet(t, ca, custAddr, "pkgs.example.org", "pkgs.example.org", p); code != refused {
 				t.Errorf("bound host %s: %d", p, code)
 			}
 		}
@@ -262,7 +269,7 @@ func TestEndpoints(t *testing.T) {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
-		if code, _ := endpointGet(t, ca, custAddr, "docker-all.registry.example.com", "docker-all.registry.example.com", "/does-not-exist"); code != 404 {
+		if code, _ := endpointGet(t, ca, custAddr, "docker-all.registry.example.com", "docker-all.registry.example.com", "/does-not-exist"); code != refused {
 			t.Errorf("request after the rotation: %d", code)
 		}
 		if got := served(t, ca, custAddr, "packages.trove.localhost"); got != 5001 {

@@ -336,6 +336,9 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 repository
 	//
 	// >>> M1 identity
+	if err := a.wireIdentity(); err != nil {
+		return err
+	}
 	// <<< M1 identity
 	//
 	// >>> M1 login

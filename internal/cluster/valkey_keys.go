@@ -251,4 +251,10 @@ func (v *Valkey) channel(f *ChannelFamily, parts ...string) (Channel, error) {
 // <<< M1 api
 //
 // >>> M1 identity
+
+// tokSeenFamily holds the throttle-exemption markers of recently validated
+// credentials (R-AUTH-038, R-ARCH-030). The longest expiry is one hour; the
+// configured recent_token_window must not exceed it.
+var tokSeenFamily = registerKeyFamily("tokseen", 1, MaxTokenSeenWindow)
+
 // <<< M1 identity

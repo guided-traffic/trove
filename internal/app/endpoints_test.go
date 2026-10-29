@@ -58,8 +58,38 @@ func startEndpoints(t *testing.T, role string, extra map[string]string) *harness
 	return h
 }
 
+// endpointsJSON configures the endpoint customers. The routing tests send no
+// credential, so the endpoint admits anonymous requests; a further endpoint
+// refuses them by default (R-EP-010 item 4), which
+// TestEndpointRefusesAnonymousByDefault covers.
 func endpointsJSON(listen string, more string) string {
-	return fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"docker-hub"}%s}}`, listen, more)
+	return fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"docker-hub"},"auth":{"anonymous":true}%s}}`, listen, more)
+}
+
+func TestEndpointRefusesAnonymousByDefault(t *testing.T) {
+	h := startEndpoints(t, "web", map[string]string{
+		"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com"}}`, freePort(t)),
+	})
+	cust := h.app.EndpointAddr("customers")
+	t.Run("R-EP-010 R-EP-005 a further endpoint answers every request without a credential with the same 401", func(t *testing.T) {
+		var want string
+		for _, p := range []string{"/does-not-exist", "/ui/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/npm/npm-customers/"} {
+			code, body := hostGet(t, cust, "packages.example.com", p)
+			var pr map[string]any
+			_ = json.Unmarshal([]byte(body), &pr)
+			if code != 401 || pr["code"] != "credentials_required" {
+				t.Errorf("%s: %d %s", p, code, body)
+			}
+			delete(pr, "instance")
+			delete(pr, "requestId")
+			b, _ := json.Marshal(pr)
+			if want == "" {
+				want = string(b)
+			} else if string(b) != want {
+				t.Errorf("%s: body %s differs from the unknown path's %s", p, b, want)
+			}
+		}
+	})
 }
 
 // hostGet sends a request to addr with the given Host.
@@ -212,7 +242,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 
 	t.Run("R-EP-003 the default endpoint answers 421 once hosts are configured for it", func(t *testing.T) {
 		h := startEndpoints(t, "web", map[string]string{
-			"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"default":{"hosts":["trove.example.com"]},"customers":{"listen":%q,"base_url":"https://packages.example.com"}}`, freePort(t)),
+			"TROVE_SERVER_ENDPOINTS": fmt.Sprintf(`{"default":{"hosts":["trove.example.com"]},"customers":{"listen":%q,"base_url":"https://packages.example.com","auth":{"anonymous":true}}}`, freePort(t)),
 		})
 		def := h.app.EndpointAddr("default")
 		if code, _ := hostGet(t, def, "packages.example.com", "/api/v1/system/ping"); code != 421 {

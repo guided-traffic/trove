@@ -2,11 +2,16 @@ package app
 
 import (
 	"net/http"
+	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
+	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/session"
+	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -32,8 +37,23 @@ type m1Wiring struct {
 	// <<< M1 api
 
 	// >>> M1 identity
-	// principals principal.Store (declare it with the first use)
+	principals       principal.Store
+	principalManager *principal.Manager
+	// provisioner is the seam the login area calls after an OIDC callback.
+	provisioner   principal.Provisioner
+	tokens        *token.Service
+	authSettings  *token.SettingsStore
 	authenticator auth.Authenticator
+	// sessions resolves the session cookie; nil means no sessions.
+	// WIRING POINT: the login area sets it before wireIdentity runs (its
+	// marker precedes none of identity's; the development agent orders them).
+	sessions session.Validator
+	// failureLimiter is the count-only limiter auth.credential_failures; nil
+	// means the per-replica one (WIRING POINT: the api area's cluster limiter).
+	failureLimiter auth.FailureLimiter
+	// publicOps are the patterns of the management API operations whose
+	// declaration is public, or public by a switch.
+	publicOps map[string]bool
 	// <<< M1 identity
 
 	// >>> M1 login
@@ -61,13 +81,21 @@ type m1Wiring struct {
 
 // authenticate returns the authentication stage of an endpoint's chain: the
 // authenticator of the identity area behind the conversion to
-// httpserver.Principal, or the M0 stand-in while none is wired.
+// httpserver.Principal. The authenticator is read when a request arrives, so a
+// chain built before step 8 of the start-up still uses the wired one.
 func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
-	if a.m1.authenticator == nil {
-		return bootstrapAuthenticate
-	}
+	rules := endpointRules(rt)
+	rules.PublicRoute = a.publicRoute(rt)
 	return func(r *http.Request) (httpserver.Principal, error) {
-		res, err := a.m1.authenticator.Authenticate(r, endpointRules(rt))
+		a.mu.Lock()
+		stage := a.m1.authenticator
+		a.mu.Unlock()
+		if stage == nil {
+			// Before step 8 of the start-up no request is served (the listener
+			// opens at step 9); a request that arrives anyway is refused.
+			return httpserver.Principal{}, errs.E(errs.Unavailable, errs.CodeUnavailable, "The replica is starting.", errs.WithRetryAfter(time.Second))
+		}
+		res, err := stage.Authenticate(r, rules)
 		if err != nil {
 			return httpserver.Principal{}, err
 		}

@@ -46,6 +46,225 @@
       },
       "type": "object"
     },
+    "auth": {
+      "additionalProperties": false,
+      "properties": {
+        "anonymous": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed": {
+              "default": true,
+              "description": "The operator's ceiling. The runtime switch anonymousAccess (R-AUTH-040) takes effect only while this is true.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_AUTH_ANONYMOUS_ALLOWED"
+            }
+          },
+          "type": "object"
+        },
+        "clients": {
+          "additionalProperties": false,
+          "properties": {
+            "basic": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Off breaks NuGet restore and _auth users; Basic with a password is impossible regardless.",
+                  "type": "boolean",
+                  "x-trove-env": "TROVE_AUTH_CLIENTS_BASIC_ENABLED"
+                }
+              },
+              "type": "object"
+            },
+            "nuget_api_key_header": {
+              "default": true,
+              "description": "Examine X-NuGet-ApiKey on the NuGet API-key endpoints (M2).",
+              "type": "boolean",
+              "x-trove-env": "TROVE_AUTH_CLIENTS_NUGET_API_KEY_HEADER"
+            }
+          },
+          "type": "object"
+        },
+        "rate_limit": {
+          "additionalProperties": false,
+          "properties": {
+            "device_code_failures": {
+              "default": 5,
+              "description": "Wrong device user codes per user within auth.cli_login.ttl, cluster-wide.",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_AUTH_RATE_LIMIT_DEVICE_CODE_FAILURES"
+            },
+            "exempt_cidrs": {
+              "default": [],
+              "description": "Client addresses or CIDRs that are never throttled.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "x-trove-env": "TROVE_AUTH_RATE_LIMIT_EXEMPT_CIDRS"
+            },
+            "failures_per_address": {
+              "default": 300,
+              "description": "Rejected credentials per minute and client address, cluster-wide; a per-replica share while Valkey is unavailable.",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_AUTH_RATE_LIMIT_FAILURES_PER_ADDRESS"
+            },
+            "max_pending_flows": {
+              "default": 100000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_AUTH_RATE_LIMIT_MAX_PENDING_FLOWS"
+            },
+            "recent_token_window": {
+              "default": "10m",
+              "description": "Throttle exemption of a credential validated on any replica.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_RATE_LIMIT_RECENT_TOKEN_WINDOW",
+              "x-trove-type": "duration"
+            },
+            "starts_per_address": {
+              "default": 30,
+              "description": "Requests to the unauthenticated row-creating endpoints per minute and address, cluster-wide.",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_AUTH_RATE_LIMIT_STARTS_PER_ADDRESS"
+            }
+          },
+          "type": "object"
+        },
+        "revocation_bound": {
+          "default": "2s",
+          "description": "Revocation bound; at least 2 x cluster.epoch_poll_interval.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_AUTH_REVOCATION_BOUND",
+          "x-trove-type": "duration"
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_ttl": {
+              "default": "15s",
+              "description": "SafetyTTL of the four auth caches; bounds staleness only if an invalidation were lost.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_TOKENS_CACHE_TTL",
+              "x-trove-type": "duration"
+            },
+            "cit": {
+              "additionalProperties": false,
+              "properties": {
+                "max_ttl": {
+                  "default": "6h",
+                  "description": "Hard ceiling; the CI exchange sets the issued lifetime.",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_CIT_MAX_TTL",
+                  "x-trove-type": "duration"
+                }
+              },
+              "type": "object"
+            },
+            "expiry_notice": {
+              "default": "168h",
+              "description": "A token expiring within this period produces one token.expiring event; runtime-adjustable.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_TOKENS_EXPIRY_NOTICE",
+              "x-trove-type": "duration"
+            },
+            "max_active_per_principal": {
+              "additionalProperties": false,
+              "properties": {
+                "pat": {
+                  "default": 50,
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_MAX_ACTIVE_PER_PRINCIPAL_PAT"
+                },
+                "sat": {
+                  "default": 20,
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_MAX_ACTIVE_PER_PRINCIPAL_SAT"
+                }
+              },
+              "type": "object"
+            },
+            "pat": {
+              "additionalProperties": false,
+              "properties": {
+                "allowed_groups": {
+                  "default": [],
+                  "description": "Empty: every user may create personal tokens; otherwise only members of these groups (R-AUTH-017).",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_PAT_ALLOWED_GROUPS"
+                },
+                "default_ttl": {
+                  "default": "2160h",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_PAT_DEFAULT_TTL",
+                  "x-trove-type": "duration"
+                },
+                "max_ttl": {
+                  "default": "8760h",
+                  "description": "Ceiling for the runtime setting.",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_PAT_MAX_TTL",
+                  "x-trove-type": "duration"
+                }
+              },
+              "type": "object"
+            },
+            "retention_after_end": {
+              "default": "2160h",
+              "description": "The token-cleanup task deletes a token row this long after expiry or revocation.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_TOKENS_RETENTION_AFTER_END",
+              "x-trove-type": "duration"
+            },
+            "sat": {
+              "additionalProperties": false,
+              "properties": {
+                "allow_non_expiring": {
+                  "default": false,
+                  "description": "Lets an administrator create a service-account token without expiry.",
+                  "type": "boolean",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_SAT_ALLOW_NON_EXPIRING"
+                },
+                "default_ttl": {
+                  "default": "2160h",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_SAT_DEFAULT_TTL",
+                  "x-trove-type": "duration"
+                },
+                "max_ttl": {
+                  "default": "8760h",
+                  "description": "Ceiling for the runtime setting.",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_SAT_MAX_TTL",
+                  "x-trove-type": "duration"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "cache": {
       "additionalProperties": false,
       "properties": {

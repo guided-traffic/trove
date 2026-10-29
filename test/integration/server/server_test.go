@@ -121,8 +121,11 @@ func TestReplicas(t *testing.T) {
 		if code != 200 || !strings.Contains(body, "trove_http_requests_total") || !strings.Contains(body, "trove_valkey_available 1") || !strings.Contains(body, `trove_build_info{`) {
 			t.Fatalf("metrics %d", code)
 		}
-		if code, _, _ := web.get(t, "/metrics"); code != 404 {
-			t.Fatalf("client /metrics = %d", code)
+		// The authentication stage runs before the router (R-ARCH-005): without a
+		// credential and with anonymous access off the client listener answers 401,
+		// with one it answers 404. Either way it serves no metrics.
+		if code, _, body := web.get(t, "/metrics"); (code != 404 && code != 401) || strings.Contains(body, "trove_") {
+			t.Fatalf("client /metrics = %d: %.200s", code, body)
 		}
 	})
 

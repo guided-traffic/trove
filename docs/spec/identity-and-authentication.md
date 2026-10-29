@@ -2835,6 +2835,10 @@ the grants that policies give that principal ([authorization.md](authorization.m
   (R-AUTH-001, [formats/npm.md](formats/npm.md) R-NPM-022);
 - the npm login start;
 - `:8081` operations;
+- `GET` and `HEAD` of `/` (the redirect to the UI) and of the UI shell under `/ui/`: the static
+  application carries no data, every
+  screen reads through the management API, and an unauthenticated visitor must reach the sign-in
+  screen (Q-AUTH-19);
 - whatever [api-and-ui.md](api-and-ui.md) declares public, for example the OpenAPI document.
 
 **Switching it off.** Turning anonymous access off takes effect on every replica within the
@@ -4064,6 +4068,136 @@ and `cli_login` together (R-AUTH-038), and `session-cleanup` deletes the expired
 **Choice:** (b), in `00008_login.sql`, with the columns of R-AUTH-034 unchanged.
 
 **Applied in the spec:** none; the sketch of R-AUTH-034 is the schema, created by `00008_login.sql`.
+
+### Q-AUTH-18 · The journal entry of `settings.auth.changed`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-041 flags `settings.auth.changed` for the revocation journal "only when the change sets
+`anonymousAccess`". The registry rule of R-OPS-014 makes an entry of a type that one page owns alone
+`required`: an event written without an entry fails its transaction. The two sentences do not fit
+together for a change of a token lifetime.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `journal_entry: optional` | The producer supplies an entry only for a change of `anonymousAccess` | Matches the sentence of R-AUTH-041 | R-OPS-014 allows `optional` only for the shared types `package.published` and `package.deleted`; a producer bug could drop a narrowing without failing |
+| (b) Always supply the entry (chosen) | Every change carries `anonymousAccess` before and after; the type is `required` | One rule for all producers; the replay comparator treats an unchanged value as a no-op | A lifetime-only change writes a journal row that replay skips |
+
+**Choice:** (b).
+
+**Rationale:** the comparator `narrows(current, after)` already returns true when the value is
+unchanged, so replay does nothing for such an entry. A journal row per settings change costs nothing
+at the rate administrators change settings, and a type that cannot be written without its entry
+cannot lose a narrowing silently. Revisit if a second producer of `settings.auth.changed` appears.
+
+**Applied in the spec:** none beyond this block; `internal/audit/events_identity.go` registers the
+type as `required` and `token.SettingsStore.Update` always supplies the entry.
+
+### Q-AUTH-19 · Which unauthenticated requests the stage lets through
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-001 item 4 makes a request without a credential anonymous "if R-AUTH-037 allows it", and
+R-AUTH-037 lists the endpoints that are always reachable, "whatever api-and-ui.md declares public".
+The management API declares each operation as public, authenticated or permission-bound
+(R-API-008) and checks it per route; the stage runs before the route is known to the handlers.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stage answers 401 whenever the anonymous switches are off | Simplest reading of item 4 | One rule | `GET /api/v1/system/ping` and the OpenAPI document, declared public, are unreachable with the default settings |
+| (b) The stage lets every management request through as anonymous | The per-operation check decides | Public operations work | The switch no longer applies to the repository reads under `/api/v1/` that the files area adds; the stage reports an anonymous principal where R-AUTH-037 says "off" |
+| (c) The stage asks which operation the request matches (chosen) | `EndpointRules.PublicRoute` is filled from the OpenAPI document: an operation declared `public`, or public by a switch, is reachable without a credential; the fixed list of R-AUTH-037 (`/auth/`, login options, device endpoints, revocation by value, the CI exchange, the npm login start) is reachable as well; every other request follows the switches | The switch means what R-AUTH-037 says; public operations work whatever the switch says | The stage depends on the route table through the composition root |
+
+**Choice:** (c). Anonymous never passes an unsafe method on `/api/v1/` unless the route is in the
+fixed list (the hard limit of R-AUTH-037). A request to an exchange route
+(`POST /api/v1/auth/oidc/token` and the two npm exchange routes) reaches the handler as anonymous
+without its `Authorization` header being read (R-AUTH-001).
+
+**Rationale:** (c) keeps both promises of the specification. The M0 bridge
+`system.bootstrap_anonymous_read` opens reads of the management API to anonymous callers on the
+default endpoint; the composition root passes it as a route predicate until the authorization area
+replaces it. Revisit when the authorization area decides anonymous reads of repository content under
+`/api/v1/`: it must then read `anonymousAccess` itself.
+
+**Applied in the spec:** R-AUTH-037 "Always unauthenticated" names `GET` and `HEAD` of `/` and of the
+UI shell under `/ui/`, on an endpoint that admits anonymous requests: an unauthenticated visitor must load the application to reach the sign-in screen
+(api-and-ui.md, sign-in criteria), and the shell holds no data. Code: `auth.EndpointRules.PublicRoute`,
+`app.publicRoute`, `auth.alwaysOpen`.
+
+### Q-AUTH-20 · Where the failed-credential throttle trips
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-038 puts an address into throttled mode when it has "more than `failures_per_address`" rejected
+credentials in the window, and its acceptance criterion says that 400 requests with random
+well-formed tokens are "validated at most 300 times". With the count-only limiter of R-ARCH-034 as
+written (`Exceeded` is true when the weighted count *exceeds* the burst), 300 counted failures leave
+the address open, and the 301st request is validated: 301 validations.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exceeded above the burst | As R-ARCH-034 words it | Matches "more than" | The acceptance criterion fails by one |
+| (b) Exceeded at the burst (chosen) | The 301st request is the first refused | Matches "at most 300 times"; also true of the per-replica shares | One request fewer than "more than" |
+
+**Choice:** (b). The `auth.LocalLimiter` of `internal/auth` implements it; the cluster limiter of the
+API area (`Exceeded` of R-ARCH-034) must use the same comparison for E1.8 to hold across replicas.
+Every rejection of a presented credential is counted: a malformed value, an unknown token, a revoked
+or expired one. A disabled owner and a storage failure are not.
+
+**Rationale:** a limit documented as 300 must admit 300. Revisit when the cluster limiter lands and
+its own test pins the comparison.
+
+**Applied in the spec:** R-ARCH-034 count-only form should read "reports whether … reaches burst"; left
+to the owner of that page.
+
+### Q-AUTH-21 · What the login flow hands to the provisioner
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`principal.LoginClaims` carried the claim values and the group-claim values. The provisioner has no
+provider configuration, yet `jit`, `sync_username`, `create_groups`, `on_missing_claim` and the issuer
+decide what it writes (R-AUTH-007, R-AUTH-008).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The provisioner reads the provider configuration | It imports the login area's types | Login passes less | The principal package would import the OIDC configuration, against the layer order of `m1-contracts.md` |
+| (b) The login flow passes the policy with the claims (chosen) | `LoginClaims` gains `Issuer`, `EmailVerified`, `GroupSync`, `ClaimState`, `KeepOnMissing`, `CreateGroups`, `JIT`, `SyncUsername` and `Source`; `Groups` are the trove group names the mapping rules produced | The package stays below the login area; the unit of work is one call | The login flow applies the gates that need raw claims (`require_verified_email`, `login_requires_groups`, `on_missing_claim: deny`) before it calls |
+
+**Choice:** (b). The refusals are the errors `ErrUserDisabled`, `ErrUsernameTaken`,
+`ErrNotProvisioned` and `ErrUsernameInvalid`, which the login flow maps to its reasons. The
+provisioner links the identity in `user_identity` (the table of `00008_login`) and completes a pending
+link with a conditional update; two first logins of one identity on different replicas end with one
+user, the loser retries once.
+
+**Rationale:** the contract file lists the seam, not the policy; the additions are fields, so the
+callers that fill only the first fields still compile. Revisit if the login area prefers to pass the
+provider's configuration object through an interface.
+
+**Applied in the spec:** none; `internal/auth/principal/principal.go`.
+
+### Q-AUTH-22 · The payload kinds of the change area `auth`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-023 says a change "names the token ID with the hash of the ended credential, the session ID or
+the principal ID". The area is shared by tokens, principals, memberships, settings (this area) and
+sessions (login), and a change message is limited to 1 KiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every change flushes the four caches | Nothing to design | Always correct | Each CI job's closing self-revocation empties every replica's token cache |
+| (b) Kinds with a precise reaction (chosen) | `token` (IDs and hashes), `principal` and `membership` (IDs), `group`, `settings`, `session`, `all`; a payload that does not fit becomes `all` | A revocation evicts one entry; a membership change touches only the principal cache | A cache must know the kinds; an unknown kind flushes |
+
+**Choice:** (b). `token` evicts the named hashes from `auth_tokens`; `principal` flushes `auth_tokens`
+(the cached owner status) and evicts the named principals; `membership` evicts the named principals
+only; `group` and `all` flush; `settings` flushes `auth_settings`; `session` is the login area's and
+the identity caches ignore it; any other kind flushes every cache of the area (the coarse reaction is
+always safe). The hash in a payload is the SHA-256 of a 256-bit secret: it is the database's lookup
+key and cannot be inverted or used to authenticate.
+
+**Rationale:** the revocation bound does not depend on the precision, only the load does.
+
+**Applied in the spec:** none; `docs/developer/identity.md` has the table.
 
 ## What this does not cover
 

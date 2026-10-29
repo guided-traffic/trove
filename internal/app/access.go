@@ -2,24 +2,11 @@ package app
 
 import (
 	"context"
-	"net/http"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
-
-// bootstrapAuthenticate is the authentication stage until the identity packages
-// exist (M1). No credential can be valid yet, so any presented credential is an
-// invalid one and gives 401 (R-ARCH-005 step 6); everything else is anonymous.
-// WIRING POINT: replace with the identity packages' stage.
-func bootstrapAuthenticate(r *http.Request) (httpserver.Principal, error) {
-	if r.Header.Get("Authorization") != "" {
-		return httpserver.Principal{}, errs.E(errs.Unauthenticated, errs.CodeUnauthenticated,
-			"The credential is not valid.", errs.WithChallenge("Bearer"))
-	}
-	return httpserver.AnonymousPrincipal(), nil
-}
 
 // bootstrapAccess decides permissions until authorization exists. Nobody can
 // hold system.read yet, so system.bootstrap_anonymous_read is the explicit,

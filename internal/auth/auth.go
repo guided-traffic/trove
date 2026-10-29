@@ -58,6 +58,12 @@ type EndpointRules struct {
 	// Anonymous is true when the endpoint allows anonymous requests
 	// (auth.anonymous), subject to R-AUTH-037.
 	Anonymous bool
+	// PublicRoute reports whether the request matches a management API operation
+	// that is declared public (or public by a switch): such a request without a
+	// credential reaches its handler as the anonymous principal whatever the
+	// anonymous switches say, because the operation's own declaration decides
+	// (R-AUTH-037 "Always unauthenticated", R-API-008). Nil: none is.
+	PublicRoute func(*http.Request) bool
 }
 
 // Authenticator is the authentication stage. An error it returns is an

@@ -54,6 +54,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
+| [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
@@ -99,7 +100,8 @@ trove/
 │   ├── api/v1/               # system API handlers; gen/ is generated (oapi-codegen)
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
 │   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
-│   ├── auth/                 # authentication stage contract; principal/ (principal table), token/, session/, oidc/ (M1)
+│   ├── auth/                 # the authentication stage and the failed-credential throttle; principal/ (users, groups,
+│   │                         # service accounts, provisioner), token/ (format, store, scopes, lifetime, revocation), session/, oidc/
 │   ├── authz/                # decision point contract: Subject, Coordinate, Decision, Authorizer (M1, WP1.3)
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures

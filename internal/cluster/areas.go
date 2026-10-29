@@ -99,6 +99,7 @@ func init() {
 	// The areas of M1: auth (identity), authz and repo_config. A change area also
 	// needs its cluster_epoch row from the migration that ships it.
 	// >>> M1 identity
+	RegisterArea(Area{Name: AreaAuth, Owner: "R-AUTH-023", Class: ChangeArea, PayloadVersion: 1})
 	// <<< M1 identity
 	//
 	// >>> M1 authz
@@ -121,6 +122,12 @@ const (
 // between the markers).
 
 // >>> M1 identity
+
+// AreaAuth carries the changes that end, narrow or alter a credential, a
+// principal or a runtime authentication setting (R-AUTH-023). The payload
+// kinds are in docs/developer/identity.md.
+const AreaAuth = "auth"
+
 // <<< M1 identity
 //
 // >>> M1 authz

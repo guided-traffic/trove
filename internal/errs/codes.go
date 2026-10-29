@@ -56,6 +56,32 @@ const CodeInvalidAuditRange = "invalid_audit_range"
 // <<< M1 api
 //
 // >>> M1 identity
+const (
+	CodeInvalidToken            = "invalid_token"
+	CodeCredentialsRequired     = "credentials_required"
+	CodeInvalidCredentials      = "invalid_credentials" //nolint:gosec // G101: an error code, not a credential
+	CodePrincipalDisabled       = "principal_disabled"
+	CodeInvalidScope            = "invalid_scope"
+	CodeInvalidTTL              = "invalid_ttl"
+	CodeTTLExceedsMaximum       = "ttl_exceeds_maximum"
+	CodeDefaultAboveMaximum     = "default_above_maximum"
+	CodeExceedsCeiling          = "exceeds_ceiling"
+	CodeNonExpiringNotAllowed   = "non_expiring_not_allowed"
+	CodeNonExpiringRestricted   = "non_expiring_restricted"
+	CodePATNotAllowed           = "pat_not_allowed"
+	CodeCITokenRestricted       = "ci_token_restricted" //nolint:gosec // G101: an error code, not a credential
+	CodeTokenAlreadyIssued      = "token_already_issued"
+	CodeTokenLimitReached       = "token_limit_reached" //nolint:gosec // G101: an error code, not a credential
+	CodeDerivationExceedsParent = "derivation_exceeds_parent"
+	CodeDescriptionRequired     = "description_required"
+	CodeNotAToken               = "not_a_token"
+	CodeManagedBySCIM           = "managed_by_scim"
+	CodeLastAdmin               = "last_admin"
+	CodeAnonymousNotAllowed     = "anonymous_not_allowed"
+	CodeAutoJoinAdminConflict   = "auto_join_admin_conflict"
+	CodeUsernameInvalid         = "username_invalid"
+)
+
 // <<< M1 identity
 //
 // >>> M1 login
@@ -139,6 +165,29 @@ var registry = []CodeInfo{
 	// <<< M1 api
 	//
 	// >>> M1 identity
+	{CodeInvalidToken, Unauthenticated, "Invalid token", "The token is malformed, unknown, expired or revoked. The response does not say which; request a new token."},
+	{CodeCredentialsRequired, Unauthenticated, "Credentials required", "The request carries no credential and anonymous access is off or does not cover it."},
+	{CodeInvalidCredentials, Unauthenticated, "Invalid credentials", "The credentials were refused."},
+	{CodePrincipalDisabled, Unauthenticated, "Principal disabled", "The credential is valid but its owner is disabled."},
+	{CodeInvalidScope, Invalid, "Invalid scope", "The token scope has an unknown field or action, an unknown endpoint, or exceeds the size limits."},
+	{CodeInvalidTTL, Invalid, "Invalid lifetime", "Give ttlSeconds (at least 60, or 0 for a non-expiring service-account token) or expiresAt, not both, and at least 60 seconds ahead."},
+	{CodeTTLExceedsMaximum, Invalid, "Lifetime exceeds the maximum", "The requested lifetime is above the maximum for the token type; trove does not clamp it."},
+	{CodeDefaultAboveMaximum, Invalid, "Default above maximum", "A default lifetime must not exceed its maximum."},
+	{CodeExceedsCeiling, Invalid, "Exceeds the configured ceiling", "A runtime value must not exceed the ceiling set in the configuration."},
+	{CodeNonExpiringNotAllowed, Invalid, "Non-expiring token not allowed", "Only a service-account token can be non-expiring, and only while the configuration allows it."},
+	{CodeNonExpiringRestricted, Forbidden, "Non-expiring token restricted", "Only an administrator may create a non-expiring service-account token."},
+	{CodePATNotAllowed, Forbidden, "Personal tokens not allowed", "Personal tokens are restricted to members of the configured groups."},
+	{CodeCITokenRestricted, Forbidden, "CI token restricted", "A CI token cannot create or rotate tokens."},
+	{CodeTokenAlreadyIssued, Conflict, "Token already issued", "The secret of this request was issued by an earlier identical request and is not shown again."},
+	{CodeTokenLimitReached, Conflict, "Token limit reached", "The principal holds the maximum number of active tokens; revoke one first."},
+	{CodeDerivationExceedsParent, Forbidden, "Derivation exceeds the presenting token", "A token created with a token must not outlive or outrank it."},
+	{CodeDescriptionRequired, Invalid, "Description required", "A token needs a description of 1 to 1024 characters."},
+	{CodeNotAToken, NotFound, "Not a token", "The request is not authenticated by a token."},
+	{CodeManagedBySCIM, Conflict, "Managed by SCIM", "The object is owned by the identity provider and cannot be changed here."},
+	{CodeLastAdmin, Conflict, "Last administrator", "The change would remove the last administrator."},
+	{CodeAnonymousNotAllowed, Conflict, "Anonymous access not allowed", "The configuration forbids anonymous access."},
+	{CodeAutoJoinAdminConflict, Conflict, "Auto-join conflicts with an administration role", "A group with an administration role binding cannot be an auto-join group."},
+	{CodeUsernameInvalid, Invalid, "Invalid username", "The username does not match the name rule or is reserved."},
 	// <<< M1 identity
 	//
 	// >>> M1 login

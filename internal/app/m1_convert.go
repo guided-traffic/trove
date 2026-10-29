@@ -17,7 +17,9 @@ func endpointRules(rt *endpointRuntime) auth.EndpointRules {
 		Name:           rt.cfg.Name,
 		AcceptsSession: true,
 		TokenTypes:     []token.Type{token.TypePAT, token.TypeSAT, token.TypeCIT},
-		Anonymous:      true,
+		// A further endpoint admits no anonymous request unless configured
+		// (R-EP-010 item 4, Q-EP-10); the rest of the rules arrive with WP1.9.
+		Anonymous: rt.cfg.Anonymous,
 	}
 }
 
