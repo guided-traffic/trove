@@ -2378,12 +2378,15 @@ inside the process.
   recycled after `valkey.max_conn_lifetime`. A rotated Secret therefore takes effect without a
   restart. Passwords never appear in the configuration file, in logs or in metrics.
 - **Least privilege.** trove needs only these commands, on keys and channels under its prefix:
-  `GET`, `SET`, `DELIFEQ`, `INCR`, `EXPIRE`, `MULTI`, `EXEC`, `PUBLISH`, `SUBSCRIBE`,
-  `UNSUBSCRIBE`, `PING`, `HELLO`, `ROLE`, `CLIENT SETNAME` and `CLIENT SETINFO`. It runs no
-  scripts. An example ACL rule, which the integration tier uses:
+  `GET`, `SET`, `DELIFEQ`, `INCR`, `EXPIRE`, `MULTI`, `EXEC`, `DISCARD`, `PUBLISH`,
+  `SUBSCRIBE`, `UNSUBSCRIBE`, `SUNSUBSCRIBE`, `PUNSUBSCRIBE`, `PING`, `HELLO`, `ROLE`,
+  `CLIENT SETNAME` and `CLIENT SETINFO`. `DISCARD`, `SUNSUBSCRIBE` and `PUNSUBSCRIBE` are sent by
+  the client library when it resets a Pub/Sub connection; trove issues no sharded or pattern
+  subscription. It runs no scripts. An example ACL rule, which the integration tier and the dev
+  profile use:
 
   ```text
-  user trove on >… resetkeys ~trove:* resetchannels &trove:* -@all +get +set +delifeq +incr +expire +multi +exec +publish +subscribe +unsubscribe +ping +hello +role +client|setname +client|setinfo
+  user trove on >… resetkeys ~trove:* resetchannels &trove:* -@all +get +set +delifeq +incr +expire +multi +exec +publish +subscribe +unsubscribe +sunsubscribe +punsubscribe +discard +ping +hello +role +client|setname +client|setinfo
   ```
 
 - **Metrics.** Those of R-HA-057 (`trove_valkey_available`, `trove_valkey_circuit_open`,
