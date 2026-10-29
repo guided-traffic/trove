@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Brings up the local development profile (R-HA-051, E0.3) on a kind cluster named "trove":
-# one control-plane and three worker nodes in three zones, the Traefik Ingress controller,
-# CloudNativePG with a two-instance PostgreSQL cluster, Valkey with a replica and three
-# Sentinels over TLS, SeaweedFS with its buckets, and the trove chart with the dev values.
+# one control-plane and three worker nodes in three zones, HAProxy Ingress as the edge, cert-manager with a
+# dev CA that issues every certificate, the internal-secrets-operator that generates every Secret,
+# CloudNativePG with a two-instance PostgreSQL cluster, the Valkey operator with a replica and three
+# Sentinels over TLS, SeaweedFS with its buckets over HTTPS, and the trove chart with the dev values.
+# TLS on every connection: client -> edge, edge -> trove, trove -> PostgreSQL, Valkey, Sentinel, S3.
 #
 # Idempotent: a second run reuses the cluster, the Secrets and the certificates and re-applies
 # the rest. Independent installs run in parallel; their logs are in .dev/logs/.
@@ -12,13 +14,13 @@
 #                         the trove image does not serve yet, or to work on the dependencies.
 #   TROVE_PROFILE=scatter the `scatter` e2e profile (E0.11): three web replicas and an edge that
 #                         balances round robin per request with its keep-alive to the pods off
-#                         (values-scatter.yaml, Traefik --serversTransport.maxIdleConnsPerHost=-1).
+#                         (values-scatter.yaml: HAProxy Ingress annotations on trove's Ingress).
 #                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
 #                         (pooler.yaml, values-pooler.yaml, R-HA-058).
 #   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default ghcr.io/guided-traffic/trove:dev,
 #                         built by `make image`). It must be present in the local Docker.
-#   TROVE_DEV_HTTP_PORT=n the host port of the edge, default 8080 (http://localhost:8080). Set it when
+#   TROVE_DEV_HTTP_PORT=n the host port of the edge, default 8080 (https://localhost:8080). Set it when
 #                         8080 is taken; the chart's base_url follows. Fixed when the cluster is created.
 #   TROVE_HELM_EXTRA=...  extra arguments for the helm upgrade of the trove release.
 set -euo pipefail
@@ -49,7 +51,7 @@ else
     > "$LOGS/kind.log" 2>&1 || { tail -30 "$LOGS/kind.log" >&2; die "kind create cluster failed (log: $LOGS/kind.log)"; }
 fi
 # The host port the cluster was created with (kind.yaml), read back from the control-plane node.
-EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30080/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
+EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
 EDGE_PORT="${EDGE_PORT:-$DEV_HTTP_PORT}"
 k get nodes >/dev/null || die "the context $CTX does not answer"
 # Pods scheduled while a worker is still NotReady would all land on the nodes that are up, and
@@ -64,48 +66,66 @@ k label namespace "$NS" --overwrite \
   pod-security.kubernetes.io/audit=restricted \
   pod-security.kubernetes.io/warn=restricted >/dev/null
 
-# ensure_secret <name> <kubectl create secret args...>: creates the Secret when it is missing,
-# so a second run keeps every credential.
-ensure_secret() {
-  local name="$1"; shift
-  if kn get secret "$name" >/dev/null 2>&1; then
-    return 0
-  fi
-  kn create secret "$@" >/dev/null
-  log "created Secret $name"
-}
-
-"$DEV_DIR/valkey-certs.sh"
-# randhex <bytes> prints that many random bytes as hex (no host openssl involved).
-randhex() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d " \n"; }
-ensure_secret trove-valkey-ca generic trove-valkey-ca --from-file=ca.crt="$STATE_DIR/valkey/ca.crt"
-ensure_secret trove-valkey-tls tls trove-valkey-tls --cert="$STATE_DIR/valkey/tls.crt" --key="$STATE_DIR/valkey/tls.key"
-ensure_secret trove-valkey generic trove-valkey --from-literal=username=trove --from-literal=password="$(randhex 24)"
-ensure_secret trove-valkey-sentinel generic trove-valkey-sentinel --from-literal=password="$(randhex 24)"
-ensure_secret trove-valkey-admin generic trove-valkey-admin --from-literal=password="$(randhex 24)"
-ensure_secret trove-s3 generic trove-s3 --from-literal=access-key-id=trove-dev --from-literal=secret-access-key="$(randhex 24)"
-# R-HA-027: the operator creates the encryption key; the file name without .key is the key ID.
-ensure_secret trove-encryption-keys generic trove-encryption-keys --from-literal=dev.key="$(head -c 32 /dev/urandom | base64)"
-
 # ── 3. the dependencies, in parallel ─────────────────────────────────────────
+# A task that others depend on writes $LOGS/<name>.ok when it is done (or .fail), and a dependent task
+# waits for the marker. So the Valkey and S3 installs do not wait for PostgreSQL, the longest one.
+rm -f "$LOGS"/*.ok "$LOGS"/*.fail
 declare -a PIDS=() NAMES=()
 # spawn <name> <function>: runs the function in the background with its own log.
 spawn() {
   local name="$1" fn="$2"
-  ( set -euo pipefail; "$fn" ) > "$LOGS/$name.log" 2>&1 &
+  ( set -euo pipefail; if "$fn"; then touch "$LOGS/$name.ok"; else touch "$LOGS/$name.fail"; exit 1; fi ) > "$LOGS/$name.log" 2>&1 &
   PIDS+=("$!"); NAMES+=("$name")
 }
+# await <name>...: waits for the markers of the tasks this one depends on.
+await() {
+  local n
+  for n in "$@"; do
+    until [ -e "$LOGS/$n.ok" ]; do
+      [ ! -e "$LOGS/$n.fail" ] || { echo "the task $n failed"; return 1; }
+      sleep 1
+    done
+  done
+}
+# digest_of <image-ref> prints sha256:... of a reference pinned by digest.
+digest_of() { printf '%s\n' "${1##*@}"; }
 
-task_traefik() {
-  local image="${DEV_TRAEFIK_IMAGE#docker.io/}"      # traefik:v3.7.16@sha256:...
-  local repo="${image%%:*}" digest="${image##*@}" tag="${image#*:}"; tag="${tag%%@*}"
-  local scatter_args=()
-  # The scatter profile: no idle connection to a backend is kept, so no client sticks to a pod.
-  [ "$PROFILE" = "scatter" ] && scatter_args=(--set-json 'additionalArguments=["--serversTransport.maxIdleConnsPerHost=-1"]')
-  helm --kube-context "$CTX" upgrade --install traefik traefik --repo https://traefik.github.io/charts \
-    --version "$DEV_TRAEFIK_CHART_VERSION" -n traefik --create-namespace -f "$DEV_DIR/traefik-values.yaml" \
-    --set image.registry=docker.io --set image.repository="$repo" --set image.digest="$digest" \
-    --set versionOverride="$tag" ${scatter_args[@]+"${scatter_args[@]}"} --wait --timeout 5m
+task_haproxy() {
+  # The chart's image values take a tag; "tag@digest" pins it by digest.
+  local ref="${DEV_HAPROXY_INGRESS_IMAGE#quay.io/}"           # jcmoraisjr/haproxy-ingress:v0.15.3@sha256:...
+  local repo="${ref%%:*}" tag="${ref#*:}"
+  helm --kube-context "$CTX" upgrade --install haproxy-ingress haproxy-ingress --repo https://haproxy-ingress.github.io/charts \
+    --version "$DEV_HAPROXY_INGRESS_CHART_VERSION" -n ingress-controller --create-namespace -f "$DEV_DIR/haproxy-values.yaml" \
+    --set controller.image.registry=quay.io --set controller.image.repository="$repo" --set controller.image.tag="$tag" \
+    --wait --timeout 5m
+}
+
+task_pki() {
+  helm --kube-context "$CTX" upgrade --install cert-manager cert-manager --repo https://charts.jetstack.io \
+    --version "$DEV_CERT_MANAGER_CHART_VERSION" -n cert-manager --create-namespace --set crds.enabled=true \
+    --set image.digest="$(digest_of "$DEV_CERT_MANAGER_CONTROLLER_IMAGE")" \
+    --set webhook.image.digest="$(digest_of "$DEV_CERT_MANAGER_WEBHOOK_IMAGE")" \
+    --set cainjector.image.digest="$(digest_of "$DEV_CERT_MANAGER_CAINJECTOR_IMAGE")" \
+    --set startupapicheck.image.digest="$(digest_of "$DEV_CERT_MANAGER_STARTUPAPICHECK_IMAGE")" \
+    --wait --timeout 5m
+  render "$DEV_DIR/pki.yaml" | kn apply -f -
+  kn wait --for=condition=Ready certificate/trove-dev-ca certificate/trove-tls certificate/trove-edge-tls certificate/trove-s3-tls --timeout=3m
+}
+
+task_secrets() {
+  helm --kube-context "$CTX" upgrade --install internal-secrets-operator internal-secrets-operator \
+    --repo https://guided-traffic.github.io/internal-secrets-operator --version "$DEV_ISO_CHART_VERSION" \
+    -n internal-secrets-operator-system --create-namespace \
+    --set image.tag="${DEV_ISO_IMAGE#*:}" --wait --timeout 5m
+  kn apply -f "$DEV_DIR/secrets.yaml"
+  wait_secret_fields 120 trove-valkey-auth:password trove-s3:secret-access-key trove-encryption-keys:dev.key trove-break-glass:password
+}
+
+task_vko() {
+  helm --kube-context "$CTX" upgrade --install valkey-operator valkey-operator \
+    --repo https://guided-traffic.github.io/valkey-operator/ --version "$DEV_VALKEY_OPERATOR_CHART_VERSION" \
+    -n valkey-operator-system --create-namespace --set image.digest="$(digest_of "$DEV_VALKEY_OPERATOR_IMAGE")" \
+    --wait --timeout 5m
 }
 
 task_postgres() {
@@ -130,12 +150,16 @@ task_postgres() {
 }
 
 task_valkey() {
+  await pki secrets vko
   render "$DEV_DIR/valkey.yaml" | kn apply -f -
-  kn rollout status statefulset/trove-valkey --timeout=5m
-  kn rollout status statefulset/trove-valkey-sentinel --timeout=5m
+  # The operator creates the StatefulSets a moment after the resource.
+  until kn get statefulset trove-valkey trove-valkey-sentinel >/dev/null 2>&1; do sleep 1; done
+  sts_wait_ready trove-valkey 2 300
+  sts_wait_ready trove-valkey-sentinel 3 300
 }
 
 task_s3() {
+  await pki secrets
   kn delete job trove-s3-buckets --ignore-not-found >/dev/null
   render "$DEV_DIR/s3.yaml" | kn apply -f -
   kn rollout status deployment/trove-s3 --timeout=5m
@@ -143,8 +167,11 @@ task_s3() {
   kn logs job/trove-s3-buckets
 }
 
-log "installing Traefik, CloudNativePG + PostgreSQL, Valkey + Sentinels and SeaweedFS in parallel"
-spawn traefik task_traefik
+log "installing HAProxy Ingress, cert-manager + PKI, the secret generator, CloudNativePG + PostgreSQL, the Valkey operator + Valkey and SeaweedFS in parallel"
+spawn haproxy task_haproxy
+spawn pki task_pki
+spawn secrets task_secrets
+spawn vko task_vko
 spawn postgres task_postgres
 spawn valkey task_valkey
 spawn s3 task_s3
@@ -161,8 +188,13 @@ for i in "${!PIDS[@]}"; do
 done
 [ "$failed" = 0 ] || die "a dependency did not come up"
 
+# The dev CA, for a client on the host (curl --cacert, a browser's trust store, the e2e suite).
+mkdir -p "$STATE_DIR/pki"
+secret_field trove-dev-ca ca.crt | base64 -d > "$STATE_DIR/pki/ca.crt"
+printf '*\n' > "$STATE_DIR/.gitignore"
+
 # ── 4. verify the dependency stack ───────────────────────────────────────────
-primary="$(valkey_primary)" || die "no Sentinel reports a primary for 'trove'"
+primary="$(valkey_primary)" || die "no Sentinel reports a primary for 'trove-valkey'"
 log "Valkey primary (asked through TLS at the Sentinels): $primary"
 log "PostgreSQL primary: $(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}')"
 
@@ -177,7 +209,7 @@ else
   kind load docker-image "$IMAGE" --name "$CLUSTER" > "$LOGS/image-load.log" 2>&1 \
     || { tail -20 "$LOGS/image-load.log" >&2; die "kind load docker-image failed"; }
 
-  # trusted_proxies of values-dev.yaml is the pod range of the control-plane node, where Traefik runs.
+  # trusted_proxies of values-dev.yaml is the pod range of the control-plane node, where HAProxy Ingress runs.
   cp_cidr="$(k get node "${CLUSTER}-control-plane" -o jsonpath='{.spec.podCIDR}')"
   grep -q "\"$cp_cidr\"" "$DEV_DIR/values-dev.yaml" \
     || die "the control-plane node's pod range is $cp_cidr; set config.server.trusted_proxies in deploy/dev/values-dev.yaml to it"
@@ -188,7 +220,8 @@ else
   for c in $node_cidrs; do probe_cidrs="$probe_cidrs$sep\"$c\""; sep=","; done
   probe_cidrs="$probe_cidrs]"
   values=(-f "$DEV_DIR/values-dev.yaml" --set-json "networkPolicy.probeCIDRs=$probe_cidrs")
-  [ "$EDGE_PORT" = "8080" ] || values+=(--set "config.server.base_url=http://localhost:$EDGE_PORT")
+  [ "$EDGE_PORT" = "8080" ] || values+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
+    --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
   [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
   [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")
   log "installing the trove release (helm upgrade --install trove, migration Job first)"
@@ -196,14 +229,14 @@ else
   helm --kube-context "$CTX" upgrade --install trove "$REPO_ROOT/deploy/helm/trove" -n "$NS" \
     "${values[@]}" --wait --timeout 10m ${TROVE_HELM_EXTRA:-}
   kn get deploy,pods -l app.kubernetes.io/instance=trove -o wide
-  log "check: curl -s http://localhost:$EDGE_PORT/api/v1/system/ping"
+  log "check: curl -s --cacert $STATE_DIR/pki/ca.crt https://localhost:$EDGE_PORT/api/v1/system/ping"
 fi
 
 log "dev profile is up in $(elapsed "$START")"
 cat >&2 <<MSG
 
   kubectl:        kubectl --context $CTX -n $NS get pods -o wide
-  trove (edge):   http://localhost:$EDGE_PORT   (Traefik, Ingress class traefik)
+  trove (edge):   https://localhost:$EDGE_PORT   (HAProxy Ingress, class haproxy; trust $STATE_DIR/pki/ca.crt)
   PostgreSQL:     kubectl --context $CTX -n $NS get cluster trove-db
   Valkey:         deploy/dev/valkey-failover.sh | valkey-kill.sh | valkey-outage.sh 60s
   tear down:      deploy/dev/down.sh

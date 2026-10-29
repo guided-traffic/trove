@@ -15,7 +15,7 @@ read it from there.
 | sqlc, oapi-codegen | the `tool` directives of [go.mod](../../go.mod) | run as `go tool sqlc …`, `go tool oapi-codegen …`; `versions-check` compares the running version with the module version |
 | golangci-lint, kind, kubectl, Helm, k6, CloudNativePG chart | [tools/versions.env](../../tools/versions.env) | `KEY=value` lines; the Makefile `include`s the file and exports its keys, CI appends it to `$GITHUB_ENV` |
 | Container images (PostgreSQL, PgBouncer, Valkey 9.0 and 9.1, SeaweedFS, the release base image, the dev-profile images) | [tools/versions.env](../../tools/versions.env), each with its digest | `docker buildx imagetools inspect <tag>` prints the digest to pin |
-| openssl | `OPENSSL_IMAGE` in [tools/versions.env](../../tools/versions.env), a container image with its digest | never the host's openssl (LibreSSL on macOS, 3.x on Ubuntu): [certs.sh](../../test/integration/certs.sh) and [deploy/dev/valkey-certs.sh](../../deploy/dev/valkey-certs.sh) run it with `docker run --rm --user "$(id -u):$(id -g)" -v <dir>:<dir> -w <dir>`, so the files belong to the caller |
+| openssl | `OPENSSL_IMAGE` in [tools/versions.env](../../tools/versions.env), a container image with its digest | never the host's openssl (LibreSSL on macOS, 3.x on Ubuntu): [certs.sh](../../test/integration/certs.sh) and the e2e probes ([e2e.md](e2e.md)) run it with `docker run --rm --user "$(id -u):$(id -g)" -v <dir>:<dir> -w <dir>`, so the files belong to the caller |
 | Angular packages, Node.js | `web/package-lock.json`, `web/.nvmrc` | owned by the web workspace, see [web-ui.md](web-ui.md) |
 
 golangci-lint is built from source with `go install` into

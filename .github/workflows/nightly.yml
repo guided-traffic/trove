@@ -50,26 +50,41 @@ jobs:
           test "$(git rev-parse HEAD)" = "$MINIO_COMMIT"
           go build -trimpath -o "$RUNNER_TEMP/bin/minio" .
           "$RUNNER_TEMP/bin/minio" --version
-      - name: Start MinIO and create the buckets
+      - name: Start MinIO over TLS and create the buckets
         run: |
           set -euo pipefail
           data="$RUNNER_TEMP/minio-data"
+          certs="$RUNNER_TEMP/minio-certs"
           mkdir -p "$data" "$GITHUB_WORKSPACE/.out"
+          # TLS on every connection (INV-20): the CA and the S3 server certificate come from the integration
+          # stack's script (openssl from the pinned image); its SANs cover 127.0.0.1 and localhost. MinIO reads
+          # public.crt and private.key from --certs-dir.
+          test/integration/certs.sh "$certs/pki" >/dev/null
+          mkdir -p "$certs/minio"
+          cp "$certs/pki/s3.crt" "$certs/minio/public.crt"
+          cp "$certs/pki/s3.key" "$certs/minio/private.key"
+          ca="$certs/pki/ca.crt"
           user="trove-nightly"
           pass="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
           echo "::add-mask::$pass"
           MINIO_ROOT_USER="$user" MINIO_ROOT_PASSWORD="$pass" \
-            "$RUNNER_TEMP/bin/minio" server "$data" \
+            "$RUNNER_TEMP/bin/minio" server "$data" --certs-dir "$certs/minio" \
             --address 127.0.0.1:9000 --console-address 127.0.0.1:9001 \
             > "$GITHUB_WORKSPACE/.out/minio.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/minio.pid"
           for _ in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && break
+            curl -fsS --cacert "$ca" https://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null
+          curl -fsS --cacert "$ca" https://127.0.0.1:9000/minio/health/live >/dev/null
+          # A plaintext request must not be served (INV-20).
+          if curl -fsS --max-time 5 http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+            echo "::error::MinIO answered a plaintext request"
+            exit 1
+          fi
           {
-            echo "TROVE_TEST_S3_ENDPOINT=http://127.0.0.1:9000"
+            echo "TROVE_TEST_S3_ENDPOINT=https://127.0.0.1:9000"
+            echo "TROVE_TEST_CA_FILE=$ca"
             echo "TROVE_TEST_S3_REGION=us-east-1"
             echo "TROVE_TEST_S3_ACCESS_KEY=$user"
             echo "TROVE_TEST_S3_SECRET_KEY=$pass"
@@ -246,6 +261,20 @@ jobs:
           jq --version
           nproc
           free -g
+      - name: The dev profile's dependency pins and the runner architecture
+        run: |
+          set -euo pipefail
+          # The Valkey operator and the internal-secrets-operator images are published for linux/amd64
+          # only (tools/versions.env); the hosted runner is amd64, so no emulation is needed here.
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "HAProxy Ingress chart $DEV_HAPROXY_INGRESS_CHART_VERSION, image $DEV_HAPROXY_INGRESS_IMAGE"
+          echo "cert-manager chart $DEV_CERT_MANAGER_CHART_VERSION (images pinned by digest)"
+          echo "valkey-operator chart $DEV_VALKEY_OPERATOR_CHART_VERSION, internal-secrets-operator chart $DEV_ISO_CHART_VERSION"
+          echo "CloudNativePG chart $CNPG_CHART_VERSION"
+          # up.sh installs the charts from these repositories; fail early, not 5 minutes into make dev-up.
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
       - name: make image
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
       - name: make dev-up
@@ -276,7 +305,7 @@ jobs:
           set -u
           mkdir -p .out/cluster-state
           kubectl config get-contexts || true
-          for ns in trove traefik cnpg-system kube-system; do
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
             kubectl --context kind-trove -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
             kubectl --context kind-trove -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context kind-trove -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true

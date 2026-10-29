@@ -1,0 +1,43 @@
+# HAProxy Ingress is the Ingress controller of the dev cluster: the edge in front of the web Service,
+# the owner's production controller at the owner's chart pin. up.sh installs it with the chart version
+# and the image pinned in tools/versions.env (DEV_HAPROXY_INGRESS_CHART_VERSION, DEV_HAPROXY_INGRESS_IMAGE).
+#
+# The edge runs on the control-plane node, two replicas. The control-plane node is never drained or
+# killed by the tests, so the drain test (E0.14) measures trove and not the edge. The kind port mapping
+# (kind.yaml) also lives on that node. It makes the source address of every proxied request predictable:
+# it comes from the control-plane node's pod range, which values-dev.yaml trusts as
+# config.server.trusted_proxies and nothing wider. Production runs its own redundant edge (R-HA-059).
+#
+# TLS: clients reach the edge on https://localhost:<TROVE_DEV_HTTP_PORT> (NodePort 30443, certificate
+# trove-edge-tls from cert-manager, named by trove's Ingress). The edge talks HTTPS to trove and verifies
+# trove's certificate against the dev CA (ingress.backendTLS in values-dev.yaml). The plain NodePort 30080
+# is not mapped to the host.
+controller:
+  ingressClass: haproxy
+  ingressClassResource:
+    enabled: true
+    default: true
+  kind: Deployment
+  replicaCount: 2
+  minAvailable: 1
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  service:
+    type: NodePort
+    externalTrafficPolicy: Local
+    httpPorts:
+      - port: 80
+        targetPort: http
+        nodePort: 30080
+    httpsPorts:
+      - port: 443
+        targetPort: https
+        nodePort: 30443
+  config:
+    # HAProxy Ingress keys of the global ConfigMap carry no prefix. A client that reaches the plain port
+    # is sent to HTTPS (the default for an Ingress with TLS); nothing maps that port to the host.
+    ssl-redirect: "true"

@@ -110,17 +110,21 @@ func TestE07PodSecurity(t *testing.T) {
 // for the probes and the proxy works the way the chart says.)
 func TestE07NetworkPolicy(t *testing.T) {
 	t.Run("R-HA-042 E0.7 the NetworkPolicy is enforced: a pod of another namespace reaches :8080 of a web pod and not :8081", func(t *testing.T) {
-		image := os.Getenv("TROVE_E2E_PROBE_IMAGE")
+		image := os.Getenv("TROVE_E2E_OPENSSL_IMAGE")
 		if image == "" {
-			t.Fatal("TROVE_E2E_PROBE_IMAGE is not set; run the suite through deploy/dev/e2e.sh")
+			t.Fatal("TROVE_E2E_OPENSSL_IMAGE is not set; run the suite through deploy/dev/e2e.sh")
 		}
 		web := livePods(t, selWeb)[0]
 		ip := strings.TrimSpace(kn(t, "get", "pod", web.Name, "-o", "jsonpath={.status.podIP}"))
 		name := "e2e-netpol-probe"
 		_, _ = kubectl("-n", "default", "delete", "pod", name, "--ignore-not-found", "--wait=true")
 		t.Cleanup(func() { _, _ = kubectl("-n", "default", "delete", "pod", name, "--ignore-not-found", "--wait=false") })
-		script := fmt.Sprintf(`if wget -T 4 -qO- http://%[1]s:8081/readyz >/dev/null 2>&1; then echo OPS_REACHED; else echo OPS_BLOCKED; fi; `+
-			`if wget -T 4 -qO- http://%[1]s:8080/api/v1/system/ping >/dev/null 2>&1; then echo HTTP_REACHED; else echo HTTP_BLOCKED; fi`, ip)
+		// Both ports speak TLS (tls.enabled): the probe completes a handshake and reads the status line, so a
+		// REACHED means a TLS answer from trove and a BLOCKED a connection the policy dropped. The Host is the default
+		// endpoint's (the chart gives it a host check as soon as a further endpoint exists).
+		script := fmt.Sprintf(`get() { printf 'GET %%s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' "$2" | timeout 6 openssl s_client -quiet -connect %[1]s:"$1" 2>/dev/null | head -1; }; `+
+			`case "$(get 8081 /readyz)" in HTTP/*" 200"*) echo OPS_REACHED ;; *) echo OPS_BLOCKED ;; esac; `+
+			`case "$(get 8080 /api/v1/system/ping)" in HTTP/*" 200"*) echo HTTP_REACHED ;; *) echo HTTP_BLOCKED ;; esac`, ip)
 		if _, err := kubectl("-n", "default", "run", name, "--image="+image, "--restart=Never", "--command", "--", "sh", "-c", script); err != nil {
 			t.Fatal(err)
 		}

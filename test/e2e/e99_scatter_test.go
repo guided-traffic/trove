@@ -13,7 +13,7 @@ import (
 
 // TestE99Scatter is E0.11 and runs last, because it switches the cluster to the scatter profile:
 // three web replicas and an edge that keeps no connection to a pod, so every request is balanced
-// round robin on its own (deploy/dev/values-scatter.yaml, Traefik --serversTransport.maxIdleConnsPerHost=-1).
+// round robin on its own (deploy/dev/values-scatter.yaml, HAProxy Ingress balance-algorithm roundrobin and option http-server-close on trove's Ingress).
 // M0's end-to-end checks must pass in it: the E0.3 checks, a load of 100 requests/s that
 // records only 200, and the proof that requests really scatter. It returns the cluster to the default
 // profile afterwards (TROVE_E2E_SCATTER_RETURN=0 keeps the profile).

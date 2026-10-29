@@ -111,7 +111,7 @@ trove/
 ├── web/                      # Angular workspace: angular.json, src/, scripts/ (build-embed, check-budget), .nvmrc
 ├── deploy/
 │   ├── helm/trove/           # the chart: templates/, values.yaml, values.schema.json, ci/ value sets
-│   └── dev/                  # the local profile: kind, CloudNativePG, Valkey, SeaweedFS, Traefik, scripts
+│   └── dev/                  # the local profile: kind, HAProxy Ingress, cert-manager, CloudNativePG, valkey-operator, internal-secrets-operator, SeaweedFS, scripts
 ├── test/
 │   ├── integration/          # build tag `integration`: area folders blob/, coordination/, postgres/, valkey/, server/
 │   ├── chart/                # build tag `chart`: render assertions and the lint script

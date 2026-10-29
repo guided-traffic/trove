@@ -9,7 +9,7 @@ require_cluster
 
 before="$(valkey_primary)" || die "no Sentinel reports a primary"
 log "primary before: $before"
-sentinel_cli trove-valkey-sentinel-0 sentinel failover trove
+sentinel_cli trove-valkey-sentinel-0 sentinel failover trove-valkey
 deadline=$(( $(date +%s) + 60 ))
 while :; do
   after="$(valkey_primary || true)"

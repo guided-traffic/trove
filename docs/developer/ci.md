@@ -44,14 +44,19 @@ test of the Linux-only steps (see [Not in place yet](#not-in-place-yet)).
 | `ci` | `chart` | `make chart-lint`, `make chart-test`; uploads `.out/test-chart.json` as `test-chart` | E0.7: the chart lints and renders as specified |
 | `ci` | `image` | `make image IMAGE=trove:ci` (no push), then the image user must be `65532:65532` | R-HA-033's non-root user; the image builds |
 | `ci` | `integration` (matrix `9.0`, `9.1`) | `make integration-up`, `make test-integration`, then `make integration-down` always; container logs on failure | E0.5 once the S3 conformance tests exist (they are under `test/integration/`), and every other integration test |
-| `ci` | `e2e` | `make image VERSION=dev`, `make dev-up`, `make e2e SET=push`; uploads `.out/test-e2e.json` (`test-e2e`), `.out/e2e/` (`e2e-artifacts`: k6 logs and summaries, pod watch, events, driver output) and, on failure, the cluster state (`e2e-cluster-state`); always `make dev-down`. Needs `chart` and `image` | E0.3, E0.4 (chart part), E0.6, E0.7, E0.11, E0.12 and the E0.14 drain on every change to `main` ([e2e.md](e2e.md)) |
+| `ci` | `e2e` | `make image VERSION=dev`, `make dev-up`, `make e2e SET=push`; uploads `.out/test-e2e.json` (`test-e2e`), `.out/e2e/` (`e2e-artifacts`: k6 logs and summaries, pod watch, events, driver output) and, on failure, the cluster state (`e2e-cluster-state`); always `make dev-down`. Needs `chart` and `image` | E0.3, E0.4 (chart part), E0.6, E0.7, E0.11, E0.12, the E0.14 drain, the E0.15 certificate rotation and the E0.16 second endpoint on every change to `main` ([e2e.md](e2e.md)) |
 | `ci` | `workflows` | actionlint at `ACTIONLINT_VERSION` over `.github/workflows/` | The workflow files themselves |
 | `nightly` | `minio` | Builds MinIO from source at `MINIO_COMMIT`, starts it, seeds the buckets, runs the conformance tests | E0.5 nightly, MinIO leg |
 | `nightly` | `e2e-failover` | the same preparation, then `make e2e SET=failover` | E0.13: PostgreSQL switchover, kill and 30 s stop, Valkey failover, kill and 60 s outage under k6 load, with E0.4 and E0.6. Nightly because it needs a runner's CPU for about 20 minutes and k6 at 100 requests/s must not share a small runner with a kind cluster in a pull request |
 | `nightly` | `aws-gate` and `aws-s3` | See [Nightly](#nightly-workflow) | E0.5 nightly, AWS leg, reported as skipped |
 
 The `e2e` job has not run on a GitHub runner either. Its design is in [e2e.md](e2e.md): it builds the release
-image, brings the dev profile up on kind and runs the suite. Measured on a laptop, `SET=push` takes about 9
+image, brings the dev profile up on kind (HAProxy Ingress, cert-manager, the Valkey operator, the
+internal-secrets-operator, CloudNativePG: all pinned in `tools/versions.env` and installed by `up.sh`) and runs the
+suite. A prep step before `make dev-up` prints the pins, checks that the runner is amd64 (the two guided-traffic
+operator images are published for amd64 only) and that the five chart repositories answer, so a missing repository
+fails in seconds and not five minutes into `dev-up`. The `e2e` job and the nightly `e2e-failover` job have the
+same prep. Measured on a laptop, `SET=push` takes about 9
 minutes and `SET=failover` about 7, each after about 5 minutes of image build and `make dev-up`. The job
 sets a 75-minute limit (90 for the nightly one) and dumps the cluster state on failure.
 
@@ -164,9 +169,11 @@ and its volumes belong to the developer running this; `make integration-down` re
    the pin, and runs `go build -trimpath` on it. The commit is the last one on `master` before MinIO
    was archived on 2026-04-25 (verified: `7aac2a2c5b7c882e68c1ce017d8256be2feea27f`, committed
    2026-02-12). I built it locally with Go 1.27.3, and the binary reports `DEVELOPMENT.GOGET`.
-2. Starts the server on `127.0.0.1:9000` with random root credentials, and runs
-   `go run ./test/integration/cmd/seed`, which creates the buckets with versioning on. I ran this
-   sequence locally: the seed reports the buckets ready.
+2. Makes the CA and the S3 server certificate with `test/integration/certs.sh` (openssl from the pinned image;
+   the SANs cover `127.0.0.1` and `localhost`), starts the server on `https://127.0.0.1:9000` with random root
+   credentials and `--certs-dir` (`public.crt`, `private.key`), checks that a plaintext request is not served
+   (INV-20), exports `TROVE_TEST_CA_FILE` and the `https` endpoint, and runs `go run ./test/integration/cmd/seed`,
+   which creates the buckets with versioning on. The leg is TLS-only like the rest of the integration tier.
 3. Runs [s3-conformance.sh](../../.github/scripts/s3-conformance.sh) with `-run Conformance` over
    `./test/integration/blob/...`. It fails when no package matches, and when no test named
    `Conformance` passed, because `go test` alone reports success for an empty match.

@@ -10,11 +10,12 @@ networking:
 nodes:
   - role: control-plane
     extraPortMappings:
-      # The Traefik Service (NodePort 30080) answers on http://localhost:8080 (base_url of
-      # values-dev.yaml). Loopback only, so the dev ingress is not exposed on the network.
-      # up.sh substitutes DEV_HTTP_PORT (TROVE_DEV_HTTP_PORT, default 8080), for hosts where
-      # 8080 is taken, and then also sets config.server.base_url to match.
-      - containerPort: 30080
+      # The edge's HTTPS NodePort (HAProxy Ingress, 30443) answers on https://localhost:8080 with the dev
+      # CA's certificate (base_url of values-dev.yaml). Loopback only, so the dev ingress is not exposed on
+      # the network. The plain NodePort 30080 is not mapped. up.sh substitutes DEV_HTTP_PORT
+      # (TROVE_DEV_HTTP_PORT, default 8080), for hosts where 8080 is taken, and then also sets
+      # config.server.base_url to match.
+      - containerPort: 30443
         hostPort: ${DEV_HTTP_PORT}
         listenAddress: 127.0.0.1
         protocol: TCP

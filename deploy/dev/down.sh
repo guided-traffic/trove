@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deletes the kind cluster "trove" and the local state (.dev/). Other kind clusters are not
+# Deletes the kind cluster "trove" and the profile's local state (.dev/logs; .dev/integration is left alone). Other kind clusters are not
 # touched.
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
@@ -11,7 +11,9 @@ if command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -qx "
 else
   log "no kind cluster '$CLUSTER'"
 fi
-if [ -d "$STATE_DIR" ]; then
-  log "removing $STATE_DIR (dev CA, certificates, logs)"
-  rm -rf "$STATE_DIR"
+# .dev/ is shared with the integration stack (.dev/integration, its certificates and env file), which
+# a dev-profile teardown must not touch: only this profile's own directories go.
+if [ -d "$STATE_DIR/logs" ]; then
+  log "removing $STATE_DIR/logs"
+  rm -rf "$STATE_DIR/logs"
 fi

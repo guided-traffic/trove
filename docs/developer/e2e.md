@@ -1,9 +1,9 @@
 # End-to-end tests on the dev cluster
 
 The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart part), E0.6, E0.7,
-E0.11, E0.12 (dev-profile parts), E0.13 and E0.14 of the [roadmap](../coverage/roadmap.md). It runs
-the real release image on the [dev profile](local-profile.md) and injects the failures of
-[R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11.
+E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md). It runs
+the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
+[R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12).
 
 ## What has to be in your head first
 
@@ -32,6 +32,8 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   e12_valkey_test.go        E0.12
   e13_failover_test.go      E0.13
   e14_drain_test.go         E0.14
+  e15_tls_test.go           E0.15: plaintext refused, the listener certificate renewed under load
+  e16_endpoint_test.go      E0.16: the second endpoint `customers`
   e99_scatter_test.go       E0.11, last because it switches the profile
   monitor_test.go           /healthz and /readyz of every replica, once a second
   k6/load.js                the load: 100 requests/s on /system/ping and /system/replicas
@@ -68,19 +70,19 @@ pod watch and the events of the drain, the logs of the drained pods, and the res
 
 | Variable | Default | Effect |
 |---|---|---|
-| `TROVE_DEV_SCHEME` | `http` | scheme of the edge for the host client and k6 |
-| `TROVE_DEV_OPS_SCHEME` | the edge's scheme | scheme of the pods' `:8081` as the API server proxy reaches it |
-| `TROVE_DEV_CA_FILE` | unset | PEM bundle that signs the edge's certificate: used by the Go client and mounted into the k6 container (`SSL_CERT_FILE`) |
-| `TROVE_E2E_K6_TARGET` | `<scheme>://trove-control-plane:30080` | what k6 requests; the NodePort of the edge on the Docker network |
-| `TROVE_E2E_K6_HOSTS_ADDR` | unset | `host:port` the edge's host name resolves to inside the k6 container (a TLS edge whose certificate names the host) |
+| `TROVE_DEV_SCHEME` | `https` | scheme of the edge for the host client and k6 |
+| `TROVE_DEV_OPS_SCHEME` | `https` | scheme of the pods' `:8081` as the API server proxy reaches it |
+| `TROVE_DEV_CA_FILE` | `.dev/pki/ca.crt` (written by `up.sh`) | PEM bundle that signs the edge's certificate: used by the Go client and mounted into the k6 container (`SSL_CERT_FILE`) |
+| `TROVE_E2E_K6_TARGET` | `https://localhost:30443` | what k6 requests: the edge's HTTPS NodePort, by the name its certificate carries |
+| `TROVE_E2E_K6_HOSTS_ADDR` | `<control-plane node address on the Docker network kind>:30443` | `host:port` that name resolves to inside the k6 container (so the certificate is verified for `localhost` while k6 reaches the node's address) |
 | `TROVE_E2E_OUT` | `.out/e2e` | artifact directory |
 | `TROVE_E2E_TIMEOUT` | `90m` | go test timeout |
 | `TROVE_E2E_DRIVER_BIN` | unset | a prebuilt linux driver binary instead of `go build` |
 | `TROVE_E2E_SCATTER_RETURN` | `1` | `0` leaves the cluster in the `scatter` profile after E0.11 |
 
-The scheme, the CA and the probe scheme are parameters so that the dev profile can move to TLS without a
-rewrite of the suite; nothing in the suite hard-codes `http`. What a TLS switch has to change is listed in
-[What a TLS switch changes](#what-a-tls-switch-changes).
+The suite runs over TLS by default: the scheme, the CA and the probe scheme are parameters (the defaults above),
+and nothing in the suite hard-codes `http`. What the move to TLS changed is listed in
+[TLS in the suite](#tls-in-the-suite).
 
 ## The driver
 
@@ -125,6 +127,8 @@ the exit criterion.
 | E0.12 | `TestE12Valkey` | `CLIENT LIST` on the primary; three new replicas started from the web template with a wrong `primary_name`, a wrong password and an unreachable Sentinel |
 | E0.13 | `TestE13Failover` | `faultRun`: k6 + driver `load` + a monitor of `/healthz` and `/readyz` of every replica run while the fault is injected: `failover.sh`, `pg-kill.sh`, `pg-stop.sh 30s`, `valkey-failover.sh`, `valkey-kill.sh`, `valkey-outage.sh 60s` |
 | E0.14 | `TestE14Drain` | see below |
+| E0.15 | `TestE15TLS` | see below |
+| E0.16 | `TestE16Endpoint` | see below |
 
 ### E0.6: the two faults
 
@@ -172,20 +176,77 @@ so the answer is the pod's own, not a Service's.
 
 The dev profile gives the worker a `terminationGracePeriodSeconds` of 60 (the chart default is 300), so a
 worker whose job outlasts the shutdown budget releases it after about 45 s and the test does not wait 5
-minutes. The edge is not part of the system under test: Traefik runs two replicas on the control-plane node, which
+minutes. The edge is not part of the system under test: HAProxy Ingress runs two replicas on the control-plane node, which
 no test drains. With one replica on a worker node, the drain reset the client connections of the evicted
-Traefik pod (25 connection errors in the first measured run).
+edge pod (25 connection errors in the first measured run, with the previous controller).
+
+### E0.15
+
+`TestE15TLS` has two subtests.
+
+1. **Plaintext is refused.** A pod of the namespace `default` sends a plaintext `GET` to `:8080` and `:8081` of a web
+   pod and to the object store (`http://trove-s3.trove.svc:9000/`). The listeners answer `400` (net/http's "Client sent
+   an HTTP request to an HTTPS server") or nothing; any `200` fails the test. (Valkey's plaintext port is 0, checked by
+   E0.12. PostgreSQL's plaintext refusal is a CloudNativePG default that this suite does not probe.)
+2. **The listener certificate is renewed under load.**
+   - Per trove pod (two web, two worker) an *ephemeral container* with the pinned openssl image
+     (`OPENSSL_IMAGE`, same user as trove, `--target=trove`) polls every 100 ms: the serial of
+     `/var/run/secrets/trove/tls/tls.crt` as the kubelet mounts it into the trove container (read through
+     `/proc/1/root`), and the serial `openssl s_client` receives from `127.0.0.1:8080` and `:8081` of that pod. It logs
+     a line with the kernel uptime whenever one of the three changes, so *file arrival* and *served* are timed by the
+     same clock inside one pod, which is what `reload_interval` bounds. (A worker serves `:8081` only.)
+   - k6 runs at 100 requests/s through the edge; after 20 s the test triggers the renewal the way `cmctl renew`
+     does: it adds the `Issuing` condition to the status of the `Certificate` `trove-tls` (a JSON patch on the status
+     subresource; `privateKey.rotationPolicy: Always` makes it a new key too).
+   - Asserted: k6 only `200` (and the rate held); on every pod the new serial is served within
+     `server.tls.reload_interval + 1 s` (2 s + 1 s from the dev values) of the file changing, on both listeners;
+     `trove_tls_reloads_total{kind="listener"}` rose and `trove_tls_reload_errors_total` did not; pod UID, restart
+     count and `process_start_time_seconds` of every pod are unchanged.
+   - The kubelet needs up to about a minute to refresh a Secret volume; that part is not bounded by trove and not
+     asserted, only logged (`everywhere_after_s`).
+
+### E0.16
+
+`TestE16Endpoint`: the second endpoint `customers` (listener `:8443`, host `packages.trove.localhost`, wildcard
+`*.packages.trove.localhost`, surface `packages`, own certificate and wildcard pair, own Ingress; see
+[local-profile.md](local-profile.md#the-second-endpoint)).
+
+- Through the edge (`TLS` to the published port, name resolution bypassed, verified against the dev CA for the real
+  name): `packages.trove.localhost` and a host under the wildcard get the endpoint's edge certificate by SNI, and
+  `localhost` the default one; `/ui/`, `/`, `/files/…`, `/api/v1/system/ping`, `/api/v1/system/replicas` and an unknown
+  `/api/v1/` path answer `404` on both hosts; the default endpoint's ping still answers `200`.
+- On the endpoint's Service, from a pod in `default` (no trusted proxy): `Host: localhost` answers `421`, also with
+  `X-Forwarded-Host: packages.trove.localhost`, and an IP literal as host answers `421`; the endpoint's own hosts
+  answer the `404` of an unknown path; the TLS listener of the pod hands out the exact pair for the exact host and the
+  wildcard pair for a host under the wildcard (serials compared with the two Secrets).
+  The `421` is tested here and not through the Ingress because HAProxy Ingress routes by `Host`: a request with the
+  default endpoint's host goes to the default backend.
+- `trove_http_requests_total` carries both `endpoint` values and `trove_endpoint_listener_up{endpoint="customers"}` is 1.
 
 ## Measured on the dev cluster
 
-Apple-silicon laptop, 20 CPUs, 17 GB for Docker, kind v0.32.0, edge on `localhost:28080`. Release image
-built from the working tree of 2026-10-29 plus the `system.probe` kind.
+Apple-silicon laptop (arm64), 20 CPUs, 16 GB for Docker, kind v0.32.0, edge on `https://localhost:28080`, the operators'
+amd64 images under qemu. Release image built from the working tree of 2026-10-29 (`make image VERSION=dev`), TLS on
+every connection.
 
 | What | Result |
 |---|---|
-| `make dev-down`, then `make dev-up` (images pulled by the new nodes, the trove image built beforehand) | 141 s (E0.3 budget: 15 min) |
-| `make e2e SET=full` | 868 s (14.5 min): E0.13 352 s, E0.14 187 s, E0.11 141 s including two profile switches, E0.12 98 s, E0.6 68 s, E0.4 8 s |
-| `SET=push` / `SET=failover` (sum of the same tests) | about 9 min / about 7 min |
+| `make dev-down`, then `make dev-up` (images pulled by the new nodes, the trove image built beforehand) | 156 s for both; `dev-up` itself 2 min 33 s (E0.3 budget: 15 min). Per task: HAProxy Ingress 57 s, PKI and secrets 64 s, Valkey operator 64 s, PostgreSQL, Valkey and SeaweedFS 2 min 22 s |
+| `make e2e SET=push` | 561 s: E0.14 171 s, E0.15 107 s, E0.12 98 s, E0.11 87 s, E0.6 68 s, E0.7 11 s, E0.4 9 s, E0.16 5 s |
+| `make e2e SET=failover` | 453 s: E0.13 364 s, E0.6 68 s, E0.4 9 s |
+| E0.15, certificate renewal under load (10 K requests) | k6 only `200` (9694 requests, 0 dropped); cert-manager issued 0.1 s after the trigger; on the four pods the new certificate was served 0.0 to 1.8 s after the mounted file changed (bound 3 s); the kubelet needed up to 65 s to refresh the Secret volume of the last pod; `trove_tls_reloads_total` +2 on a web pod (client and ops listener), +1 on a worker; reload errors 0; no restart, process start time unchanged |
+| E0.14, drain of `trove-worker2` | k6 16994 requests, only `200`, 0 dropped; drain 46.5 s; 2 jobs moved to the other worker, all `succeeded` with `attempt` 1 |
+| E0.13, PostgreSQL switchover | 4890 requests, only `200`, 0 dropped, slowest request 9.5 s (held in the retry) |
+| E0.13, PostgreSQL primary force-deleted | 6290 requests, only `200`, 0 dropped, slowest 17.9 s |
+| E0.13, PostgreSQL stopped 30 s | 6991 requests, `200` 6145 and `503` 846 (503 only), 0 dropped; `/readyz` 503 on 10 to 15 one-second samples per pod; `/healthz` never; no restart |
+| E0.13, Valkey failover / kill / outage 60 s | only `200` (3391 / 4294 / 10495 requests), slowest request 21 ms, `/readyz` 200 on every replica throughout; the faults took 2 s / 10 s / 72 s |
+| E0.11 scatter | 60 sequential requests reached the three web replicas 20 times each; 100 requests/s through the edge, only `200` |
+
+The k6 load pre-allocates 2000 virtual users. A request that the server holds while it retries the database occupies
+one for up to `database.retry.max_elapsed`, and a user started on demand is slow (with TLS it includes a handshake),
+so with the earlier 100 pre-allocated users k6 dropped 177 to 540 iterations in the PostgreSQL cases and
+`only200` rightly failed on "the load fell behind its rate". The check is unchanged; the load generator now holds
+its rate.
 
 The measured numbers of each criterion are in the files under `.out/e2e/` after a run and in the test
 log. The tests print them with `t.Logf`.
@@ -193,9 +254,8 @@ log. The tests print them with `t.Logf`.
 ## Findings of the suite
 
 What the suite found in the product, and what fixed each. Every one has a regression test that fails without the
-fix. The numbers stay, because commits and test output refer to them. The suite has not been re-run on the kind
-profile since the fixes; the first `make e2e SET=failover` and `SET=drain` after them is what confirms the
-measurements below no longer occur.
+fix. The numbers stay, because commits and test output refer to them. The suite was re-run on the kind
+profile after the fixes (`SET=push` and `SET=failover`, above): the measurements below no longer occur.
 
 1. **Fixed: `GET /api/v1/system/replicas` was not retried and answered 500 during a PostgreSQL failover**
    (`TestE13Failover`, switchover, primary kill and stop). `replicaSource.Replicas`
@@ -243,24 +303,26 @@ measurements below no longer occur.
    in [internal/app/version_check_test.go](../../internal/app/version_check_test.go)): the message names the version
    and the way out. CI and this page still pass `VERSION=dev`, which is now the default and no longer needed.
 
-## What a TLS switch changes
+## TLS in the suite
 
-The suite takes the scheme, the CA and the probe scheme from the environment ([Running it](#running-it)).
-When trove's listeners and the edge's backend connection move to TLS:
+The suite and the profile are TLS on every connection ([local-profile.md](local-profile.md)). What that meant for the
+harness:
 
-- `deploy/dev/e2e.sh` runs with `TROVE_DEV_SCHEME=https`, `TROVE_DEV_CA_FILE=<dev CA>` and, when the
-  certificate names `localhost` while k6 reaches the node by name, `TROVE_E2E_K6_HOSTS_ADDR` and
-  `TROVE_E2E_K6_TARGET=https://localhost:<port>`. The edge URL for the host stays `localhost:<port>`.
-- `TROVE_DEV_OPS_SCHEME=https` makes the API-server proxy address `https:<pod>:8081`. That proxy does
-  not verify the pod's certificate; a test that must check the certificate has to connect differently.
-- `test/e2e/e03_cluster_test.go` (`TestE07NetworkPolicy`) uses `wget` over plain HTTP against the pod IP.
-  It needs `https://` and the CA, or `--no-check-certificate`, and a `wget` that does TLS (the Valkey
-  image's busybox does).
-- `test/e2e/e12_valkey_test.go` clones the web pod; the clones inherit whatever TLS volumes the web
-  Deployment has.
-- `deploy/dev/up.sh` / `values-dev.yaml`: the Ingress backend scheme, `config.server.base_url` and
-  `probeCIDRs` stay as they are.
-- `pg-stop.sh`, `pg-kill.sh` and the Valkey scripts do not depend on the scheme.
+- `deploy/dev/e2e.sh` defaults to `TROVE_DEV_SCHEME=https`, `TROVE_DEV_OPS_SCHEME=https` and
+  `TROVE_DEV_CA_FILE=.dev/pki/ca.crt`. k6 requests `https://localhost:30443` (the edge's HTTPS NodePort; the
+  certificate names `localhost`) and resolves that name to the control-plane node's address on the Docker network
+  (`TROVE_E2E_K6_HOSTS_ADDR`); the CA is mounted into the k6 container as `SSL_CERT_FILE`. The edge URL for the host
+  stays `https://localhost:<port>`.
+- The API-server proxy to `:8081` is addressed as `https:<pod>:8081`; it does not verify the pod's certificate. The
+  checks that matter for the certificate (E0.15, E0.16) connect differently, as described above.
+- `TestE07NetworkPolicy` completes a TLS handshake with `openssl s_client` from a pod in `default` and reads the status
+  line; the `Host` is the default endpoint's (`localhost`), because the chart gives the default endpoint a host check
+  once a further endpoint exists.
+- `TestE12Valkey` uses the Valkey operator's names: port 16379, password from `$VALKEY_PASSWORD` in the pod, user
+  `default`. The wrong-password case creates a Secret with a `password` key only, because the profile's chart values
+  use the `default` user.
+- The Valkey outage cannot scale the StatefulSets alone (the operator restores them), see
+  [local-profile.md](local-profile.md#valkey-and-sentinel).
 
 ## Extension checklist
 

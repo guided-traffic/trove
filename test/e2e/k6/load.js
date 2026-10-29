@@ -28,8 +28,8 @@ export const options = {
       rate: Number(__ENV.RATE || 100),
       timeUnit: '1s',
       duration: __ENV.DURATION || '60s',
-      preAllocatedVUs: 100,
-      maxVUs: 4000,  // a request held for retry.max_elapsed (30 s) occupies a VU: 100/s x 30 s
+      preAllocatedVUs: 2000,  // a request that the server holds while it retries the database occupies a VU; a VU started on demand is slow (TLS handshake included) and k6 would drop iterations, so the worst case is allocated up front: 50 requests/s held for retry.max_elapsed (30 s) is 1500 VUs
+      maxVUs: 4500,  // a request held for retry.max_elapsed (30 s) occupies a VU: 100/s x 30 s
       gracefulStop: '30s',
     },
   },

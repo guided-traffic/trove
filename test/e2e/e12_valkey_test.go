@@ -13,13 +13,13 @@ import (
 	"time"
 )
 
-// valkeyCLI runs valkey-cli as the admin user inside a Valkey pod, over TLS. The password is read
-// in the pod from the mounted Secret.
+// valkeyCLI runs valkey-cli as the default user inside a Valkey pod, over TLS (port 16379). The password
+// is read in the pod from the environment the Valkey operator sets from the Secret.
 func valkeyCLI(t testing.TB, podName string, args ...string) string {
 	t.Helper()
 	cmd := append([]string{
 		"-n", cfg.namespace, "exec", podName, "-c", "valkey", "--", "sh", "-c",
-		`exec valkey-cli --tls --cacert /tls/ca.crt -h 127.0.0.1 -p 6379 --no-auth-warning -a "$(cat /secrets/admin/password)" "$@"`, "sh",
+		`exec valkey-cli --tls --cacert /tls/ca.crt -h 127.0.0.1 -p 16379 --no-auth-warning -a "$VALKEY_PASSWORD" "$@"`, "sh",
 	}, args...)
 	out, err := kubectl(cmd...)
 	if err != nil {
@@ -109,10 +109,11 @@ func checkClientList(t *testing.T) {
 			t.Errorf("%s holds %d connections, at most 6 allowed (R-ARCH-031)", pod, n)
 		}
 	}
-	// A plaintext connection never gets an answer: the server has no plaintext port.
-	out, _ := kubectl("-n", cfg.namespace, "exec", primary, "-c", "valkey", "--", "sh", "-c", "valkey-cli -h 127.0.0.1 -p 6379 ping 2>&1 | head -1")
+	// A plaintext connection never gets an answer: the server has no plaintext port (port 0), and the TLS port
+	// refuses a client that does not speak TLS.
+	out, _ := kubectl("-n", cfg.namespace, "exec", primary, "-c", "valkey", "--", "sh", "-c", "valkey-cli -h 127.0.0.1 -p 16379 ping 2>&1 | head -1")
 	if strings.TrimSpace(out) == "PONG" {
-		t.Errorf("plaintext PING was answered on port 6379")
+		t.Errorf("plaintext PING was answered on the TLS port 16379")
 	}
 }
 
@@ -126,7 +127,7 @@ func TestE12Valkey(t *testing.T) {
 
 	t.Run("R-HA-056 Q-HA-13 E0.12 a new replica with a wrong password stays not ready and logs the cause", func(t *testing.T) {
 		kn(t, "delete", "secret", "trove-e2e-valkey-wrong", "--ignore-not-found")
-		kn(t, "create", "secret", "generic", "trove-e2e-valkey-wrong", "--from-literal=username=trove", "--from-literal=password=not-the-password")
+		kn(t, "create", "secret", "generic", "trove-e2e-valkey-wrong", "--from-literal=password=not-the-password")
 		t.Cleanup(func() { _, _ = kubectl("-n", cfg.namespace, "delete", "secret", "trove-e2e-valkey-wrong") })
 		clonedReplica(t, "trove-e2e-wrong-password", func(spec map[string]any) {
 			for _, v := range spec["volumes"].([]any) {
@@ -141,7 +142,7 @@ func TestE12Valkey(t *testing.T) {
 
 	t.Run("R-HA-056 Q-HA-13 E0.12 with every Sentinel unreachable at its first start a new replica becomes ready, degraded valkey", func(t *testing.T) {
 		clonedReplica(t, "trove-e2e-no-sentinel", func(spec map[string]any) {
-			addEnv(spec, "TROVE_VALKEY_SENTINEL_ADDRESSES", `["127.0.0.1:26379"]`)
+			addEnv(spec, "TROVE_VALKEY_SENTINEL_ADDRESSES", `["127.0.0.1:36379"]`)
 		})
 		var body string
 		took := waitFor(t, "the replica to become ready", 3*time.Minute, 2*time.Second, func() bool {

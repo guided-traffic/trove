@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end tests of the dev cluster (WP0.11): E0.3, E0.4, E0.6, E0.7, E0.11, E0.12, E0.13, E0.14.
+# End-to-end tests of the dev cluster (WP0.11): E0.3, E0.4, E0.6, E0.7, E0.11, E0.12, E0.13, E0.14, E0.15.
 # The trove release must be installed (make dev-up). The suite is Go (test/e2e, build tag e2e); this
 # script prepares what it needs and runs it:
 #
@@ -11,7 +11,7 @@
 #      artifacts (k6 logs and summaries, pod watch, events, driver output) to .out/e2e/.
 #
 #   e2e.sh              every test except the profile switch of E0.11 (the default profile)
-#   e2e.sh push         the set CI runs on every change to main: E0.3, E0.4, E0.6, E0.7, E0.12, E0.14 and then E0.11
+#   e2e.sh push         the set CI runs on every change to main: E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, E0.15 and then E0.11
 #   e2e.sh full         everything, in the order of the milestone, ending with E0.11
 #   e2e.sh failover     E0.4, E0.6 and the E0.13 failover set (CI runs it nightly)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
@@ -29,15 +29,15 @@ for tool in docker jq go helm kubectl; do command -v "$tool" >/dev/null 2>&1 || 
 
 set_name="${1:-default}"
 case "$set_name" in
-  default) run='^Test(E03|E04|E06|E07|E12|E13|E14)' ;;
-  push) run='^Test(E03|E04|E06|E07|E12|E14|E99)' ;;
-  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E99)' ;;
+  default) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16)' ;;
+  push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E99)' ;;
+  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E99)' ;;
   failover) run='^Test(E04|E06|E13)' ;;
   drain) run='^TestE14' ;;
   *) run="$set_name" ;;
 esac
 
-EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30080/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
+EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
 EDGE_PORT="${EDGE_PORT:-$DEV_HTTP_PORT}"
 OUT="${TROVE_E2E_OUT:-$REPO_ROOT/.out/e2e}"
 mkdir -p "$OUT" "$REPO_ROOT/.out"
@@ -87,18 +87,34 @@ kn get deployment trove-worker -o json | jq --arg image "$DRIVER_IMAGE" --arg ns
 kn wait --for=condition=Ready pod/trove-e2e-driver --timeout=120s >/dev/null || { kn describe pod trove-e2e-driver >&2; die "the driver pod did not become ready"; }
 
 # ── the tests ────────────────────────────────────────────────────────────────
-# The edge scheme and the CA are parameters, so the run after the dev profile moves to TLS needs no
-# rewrite: TROVE_DEV_SCHEME (http|https), TROVE_DEV_OPS_SCHEME (the scheme of the pods' :8081, default
-# the edge's), TROVE_DEV_CA_FILE (a PEM bundle that signs the edge's certificate), TROVE_E2E_K6_TARGET
-# (default <scheme>://<control-plane>:30080, the edge's NodePort on the kind Docker network),
-# TROVE_E2E_K6_HOSTS_ADDR (host:port the edge's name resolves to inside the k6 container).
-SCHEME="${TROVE_DEV_SCHEME:-http}"
-OPS_SCHEME="${TROVE_DEV_OPS_SCHEME:-$SCHEME}"
+# The whole path is TLS (R-ARCH-035): the edge serves the dev CA's certificate for localhost, and the
+# pods' :8081 is HTTPS too. The scheme and the CA stay parameters: TROVE_DEV_SCHEME (https|http),
+# TROVE_DEV_OPS_SCHEME (the scheme of the pods' :8081, default https), TROVE_DEV_CA_FILE (a PEM bundle that
+# signs the edge's certificate, default .dev/pki/ca.crt written by up.sh), TROVE_E2E_K6_TARGET (default
+# https://localhost:30443, the edge's HTTPS NodePort; the name must be one the certificate carries) and
+# TROVE_E2E_K6_HOSTS_ADDR (host:port that name resolves to inside the k6 container, default the control-plane
+# node's address on the Docker network `kind`).
+SCHEME="${TROVE_DEV_SCHEME:-https}"
+OPS_SCHEME="${TROVE_DEV_OPS_SCHEME:-https}"
+CA_FILE="${TROVE_DEV_CA_FILE:-}"
+if [ "$SCHEME" = "https" ] || [ "$OPS_SCHEME" = "https" ]; then
+  CA_FILE="${CA_FILE:-$STATE_DIR/pki/ca.crt}"
+  [ -s "$CA_FILE" ] || die "the dev CA $CA_FILE is missing; run make dev-up"
+fi
+if [ "$SCHEME" = "https" ]; then
+  node_ip="$(docker inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "${CLUSTER}-control-plane")"
+  K6_TARGET="${TROVE_E2E_K6_TARGET:-https://localhost:30443}"
+  K6_HOSTS_ADDR="${TROVE_E2E_K6_HOSTS_ADDR:-$node_ip:30443}"
+else
+  K6_TARGET="${TROVE_E2E_K6_TARGET:-http://${CLUSTER}-control-plane:30080}"
+  K6_HOSTS_ADDR="${TROVE_E2E_K6_HOSTS_ADDR:-}"
+fi
 export TROVE_E2E_REPO="$REPO_ROOT" TROVE_E2E_CONTEXT="$CTX" TROVE_E2E_NAMESPACE="$NS" \
-  TROVE_E2E_EDGE_URL="$SCHEME://localhost:$EDGE_PORT" TROVE_E2E_K6_TARGET="${TROVE_E2E_K6_TARGET:-$SCHEME://${CLUSTER}-control-plane:30080}" \
+  TROVE_E2E_EDGE_URL="$SCHEME://localhost:$EDGE_PORT" TROVE_E2E_K6_TARGET="$K6_TARGET" \
   TROVE_E2E_K6_IMAGE="$K6_IMAGE" TROVE_E2E_OUT="$OUT" \
-  TROVE_E2E_OPS_SCHEME="$OPS_SCHEME" TROVE_E2E_CA_FILE="${TROVE_DEV_CA_FILE:-}" TROVE_E2E_K6_HOSTS_ADDR="${TROVE_E2E_K6_HOSTS_ADDR:-}" \
-  TROVE_E2E_PROBE_IMAGE="$DEV_VALKEY_IMAGE" TROVE_E2E_DEV_DIR="$DEV_DIR" TROVE_E2E_SCATTER_RETURN="${TROVE_E2E_SCATTER_RETURN:-1}" TROVE_DEV_HTTP_PORT="$EDGE_PORT"
+  TROVE_E2E_OPS_SCHEME="$OPS_SCHEME" TROVE_E2E_CA_FILE="$CA_FILE" TROVE_E2E_K6_HOSTS_ADDR="$K6_HOSTS_ADDR" \
+  TROVE_E2E_OPENSSL_IMAGE="$OPENSSL_IMAGE" \
+  TROVE_E2E_DEV_DIR="$DEV_DIR" TROVE_E2E_SCATTER_RETURN="${TROVE_E2E_SCATTER_RETURN:-1}" TROVE_DEV_HTTP_PORT="$EDGE_PORT"
 
 log "go test -tags e2e -run '$run' (report: .out/test-e2e.json, artifacts: $OUT)"
 cd "$REPO_ROOT"
@@ -109,4 +125,7 @@ if ! go test -count=1 -tags e2e -timeout "${TROVE_E2E_TIMEOUT:-90m}" -json -run 
   log "e2e FAILED (report: .out/test-e2e.json, artifacts: $OUT)"
   exit 1
 fi
-log "e2e passed"
+# A -run expression that matches nothing is a pass for `go test`; for this suite it is a mistake.
+ran="$(jq -s '[.[] | select(.Action == "pass" and .Test != null)] | length' "$REPO_ROOT/.out/test-e2e.json")"
+[ "$ran" -gt 0 ] || { log "e2e FAILED: the expression '$run' matched no test"; exit 1; }
+log "e2e passed ($ran tests and subtests)"

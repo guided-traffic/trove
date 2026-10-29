@@ -1,0 +1,191 @@
+# The dev PKI (R-ARCH-035, R-HA-063): one self-signed root and the Issuer trove-dev-ca that signs every
+# certificate of the profile. cert-manager issues, renews and re-issues them; nothing is made by hand.
+#
+#   trove-dev-ca        the root (Secret trove-dev-ca; ca.crt is what a client trusts, see local-profile.md)
+#   trove-tls           trove's own listeners (:8080, :8081), Secret trove-tls; chart tls.secretName and
+#                       ingress.backendTLS.caSecret. HAProxy Ingress verifies this certificate for the name
+#                       trove.trove.svc.
+#   trove-edge-tls      the edge's certificate for clients on the host (https://localhost:<port>)
+#   trove-s3-tls        the SeaweedFS S3 endpoint (https://trove-s3.trove.svc:9000)
+#   trove-customers-tls            the endpoint `customers` (values-dev.yaml endpoints.customers): its exact host and
+#                                  the Service name the edge verifies, trove-ep-customers.<ns>.svc
+#   trove-customers-wildcard-tls   the endpoint's wildcard pair (extraSecrets), chosen by SNI
+#   trove-customers-edge-tls       the edge's certificate for the endpoint's host and its wildcard
+#   <name>-tls          the Valkey operator's own Certificate for the Valkey CR (valkey.yaml, one for both tiers)
+#
+# The Issuer is namespaced in the release namespace, so a namespace other than `trove` needs the names below
+# to follow (kubectl apply of this file goes to -n $NS).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: trove-dev-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-dev-ca
+spec:
+  isCA: true
+  commonName: trove dev CA
+  secretName: trove-dev-ca
+  duration: 87600h          # ten years: the root outlives every cluster built from it
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: trove-dev-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: trove-dev-ca
+spec:
+  ca:
+    secretName: trove-dev-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-tls
+spec:
+  secretName: trove-tls
+  commonName: trove
+  duration: 2160h           # 90 days
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always  # a renewal changes the key as well, so the e2e rotation drill is a real one
+  usages: [digital signature, key encipherment, server auth, client auth]
+  dnsNames:
+    - trove
+    - trove.${NS}
+    - trove.${NS}.svc
+    - trove.${NS}.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-edge-tls
+spec:
+  secretName: trove-edge-tls
+  commonName: localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+    - ::1
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-s3-tls
+spec:
+  secretName: trove-s3-tls
+  commonName: trove-s3
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - trove-s3
+    - trove-s3.${NS}
+    - trove-s3.${NS}.svc
+    - trove-s3.${NS}.svc.cluster.local
+    - localhost
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-customers-tls
+spec:
+  secretName: trove-customers-tls
+  commonName: packages.trove.localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - packages.trove.localhost
+    - trove-ep-customers
+    - trove-ep-customers.${NS}
+    - trove-ep-customers.${NS}.svc
+    - trove-ep-customers.${NS}.svc.cluster.local
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-customers-wildcard-tls
+spec:
+  secretName: trove-customers-wildcard-tls
+  commonName: "*.packages.trove.localhost"
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - "*.packages.trove.localhost"
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-customers-edge-tls
+spec:
+  secretName: trove-customers-edge-tls
+  commonName: packages.trove.localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - packages.trove.localhost
+    - "*.packages.trove.localhost"
+  ipAddresses:
+    - 127.0.0.1
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io

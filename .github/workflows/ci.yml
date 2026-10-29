@@ -365,7 +365,7 @@ jobs:
         run: make integration-down
 
   e2e:
-    name: e2e on kind (E0.3, E0.7, E0.11 to E0.14)
+    name: e2e on kind (E0.3, E0.7, E0.11 to E0.16)
     runs-on: ubuntu-24.04
     needs: [chart, image]
     timeout-minutes: 75
@@ -410,6 +410,20 @@ jobs:
           jq --version
           nproc
           free -g
+      - name: The dev profile's dependency pins and the runner architecture
+        run: |
+          set -euo pipefail
+          # The Valkey operator and the internal-secrets-operator images are published for linux/amd64
+          # only (tools/versions.env); the hosted runner is amd64, so no emulation is needed here.
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "HAProxy Ingress chart $DEV_HAPROXY_INGRESS_CHART_VERSION, image $DEV_HAPROXY_INGRESS_IMAGE"
+          echo "cert-manager chart $DEV_CERT_MANAGER_CHART_VERSION (images pinned by digest)"
+          echo "valkey-operator chart $DEV_VALKEY_OPERATOR_CHART_VERSION, internal-secrets-operator chart $DEV_ISO_CHART_VERSION"
+          echo "CloudNativePG chart $CNPG_CHART_VERSION"
+          # up.sh installs the charts from these repositories; fail early, not 5 minutes into make dev-up.
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
       - name: make image
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
       - name: make dev-up
@@ -440,7 +454,7 @@ jobs:
           set -u
           mkdir -p .out/cluster-state
           kubectl config get-contexts || true
-          for ns in trove traefik cnpg-system kube-system; do
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
             kubectl --context kind-trove -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
             kubectl --context kind-trove -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
             kubectl --context kind-trove -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true

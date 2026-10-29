@@ -5,6 +5,8 @@
 # Two outcomes are both correct, and the script says which one happened:
 #   moved               the pod stayed away longer than down-after-milliseconds (5 s); the
 #                       Sentinels promoted the replica and the old primary rejoined as replica.
+#                       The Valkey operator owns the StatefulSets and keeps the pods; nothing here
+#                       talks to it.
 #   restarted in place  the StatefulSet recreated the pod within 5 s, before any Sentinel
 #                       declared it down. It came back empty and its replica resynchronised to
 #                       an empty data set, which costs cache warmth only (R-HA-056, INV-3).
