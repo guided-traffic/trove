@@ -16,9 +16,32 @@ metadata:
     {{- with .Values.ingress.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- if or .Values.ingress.annotations .Values.commonAnnotations }}
+  {{- $ann := merge (dict) .Values.ingress.annotations .Values.commonAnnotations }}
+  {{- /* Backend over TLS (R-HA-063): the controller-specific settings, only for the controller named. */}}
+  {{- if and .Values.tls.enabled (eq .Values.ingress.backendTLS.controller "haproxy") }}
+  {{- /* haproxy-ingress backend-scope keys (https://haproxy-ingress.github.io/docs/configuration/keys/), default prefix haproxy-ingress.github.io. */}}
+  {{- $hp := "haproxy-ingress.github.io/" }}
+  {{- $_ := set $ann (print $hp "secure-backends") "true" }}
+  {{- with (ternary .Values.ingress.backendTLS.caSecret "" .Values.ingress.backendTLS.verify) }}
+  {{- $_ := set $ann (print $hp "secure-verify-ca-secret") . }}
+  {{- $_ := set $ann (print $hp "secure-sni") (printf "%s.%s.svc" (include "trove.fullname" $) $.Release.Namespace) }}
+  {{- end }}
+  {{- with .Values.ingress.backendTLS.clientCertSecret }}
+  {{- $_ := set $ann (print $hp "secure-crt-secret") . }}
+  {{- end }}
+  {{- end }}
+  {{- if and .Values.tls.enabled (eq .Values.ingress.backendTLS.controller "ingress-nginx") }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/backend-protocol" "HTTPS" }}
+  {{- with (ternary .Values.ingress.backendTLS.caSecret "" .Values.ingress.backendTLS.verify) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-verify" "on" }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-secret" (printf "%s/%s" $.Release.Namespace .) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-name" (printf "%s.%s.svc" (include "trove.fullname" $) $.Release.Namespace) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-server-name" "on" }}
+  {{- end }}
+  {{- end }}
+  {{- if $ann }}
   annotations:
-    {{- toYaml (merge (dict) .Values.ingress.annotations .Values.commonAnnotations) | nindent 4 }}
+    {{- toYaml $ann | nindent 4 }}
   {{- end }}
 spec:
   {{- with .Values.ingress.className }}

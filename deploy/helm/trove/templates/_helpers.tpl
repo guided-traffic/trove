@@ -202,5 +202,35 @@ keys win; setting one inside config is refused by trove.validate.
 {{- end -}}
 {{- $_ := set $managed "secrets" (dict "encryption_key_files" $files "active_key_id" (first $keys | trimSuffix ".key")) -}}
 {{- end -}}
+{{- /*
+TLS (R-HA-063): server.tls for the client listener and, when the ops listener must not carry the
+client-certificate requirement or has its own Secret, an explicit server.ops_tls block. Without either,
+server.ops_tls keeps its default (inherit: true). Probes and scrapers present no client certificate,
+which is why a client CA on :8080 never extends to :8081.
+*/ -}}
+{{- if .Values.tls.enabled -}}
+{{- $t := .Values.tls -}}
+{{- $block := dict "min_version" $t.minVersion "reload_interval" $t.reloadInterval -}}
+{{- $main := list (dict "cert_file" "/var/run/secrets/trove/tls/tls.crt" "key_file" "/var/run/secrets/trove/tls/tls.key") -}}
+{{- $srv := deepCopy $block -}}
+{{- $_ := set $srv "certificates" $main -}}
+{{- if $t.clientCA.secretName -}}
+{{- $_ := set $srv "client_ca_file" "/var/run/secrets/trove/tls-client-ca/ca.crt" -}}
+{{- $_ := set $srv "client_auth" $t.clientCA.auth -}}
+{{- end -}}
+{{- $server := dict "tls" $srv -}}
+{{- if $t.ops.secretName -}}
+{{- $ops := deepCopy $block -}}
+{{- $_ := set $ops "inherit" false -}}
+{{- $_ := set $ops "certificates" (list (dict "cert_file" "/var/run/secrets/trove/tls-ops/tls.crt" "key_file" "/var/run/secrets/trove/tls-ops/tls.key")) -}}
+{{- $_ := set $server "ops_tls" $ops -}}
+{{- else if $t.clientCA.secretName -}}
+{{- $ops := deepCopy $block -}}
+{{- $_ := set $ops "inherit" false -}}
+{{- $_ := set $ops "certificates" $main -}}
+{{- $_ := set $server "ops_tls" $ops -}}
+{{- end -}}
+{{- $_ := set $managed "server" $server -}}
+{{- end -}}
 {{- $managed | mergeOverwrite (deepCopy .Values.config) | toYaml -}}
 {{- end -}}

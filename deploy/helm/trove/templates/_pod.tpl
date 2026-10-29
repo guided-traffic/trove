@@ -14,6 +14,9 @@ The pod pieces web and worker share. Argument: dict "root" . "role" "web".
   httpGet:
     path: {{ $p.path }}
     port: ops
+    {{- if $.Values.tls.enabled }}
+    scheme: HTTPS
+    {{- end }}
   periodSeconds: {{ $p.periodSeconds }}
   timeoutSeconds: {{ $p.timeoutSeconds }}
   failureThreshold: {{ $p.failureThreshold }}

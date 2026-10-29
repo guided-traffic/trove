@@ -1,0 +1,29 @@
+{{- if and .Values.tls.enabled .Values.tls.backendTLSPolicy.enabled }}
+{{- /*
+How a Gateway API implementation verifies trove (R-HA-063). The policy targets the client
+Service port http. The CA reference is a ConfigMap: Gateway API takes no Secret here. The chart
+creates neither the ConfigMap nor the CRD.
+*/ -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ include "trove.fullname" . }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "web") | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ include "trove.fullname" . }}
+      sectionName: http
+  validation:
+    hostname: {{ default (printf "%s.%s.svc" (include "trove.fullname" .) .Release.Namespace) .Values.tls.backendTLSPolicy.hostname | quote }}
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: {{ .Values.tls.backendTLSPolicy.caConfigMapName }}
+{{- end }}

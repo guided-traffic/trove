@@ -52,6 +52,17 @@ Secrets never become environment variables.
 {{- if eq (dig "metrics" "auth" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "metrics" "secret" $s.metricsToken.existingSecret "path" "/var/run/secrets/trove/metrics" "items" (list (dict "key" $s.metricsToken.key "path" "token"))) -}}
 {{- end -}}
+{{- /* TLS material of the listeners (R-HA-063): only the pods whose process serves them; the Job serves no listener. */ -}}
+{{- $t := .root.Values.tls -}}
+{{- if $t.enabled -}}
+{{- $out = append $out (dict "name" "tls" "secret" $t.secretName "path" "/var/run/secrets/trove/tls" "items" (list (dict "key" $t.certKey "path" "tls.crt") (dict "key" $t.keyKey "path" "tls.key"))) -}}
+{{- if $t.clientCA.secretName -}}
+{{- $out = append $out (dict "name" "tls-client-ca" "secret" $t.clientCA.secretName "path" "/var/run/secrets/trove/tls-client-ca" "items" (list (dict "key" $t.clientCA.key "path" "ca.crt"))) -}}
+{{- end -}}
+{{- if $t.ops.secretName -}}
+{{- $out = append $out (dict "name" "tls-ops" "secret" $t.ops.secretName "path" "/var/run/secrets/trove/tls-ops" "items" (list (dict "key" $t.ops.certKey "path" "tls.crt") (dict "key" $t.ops.keyKey "path" "tls.key"))) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- toYaml $out -}}
 {{- end -}}

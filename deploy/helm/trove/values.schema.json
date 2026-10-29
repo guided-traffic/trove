@@ -1104,6 +1104,33 @@
           "items": {
             "type": "object"
           }
+        },
+        "backendTLS": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "controller": {
+              "type": "string",
+              "enum": [
+                "haproxy",
+                "traefik",
+                "ingress-nginx",
+                "manual"
+              ]
+            },
+            "caSecret": {
+              "type": "string"
+            },
+            "serversTransport": {
+              "type": "string"
+            },
+            "clientCertSecret": {
+              "type": "string"
+            },
+            "verify": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -1243,6 +1270,90 @@
         }
       },
       "additionalProperties": false
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "secretName": {
+          "type": "string"
+        },
+        "certKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minVersion": {
+          "type": "string",
+          "enum": [
+            "1.2",
+            "1.3"
+          ]
+        },
+        "reloadInterval": {
+          "type": "string",
+          "pattern": "^([0-9]+h)?([0-9]+m)?([0-9]+s)?$",
+          "minLength": 2
+        },
+        "clientCA": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "auth": {
+              "type": "string",
+              "enum": [
+                "require",
+                "verify_if_given"
+              ]
+            }
+          }
+        },
+        "ops": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string"
+            },
+            "certKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "keyKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "backendTLSPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "caConfigMapName": {
+              "type": "string"
+            },
+            "hostname": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -2,7 +2,7 @@
 
 // Package chart_test renders deploy/helm/trove with the helm binary and asserts the chart
 // requirements of docs/spec/ha-and-helm.md (R-HA-002, R-HA-011, R-HA-019, R-HA-027 to R-HA-037,
-// R-HA-056, R-HA-061) and the exit criterion E0.7 of the roadmap. It needs helm at the version
+// R-HA-056, R-HA-061, R-HA-063) and the exit criterion E0.7 of the roadmap. It needs helm at the version
 // pinned in tools/versions.env, and nothing else: no cluster.
 //
 // Run it with `make chart-test` or `go test -tags chart ./test/chart/...`.
@@ -1115,7 +1115,7 @@ func TestChart(t *testing.T) {
 
 	t.Run("R-HA-037 ingress.path fails schema validation and names path", func(t *testing.T) {
 		renderFails(t, required(), []string{"ingress.enabled=true", "ingress.path=/trove"}, "path")
-		_, docs := render(t, required(), "ingress.enabled=true", "ingress.className=traefik")
+		_, docs := render(t, required(), "ingress.enabled=true", "ingress.className=traefik", "ingress.backendTLS.caSecret=trove-tls")
 		ing := ofKind(docs, "Ingress")
 		if len(ing) != 1 {
 			t.Fatalf("%d Ingress objects, want 1", len(ing))

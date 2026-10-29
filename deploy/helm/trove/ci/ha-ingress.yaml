@@ -60,9 +60,20 @@ spool:
     storageClassName: standard                     # example
     size: 50Gi
     accessModes: [ReadWriteOnce]
+tls:
+  secretName: trove-tls                            # example: a cert-manager Certificate's secret (tls.crt, tls.key, ca.crt)
+  minVersion: "1.3"                                # example
+  clientCA:
+    secretName: trove-edge-ca                      # example: mutual TLS from the edge
+  ops:
+    secretName: trove-ops-tls                      # example: separate certificate for the operations listener
 ingress:
   enabled: true
-  className: traefik                               # example
+  className: haproxy                               # example
+  backendTLS:
+    controller: haproxy                            # example: HAProxy Ingress connects with HTTPS and verifies trove
+    caSecret: trove-tls                            # example: the cert-manager Secret carries ca.crt
+    clientCertSecret: trove-edge-client            # example: client certificate for the mutual TLS of tls.clientCA
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt    # example
   tls:

@@ -16,6 +16,8 @@ config:
         - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
         - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
       primary_name: trove                          # example
+tls:
+  secretName: trove-tls                            # example: the one value TLS needs (tls.enabled defaults to true)
 secrets:
   database:
     existingSecret: trove-db-app                   # example

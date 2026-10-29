@@ -33,6 +33,8 @@ config:
     tls:
       mode: disable
     allow_insecure: true
+tls:
+  enabled: false                                   # plain HTTP inside the development cluster (H-38)
 secrets:
   database:
     existingSecret: postgres                       # example

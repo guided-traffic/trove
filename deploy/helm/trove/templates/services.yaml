@@ -12,9 +12,17 @@ metadata:
     {{- with .Values.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- if or .Values.service.annotations .Values.commonAnnotations }}
+  {{- $svcAnn := merge (dict) .Values.service.annotations .Values.commonAnnotations }}
+  {{- /* Traefik reads the backend scheme and transport from the Service (R-HA-063). */}}
+  {{- if and .Values.ingress.enabled .Values.tls.enabled (eq .Values.ingress.backendTLS.controller "traefik") }}
+  {{- $_ := set $svcAnn "traefik.ingress.kubernetes.io/service.serversscheme" "https" }}
+  {{- with .Values.ingress.backendTLS.serversTransport }}
+  {{- $_ := set $svcAnn "traefik.ingress.kubernetes.io/service.serverstransport" . }}
+  {{- end }}
+  {{- end }}
+  {{- if $svcAnn }}
   annotations:
-    {{- toYaml (merge (dict) .Values.service.annotations .Values.commonAnnotations) | nindent 4 }}
+    {{- toYaml $svcAnn | nindent 4 }}
   {{- end }}
 spec:
   type: {{ .Values.service.type }}
@@ -24,6 +32,9 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: http
       protocol: TCP
+      {{- if .Values.tls.enabled }}
+      appProtocol: https
+      {{- end }}
   selector:
     {{- include "trove.selectorLabels" (dict "root" . "component" "web") | nindent 4 }}
 ---
@@ -45,6 +56,9 @@ spec:
       port: {{ .Values.service.opsPort }}
       targetPort: ops
       protocol: TCP
+      {{- if .Values.tls.enabled }}
+      appProtocol: https
+      {{- end }}
   selector:
     app.kubernetes.io/name: {{ include "trove.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}

@@ -60,8 +60,39 @@ pools) are added with those features.
 {{- fail "trove: config.metrics.auth: static needs secrets.metricsToken.existingSecret" -}}
 {{- end -}}
 
+{{- /* TLS (R-HA-063, Q-HA-32). */ -}}
+{{- $t := $v.tls -}}
+{{- if $t.enabled -}}
+{{- if not $t.secretName -}}
+{{- fail "trove: tls.secretName is required while tls.enabled is true (default); the chart never creates the Secret. Name an existing kubernetes.io/tls Secret with tls.crt and tls.key (a cert-manager Certificate's secretName, example: trove-tls), or opt out of TLS on trove's listeners with tls.enabled: false (plain HTTP inside the cluster)" -}}
+{{- end -}}
+{{- if $v.ingress.enabled -}}
+{{- $bt := $v.ingress.backendTLS -}}
+{{- if and $bt.verify (or (eq $bt.controller "haproxy") (eq $bt.controller "ingress-nginx")) (not $bt.caSecret) -}}
+{{- fail (printf "trove: ingress.backendTLS.caSecret is required for controller %s while ingress.backendTLS.verify is true: name a Secret in the release namespace with the CA as ca.crt (a cert-manager Secret carries it; example: the value of tls.secretName), or set ingress.backendTLS.verify: false to accept an unverified connection" $bt.controller) -}}
+{{- end -}}
+{{- if and $bt.verify (eq $bt.controller "traefik") (not $bt.serversTransport) -}}
+{{- fail "trove: ingress.backendTLS.serversTransport is required for controller traefik while ingress.backendTLS.verify is true (<namespace>-<name>@kubernetescrd of a ServersTransport that verifies trove), or set ingress.backendTLS.verify: false" -}}
+{{- end -}}
+{{- if and $t.clientCA.secretName (eq $bt.controller "haproxy") (not $bt.clientCertSecret) -}}
+{{- fail "trove: tls.clientCA requires ingress.backendTLS.clientCertSecret with controller haproxy: trove demands a client certificate and HAProxy Ingress needs a Secret with tls.crt and tls.key to present" -}}
+{{- end -}}
+{{- end -}}
+{{- if and $v.tls.backendTLSPolicy.enabled (not $t.backendTLSPolicy.caConfigMapName) -}}
+{{- fail "trove: tls.backendTLSPolicy.caConfigMapName is required with tls.backendTLSPolicy.enabled (a ConfigMap with the CA as ca.crt)" -}}
+{{- end -}}
+{{- else -}}
+{{- if or $t.clientCA.secretName $t.ops.secretName $t.backendTLSPolicy.enabled -}}
+{{- fail "trove: tls.clientCA, tls.ops and tls.backendTLSPolicy need tls.enabled: true" -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}
-{{- range $path := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" -}}
+{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" -}}
+{{- if $t.enabled -}}
+{{- $managedPaths = concat $managedPaths (list "server.tls" "server.ops_tls") -}}
+{{- end -}}
+{{- range $path := $managedPaths -}}
 {{- $cur := $cfg -}}
 {{- $found := true -}}
 {{- range splitList "." $path -}}
@@ -72,7 +103,7 @@ pools) are added with those features.
 {{- end -}}
 {{- end -}}
 {{- if $found -}}
-{{- fail (printf "trove: config.%s is managed by the chart and must not be set (secret file paths come from the secrets values, the spool directory is fixed)" $path) -}}
+{{- fail (printf "trove: config.%s is managed by the chart and must not be set (secret file paths come from the secrets values, TLS comes from the tls values, the spool directory is fixed)" $path) -}}
 {{- end -}}
 {{- end -}}
 

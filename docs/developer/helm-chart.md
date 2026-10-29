@@ -3,7 +3,7 @@
 The chart lives in [deploy/helm/trove](../../deploy/helm/trove). This page covers its layout, what
 it renders, how its values reach the pods, how it is validated and tested, and how to extend it.
 The requirements are in [ha-and-helm.md](../spec/ha-and-helm.md) (R-HA-002, R-HA-011, R-HA-019,
-R-HA-027 to R-HA-037, R-HA-056, R-HA-061); the dev profile that installs it is described in
+R-HA-027 to R-HA-037, R-HA-056, R-HA-061, R-HA-063); the dev profile that installs it is described in
 [local-profile.md](local-profile.md).
 
 ## Scope: a skeleton
@@ -22,7 +22,7 @@ of being silently ignored.
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring, downward-API variables (R-HA-030) | `secrets.oidc`, `secrets.breakGlass`, `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
-| Ingress, path `/` only (R-HA-037) | profiles `small`, `medium`, `large` (R-HA-050), the complete values reference (R-HA-031) |
+| Ingress, path `/` only (R-HA-037); TLS on trove's listeners (R-HA-063) | profiles `small`, `medium`, `large` (R-HA-050), the complete values reference (R-HA-031) |
 | fail-fast validation for the rows listed [below](#validation) | the validation rows of the features in the right column |
 
 Gaps in what is there:
@@ -90,7 +90,8 @@ deploy/helm/trove/
 | NetworkPolicy | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` (hook) | `networkPolicy.enabled`, ingress only, see [Network policy](#network-policy) |
 | ConfigMap, ServiceAccount (hook, weight -10) | `<fullname>-migrate` | same `trove.yaml` as `<fullname>-config` |
 | Job (hook, weight 0) | `<fullname>-migrate` | `trove migrate up`; `backoffLimit` 2, deadline 1800 s, TTL 86400 s |
-| Ingress | `<fullname>` | `ingress.enabled`; one rule per host, path `/`, `Prefix`, backend `<fullname>:http` |
+| Ingress | `<fullname>` | `ingress.enabled`; one rule per host, path `/`, `Prefix`, backend `<fullname>:http`; backend-over-TLS annotations per controller, see [TLS](#tls) |
+| BackendTLSPolicy | `<fullname>` | `tls.backendTLSPolicy.enabled` only; Gateway API CRD, see [TLS](#tls) |
 | anything | from `extraObjects` | |
 
 The chart renders no Secret, no Role or RoleBinding, no PersistentVolumeClaim, no StatefulSet and
@@ -160,10 +161,102 @@ never as an environment variable. A mount exists only in the pods that read it.
 | `secrets.valkeyCA` | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` | `web`, `worker` |
 | `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` | `web`, `worker` |
 | `secrets.metricsToken` (`config.metrics.auth: static`) | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` | `web`, `worker` |
+| `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | `server.tls.certificates[0]` | `web`, `worker`; never the Job |
+| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | `web`, `worker` |
+| `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | `ops_tls.certificates[0]`, `ops_tls.inherit: false` | `web`, `worker` |
 
 The file *names* inside a mount are fixed (`username`, `password`, `ca.crt`, …); the Secret's key
 names are the values (`usernameKey`, `passwordKey`, …). The encryption keys are the exception:
 file name equals Secret key, because the file name without `.key` is the key ID (R-ARCH-021).
+
+## TLS
+
+Requirement: R-HA-063 (Q-HA-32); the binary's side is R-ARCH-035. The Secret may come from cert-manager or from any other operator that writes `tls.crt`, `tls.key` (and `ca.crt`); the chart only names it. `tls.enabled` defaults to `true`.
+The chart never creates the Secret (a cert-manager `Certificate` with `secretName` is the usual
+source). `tls.*` describes the default client listener `:8080` and the operations listener
+`:8081`. The endpoint feature adds an `endpoints:` list whose entries each carry their own `tls`
+block of the same shape; `tls.*` stays the default endpoint and does not change.
+
+<details>
+<summary>Values reference</summary>
+
+| Value | Default | Effect |
+|---|---|---|
+| `tls.enabled` | `true` | `false` renders no TLS wiring: HTTP probes, no `appProtocol`, no mount, no `server.tls` (plain HTTP inside the cluster, H-38) |
+| `tls.secretName` | `""` | required while enabled; the render fails naming the key and `tls.enabled: false` |
+| `tls.certKey`, `tls.keyKey` | `tls.crt`, `tls.key` | keys in the Secret; the file names in the pod are fixed |
+| `tls.minVersion` | `"1.2"` | `server.tls.min_version` (and `ops_tls` when rendered) |
+| `tls.reloadInterval` | `10s` | `server.tls.reload_interval` |
+| `tls.clientCA.secretName`, `.key`, `.auth` | `""`, `ca.crt`, `require` | mutual TLS on `:8080`: `server.tls.client_ca_file` and `client_auth` (`require` or `verify_if_given`) |
+| `tls.ops.secretName`, `.certKey`, `.keyKey` | `""`, `tls.crt`, `tls.key` | own certificate for `:8081`: `ops_tls.inherit: false` |
+| `tls.backendTLSPolicy.enabled`, `.caConfigMapName`, `.hostname` | `false`, `""`, `<fullname>.<namespace>.svc` | optional `BackendTLSPolicy` for a Gateway |
+| `ingress.backendTLS.controller` | `haproxy` | `haproxy` (HAProxy Ingress, primary), `traefik`, `ingress-nginx` or `manual` |
+| `ingress.backendTLS.verify` | `true` | the controller verifies the trove certificate; `false` accepts an unverified connection |
+| `ingress.backendTLS.caSecret` | `""` | haproxy, ingress-nginx: Secret in the release namespace with `ca.crt`; required while `verify` |
+| `ingress.backendTLS.clientCertSecret` | `""` | haproxy: Secret with `tls.crt` and `tls.key` the controller presents to trove; required with `tls.clientCA` |
+| `ingress.backendTLS.serversTransport` | `""` | Traefik: `<namespace>-<name>@kubernetescrd` of a `ServersTransport`; required while `verify` |
+
+</details>
+
+What the chart does with them:
+
+- **Mount.** One directory volume per Secret, `items` for the keys the process reads (`tls.crt`,
+  `tls.key`; `ca.crt` of the main Secret is for the edge and for Prometheus, not for this process,
+  so it is not projected), read-only, mode 0440, no `subPath`. The kubelet replaces the files with
+  an atomic symlink swap on a Secret update; the process polls the content every
+  `tls.reloadInterval` and swaps the certificate without a restart. A subPath mount would never
+  see the update. Only `web` and `worker` mount it; the migration Job serves no listener (R-HA-030).
+- **Config.** `server.tls` (and `ops_tls`) are chart-managed keys: setting `config.server.tls` or
+  `config.ops_tls` fails while `tls.enabled` is true. `checksum/config` follows `min_version` and
+  the paths, not the Secret content, so a certificate rotation does not roll the pods.
+- **Operations listener.** Without `tls.ops` and `tls.clientCA`, `ops_tls` keeps its default
+  (`inherit: true`). With `tls.clientCA`, the chart renders `ops_tls` with `inherit: false` and the
+  same certificate pair but no client CA, because the kubelet's probes and Prometheus present no
+  client certificate; mutual TLS applies to `:8080` only. With `tls.ops`, `ops_tls` uses that
+  Secret.
+- **Probes.** `httpGet.scheme: HTTPS` on port `ops`. The kubelet does not verify the certificate.
+  A `probes.*.custom` probe replaces the generated one and is on its own.
+- **Services.** Both ports declare `appProtocol: https`.
+- **NetworkPolicy** is unchanged.
+- **ServiceMonitor** (R-HA-063): the chart renders none yet. When monitoring joins, it sets
+  `scheme: https` and `tlsConfig` with the CA from the Secret's `ca.crt` and `serverName` equal to
+  the Service name.
+
+### Ingress and Gateway
+
+trove speaks HTTPS, so the controller must connect to the backend with HTTPS and should verify
+it. The settings differ per controller and the chart sets only those of the controller named in
+`ingress.backendTLS.controller`. HAProxy Ingress is the default and the tested target (the
+standard edge of the owner's platform); the other rows are rendered and tested for their
+annotations, but not run against a live controller. The annotations are inert on a controller
+that does not read them, so a wrong `controller` does not break the Ingress, it leaves the
+backend on plain HTTP and every request fails with a gateway error.
+
+| `controller` | What the chart renders | What you provide |
+|---|---|---|
+| `haproxy` | Ingress annotations with the default prefix `haproxy-ingress.github.io/`: `secure-backends: "true"`; with `caSecret`: `secure-verify-ca-secret: <caSecret>` and `secure-sni: <fullname>.<namespace>.svc` (the name is validated against the certificate when a CA is given); with `clientCertSecret`: `secure-crt-secret: <clientCertSecret>` | the CA Secret with key `ca.crt` (a cert-manager Secret carries it, so `caSecret` can equal `tls.secretName`); for `tls.clientCA`, a Secret with `tls.crt` and `tls.key` that the CA signs. The Secrets must be in the release namespace: reading across namespaces is off in HAProxy Ingress unless `cross-namespace-secrets-ca` / `-crt` allow it. |
+| `ingress-nginx` | Ingress annotations `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`; with `caSecret`: `proxy-ssl-verify: "on"`, `proxy-ssl-secret: <namespace>/<caSecret>`, `proxy-ssl-name: <fullname>.<namespace>.svc`, `proxy-ssl-server-name: "on"` | the Secret with `ca.crt` (and `tls.crt`/`tls.key` when `tls.clientCA` is set: the controller presents them to trove) |
+| `traefik` | Service annotations `traefik.ingress.kubernetes.io/service.serversscheme: https` and `...service.serverstransport` | a `ServersTransport` (a Traefik CRD the chart does not create) with `serverName: <fullname>.<namespace>.svc`, `rootCAs` from the CA, and `certificatesSecrets` for mTLS |
+| `manual` | nothing | the backend protocol, through `ingress.annotations` and `service.annotations` of your controller |
+
+The HAProxy Ingress key names are checked against its
+[configuration keys](https://haproxy-ingress.github.io/docs/configuration/keys/) page
+(section "Secure backend"): `secure-backends`, `secure-crt-secret`, `secure-sni`,
+`secure-verify-ca-secret`, `secure-verify-hostname`, plus `backend-protocol` (`h1-ssl`, `h2-ssl`)
+as the alternative to `secure-backends`. The chart uses `secure-backends` because it leaves the
+HTTP version alone. A changed `--annotations-prefix` of the controller needs `controller: manual`
+and your own annotations. With `verify: false` the chart renders only `secure-backends` (or the
+nginx and Traefik equivalent): encrypted, but a man in the middle is not detected.
+
+The upstream project retired ingress-nginx in March 2026 (see [ha-and-helm.md](../spec/ha-and-helm.md)
+R-HA-037); it stays supported here because installations still run it.
+
+Gateway API: `tls.backendTLSPolicy.enabled: true` renders a `BackendTLSPolicy`
+(`gateway.networking.k8s.io/v1`) that targets the client Service port `http`, with
+`validation.hostname` and a `caCertificateRefs` entry naming a ConfigMap. Gateway API takes a
+ConfigMap there, not a Secret, so the chart cannot reference the Secret's `ca.crt`; you create
+the ConfigMap (a cert-manager `trust-manager` Bundle does it). The chart renders no HTTPRoute yet,
+so the policy applies to routes you create yourself.
 
 ## Network policy
 
@@ -214,6 +307,7 @@ tests in `chart_test.go` assert both, row by row.
 | a chart-managed key set inside `config` | implemented (secret file paths, `storage.spool.dir`) |
 | `config.metrics.auth: static` without `secrets.metricsToken` | implemented |
 | `spool.headroom` not smaller than the spool; sizes that are not quantities | implemented |
+| `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
 | pooler (`session_host`, control endpoint), backup, restore, pools, gateway, ServiceMonitor, `contentOrigin` | with those features |
 | a `ReadWriteMany` spool, `--set ingress.path=…`, any unknown key | schema |
 
@@ -221,7 +315,7 @@ tests in `chart_test.go` assert both, row by row.
 
 ## Value sets and tests
 
-`ci/*.yaml` are the value sets every requirement is asserted against. The dev profile's
+`ci/*.yaml` are the value sets every requirement is asserted against. Each names `tls.secretName` or sets `tls.enabled: false` with a comment (`single-node.yaml`). The dev profile's
 [values-dev.yaml](../../deploy/dev/values-dev.yaml) is rendered alongside them (E0.7). Adding a
 file to `ci/` adds it to every per-set assertion with no code change.
 
@@ -257,6 +351,7 @@ is where the coverage generator reads the IDs from.
 | `R-HA-037`, `R-ARCH-032` | `sessionAffinity: None` everywhere, no affinity annotations, Ingress path `/` and `Prefix`, `ingress.path` fails naming `path` |
 | `R-HA-019` | hook annotations and weights, `podFailurePolicy`, same `trove.yaml`, nothing from Valkey or S3; disabled renders no Job |
 | `R-HA-056` | Valkey wiring reaches `web` and `worker` only |
+| `R-HA-063`, `R-HA-030` (`TestTLS`) | HTTPS probes, mount without `subPath` of exactly the certificate and key, config paths, `appProtocol`; missing `tls.secretName` fails; opt-out renders no TLS wiring; no TLS mount in the migration Job; client CA and `ops_tls` separation; per-controller Ingress settings (HAProxy Ingress default, verification and client-certificate rules); `BackendTLSPolicy`; every value set agrees between config and probe scheme |
 
 Not covered by these tests (needs a cluster): that the pods start in a restricted namespace, that
 `kubectl exec … touch /x` fails, that the Job finishes before the Deployments roll. The dev
@@ -274,7 +369,7 @@ profile covers them once the trove image serves ([local-profile.md](local-profil
 4. Add a subtest to `chart_test.go` named with the requirement ID.
 5. Update the tables on this page.
 
-**Add a Secret.** Add an entry in `trove.secretMounts` (`_secrets.tpl`) with its scope, the config
+**Add a Secret.** (For TLS material, see [TLS](#tls).) Add an entry in `trove.secretMounts` (`_secrets.tpl`) with its scope, the config
 key it sets in `trove.config`, the value in `values.yaml` and the schema, and the managed-key
 check in `_validate.tpl`. Extend `R-HA-030 only the pods that need a Secret mount it`.
 

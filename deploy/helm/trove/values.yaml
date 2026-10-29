@@ -157,6 +157,32 @@ config:
   metrics:
     auth: none                          # default (proposed): none | static (needs secrets.metricsToken)
 
+# ── TLS on trove's own listeners (R-HA-063, R-ARCH-035) ────────────────────
+# The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,
+# tls.key and, for the edge and for Prometheus, ca.crt). Mounted as a directory volume without
+# subPath, so a rotated Secret reaches the pod through the kubelet's atomic swap and the process
+# reloads the files (tls.reloadInterval). tls.* configures the default client listener :8080 and
+# the operations listener :8081; a later endpoints list carries its own tls block per listener.
+tls:
+  enabled: true                         # default (proposed) (Q-HA-32); false = plain HTTP inside the cluster (H-38)
+  secretName: ""                        # required with tls.enabled; example: trove-tls (cert-manager Certificate secretName)
+  certKey: tls.crt                      # default (proposed): key of the certificate chain in the Secret
+  keyKey: tls.key                       # default (proposed): key of the private key in the Secret
+  minVersion: "1.2"                     # default: "1.2" | "1.3" (server.tls.min_version)
+  reloadInterval: 10s                   # default: content poll of the mounted files (server.tls.reload_interval)
+  clientCA:                             # optional mutual TLS: the edge must present a client certificate
+    secretName: ""                      # default (proposed): empty = no client certificates requested; example: trove-edge-ca
+    key: ca.crt                         # default (proposed): key of the CA bundle in that Secret
+    auth: require                       # default (proposed): require | verify_if_given (server.tls.client_auth)
+  ops:                                  # optional separate certificate for :8081 (probes, metrics); empty = same material as :8080
+    secretName: ""                      # default (proposed); example: trove-ops-tls
+    certKey: tls.crt                    # default (proposed)
+    keyKey: tls.key                     # default (proposed)
+  backendTLSPolicy:                     # Gateway API: how the Gateway verifies trove (needs the BackendTLSPolicy CRD)
+    enabled: false                      # default (proposed)
+    caConfigMapName: ""                 # required when enabled; example: trove-tls-ca (a ConfigMap with ca.crt: Gateway API takes no Secret here)
+    hostname: ""                        # default (proposed): empty = <fullname>.<namespace>.svc; must be a SAN of the certificate
+
 # ── Existing Secrets (the chart never creates one) ──────────────────────────
 secrets:
   database:
@@ -295,6 +321,12 @@ ingress:
   hosts: []                             # default (proposed): empty = host of config.server.base_url
   # No path value: every host is routed whole, path / with pathType Prefix (R-HA-037).
   tls: []                               # default (proposed); example: [{secretName: trove-tls, hosts: [trove.example.com]}]
+  backendTLS:                           # how the controller reaches trove when tls.enabled (R-HA-063); trove speaks HTTPS, so the controller must too
+    controller: haproxy                 # default (proposed): haproxy (HAProxy Ingress, the primary target) | traefik | ingress-nginx | manual (you set the backend protocol in ingress.annotations / service.annotations)
+    verify: true                        # default (proposed): the controller verifies the trove certificate; needs caSecret (haproxy, ingress-nginx) or serversTransport (traefik); false = encrypted but unverified
+    caSecret: ""                        # required with verify on haproxy and ingress-nginx; Secret in the release namespace with ca.crt; example: trove-tls (a cert-manager Secret carries ca.crt)
+    clientCertSecret: ""                # haproxy: Secret with tls.crt and tls.key that HAProxy Ingress presents to trove (required with tls.clientCA); example: trove-edge-client
+    serversTransport: ""                # traefik: ServersTransport reference <namespace>-<name>@kubernetescrd that verifies trove; example: trove-trove-tls@kubernetescrd
 
 # ── Migrations (R-HA-019) ──────────────────────────────────────────────────
 migrations:
