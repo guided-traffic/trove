@@ -81,11 +81,16 @@ Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 - ⚪ Helm chart skeleton: one Deployment per role, Services, PodDisruptionBudgets, topology spread
 - ⚪ Local HA-shaped stack: PostgreSQL with standby, Valkey with three Sentinels, S3 store
 - ⚪ Metrics, JSON request log, health and readiness endpoints
+- ⚪ TLS on every connection, trove's listeners included; certificate rotation without restart
+- ⚪ Endpoints: further client listeners with their own port, hosts (one wildcard allowed), base URL and certificates chosen by SNI; the endpoint is the listener's, a foreign host gets `421`; route families per endpoint; host-root binding reserved for later registries ([spec](../spec/endpoints.md))
+- ⚪ Helm chart per endpoint: Service or own pool, Ingress or Gateway route with its own class, hosts and TLS Secret, NetworkPolicy per port
 
 **Exit checks**
 - ⚪ PostgreSQL and Valkey failover under load without a failed request
 - ⚪ Node drain under load without a failed request
 - ⚪ No state between requests: test profile with random distribution across replicas
+- ⚪ Listener certificate rotated under load without a failed request
+- ⚪ A second endpoint with its own host and certificate answers `421` for a foreign host and serves only its route families
 
 **Release**
 - ⚪ `v0.1.0`
@@ -106,6 +111,12 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - ⚪ Evaluation engine with caches that stay correct across replicas
 - ⚪ Audit of logins, token changes, policy changes and denied requests
 
+**Endpoints and exposure**
+- ⚪ Accepted credentials per endpoint; tokens bound to endpoints
+- ⚪ Exposure rules per endpoint (repository, package and version patterns, version ranges, pre-releases, tags) as a ceiling for every caller, administrators included; hidden content answers 404
+- ⚪ Management API and admin screen for endpoints and exposure rules, with an exposure check
+- ⚪ Raw files on an endpoint filtered by exposure; rate limit per endpoint
+
 **Repositories and files**
 - ⚪ Repository model and management API (local, remote, virtual)
 - ⚪ Generic local repositories and raw file transfer under `/files/`
@@ -115,6 +126,7 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - ⚪ Sign-in, repository list and creation wizard, file browser
 - ⚪ Users, groups, service accounts, personal tokens
 - ⚪ Permission policy editor with "why can X do Y" explainer
+- ⚪ Endpoint screen with the exposure rule editor and its preview
 - ⚪ Audit log and system status
 
 **Tests**
@@ -139,12 +151,14 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - ⚪ Virtual: merged package documents and dist-tags, writes through the deployment target
 - ⚪ Clients: npm, pnpm, Yarn Classic, Yarn Berry
 - ⚪ Package UI: package list and detail, README, install panel, client setup snippets
+- ⚪ npm on a customer endpoint: package documents and dist-tags list only exposed versions, URLs on the endpoint's host, no upstream fetch from that endpoint by default
 
 **Tests**
 - ⚪ npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents
 - ⚪ npm e2e tests: install and publish with npm, pnpm, Yarn Classic and Yarn Berry through local, remote and virtual repositories
 - ⚪ npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install
 - ⚪ npm load joins the drain and failover tests
+- ⚪ npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
 **Release**
 - ⚪ `v0.3.0`
@@ -161,6 +175,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - ⚪ Authentication: token as password in `nuget.config`, token as API key for push
 - ⚪ Clients: .NET CLI, nuget.exe; setup instructions for Visual Studio
 - ⚪ Package UI and client setup snippets for .NET
+- ⚪ NuGet on a customer endpoint: version lists, registrations and search list only exposed versions; no push there
 - ⚪ Format contract frozen for all later registries
 
 **Tests**
@@ -168,6 +183,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - ⚪ NuGet e2e tests: `dotnet restore`, `dotnet nuget push` and nuget.exe through local, remote and virtual repositories
 - ⚪ NuGet e2e: cold cache with three clients at once, push and delete across drains and retries, Valkey stopped
 - ⚪ NuGet load joins the drain and failover tests
+- ⚪ NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
 
 **Release**
 - ⚪ `v0.4.0`
@@ -199,7 +215,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **Backup and restore**
 - ⚪ Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
 - ⚪ Restore job into an empty installation
-- ⚪ Revocation journal: a restore never brings back revoked tokens or removed permissions
+- ⚪ Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure
 - ⚪ E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
 
 **Helm chart and release**

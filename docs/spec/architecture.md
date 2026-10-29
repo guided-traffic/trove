@@ -246,7 +246,6 @@ flowchart LR
   HS --> FM
   FM --> RP
   FM --> PX
-  FM --> BL
   API --> RP
   API --> JB
   RP --> MT
@@ -313,9 +312,11 @@ Normative rules:
 - Imports form layers:
   1. Edge: `httpserver`, `api/v1`, `webui`, format handlers.
   2. Domain: `repository`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
-  3. Infrastructure: `meta/postgres`, `blob/s3`, `cluster`, `outbound`, `secrets`.
+  3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`. Every layer may import them, and they import only each other.
 
-  No lower layer imports a higher one.
+  No lower layer imports a higher one. Format packages reach storage only through the host interface
+  (R-ARCH-009), so the diagram has no arrow from `formats` to `blob`.
 - Only `meta/postgres` and `cluster` import pgx. Only `cluster` imports the Valkey client
   (R-ARCH-031). Only `blob/s3` imports the S3 SDK. Format packages import none of them
   (R-ARCH-008).
@@ -396,8 +397,11 @@ Acceptance criteria:
   R-AUTH-036, [formats/npm.md](formats/npm.md) R-NPM-020).
 - A test in `internal/archtest` fails on a package-level variable of map, slice, pointer or
   `sync.Map` type outside `internal/cache`, `internal/cluster`, `internal/observability` and the
-  registries that are frozen at start-up (`formats`, `jobs`, `errs`, `secrets`, and the
-  revision-column registry of `meta`, R-ARCH-009).
+  registries that are frozen at start-up: `internal/formats`, `internal/jobs`, `internal/errs`,
+  `internal/secrets`, `internal/meta` (the revision-column registry, R-ARCH-009) and
+  `internal/backup/tables` (the table registry). A package-level `*regexp.Regexp` is exempt; generated
+  files, variables with a `//go:embed` directive and variables of interface type are not checked
+  (Q-ARCH-19).
 
 ## Code layout
 
@@ -434,7 +438,8 @@ trove/
 │   │   └── nuget/
 │   ├── proxy/
 │   ├── blob/                    # BlobStore interface, spool, digests
-│   │   └── s3/
+│   │   ├── s3/
+│   │   └── blobtest/            # conformance kit and in-memory store for tests
 │   ├── meta/                    # Tx helper, shared types
 │   │   └── postgres/            # pgx pools, transactions, migration runner (R-ARCH-026)
 │   │       ├── migrations/      # NNNNN_name.sql, embedded
@@ -446,12 +451,14 @@ trove/
 │   ├── cache/
 │   ├── jobs/
 │   ├── audit/
-│   ├── backup/                  # trove backup: create, restore, table registry (backup-and-restore.md)
+│   ├── backup/                  # trove backup: create, restore (backup-and-restore.md)
+│   │   └── tables/              # table registry: the export class of every table (leaf layer)
 │   ├── outbound/
 │   ├── secrets/
 │   ├── errs/
 │   ├── observability/
 │   ├── webui/                   # go:embed all:dist; dist/ is filled by the web build
+│   ├── tools/coverage/          # requirement coverage generator (docs/coverage, Q-ROAD-4)
 │   └── archtest/
 ├── web/                         # Angular workspace (R-ARCH-004)
 ├── deploy/helm/trove/         # Helm chart (INV-13)
@@ -468,7 +475,8 @@ trove/
 - Generated code carries the `// Code generated … DO NOT EDIT.` header and is committed. CI runs
   `go generate ./... && git diff --exit-code`.
 - `internal/webui/dist/` holds a committed placeholder `index.html`, so `go build` works without a
-  UI build. Release builds run the web build first.
+  UI build. Release builds run the web build first. Built locale directories `dist/<locale>/` are
+  not committed; `internal/webui/.gitignore` ignores them (Q-ARCH-20).
 
 Acceptance criteria:
 - `go build ./cmd/trove` succeeds on a clean checkout without Node.js installed.
@@ -532,9 +540,18 @@ Listeners (INV-6; Q-ARCH-11 keeps the layout and the ports as they are):
   (`server.ops_listen`) serves only `/healthz`, `/readyz` and `/metrics`
   ([operations-and-observability.md](operations-and-observability.md)). Neither serves the other's
   paths.
+- **Several client listeners.** `server.listen` is the listener of the default endpoint. Every
+  further endpoint of `server.endpoints` has a client listener of its own, with its own ServeMux
+  built from the endpoint's surface, its own in-flight limit and its own instance of the middleware
+  chain below ([endpoints.md](endpoints.md) R-EP-001, R-EP-002, R-EP-005). The endpoint of a
+  request is the listener's and is placed in the request context at step 1; it is never derived
+  from request data (Q-EP-1). A `web` process opens the client listeners of the endpoints of its
+  pool, a `worker` process none.
 - An address without a host binds every interface on IPv4 and IPv6 (HA-020).
-- HTTP/1.1 is always on. With `server.tls`, HTTP/2 is served over TLS. TLS normally ends at the
-  Ingress ([ha-and-helm.md](ha-and-helm.md)).
+- HTTP/1.1 is always on. Both listeners serve TLS when `server.tls` is set, and HTTP/2 is served over
+  TLS (R-ARCH-035). A reverse proxy or Ingress in front may end the client's TLS and connect to trove
+  over TLS again, which the chart wires (R-HA-063). TLS at the edge alone is no longer the design: plain
+  HTTP to trove is a chart choice, `tls.enabled: false` (H-38).
 
 Top-level routes on the client listener (`net/http.ServeMux`, Q-ARCH-1). The `/api/v1/` operations
 are registered on the same ServeMux by the oapi-codegen `std-http-server` interface, and the
@@ -550,7 +567,8 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
 | `/ui/` | Embedded UI (R-ARCH-004) |
 | `POST /-/npm/v1/oidc/token/exchange/package/{name...}` | npm plug-in: trusted-publishing token exchange at the host root ([formats/npm.md](formats/npm.md) R-NPM-022, P1; Q-NPM-1) |
 | `/v2/` | Reserved for the OCI format ([ha-and-helm.md](ha-and-helm.md) R-HA-041, Q-HA-4). `404` until the OCI format exists: no pattern is registered here yet, so `/v2/` and every path below it fall through to the last row. No other pattern may start with `/v2/` (route-table test below). |
-| `GET /{$}` | `302` to `/ui/` |
+| `/.well-known/` | Reserved for discovery documents at the host root, the first being Terraform's on a host bound to one repository (P1; [endpoints.md](endpoints.md) R-EP-006). `404` until a format registers one; no other pattern may start with `/.well-known/` (route-table test below). |
+| `GET /{$}` | `302` to `/ui/`; only on an endpoint whose surface holds `ui` ([endpoints.md](endpoints.md) R-EP-005) |
 | anything else | `404` problem (R-ARCH-023) |
 
 - Format IDs match `^[a-z][a-z0-9-]{1,31}$` and MUST NOT match `^v[0-9]+$`, which is reserved for API
@@ -588,6 +606,8 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
       every client-listener route, the generated `/api/v1/` operations and the format plug-ins'
       host-root routes included. A route registered on the ServeMux around that wrapper is a defect.
   - No host-root route is served on the content host (`server.content_base_url`, R-ARCH-029).
+  - The route-table test applies the same rule to `/.well-known/` and runs over the ServeMux of
+    every endpoint ([endpoints.md](endpoints.md) R-EP-002, R-EP-006).
 - The dispatcher hands the format the remaining path exactly as received: `r.URL.EscapedPath()`
   minus `/api/<id>/<repoKey>/`. It never hands over the unescaped wildcard value. This keeps an
   encoded slash in a package name (`@scope%2fname`) apart from a separator. Repository keys contain
@@ -604,17 +624,22 @@ Middleware, outermost first:
    Every response carries `X-Request-Id`.
 3. Request log and metrics. The route label is the ServeMux pattern or the format route name
    (R-ARCH-008), never the raw path.
-4. In-flight limit (`server.max_in_flight`, client listener only): `503` with `Retry-After: 1` and
-   code `server_busy`.
-5. Client address (R-ARCH-006) and the base URL of the response
-   ([operations-and-observability.md](operations-and-observability.md)).
+4. In-flight limit (`server.max_in_flight` on the default endpoint, the endpoint's `max_in_flight`
+   on a further endpoint; client listeners only): `503` with `Retry-After: 1` and code
+   `server_busy`.
+5. Client address (R-ARCH-006), the endpoint's host check with `421` for a foreign host, the
+   base URL of the response and the host-root binding
+   ([operations-and-observability.md](operations-and-observability.md) R-OPS-005,
+   [endpoints.md](endpoints.md) R-EP-003, R-EP-006).
 6. Authentication: a principal or anonymous. Credentials that are present but invalid always give
    `401` ([identity-and-authentication.md](identity-and-authentication.md)). The one exception is a
    `POST` to an exchange endpoint, at the host root or below a registry URL. There the
    `Authorization` header carries an ID token, the stage does not evaluate it, and the request
    reaches the handler unauthenticated
    ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-001).
-7. Rate limits on `/api/v1/`, `/files/` and `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
+7. The endpoint's rate-limit class, on every route of a further endpoint
+   ([endpoints.md](endpoints.md) R-EP-015), then the rate limits on `/api/v1/`, `/files/` and
+   `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
    counters are cluster-wide in Valkey wherever the owning page gives a class cluster scope, and
    fall back to per-replica buckets while Valkey is unavailable (R-ARCH-034). The check never waits
    longer than `valkey.command_timeout`.
@@ -665,23 +690,31 @@ Acceptance criteria:
 - Until the OCI format exists, `GET /v2/` and `GET /v2/docker-all/manifests/latest` answer `404`
   with a problem body. The route-table test fails on a fixture plug-in that registers
   `GET /v2/x` as a host-root route, and passes again once the fixture is removed.
+- With a further endpoint configured (R-EP-001), `:8080` and the endpoint's port each answer with
+  their own route families, and a request whose host is not one of the further endpoint's hosts
+  answers `421` there ([endpoints.md](endpoints.md) R-EP-002, R-EP-003, R-EP-005).
 
 ### R-ARCH-006 · Client address and trusted proxies
 Priority: **MVP** · Covers: HA-025
 
 Several pages rely on this mechanism: rate limits, audit, authorization conditions, and token
 exchange limits.
-- The client address is the TCP peer, unless the peer lies in `server.trusted_proxies`. In that case
-  it is the right-most address in `X-Forwarded-For`, or in `Forwarded: for=`
+- The client address is the TCP peer, unless the peer lies in the trusted proxies of the request's
+  endpoint (`server.trusted_proxies`, or a further endpoint's `trusted_proxies`,
+  [endpoints.md](endpoints.md) R-EP-001). In that case it is the right-most address in
+  `X-Forwarded-For`, or in `Forwarded: for=`
   ([RFC 7239](https://www.rfc-editor.org/rfc/rfc7239)), that is not itself a trusted proxy.
 - Forwarded scheme and host are evaluated only under the rules of the public base URL. Those rules,
   the `server.base_url`, `server.trusted_proxies` and `server.additional_base_urls` keys, and their
-  defaults are owned by [operations-and-observability.md](operations-and-observability.md).
+  defaults are owned by [operations-and-observability.md](operations-and-observability.md). On every
+  endpoint a forwarded host counts only when it lies in that endpoint's host set; it never selects
+  the endpoint ([endpoints.md](endpoints.md) R-EP-003).
 - The resolved client address and base URL are placed in the request context once, by middleware
   step 5 of R-ARCH-005. No handler, format or job reads `Host`, `X-Forwarded-*` or `Forwarded`
   itself.
-- Rendered metadata that contains links is cached under a key that includes the base URL
-  (R-ARCH-018), so one host name never sees another's links.
+- Rendered metadata that contains links is cached under a key that includes the base URL and the
+  endpoint (R-ARCH-018, [endpoints.md](endpoints.md) R-EP-018), so one host name never sees
+  another's links and one endpoint never another's exposure.
 
 Acceptance criteria:
 - `grep -rnE 'X-Forwarded|\.Host\b|"Forwarded"' internal --include=*.go` matches only in
@@ -693,8 +726,11 @@ Acceptance criteria:
 ### R-ARCH-007 · One origin for UI and package content
 Priority: **MVP** · Covers: trove-only
 
-In the MVP, the UI, the management API and the package endpoints share one origin: one host name
-and one listener (INV-6). [formats/nuget.md](formats/nuget.md) handed this decision to this page.
+In the MVP, the UI, the management API and the package endpoints share one origin: the host name
+and the listener of the default endpoint (INV-6). A further endpoint never serves the UI or the
+sign-in flow ([endpoints.md](endpoints.md) R-EP-005), so it is an origin without session cookies;
+the content headers below apply on every endpoint. [formats/nuget.md](formats/nuget.md) handed this
+decision to this page.
 An optional separate content origin is P1 (R-ARCH-029, Q-ARCH-10). With it unset, which remains the
 default in P1, everything below stays the complete defence.
 
@@ -750,9 +786,10 @@ layer (Q-ARCH-10).
 
 Origin rules, checked at start-up. On a violation the process exits and names the rule:
 - `server.content_base_url` is an `https` origin with no path.
-- Its host name differs from the host name of `server.base_url` and of every
+- Its host name differs from the host name of `server.base_url`, of every
   `server.additional_base_urls` entry
-  ([operations-and-observability.md](operations-and-observability.md)). A different port on the same
+  ([operations-and-observability.md](operations-and-observability.md)) and of every endpoint host
+  ([endpoints.md](endpoints.md) R-EP-001). A different port on the same
   host is refused: browsers do not isolate cookies by port, so such an origin would receive the
   session cookie.
 - Recommended form: a separate registrable domain, such as `https://trove-content.example.net`.
@@ -911,6 +948,9 @@ type Format interface {
 	Remote() RemoteAdapter   // nil when Descriptor().Classes lacks Remote
 	Virtual() VirtualAdapter // nil when Descriptor().Classes lacks Virtual
 	Indexes() IndexBuilder   // nil when the format has no rebuildable derived metadata
+	// Exposure filters documents per endpoint; nil makes the format unservable on an endpoint
+	// with exposure rules (endpoints.md R-EP-018, added before the contract freeze of M3).
+	Exposure() ExposureAdapter
 
 	// SetupTemplates returns the client setup templates (text/template) used by api-and-ui.md R-API-033.
 	SetupTemplates() []SetupTemplate
@@ -1638,8 +1678,9 @@ Normative rules:
     deleted, for example a cleanup policy on `@monthly`.
 - **Liveness watchdog** ([operations-and-observability.md](operations-and-observability.md)
   R-OPS-001, Q-OPS-1). Each long-running loop registers with the watchdog through
-  `observability.Watch(name, bound)`, under the loop name that the `stuck` list of `/healthz`
-  shows. It calls `Progress()` at the end of every iteration, failed iterations included. Besides
+  `cluster.WatchLoop(watchdog, name, bound)`, which returns a `*cluster.WatchedLoop`, under the loop
+  name that the `stuck` list of `/healthz` shows. It calls `Beat()` at the end of every iteration,
+  failed iterations included. Besides
   the health check loop, which R-OPS-001 watches itself, the watched loops are:
   - the claim loop `jobs.claim` and the reaper `jobs.reaper`, on replicas whose role runs workers;
   - the scheduler tick `jobs.scheduler`, while this replica holds the `scheduler` lease;
@@ -1659,9 +1700,10 @@ Normative rules:
     `health.watchdog_timeout`: the claim query, the reaper's update, the slot insert and the
     dispatcher's batch. A blackholed PostgreSQL then produces failed iterations, not a stuck loop.
     A unit test per loop asserts the deadline.
-  - A loop that stops on purpose, during shutdown or when its lease is lost, calls `Leave()` first
+  - A loop that stops on purpose, during shutdown or when its lease is lost, calls `Stop()` first
     (R-ARCH-024).
-- Kinds are registered in code: `jobs.Register(kind, handler, Options{Queue, Timeout, MaxAttempts, DedupMode})`.
+- Kinds are registered in code: `jobs.RegisterKind(kind, KindSpec{Handler, Queue, Timeout, MaxAttempts, DedupMode, Priority})`,
+  and periodic tasks with `jobs.RegisterTask(name, TaskSpec{Kind, Schedule, Disabled})`.
   Each kind's semantics belong to its owning page. A kind that a maintenance task enqueues carries
   the task's name, because the job reference of
   [operations-and-observability.md](operations-and-observability.md) R-OPS-019 and
@@ -1834,7 +1876,8 @@ reaches the other replicas through a change log in PostgreSQL, which carries cor
 through Valkey, which carries speed.
 
 Caches:
-- A cache is registered with `cache.Register(name, Options{MaxBytes|MaxEntries, SafetyTTL, OnFlush})`.
+- A cache is registered with `cache.Register(registry, name, Options{MaxBytes|MaxEntries, Weigh, SafetyTTL, Areas, OnChange, OnFlush})`,
+  where `registry` is the process's `*cache.Registry`.
   `SafetyTTL` is mandatory and bounds staleness if an invalidation is ever missed. Every cache exports
   `trove_cache_requests_total{cache,result}` and its size
   ([operations-and-observability.md](operations-and-observability.md)).
@@ -1982,29 +2025,31 @@ Rules:
     ```go
     package cluster
 
-    // ChangesFresh reports whether the last successful change-log poll is younger than
+    // Fresh reports whether the last successful change-log poll is younger than
     // cluster.epoch_max_staleness: the condition of the `invalidation` check.
-    func ChangesFresh() bool
+    func (c *Changes) Fresh() bool
 
-    // ChangesFreshWithin reports whether the replica's last completed change-log poll started
+    // FreshWithin reports whether the replica's last completed change-log poll started
     // less than d ago, measured on the replica's monotonic clock. A poll reads every change
     // committed before it started (READ COMMITTED), so a true result proves that every change
     // older than d is applied.
-    func ChangesFreshWithin(d time.Duration) bool
+    func (c *Changes) FreshWithin(d time.Duration) bool
     ```
 
     [authorization.md](authorization.md) R-AUTHZ-028 bounds the staleness of its grant index this
     way with `authz.cache.max_staleness`, and the freshness gate of
-    [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 uses
-    `cluster.ChangesFreshWithin(auth.revocation_bound)`.
+    [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 calls
+    `(*cluster.Changes).FreshWithin(auth.revocation_bound)`.
 - After the Valkey subscriber reconnects, the replica runs one change-log poll at once. Caches of
   signal areas are not flushed, because they never rely on signals for correctness.
 - Metrics ([operations-and-observability.md](operations-and-observability.md) R-OPS-008):
   `trove_cluster_poll_last_success_timestamp_seconds`, whose age the `invalidation` check compares
   with `cluster.epoch_max_staleness`; `trove_cluster_changes_applied_total{area,source}`, with
-  `source` = `poll` for changes applied from the change log and `message` for early evictions from
-  Valkey; `trove_cluster_signals_published_total{area}` and
-  `trove_cluster_signals_dropped_total{area}`; and `trove_cache_flushes_total{cache,reason}` for
+  `source` = `poll` for changes applied from the change log, `message` for early evictions from
+  Valkey and `local` for changes the replica applies to itself; `trove_cluster_changes_published_total{area}`,
+  `trove_cluster_changes_dropped_total{area}` and `trove_cluster_poll_errors_total` for the change
+  messages and the polls; `trove_cluster_signals_published_total{area}` and
+  `trove_cluster_signals_dropped_total{area}` for signals; and `trove_cache_flushes_total{cache,reason}` for
   the flushes of change-area step 5.
 - A migration inserts the `cluster_epoch` row of a change area in the release that introduces the
   area (an expand step).
@@ -2235,6 +2280,10 @@ Acceptance criteria:
 
 ## Shared ephemeral state (Valkey)
 
+**Named exception for the catalog-driven SQL builder.** `internal/meta/postgres/blobrefs.go` builds SQL
+from catalog table names by string formatting, for the discovery of R-STOR-024 rule 3. It is the one such
+place outside the `listq` builder. The source rule of R-ARCH-032 names that file and no other.
+
 ### R-ARCH-030 · Valkey usage map
 Priority: **MVP** · Covers: HA-006, HA-007
 
@@ -2268,7 +2317,7 @@ The keys are shown with the default prefix `trove:`.
 | Job queue, scheduler slots, named and singleton leases, migration lock, configuration locks | PostgreSQL | — | — | Unaffected | Unaffected | R-ARCH-016, R-ARCH-017 |
 | Replica registry, break-glass lockout and rotation hold (R-AUTH-014, R-AUTH-038), multi-request upload sessions (P1), download statistics, CI subject-token replay set, its restore cut-off and CI issuance records | PostgreSQL | — | — | Unaffected | Unaffected | R-OPS-003, R-AUTH-014, R-AUTH-038, R-STOR-011, [storage.md](storage.md), [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018, R-CI-020 |
 
-`<ks>` is the keyspace: the first 12 hex digits of `system_state.keyspace_id`
+`<ks>` is the keyspace: the first 12 hex digits of `system_state.keyspace_id` after its dashes are removed
 ([backup-and-restore.md](backup-and-restore.md) R-BAK-022), read from PostgreSQL at start-up. `<f>`
 is the lowercase hex SHA-256 of `repository id ‖ 0x00 ‖ canonical path ‖ 0x00 ‖ variant`, the
 flight key of R-REPO-026. `<b>` is the lowercase hex of the first 16 bytes of the SHA-256 of the
@@ -2303,8 +2352,10 @@ Normative rules:
   - A rate-limit counter cannot block a bucket for longer than its window, because each window has
     its own key.
 - **Small values.** No value or payload exceeds 1 KiB.
-- **One gateway.** Only `internal/cluster` talks to Valkey. Key and channel names are registered in
-  `internal/cluster/keys.go`. Other packages use `FlightLock`, the negative-cache store, the limiter
+- **One gateway.** Only `internal/cluster` talks to Valkey. Key families and channel families are registered in
+  `internal/cluster/valkey_keys.go`, and a key is formed only by `(*Valkey).Key(family, parts...)`.
+  A part matches `^[A-Za-z0-9_-]{1,128}$`, so a dotted name such as `auth.credential_failures` is
+  written with underscores. Other packages use `FlightLock`, the negative-cache store, the limiter
   and `Notify`.
 - **No persistence assumed.** trove treats every Valkey restart as a loss of all its data. AOF and
   RDB persistence are the operator's choice. trove works under every `maxmemory-policy`: an
@@ -2346,7 +2397,9 @@ inside the process.
   `valkey.sentinel.addresses` for `valkey.sentinel.primary_name`, checks `ROLE` on the instance it
   connects to, and resolves again after every reconnection, timeout, closed connection and
   `READONLY` error. In addition, it reconciles with the Sentinels every
-  `valkey.sentinel.refresh_interval` (valkey-go's `TopologyRefreshInterval`). A demoted primary can
+  `valkey.sentinel.refresh_interval` (valkey-go's `TopologyRefreshInterval`). Trove's own Sentinel
+  loop probes every configured Sentinel once per interval on a short connection that it closes
+  again, so the replica holds one connection to the current Sentinel and no more. A demoted primary can
   keep its connections open, and valkey-go's documentation states that a client which missed
   `+switch-master` then stays bound to it; the reconciliation bounds that case.
 - **Subscriptions follow the primary.** After every primary change, whether learned from
@@ -2583,6 +2636,56 @@ Acceptance criteria:
 
 ## Configuration, secrets and outbound connections
 
+### R-ARCH-035 · TLS on trove's listeners and reloadable TLS material
+Priority: **MVP** · Covers: HA-018
+
+Every listener of trove serves TLS when `server.tls` is set, and every TLS material that trove presents
+or trusts can be replaced without a restart (INV-20, [ADR-127](../decisions.md#adr-127--transport-encryption-on-every-connection-troves-listeners-included)).
+
+Listener side:
+- `server.tls.cert_file` and `server.tls.key_file` name PEM files. They serve the client listener and
+  the ops listener. `server.ops_tls.cert_file` and `server.ops_tls.key_file`, when set, give the ops
+  listener its own pair (Q-ARCH-33). Startup refuses an absent, unreadable or non-matching pair.
+- `server.tls.client_ca_file`, when set, makes the client listener require and verify a client
+  certificate that chains to that CA (mutual TLS for a proxy that connects to trove). It is off by
+  default (Q-ARCH-32).
+- Minimum TLS 1.2; TLS 1.3 is preferred. HTTP/2 is negotiated over TLS with ALPN.
+- A reloader checks both files every `server.tls.reload_interval` (default `10s`). It compares the
+  content, not the file times, and a change is loaded into a new `tls.Config.GetCertificate` lookup, so
+  the new certificate serves every new handshake at once. Connections already open keep the certificate
+  they negotiated until they close (Q-ARCH-31).
+- A new pair that does not load, or whose key does not match its certificate, is refused. The previous
+  pair stays in service, `trove_tls_reload_failures_total{listener}` increments, and an error is logged
+  with the file names and the reason. Nothing else changes.
+- `trove_tls_certificate_not_after_timestamp_seconds{listener}` exposes the expiry of the served
+  certificate, so an expiry alert needs no log parsing.
+- **Endpoint listeners.** The listener of every further endpoint uses the same reloader, bound and
+  failure rule for each pair of its certificate set, and chooses among its own pairs by the TLS
+  server name, wildcard certificates included; with no pair of its own it serves the pair of
+  `server.tls`. On client listeners both families also carry `endpoint` and `certificate`
+  ([endpoints.md](endpoints.md) R-EP-004).
+
+Client side: every TLS material trove presents or trusts is re-read without a restart, and an error
+keeps the last good material in service:
+- PostgreSQL root CA, client certificate and key: read for each new connection
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-015).
+- Valkey and Sentinel CA, client certificate and key: read for each new handshake
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-056).
+- Outbound CA bundles and client certificates, and the object store's CA when supported: reloaded within
+  the bound of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-035 and R-ARCH-022.
+
+Acceptance criteria:
+- Rotating the listener certificate under a constant k6 load (E0.15) produces no failed request, the new
+  certificate is served within `server.tls.reload_interval` + 1 s, and the process start time does not change.
+- A new pair whose key does not match its certificate keeps the old pair in service, increments
+  `trove_tls_reload_failures_total`, and logs an error; the next valid pair is served.
+- A connection opened before a rotation keeps the old certificate until it closes; a connection opened after
+  the bound sees the new certificate.
+- With `client_ca_file` set, a client certificate that does not chain to it is refused in the TLS handshake,
+  before any HTTP request is read.
+- A rotated PostgreSQL or Valkey client certificate is used by the next new connection or handshake, with no
+  restart and no failed request on the replica.
+
 ### R-ARCH-020 · Configuration schema in code and the file/database split
 Priority: **MVP** · Covers: OPS-040
 
@@ -2598,9 +2701,10 @@ schema is built and which data belongs in the file.
 - File or database: if a value is needed before the database is reachable, or is specific to a
   deployment, it goes in the file. That covers the process role, listeners, database, Valkey and
   object-store connections, OIDC provider connection, base URL, pools, caches, jobs, logging and
-  schedules of maintenance tasks. If a value must be identical on every replica and can change without a restart, it goes in
-  PostgreSQL. That covers repositories, permission policies, users, groups, tokens, CI identity
-  mappings and runtime settings (INV-15).
+  schedules of maintenance tasks, and endpoints with their hosts, certificates and surfaces. If a value must be identical on every replica and can change without a restart, it goes in
+  PostgreSQL. That covers repositories, permission policies, the exposure rules of endpoints, users,
+  groups, tokens, CI identity mappings and runtime settings (INV-15,
+  [endpoints.md](endpoints.md) Q-EP-2).
 - Sections owned by this page: `process` (role), `server` (listeners, timeouts, shutdown), `jobs`,
   `cluster`, `cache`, `secrets`. The `valkey` section belongs to [ha-and-helm.md](ha-and-helm.md)
   R-HA-056, and R-ARCH-031 implements it.
@@ -2726,6 +2830,11 @@ Acceptance criteria:
 ### R-ARCH-022 · Outbound HTTP client factory
 Priority: **MVP** · Covers: HA-019, RMT-015
 
+Every CA bundle and client certificate of an outbound client is re-read without a restart, on the reload
+bound of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-035 (60 s), so the statement that the
+bundle is read once at start-up does not hold; the reload is required from M0, not in P1. The reloader is the
+one of R-ARCH-035. The object store's CA trust follows Q-STOR-14 until it is supported.
+
 - Every outbound HTTP request is made by a client from `internal/outbound`. This includes upstream
   registries, OIDC discovery and JWKS, the GitLab issuer JWKS, the object store and webhooks (P1).
   The factory builds clients per purpose, and per remote repository.
@@ -2760,7 +2869,7 @@ Priority: **MVP** · Covers: trove-only
 
 The wire format on `/api/v1/`, `/auth` and `/files` is RFC 9457 problem details, as
 [api-and-ui.md](api-and-ui.md) specifies (`type`, `title`, `status`, `detail`, `instance`, and the
-extensions `code`, `request_id`, `errors`). Package-protocol routes keep their ecosystem's error
+extensions `code`, `requestId`, `errors`). Package-protocol routes keep their ecosystem's error
 shape. This requirement fixes the internal model every component uses.
 
 ```go
@@ -2819,7 +2928,7 @@ func (e *Error) Unwrap() error
 Acceptance criteria:
 - `curl -s -D h.txt -H "Authorization: Bearer $T" https://trove.example.com/api/v1/repositories/nope`
   returns `404`, `application/problem+json` and `.code == "repository_not_found"`, and
-  `.request_id` equals the `X-Request-Id` header in `h.txt`.
+  `.requestId` equals the `X-Request-Id` header in `h.txt`.
 - With PostgreSQL unreachable, API calls return `503` with code `database_unavailable` and
   `Retry-After`, and the body contains no SQL.
 - `npm view trove-nope-4711 --registry …/npm-local/` makes npm print its normal `404 Not Found`
@@ -2900,7 +3009,7 @@ learns of the removal with a delay. The steps cover that delay first:
 5. At the deadline, the requests still running are cut by closing their connections, with one
    exception. A request whose request body has been read completely is storing and committing an
    upload, and it is never cut between its commit and its status line. It runs on into the 5 s
-   margin of the grace period, for at most 4 s, so the process still exits before the kubelet's
+   margin of the grace period, for at most 3 s, so the process still exits before the kubelet's
    `SIGKILL`. P-11 bounds that work (1 s plus size ÷ 150 MiB/s, proposed). Without the exception, a
    publish cut after its commit would be retried by its client and refused as an existing version
    (`409 npm_version_exists`, [formats/npm.md](formats/npm.md)), although it had succeeded. npm
@@ -4154,12 +4263,334 @@ setup is sized for it.
   resume and uploads retry, and counts the cuts; an acceptance criterion resumes a cut download on
   another replica.
 - R-ARCH-024, after review on 2026-10-28: an upload whose body has arrived completely is never cut
-  between its commit and its status line. It runs on for at most 4 s of the grace period's 5 s
+  between its commit and its status line. It runs on for at most 3 s of the grace period's 5 s
   margin, so a retried publish never meets its own committed version as a conflict; an acceptance
   criterion publishes across the deadline.
 - Cross-page: [storage.md](storage.md) R-STOR-012 (`Content-Length` on every blob response and
   `If-Range` support); [ha-and-helm.md](ha-and-helm.md) R-HA-011 (size the grace period to the p99
   transfer, and name this decision).
+
+### Q-ARCH-19 · Package-level state the state rule allows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No exemption | Every package-level pointer outside the allowed trees is reported | Strictest reading of R-ARCH-032 | Compiled regular expressions must move into functions or into wrappers, for no gain in safety |
+| (b) Exact exemption of `*regexp.Regexp` (chosen) | A compiled regular expression is exempt by package path and type name; every other pointer is still reported | An immutable program is not state a request can leave behind. The exemption names one type, so nothing else slips through. | One more named exception to keep in the archtest list |
+| (c) Exemption of every immutable type | Any type the author declares immutable is exempt | Covers future immutable values | An author decides what "immutable" means, which is the judgement the rule exists to avoid |
+
+**Choice:** (b) — `*regexp.Regexp` is exempt, matched exactly by package path and type name.
+
+**Rationale:** The rule protects against state that a request leaves in a replica's memory. A regular
+expression compiled at start-up is shared and never written after compilation, so it cannot carry
+state between requests. Generated files, variables with a `//go:embed` directive and variables of
+interface type are skipped for the same reason: they are not hand-written state of these kinds. The
+development agent would revisit this if a regular expression were compiled from request data, or if
+the rule had to cover lazily filled package variables, which would need their own exemption with a
+reason.
+
+**Applied in the spec:** R-ARCH-032, acceptance criterion on package-level state: the frozen registries
+are named exactly (`formats`, `jobs`, `errs`, `secrets`, `meta`, `backup/tables`), and the exemptions
+of this block are stated.
+
+### Q-ARCH-20 · Web build output in git and the placeholder
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Commit the built locale directories | `internal/webui/dist/<locale>/` is in git, so a clone builds a working UI without Node | No build step before `go build` | Large generated diffs on every UI change; a stale build can be committed |
+| (b) No placeholder; the UI is built only in CI and releases | `go build` depends on a UI build | Nothing generated in git | `go build` needs Node.js, against R-ARCH-003's acceptance criterion |
+| (c) Committed placeholder `index.html`; built locale directories ignored | `internal/webui/dist/index.html` is committed; `dist/<locale>/` is ignored by `internal/webui/.gitignore`. With no locale directory the placeholder serves every locale. With some but not all configured locales built, `webui.New` fails. (chosen) | `go build` works without Node.js; a release build runs the web build first; a half-built UI cannot start | A binary built without the web build shows a placeholder page, which the release procedure must never ship |
+
+**Choice:** (c) — the placeholder is committed, the locale directories are not, and a partially built
+UI fails at start-up.
+
+**Rationale:** R-ARCH-003 requires `go build ./cmd/trove` on a clean checkout without Node.js, and
+the release build must still embed the real UI. Ignoring the locale directories keeps the diffs
+generated by the build out of git. Failing when some locales are missing is the fail-fast choice:
+a UI that serves one language and 404s another is worse than a start-up error. The development agent
+would revisit this when the release pipeline builds the UI in CI and no release can be produced
+without it.
+
+**Applied in the spec:** R-ARCH-003 states that built locale directories are not committed and
+`internal/webui/.gitignore` ignores them; the placeholder rule is unchanged.
+
+### Q-ARCH-21 · Setup failures of the outbound factory and the object-store exception
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `outbound.New` returns an error on a setup problem | A failed trust store stops start-up | Problems surface at start-up | Local repositories and the probes stop because of one remote setting |
+| (b) `outbound.New` returns a `*Factory` whose `Err()` reports the setup problem; every request through the factory fails (chosen) | A failed trust store (`proxy.outbound.tls.ca_files`, or `use_system_roots: false` without files) is kept in the factory. Clients built by it fail every request with that error. | Replica stays up for the parts that need no outbound client; the failure is visible on every use | A misconfigured replica answers remote requests with errors until the configuration is fixed |
+| (c) Silent fallback to the system roots | A failed trust store is ignored | Nothing breaks | Certificates are verified against a different trust store than configured |
+
+For the egress policy of R-REPO-038 (the address policy of [repositories-and-proxy.md](repositories-and-proxy.md)):
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every purpose | The policy applies to the object-store client too | One rule for every outbound connection | The object-store endpoint is operator-configured and is often a private address (MinIO, SeaweedFS, Ceph RGW in the cluster), so the default policy refuses it |
+| (b) Every purpose except `objectstore` (chosen) | The `objectstore` purpose sets the egress check off; its transfers keep their own stall detection | The endpoint is configuration the operator writes, not input from a client | The gap of [H-56](#h-56--the-object-store-endpoint-skips-the-egress-address-policy) |
+| (c) Per-purpose allowlist in configuration | A setting lists the purposes that may reach private addresses | Explicit per deployment | One more setting to get wrong |
+
+**Choice:** (b) for the policy, and (b) for setup failures — the factory keeps its setup error, and every request through it fails with that error.
+
+**Rationale:** The endpoint of the object store is written by the operator in the configuration, so
+its address is not untrusted input in the way an upstream's redirect is. Refusing it by default would
+break every on-premises installation. The gap stays recorded as H-56 rather than hidden. For setup
+failures, a replica that cannot verify upstream certificates must not contact upstreams, and it still
+serves what needs no upstream. The development agent would revisit the object-store exception when
+a deployment shows that the endpoint can come from a request, or when the configuration of endpoints
+moves into the database.
+
+**Applied in the spec:** H-56 records the object-store exception as an open gap. R-ARCH-022 is
+unchanged.
+
+### Q-ARCH-22 · Sealed-column registry and the envelope format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Column names passed to `Seal` as strings | Any table and column may be sealed by name | No registration step | A column can be sealed under a binding that no reader expects, and nothing checks it |
+| (b) Registry values only (chosen) | `secrets.Register(table, primaryKey, column)` returns a `Column`; only the registry creates one. `Seal` on any other column fails with `ErrUnregistered`. | The binding (table, primary key, column) is fixed by the code that owns it | One call per sealed column at start-up |
+| (c) Registry in the database | The list of sealed columns is a table | Editable at run time | The list would decide what is encrypted, so a row change could leave secrets in plaintext |
+
+Envelope: `v1:<key id>:<base64(nonce ‖ ciphertext ‖ tag)>`, AES-256-GCM, additional authenticated data
+`trove/sealed/v1` followed by the table, the primary key and the column name (chosen).
+
+**Choice:** (b) for the registry; the envelope as stated above.
+
+**Rationale:** The additional authenticated data binds a sealed value to its row and column, so a
+value copied to another row or column fails authentication instead of decrypting to a foreign secret.
+A version segment at the front of the envelope lets a later format be read beside this one. The
+development agent would revisit the envelope when a second cipher or a key service (KMS) is needed.
+
+**Applied in the spec:** R-ARCH-021 keeps the mechanism; the envelope and the registry rule are the
+choice of this block.
+
+### Q-ARCH-23 · Query execution mode behind a transaction-mode pooler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) pgx default `cache_statement` everywhere | Prepared statements are cached per connection | Fastest for repeated queries on direct connections | A transaction-mode pooler hands the next transaction a connection whose named statements are gone |
+| (b) `QueryExecModeExec` for the pooled main class when `database.pooler.mode` is `transaction`; the default elsewhere (chosen) | Parameters are sent through the extended protocol on the unnamed statement | Works through any transaction-mode pooler, with or without `max_prepared_statements` | Slower than cached statements for hot queries, measured at M5 |
+| (c) A configuration key that selects the mode | The operator chooses per deployment | Explicit | An operator choice that breaks the pooler case silently |
+
+Refusal rule (chosen with (b)): a session-scoped connection that lands on a pooler refusing session
+parameters (SQLSTATE `08P01`) fails with `ErrSessionState` and is never retried.
+
+**Choice:** (b), with the refusal rule.
+
+**Rationale:** Exec mode costs little on the main class and removes a whole failure class without a
+setting to get wrong. The session classes cannot run behind a transaction pooler at all, so the
+refusal is the only correct answer for them; retrying it would only repeat the same refusal.
+
+**Applied in the spec:** R-ARCH-019 already states the exec mode of the transaction-mode pooler; no
+requirement text changed. The session-state refusal is not yet in R-ARCH-019 and is recorded here only.
+
+### Q-ARCH-24 · Opening the PostgreSQL pool, and a connection lost during COMMIT
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Retry every failure within `database.retry.max_elapsed` | Connection errors, version errors and privilege errors all retry | One rule | A wrong version or missing privilege waits for the full bound before it is reported |
+| (b) Connection errors retry within `database.retry.max_elapsed`, then `IsUnavailable`; version, encoding and superuser failures fail at once (chosen) | At start-up and per transaction, a failover error is retried with jittered backoff until the bound or the request deadline. A COMMIT that the server rejects with a failover error did not commit and is retried. A COMMIT whose outcome is unknown (the connection closed without a server answer) is never retried and answers `503` `database_unavailable`. | Configuration errors surface at once; a failover is absorbed | An unknown COMMIT outcome leaves one case where a client retry may duplicate a committed write |
+| (c) Never retry at open | The first failed connect ends the process | Simple | A replica restarts for every failover window |
+
+**Choice:** (b).
+
+**Rationale:** A failover is normal in an HA deployment and must not surface as an error to clients.
+A configuration error will not heal by waiting, so it fails at once. The unknown COMMIT outcome cannot be
+retried safely by the server, so the replica reports it. The gap is accepted: idempotent operations
+(npm identical publish, NuGet identical push, idempotency keys of [api-and-ui.md](api-and-ui.md)
+R-API-014) absorb a retry, and other writes are not retried by the server. The development agent would
+revisit this if a write without an idempotency key shows a duplicate in the audit trail.
+
+**Applied in the spec:** R-ARCH-019 does not yet state the unknown-COMMIT rule; this block is its record
+and no requirement text changed in this round.
+
+### Q-ARCH-25 · READONLY replies and the circuit breaker
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Count a `READONLY` reply as a failure | The breaker opens on a demotion | One rule for every error | A demoted primary keeps the replica away from the new primary for `valkey.circuit_breaker.open_duration` on top of the refresh that finds it |
+| (b) Neutral for the breaker; counted as `trove_valkey_errors_total{kind="readonly"}`; the next probe or refresh marks Valkey degraded (chosen) | The client moves on at once | The demotion is visible in metrics, and the bound stays the refresh interval plus 1 s | A replica that cannot reach the new primary is not counted as failing until the probe runs |
+| (c) Ignore `READONLY` entirely | No metric, no state change | Smallest code | Blind to a demotion |
+
+**Choice:** (b).
+
+**Rationale:** A `READONLY` reply says that the node was demoted and that the client is about to move
+on. It does not say that Valkey is down. Opening the circuit for it would delay the failover that the
+replica is already following. The development agent would revisit this if the metric shows
+`READONLY` replies that do not end in a primary change.
+
+**Applied in the spec:** R-ARCH-031 states the bound of the failover (refresh interval plus 1 s);
+the breaker treatment is the choice of this block.
+
+### Q-ARCH-26 · Valkey key families, expiry and keyspace
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Free-form key strings with an expiry chosen per call | Any code may write any key | No registration | A key without an expiry is possible, and nothing checks the name |
+| (b) Key families registered at package initialisation with a mandatory positive maximum expiry (chosen) | `RegisterKeyFamily(mechanism, version, maxTTL)` creates the family; `(*Valkey).Key(family, parts...)` forms a key with the family's maximum expiry; `KeyTTL` may shorten it, never lengthen it | A key without expiry cannot be written through the API. Names are checked in one place. | A new mechanism needs a family registration |
+| (c) One global key builder with string concatenation | A helper joins its arguments | Short code | Raw names can reach a key, which the rule against raw identifiers forbids |
+
+Rules of the chosen option: the mechanism matches `^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)*$`; a part matches
+`^[A-Za-z0-9_-]{1,128}$`; the keyspace is the first 12 hex digits of `system_state.keyspace_id` after its
+dashes are removed (the UUID is read once at start-up, `internal/app`).
+
+**Choice:** (b).
+
+**Rationale:** The registry makes "every key expires" a property of the code, not a review item. The part
+pattern keeps raw names out of keys. Removing the dashes keeps the keyspace in a fixed hexadecimal form
+for every installation. The development agent would revisit this if a mechanism needs keys that are
+built from more than one family, or a part that cannot be an identifier or a hash.
+
+**Applied in the spec:** R-ARCH-030: the registry file is `internal/cluster/valkey_keys.go`; the part
+form and the `Key` call are stated; the keyspace derivation says that the dashes are removed.
+
+### Q-ARCH-27 · Valkey connections: data, Pub/Sub and Sentinel probes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One connection for commands and subscriptions | Pub/Sub shares the data connection | Fewest connections | A subscription holds a connection that commands need; a demotion is harder to follow |
+| (b) One dedicated Pub/Sub connection that follows the primary; a short probe connection per Sentinel at each refresh (chosen) | The data client is `valkey-go`; the Pub/Sub connection is named `trove:<instance>:pubsub` and re-subscribes after every primary change; trove's own Sentinel loop opens a short connection per Sentinel every `valkey.sentinel.refresh_interval` and closes it | The subscriber and the commands do not block each other; the connection count stays fixed | Two connections more than (a) |
+| (c) A Pub/Sub connection per change area | Each area subscribes on its own connection | Isolation per area | The connection count grows with the areas, against the bound of R-ARCH-031 |
+
+**Choice:** (b).
+
+**Rationale:** A replica needs a fixed, small number of connections to Valkey, and a subscription must
+never stop the commands that a request waits for. The name of the Pub/Sub connection makes it visible
+in `CLIENT LIST`. The development agent would revisit this if the replica count makes the fixed set of
+connections a problem at the Valkey server's connection limit.
+
+**Applied in the spec:** R-ARCH-031: the Sentinel reconciliation paragraph states the probe connections.
+The naming of the Pub/Sub connection follows from the same choice; the subscriptions paragraph is consistent with it.
+
+### Q-ARCH-28 · Layering of the blob store, and where its garbage-collection job registers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `blob` as a domain package that formats call directly | An arrow from `formats` to `blob` | Formats can store bytes without the host | Formats hold storage logic, and the layer rule has no leaf for shared types |
+| (b) `blob` as infrastructure; formats reach it only through the host interface; the GC job registers in `internal/app` through `Collector.RunJob` (chosen) | `blob` imports neither `jobs` nor the formats. `internal/app` builds the job kinds from a `JobRun` adapter. | The layer rule holds; `blob` is testable without the job framework | One adapter in the composition root |
+| (c) `blob` imports `jobs` to register its own kinds | The store registers its job kinds itself | Local registration | `blob` depends on the domain layer, which R-ARCH-002 forbids |
+
+**Choice:** (b).
+
+**Rationale:** The layer rule of R-ARCH-002 puts `blob` below the domain. Formats must not hold storage
+handles, so the host interface is the only path to storage (R-ARCH-009). The composition root is the one
+place where all layers are visible, which is where the registration belongs.
+
+**Applied in the spec:** R-ARCH-002: the layer list has the leaf layer and names `blob` as infrastructure;
+the diagram has no arrow from `formats` to `blob`. Open: the archtest rule still admits the root package
+`internal/blob` for formats, and the format rule is a denylist (architecture review A2); the spec states
+the target.
+
+### Q-ARCH-29 · What the scheduler enqueues on each tick
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Run a task only at its first scheduled time | A new installation waits for the first matching time | No surprise run at start-up | A weekly task waits up to a week after install |
+| (b) Each tick enqueues the latest due slot of every enabled task (chosen) | The scheduler inserts the most recent due slot of each enabled task into `job` with the task name as its key; the unique index `job_task_slot` on `(task, scheduled_for)` refuses a second insert of the same slot | A fresh installation runs each task once; missed runs during an outage collapse into one | A task that was due long ago runs once, not once per missed slot |
+| (c) Run every missed slot | Each due slot is enqueued | Complete history | A long outage replays hours of maintenance at once |
+
+**Choice:** (b).
+
+**Rationale:** The coalescing of missed runs is what [ha-and-helm.md](ha-and-helm.md) R-HA-005 already
+requires for outages. The unique slot index makes a double insert harmless, which is also what keeps
+the task single across replicas. The development agent would revisit this if a task needs every slot,
+for example one that must process each day's data.
+
+**Applied in the spec:** R-HA-005 names `job_task_slot` as the slot record (see [ha-and-helm.md](ha-and-helm.md)).
+
+### Q-ARCH-30 · Fencing of singleton writes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No token: writes on the lease's own session (chosen) | Every state change of a singleton runs on the session that holds the lease advisory lock; if the session dies, the lock and the write fail together ([ha-and-helm.md](ha-and-helm.md) R-HA-006) | The fence is the database's own lock on the connection that writes; nothing to hand out or compare | The fence works only where the session is kept, so the session host must be direct or session-mode |
+| (b) `pg_current_xact_id()` as a fencing token, checked against `pg_locks` in the write transaction | Each acquisition yields an `xid8`, which the writer presents | Looks like a classic fencing token | Not monotonic across an asynchronous failover, so a later holder can carry a lower token; and a `pg_locks` check on another session is not a fence. Rejected also because nothing in the code used it (architecture review, A7) |
+| (c) Table-based leases with fencing tokens | Lease rows with a counter | Works through any pooler | Gives up the immediate release on session end that R-HA-006 builds on (Q-ARCH-14) |
+
+**Choice:** (a).
+
+**Rationale:** The lock and the write share one session, so a replica that lost its lease cannot commit. A token
+adds a second mechanism that is weaker than the session. The development agent would revisit this only if a
+singleton must write through a pooler that cannot keep a session, which Q-ARCH-14 already excludes.
+
+**Applied in the spec:** R-HA-006 is the rule and is unchanged; R-HA-052's stale "lease table" wording is fixed.
+No token is specified anywhere.
+
+### Q-ARCH-31 · How TLS material is reloaded
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Poll the file content every `server.tls.reload_interval` and compare a hash (chosen) | A timer reads both files and swaps the certificate when the content changes | Works on every volume type, including Kubernetes Secret volumes whose files are replaced by a symlink swap; no watcher to lose events | A change takes up to one interval to appear (default 10 s) |
+| (b) Watch the files with a filesystem notifier (fsnotify) | The kernel reports changes | Immediate | Missed events when a Secret volume swaps a symlink, which needs a watch on the directory; a dependency for each platform |
+| (c) Restart the process on a change | The pod is restarted | Simplest | Violates the owner constraint of 2026-10-29 (no restart) |
+
+**Choice:** (a), with the interval as the one knob. The bound of R-ARCH-035 (reload_interval + 1 s) follows.
+
+**Rationale:** The owner requires that rotation needs no restart, and Secret volumes are the mechanism the chart uses. A
+polling loop is the one design that every mounted file type satisfies. The development agent would revisit this if
+the interval must be below one second, which would move the check to a watcher on the directory.
+
+**Applied in the spec:** R-ARCH-035 states the reloader and its bound.
+
+### Q-ARCH-32 · Client certificates on trove's client listener
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Client certificates required on every connection | The listener refuses clients without a certificate | Strong authentication of the transport | Breaks every package client and browser, and the kubelet probes cannot present one |
+| (b) Optional: `server.tls.client_ca_file` set means verified, off by default (chosen) | Only an installation that sets the CA requires a certificate, typically for a proxy that connects to trove | Proxies can prove themselves; clients are unaffected by default | An operator must decide per installation |
+| (c) No client certificates | Verification is never offered | Smallest code | No way to pin a proxy to trove |
+
+**Choice:** (b).
+
+**Rationale:** The owner needs trove to accept TLS from a reverse proxy. Client certificates are a stronger tie for that
+proxy, not for people, which is why the identity model (INV-7) stays with the external provider. The development agent
+would revisit this when a proxy-to-trove setup needs per-client identities, which the authentication work would carry.
+
+**Applied in the spec:** R-ARCH-035 states the switch and its default.
+
+### Q-ARCH-33 · One certificate pair for both listeners, or one pair each
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One pair for both listeners by default; `server.ops_tls` may name its own pair (chosen) | `server.tls` serves `:8080` and `:8081`; an installation that wants a separate ops certificate sets `server.ops_tls` | One rotation covers both; the chart needs one Secret | Both listeners share one private key unless the ops pair is set |
+| (b) Separate pairs always | Two Secrets, two rotations | Separation by construction | Twice the rotation and mounts for every installation |
+| (c) Ops listener in plain HTTP | Probes and metrics unencrypted | Simplest probes | Violates INV-20 |
+
+**Choice:** (a), with `server.ops_tls` as the override.
+
+**Rationale:** The probes and the metrics live on the same pod and the same trust domain, and one pair keeps the
+rotation simple. The override covers the case where the monitoring side requires a different CA. The development agent
+would revisit this when an installation has a monitoring CA that must not sign client traffic.
+
+**Applied in the spec:** R-ARCH-035 states the default pair and the override.
 
 ## What this does not cover
 
@@ -4252,3 +4683,30 @@ are unkeyed SHA-256 hashes, so a reader can recover an address by enumerating th
 What makes it real: a Valkey reachable from other workloads, without a NetworkPolicy that limits it
 to trove's pods and the Sentinels; an ACL user shared with other applications, or the `default`
 user; TLS switched off on a network an attacker can observe, which exposes the ACL password.
+
+### H-55 · Key files of the stored-secret key ring are read once at start-up
+
+Stage: the key files of `secrets.encryption_key_files`, read by the key-ring loader at start-up
+(R-ARCH-021, [ha-and-helm.md](ha-and-helm.md) R-HA-027), for every sealed column.
+
+Live from the first rotation: a key file that is replaced, or removed from the list, keeps its key in
+memory on every replica until that replica restarts. A key that is suspected compromised therefore
+stays in use on a replica that was not restarted.
+
+Subject: the confidentiality of the sealed values under that key. What makes it real: an operator
+rotates a key file and expects the old key to stop decrypting, or a key file is copied into a Secret
+that other workloads can read. Mitigation today is the restart of every replica after a rotation.
+
+### H-56 · The object-store endpoint skips the egress address policy
+
+Stage: every object-store client of purpose `objectstore` (`internal/outbound`, used by
+`internal/blob/s3`, R-ARCH-022, [storage.md](storage.md) R-STOR-030).
+
+Live for every installation whose `storage.s3.endpoint` resolves to an address that the egress policy
+would refuse, which includes every private-network object store. The endpoint comes from the
+configuration the operator writes. Subject: the set of addresses that a replica may connect to with the
+object-store credentials.
+
+What makes it real: a write to the configuration, or a compromise of the operator's configuration
+management, can point the object-store client at an internal address, and the policy that refuses the
+same address for upstreams does not apply. Upstream requests stay under the policy.

@@ -23,6 +23,7 @@ semantics live on the owner pages and are referenced, not repeated.
 | Format plug-in interface, configured public base URL, trusted reverse proxies, process roles, in-process caches and the change log, Valkey usage and degradation, cross-replica request collapsing, no state between requests, graceful shutdown | [architecture.md](../architecture.md) |
 | Backup contents, export classes, revision columns, restore fix-ups | [backup-and-restore.md](../backup-and-restore.md) |
 | Node drain, role split and web pools, transaction-mode pooler, revocation journal | [ha-and-helm.md](../ha-and-helm.md) |
+| Endpoints: per-endpoint hosts and base URLs, accepted credentials, exposure rules and the exposure adapter that R-NPM-048 implements | [endpoints.md](../endpoints.md) |
 
 Covers: every MVP and P1 entry of the npm format catalog
 [features/formats/npm.md](../../features/formats/npm.md), and the npm-specific parts of
@@ -806,8 +807,10 @@ Priority: **MVP** · Covers: PKG-NPM-032
   The ETag is derived from inputs, so a 304 needs no rendering: local (repository, package,
   `packages.rev_seq`, variant, public base URL, rendering settings); remote (stored document
   digest, serving address, variant, settings, as R-REPO-043 requires); virtual (merge fingerprint,
-  variant). The in-process rendition and merged-metadata caches key their entries by the same
-  tuple, so a replica never serves cached bytes under a validator computed from other inputs.
+  variant); and, for every class, the endpoint of the request and its exposure fingerprint
+  (R-NPM-048, [endpoints.md](../endpoints.md) R-EP-018). The in-process rendition and
+  merged-metadata caches key their entries by the same tuple, so a replica never serves cached
+  bytes under a validator computed from other inputs.
 - **`If-Modified-Since` never produces a 304 on a package document.** It is ignored when
   `If-None-Match` is present, as RFC 9110 §13.1.3 requires, and also when it arrives alone. A
   document's date does not move with every change of its bytes: a restore returns
@@ -2278,6 +2281,56 @@ Acceptance criteria:
   request per package to the test upstream.
 - R-BAK-022's criterion (an ETag kept from the old installation answers `200` after the restore
   and one publish) passes for a full, an abbreviated and a merged document.
+
+## Endpoints
+
+### R-NPM-048 · npm documents on an endpoint with exposure rules
+Priority: **MVP** · Covers: trove-only
+
+The npm plug-in implements the exposure adapter of [endpoints.md](../endpoints.md) R-EP-018. On an
+endpoint with `exposure: rules`, after the merge of a virtual repository and the rewrite of a remote
+document and before compression:
+
+- **Versions.** `versions` and `time` of the full and the abbreviated document list only the
+  versions the endpoint exposes (R-EP-012). A package without an exposed version answers 404, like
+  an unknown package. `time.created` and `time.modified` keep the values of the unfiltered document,
+  because `modified` must never move backwards for a downstream proxy (R-NPM-012); what that reveals
+  is [endpoints.md](../endpoints.md) H-60.
+- **Dist-tags.** A tag other than `latest` is kept when the rules admit its name and the version it
+  points to is exposed, and dropped otherwise; it is never moved to another version. `latest` is not
+  subject to `distTags`: it keeps its version when that version is exposed, and otherwise moves to
+  the highest exposed version that is not a pre-release, or to the highest exposed version when all
+  are pre-releases, the rule of R-NPM-016.
+- **Top-level fields** (`description`, `readme`, `keywords`, `license`, `homepage`, `repository`,
+  `bugs`, `author`) come from the version the filtered `latest` points to (R-NPM-010);
+  `maintainers` lists only the publishers of exposed versions.
+- **Other documents.** `GET -/package/{name}/dist-tags` returns the filtered tags. The
+  single-version document (R-NPM-014, P1) answers 404 for a hidden version or a dropped tag. Search
+  (R-NPM-037, P1) returns only exposed packages, with the filtered `latest` as their version.
+- **Tarballs** of hidden versions answer the 404 of R-EP-013; the version is the one R-NPM-015
+  parses from the file name.
+- **No writes.** `?write=true`, publish, dist-tag writes, deprecation and unpublish answer 403
+  `endpoint_read_only` (R-EP-013).
+- **Upstream contact.** On an endpoint with `cache_fill: false` (R-EP-019), the audit endpoint
+  (R-NPM-038, P1) answers 501 `npm_audit_unavailable`, as in mode `disabled`, because forwarding
+  would contact an upstream.
+- **Validators.** The ETag of R-NPM-013 includes the endpoint and its exposure fingerprint, so a
+  rule change makes every cached copy of the document fail revalidation.
+- **Version ranges** in rules use node-semver range syntax; `ValidateRange` refuses what npm's own
+  range parser refuses, and pre-releases follow `prereleases`, not the range's pre-release rule.
+
+Acceptance criteria (fixture of [endpoints.md](../endpoints.md) R-EP-012, with `latest` on 2.1.0 and
+`next` on 2.1.0-rc.1 in `npm-internal`):
+
+- On `customers`, `npm view @acme/sdk versions` prints `[ '2.0.0', '2.1.0' ]`,
+  `npm view @acme/sdk dist-tags` prints `{ latest: '2.1.0' }`, and the abbreviated document lists the
+  same versions; through `default` every version and both tags are listed.
+- After `npm dist-tag add @acme/sdk@1.9.0 latest` on `default`, the document on `customers` has
+  `latest: '2.1.0'`, the highest exposed release, and `npm install @acme/sdk` there installs 2.1.0.
+- `npm install @acme/sdk@1.9.0` on `customers` fails with `E404`, and `npm ci` with a lockfile
+  that resolves 2.0.0 succeeds with npm, pnpm and both Yarn lines of R-NPM-045.
+- After a rule update that hides 2.0.0, a conditional request with the earlier ETag on any replica
+  answers 200 with a document without 2.0.0.
 
 ## Deferred
 

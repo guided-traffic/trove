@@ -60,6 +60,7 @@ Decisions this page takes:
 | What is checked on a virtual repository? | `read` on the virtual repository as an endpoint gate; content actions on the member that holds or receives the content (Q-AUTHZ-1). | R-AUTHZ-009 |
 | Does fetching an uncached item through a remote repository need a write-type action? | Configurable per remote repository (`cacheFillAction`); default `read`, `deploy` for frozen mirrors (Q-AUTHZ-4). | R-AUTHZ-008 |
 | 401, 403 or 404? | 401 for callers without a credential; 404 for reads the caller may not make; 403 for refused writes and management operations. | R-AUTHZ-016 |
+| Does the endpoint a request arrives on change its rights? | Only downwards: an endpoint with exposure rules is a ceiling for every subject, administrators included, and answers hidden reads with 404 ([endpoints.md](endpoints.md) Q-EP-4, Q-EP-12). | R-AUTHZ-015, R-AUTHZ-016 |
 | Can a token scope grant rights? | Never; it only narrows. Its repository part uses the policy resource set; its resource types are repository content, system capabilities and, from P1, build records (Q-AUTHZ-9, Q-AUTHZ-10). | R-AUTHZ-013 |
 | How do "all signed-in people" get read access? | Through the built-in principal `authenticated`: every user, never service accounts or CI tokens, `read` only (Q-AUTHZ-3). | R-AUTHZ-030 |
 | Who may publish the next version of a package? | Its owners, or a holder of `manage` on it. The grants that allowed the first publish decide the owners. Ownership is enforced by default in new npm and NuGet local repositories (Q-AUTHZ-2). | R-AUTHZ-018 |
@@ -84,7 +85,9 @@ Grants MUST only add rights; there are no deny rules. A subject's rights can be 
 1. exclude patterns inside the same resource set (R-AUTHZ-005);
 2. the token scope (R-AUTHZ-013) and, for CI tokens, the caps and the triggering-user bound of
    [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-013, R-CI-024);
-3. three checks that are not permissions and never grant anything: the endpoint gate of virtual
+3. the exposure of the endpoint the request arrived on ([endpoints.md](endpoints.md) R-EP-013): a
+   ceiling of the same kind, which binds every subject, `content:bypass` included, and never grants;
+4. three checks that are not permissions and never grant anything: the endpoint gate of virtual
    repositories (R-AUTHZ-009), package ownership (R-AUTHZ-018), and the shadowing check on the
    first publish of a name that a remote member already serves, which a `deploy` grant alone does
    not pass ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048).
@@ -619,6 +622,7 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
 | `settings:read`, `settings:write` | yes, yes | yes, — | yes, — | — | — |
 | `security-settings:write`: the authorization settings of this page | yes | yes | — | — | — |
 | `audit:read` | yes | yes | yes | — | — |
+| `endpoints:read`, `endpoints:write`: endpoints and their exposure rules ([endpoints.md](endpoints.md) R-EP-016) | yes, yes | yes, yes | yes, — | yes, — | — |
 
 - Roles are bound to users, groups and service accounts (R-AUTHZ-022). A role bound to a group
   applies to every member, including members synchronized from the identity provider. This is how
@@ -888,6 +892,9 @@ func Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
 }
 
 func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
+    if !idx.Exposure(c.Endpoint).Admits(a, c.Addressed, c) {        // endpoints.md R-EP-013: every subject,
+        return false                                                // decided on the addressed repository
+    }
     if sub.Capabilities().Has(ContentBypass) {                      // roles as admitted by the scope
         return true
     }
@@ -940,7 +947,8 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
         return false                                                // skipped silently
     }
     if m.Class == Remote && m.NeedsUpstream(mc) {                   // uncached, or expired metadata
-        return Allowed(sub, idx, m.PopulateAction, mc)              // otherwise the cache only
+        return c.Endpoint.CacheFill &&                              // endpoints.md R-EP-019
+            Allowed(sub, idx, m.PopulateAction, mc)                 // otherwise the cache only
     }
     return true
 }
@@ -956,9 +964,17 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
   (chunked or resumable uploads, P1, [storage.md](storage.md) R-STOR-011), each request is
   authorized when it arrives, and the request that commits runs the commit-time re-check on its
   own replica.
-- `reasonFor` returns `deny.scope` when a grant would allow the action but a ceiling does not,
+- `reasonFor` returns `deny.exposure` when the endpoint's exposure refuses a read,
+  `deny.endpoint_read_only` when it refuses a write ([endpoints.md](endpoints.md) R-EP-013),
+  `deny.scope` when a grant would allow the action but a ceiling does not,
   `deny.triggering-user` when only the triggering-user bound refuses, and `deny.no-grant`
   otherwise.
+- The coordinate carries the request's endpoint and its addressed repository, the one the client
+  named; `WithRepo` changes neither, so exposure is decided on the addressed repository while grants
+  are decided per member ([endpoints.md](endpoints.md) Q-EP-11). The exposure rules are part of the
+  compiled index and follow its staleness rules (R-AUTHZ-028). On an endpoint with `exposure: all`
+  the first check of `Allowed` admits everything, so every decision on the default endpoint stays as
+  this page describes it.
 - The shadowing check on the first version of a name (R-AUTHZ-007, R-REPO-048) is not part of
   `Decide`, because it may probe an upstream: it runs after `Decide` allowed the write and before
   the commit, without a database transaction held open. It asks `Allowed(sub, idx, Manage, c)`
@@ -1001,6 +1017,8 @@ A refused request is answered as follows (first matching row wins):
 | No credential: anonymous access off, or `anonymous` lacks what the request needs (reads and writes alike) | 401 with the challenge of R-AUTH-002 |
 | `Trove-Authz-Min-Epoch` names an epoch the database has not reached (R-AUTHZ-032) | 412 `authz_epoch_unknown` |
 | Read-type request (request kinds `artifact`, `metadata`, `search`, R-REPO-003) without `read` on the coordinate; for a virtual repository, without `read` on it | 404 |
+| Read-type request that the endpoint's exposure does not admit ([endpoints.md](endpoints.md) R-EP-013) | 404, byte-identical to a missing resource; R-AUTHZ-017 does not change it |
+| Write-type request on an endpoint with exposure rules ([endpoints.md](endpoints.md) R-EP-013) | 403 `endpoint_read_only` |
 | Read on a remote repository that would need to populate, caller may read but not populate (R-AUTHZ-008) | 403 `populate_not_permitted` |
 | Write-type request without a required action | 403, naming the missing action |
 | Ownership refused (R-AUTHZ-018) | 403 `package_owned_by_other_owner` |

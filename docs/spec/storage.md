@@ -509,7 +509,7 @@ request ─▶ authorize (deploy, overwrite) ─▶ admission ─▶ spool + has
    an upload whose body is still arriving is cut: its spool file is removed, nothing is
    committed, and the client's retry reaches another replica. An upload whose body has arrived
    completely is not cut at the deadline: it runs on into the margin that R-ARCH-024 grants (at
-   most 4 s of the grace period's 5 s margin; [architecture.md](architecture.md) P-11 bounds that
+   most 3 s of the grace period's 5 s margin; [architecture.md](architecture.md) P-11 bounds that
    work). If its object write has not finished by the end of that margin, it is cut before its
    commit in the same way, and its multipart upload is aborted. Once its commit transaction has
    started, it is neither cancelled nor cut before its status line, so a drain never makes a
@@ -635,7 +635,7 @@ Acceptance criteria:
 
 - Publishing the same npm tarball to `npm-a` and `npm-b`
   (`npm publish --registry https://trove.example.com/api/npm/npm-b/`) causes exactly one S3
-  `PutObject` (S3 request metric `trove_storage_s3_requests_total{op="put"}` grows by one) and
+  `PutObject` (S3 request metric `trove_storage_s3_requests_total{operation="put"}` grows by one) and
   two item rows referencing one blob row.
 - Race test (Go integration test against PostgreSQL and the per-change S3 store of
   [ha-and-helm.md](ha-and-helm.md) R-HA-051, run in CI): 32 goroutines upload
@@ -2216,6 +2216,12 @@ Acceptance criteria:
 ### R-STOR-030 · Object-store connection and bucket settings
 Priority: **MVP** · Covers: STOR-006, STOR-020, STOR-029
 
+**TLS (R-ARCH-035, INV-20).** An `https://` endpoint is the production form. The object store's CA trust is part of
+the TLS material of R-ARCH-035 once `storage.s3.ca_file` is supported (Q-STOR-14); until then it is refused. An
+`http://` endpoint is a development exception behind `storage.s3.allow_insecure_endpoint: true`, and the development
+and integration profiles use TLS, so no profile needs the exception. Where the endpoint rules below name plain HTTP as
+a permitted form, this paragraph governs.
+
 - trove talks to one bucket through the S3 API with Signature Version 4 (AWS SDK for Go v2).
   Any store that implements the operations below and meets R-STOR-035 is supported (AWS S3,
   MinIO, Ceph RGW and similar).
@@ -2354,8 +2360,8 @@ Priority: **MVP** · Covers: STOR-024, STOR-017
   (network errors, timeouts, `5xx`, credential errors; not `404` or other `4xx`) the circuit opens
   for `circuit_breaker.open_duration`; blob operations then fail fast (R-STOR-036); one probe
   request closes it again.
-- Metrics: `trove_storage_s3_requests_total{op,outcome}`,
-  `trove_storage_s3_request_duration_seconds{op}`, `trove_storage_s3_bytes_total{direction}`,
+- Metrics: `trove_storage_s3_requests_total{operation,outcome}`,
+  `trove_storage_s3_request_duration_seconds{operation}`, `trove_storage_s3_bytes_total{direction}`,
   `trove_storage_s3_circuit_open`.
 
 Configuration:
@@ -3864,6 +3870,30 @@ the GC worker through `job.locked_by`, not `trove_lease_held`);
 [architecture.md](architecture.md) R-ARCH-016 (registration table: queue `maintenance` for the
 storage tasks, `default` for retention runs) and Q-ARCH-14 (its rationale no longer names
 garbage-collection decisions as what the lease fence protects).
+
+### Q-STOR-14 · Object-store settings the outbound layer does not yet support, and plaintext endpoints
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse every key without its outbound option at start-up | `storage.s3.ca_file`, `http.max_connections`, `http.tls_handshake_timeout`, `http.idle_conn_timeout` and `http.proxy_credentials_file` fail the configuration until the outbound layer supports them | Nothing is silently ignored | Five keys that the schema lists are unusable until the outbound work lands |
+| (b) Accept every key and ignore the unsupported ones with a warning | The keys load; the warning names each | Keys usable at once | An operator believes a setting is applied when it is not |
+| (c) Accept the keys, refuse the one whose effect is a security decision, and let the others take the outbound defaults, stated in the code (chosen) | `storage.s3.ca_file` is refused with an error naming the fix (add the CA to `proxy.outbound.tls.ca_files`). `max_connections`, `tls_handshake_timeout` and `idle_conn_timeout` take the factory's defaults; the S3 client does not read `proxy_credentials_file` yet. | A trust-store choice is never taken silently; the timeouts and limits stay usable | The three timeouts and the connection limit are not configurable until the outbound options exist |
+
+Plaintext endpoints (chosen with (c)): the endpoint rules of `config.Storage.Validate` apply, and an `http://` endpoint
+needs `storage.s3.allow_insecure_endpoint: true`. The development profile and the single-node CI values set it.
+
+**Choice:** (c), with the plaintext rule above.
+
+**Rationale:** The one setting that changes which authority a connection trusts (`ca_file`) must fail loudly, because a
+silent fallback to the system roots would verify against a different store than the one configured. The limits and
+timeouts have a sane factory default, so a refusal would only block the operator for no safety gain. The development
+agent would revisit (c) when the outbound layer gains `WithRootCAFile` and the remaining options, because then the keys
+are applied rather than defaulted.
+
+**Applied in the spec:** R-STOR-033 names the metric label `operation` (replacing `op`, Q-OPS-26) in its metrics line,
+and the acceptance criterion of R-STOR-005 that reads the same counter uses `operation` too; no other requirement text changed.
 
 ## What this does not cover
 

@@ -213,6 +213,12 @@ can serve everything its role serves, a further split is routing and scheduling 
   pools like any other Deployment. A pool's pods carry `trove/pool: <name>`, which keeps its
   selectors apart from the main Deployment's (R-HA-028) and becomes the target label `pool` of its
   series (R-HA-045).
+- **Endpoint pools are MVP.** The pool of a further endpoint (`endpoints.<name>.pool`,
+  [endpoints.md](endpoints.md) R-EP-008, Q-EP-3) is a web pool named `ep-<name>` that follows every
+  rule above, but is routed by its own port, Service and edge route instead of by path prefix, and
+  its pods open only the listeners of their endpoints (R-EP-002). The chart renders it from the MVP
+  on; the path pools of `web.pools` and the worker pools stay P1, and their names may not start with
+  `ep-`.
 
 ```yaml
 web:
@@ -231,6 +237,40 @@ Acceptance criteria: with one web pool for `/api/npm/` and one worker pool for t
 R-HA-059's drain test passes; npm requests appear only in the pool's access logs; jobs of the index
 queue run only on the pool's pods; `helm template` fails when two pools list the same path prefix
 or the same queue.
+
+### R-HA-063 · Chart TLS wiring
+Priority: **MVP** · Covers: HA-018
+
+The chart wires TLS through trove's listeners and the platform's connections. `tls.enabled` defaults to `true`
+(Q-HA-32).
+- `tls.existingSecret` names a Secret that the chart never creates. It holds `tls.crt`, `tls.key` and `ca.crt`: the
+  keys of a cert-manager TLS Secret with its CA. Rendering fails with `tls.enabled: true` and no such Secret, naming
+  it, as the encryption key and the backup target do (R-HA-029). `tls.enabled: false` renders no TLS wiring, and H-38
+  applies.
+- The Secret is mounted read-only at `/var/run/secrets/trove/tls/`. The chart sets `server.tls.cert_file`,
+  `server.tls.key_file` and, when mutual TLS is configured, `server.tls.client_ca_file` (R-ARCH-035). A rotated Secret
+  replaces the mounted files, and the reloader of R-ARCH-035 applies them.
+- A further endpoint serves the same pair unless its `tls.existingSecret` or `tls.extraSecrets` name pairs of its own,
+  wildcard certificates included; each is mounted under `/var/run/secrets/trove/endpoints/<name>/<n>/`, rendered as
+  that endpoint's `tls.certificates`, chosen by SNI and reloaded the same way ([endpoints.md](endpoints.md) R-EP-004,
+  R-EP-008). Its Service port declares `appProtocol: https`, and its Ingress or HTTPRoute connects to it over TLS as
+  above.
+- Probes use `scheme: HTTPS` on the ops port (R-HA-034). The kubelet does not verify the served certificate for
+  probes, so they need no CA.
+- The client and ops Service ports declare `appProtocol: https`.
+- The ServiceMonitor sets `tlsConfig` with `ca` from `ca.crt` and `serverName` equal to the Service name, so
+  Prometheus verifies the certificate.
+- The Ingress or Gateway connects to the backend over TLS and verifies it against `ca.crt`. The chart renders the
+  backend-protocol setting of each supported controller, and the chart documentation names the annotation per
+  controller. A Gateway route uses a `BackendTLSPolicy`.
+- The chart test renders `tls.enabled: true` and checks the HTTPS probes, the `appProtocol` and the Secret mount, and
+  checks that rendering without the Secret fails.
+
+Acceptance criteria:
+- `helm template` with `tls.enabled: true` and no Secret fails and names the Secret; with `tls.enabled: false` no probe
+  uses `scheme: HTTPS`.
+- Every request through the dev profile's edge is served over TLS and verified against the dev CA (R-HA-051).
+- Prometheus scrapes the ops port over TLS with the chart's ServiceMonitor, and the target is up.
 
 ### R-HA-003 · Replica registry as the coordination view
 Priority: **MVP** · Covers: HA-006, HA-009
@@ -370,7 +410,8 @@ work. This requirement fixes the HA guarantees both must give.
   `WHERE` clause against the committed row, so the same occurrence is never enqueued twice, even if
   two replicas briefly both believe they hold the lease
   ([UPDATE under READ COMMITTED](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)).
-- `$next` is computed from the schedule's previous `next_run_at`, not from the replica clock. Runs
+- The next due slot is computed from the task's cron expression and its last inserted slot
+  (`job_task_slot`, Q-ARCH-29), not from the replica clock. Runs
   missed during an outage are coalesced into one run, never replayed one by one.
 
 **Job leases.**
@@ -379,11 +420,14 @@ work. This requirement fixes the HA guarantees both must give.
   `state = 'running'`, `locked_by` (the replica's `instance_uid`) and
   `locked_until = now() + jobs.lease_duration`, then commits. No transaction stays open while the
   job runs.
-- The worker extends the lease every `jobs.heartbeat_interval`. If an extension fails (database
-  unreachable, row no longer owned), the worker MUST cancel the job's context and stop changing
-  shared state for it.
-- A reaper (part of the scheduler tick) returns jobs whose `locked_until < now()` to `queued`,
-  increments `attempt`, and moves jobs over `max_attempts` to `failed`.
+- The worker extends the lease every `jobs.heartbeat_interval`. A row that another replica has taken
+  cancels the job's context at once. A failed extension (database unreachable) cancels it only once
+  the lease could already have expired, measured on the worker's monotonic clock from its last
+  confirmed extension (Q-HA-31). Until then the handler keeps running, so a database blip shorter
+  than the lease does not cancel the work. A cancelled handler stops changing shared state for the job.
+- A reaper (part of the scheduler tick) returns jobs whose `locked_until < now()` to `queued`. It does
+  not increment `attempt`: the claim that starts the next attempt does. A job whose attempts are used
+  up ends `failed` with `attempts_exhausted`.
 - All lease and heartbeat timestamps use PostgreSQL's `now()`. Replica clocks never decide whether a
   lease has expired.
 - During a rolling upgrade a worker claims only job kinds it implements (`WHERE kind = ANY($known)`,
@@ -408,13 +452,8 @@ CREATE TABLE job (                           -- excerpt; full definition in arch
 CREATE INDEX job_fetch ON job (queue, priority, run_at) WHERE state = 'queued';
 CREATE INDEX job_lease ON job (locked_until) WHERE state IN ('running', 'cancelling');
 
-CREATE TABLE schedule (
-  name             text        PRIMARY KEY,    -- e.g. 'storage.gc.incremental'
-  cron             text        NOT NULL,       -- 5 fields, UTC
-  enabled          boolean     NOT NULL DEFAULT true,
-  next_run_at      timestamptz NOT NULL,
-  last_enqueued_at timestamptz
-);
+-- No schedule table. Each task's slots are job rows; the unique index job_task_slot on
+-- (task, scheduled_for) keeps one job per slot (architecture.md R-ARCH-016, Q-ARCH-29).
 ```
 
 Configuration:
@@ -819,7 +858,7 @@ background work.
   cut (`Content-Length`) and resumes with `Range` and `If-Range` on any replica; an upload whose
   body was still arriving leaves nothing committed and is retried by the client. An upload whose
   body has fully arrived is not cut before its status line: it may run on into the 5 s margin of
-  the grace period for at most 4 s, so a commit whose answer is lost never turns the client's retry
+  the grace period for at most 3 s, so a commit whose answer is lost never turns the client's retry
   into a version conflict, and the process still exits before `SIGKILL`. Operators size the grace
   period to their p99 transfer duration (R-HA-050); R-HA-059 states the tolerance that the drain
   test applies.
@@ -1205,6 +1244,11 @@ Acceptance criteria:
 ### R-HA-015 · Connection settings and TLS
 Priority: **MVP** · Covers: HA-061, HA-063
 
+**TLS material reload (R-ARCH-035).** The PostgreSQL root CA, client certificate and key named by `ssl_root_cert_file`,
+`ssl_cert_file` and `ssl_key_file` are read again for each new connection, so a rotated file applies to the next
+connection without a restart. A file that fails to load keeps the connections that already use the old material and
+is reported as a reload failure.
+
 - Credentials come only from files mounted from Kubernetes Secrets (`database.username_file`,
   `database.password_file`; INV-15). The password file is read again for every new connection
   (pgx `BeforeConnect`), so a rotated Secret applies without a restart (R-HA-017). A connection
@@ -1587,10 +1631,18 @@ Acceptance criteria (pooler profile of R-HA-051, nightly):
 ### R-HA-056 · Valkey with Sentinel: connection and supported topologies
 Priority: **MVP** · Covers: trove-only
 
+**TLS material reload (R-ARCH-035).** The CA, client certificate and key of the data nodes and of the Sentinels
+(`valkey.tls.*`, `valkey.sentinel.tls`) are read again for each new handshake. A rotated certificate applies to the
+next handshake without a restart; a failed read keeps the material that works and is reported.
+
 Valkey holds trove's shared ephemeral state (INV-3); [architecture.md](architecture.md) R-ARCH-030
 decides what goes there, and R-ARCH-031 specifies the client. This requirement owns the `valkey`
 configuration keys, the supported topologies, the server settings and what the chart wires.
 Valkey with Sentinel is an owner constraint (INV-12).
+
+Three settings weaken the connection and are refused unless named: `valkey.sentinel.tls: false`
+(plaintext Sentinel connections) and `valkey.tls.mode: disable` each require `valkey.allow_insecure: true`,
+and `valkey.key_prefix` must end in `:` (Q-HA-30).
 
 **Supported topologies** (Q-HA-14):
 
@@ -2665,6 +2717,7 @@ to this mechanism. At least these events are flagged:
 | `authz.ownership.removed`, `authz.ownership.released` | authorization R-AUTHZ-019 | Remove the owner |
 | `ci.issuer.*` and `ci.mapping.*` disables and deletions | gitlab-ci R-CI-002, R-CI-019, R-CI-020 | Disable the issuer or mapping. Disabling a mapping that was enabled also suspends every later enabled mapping of its tier, so no job falls through to a mapping that grants more ([Q-CI-11](gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match)) |
 | `authz.policy.updated`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
+| `endpoint.exposure.deleted`; `endpoint.exposure.updated` | [endpoints.md](endpoints.md) R-EP-020 | Delete the rule; the update rule below with the exposure comparator of R-EP-020, whose suspension disables the rule |
 | `npm.unpublish` | [formats/npm.md](formats/npm.md) R-NPM-017, R-NPM-047 | Withhold the version: tombstone it and apply the dist-tag rule, leaving its items stored and unserved, when the restored repository holds it live with the journaled integrity (`applied`); `already in effect` when it is tombstoned; otherwise `subject unknown`. Nothing is deleted; `trove admin npm reinstate` reverses it |
 | `package.published`, `package.deleted` (from P1 also the copy and move events of R-STOR-019) of local NuGet repositories | [formats/nuget.md](formats/nuget.md) R-NUGET-033 | Addition of an absent version: write a `reserved` tombstone for the journaled SHA-512. Removal: an absent version's tombstone becomes or is written as `removed`; a present version with the journaled SHA-512 is reported `revived`; never delete |
 
@@ -2830,6 +2883,8 @@ does not contain `trove`, overridable by `fullnameOverride`):
 | HTTPRoute | `<fullname>` | `gateway.enabled` |
 | Gateway | `<fullname>-gateway` | `gateway.enabled` and `gateway.create.enabled` (P1, R-HA-053) |
 | NetworkPolicy | `<fullname>` (`web` and `worker`), `<fullname>-migrate`, `<fullname>-restore`, `<fullname>-backup` | `networkPolicy.enabled` |
+| Service, Ingress, HTTPRoute, NetworkPolicy | `<fullname>-ep-<name>` per further endpoint: its Service and port, its own Ingress or HTTPRoute with its class, hosts (a wildcard host included) and TLS entries, and a NetworkPolicy for its port ([endpoints.md](endpoints.md) R-EP-008) | per entry of `endpoints`; the Ingress with its `ingress.enabled`, the HTTPRoute with its `gateway.enabled` |
+| Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-web-ep-<name>`, the optional pool of an endpoint ([endpoints.md](endpoints.md) R-EP-008) | `endpoints.<name>.pool.enabled` |
 | ServiceMonitor, PrometheusRule | `<fullname>` | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
 | anything | from `extraObjects` | listed |
 
@@ -2844,9 +2899,10 @@ does not contain `trove`, overridable by `fullnameOverride`):
   (R-HA-045). Selectors use name, instance, component and, for `web` and `worker`, `trove/pool`,
   from the MVP on, because selector labels are immutable: adding a pool later then never overlaps
   the main Deployment's or the client Service's selector and never changes an immutable one.
-- **Ports (HA-021).** Containers listen on 8080 (`http`, client listener) and 8081 (`ops`) and
-  nothing else (INV-6). Both ports are unprivileged, so no capability is needed. Replicas need no
-  port open towards each other.
+- **Ports (HA-021).** Containers listen on 8080 (`http`, the default endpoint's client listener),
+  8081 (`ops`) and the port of each further endpoint they serve ([endpoints.md](endpoints.md)
+  R-EP-002, R-EP-008), and nothing else (INV-6). Every port is unprivileged, so no capability is
+  needed. Replicas need no port open towards each other.
 - The pod template carries `checksum/config` (hash of the rendered ConfigMap), so every
   configuration change rolls the pods. Secret contents are not hashed, because the chart does not
   read them. Rotated Secret files are re-read by their consumers where the owning page says so
@@ -2888,11 +2944,12 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` | both |
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
 | `restore.enabled` with a `web` or `worker` replica count above 0 or autoscaling enabled | `restore.enabled` and the value |
-| Two pools with the same name, path prefix or queue (P1, R-HA-062) | the pools |
+| Two pools with the same name, path prefix or queue (P1, R-HA-062), or a path pool whose name starts with `ep-` | the pools |
+| An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-ep-<name>` exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
 | `gateway.enabled` without `gateway.parentRefs` and without `gateway.create.enabled` | `gateway.parentRefs` |
 | `gateway.enabled` and `.Capabilities.APIVersions` lacks `gateway.networking.k8s.io/v1/HTTPRoute` | the missing API |
 | `metrics.serviceMonitor.enabled` (or `prometheusRule`) and the `monitoring.coreos.com/v1` API missing | the missing API |
-| A chart-managed configuration key set inside `config` (secret file paths, among them those of `valkey` and `backup.target`; `storage.spool.dir`; `server.content_base_url`; `backup.manual_run`) | the key |
+| A chart-managed configuration key set inside `config` (secret file paths, among them those of `valkey` and `backup.target`; `storage.spool.dir`; `server.content_base_url`; `server.endpoints`; `backup.manual_run`) | the key |
 | `contentOrigin.host` equal to the host of `config.server.base_url` or of a `config.server.additional_base_urls` entry (P1, R-HA-055) | `contentOrigin.host` |
 | `podDisruptionBudget` with both `minAvailable` and `maxUnavailable` set | both |
 
@@ -2926,7 +2983,10 @@ Priority: **MVP** · Covers: HA-033, HA-035, HA-036, HA-037, HA-053
     is set (P1, R-HA-055);
   - `backup.manual_run.namespace` (the release namespace) and `backup.manual_run.cronjob`
     (`<fullname>-backup`), which the API's backup summary and the UI read to show the manual-run
-    command ([api-and-ui.md](api-and-ui.md) R-API-050, Q-API-10; R-HA-060).
+    command ([api-and-ui.md](api-and-ui.md) R-API-050, Q-API-10; R-HA-060);
+  - `server.endpoints`, rendered from the `endpoints` values, with the certificate file paths of
+    their mounted Secrets ([endpoints.md](endpoints.md) R-EP-008). The rate-limit classes
+    `server.endpoint_rate_limits` stay ordinary `config` keys.
 - Precedence follows INV-15: environment variable `TROVE_<SECTION>_<KEY>` (nested keys joined
   with `_`, e.g. `TROVE_DATABASE_POOL_MAX_CONNS`) > file > built-in default. `extraEnv` can
   therefore override any file value. The chart itself sets only:
@@ -3511,6 +3571,8 @@ gateway:
     gatewayClassName: ""                # default (proposed); example: envoy-gateway
     listeners: []                       # default (proposed); example: [{name: https, protocol: HTTPS, port: 443, tls: {certificateRefs: [{name: trove-tls}]}}]
 
+endpoints: {}                           # default (proposed): only the default endpoint; every key in endpoints.md R-EP-008
+
 contentOrigin:                          # P1 (R-HA-055); renders config.server.content_base_url (R-ARCH-029)
   host: ""                              # default (proposed): empty = one origin (R-ARCH-007); example: trove-content.example.net
   tls:
@@ -3764,7 +3826,7 @@ Priority: **MVP** · Covers: HA-046
 | readiness | `GET :8081/readyz` | 5 s / 3 s / 1 | The process debounces its checks (`health.failure_threshold`), so the probe removes a pod as soon as the process says so, which matters most for the drain |
 
 - Each probe can be disabled or replaced (`probes.<name>.custom`).
-- Probes use plain HTTP on the operations port. The port is not exposed through Ingress or Gateway
+- Probes use HTTPS on the operations port when `tls.enabled` is `true` (R-HA-063); plain HTTP only when it is `false`. The port is not exposed through Ingress or Gateway
   (R-HA-037), and NetworkPolicy restricts it (R-HA-042).
 
 Acceptance criteria: the probe settings render as in the table. R-HA-008's tests pass with them.
@@ -3877,12 +3939,15 @@ Acceptance criteria:
 ### R-HA-037 · Service, Ingress and TLS at the edge
 Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
 
-- **One entry point (HA-012).** All client traffic (UI, API, package protocols, raw files, login)
-  uses one port and one Service (`<fullname>:8080`), which selects the `web` pods. The Ingress has
-  one rule per host, path `/`, `pathType: Prefix`, to that Service; web pools of R-HA-062 (P1) add
-  more specific prefixes of the same host. There is no second route that bypasses anything, because
-  no internal component sits behind the replica. The operations port is never routed by the Ingress
-  or the Gateway.
+- **One entry point per endpoint (HA-012).** All client traffic of the default endpoint (UI, API,
+  package protocols, raw files, login) uses one port and one Service (`<fullname>:8080`), which
+  selects the `web` pods. The Ingress has one rule per host, path `/`, `pathType: Prefix`, to that
+  Service; web pools of R-HA-062 (P1) add more specific prefixes of the same host. Each further
+  endpoint has its own port, Service `<fullname>-ep-<name>` and its own Ingress or HTTPRoute, with
+  its own class, hosts, optional wildcard host and TLS Secret ([endpoints.md](endpoints.md)
+  R-EP-008); its rules follow this requirement in the same way. There is no second route that
+  bypasses anything, because no internal component sits behind the replica. The operations port is
+  never routed by the Ingress or the Gateway.
 - **No session affinity anywhere (INV-12, INV-18, [architecture.md](architecture.md) R-ARCH-032).**
   Every Service the chart renders, the client Service and the Services of web pools, keeps
   `sessionAffinity: None`, fixed and not a value, and the edge route sets no affinity cookie. The
@@ -3905,12 +3970,15 @@ Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
   annotations. Plain HTTP to the internet is not a supported production setup.
 - **TLS (HA-042).** TLS terminates at the edge: an Ingress TLS Secret, cert-manager through an
   annotation (`cert-manager.io/cluster-issuer`, [cert-manager Ingress](https://cert-manager.io/docs/usage/ingress/)),
-  a Gateway listener, or a cloud load balancer. Traffic from the edge to the pods is plain HTTP
-  inside the cluster (H-38). trove has no TLS listener in the MVP. Internal TLS is Deferred
-  (HA-018). A service mesh with mutual TLS (Istio, Linkerd) or CNI encryption works transparently
+  a Gateway listener, or a cloud load balancer. Traffic from the edge to the pods is HTTPS when
+  `tls.enabled` is `true` (R-HA-063): the edge verifies the trove certificate against the chart's CA. With
+  `tls.enabled: false` it is plain HTTP inside the cluster (H-38). A service mesh with mutual TLS (Istio, Linkerd) or CNI encryption works transparently
   and closes H-38 at the platform level.
 - `ingress.hosts` defaults to the host of `config.server.base_url`, so the URL clients use and the
-  URL trove writes into metadata cannot diverge.
+  URL trove writes into metadata cannot diverge. A further endpoint's Ingress takes its hosts from
+  that endpoint's `baseUrl`, `hosts` and `wildcardHost` the same way; a wildcard host needs a
+  wildcard DNS record and a wildcard certificate in its TLS Secret ([endpoints.md](endpoints.md)
+  R-EP-003, R-EP-004).
 - ingress-nginx, the most common controller, was retired by the Kubernetes project in March 2026
   and receives no further fixes
   ([retirement announcement](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)).
@@ -4144,10 +4212,12 @@ can be added later without moving anything.
   rules. The repository is the first path segment after `/v2/`
   (`docker pull trove.example.com/docker-all/library/alpine:3`). The OCI format page specifies
   this.
-- Subdomain-per-repository routing (`docker-all.trove.example.com`) needs a wildcard host and a
-  wildcard certificate. The chart supports it by adding `*.<base host>` to `ingress.hosts` and
-  `gateway.hostnames` when `config.oci.subdomainRouting` is enabled. Mapping the host to a
-  repository is the OCI page's.
+- Subdomain-per-repository routing (`docker-all.registry.example.com`) needs a wildcard host and a
+  wildcard certificate. It is an endpoint with `wildcardHost: "*.registry.example.com"` and
+  `wildcardRoot: label` ([endpoints.md](endpoints.md) R-EP-006, R-EP-007): the chart renders the
+  wildcard host into that endpoint's Ingress and HTTPRoute, and the binding maps the host label to
+  the repository. A Docker Engine mirror is an endpoint host bound to one repository the same way.
+  The OCI page specifies the registry side.
 - The chart renders no rewrite rules or snippets. This avoids the catalog's mismatch between edge
   rewrites and the server's routing method, where pushes break while pulls work.
 
@@ -4158,11 +4228,20 @@ the chart's Ingress succeeds without any Ingress annotation beyond R-HA-039's.
 ### R-HA-042 · Network policies
 Priority: **MVP** · Covers: HA-054
 
+**Status.** The ingress policy is shipped and enabled by default: the `web` pods admit port 8080 from `http.from`
+(anywhere when empty), port 8081 from `ops.from` (the monitoring namespace by default) and `probeCIDRs`; the `worker`
+pods admit 8081 only; the migration Job admits nothing. The egress policy is not implemented, which is H-41. Enforcement
+on the cluster's CNI is not verified in this build.
+
 With `networkPolicy.enabled: true` (default) the chart renders, for the `web` and `worker` pods:
 
 - **Ingress.**
   - Port 8080 from `networkPolicy.ingress.http.from`; empty means from anywhere, so the ingress
     controller works wherever it runs. `worker` pods do not listen on 8080 (R-HA-001).
+  - The port of each further endpoint, on the pods that serve it, only from that endpoint's
+    `networkPolicy.from` (policy `<fullname>-ep-<name>`, [endpoints.md](endpoints.md) R-EP-008), so
+    each port admits only its own edge. Pods of an endpoint pool admit neither 8080 nor another
+    endpoint's port.
   - Port 8081 only from `networkPolicy.ingress.ops.from` (default: namespace `monitoring`) and
     `probeCIDRs`.
   - Nothing else; replicas do not talk to each other.
@@ -4547,6 +4626,18 @@ against each profile in CI before the beta, and this table is updated from its r
 ### R-HA-051 · Local development profile
 Priority: **MVP** · Covers: trove-only
 
+**TLS in the local profile (R-ARCH-035, R-HA-063).** The dev CA issues trove's listener certificate. Traefik
+serves the client edge over HTTPS on `TROVE_DEV_HTTP_PORT` and connects to trove over HTTPS, verifying the dev
+CA; `base_url` is then an `https` origin of localhost. SeaweedFS serves S3 over TLS. PostgreSQL (CloudNativePG,
+`verify-full`) and Valkey (TLS only) are unchanged. The integration stack runs PostgreSQL, PgBouncer and S3 over
+TLS and its tests use `verify-full`. The plain-HTTP addresses named elsewhere in this requirement are superseded
+by this paragraph.
+
+**A second endpoint in the local profile ([endpoints.md](endpoints.md) R-EP-008).** `values-dev.yaml` renders a
+further endpoint `customers` on port 8443 with base URL `https://packages.trove.localhost:<TROVE_DEV_HTTP_PORT>`, a
+Traefik route of its own for that host and a certificate from the dev CA, so E0.16 runs on the profile. Tests reach
+the host with `curl --resolve`, because the resolution of `*.localhost` differs between developer machines.
+
 A developer brings up an HA-shaped installation on a laptop with one command: the real chart with
 two `web` and two `worker` replicas, PostgreSQL with a standby, Valkey with a replica and three
 Sentinels, an S3 store and the backup CronJob. Failover of every dependency can therefore be tested
@@ -4564,8 +4655,7 @@ pinned by digest.
 | `deploy/dev/s3.yaml` | Single-process SeaweedFS Deployment (master, volume server, filer and S3 gateway in one `weed` process) with an `emptyDir`, Service `trove-s3` on port 9000 mapped to the S3 gateway, plus a Job that creates bucket `trove-blobs` with versioning enabled, bucket `trove-pg-archive` for the WAL archive (Q-HA-3) and bucket `trove-backups` as backup target (R-HA-060) |
 | `deploy/dev/values-dev.yaml` | Chart values: `web` and `worker` 2 replicas each, `highAvailability.enforce: true`, `spool.sizeLimit: 4Gi`, `forcePathStyle: true`, static S3 credentials, `base_url: http://localhost:8080`, the CloudNativePG Secrets, the three Sentinel addresses with `primary_name: trove`, the Valkey Secrets, and the backup target `trove-backups` on the same SeaweedFS endpoint with a schedule every 6 hours |
 
-Steps behind the task-runner target `dev-up` (target names are an example until the task runner is
-chosen):
+Steps behind the task-runner target `dev-up` (GNU Make, the root `Makefile`; Q-HA-21):
 
 ```shell
 kind create cluster --name trove --config deploy/dev/kind.yaml
@@ -4667,7 +4757,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 | PostgreSQL outage | Scale the database to 0 instances for 2 min (hibernation) | No container restart; full recovery within 30 s of return |
 | Object-store outage | The S3 store scaled to 0 for 30 s and for 5 min; during the 5-minute run one replica is deleted | Metadata, UI and API succeed throughout; blob transfers answer `503` with `Retry-After` (R-STOR-036); no running replica turns unready (R-HA-008); the replacement pod started during the outage stays not ready with its container restart count unchanged, because the startup check retries without exiting (R-STOR-035), and becomes ready within 60 s after the store returns; full recovery within `storage.s3.circuit_breaker.open_duration` + 10 s |
 | Node drain | R-HA-059's drain test, variants A to E | R-HA-059's pass conditions |
-| Node loss | `docker stop` of a kind worker node | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s; no duplicate singleton work (lease table) |
+| Node loss | `docker stop` of a kind worker node | Replacement pods ready within `nodeFailureTolerationSeconds` + 60 s; no duplicate singleton work (the lease sessions of R-HA-006) |
 | Change propagation without Valkey | `CLIENT KILL TYPE pubsub` for one replica, then Valkey stopped | R-HA-004: changes take effect within `cluster.epoch_poll_interval` + 1 s; replicas stay ready |
 | Change log unreachable for one replica | NetworkPolicy denying its egress to PostgreSQL | R-HA-004: `invalidation` fails, the replica leaves the Service and catches up before it returns |
 | Valkey planned failover | `SENTINEL FAILOVER trove` | R-HA-057 |
@@ -4946,6 +5036,12 @@ consequence.
 it. A new bullet makes the reservation MVP: `/v2/` answers `404` until the OCI format exists, and a
 route-table test rejects any other client-listener pattern under `/v2/`, because ServeMux's
 conflict check does not catch a more specific pattern. The routing itself stays P1.
+
+Revisited on 2026-10-29 with the endpoints of [endpoints.md](endpoints.md): the choice is unchanged. Options (b) and
+(d) are no longer per-installation burdens but optional endpoint configurations: a host bound to one repository is
+the dedicated registry host of (d) and serves Docker Engine mirrors, and a wildcard host with a label binding is the
+subdomain mode of (b) ([endpoints.md](endpoints.md) R-EP-006, R-EP-007, Q-EP-6). On a bound host the repository
+comes from the binding, not from the first segment after `/v2/`.
 
 ### Q-HA-5 · Zero-downtime upgrades that skip minor releases
 
@@ -5478,6 +5574,250 @@ endpoint and the `database` check on it) and
 [operations-and-observability.md](operations-and-observability.md) R-OPS-001 (the `database` check
 runs on the control connection).
 
+### Q-HA-21 · Task runner and tool pin file
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) GNU Make, root `Makefile` (chosen) | Targets for build, test, chart, dev profile and integration stack | Preinstalled on macOS and Linux runners and on the developer machines; no extra pin | Windows needs a Make port or WSL |
+| (b) Taskfile | A YAML task runner | Readable task definitions | One more tool to pin and install in CI and on every laptop |
+| (c) mage | Targets written in Go | No shell | Another pin and a bootstrap binary before the first target runs |
+| (d) just | A command runner | Simple syntax | One more tool to pin, the same cost as (b) without a file format of its own |
+
+Pin file (chosen with (a)): `tools/versions.env`, `KEY=value` lines only. The Makefile reads it with `include`
+and exports it to the scripts; CI reads it through the `load-pins` action (`.github/actions/load-pins/action.yml`)
+and appends it to `$GITHUB_ENV`. Go is pinned by the `go` line of `go.mod`, sqlc and oapi-codegen by the `tool`
+directives, Angular by `web/package-lock.json`, Node by `web/.nvmrc`. `make versions-check` compares the installed
+tools with the pins. Helm and kubectl in CI come from `azure/setup-*` actions pinned by commit SHA, with their
+versions from the same file.
+
+**Choice:** (a) GNU Make, and one pin file for every tool that is not a Go module or an npm package.
+
+**Rationale:** The task runner is one more thing that every contributor must install, and Make is already on
+the machines that build the project. One file for the pins means a version change touches one line, which
+both the local build and CI read. The development agent would revisit the runner if Windows contributors must
+build without WSL, which would make (b) the choice with the smallest cost.
+
+**Applied in the spec:** R-HA-051 names GNU Make as the task runner (the sentence that called the target names
+an example is replaced). Decision record: [ADR-125](../decisions.md#adr-125--gnu-make-and-one-pin-file-for-every-tool).
+
+### Q-HA-22 · Upload limit against the spool of each role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Raise the worker spool to 12 GiB so that the largest upload fits everywhere | Every role's spool holds the largest upload | One rule, no role exception | Workers hold 12 GiB of scratch for no upload they ever accept |
+| (b) Drop the rule for workers, keep the 5 GiB worker spool and check nothing | The chart does not compare the two sizes for `worker` | Smallest surface | The chart cannot warn when a worker is given a larger `upload.max_size` than its spool |
+| (c) Role-aware rule: `upload.max_size` must fit `spool.max_bytes` on the roles `web` and `all`; the worker spool is 5 GiB (chosen) | The binary checks the rule for `web` and `all` only; the chart renders the same rule and the worker default is 5 GiB | Workers accept no uploads, so their spool needs no upload budget; the check is exact for the roles that take uploads | Two rules to explain |
+
+**Choice:** (c). The worker default is `5Gi` in the chart (`values.yaml`, `worker.spool.sizeLimit`).
+
+**Rationale:** The worker role spools only job output and cache fills, never an upload (R-STOR-004). A rule
+that applies to a role which accepts no uploads forces a 12 GiB default on the role that needs the least
+scratch, so the rule belongs to the roles that take uploads. The development agent would revisit this if a
+worker role starts accepting uploads.
+
+**Applied in the spec:** R-HA-031 already states the worker default of `5Gi` and the rule's scope; no requirement
+text changed in this round.
+
+### Q-HA-23 · Chart validation of the `config` subtree until the binary emits its schema
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Mirror every key of `internal/config` in `values.schema.json` now | The chart holds a second copy of the configuration schema | Typed errors at `helm lint` for every key | Two copies to keep in step, and the copy is wrong the first time a key changes |
+| (b) The `config` object is free-form in `values.schema.json`; the chart types the keys it owns (chosen) | `values.schema.json` types the chart-owned keys and describes the `config` object as rendered to `/etc/trove/trove.yaml` | No second copy; the chart cannot drift from the binary | Typos below `config` are caught only by the binary |
+| (c) No chart validation of `config` | The binary validates at start-up only | Smallest chart | A bad value is rendered and found at runtime |
+
+**Choice:** (b), until the binary emits `internal/config/schema.json` for the chart to consume.
+
+**Rationale:** The binary's schema is the single source of the configuration keys (R-ARCH-020). Until it can
+be read by the chart, a typed copy would be a second source. The chart keeps the keys it owns typed, so the
+rejections of R-HA-029 still hold. The development agent would revisit this when the binary's schema can be
+consumed; the chart test planned for that point would then run `trove admin config validate` over every
+rendered value set. That test is not in `test/chart` yet.
+
+**Applied in the spec:** R-HA-029 and R-HA-031 are consistent with this choice; no requirement text changed.
+
+### Q-HA-24 · Edge controller, failover mechanism and the scatter profile of the local profile
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Traefik as the Ingress controller, pinned by chart and image, on `localhost` port `TROVE_DEV_HTTP_PORT` (default 8080) (chosen) | The edge is an Ingress controller, as the chart's Ingress expects | Same Ingress path as production; one pin set | One more chart and image to pin |
+| (b) A plain port mapping to a Service without an Ingress | Ports are exposed without the Ingress | Fewest components | The Ingress of the chart is not exercised |
+| (c) A Gateway API controller | The HTTPRoute of R-HA-038 | Matches the Gateway route | Not the priority route for the MVP (Q-HA-7) |
+
+Scatter profile (`TROVE_PROFILE=scatter`, chosen): three `web` replicas, one per worker node, and Traefik
+with `--serversTransport.maxIdleConnsPerHost=-1`, so no idle connection to a backend is kept and each request
+is balanced on its own. The default profile keeps keep-alive.
+
+Failover (chosen): `deploy/dev/failover.sh` patches `status.targetPrimary` of the CloudNativePG cluster, which is
+what `kubectl cnpg promote` does, so the profile needs no plugin pin.
+
+**Choice:** (a) for the edge; the scatter profile and the patch as stated.
+
+**Rationale:** The local profile must exercise the Ingress path that production uses, and the scatter profile
+is the only way to see load shared per request. The patch is the operator's own mechanism, so no kubectl plugin
+is pinned. The development agent would revisit the edge if the Ingress path cannot be tested through a Gateway.
+
+**Applied in the spec:** R-HA-051 and the local profile describe the same mechanisms; no requirement text changed.
+
+### Q-HA-25 · AWS leg of the nightly run when no AWS account is configured
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The nightly run fails when the account is absent | Red nightly until the owner configures AWS | Forces the setup | A missing secret blocks every nightly signal |
+| (b) The AWS job is dropped silently | No record | Quiet | A reader cannot tell that AWS was never tested |
+| (c) A gate job writes an explicit SKIPPED summary; the AWS job is skipped through `needs` and shown grey, never green (chosen) | The gate reads the `AWS_CI_ROLE_ARN` secret, writes the summary and the notice, and the AWS job does not run | The skip is visible in the summary and never looks like a pass | A grey job in every nightly until the owner provides the account |
+
+**Choice:** (c).
+
+**Rationale:** A skipped leg must never count as a passed one. The gate is needed because a job-level `if` cannot
+read secrets. The development agent would revisit this when the owner configures the AWS account and the role.
+
+**Applied in the spec:** R-HA-051 and E0.5 already keep AWS S3 listed as skipped until the owner provides the
+account; no requirement text changed.
+
+### Q-HA-26 · Release image: how the binary gets into the image
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Multi-stage Dockerfile with the Go and Node builds inside the image | Hermetic image build | No host toolchain | A Node and Go build in every image build; slow |
+| (b) The host builds the static binary with the embedded web build; the image wraps it in the pinned distroless base (chosen) | `make image` runs `make web`, a static Go build with `CGO_ENABLED=0`, then `docker buildx build` with `RUNTIME_BASE_IMAGE` from `tools/versions.env` | Fast, reproducible from the pins; no Node in the image | The image depends on the host build; the release pipeline (phase 6) must build it in CI |
+| (c) Pre-built binaries from a release workflow only | No local image | Simple local | No local image for development |
+
+**Choice:** (b).
+
+**Rationale:** The base image and the Go toolchain are pinned, so the same inputs give the same image. The
+development agent would revisit this when the release pipeline builds in CI, which would move the build into a
+job with the same pins.
+
+**Applied in the spec:** R-HA-047 and R-HA-051 describe the image; no requirement text changed.
+
+### Q-HA-27 · Which replicas the contract guard counts as live
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every row of the replica registry | A replica that stopped long ago still counts | Conservative | A stale replica blocks an upgrade indefinitely |
+| (b) A replica counts when its heartbeat is younger than `system.heartbeat_stale_after` (30 s by default) (chosen) | The registry's heartbeat decides | Stale replicas do not block | A replica whose heartbeat is late for a short time is not counted |
+| (c) Only replicas that answer a probe | Live probe per replica | Exact | Probes add a path that a failover can break |
+
+**Choice:** (b).
+
+**Rationale:** The contract guard decides whether an older release may still run beside the migrated schema
+(R-ARCH-026). The heartbeat is the one live signal every replica writes. The development agent would revisit
+this if a heartbeat can be late for longer than the stale window during normal operation.
+
+**Applied in the spec:** R-ARCH-026 states the gate; the heartbeat source as the liveness signal is the choice of this block.
+
+### Q-HA-28 · Who creates the database schema at migration
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The operator creates the schema; `trove migrate` refuses when it is missing | The migration never creates objects that the operator did not name | Explicit ownership | An extra manual step on every installation |
+| (b) `trove migrate` creates `database.schema` when it is missing and the role may create it; it never creates roles or databases, then checks the owner (chosen) | The schema is created by the migration role, and the owner check follows | One command for a new installation; roles and databases stay under the operator's control | The migration role needs `CREATE` on the database |
+
+**Choice:** (b). When the role may not create the schema, the error names the `CREATE SCHEMA` statement to run as the
+migration role (`internal/meta/postgres/migrate.go`).
+
+**Rationale:** R-HA-014 keeps roles and databases with the operator. The schema is trove's own object, so creating it
+is the natural step of the migration. The development agent would revisit this if an installation cannot grant
+`CREATE` on the database to the migration role.
+
+**Applied in the spec:** R-HA-014 keeps the operator's role and database responsibilities; no requirement text changed.
+
+### Q-HA-29 · Where the garbage-collection pause is stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A table with the columns of the sketch in R-HA-025 | A dedicated row shape | Typed columns | A new table for one flag |
+| (b) A key-value row `deletions_paused_at` in `system_state` (chosen) | The pause is the row `system_state` with the key `deletions_paused_at`; a null value means not paused | No new table | The shape of R-HA-025's sketch is replaced |
+
+**Choice:** (b), as built. R-HA-025's column sketch is to be settled in M5 after the restore work.
+
+**Rationale:** The pause is one flag, and `system_state` already holds the installation's other key-value facts. The
+development agent would revisit this at M5 when the restore procedure is written.
+
+**Applied in the spec:** no requirement text changed in this round; the sketch of R-HA-025 is open for M5.
+
+### Q-HA-30 · Plaintext switches of the Valkey connection
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No plaintext setting at all | TLS is mandatory for Valkey and for the Sentinels | Nothing to misconfigure | Local development without TLS is impossible |
+| (b) Plaintext requires `valkey.allow_insecure: true` for each switch (chosen) | `valkey.sentinel.tls: false` and `valkey.tls.mode: disable` are refused unless `allow_insecure` is set; `valkey.key_prefix` must end in `:` | A plaintext connection is an explicit decision in the file | A second switch to read |
+| (c) Plaintext allowed silently | The setting alone enables plaintext | Simplest | The switch is hidden from review |
+
+**Choice:** (b).
+
+**Rationale:** Plaintext to Valkey exposes the ACL password and the data of the request path (INV-3, H-49). The
+explicit switch makes the choice visible in the configuration. The trailing colon of the prefix keeps keys of two
+installations apart. The development agent would revisit this when a plaintext local profile is no longer needed.
+
+**Applied in the spec:** R-HA-056 states the two switches and the prefix rule (added in this revision).
+
+### Q-HA-31 · Job heartbeat, attempt counting and the slot record
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Cancel the handler on any failed extension (R-HA-005 as first written) | A single failed extension ends the work | Simplest rule | A database blip shorter than the lease cancels long jobs |
+| (b) Cancel at once when another replica has taken the row; after a failed extension, cancel only once the lease could already have expired on the monotonic clock (chosen) | Bounded by the lease, not by the blip | Work survives a short outage without a second owner | The handler may run a little past the database's view of the lease |
+| (c) Never cancel on a failed extension | The handler runs to its end | No cancellation on outages | A handler can outlive its lease and race a new owner |
+
+Attempt counting (chosen with (b)): the claim that starts an attempt increments `attempt`; the reaper does not.
+Slot record (chosen with (b)): the unique index `job_task_slot` on `(task, scheduled_for)` replaces a separate
+schedule table.
+
+**Choice:** (b), with the attempt and slot rules above.
+
+**Rationale:** A database failover can take longer than a heartbeat without the lease being lost, and cancelling the
+work for it wastes the attempt. The bound keeps a second owner from starting while the first still writes, because
+the handler stops once the lease could have expired, and the settle statements of the job table, which name the
+worker and the attempt as their owner, reject a stale attempt (`internal/jobs/worker.go`). The development agent would revisit (b) if a handler shows a write after its lease
+was taken over.
+
+**Applied in the spec:** R-HA-005: the heartbeat rule (cancel at once when the row is taken; bounded cancel after a failed
+extension), the reaper rule (no increment), the schedule sketch replaced by `job_task_slot`.
+
+### Q-HA-32 · Default of the chart's TLS wiring
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `tls.enabled` defaults to `false`; TLS is opt-in | Plain HTTP inside the cluster unless an installation sets `true` | Works without a certificate on first install | The owner constraint of 2026-10-29 would be met only by installations that opt in, so H-38 stays the default |
+| (b) `tls.enabled` defaults to `true`; rendering fails without the Secret unless `tls.enabled: false` (chosen) | The chart needs a certificate Secret for every install that does not explicitly opt out | Every installation is encrypted by default; the missing Secret is found at render time, not at run time | First install needs a Secret before it renders |
+| (c) TLS rendered only when the Secret exists | Silent fallback to plain HTTP when the Secret is absent | No failure on first install | A missing Secret means plaintext without any signal |
+
+**Choice:** (b), in the pattern the chart already uses for the encryption key and the backup target (Q-HA-8, Q-BAK-9).
+
+**Rationale:** The owner requires that every connection can run encrypted, and a default that is off would make the
+encrypted state the exception. Failing at render time is the same fail-fast rule the chart applies to other required
+Secrets, so no replica starts without the setting that the operator chose. The development agent would revisit the
+default if a supported platform cannot provide a certificate at first install, which would make (a) the right
+default for that platform only.
+
+**Applied in the spec:** R-HA-063 states the default and the failure; H-38 is limited to `tls.enabled: false`.
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
@@ -5504,10 +5844,11 @@ stream and in the revocation journal.
 
 ### H-38 · Plain HTTP between the edge proxy and the replicas
 
-TLS ends at the Ingress controller or Gateway (R-HA-037). Inside the cluster, requests travel to the
-pods unencrypted, including `Authorization` headers with bearer tokens, Basic credentials and
-session cookies. Anyone who can capture pod-network traffic can read the following: a compromised
-node, a privileged pod with host networking, or a CNI-level tap. trove has no TLS listener in the
-MVP (internal TLS, HA-018, is P2). The mitigation is at the platform level: a service mesh with
-mutual TLS, or CNI encryption (WireGuard or IPsec modes of common CNIs). The chart does not enforce
+This gap applies only to an installation that sets `tls.enabled: false` (R-HA-063). With the default
+`tls.enabled: true`, the edge connects to the pods over TLS and trove serves it (R-ARCH-035), so there is no
+plain-HTTP path between the edge and the replicas. With `tls.enabled: false`, requests travel to the pods
+unencrypted, including `Authorization` headers with bearer tokens, Basic credentials and session cookies.
+Anyone who can capture pod-network traffic can read them: a compromised node, a privileged pod with host
+networking, or a CNI-level tap. The mitigation for such an installation is at the platform level: a service
+mesh with mutual TLS, or CNI encryption (WireGuard or IPsec modes of common CNIs). The chart does not enforce
 either.

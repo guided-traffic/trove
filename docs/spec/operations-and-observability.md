@@ -356,8 +356,9 @@ Invalid credentials yield `401` in either mode.
 Every client-listener response MUST carry `X-Request-Id` with the request's trace ID
 (R-OPS-018). `X-Trove-Replica` with the replica name is sent according to
 `server.replica_header`: `authenticated` (default) sends it only to authenticated callers,
-`always` sends it to everyone, `never` suppresses it. No response carries the product version in a
-header.
+`always` sends it to everyone, `never` suppresses it. A further endpoint has its own
+`replica_header`, `never` by default ([endpoints.md](endpoints.md) R-EP-009). No response carries
+the product version in a header.
 
 ```yaml
 system:
@@ -400,7 +401,8 @@ divide a remote repository's `maxConcurrentFetches` by the count of live client-
 
 **Node.** Each row names the Kubernetes node the replica runs on: `spec.nodeName`, which the
 downward API offers only as an environment variable, passed by the chart as `TROVE_NODE_NAME`
-(R-OPS-028); `NULL` outside Kubernetes. The pod name comes from `TROVE_POD_NAME` the same way. The
+(R-OPS-028); `NULL` outside Kubernetes. The instance name, which is not the node name, comes from `TROVE_POD_NAME`, then `POD_NAME`, then
+`HOSTNAME` inside Kubernetes, and otherwise `<hostname>-<pid>` (Q-OPS-28). The
 number of distinct nodes per role tells whether a role survives the drain of one node (INV-12,
 [ha-and-helm.md](ha-and-helm.md) R-HA-059); system information reports it (R-OPS-004).
 
@@ -423,8 +425,9 @@ vocabulary of R-OPS-001, so the status screen can name the cause (a timeout, a r
 credential, a missing primary) without a second call; the circuit state is `valkey.circuit` of
 the view above.
 
-**Pool (P1).** With the further splits of [ha-and-helm.md](ha-and-helm.md) R-HA-062, the column
-`pool` names the pool of the replica's Deployment, from the variable `TROVE_POOL_NAME` that the
+**Pool.** With the endpoint pools of [endpoints.md](endpoints.md) R-EP-008 (MVP) and the further
+splits of [ha-and-helm.md](ha-and-helm.md) R-HA-062 (P1), the column `pool` names the pool of the
+replica's Deployment, from the variable `TROVE_POOL_NAME` that the
 chart sets on each pool Deployment (R-OPS-028); it is `NULL` for a role's main Deployment and
 outside the chart (cross-page to R-HA-030 and R-HA-062).
 
@@ -450,7 +453,7 @@ CREATE TABLE replica (
   active_secret_key_id text   NOT NULL,           -- the replica's secrets.active_key_id; ID only
   node          text,                             -- Kubernetes node name (TROVE_NODE_NAME); NULL outside Kubernetes
   valkey        jsonb       NOT NULL DEFAULT '{}',-- the replica's view of Valkey (shape above), sentinelsReachable included; no credentials
-  pool          text,                             -- P1: R-HA-062 pool (TROVE_POOL_NAME); NULL for a role's main Deployment
+  pool          text,                             -- endpoint pool (MVP) or R-HA-062 pool (P1), from TROVE_POOL_NAME; NULL for a role's main Deployment
   started_at    timestamptz NOT NULL,
   heartbeat_at  timestamptz NOT NULL
 );
@@ -660,6 +663,12 @@ built from it: npm tarball URLs, NuGet service-index resources, the OIDC redirec
   `content_base_url`. It is never a base URL for UI, API, OIDC, mail or webhook links, so it MUST
   NOT appear in `server.additional_base_urls`: an entry with the content host's host name stops
   startup, as R-ARCH-029's origin rules require.
+- **Endpoints.** These rules describe the default endpoint. A further endpoint has its own
+  `base_url`, host set and trusted proxies; a request on it is answered with the base URL of its
+  matched host, a host outside its set answers `421`, and a forwarded host counts only inside the
+  set ([endpoints.md](endpoints.md) R-EP-003). With `server.endpoints.default.hosts` configured,
+  the default endpoint checks its hosts the same way. Absolute URLs that leave a request (OIDC,
+  mail, webhooks) are always built from `server.base_url`.
 - **No runtime write operation.** The base URL is configuration (GitOps). It is shown in system
   information, and it cannot be changed through the API.
 - **Cached metadata.** Metadata that embeds URLs MUST be cached in a form that does not depend on
@@ -766,6 +775,8 @@ Rules for every metric family, including families that format pages and other sp
   | Label | Values |
   |---|---|
   | `listener` | `client`, `ops` |
+  | `endpoint` | Configured endpoint names and `default`, at most 17 ([endpoints.md](endpoints.md) R-EP-001, R-EP-009); bounded by configuration; only on client-listener series |
+  | `certificate` | 0-based position of a pair in an endpoint's certificate set ([endpoints.md](endpoints.md) R-EP-004); bounded by configuration |
   | `handler` | Registered handler names (`npm.packument`, `nuget.push`, `files.get`, `api.repositories.list`, `unmatched`, …) |
   | `method` | Standard HTTP methods; anything else becomes `OTHER` |
   | `code` | HTTP status code, on counters |
@@ -860,9 +871,9 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 |---|---|---|---|
 | `trove_build_info` | gauge (=1) | `version`, `revision`, `goversion`, `role` | Build and process role (`web`, `worker`, `all`) of the running binary (Q-OPS-13) |
 | `trove_ready` | gauge | — | 1 while `/readyz` answers `200`, degraded included (R-OPS-001) |
-| `trove_http_requests_total` | counter | `listener`, `handler`, `method`, `code` | Completed requests |
-| `trove_http_request_duration_seconds` | histogram | `listener`, `handler`, `method`, `code_class` | Time from first byte received to last byte sent |
-| `trove_http_requests_in_flight` | gauge | `listener` | Requests in progress |
+| `trove_http_requests_total` | counter | `listener`, `endpoint` (client listener), `handler`, `method`, `code` | Completed requests |
+| `trove_http_request_duration_seconds` | histogram | `listener`, `endpoint` (client listener), `handler`, `method`, `code_class` | Time from first byte received to last byte sent |
+| `trove_http_requests_in_flight` | gauge | `listener`, `endpoint` (client listener) | Requests in progress |
 | `trove_http_received_bytes_total` | counter | `handler` | Request body bytes |
 | `trove_http_sent_bytes_total` | counter | `handler` | Response body bytes |
 | `trove_http_transfers_cut_total` | counter | `direction` | Transfers cut at the shutdown deadline ([architecture.md](architecture.md) R-ARCH-024, Q-ARCH-18) |
@@ -952,6 +963,9 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_webhook_pending_deliveries` | gauge | — | Deliveries waiting or retrying (from PostgreSQL) |
 | `trove_events_undispatched` | gauge | — | Outbox rows not yet dispatched (R-OPS-035) |
 | `trove_tracing_spans_dropped_total` | counter | — | Spans lost to a full export queue |
+| `trove_outbound_requests_total` | counter | `kind` (purpose), `code` | Requests sent to other systems, by purpose and result code (Q-OPS-26) |
+| `trove_outbound_request_duration_seconds` | histogram | `kind` (purpose) | Time of an outbound request including the body, by purpose |
+| `trove_outbound_egress_denied_total` | counter | `kind` (purpose) | Connections refused by the egress address policy, by purpose |
 | `trove_metrics_label_overflow_total` | counter | `family`, `label` | Values folded into `_other` |
 | `trove_metrics_db_gauges_last_success_timestamp_seconds` | gauge | — | End of the last successful evaluation of the gauges read from PostgreSQL (Q-OPS-18) |
 | `trove_maintenance_mode` | gauge | `mode` | 1 for the current mode (R-OPS-024) |
@@ -1172,13 +1186,15 @@ The field set is fixed. A field that does not apply is `null`, and an unknown le
 consumers can rely on every key being present.
 
 <details>
-<summary>Fields of the request log record (23)</summary>
+<summary>Fields of the request log record (25)</summary>
 
 | Field | Content |
 |---|---|
 | `time` | Completion time |
 | `trace_id` | Trace ID; also sent to the client as `X-Request-Id` |
 | `listener` | `client` or `ops` |
+| `endpoint` | Name of the endpoint whose listener accepted the connection ([endpoints.md](endpoints.md) R-EP-002); `null` on the ops listener |
+| `host` | Effective host of the request, at most 255 bytes ([endpoints.md](endpoints.md) R-EP-003); `null` on the ops listener |
 | `remote_addr` | Client address after the trusted-proxy rule (R-OPS-005) |
 | `peer_addr` | TCP peer address |
 | `method` | HTTP method |
@@ -1494,6 +1510,7 @@ CREATE TABLE audit_event (
   user_agent    text,
   trace_id      text,
   replica       text,
+  endpoint      text,                          -- endpoint of the request (endpoints.md R-EP-009); NULL for jobs
   resource_type text,                          -- repository | user | group | token | permission_policy | …
   resource_id   text,
   repository    text,
@@ -1667,6 +1684,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` | T | — | Service-account change; names as [identity-and-authentication.md](identity-and-authentication.md) registers them | `changes` |
 | `admin_role.granted`, `admin_role.revoked` | T | — | System administration role or delegated system permission changed | `permission` |
 | `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted` | T | — | Permission policy change (INV-9); names as [authorization.md](authorization.md) registers them | `changes` |
+| `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` | T | — | Exposure rule change of an endpoint ([endpoints.md](endpoints.md) R-EP-016); updates and deletions carry the journal flag (R-EP-020) | `changes`, `endpoint`, `before`, `after` |
 | `authz.denied` | A | — | An authenticated principal was refused an action; with `audit.record_anonymous_denials`, also an anonymous caller, deduplicated per client address (R-OPS-015) | `operation`, `required_action`, `count`, `repeat_of` (summaries only) |
 | `oidc_provider.created`, `oidc_provider.updated`, `oidc_provider.deleted` | T | — | Trusted issuer change | `changes` |
 | `identity_mapping.created`, `identity_mapping.updated`, `identity_mapping.deleted` | T | — | CI identity mapping change | `changes` |
@@ -1801,8 +1819,8 @@ receives it as `X-Request-Id`.
 - `all`: continued from every client.
 - `none`: never continued.
 
-**Export** (`tracing.enabled: true`). Spans go over OTLP (gRPC or HTTP/protobuf) through a batch
-processor. When the trove keys are unset, the standard `OTEL_EXPORTER_OTLP_*` variables of the
+**Export** (`tracing.enabled: true`). Spans go over OTLP (gRPC or HTTP/protobuf) through a bounded
+queue of the process (Q-OPS-25). When the trove keys are unset, the standard `OTEL_EXPORTER_OTLP_*` variables of the
 [OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/) apply.
 Resource attributes:
 
@@ -2586,9 +2604,11 @@ only exempt variables are the reserved ones: `TROVE_CONFIG_FILE`; `TROVE_CAC_*` 
 configuration-as-code secret references (R-OPS-029); `TROVE_POD_NAME`, `TROVE_POD_NAMESPACE`
 and `TROVE_NODE_NAME`, which the chart sets in every trove pod from the downward API
 (`metadata.name`, `metadata.namespace`, `spec.nodeName`) for the replica registry, the `replica`
-field of every log record and the trace resource (R-OPS-003, R-OPS-009, R-OPS-018); and, from P1,
-`TROVE_POOL_NAME`, which the chart sets on each pool Deployment of
-[ha-and-helm.md](ha-and-helm.md) R-HA-062 for the registry's `pool` column (R-OPS-003). Without
+field of every log record and the trace resource (R-OPS-003, R-OPS-009, R-OPS-018); and
+`TROVE_POOL_NAME`, which the chart sets on each pool Deployment: from the MVP on the endpoint
+pools of [endpoints.md](endpoints.md) R-EP-008, whose processes open only the listeners of their
+endpoints (R-EP-002), and from P1 the pools of [ha-and-helm.md](ha-and-helm.md) R-HA-062; it also
+fills the registry's `pool` column (R-OPS-003). Without
 the reservation, strict validation would stop every pod that carries them.
 
 **Secrets.** Every secret-typed key `<name>` has a companion `<name>_file`, and both can be set
@@ -2616,7 +2636,7 @@ sections it owns, in the requirements above and below.
 
 | Section | Owner |
 |---|---|
-| `server` | [architecture.md](architecture.md) (listeners, timeouts, shutdown, the content origin `content_base_url` and `content_url_ttl` of R-ARCH-029); this page (`base_url`, `trusted_proxies`, `additional_base_urls`, `replica_header`) |
+| `server` | [architecture.md](architecture.md) (listeners, timeouts, shutdown, the content origin `content_base_url` and `content_url_ttl` of R-ARCH-029); this page (`base_url`, `trusted_proxies`, `additional_base_urls`, `replica_header`); [endpoints.md](endpoints.md) (`endpoints`, `endpoint_rate_limits`) |
 | `database`, `migrate`, `runtime` | [ha-and-helm.md](ha-and-helm.md) |
 | `valkey` | [ha-and-helm.md](ha-and-helm.md) R-HA-056; [architecture.md](architecture.md) R-ARCH-031 adds `valkey.sentinel.refresh_interval` |
 | `backup` | [backup-and-restore.md](backup-and-restore.md) R-BAK-011; [ha-and-helm.md](ha-and-helm.md) adds `backup.recovery_window` and `backup.object_versioning` (R-HA-023) and `backup.revocation_journal` (R-HA-054) |
@@ -4617,7 +4637,167 @@ numbers), "The flag is per event type; the entry comes from the producer", `jour
 acceptance criteria. R-OPS-015: "No entry, no row" in the revocation journal bullet. R-OPS-016:
 the journal note on `package.published` and `package.deleted`.
 
+### Q-OPS-23 · Configuration file that is not there
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A missing file is always an error | Start-up stops unless `/etc/trove/trove.yaml` exists | One rule | A replica that runs on defaults and the environment (the normal development case) cannot start |
+| (b) The default file may be absent; a file named by `--config` or `TROVE_CONFIG_FILE` must exist (chosen) | The default path is looked up and skipped when missing. An explicit path that is missing fails the command. | Defaults and environment are enough to run; a typo in an explicit path is never silent | Two rules for one file setting |
+| (c) Environment only, no file | The file is not read at all | Smallest surface | The chart's ConfigMap cannot be used |
+
+**Choice:** (b).
+
+**Rationale:** The configuration must work from the environment alone, so the default path cannot be
+mandatory. An explicit path names a file the operator meant to load, so its absence is an error. The
+development agent would revisit this if the default path had to be mandatory for an audit reason.
+
+**Applied in the spec:** this block records the rule of the configuration loader (`internal/config`,
+`load.go`); R-OPS-028 is unchanged.
+
+### Q-OPS-24 · Required keys per command, reserved variable names and source labels
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One required set for every command | `migrate` and `admin config validate` need what `serve` needs | One rule | A migration job needs a Valkey address and a bucket it never uses |
+| (b) Required keys per command (chosen) | `config.Command` names the keys each command requires. `migrate` needs the database only. `admin config validate` applies the `serve` checks except that the role may be unset. | Each command fails for what it uses | A rule per command to keep in step |
+| (c) No command-dependent checks | Each command loads what it is given | Simple | A bad configuration reaches the first use |
+
+Reserved names (chosen with (b)): environment variables with the prefixes `TROVE_CAC_` and `TROVE_TEST_`,
+and `TROVE_CONFIG_FILE`, `TROVE_POD_NAME`, `TROVE_POD_NAMESPACE`, `TROVE_NODE_NAME` and `TROVE_POOL_NAME`,
+are not configuration keys, so the strict environment validation ignores them. Source labels that
+`admin config validate` prints for each value: `default`, `file`, `env`, `flag:--role` (or the flag
+name), and `file:<secret path>` for a value read from a secret file.
+
+**Choice:** (b), with the reserved names and labels above.
+
+**Rationale:** A command should fail for the keys it uses and no others. The reserved names let the
+test suite and the chart set their own variables without the validator rejecting them. The labels let an
+operator see where each value came from. The development agent would revisit the per-command rules if a
+command starts to use a key that another command validates differently.
+
+**Applied in the spec:** this block records the rules of `internal/config` (`load.go`, `admin.go`); R-OPS-028
+is unchanged.
+
+### Q-OPS-25 · OTLP span export: own queue, transport and endpoint rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The SDK's batch span processor | Spans are batched and dropped without a count | Standard component | A dropped span is invisible; the drop counter of R-OPS-018 cannot be kept |
+| (b) An own bounded queue in front of the SDK's OTLP exporter (chosen) | `queueProcessor` holds up to a fixed number of ended spans. A full queue drops the span and increments `trove_tracing_spans_dropped_total`. Request handling never waits. | The drop is counted, and the queue size is fixed | Own code that the SDK's processor would otherwise provide |
+| (c) Synchronous export per span | Each request waits for its spans | No queue | Request latency depends on the collector |
+
+Transport (chosen with (b)): the OTLP exporter of the OpenTelemetry SDK sends the spans. It does not go
+through `internal/outbound`, so the egress address policy does not apply to it ([H-53](#h-53--span-export-bypasses-the-egress-address-policy)).
+Endpoint (chosen with (b)): `tracing.endpoint` is not required when `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set.
+
+**Choice:** (b), with the transport and endpoint rules above.
+
+**Rationale:** Counting drops is the only way an operator learns that traces are lost, and a request must never
+wait for an exporter. The development agent would revisit the own queue if the SDK's processor gained a
+drop counter, which would let the code go back to the standard component.
+
+**Applied in the spec:** R-OPS-018: the export paragraph names the bounded queue of the process
+(Q-OPS-25); the metrics table has `trove_tracing_spans_dropped_total` as before.
+
+### Q-OPS-26 · Metric label names of the outbound and the object-store metrics
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `purpose` on the outbound families | `trove_outbound_*{purpose}` | Names what the value is | Differs from the object-store family's label; a rename of a family that is not released yet |
+| (b) `kind` for the purpose on the outbound families (chosen) | `trove_outbound_requests_total{kind,code}`, `trove_outbound_request_duration_seconds{kind}`, `trove_outbound_egress_denied_total{kind}` | Matches the code; the families are in R-OPS-008 | The name `kind` is generic |
+| (c) `operation` for the object-store families, `op` as in R-STOR-033 | `trove_storage_s3_requests_total{op,...}` | Matches the text of R-STOR-033 | `op` is not the label R-OPS-007 allows; the code uses `operation` |
+
+**Choice:** (b) for the outbound families, and `operation` (not `op`) for the object-store families.
+
+**Rationale:** R-OPS-007 lists `operation` among the allowed labels, and the code already uses it. The
+outbound families name their purpose `kind` in code and in the catalog. The development agent would
+revisit the outbound name if an operator dashboard needs one label name across both families.
+
+**Applied in the spec:** R-OPS-008 lists the three `trove_outbound_*` families; R-STOR-033 names the label
+`operation` (see [storage.md](storage.md)).
+
+### Q-OPS-27 · Secret values in configuration dumps and logs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Redaction in the dump code only | The effective-configuration view and the logs mask values by rule | Nothing changes in the type | Any other serializer of the type leaks the value |
+| (b) `config.Secret` implements `MarshalJSON` and `LogValue` (chosen) | The value never serialises and never logs; `String` and `LogValue` return the redaction marker | The type is safe wherever it is printed | One type to keep in step |
+| (c) Secret values loaded only as files and never as strings | Every secret is a path | No value in memory as text | Environment-variable secrets lose their only form |
+
+**Choice:** (b).
+
+**Rationale:** A secret that a serializer can reach will eventually be serialized, so the protection belongs in
+the type. Closing it in the type also closes the gap that would otherwise be recorded as an open item. The
+development agent would revisit this when a second secret type appears that does not use `config.Secret`.
+
+**Applied in the spec:** R-OPS-013 and the effective-configuration view are consistent; no requirement text changed.
+
+### Q-OPS-28 · Instance name source
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host name only | `os.Hostname()` | Simple | In Kubernetes every pod of a Deployment may share one name on a node, and two processes on one machine collide |
+| (b) `TROVE_POD_NAME`, then `POD_NAME`, then `HOSTNAME` inside Kubernetes (`KUBERNETES_SERVICE_HOST` set), otherwise `<hostname>-<pid>` (chosen) | The name is the pod name where one exists, and unique otherwise | Names unique per process and readable in `/api/v1/system/replicas` | Two sources to document |
+| (c) A random name | A UUID | Always unique | Unreadable in the replica registry |
+
+**Choice:** (b).
+
+**Rationale:** The replica registry shows the instance name to operators, so it must name the pod. Outside
+Kubernetes, the process ID keeps two processes apart. Open item in the code, not in this page: `trove migrate`
+has its own instance-name function (`cmd/trove/migrate.go`) that reads `TROVE_POD_NAME` and then falls back to
+`<hostname>-<pid>`; the order of (b) is not applied there yet. The development agent would revisit this if the
+instance name must be stable across restarts of one pod.
+
+**Applied in the spec:** R-OPS-003 states the order (sentence on the pod name); the column comment in its table
+still says "pod name (`TROVE_POD_NAME`), else host name".
+
+### Q-OPS-29 · A replica started on a database that is not yet migrated
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse to start | The process exits when the schema is behind | Clear failure | A rolling upgrade whose migration job is late crash-loops every replica |
+| (b) Wait, not ready, until the schema check passes; a schema below the compatibility floor fails start-up (chosen) | The replica runs its wait loop with readiness false. It retries the schema check with a backoff of up to 15 s. A schema below the floor (`FloorError`) returns an error and the process stops. | The pre-upgrade Job may finish late without a restart storm; a too-old schema is still refused | A replica sits not-ready until someone migrates |
+| (c) Serve with the old schema | The replica answers requests against whatever schema exists | Available during the gap | Violates the expand/contract guarantee of [architecture.md](architecture.md) R-ARCH-026 |
+
+**Choice:** (b).
+
+**Rationale:** A migration is normally run first by the chart's pre-upgrade Job, so a replica that starts
+early waits instead of failing. The compatibility floor is the one condition that never heals by waiting.
+The development agent would revisit this if a rolling upgrade needs readiness to be true before the schema
+check succeeds.
+
+**Applied in the spec:** this block records the start-up behaviour of `internal/app` (`wire_postgres.go`);
+R-OPS-001 is unchanged.
+
 ## What this does not cover
+
+### H-53 · Span export bypasses the egress address policy
+
+Stage: the OTLP exporter of `tracing.endpoint` (R-OPS-018, Q-OPS-25), which sends spans through the
+OpenTelemetry SDK's own transport.
+
+Live only when `tracing.enabled` is `true`. Subject: the destinations that a replica can send span data to;
+span attributes are scrubbed of secrets before export (R-OPS-013), so the exposure is metadata about requests
+and not credentials.
+
+What makes it real: a collector endpoint that resolves to an address the egress policy would refuse, set in
+the configuration by someone who can write it. The policy that refuses the same address for upstreams does
+not apply to the exporter.
 
 ### H-39 · Audit records are not tamper-evident
 
@@ -4643,13 +4823,16 @@ resolves differently for the proxy, or changes in between, reaches whatever addr
 chooses. Proxy-side egress rules are the only full control. The gap is live only for subscriptions
 that use a proxy.
 
-### H-41 · The operations listener relies on the NetworkPolicy
+### H-41 · Egress is unrestricted, and the ingress policy's enforcement is unverified
 
 With the default `metrics.auth: none`, any pod that can reach port 8081 of a `web` or `worker`
 replica reads metrics: repository keys, request and byte volumes, queue depth, backup run state. It
-also reads verbose readiness: dependency latency, schema version, whether Valkey is reachable. The chart's NetworkPolicy (INV-13) is the control. Clusters whose CNI does not
+also reads verbose readiness: dependency latency, schema version, whether Valkey is reachable. The chart ships an
+ingress NetworkPolicy, enabled by default, that admits port 8081 only from the monitoring namespace and the probe
+CIDRs (R-HA-042). Its enforcement on the cluster's CNI is not verified in this build. Clusters whose CNI does not
 enforce NetworkPolicy, or installations that switch it off, expose this data cluster-wide unless
-`metrics.auth: static` is set.
+`metrics.auth: static` is set. Separately, the replicas' egress is not restricted: the chart renders no egress
+policy, so a compromised replica can reach any address (R-HA-042, H-6).
 
 ### H-42 · Secret masking in the delivery log matches known encodings only
 

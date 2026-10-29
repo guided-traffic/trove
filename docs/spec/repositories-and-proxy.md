@@ -853,7 +853,8 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
    R-REPO-029), because "not found" would be a false statement about an item that may exist.
 
 - Artifact responses MUST carry `Trove-Resolved-From: <member key>`; the member is one the caller
-  can read, so the header discloses nothing new.
+  can read, so the header discloses nothing new. On an endpoint with exposure rules the header is
+  never sent, because members are not exposed there ([endpoints.md](endpoints.md) R-EP-018).
 - **Resolution explanation.** `GET /api/v1/repositories/{key}/resolution?path=<client path>`
   evaluates steps 1 to 6 for the calling principal without transferring content and without
   contacting upstreams, and returns per member the decision and its reason (`disabled`,
@@ -899,7 +900,8 @@ Priority: **MVP** · Covers: REPO-037
   of [architecture.md](architecture.md) R-ARCH-018), and only there: a merged document is
   served to clients, so it is never stored in or read from Valkey
   ([architecture.md](architecture.md) R-ARCH-030, Q-ARCH-16). The cache key MUST include the virtual
-  repository, the canonical path, the variant and a SHA-256 fingerprint of the ordered list of
+  repository, the canonical path, the variant, the endpoint of the request
+  ([endpoints.md](endpoints.md) R-EP-018) and a SHA-256 fingerprint of the ordered list of
   members that took part after permission filtering: two callers who see different members never
   share an entry ([R-AUTHZ-009](authorization.md) rule 4); callers who see the same members do.
 - A merged entry expires at the earlier of `mergedMetadataTtlSeconds` after merging and the earliest
@@ -1425,8 +1427,9 @@ execute these steps in order:
    `upstream_assumed_offline` with `Retry-After`.
 8. A valid negative entry (R-REPO-028; the replica's L1 first, then Valkey) → 404,
    `Cache-Status: trove; hit; detail=negative`. While Valkey is unavailable, only the L1 answers.
-9. c fails the cache-fill check ([R-AUTHZ-008](authorization.md)) → serve an existing expired entry
-   as stale without contacting the upstream, otherwise 403 `populate_not_permitted`
+9. c fails the cache-fill check ([R-AUTHZ-008](authorization.md)), which every caller fails on an
+   endpoint with `cache_fill: false` ([endpoints.md](endpoints.md) R-EP-019) → serve an existing
+   expired entry as stale without contacting the upstream, otherwise 403 `populate_not_permitted`
    (R-AUTHZ-008; through a virtual repository the member counts as a miss). No negative entry is
    written.
 10. The collapsing protocol (R-REPO-026). Only the request that fetches, once it holds the flight
@@ -2436,7 +2439,8 @@ Priority: **MVP** · Covers: trove-only
   modified.
 - Rewriting MUST happen when a document is served, not when it is stored, using the base URL of
   [operations-and-observability.md](operations-and-observability.md) (including its additional base
-  URLs and trusted proxies). The stored upstream document stays unchanged, so a base URL change needs
+  URLs and trusted proxies), which on a further endpoint is that endpoint's response base URL
+  ([endpoints.md](endpoints.md) R-EP-003). The stored upstream document stays unchanged, so a base URL change needs
   no cache flush and one host name's URLs never leak into another's responses.
 - A rewritten path maps back to its upstream URL as follows: if the upstream URL equals the one the
   format derives from `url` and the canonical path, nothing is recorded; otherwise the mapping is

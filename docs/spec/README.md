@@ -1,6 +1,8 @@
 # trove specification
 
-Status: specification — nothing described here is implemented yet.
+Status: specification. Milestone M0 (Foundation) implements the foundation of this design: the binary and its roles,
+configuration, PostgreSQL and Valkey connections, replica coordination, the S3 blob layer, the system API, the ops
+endpoints and the chart skeleton. Every other requirement is specified and not yet implemented.
 
 This directory is trove's target design: what trove will do and how, requirement by
 requirement. Each requirement names the catalog features it covers (`Covers:` line, IDs from
@@ -33,16 +35,23 @@ Given by the project owner; not up for redesign in these pages:
 - Versioning: releases stay on major version 0, starting at `v0.1.0`; every completed project
   phase is the next minor release. No major release until the owner explicitly decides otherwise
   ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)).
+- **Transport encryption on every connection, trove's listeners included (2026-10-29).** Every connection that a
+  component of this repository makes or accepts can run fully encrypted with TLS: PostgreSQL, Valkey and Sentinel,
+  the object store, outbound HTTP, trove's own client and ops listeners (so a reverse proxy can connect to trove over
+  TLS), and the chart's probes, Service and monitoring. Certificates may be rotated while the service runs: trove
+  picks up its own rotated certificates and the rotated client material it uses without a restart
+  ([architecture.md](architecture.md) R-ARCH-035, [ha-and-helm.md](ha-and-helm.md) R-HA-063, INV-20). Plain HTTP
+  remains a chart choice (`tls.enabled: false`), recorded as an open gap ([ha-and-helm.md](ha-and-helm.md) H-38).
 
 ## Design invariants
 
 Baseline that every spec page builds on, so the pages agree. The development agent decided it, and
 the owner reviews it at the walkthrough; each invariant is an ADR in
 [docs/decisions.md](../decisions.md) (INV-1 to INV-17: ADR-012 to ADR-028; INV-18: ADR-096;
-INV-19: ADR-097). A page may refine an invariant but must
+INV-19: ADR-097; INV-20: ADR-127). A page may refine an invariant but must
 not contradict it. A page that finds an invariant wrong raises a question in its `## Decisions`
 section; a choice that changes an invariant says so and edits it here as a cross-page consequence,
-as the choices behind INV-6, INV-8, INV-12 and INV-17 did.
+as the choices behind INV-6, INV-8, INV-9, INV-12, INV-15 and INV-17 did.
 
 **INV-1 · Toolchain.** Go 1.27.3 (verified 2026-10-28: local `go version` and the go.dev
 download list both show go1.27.3 as current stable). Angular 22 (npm `@angular/core` dist-tag
@@ -101,9 +110,16 @@ or `virtual` (ordered aggregation of local and remote repositories of the same f
 default deployment target). Federated repositories are not part of the MVP. Repository keys match
 `^[a-z0-9][a-z0-9._-]{1,63}$`.
 
-**INV-6 · URL layout.** One HTTP listener for clients (port 8080), one for operations (port
-8081). trove owns the host root of `server.base_url`, which is an origin without a path
-([operations-and-observability.md](operations-and-observability.md) R-OPS-005).
+**INV-6 · URL layout.** One client listener per endpoint and one listener for operations (port
+8081). The default endpoint listens on port 8080 with `server.base_url`; further endpoints each
+listen on a port of their own, with their own hosts, base URL and certificates
+([endpoints.md](endpoints.md) R-EP-001). The endpoint of a request is the one whose listener the
+connection arrived on, never one derived from `Host` or forwarded headers; host data only selects
+among that endpoint's own hosts, and a foreign host answers `421` (R-EP-002, R-EP-003, Q-EP-1). The
+path layout below is the same on every endpoint; an endpoint's surface decides which rows it serves
+(R-EP-005). trove owns the host root of every endpoint's base URL and hosts, each an origin without a
+path ([operations-and-observability.md](operations-and-observability.md) R-OPS-005). A host may bind
+its root to one repository, for clients that cannot use a path (R-EP-006, Q-EP-6).
 
 | Path | Purpose |
 |---|---|
@@ -113,7 +129,8 @@ default deployment target). Federated repositories are not part of the MVP. Repo
 | `/auth/…` | Browser login flow (OIDC redirect and callback, logout) |
 | `/ui/…` | Angular UI |
 | `/-/npm/v1/oidc/token/exchange/package/…` (host root) | npm trusted-publishing token exchange (P1). npm resolves it against the registry's host root ([formats/npm.md](formats/npm.md) R-NPM-022). |
-| `/v2/…` (host root) | Reserved for the OCI distribution API (OCI format, P1); the repository key is the first path segment; no other route may use this prefix; answers `404` until the OCI format exists ([ha-and-helm.md](ha-and-helm.md) Q-HA-4, R-HA-041). |
+| `/v2/…` (host root) | Reserved for the OCI distribution API (OCI format, P1); the repository key is the first path segment; no other route may use this prefix; answers `404` until the OCI format exists ([ha-and-helm.md](ha-and-helm.md) Q-HA-4, R-HA-041). On a host whose root is bound to one repository, the repository comes from the binding instead (Docker Engine mirrors, [endpoints.md](endpoints.md) R-EP-007, P1). |
+| `/.well-known/…` (host root) | Reserved for discovery documents that clients fetch at the host root ([RFC 8615](https://www.rfc-editor.org/rfc/rfc8615)), the first being Terraform's `terraform.json` on a bound host (P1); no other route may use this prefix; answers `404` until a format registers one ([endpoints.md](endpoints.md) R-EP-006). |
 | `:8081/healthz`, `:8081/readyz`, `:8081/metrics` | Liveness, readiness, Prometheus metrics |
 
 **INV-7 · Human identity.** Humans authenticate only through an external OpenID Connect provider
@@ -146,8 +163,11 @@ policy* binds principals (users, groups, service accounts, CI identity mappings)
 (repositories by key or pattern, narrowed by include/exclude patterns on paths or package names)
 and the actions `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage`. A request's
 effective permission is the union of the grants of its principal and the principal's groups,
-intersected with the presented token's scope. System administration is a separate role, not a
-repository action. Every authorization decision can be audited.
+intersected with the presented token's scope and with the exposure of the endpoint the request
+arrived on ([endpoints.md](endpoints.md) R-EP-013). Exposure is a ceiling that binds every subject,
+administrators included (Q-EP-12); an endpoint without exposure rules (`exposure: all`, the default
+endpoint's default) adds none. System administration is a separate role, not a repository action.
+Every authorization decision can be audited.
 
 **INV-10 · CI identity (GitLab).** A GitLab job authenticates with a GitLab-issued OIDC ID token
 (`id_tokens:` keyword, audience = trove's base URL) and exchanges it at
@@ -232,7 +252,11 @@ an environment variable `TROVE_<SECTION>_<KEY>`; secrets are referenced from fil
 environment variables, never written inline into a ConfigMap. Repositories, permissions and CI
 identity mappings (INV-10) live in PostgreSQL and are managed through the API and UI. Login
 providers, including their claim mapping and group rules, are file configuration only
-([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004). A declarative
+([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004). Endpoints are split
+by lifecycle ([endpoints.md](endpoints.md) Q-EP-2): their network binding (listener, hosts, wildcard
+host, host-root bindings, base URL, certificates, pool, surface, accepted credentials, exposure
+mode, cache-fill policy, rate-limit class) is file configuration, while the exposure rules of an
+endpoint live in PostgreSQL and are managed through the API and UI, audited. A declarative
 bootstrap file (configuration as code) is P1.
 
 **INV-16 · Observability and audit.** Structured JSON logs through `log/slog`; Prometheus
@@ -259,6 +283,13 @@ empty installation, and an interrupted restore of the same backup resumes where 
 ([backup-and-restore.md](backup-and-restore.md) Q-BAK-10). Valkey is not part of a backup
 (INV-3). Owner constraint since 2026-10-28; format and procedure in
 [backup-and-restore.md](backup-and-restore.md).
+
+**INV-20 · Transport encryption on every connection.** Every connection that trove or a component of this
+repository makes or accepts can run with TLS, trove's own listeners included. TLS material that trove presents or
+trusts is reloaded without a restart. The product does not depend on a connection being plaintext inside a cluster.
+This is the owner constraint of 2026-10-29, recorded as [ADR-127](../decisions.md#adr-127--transport-encryption-on-every-connection-troves-listeners-included).
+An installation may set `tls.enabled: false` (H-38); the invariant forbids a design that needs plaintext, not that
+choice.
 
 ## Requirement format
 
@@ -320,4 +351,5 @@ acceptance criteria.
 | [ha-and-helm.md](ha-and-helm.md) | `R-HA` | High availability, failure modes, upgrades, backup CronJob and restore Job (chart side), platform backup (PITR, bucket versioning), disaster recovery, Helm chart values |
 | [operations-and-observability.md](operations-and-observability.md) | `R-OPS` | Health, metrics, logs, audit, Valkey and coordination observability, operational signals and alerts, maintenance operations, webhooks, configuration as code |
 | [api-and-ui.md](api-and-ui.md) | `R-API`, `R-UI` | Management API conventions and surface, Angular UI information architecture |
+| [endpoints.md](endpoints.md) | `R-EP` | Endpoints: a client listener per endpoint with its hosts (exact and one wildcard), base URL, certificates by SNI and optional pool; identification by listener and `421` for foreign hosts; surface and accepted credentials per endpoint, endpoint-bound tokens; host-root bindings and where host roots are needed; exposure rules as a ceiling in the decision point, their API and screen; filtered metadata, URLs, cache keys and cache fill per endpoint; chart rendering and observability |
 | `builds.md` (not yet written) | `R-BLD` | Build records, their API, retention, promotion and storage: the record schema and its PostgreSQL tables, the API and permissions ([authorization.md](authorization.md) R-AUTHZ-027), mapping of CI job names to build names, promotion, run retention and the retention hooks of [storage.md](storage.md) R-STOR-043. P1; written before P1 build work starts (milestone M9), and the page that creates it turns `builds.md` in this cell into a link to itself. One owner, decided the same way three times: option (a) of [Q-AUTHZ-8](authorization.md#q-authz-8--spec-page-for-build-metadata), [Q-STOR-3](storage.md#q-stor-3--owner-of-build-records) and [Q-API-5](api-and-ui.md#q-api-5--owning-page-for-build-information); build records are not deferred to P2. It must provide R-STOR-043's contract: a run has a name, a number, a start time and its files as repository, path and SHA-256, and records live in PostgreSQL tables, not as repository items. |

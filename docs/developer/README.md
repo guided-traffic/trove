@@ -1,74 +1,143 @@
 # Developer documentation
 
-Status: specification phase. The repository holds documentation only: no Go code, no Angular
-workspace, no Helm chart, no CI workflow and no task runner. This page covers how to work on the
-documents today. The code layout, test tiers and build commands below are the planned design from
-[docs/spec/](../spec/README.md), and they are marked as planned.
+Status: the foundation milestone (M0) is built. The repository holds the Go binary, its configuration
+and database and cache layers, the S3 blob layer, the system API, the ops endpoints, the Angular
+workspace with a placeholder page, the Helm chart skeleton, the local development profile on kind, the
+integration and chart tests, and the CI workflows. No package format, login, repository or backup exists
+yet. Everything marked *planned* below is the target design in [docs/spec/](../spec/README.md).
 
 ## What to have in your head first
 
-- **Four parts, one direction.** The [feature catalog](../features/README.md) says *what* a
-  full-featured binary repository manager does. The [specification](../spec/README.md) says *how*
-  trove will do it. Each requirement names the catalog entries it covers. [Coverage](../coverage/README.md)
-  measures the gap between the two, and [decisions.md](../decisions.md) records *why*.
-- **Owner constraints are fixed.** Go 1.27.3, Angular 22, PostgreSQL, S3, Helm, OIDC login, tokens,
-  detailed permissions, GitLab CI OIDC, pull-through proxying, and npm and NuGet first. Since
-  2026-10-28 also: high availability on HA PostgreSQL, HA Valkey with Sentinel and S3, which cannot
-  be deselected; load beyond one replica, shared by a Kubernetes Service that spreads requests at
-  random; node drains without outage; a configurable backup job that writes a consistent backup to
-  S3; and no ReadWriteMany volume. They are listed in
-  [spec/README.md](../spec/README.md#owner-constraints) and are not up for redesign.
-- **Invariants `INV-1` to `INV-19` bind every spec page.** A page may refine an invariant but must
-  not contradict it. If an invariant looks wrong, raise a question `Q-<AREA>-n` in the page's
-  `## Decisions` section and decide it there; a choice that changes an invariant edits it in
-  [spec/README.md](../spec/README.md#design-invariants). Every invariant is a record in
-  [decisions.md](../decisions.md).
-- **Three roles, one binary** (INV-2, [R-ARCH-001](../spec/architecture.md)). `web` serves every
-  HTTP request and never claims a job or holds a lease. `worker` runs jobs and serves only the ops
-  listener. `backup` runs the backup and restore commands and uses no Valkey. Work that outlasts a
-  request on `web` is enqueued as a job. `all` combines `web` and `worker` for a binary started
-  outside the chart; the chart never renders it.
-- **PostgreSQL decides, Valkey accelerates** (INV-3, [R-ARCH-030](../spec/architecture.md)). State
-  whose loss would cost correctness or data, including every mutual exclusion whose failure would
-  corrupt data, lives in PostgreSQL. Valkey holds request collapsing, the negative cache,
-  cluster-wide rate-limit counters, change messages and signals. Every use of Valkey has a fallback
-  that works without it. A value read from Valkey can at most make trove refuse (a `404` from a
-  negative entry, a `429` from a counter), never grant access or supply served content. Every key
-  expires, and only `internal/cluster` talks to Valkey.
-- **No state between requests** (INV-18, [R-ARCH-032](../spec/architecture.md)). Consecutive
-  requests of one client may land on different replicas. A protocol that spans several requests
-  keeps its state in PostgreSQL or Valkey and its data in S3; local disk is scratch space for one
-  request or one job.
-- **IDs are permanent.** No ID is ever renumbered or reused. A new entry takes the next free number
-  in its prefix.
-- **Tools read the headings.** A `### <ID> · <Title>` heading followed directly by a `Priority:` line
-  is how catalog entries and requirements are found. Keep both on one line each.
-- **Neutral names.** Catalog entries describe behavior with descriptive, product-neutral names.
-  Links go to open standards and to the documentation of the ecosystems trove speaks.
-- **One version per tool** (planned, R-ARCH-003, R-ARCH-004). `go.mod` states `go 1.27.3` and pins
-  code generators as `tool` directives. `web/package.json` uses exact versions with a committed
-  lockfile. `web/.nvmrc` names the one Node.js version. Local builds and CI read the same pins.
+- **Four parts, one direction.** The [feature catalog](../features/README.md) says *what* a full-featured
+  repository manager does. The [specification](../spec/README.md) says *how* trove does it, one
+  requirement at a time (`R-<AREA>-nnn`). [Coverage](../coverage/README.md) measures the gap, and
+  [decisions.md](../decisions.md) records *why*.
+- **Owner constraints are fixed.** Go 1.27.3, Angular 22, PostgreSQL, S3-compatible storage, Helm, OIDC
+  login, own tokens, detailed permissions, GitLab CI OIDC, pull-through proxying, npm and NuGet first, and
+  the high-availability and scale constraints of 2026-10-28 ([spec/README.md](../spec/README.md#owner-constraints)).
+- **Invariants `INV-1` to `INV-19` bind every spec page.** A page may refine an invariant but must not
+  contradict it ([spec/README.md](../spec/README.md#design-invariants)).
+- **Roles, one binary** ([R-ARCH-001](../spec/architecture.md)). `web` answers HTTP and never claims a job or
+  holds a lease. `worker` claims jobs, holds leases and serves only the ops listener. `all` combines both
+  for a local run outside the chart. The `backup` role is planned.
+- **PostgreSQL decides, Valkey accelerates.** State whose loss would corrupt data lives in PostgreSQL,
+  including every mutual exclusion whose failure would corrupt data. Valkey holds shared ephemeral state and
+  never the only copy of anything. Only `internal/cluster` talks to Valkey, and every key expires.
+- **No state between requests** ([R-ARCH-032](../spec/architecture.md)). Consecutive requests of one client
+  may land on different replicas.
+- **Tools read the headings.** `### <ID> · <Title>` followed directly by a `Priority:` line is how the coverage
+  generator finds catalog entries and requirements. Keep both on one line each.
+- **One version per tool.** Pins live in [tools/versions.env](../../tools/versions.env) (tools and images),
+  `go.mod` (Go, sqlc, oapi-codegen), `web/package-lock.json` (Angular) and `web/.nvmrc` (Node.js). `make
+  versions-check` compares the installed tools with the pins.
 
 ## Pages
 
 | Page | Content |
 |---|---|
-| This page | Entry point: ID schemes, adding catalog entries and requirements, coverage, planned layout, the local development profile and test tiers |
+| [architecture.md](architecture.md) | Components, layers, request path, startup and shutdown, coordination, configuration and secrets |
+| [build-and-test.md](build-and-test.md) | Build, generate, lint and test targets, and the test tiers and their build tags |
+| [ci.md](ci.md) | CI and nightly workflows, jobs, pins, and what the release process does and does not do yet |
+| [configuration.md](configuration.md) | How `trove.yaml`, environment variables and flags combine, and how a key is added |
+| [coverage.md](coverage.md) | The requirement coverage generator, its rules and its evidence record |
+| [database.md](database.md) | PostgreSQL connections, pools, migrations, sqlc and the job and change tables |
+| [blob-store.md](blob-store.md) | The S3 blob layer: keys, spool, commit, download, garbage collection |
+| [coordination.md](coordination.md) | Change log, signals, leases, the job queue and the replica registry |
+| [valkey.md](valkey.md) | The Valkey client, Sentinel discovery, key families, degraded mode |
+| [observability.md](observability.md) | Logs, metrics, traces, health and the ops listener |
+| [secrets.md](secrets.md) | The stored-secret key ring and the envelope of sealed columns |
+| [tls.md](tls.md) | TLS material on every listener and client: loading, reloading, rotating, testing |
+| [http-api.md](http-api.md) | Listeners, the middleware chain, the system API and the problem format |
+| [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
+| [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
+| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
+| [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
-Topic pages are created together with the code they describe. Until then their design lives in the
-spec:
+## Core flows
 
-| Future topic | Design today |
-|---|---|
-| Architecture: components, request paths, startup | [spec/architecture.md](../spec/architecture.md) |
-| Process roles, graceful shutdown and node drains | [spec/architecture.md](../spec/architecture.md) R-ARCH-001, R-ARCH-024, R-ARCH-032; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-002, R-HA-011, R-HA-059, R-HA-062 |
-| Valkey: usage map, client, request collapsing, rate limits, degraded mode | [spec/architecture.md](../spec/architecture.md) R-ARCH-030, R-ARCH-031, R-ARCH-033, R-ARCH-034; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-056, R-HA-057 |
-| PostgreSQL connections, change log and leases | [spec/architecture.md](../spec/architecture.md) R-ARCH-016 to R-ARCH-019; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-016, R-HA-058 |
-| Backup and restore | [spec/backup-and-restore.md](../spec/backup-and-restore.md); chart side [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-060 |
-| Build, test and lint matrix | [spec/architecture.md](../spec/architecture.md) R-ARCH-003, R-ARCH-004; no task runner chosen yet |
-| Local development profile | [Local development profile](#local-development-profile-planned) below; [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-051 |
-| Adding a package format | [spec/architecture.md](../spec/architecture.md) R-ARCH-008 to R-ARCH-010 |
-| CI and release: images, chart, signatures | [spec/ha-and-helm.md](../spec/ha-and-helm.md) R-HA-047; published to ghcr.io/guided-traffic (image `trove`, chart `charts/trove`), Q-HA-11 |
+One fact per line; each links to the page that explains it.
+
+- **Start-up:** `trove serve` loads the configuration, builds the components of its role and waits for the
+  PostgreSQL schema check, then becomes ready ([architecture.md](architecture.md)).
+- **Configuration:** defaults, then the file, then the environment, then flags; strict validation; the
+  effective view is printed by `trove admin config validate` ([configuration.md](configuration.md)).
+- **Requests:** the middleware chain assigns `X-Request-Id`, applies the client address and the body limits,
+  then the handler; every error is written as `application/problem+json` ([http-api.md](http-api.md)).
+- **Migrations:** `trove migrate up` holds the migration advisory lock and applies each step in its own
+  transaction; a replica waits, not ready, until the schema is current ([database.md](database.md)).
+- **Cross-replica change:** every replica polls the change log; a Valkey message only evicts early
+  ([coordination.md](coordination.md)).
+- **Singleton work:** a worker takes a session-level advisory lease on its lease pool and fences its writes
+  to that session ([coordination.md](coordination.md)).
+- **Jobs:** a worker claims rows with `FOR UPDATE SKIP LOCKED`, extends its lease with a heartbeat, and settles
+  the attempt with the worker and attempt as owner ([coordination.md](coordination.md)).
+- **Valkey:** keys come from registered families with a mandatory expiry; the client follows the primary that
+  Sentinel reports ([valkey.md](valkey.md)).
+- **Blobs:** content-addressed keys under `<prefix>/sha256/…`; the S3 client sits behind an outbound factory
+  ([blob-store.md](blob-store.md)).
+- **Health:** readiness checks, watched loops and the liveness watchdog ([observability.md](observability.md)).
+
+## Repository layout
+
+```text
+trove/
+├── Makefile                  # the task runner: build, generate, lint, test, chart, dev profile, integration
+├── go.mod                    # go 1.27.3; sqlc and oapi-codegen as tool directives
+├── tools/versions.env        # pins of every tool and image that is not a Go module or an npm package
+├── cmd/trove/                # main.go (dispatch), serve.go, migrate.go, admin.go
+├── api/openapi.yaml          # OpenAPI 3.1 source of truth; go generate copies it into internal/api/v1
+├── internal/
+│   ├── app/                  # composition root: components per role, start and stop order
+│   ├── api/v1/               # system API handlers; gen/ is generated (oapi-codegen)
+│   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
+│   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
+│   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
+│   ├── buildinfo/            # version, commit and build date from -ldflags
+│   ├── cache/                # bounded in-process caches with change-area invalidation
+│   ├── cluster/              # the only Valkey client and key registry (valkey_keys.go), change log, signals,
+│   │                         # FlightLock, leases, lock categories, replica registry, watchdog loops
+│   ├── config/               # struct tree with defaults, loader, validation, schema.json (generated)
+│   ├── errs/                 # error kinds, the code registry (codes.go), problem rendering
+│   ├── httpserver/           # listeners, routes, middleware chain, client address, ops endpoints
+│   ├── jobs/                 # job kinds, tasks, the queue, workers, scheduler, reaper
+│   ├── meta/                 # transactions and the revision-column registry
+│   ├── meta/postgres/        # pools, connect, retry, migrations/ (embedded), queries/ (sqlc input), q/ (sqlc output)
+│   ├── observability/        # logs, metrics, tracing and OTLP export, health checks
+│   ├── outbound/             # the one HTTP client factory and the egress address policy
+│   ├── secrets/              # key ring and sealed-column registry
+│   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
+│   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder
+├── web/                      # Angular workspace: angular.json, src/, scripts/ (build-embed, check-budget), .nvmrc
+├── deploy/
+│   ├── helm/trove/           # the chart: templates/, values.yaml, values.schema.json, ci/ value sets
+│   └── dev/                  # the local profile: kind, CloudNativePG, Valkey, SeaweedFS, Traefik, scripts
+├── test/
+│   ├── integration/          # build tag `integration`: area folders blob/, coordination/, postgres/, valkey/, server/
+│   ├── chart/                # build tag `chart`: render assertions and the lint script
+│   └── e2e/                  # build tag `e2e`: scenarios against the dev cluster, with a k6 load script
+├── .github/
+│   ├── workflows/            # ci.yml, nightly.yml
+│   └── actions/load-pins/    # loads tools/versions.env into the job
+└── docs/                     # README.md, decisions.md, developer/, spec/, security/, coverage/, features/
+```
+
+Planned, from [R-ARCH-003](../spec/architecture.md): the format packages (`internal/formats/`), the identity
+and authorization packages (`internal/auth/`, `internal/authz/`), the repository model (`internal/repository/`),
+the remote fetch engine (`internal/proxy/`) and the audit package (`internal/audit/`) do not exist yet.
+
+## Test tiers
+
+| Tier | How it runs | Where |
+|---|---|---|
+| Unit | `make test` (`go test -race`, JSON to `.out/test-unit.json`) | next to the code; `_test.go` |
+| Architecture | part of unit: `go test ./internal/archtest` | `internal/archtest/` |
+| Integration | `make integration-up`, then `make test-integration`; build tag `integration`; `-p 1` | `test/integration/<area>/` |
+| Chart | `make chart-lint`, `make chart-test`; build tag `chart` | `test/chart/` |
+| End-to-end | `make e2e` against the dev cluster; build tag `e2e` | `test/e2e/` |
+| Web unit | Angular's `unit-test` builder with Vitest and jsdom | `web/` |
+
+The coverage evidence (`make coverage-refresh`) reads the unit, chart and integration reports; the rules
+are in [coverage.md](coverage.md).
 
 ## ID schemes
 
@@ -91,189 +160,27 @@ grep -rhoE '^### R-REPO-[0-9]{3} · ' docs/spec | sort | tail -n 1
 grep -rhoE '^### H-[0-9]+ · ' docs/spec docs/security | sed -E 's/^### H-([0-9]+).*/\1/' | sort -n | tail -n 1
 ```
 
-## How to add a catalog entry
+## How to add something
 
-1. Pick the page by scope from the page table in [features/README.md](../features/README.md#pages).
-   Format-specific behavior goes to the format's page under
-   [features/formats/](../features/formats/README.md), and behavior shared by formats goes to
-   `FMT`.
-2. Take the next free number in the page's prefix (command above).
-3. Write the heading `### <ID> · <Title>` and, directly below it, `Priority: **<P>**` using the
-   rubric.
-4. Describe what the feature does, its settings with descriptive names, meanings and defaults, the
-   API operations, the UI location, limits, edge cases and interactions. Write *unspecified* where a
-   value is not known. Put long tables into `<details>`.
-5. If the spec already handles the feature, add the new ID to the `Covers:` line of that
-   requirement. Then regenerate coverage (below).
+The ordered steps for each kind of addition live on the topic pages, next to the code they describe:
 
-## How to add a spec requirement
+- a configuration key: [configuration.md](configuration.md);
+- a system API operation or an error code: [http-api.md](http-api.md) (the code registry is `internal/errs/codes.go`);
+- a Valkey key family: [valkey.md](valkey.md);
+- a job kind or a periodic task: [coordination.md](coordination.md);
+- a metric family: [observability.md](observability.md);
+- a Helm value or a rendered object: [helm-chart.md](helm-chart.md);
+- a spec requirement or a catalog entry: the steps below.
 
-1. Pick the page by scope from the page table in [spec/README.md](../spec/README.md#pages) and take
-   the next free number in its prefix.
-2. Write `### R-<AREA>-nnn · <Title>` and directly below
-   `Priority: **<P>** · Covers: <catalog IDs>`. Use `Covers: trove-only` when no catalog entry
-   applies.
-3. Write the normative text with MUST, SHOULD and MAY in the
-   [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) sense. Include the data model, the API, the
-   configuration and acceptance criteria that a test can check. Mark each configuration value
-   `# default (proposed)` or `# example`.
-4. Check the requirement against the invariants and the owning pages named in it. A conflict
-   becomes a question `Q-<AREA>-n` under `## Decisions`, decided in the block format of
-   [spec/README.md](../spec/README.md#requirement-format) and listed in
-   [decisions.md](../decisions.md#decisions-by-the-development-agent).
-5. A security gap the requirement leaves open goes under `## What this does not cover` as
-   `### H-<n> · <title>`. Take the next free number across all spec and security pages. Name the component, the
-   subject it affects, whether it is live or dormant (and which requirement makes it live), and
-   what makes it real.
-6. A design choice with real alternatives gets a record in [decisions.md](../decisions.md).
-7. Regenerate coverage.
+For a spec requirement: take the next free number in the page's prefix, write the heading and the
+`Priority:` line, state the normative text with MUST, SHOULD and MAY, and put any open question under
+`## Decisions` in the block format of [spec/README.md](../spec/README.md#requirement-format). A security gap goes
+under `## What this does not cover` as `H-<n>`, numbered across all spec and security pages. Then regenerate the
+coverage checklist with `make coverage` and check the links with `go run ./internal/tools/coverage -links`.
 
-## How coverage is produced
+## Conventions
 
-Coverage compares two machine-read inputs:
-
-- the catalog: every `### <ID> · <Title>` heading in `docs/features/` with the `Priority:` line
-  below it;
-- the spec: every `Covers:` list on the `Priority:` line of a requirement in `docs/spec/`.
-
-A catalog entry counts as *specified* when at least one requirement lists its ID, and *open*
-otherwise. The generated output is [coverage/checklist.md](../coverage/checklist.md) plus the marked
-tables in [coverage/README.md](../coverage/README.md). The full rules, including the checks that
-stop generation, are in
-[How the numbers are produced](../coverage/README.md#how-the-numbers-are-produced).
-
-The generator is not committed to the repository yet, so nothing keeps the coverage pages current
-when a heading or a `Covers:` line changes. Until it is, these commands, run from the repository
-root, reproduce the raw comparison. They skip the format examples inside code fences:
-
-```shell
-t=$(mktemp -d)
-
-# Catalog entries: "<ID> Priority: **<P>**", one per line
-find docs/features -name '*.md' -exec awk '
-  FNR == 1 { fence = 0 }
-  /^```/   { fence = !fence; next }
-  !fence && /^### [A-Z0-9-]+-[0-9]{3} · / { id = $2; getline; if ($0 ~ /^Priority:/) print id, $0 }
-' {} + | LC_ALL=C sort > "$t/catalog.txt"
-
-# Catalog IDs that at least one requirement covers
-find docs/spec -name '*.md' -exec awk '
-  FNR == 1 { fence = 0 }
-  /^```/   { fence = !fence; next }
-  !fence && /^Priority: .*Covers:/ { sub(/.*Covers:/, ""); print }
-' {} + | grep -oE '[A-Z][A-Z0-9]*(-[A-Z0-9]+)*-[0-9]{3}' | LC_ALL=C sort -u > "$t/covered.txt"
-
-# Uncovered entries with their priority, then covered IDs that do not exist in the catalog
-LC_ALL=C join -v 1 "$t/catalog.txt" "$t/covered.txt"
-LC_ALL=C join -v 2 "$t/catalog.txt" "$t/covered.txt"
-```
-
-## Repository layout
-
-Today:
-
-```text
-trove/
-├── LICENSE                 # Apache License 2.0
-├── README.md               # user-facing overview, naming conventions, target quick start
-├── SECURITY.md             # vulnerability reporting
-└── docs/
-    ├── README.md           # map of the documentation
-    ├── features/           # feature catalog, IDs <PREFIX>-nnn
-    │   └── formats/        # format matrix (FMT) and one page per format (PKG-<FORMAT>)
-    ├── spec/               # target design, IDs R-<AREA>-nnn
-    │   └── formats/        # npm.md, nuget.md
-    ├── coverage/           # catalog entries covered by the spec, work list
-    ├── decisions.md        # decision records
-    ├── developer/          # this page
-    └── security/           # security architecture
-```
-
-Planned, from [R-ARCH-003](../spec/architecture.md) and [R-ARCH-004](../spec/architecture.md)
-(abbreviated; the spec has the full tree):
-
-```text
-trove/
-├── go.mod                       # one module; go 1.27.3; generators as tool directives
-├── cmd/trove/main.go            # subcommands serve, migrate, backup, admin; flag parsing only
-├── api/openapi.yaml             # OpenAPI 3.1 source of truth, served as /api/v1/openapi.json
-├── internal/                    # all Go code; no public Go API
-│   ├── app/                     # composition root: build components per role, start/stop order
-│   ├── config/                  # schema, YAML and environment loading, validation
-│   ├── httpserver/              # listeners, routing, middleware, client address
-│   ├── api/v1/                  # management API handlers
-│   ├── auth/{oidc,session,token,ciexchange}/
-│   ├── authz/                   # permission decisions
-│   ├── repository/              # model, snapshot, path cleaning, virtual resolver
-│   ├── formats/                 # plug-in contract, registry, conformance kit, npm/, nuget/
-│   ├── proxy/                   # remote fetch engine
-│   ├── blob/s3/                 # spool, digests, content-addressed objects
-│   ├── meta/postgres/           # pgx pools, migrations, sqlc queries and generated code
-│   ├── cluster/                 # the only Valkey client and key registry (keys.go), change log
-│   │                            # and signal areas, FlightLock, shared counters, leases, lock categories
-│   ├── backup/                  # trove backup: create, restore, table registry
-│   ├── cache/  jobs/  audit/  outbound/  secrets/  errs/  observability/
-│   ├── webui/                   # embeds the Angular build (dist/ has a committed placeholder)
-│   └── archtest/                # fails on forbidden imports between layers
-├── web/                         # Angular workspace; exact versions, .nvmrc
-├── deploy/helm/trove/           # Helm chart: web and worker Deployments, backup CronJob
-├── deploy/dev/                  # HA-shaped local profile, see below
-├── test/integration/            # real PostgreSQL, PgBouncer, Valkey with Sentinel and SeaweedFS (S3) in containers
-├── test/e2e/                    # kind + Helm + real clients (npm, pnpm, yarn, dotnet)
-└── perf/                        # load scripts, reference lockfiles
-```
-
-The responsibility of each Go package and the import layering are in
-[R-ARCH-002](../spec/architecture.md).
-
-## Local development profile (planned)
-
-The local profile is HA-shaped, so that failover of every dependency, node drains and a backup and
-restore can be exercised on a laptop and in CI with the same files ([R-HA-051](../spec/ha-and-helm.md)).
-It runs the real chart, not a single process. Files live in `deploy/dev/`; the tool versions (kind,
-kubectl, Helm, openssl, the CloudNativePG operator chart, the PostgreSQL, Valkey and SeaweedFS
-images) are pinned once in the repository's tool pins, and images are pinned by digest.
-
-| Component | What runs | File |
-|---|---|---|
-| Cluster | kind, one control-plane and three worker nodes labeled with three zones, so two replicas per role can spread, drain and lose a node | `deploy/dev/kind.yaml` |
-| trove | the chart with `trove-web` and `trove-worker` at two replicas each, `highAvailability.enforce: true`, and the backup CronJob every 6 hours | `deploy/dev/values-dev.yaml` |
-| PostgreSQL | CloudNativePG `Cluster` `trove-db` with two instances (primary and standby), TLS with `verify-full` | `deploy/dev/postgres.yaml` |
-| Pooler (optional, `dev-up POOLER=1`) | CloudNativePG `Pooler` resources `trove-db-pooler-rw` and `trove-db-pooler-control` in transaction mode, two instances each | `deploy/dev/pooler.yaml` |
-| Valkey with Sentinel | StatefulSet `trove-valkey` (primary and replica) and StatefulSet `trove-valkey-sentinel` (three Sentinels, quorum 2, `down-after-milliseconds 5000`), spread over the three nodes, `emptyDir` only, TLS only, ACL user `trove`; the dev CA comes from `deploy/dev/valkey-certs.sh` and lives in `.dev/valkey/` | `deploy/dev/valkey.yaml` |
-| S3 | single-process SeaweedFS, Service `trove-s3` on port 9000, buckets `trove-blobs` (versioning on), `trove-pg-archive` and `trove-backups` | `deploy/dev/s3.yaml` |
-
-Every component is single-attach or ephemeral: the PostgreSQL instances use one ReadWriteOnce claim
-each through CloudNativePG, Valkey and SeaweedFS use `emptyDir`, and nothing needs ReadWriteMany
-([R-HA-061](../spec/ha-and-helm.md)).
-
-Targets (the names are examples until the task runner is chosen):
-
-| Target | What it does |
-|---|---|
-| `dev-up` / `dev-down` | Creates the kind cluster with everything above and port-forwards `svc/trove` to `localhost:8080` / deletes the cluster |
-| `dev-failover` | Promotes the PostgreSQL standby (`kubectl cnpg promote trove-db <standby>`) |
-| `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` | `SENTINEL FAILOVER trove`; force-deletes the Valkey primary pod; scales Valkey and the Sentinels to 0 for a given duration |
-| `dev-s3-outage` | Scales the S3 store to 0 for a given duration |
-| `dev-drain` | Runs variant A of the drain test of [R-HA-059](../spec/ha-and-helm.md) against a node the target picks |
-| `dev-backup`, `dev-restore` | Creates a Job from the backup CronJob and waits for it; installs a second release into an empty namespace from the latest backup |
-| `dev-chaos` | Runs the failure-injection suite of [R-HA-052](../spec/ha-and-helm.md) |
-
-`trove serve --role all` from an IDE uses the same dependencies through `kubectl port-forward`. It
-is a convenience, not a tested profile.
-
-## Test tiers (planned)
-
-| Tier | Where | Scope | Spec |
-|---|---|---|---|
-| Unit | next to the code | Package logic; the token format test vector | R-AUTH-022 |
-| Architecture | `internal/archtest` | Forbidden imports between layers | R-ARCH-002 |
-| Format conformance | `internal/formats/formattest` | Routing, path rejection, classification, rewrite and merge determinism, limits, content headers, client snippet templates | R-ARCH-010 |
-| Integration | `test/integration` | Real PostgreSQL, PgBouncer, Valkey with Sentinel (newest patch of each supported line, 9.0 and 9.1 today) and SeaweedFS (S3) in containers on every change; MinIO and AWS S3 nightly | R-ARCH-003, R-ARCH-031, R-HA-051 |
-| Chart | CI | `helm lint`, `helm template` per value set, schema validation; no `ReadWriteMany`, no PersistentVolumeClaim, no StatefulSet, no Secret, never `--role all` | R-HA-002, R-HA-028, R-HA-029, R-HA-061 |
-| End to end | `test/e2e` | kind, the real chart, and npm, pnpm, Yarn and `dotnet` against local, remote and virtual repositories; the client suite also with Valkey stopped | R-ARCH-010, R-ARCH-030, R-NPM-045, R-NUGET-027 |
-| Failure injection | local profile in CI | Every failure mode of R-HA-007 under real client load, including PostgreSQL switchover, Valkey failover, outage and content loss, object-store outage, node loss and backup under load | R-HA-052, R-HA-057 |
-| Node drain | local profile in CI | Variant A on every change to `main`; variants B to E (Valkey primary, PostgreSQL primary, pooler instance, running backup pod on the drained node) nightly | R-HA-059 |
-| Backup and restore | `test/integration`, kind | Consistency under load, overlapping runs, drain and crash during backup and restore, revocations surviving a restore; the restore drill nightly | R-BAK-029, R-HA-052 |
-| UI | `web/` | Unit, component, contract, end-to-end, accessibility, internationalization and security tiers | R-UI-047 |
-| Performance | `perf/` | Proposed targets, not measurements | R-ARCH-027 |
+- English only, in code, comments, commits and documentation.
+- Documentation of a behaviour changes in the same change as the behaviour.
+- Generated files are committed and carry the `DO NOT EDIT` header; `make generate-check` fails on a diff.
+- No secret in a repository file, a ConfigMap or a log line; secrets are referenced as files.

@@ -2049,6 +2049,25 @@ within `stall_timeout`, for example a single server-side copy that takes longer.
 (no `activeDeadlineSeconds`); [ha-and-helm.md](ha-and-helm.md) R-HA-060 and R-HA-031 set
 `backup.activeDeadlineSeconds` and `restore.activeDeadlineSeconds` to 0, not rendered.
 
+### Q-BAK-12 · The `backup` command in M0
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Implement `trove backup` in M0 | The create and restore paths are built with the foundation | The command works from the first release | The backup needs the table export classes and the revision registry of later milestones (M5); building it now would freeze formats that are not designed yet |
+| (b) Leave the command out until M5 | `trove backup` is an unknown command | Nothing half-built | Scripts and the chart cannot reference the name until M5 |
+| (c) Reserve the name; every `trove backup` subcommand returns "not implemented yet" and exits non-zero (chosen) | `cmd/trove/main.go` dispatches `backup` to `errNotImplemented` | The name and the exit code are fixed now; the chart and documentation can refer to it | A command that exists and does nothing |
+
+**Choice:** (c).
+
+**Rationale:** The subcommand names are part of the surface of [architecture.md](architecture.md) R-ARCH-001, and
+M0 must not decide the backup format. A reserved name fixes the surface without a format. The development agent
+would revisit this at the start of M5, when the command is implemented and the reservation ends.
+
+**Applied in the spec:** no requirement text changed. The backup format and procedure of this page are unchanged;
+the M0 state is the command's reservation only.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated

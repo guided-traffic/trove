@@ -111,6 +111,14 @@ Normative rules:
   JWTs in general, and passwords, including the break-glass password. There is one extension
   point: when [gitlab-ci-oidc.md](gitlab-ci-oidc.md)'s optional job-token fallback is enabled,
   the stage hands a Basic credential whose username is `gitlab-ci-token` to that verifier.
+- **Endpoint rules.** After selecting the credential, the stage applies the rules of the endpoint
+  the request arrived on ([endpoints.md](endpoints.md) R-EP-010): the session cookie is evaluated
+  only on an endpoint whose surface holds `ui` (the default endpoint) and is ignored elsewhere; a
+  token type the endpoint does not accept is rejected with 401 `invalid_token` without a database
+  lookup; a token bound to other endpoints, or an unbound token where the endpoint accepts only
+  bound ones, is rejected with 401 `invalid_token`; and an endpoint with `auth.anonymous: false`
+  makes no request anonymous. With the default endpoint's defaults, every rule of this requirement
+  stays as written.
 - Tokens in query parameters (`?access_token=`) MUST NOT be accepted
   ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750) §2.3 discourages them; they leak into logs).
 - **Exchange endpoints.** These routes take a GitLab ID token as request input:
@@ -1865,12 +1873,13 @@ structure, its validation and who may request what.
 | `admin` | `true` lets the token exercise system administration if, and only if, the owner holds the administrator role at use time (TOK-009). An administrator's token without `admin: true` acts as a non-administrator, so administrator power is always an explicit choice. |
 | `repositories` | Restricted grants with the same resource selector as a policy grant: repository keys or patterns, package-name and path include/exclude patterns (`packages`, `paths`; [authorization.md](authorization.md) R-AUTHZ-005), actions from `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` (INV-9). Each element is `{"repositories": [...], "packages": {"include": [...], "exclude": [...]}, "paths": {"include": [...], "exclude": [...]}, "actions": [...]}`; `packages` and `paths` are optional. Pattern syntax and matching are defined by [authorization.md](authorization.md). |
 | `system` | Items from the closed list of R-AUTH-025 (P1). |
+| `endpoints` | The endpoints the token is valid on ([endpoints.md](endpoints.md) R-EP-011): at most 16 configured endpoint names; absent or empty means unbound. A binding, not a resource type: it grants nothing and only limits where the token is accepted (R-EP-010). An unknown name answers 400 `invalid_scope`. |
 | `builds` | P1. Restricted build grants: each element is `{"builds": {"include": [...], "exclude": [...]}, "actions": [...]}`, with build-name globs (syntax of the `packages` dimension) and actions from `read`, `annotate`, `deploy`, `delete`, `manage` ([authorization.md](authorization.md) R-AUTHZ-027). `overwrite` does not apply to build records and answers 400 `invalid_scope`. `inherit: true` also admits build rights from P1; a restricted scope without a `builds` element admits no build action. |
 
 **Resource types.** A scope can name only this closed list of resource types: `repositories`
 (repository content, MVP), `system` (system capabilities, P1) and `builds` (build records, P1),
 the resource types the grant model has ([authorization.md](authorization.md) R-AUTHZ-013,
-Q-AUTHZ-10). `inherit` and `admin` are switches, not resource types. There is no project resource
+Q-AUTHZ-10). `inherit` and `admin` are switches and `endpoints` is a binding, not resource types. There is no project resource
 type before project roles exist (TOK-011, TOK-013, P2), and no per-repository configuration type:
 repository configuration rights are system capabilities and apply instance-wide.
 
@@ -2067,6 +2076,8 @@ create call must satisfy all of the following:
 - Its scope is no broader than the presenting token's scope. Each new grant (an element of
   `repositories` or, from P1, `builds`) must equal a presenting grant of the same part with a
   subset of its actions, and `inherit`, `admin` and `system` items may only be kept or dropped.
+  When the presenting token is bound to endpoints, the new token must be bound to a non-empty
+  subset of them ([endpoints.md](endpoints.md) R-EP-011).
 
 This holds for `Bearer` and for Basic with a token as password. A token can never mint a
 credential that outlives or outranks itself. The new token records the presenting token in

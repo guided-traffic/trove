@@ -762,8 +762,9 @@ thirty. Protecting one replica's own CPU and memory is the job of `server.max_in
 ([architecture.md](architecture.md) R-ARCH-005), which stays per replica. The limits for login,
 token validation and token revocation are R-AUTH-038 in
 [identity-and-authentication.md](identity-and-authentication.md); those of the CI exchange are
-R-CI-021 in [gitlab-ci-oidc.md](gitlab-ci-oidc.md). This requirement adds the general classes for
-`/api/v1/` and `/files/`:
+R-CI-021 in [gitlab-ci-oidc.md](gitlab-ci-oidc.md); the class a further endpoint applies to every
+request on it, package protocols included, is R-EP-015 in [endpoints.md](endpoints.md). This
+requirement adds the general classes for `/api/v1/` and `/files/`:
 
 | Class | Applies to | Bucket key | Limiter name |
 |---|---|---|---|
@@ -1133,6 +1134,7 @@ Priority: **MVP** · Covers: trove-only
 | `/api/v1/config/…` | Configuration as code (P1) | R-API-044 | [operations-and-observability.md](operations-and-observability.md) |
 | `/api/v1/scim/v2/…` | SCIM (P1) | R-API-046 | [identity-and-authentication.md](identity-and-authentication.md) |
 | `/api/v1/projects…` | Projects (P1) | R-API-047 | [authorization.md](authorization.md) |
+| `/api/v1/endpoints…` | Endpoints (read only) and their exposure rules, `check-exposure` | R-EP-016 | [endpoints.md](endpoints.md) |
 | `/api/v1/problems/{code}`, `/api/v1/openapi.json`, `/api/v1/openapi.yaml` | Contract | R-API-009, R-API-002 | this page |
 
 Routes are registered on the HTTP stack of R-ARCH-005 with method-qualified patterns. The browser
@@ -1720,6 +1722,13 @@ Owned by [operations-and-observability.md](operations-and-observability.md) and
 | GET | `/api/v1/system/info` | Installation facts: version, base URL and source, maintenance mode, replicas per role (live, ready, degraded, nodes) and per version, database and schema versions, Valkey installation facts (mode, primary name, number of configured Sentinels, TLS mode, key prefix, keyspace, degraded replicas), backup status | `system.read` |
 | GET | `/api/v1/system/replicas` | Replicas with version, roles, node, state, heartbeat, readiness checks and each replica's view of Valkey (state, reason, circuit, primary, Sentinels reachable and configured, server version, last primary change) | `system.read` |
 | GET | `/api/v1/system/tasks`, POST `/api/v1/system/tasks/{name}/run` | Scheduled tasks and manual runs (R-OPS-019) | `system.read`; `admin` to run |
+
+**M0 stand-in until authentication ships (M1).** No principal holds `system.read` yet. The configuration
+key `system.bootstrap_anonymous_read` (default `false`; `true` in the development profile) lets anonymous
+callers read `/api/v1/system/info` and `/api/v1/system/replicas`. A request that presents an
+`Authorization` header gets `401`. Startup refuses the key when `server.base_url` is an `https` origin other
+than localhost, and a warning is logged when it is set. The key is removed with the identity work
+(Q-API-14).
 | GET | `/api/v1/system/jobs`, `/api/v1/system/jobs/{id}`, POST `…/cancel` | Jobs (R-OPS-019, R-API-015) | `system.read`; `admin` to cancel |
 
 Liveness, readiness and Prometheus metrics stay on the operations listener (INV-6) and are not
@@ -2294,7 +2303,7 @@ Every screen and every object has a bookmarkable URL under `/ui/{locale}`. Filte
 selected tab and selected version live in query parameters.
 
 <details>
-<summary>Route table (27)</summary>
+<summary>Route table (28)</summary>
 
 | Route | Screen | Requirement |
 |---|---|---|
@@ -2318,6 +2327,7 @@ selected tab and selected version live in query parameters.
 | `/admin/tokens` | Token administration | R-UI-030 |
 | `/admin/ci`, `/admin/ci/{issuer}`, `/admin/ci/{issuer}/mappings/{mapping}`, `/admin/ci/{issuer}/test` | CI identity, claim tester | R-UI-035, R-UI-036 |
 | `/admin/audit` | Audit log | R-UI-037 |
+| `/admin/endpoints`, `/admin/endpoints/{endpoint}`, `/admin/endpoints/{endpoint}/rules/new`, `/admin/endpoints/{endpoint}/rules/{name}` | Endpoints and exposure rules | [endpoints.md](endpoints.md) R-EP-017 |
 | `/admin/system`, `/admin/system/jobs`, `/admin/system/backups` | System status, jobs, backups | R-UI-038, R-UI-048 |
 | `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
 | `/admin/projects…` | Projects (P1) | R-UI-041 |
@@ -4332,6 +4342,101 @@ Since 2026-10-28 every installation runs separate `web` and `worker` Deployments
 **Rationale:** The owner requires a drain without outage "when the setup is designed for it", and the screen is where an operator without cluster access sees whether it currently is. Two of the conditions are visible to trove: at least two ready replicas per role, and on different nodes. The node name costs one environment variable from the downward API (`spec.nodeName` is offered as an environment variable only, [downward API](https://kubernetes.io/docs/concepts/workloads/pods/downward-api/), checked 2026-10-28), and every replica already computes its Valkey state, circuit, Sentinel reachability and primary for the metrics of R-HA-057. Showing the primary each replica uses exposes the one Valkey fault that metrics aggregated with `max` hide: a replica still bound to a demoted primary. (c) needs Kubernetes permissions that trove deliberately lacks, and (d) leaves the UI silent about the requirement the owner stressed. The screen states what it cannot see (budgets, capacity, the N + 1 rule). The development agent revisits this if trove ever gets read access to the Kubernetes API for another reason, which would let the screen show desired replicas and budgets too.
 
 **Applied in the spec:** R-UI-038 (replicas by role with drain safety, the `valkey` degraded check, the Valkey card, the Backups card, the header's "not drain-safe", new acceptance criteria, and the MVP note that names the added registry fields), R-API-038 (the registry and system-information fields the screen reads, adopted unchanged from [operations-and-observability.md](operations-and-observability.md) R-OPS-003 and R-OPS-004, which own their shapes: per replica `roles` (`["all"]` for the development role), `state`, `node`, `checks`, `degraded` and the nested `valkey` view with `state`, `reason` in R-OPS-001's vocabulary, `circuit`, `primary`, `sentinelsReachable`, `sentinelsConfigured`, `serverVersion` and `lastPrimaryChangeAt`; per installation `replicas.roles.<role>` with `live`, `ready`, `degraded` and `nodes`, the `valkey` block of installation facts and the `backup` block). An earlier revision of this block named flat fields (`valkeyPrimary`, `valkeyPrimarySince`, `valkeySentinelsReachable`), `replicas.byRole` and other reason names; the choice is unchanged, only the field shapes follow their owner. Cross-page: [operations-and-observability.md](operations-and-observability.md) R-OPS-003 (column `node` and the `valkey` view column); [ha-and-helm.md](ha-and-helm.md) R-HA-030 (the chart sets `TROVE_NODE_NAME` from `spec.nodeName` for `web` and `worker` pods), R-HA-057 (`trove_valkey_sentinels_reachable` counts the Sentinels that answer a periodic probe of all configured ones) and Q-HA-12 (the status screen now needs these registry fields and the backup summary, so "adds no backend work" no longer holds).
+
+### Q-API-13 · Problem member name, problem type, status of validation errors and error codes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Absolute problem type on the public base URL | `type` is `https://<base url>/api/v1/problems/<code>` | Resolves to a page of the installation | Differs for every installation and for every alias of the host; cannot be compared across installations |
+| (b) Relative reference `/api/v1/problems/<code>` served by trove from the embedded code registry (chosen) | `type` is the same on every installation; `GET /api/v1/problems/{code}` describes it | Identical everywhere; resolves on every base URL | Served by trove only |
+| (c) `about:blank` with the code as a member | The RFC 9457 default | No catalog to serve | No description of the code for clients |
+
+Request-ID member (chosen with the API conventions, `requestId`): (a) `request_id` in snake case, as the logs
+name it; (b) `requestId` in camel case, as the rest of the API's JSON (R-API-003) (chosen). The member carries
+the value of the `X-Request-Id` header.
+
+Status of a validation failure: (a) 400 for every `invalid` error; (b) 400 for a request that cannot be parsed
+or that names an unknown field, and 422 when the body parsed and the fields are invalid (chosen).
+
+Codes (chosen): `malformed_request` for the 400 of an unparsable request (not `invalid_request`, which is the
+OAuth form of [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-008); `server_busy` for a replica at its concurrency
+bound (not `too_many_requests_in_flight`); `database_timeout` for a statement that exceeded its limit, `503` with
+`Retry-After` (R-ARCH-019).
+
+**Choice:** (b) for the type, `requestId` for the member, the 400/422 split, and the three codes above.
+
+**Rationale:** A client matches on `code` and on `type` across installations, so both must be the same
+everywhere, and the API's JSON is camel case in every other member. The split keeps a parse error apart from a
+field error without a second status family. The development agent would revisit the codes before any of them
+is released, because a code is never renamed within an API major version (R-ARCH-025).
+
+**Applied in the spec:** R-ARCH-023 names `requestId` (it said `request_id`, which contradicted R-API-009 and the
+API's JSON); R-API-009 already states the type, the status split and the extension members. `malformed_request` is
+in R-API-009's generic table; `server_busy` and `database_timeout` are named by their owning pages
+([architecture.md](architecture.md) R-ARCH-005 and R-ARCH-019, R-API-014). Decision record:
+[ADR-126](../decisions.md#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes).
+
+### Q-API-14 · Stand-in for `system.read` until authentication ships
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No anonymous read; the development profile reads the replica list with a credential | No credential can be valid before M1 | No exposure | The development profile and its load test have no credential to read with |
+| (b) `system.bootstrap_anonymous_read`, default `false`; `true` only where configured (chosen) | Anonymous callers read `/api/v1/system/info` and `/api/v1/system/replicas`. A presented `Authorization` header gets `401` (`bootstrapAuthenticate`). Startup refuses `true` with an `https` `server.base_url` other than localhost. | Off by default; the dev profile and its load test work; the refusal keeps it away from a public origin | Anyone who reaches the client listener of a development installation reads the replica list |
+| (c) A fixed development principal that holds every permission | A stand-in identity in code | Works with every route | The stand-in becomes the authorization model by accident |
+
+**Choice:** (b). The key is removed with the identity work at M1.
+
+**Rationale:** The replica list and the installation facts are operator data, but the M0 dev profile must show them
+to a load test. The refusal of the `https` origin keeps the switch away from anything that is not a development
+installation, and the warning in the log says so at each start. The development agent would revisit the key when
+M1 ships, where it is deleted rather than kept.
+
+**Applied in the spec:** R-API-038 states the M0 stand-in and its refusal (paragraph under the endpoint table).
+
+### Q-UI-8 · Bundle budget, CSP nonce and inline code
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No budget | The build reports sizes only | No failing build | The initial bundle grows unnoticed |
+| (b) Raw-size guard in `angular.json`: warning at 800 kB, error at 1500 kB (chosen as the first line) | Angular's budget on the build output | Fails on a gross regression with no extra tooling | Raw sizes say little about what a browser downloads |
+| (c) Compressed budget of what `index.html` loads, checked by `web/scripts/check-budget.mjs` (400 kB, chosen as the rule of R-UI-001) | The script reads `index.html`, follows the files it loads and sums their gzip size; `build:embed` runs it after the build | The number of R-UI-001 is what is enforced | A script to keep in step with Angular's output names |
+
+Nonce: `index.html` carries the literal `TROVE_CSP_NONCE` on the root element as `ngCspNonce`; the server replaces it with the
+per-response nonce of the CSP. Inline code: critical-CSS inlining and font inlining are off in `angular.json` (`inlineCritical: false`,
+`fonts.inline: false`), so no inline code needs the nonce.
+
+**Choice:** (b) and (c) together, and the nonce with inlining off, as stated.
+
+**Rationale:** The guard catches a gross regression at once; the compressed budget is the number that R-UI-001 states
+for the user's download. Turning inlining off keeps the strict CSP of R-UI-001 without a hash for each inline block.
+The development agent would revisit the raw guard if Angular's budgets change their meaning, and the compressed budget
+when a route is loaded lazily and no longer part of the initial bundle.
+
+**Applied in the spec:** R-UI-001 states the 400 kB compressed budget (unchanged); the mechanism is the choice of this block.
+
+### Q-UI-9 · Test tiers of the web UI at M0
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every tier of R-UI-047 at M0, including browser mode, contract tests and Playwright | The full table from the first commit | Nothing deferred | The M0 shell has no journeys to test in a browser, so the tiers would test nothing yet |
+| (b) Unit and component tiers at M0 on jsdom through Angular's `unit-test` builder; browser mode, contract, Playwright and axe with the M1 screens (chosen) | The M0 table has two tiers | The tiers that exist test real logic; the rest arrive with the screens they test | R-UI-047's table describes M1 and later for the rest |
+| (c) Unit tests only | Nothing else at M0 | Smallest | No component test of the shell |
+
+**Choice:** (b).
+
+**Rationale:** Browser-based tests need screens. Writing them against the M0 shell would test placeholders and cost
+the build time that the coverage evidence needs. The development agent would revisit this when the first screen
+of M1 lands, which is when the browser tiers and axe start.
+
+**Applied in the spec:** R-UI-047 is unchanged; its table describes the full target, and this block states the M0 subset.
 
 ## What this does not cover
 

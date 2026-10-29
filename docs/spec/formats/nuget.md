@@ -17,7 +17,9 @@ by [storage.md](../storage.md); credentials by
 ownership by [authorization.md](../authorization.md); audit and metrics by
 [operations-and-observability.md](../operations-and-observability.md); roles, caches, Valkey and
 the request lifecycle by [architecture.md](../architecture.md); the backup format and the restore
-procedure by [backup-and-restore.md](../backup-and-restore.md).
+procedure by [backup-and-restore.md](../backup-and-restore.md); endpoints, their base URLs,
+accepted credentials and exposure rules by [endpoints.md](../endpoints.md), whose exposure adapter
+R-NUGET-034 implements.
 
 Covers: this page draws on [formats/nuget.md](../../features/formats/nuget.md) (`PKG-NUGET-*`),
 [remote-repositories.md](../../features/remote-repositories.md) (`RMT-*`) and
@@ -159,7 +161,9 @@ HTTP conventions for every NuGet endpoint:
     push;
   - for the service index: the repository's configuration version and `<base>`; from P1, for a
     remote or virtual repository also the stored digests of the upstream service indexes and the
-    member fingerprint that decide whether the vulnerability entry is listed (R-NUGET-023).
+    member fingerprint that decide whether the vulnerability entry is listed (R-NUGET-023);
+  - for every document: the endpoint of the request and its exposure fingerprint (R-NUGET-034,
+    [endpoints.md](../endpoints.md) R-EP-018).
 
   The same value is sent with and without gzip content coding, and replicas of two releases send
   the same value for documents built from the same inputs; RFC 9110 calls such a shared validator
@@ -2138,6 +2142,54 @@ R-BAK-029:
 - After a restore with `backup.exclude.remote_caches: true`, `nuget_tombstone` holds no row of a
   remote repository, and `dotnet restore` of `Newtonsoft.Json 13.0.3` through `nuget-org` fetches
   it from the stub upstream once.
+
+## Endpoints
+
+### R-NUGET-034 · NuGet documents on an endpoint with exposure rules
+Priority: **MVP** · Covers: trove-only
+
+The NuGet plug-in implements the exposure adapter of [endpoints.md](../endpoints.md) R-EP-018. On an
+endpoint with `exposure: rules`, after the merge of a virtual repository and the rewrite of a remote
+document:
+
+- **Version list** (`flatcontainer/{lower_id}/index.json`): only exposed versions; 404 when none is
+  left, like an unknown ID.
+- **Registrations**, all three hives: leaves only of exposed versions. Paging (R-NUGET-009) runs over
+  the exposed versions visible in the hive, so `count`, `lower`, `upper` and the inlining rule follow
+  the filtered list; a registration index without an exposed version answers 404. Dependencies are
+  not filtered: a dependency on an ID the endpoint does not expose fails the consumer's restore with
+  NuGet's "unable to find package", which the rule's author checks with `check-exposure`.
+- **Search and autocomplete** (R-NUGET-010, R-NUGET-011, R-NUGET-016, R-NUGET-018): only exposed IDs
+  and versions; `version` is the latest exposed version visible under the request's filters,
+  `totalDownloads` sums the exposed versions, and `totalHits` counts exposed packages only. On an
+  endpoint with `cache_fill: false` a remote answers with its cache-only search (R-EP-019); with
+  `cache_fill: true`, forwarded results are filtered per item and `totalHits` is reduced as
+  R-NUGET-016 reduces it for removed results.
+- **Package content.** `.nupkg`, `.nuspec` and embedded files of hidden versions answer the 404 of
+  R-EP-013.
+- **Pre-releases.** `prereleases: false` hides every version with a pre-release label, whatever the
+  client's `prerelease` parameter says; the SemVer 2.0.0 visibility of R-NUGET-004 applies to what
+  remains. Exposure does not change a version's listed state.
+- **Service index.** On an endpoint with `exposure: rules` it lists no publish and no symbol publish
+  resource, because the endpoint accepts no writes; push, delete and relist answer 403
+  `endpoint_read_only`. The symbol server and vulnerability resources (P1) are not listed there and
+  answer 404 until their requirements specify their filter.
+- **Version ranges** in rules use NuGet's interval notation (`[2.0,4.0)`; a bare `2.0` means "2.0
+  or higher"), compared after the normalization of R-NUGET-003; `ValidateRange` refuses what the
+  NuGet client's range parser refuses.
+- **Validators.** The ETag of R-NUGET-002 includes the endpoint and its exposure fingerprint.
+
+Acceptance criteria (`Acme.Sdk` 1.9.0, 2.0.0, 2.1.0-beta.1 and 2.1.0 in `nuget-internal`, a member
+of `nuget-customers`; a rule on `customers` exposing `Acme.Sdk` with `"range": "[2.0.0, )"` and no
+pre-releases):
+
+- On `customers`, `curl <feed>/flatcontainer/acme.sdk/index.json` returns
+  `{"versions":["2.0.0","2.1.0"]}`; the `registration-semver2/` index lists the same two leaves;
+  `search?q=acme&prerelease=true` returns `"version": "2.1.0"` with two `versions`. Through `default`
+  all four versions are listed.
+- `dotnet add package Acme.Sdk --version 1.9.0` against `customers` fails with `NU1102`; a restore of
+  2.1.0 with the bound token as password succeeds.
+- `dotnet nuget push` with the bound token as API key against `customers` answers 403.
 
 ## Deferred
 

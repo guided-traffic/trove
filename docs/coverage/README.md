@@ -17,13 +17,13 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **2.5%** (57 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
+| **Implemented** | **2.3%** (52 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 54.9% (286 of 521) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 30.5% (662 of 2,167) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 30.7% (665 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 553 on 12 pages (408 MVP, 143 P1, 2 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 81 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 577 on 13 pages (431 MVP, 144 P1, 2 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 94 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
 **What the owner constraints of 2026-10-28 changed.** The tables were regenerated on 2026-10-29,
@@ -51,12 +51,12 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 359 | 359 | 0 | 100% | 359 | 45 |
-| **P1** | 521 | 286 | 235 | 54.9% | 55 | 9 |
-| **P2** | 896 | 17 | 879 | 1.9% | 10 | 3 |
+| **MVP** | 359 | 359 | 0 | 100% | 359 | 41 |
+| **P1** | 521 | 286 | 235 | 54.9% | 55 | 7 |
+| **P2** | 896 | 20 | 876 | 2.2% | 12 | 4 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 662 | 1,577 | 29.6% | 424 | 57 |
+| **Total** | 2,239 | 665 | 1,574 | 29.7% | 426 | 52 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -77,7 +77,7 @@ Each page name links to that page's section of the checklist.
 | [Repositories](checklist.md#repositories-repo) | 68 | 23 | 26 | 16 | 2 | 1 | 40 | 28 |
 | [Remote repositories](checklist.md#remote-repositories-rmt) | 49 | 15 | 14 | 20 | 0 | 0 | 28 | 21 |
 | [Replication, federation and multi-site topology](checklist.md#replication-federation-and-multi-site-topology-repl) | 72 | 0 | 0 | 17 | 51 | 4 | 0 | 72 |
-| [Artifact management](checklist.md#artifact-management-art) | 53 | 10 | 20 | 22 | 0 | 1 | 31 | 22 |
+| [Artifact management](checklist.md#artifact-management-art) | 53 | 10 | 20 | 22 | 0 | 1 | 32 | 21 |
 | [Search and query language](checklist.md#search-and-query-language-srch) | 64 | 0 | 24 | 35 | 5 | 0 | 3 | 61 |
 | [Builds and CI integration](checklist.md#builds-and-ci-integration-bld) | 49 | 0 | 15 | 22 | 11 | 1 | 0 | 49 |
 | [Identity and access](checklist.md#identity-and-access-iam) | 69 | 20 | 11 | 26 | 7 | 5 | 34 | 35 |
@@ -86,7 +86,7 @@ Each page name links to that page's section of the checklist.
 | [OIDC federation for CI systems](checklist.md#oidc-federation-for-ci-systems-cioidc) | 40 | 20 | 9 | 10 | 1 | 0 | 31 | 9 |
 | [Storage and blob providers](checklist.md#storage-and-blob-providers-stor) | 41 | 12 | 7 | 20 | 1 | 1 | 21 | 20 |
 | [Retention, cleanup and archiving](checklist.md#retention-cleanup-and-archiving-ret) | 42 | 0 | 26 | 3 | 11 | 2 | 26 | 16 |
-| [High availability and deployment](checklist.md#high-availability-and-deployment-ha) | 79 | 49 | 14 | 10 | 3 | 3 | 60 | 19 |
+| [High availability and deployment](checklist.md#high-availability-and-deployment-ha) | 79 | 49 | 14 | 10 | 3 | 3 | 61 | 18 |
 | [Operations, monitoring and configuration](checklist.md#operations-monitoring-and-configuration-ops) | 100 | 17 | 23 | 34 | 1 | 25 | 44 | 56 |
 | [Events and extensibility](checklist.md#events-and-extensibility-evt) | 82 | 1 | 24 | 12 | 43 | 2 | 26 | 56 |
 | [Distribution and release lifecycle](checklist.md#distribution-and-release-lifecycle-dist) | 70 | 0 | 0 | 0 | 69 | 1 | 0 | 70 |
@@ -97,7 +97,7 @@ Each page name links to that page's section of the checklist.
 | [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 9 | 5 |
 | [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond) | 34 | 0 | 5 | 26 | 3 | 0 | 2 | 32 |
 
-Per-format pages (38 pages, 782 features, 94 specified):
+Per-format pages (38 pages, 782 features, 95 specified):
 
 <details>
 <summary>38 format pages</summary>
@@ -106,7 +106,7 @@ Per-format pages (38 pages, 782 features, 94 specified):
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | [npm package format](checklist.md#npm-package-format-pkg-npm) | 62 | 37 | 15 | 8 | 1 | 1 | 52 | 10 |
 | [NuGet](checklist.md#nuget-pkg-nuget) | 56 | 35 | 7 | 12 | 2 | 0 | 42 | 14 |
-| [Docker image format](checklist.md#docker-image-format-pkg-docker) | 52 | 0 | 34 | 13 | 3 | 2 | 0 | 52 |
+| [Docker image format](checklist.md#docker-image-format-pkg-docker) | 52 | 0 | 34 | 13 | 3 | 2 | 1 | 51 |
 | [OCI images and artifacts](checklist.md#oci-images-and-artifacts-pkg-oci) | 20 | 0 | 15 | 4 | 1 | 0 | 0 | 20 |
 | [Helm chart format](checklist.md#helm-chart-format-pkg-helm) | 25 | 0 | 18 | 6 | 1 | 0 | 0 | 25 |
 | [Maven package format](checklist.md#maven-package-format-pkg-maven) | 39 | 0 | 23 | 15 | 1 | 0 | 0 | 39 |
@@ -187,9 +187,9 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 2 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 2 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 441 of 460 specified, 19 open (95.9%) | 52 | Repositories 9; High availability and deployment 3; Operation catalog: administration API 3 |
+| **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 1 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 1 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 441 of 460 specified, 19 open (95.9%) | 47 | Repositories 9; High availability and deployment 3; Operation catalog: administration API 3 |
 
 Pages counted per audience:
 

@@ -26,7 +26,7 @@ flowchart LR
 | Specification | How will trove do it: invariants, requirements, data model, API, configuration and acceptance criteria | `INV-n`, `R-<AREA>-nnn`, decided questions `Q-<AREA>-n`, security gaps `H-n` | [spec/README.md](spec/README.md) |
 | Coverage | Which catalog entries a requirement covers, and what is left by priority | catalog and requirement IDs | [coverage/README.md](coverage/README.md) |
 | Decisions | Why the design is what it is, with the options that were weighed | one record per decision; every invariant becomes one | [decisions.md](decisions.md) |
-| Developer documentation | How to work on the repository: ID rules, adding entries and requirements, the planned code layout, the HA-shaped local development profile | — | [developer/README.md](developer/README.md) |
+| Developer documentation | How to work on the repository: the layout, the build and test tiers, the subsystem pages, ID rules, adding entries and requirements, the HA-shaped local development profile | — | [developer/README.md](developer/README.md) |
 | Security architecture | The security design, one page per perspective (including the Valkey trust boundary and the backup data flow), and where open gaps are recorded | `H-n` | [security/README.md](security/README.md) |
 
 Vulnerability reports go through [SECURITY.md](../SECURITY.md). The user-facing overview is the

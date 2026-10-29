@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Status: decision log for the specification. Nothing described here is implemented yet.
+Status: decision log for the specification. Phase 1 (M0 Foundation) is built; the rest of the specification is not implemented yet.
 
 This page records trove's design decisions, one entry per decision: what forced it, what was
 decided, what follows from it, which alternatives were weighed and where the specification states
@@ -186,6 +186,10 @@ checked every earlier decision against them:
 | [ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones) | A restore replays NuGet publishes and deletes into tombstones | Decided by the development agent — owner review at the walkthrough |
 | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) | NuGet symbol packages are indexed by one job each on the worker role | Decided by the development agent — owner review at the walkthrough |
 | [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint) |
+| [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
+| [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
+| [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
+| [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) | Endpoints: one listener each, identified by the listener, with exposure rules as a ceiling (INV-6, INV-9, INV-15) | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -583,6 +587,14 @@ of INV-4, INV-10 and INV-15 with decisions that refine them:
 - **INV-15** wording: login providers are file configuration only ([Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives); [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15)).
 - **INV-17:** public, documented endpoints instead of only `/api/v1` ([Q-API-4](spec/api-and-ui.md#q-api-4--inv-17s-wording-and-byte-transfers-on-files); [ADR-028](#adr-028--the-ui-uses-only-the-public-api-inv-17)).
 
+On 2026-10-29 the endpoints of [spec/endpoints.md](spec/endpoints.md) changed three invariants
+([ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling)):
+- **INV-6:** one client listener per endpoint, the endpoint identified by the listener, the
+  `/.well-known/` reservation and host-root bindings ([Q-EP-1](spec/endpoints.md#q-ep-1--how-the-endpoint-of-a-request-is-identified), [Q-EP-6](spec/endpoints.md#q-ep-6--how-far-wildcard-hosts-and-host-root-bindings-go)).
+- **INV-9:** the effective permission is also intersected with the endpoint's exposure, for every
+  subject ([Q-EP-12](spec/endpoints.md#q-ep-12--whether-administrators-pass-the-exposure-ceiling)).
+- **INV-15:** endpoints in the file, their exposure rules in PostgreSQL ([Q-EP-2](spec/endpoints.md#q-ep-2--where-endpoint-configuration-and-exposure-rules-live)).
+
 ### ADR-012 · One toolchain, one image (INV-1)
 
 **Status:** Decided by the development agent — owner review at the walkthrough
@@ -782,7 +794,10 @@ exist only where a client fixes the path, and none carries a repository key:
 `/-/npm/v1/oidc/token/exchange/package/…` for npm's trusted-publishing exchange
 ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6)), and `/v2/`, reserved from the MVP on for the OCI distribution API and answering
 `404` until the OCI format exists ([Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci)). Both amend INV-6. The layout and the ports were
-reviewed and confirmed unchanged ([Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6), option (a)).
+reviewed and confirmed unchanged ([Q-ARCH-11](spec/architecture.md#q-arch-11--url-layout-and-port-numbers-inv-6), option (a)). Amended on 2026-10-29
+([ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling)): port 8080 is the default endpoint's listener, each further endpoint
+listens on a port of its own, the endpoint is the listener's, `/.well-known/` is reserved, and a host
+may bind its root to one repository.
 
 **Consequences.** Every protocol is namespaced per format and repository, so formats cannot
 collide. npm's host-root exchange prefix is part of INV-6 ([Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6)), OCI `/v2/` per [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci);
@@ -791,7 +806,7 @@ other client-listener pattern under `/v2/`, because ServeMux's conflict check do
 specific pattern ([R-HA-041](spec/ha-and-helm.md#r-ha-041--container-registry-routing-at-the-edge)). Protocols and the management API share the `/api/` prefix, so
 format IDs matching `^v[0-9]+$` are refused at registration, and ServeMux panics on a conflicting
 registration, so a collision cannot ship. With metrics authentication off by default, the operations
-listener relies on the chart's NetworkPolicy ([H-41](spec/operations-and-observability.md#h-41--the-operations-listener-relies-on-the-networkpolicy)).
+listener relies on the chart's NetworkPolicy ([H-41](spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-the-ingress-policys-enforcement-is-unverified)).
 
 **Alternatives considered.** One host name per repository: the host root becomes the registry
 root, at the cost of DNS, TLS and Ingress objects per repository. One format at the host root:
@@ -902,7 +917,9 @@ result.
 principals (users, groups, service accounts, CI identity mappings) to resources (repositories by
 key or pattern, narrowed by include and exclude patterns on paths or package names) and the actions
 `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage`. The effective permission is the
-union of the grants of the principal and its groups, intersected with the presented token's scope.
+union of the grants of the principal and its groups, intersected with the presented token's scope
+and, since 2026-10-29, with the exposure of the endpoint the request arrived on, for every subject
+([ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling)).
 System administration is a separate role, not a repository action. Every decision can be audited.
 
 **Consequences.** Without deny rules there is no rule order to get wrong; restricting means
@@ -1213,7 +1230,9 @@ database; others are changed daily by administrators.
 variable `TROVE_<SECTION>_<KEY>`; secrets are referenced from files or environment variables,
 never written inline into a ConfigMap. Repositories, permissions and CI identity mappings live in
 PostgreSQL and are managed through the API and UI. Login providers, including their claim mapping
-and group rules, are file configuration only. A declarative bootstrap file (configuration as code)
+and group rules, are file configuration only. Endpoints are file configuration and their exposure
+rules live in PostgreSQL (since 2026-10-29,
+[ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling)). A declarative bootstrap file (configuration as code)
 is P1 ([ADR-081](#adr-081--configuration-as-code-documents-own-their-objects-plan-before-apply-p1)).
 
 **Consequences.** Bootstrap-critical settings (database, object store, base URL, keys) change by
@@ -4687,6 +4706,137 @@ the build-time check of missing translations would have to be rebuilt as a separ
 
 **Spec:** [R-UI-045](spec/api-and-ui.md#r-ui-045--internationalization), [R-UI-001](spec/api-and-ui.md#r-ui-001--technology-baseline-and-delivery); decided: [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism).
 
+## Foundation (M0)
+
+### ADR-125 · GNU Make and one pin file for every tool
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Phase 1 (M0) gave the repository its first commands and CI jobs. Local builds and CI
+had to run the same commands with the same tool versions, and no contributor should need a second
+task runner to build the project.
+
+**Decision.** GNU Make is the task runner: the root `Makefile` holds every target of
+[ha-and-helm.md](spec/ha-and-helm.md) R-HA-051 and of the build, test and chart steps. Every tool and
+image pin that is not a Go module, an npm package or a Node version lives in `tools/versions.env`
+as `KEY=value` lines. The Makefile includes that file, and CI loads it through the `load-pins` action.
+Go is pinned by `go.mod`, sqlc and oapi-codegen by `tool` directives, Angular by `web/package-lock.json`
+and Node by `web/.nvmrc`.
+
+**Consequences.** A version change is one line that the local build and CI both read. `make versions-check`
+compares the installed tools with the pins. A stale binary of a tool is detected by that check, and the
+linter binary's name carries its pin and toolchain, so a change rebuilds it. Windows contributors need WSL
+or a Make port.
+
+**Alternatives considered.** Taskfile (one more pinned tool), mage (a second Go toolchain for the build
+scripts), just (one more binary to install). Decided in
+[Q-HA-21](spec/ha-and-helm.md#q-ha-21--task-runner-and-tool-pin-file).
+
+**Spec:** [Q-HA-21](spec/ha-and-helm.md#q-ha-21--task-runner-and-tool-pin-file), [R-HA-051](spec/ha-and-helm.md).
+
+### ADR-126 · Problem details with a relative type, a requestId member and named error codes
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Every error on `/api/v1/` must be readable by a client that has never seen the installation.
+Two details had drifted between the spec and the code: the request-ID member's spelling, and the set of
+codes the statement timeout and the concurrency bound answer with.
+
+**Decision.** The problem `type` is the relative reference `/api/v1/problems/<code>`, which trove serves from
+its embedded code registry, so it is the same on every installation. The extension member is `requestId`,
+equal to the `X-Request-Id` header. A request that cannot be parsed answers 400 `malformed_request`; a request
+whose body parsed and whose fields are invalid answers 422 `validation_failed` with `errors`. A replica at its
+concurrency bound answers 503 `server_busy`, and a statement over its time limit 503 `database_timeout`.
+
+**Consequences.** A code is never renamed or reused within an API major version (R-ARCH-025), so the codes
+above are frozen at their first release. The UI and every client match on `code`. `requestId` keeps the camel
+case of the rest of the API's JSON.
+
+**Alternatives considered.** An absolute `type` on the public base URL (differs per installation); `about:blank`
+(no catalog); a snake-case `request_id` member (inconsistent with the API's JSON); `invalid_request` (the OAuth
+form of the token endpoint, R-CI-008) and `too_many_requests_in_flight` (a `429`-style name for a `503` case). Decided in
+[Q-API-13](spec/api-and-ui.md#q-api-13--problem-member-name-problem-type-status-of-validation-errors-and-error-codes).
+
+**Spec:** [Q-API-13](spec/api-and-ui.md#q-api-13--problem-member-name-problem-type-status-of-validation-errors-and-error-codes),
+[R-ARCH-023](spec/architecture.md#r-arch-023--error-model), [R-API-009](spec/api-and-ui.md).
+
+### ADR-127 · Transport encryption on every connection, trove's listeners included
+
+**Status:** Accepted (owner constraint, 2026-10-29); it is the record of INV-20
+
+**Context.** On 2026-10-29 the owner required that every component of this repository can run fully
+TLS-encrypted: PostgreSQL, Valkey and Sentinel, the object store, the outbound HTTP clients, trove's own listeners
+(so that a reverse proxy can connect internally over TLS), and the chart's probes and monitoring. Certificates may be
+rotated while the service runs, and trove must pick up its own rotated certificates without a restart. Before this,
+the design left plain HTTP inside the cluster as the default (H-38), and the CA bundles were read once at start-up.
+
+**Decision.** INV-20: every connection that trove or a component of this repository makes or accepts can run with TLS,
+trove's listeners included. TLS material that trove presents or trusts is reloaded without a restart; the reload bound
+is `server.tls.reload_interval` for the listeners and the bounds of R-ARCH-035 for the clients. The chart defaults to
+`tls.enabled: true` and refuses to render without the certificate Secret, unless `tls.enabled: false` is set, which
+keeps H-38 open for that installation only.
+
+**Consequences.** Certificate handling is part of every component: a reloader for the listeners, a re-read per
+connection or handshake for the clients, and expiry metrics. The dev profile and the integration stack run every
+connection over TLS, which makes the tests exercise the same paths as production. Plain HTTP stays possible as an
+explicit chart setting, not as a design assumption.
+
+**Alternatives considered.** TLS ending at the edge only, with plain HTTP inside the cluster (the earlier design, now
+limited to `tls.enabled: false`); a service mesh as the only encryption (it stays a platform option, not a requirement);
+restart-based rotation (rejected by the owner constraint). Decided in
+[Q-HA-32](spec/ha-and-helm.md#q-ha-32--default-of-the-charts-tls-wiring),
+[Q-ARCH-31](spec/architecture.md#q-arch-31--how-tls-material-is-reloaded),
+[Q-ARCH-32](spec/architecture.md#q-arch-32--client-certificates-on-troves-client-listener) and
+[Q-ARCH-33](spec/architecture.md#q-arch-33--one-certificate-pair-for-both-listeners-or-one-pair-each).
+
+**Spec:** [INV-20](spec/README.md#design-invariants), [R-ARCH-035](spec/architecture.md),
+[R-HA-063](spec/ha-and-helm.md), [H-38](spec/ha-and-helm.md).
+
+## Endpoints
+
+### ADR-128 · Endpoints: one listener each, identified by the listener, with exposure rules as a ceiling
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** On 2026-10-29 the owner asked for several endpoints, so that a registry with internal
+artifacts can be offered to customers through an external endpoint, with detailed control over
+which packages are retrievable there. He also suspected that some registries need a wildcard
+Ingress. INV-6 knew one client listener, INV-9 one ceiling (the token scope), and INV-15 nothing
+about entry points.
+
+**Decision.** An endpoint is a named client listener with its own hosts (exact names and at most
+one single-label wildcard), base URL, certificates chosen by SNI, optional web pool, surface,
+accepted credentials, exposure mode, cache-fill policy and rate-limit class. The endpoint of a
+request is the listener's, never derived from `Host` or forwarded headers; a host outside the
+endpoint's set answers `421`. Network binding is file configuration; exposure rules live in
+PostgreSQL, are compiled into the grant index, and act in the one decision point as a ceiling for
+every subject, administrators included: effective = grants ∩ token scope ∩ exposure. Hidden content
+answers `404`, writes on an endpoint with rules `403`. Further endpoints default to package routes
+only, bound service-account tokens, no anonymous access and no cache fill. A host may bind its root
+to one repository, a mechanism built in the MVP for Docker Engine mirrors, OCI subdomains and
+Terraform discovery later. Path-based routing stays the default; no MVP format needs a wildcard.
+
+**Consequences.** One more port, Service, edge route and NetworkPolicy per endpoint, rendered by the
+chart. Every format must implement an exposure filter before it can be served on an endpoint with
+rules, and its ETags and caches include the endpoint. Exposure narrowings are journaled for restores.
+The listener boundary is only as good as the edge routing: traffic routed to port 8080 gets the
+default endpoint ([H-59](spec/endpoints.md#h-59--traffic-routed-to-the-default-endpoints-port-bypasses-exposure)), and every endpoint runs with a `web` replica's credentials
+([H-57](spec/endpoints.md#h-57--a-further-endpoint-runs-with-every-credential-of-a-web-replica)).
+
+**Alternatives considered.** Endpoints by `Host` on one listener (the client chooses the endpoint);
+by TLS server name (absent behind re-encrypting edges); by path prefix (changes every format's URL
+layout); exposure in the configuration file (a rollout per release decision); exposure bypassed by
+`content:bypass` (a leaked administrator token opens the external endpoint); `403` for hidden content
+(an existence oracle). Decided in
+[Q-EP-1](spec/endpoints.md#q-ep-1--how-the-endpoint-of-a-request-is-identified) to
+[Q-EP-13](spec/endpoints.md#q-ep-13--sign-in-and-the-ui-on-further-endpoints).
+
+**Spec:** [spec/endpoints.md](spec/endpoints.md), [INV-6, INV-9, INV-15](spec/README.md#design-invariants),
+[R-ARCH-005](spec/architecture.md#r-arch-005--http-listeners-routing-and-middleware-chain),
+[R-AUTHZ-015](spec/authorization.md#r-authz-015--evaluation-algorithm),
+[R-AUTH-024](spec/identity-and-authentication.md#r-auth-024--token-scopes),
+[R-HA-037](spec/ha-and-helm.md#r-ha-037--service-ingress-and-tls-at-the-edge).
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -4717,6 +4867,21 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-16](spec/architecture.md#q-arch-16--what-valkey-may-hold) | What may Valkey hold? | (b) coordination state and the negative cache; nothing served to a client and no positive authentication or authorization result | [ADR-098](#adr-098--valkey-holds-coordination-and-the-negative-cache-nothing-served-and-nothing-that-grants) |
 | [Q-ARCH-17](spec/architecture.md#q-arch-17--rate-limit-counters-across-replicas) | Rate-limit counters across replicas? | (b) cluster scope in Valkey with sliding windows; per-replica shares of the budget while Valkey is unavailable; same choice as Q-API-3 | [ADR-102](#adr-102--cluster-wide-rate-limits-in-valkey-with-a-per-replica-fallback) |
 | [Q-ARCH-18](spec/architecture.md#q-arch-18--transfers-that-outlast-the-termination-grace-period) | Transfers that outlast the termination grace period? | (a) cut at the deadline; clients resume with `Range` and `If-Range` on any replica or retry; an upload whose body has fully arrived is not cut before its status line | [ADR-103](#adr-103--shutdown-protocol-drain-delay-transfers-cut-at-the-deadline-resumed-on-any-replica) |
+| [Q-ARCH-19](spec/architecture.md#q-arch-19--package-level-state-the-state-rule-allows) | Which package-level variables does the state rule allow? | (b) an exact exemption of `*regexp.Regexp`; every other pointer is reported | — |
+| [Q-ARCH-20](spec/architecture.md#q-arch-20--web-build-output-in-git-and-the-placeholder) | Is built UI output committed, and what does a partial build do? | (c) placeholder `index.html` committed, locale directories ignored, a partial build fails start-up | — |
+| [Q-ARCH-21](spec/architecture.md#q-arch-21--setup-failures-of-the-outbound-factory-and-the-object-store-exception) | How do outbound setup failures show, and does the egress policy cover the object store? | (b) the factory keeps its setup error and its clients fail every request; the egress policy skips `objectstore` (H-56) | — |
+| [Q-ARCH-22](spec/architecture.md#q-arch-22--sealed-column-registry-and-the-envelope-format) | How are sealed columns registered and enveloped? | (b) only `secrets.Register` creates a column; envelope `v1:<key id>:<base64>` with AES-256-GCM and the row and column as additional data | — |
+| [Q-ARCH-23](spec/architecture.md#q-arch-23--query-execution-mode-behind-a-transaction-mode-pooler) | Which query execution mode runs behind a transaction-mode pooler? | (b) `QueryExecModeExec` for the pooled main class; a session-state refusal is never retried | — |
+| [Q-ARCH-24](spec/architecture.md#q-arch-24--opening-the-postgresql-pool-and-a-connection-lost-during-commit) | Which PostgreSQL failures are retried, and what happens to a lost COMMIT? | (b) connection errors retried within `retry.max_elapsed`; an unknown COMMIT outcome is never retried and answers 503 | — |
+| [Q-ARCH-25](spec/architecture.md#q-arch-25--readonly-replies-and-the-circuit-breaker) | Does a `READONLY` reply open the Valkey circuit breaker? | (b) no: neutral for the breaker, counted under `kind="readonly"`, the next probe marks Valkey degraded | — |
+| [Q-ARCH-26](spec/architecture.md#q-arch-26--valkey-key-families-expiry-and-keyspace) | How are Valkey keys formed, and what expires them? | (b) key families registered with a mandatory maximum expiry; `Key(family, parts...)`; parts `[A-Za-z0-9_-]`; keyspace from the UUID without dashes | — |
+| [Q-ARCH-27](spec/architecture.md#q-arch-27--valkey-connections-data-pubsub-and-sentinel-probes) | How many Valkey connections, and which carry Pub/Sub and the Sentinel probes? | (b) a data client, one dedicated Pub/Sub connection `trove:<instance>:pubsub`, a short probe connection per Sentinel at each refresh | — |
+| [Q-ARCH-28](spec/architecture.md#q-arch-28--layering-of-the-blob-store-and-where-its-garbage-collection-job-registers) | Where does the blob store sit in the layers, and where does its GC job register? | (b) `blob` is infrastructure, formats reach it only through the host, the GC job registers in `internal/app` through `RunJob` | — |
+| [Q-ARCH-29](spec/architecture.md#q-arch-29--what-the-scheduler-enqueues-on-each-tick) | What does the scheduler enqueue on each tick? | (b) the latest due slot of each enabled task, deduplicated by `job_task_slot` | — |
+| [Q-ARCH-30](spec/architecture.md#q-arch-30--fencing-of-singleton-writes) | How are singleton writes fenced? | (a) no token: writes on the lease's own session, as R-HA-006 states; the xid8 token was rejected | [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) |
+| [Q-ARCH-31](spec/architecture.md#q-arch-31--how-tls-material-is-reloaded) | How is TLS material reloaded? | (a) content polling every `server.tls.reload_interval`, not a filesystem notifier and not a restart | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) |
+| [Q-ARCH-32](spec/architecture.md#q-arch-32--client-certificates-on-troves-client-listener) | Are client certificates required on the client listener? | (b) optional: verified when `server.tls.client_ca_file` is set; off by default | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) |
+| [Q-ARCH-33](spec/architecture.md#q-arch-33--one-certificate-pair-for-both-listeners-or-one-pair-each) | One certificate pair for both listeners, or one pair each? | (a) one pair by default; `server.ops_tls` may name its own pair | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
@@ -4739,6 +4904,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-STOR-11](spec/storage.md#q-stor-11--multi-request-uploads-across-replicas) | Multi-request uploads across replicas? | (b) one S3 multipart upload per session; parts and a per-request tail object recorded in PostgreSQL under a writer claim; the claim is released on drain | [ADR-096](#adr-096--no-state-between-requests-on-a-replica-inv-18) |
 | [Q-STOR-12](spec/storage.md#q-stor-12--counters-that-several-replicas-update-usage-quotas-and-download-statistics) | Counters that several replicas update? | (a) PostgreSQL deltas folded by every worker every 5 s; quota admission reads the folded rows; a recount after a restore | [ADR-014](#adr-014--postgresql-is-the-system-of-record-valkey-holds-only-shared-ephemeral-state-inv-3), [ADR-104](#adr-104--subsystems-per-role-web-serves-worker-owns-background-work-and-leases) |
 | [Q-STOR-13](spec/storage.md#q-stor-13--exclusion-of-storage-maintenance-runs-job-key-fenced-lease-or-valkey-lock) | How are storage maintenance runs kept apart? | (a) by the exclusive job key only; S3 deletes follow the hand-over rule on the collector's own clock, and claims are handed over on drain; no lease, no Valkey lock | [ADR-042](#adr-042--race-free-garbage-collection-with-a-grace-period) |
+| [Q-STOR-14](spec/storage.md#q-stor-14--object-store-settings-the-outbound-layer-does-not-yet-support-and-plaintext-endpoints) | Which object-store settings does the outbound layer not yet support, and how are plaintext endpoints allowed? | (c) refuse `ca_file`; the timeouts and the connection limit take the factory defaults; `http://` needs `allow_insecure_endpoint` | — |
 | [Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) | Where does login provider configuration live? | (a) the configuration file only, claim mapping, gates and group rules included; same choice as Q-OPS-6 | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7), [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) |
 | [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name) | Should the cookies use the `__Host-` prefix? | (c) all three: `__Host-trv_session`, `__Host-trv_csrf`, `__Host-trv_oidc_binding`; changes INV-8 | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8), [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) |
 | [Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation) | Refresh tokens or rotation only? | (a) no refresh tokens; rotation and repeated login are the renewal paths | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |
@@ -4816,6 +4982,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-on-by-default) | Backup CronJob on by default? | (b) on by default; rendering fails without a target bucket unless backups are disabled deliberately; same choice as Q-HA-17 | [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target) |
 | [Q-BAK-10](spec/backup-and-restore.md#q-bak-10--resuming-an-interrupted-restore) | Resuming an interrupted restore? | (c) automatic resumption keyed to the backup ID through a schema anchor, with the migration lock held for the whole restore | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) |
 | [Q-BAK-11](spec/backup-and-restore.md#q-bak-11--bounding-a-hung-backup-run) | Bounding a hung backup run? | (c) the run cancels itself after `backup.stall_timeout` (30 minutes) without progress; no `activeDeadlineSeconds` by default | [ADR-107](#adr-107--backup-runs-one-at-a-time-in-a-leased-row-cancelled-when-they-stall) |
+| [Q-BAK-12](spec/backup-and-restore.md#q-bak-12--the-backup-command-in-m0) | What does `trove backup` do in M0? | (c) the name is reserved; every subcommand returns "not implemented yet" | — |
 | [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) | Readiness on object-storage failure? | (d) gate only the first readiness; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-OPS-2 | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor) | PostgreSQL version floor? | (b) 16; raised only after a version's community end of life, announced one minor release ahead | [ADR-003](#adr-003--postgresql-as-the-database), [ADR-014](#adr-014--postgresql-is-the-system-of-record-valkey-holds-only-shared-ephemeral-state-inv-3) |
 | [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival) | Which S3 store for the local profile after MinIO's archival? | (e) SeaweedFS in the local profile and per-change CI; MinIO and AWS S3 nightly | [ADR-004](#adr-004--s3-as-binary-storage) |
@@ -4836,6 +5003,18 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart) | How does a restore run in the chart? | (b) an ordinary Job with both roles at zero, no migration Job and a suspended backup CronJob, while `restore.enabled` | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job), [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
 | [Q-HA-19](spec/ha-and-helm.md#q-ha-19--priority-of-the-platform-backup-layer-and-the-point-in-time-restore) | Priority of the platform backup layer and the point-in-time restore? | (c) R-HA-023 and R-HA-025 are MVP; the platform layer stays a recommendation for installations | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-HA-20](spec/ha-and-helm.md#q-ha-20--control-connection-behind-a-transaction-mode-pooler) | Control connection behind a transaction-mode pooler? | (c) a control endpoint with a server pool of its own; the chart refuses one equal to the request endpoint | [ADR-101](#adr-101--connection-model-a-transaction-scoped-main-pool-behind-an-optional-pooler-sessions-only-on-workers), [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
+| [Q-HA-21](spec/ha-and-helm.md#q-ha-21--task-runner-and-tool-pin-file) | Which task runner, and where are the tool pins? | (a) GNU Make in the root `Makefile`; one pin file `tools/versions.env` read by the Makefile and by CI | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) |
+| [Q-HA-22](spec/ha-and-helm.md#q-ha-22--upload-limit-against-the-spool-of-each-role) | How does the upload limit relate to the spool of each role? | (c) the rule holds for the roles `web` and `all`; the worker spool is 5 GiB | — |
+| [Q-HA-23](spec/ha-and-helm.md#q-ha-23--chart-validation-of-the-config-subtree-until-the-binary-emits-its-schema) | How does the chart validate the `config` subtree? | (b) free-form in `values.schema.json`, the chart-owned keys typed, until the binary emits its schema | — |
+| [Q-HA-24](spec/ha-and-helm.md#q-ha-24--edge-controller-failover-mechanism-and-the-scatter-profile-of-the-local-profile) | Which edge, failover mechanism and load profile does the local profile use? | (a) Traefik as Ingress controller; `TROVE_PROFILE=scatter` without idle backend connections; failover patches `status.targetPrimary` | — |
+| [Q-HA-25](spec/ha-and-helm.md#q-ha-25--aws-leg-of-the-nightly-run-when-no-aws-account-is-configured) | What does the nightly AWS leg show without an account? | (c) an explicit SKIPPED summary; the AWS job is grey, never green | — |
+| [Q-HA-26](spec/ha-and-helm.md#q-ha-26--release-image-how-the-binary-gets-into-the-image) | How does the binary get into the release image? | (b) the host builds the static binary with the embedded UI; the image wraps it in the pinned distroless base | — |
+| [Q-HA-27](spec/ha-and-helm.md#q-ha-27--which-replicas-the-contract-guard-counts-as-live) | Which replicas count as live for the contract guard? | (b) those whose heartbeat is younger than `system.heartbeat_stale_after` | — |
+| [Q-HA-28](spec/ha-and-helm.md#q-ha-28--who-creates-the-database-schema-at-migration) | Who creates the database schema? | (b) `trove migrate` creates `database.schema` when the role may; never roles or databases | — |
+| [Q-HA-29](spec/ha-and-helm.md#q-ha-29--where-the-garbage-collection-pause-is-stored) | Where is the garbage-collection pause stored? | (b) a key-value row `deletions_paused_at` in `system_state`; R-HA-025's sketch settled at M5 | — |
+| [Q-HA-30](spec/ha-and-helm.md#q-ha-30--plaintext-switches-of-the-valkey-connection) | Which plaintext switches does the Valkey connection have? | (b) each requires `valkey.allow_insecure: true`; `key_prefix` ends in `:` | — |
+| [Q-HA-31](spec/ha-and-helm.md#q-ha-31--job-heartbeat-attempt-counting-and-the-slot-record) | When does a failed lease extension cancel a job, and what counts an attempt? | (b) cancel at once when the row is taken, otherwise once the lease could have expired; claims count attempts; `job_task_slot` records slots | — |
+| [Q-HA-32](spec/ha-and-helm.md#q-ha-32--default-of-the-charts-tls-wiring) | Is the chart's TLS wiring on by default? | (b) `tls.enabled` defaults to `true`; rendering fails without the certificate Secret unless `tls.enabled: false` | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) |
 | [Q-OPS-1](spec/operations-and-observability.md#q-ops-1--couple-liveness-to-prolonged-unreadiness) | Couple liveness to prolonged unreadiness? | (d) never; liveness is a watchdog over trove's own loops | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness) | Should object-storage reachability gate readiness? | (d) gate only the first readiness, then report and degrade; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-HA-1 | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-OPS-3](spec/operations-and-observability.md#q-ops-3--anonymous-access-to-the-version-endpoint) | Anonymous access to the version endpoint? | (b) authenticated by default; `system.public_version: true` opens it | — |
@@ -4858,6 +5037,13 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OPS-20](spec/operations-and-observability.md#q-ops-20--final-event-for-a-successful-delivery-that-is-not-recorded) | Final event for a successful delivery that is not recorded? | (b) a tombstone row with the final state for 15 minutes, shown only by the follow stream | [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) |
 | [Q-OPS-21](spec/operations-and-observability.md#q-ops-21--position-of-the-delivery-log-follow-stream) | Position of the delivery-log follow stream? | (b) `change_seq` from a sequence on every insert and update, with a re-read window and duplicates dropped by record and version | [ADR-082](#adr-082--events-through-a-transactional-outbox-as-cloudevents-signed-per-standard-webhooks-p1) |
 | [Q-OPS-22](spec/operations-and-observability.md#q-ops-22--journal-flag-on-event-types-that-several-producers-share) | Journal flag on event types that several producers share? | (d) "journaled when the producer supplies an entry"; required for every flagged type except the allow-listed shared types `package.published` and `package.deleted` | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
+| [Q-OPS-23](spec/operations-and-observability.md#q-ops-23--configuration-file-that-is-not-there) | What happens when the configuration file is missing? | (b) the default file may be absent; an explicit `--config` or `TROVE_CONFIG_FILE` must exist | — |
+| [Q-OPS-24](spec/operations-and-observability.md#q-ops-24--required-keys-per-command-reserved-variable-names-and-source-labels) | Which keys does each command require, and which variable names are reserved? | (b) required keys per command; `TROVE_CAC_*` and `TROVE_TEST_*` reserved; source labels printed | — |
+| [Q-OPS-25](spec/operations-and-observability.md#q-ops-25--otlp-span-export-own-queue-transport-and-endpoint-rule) | How are spans queued and exported? | (b) an own bounded queue with a drop counter in front of the SDK's OTLP exporter; the endpoint is optional with the OTel variables | — |
+| [Q-OPS-26](spec/operations-and-observability.md#q-ops-26--metric-label-names-of-the-outbound-and-the-object-store-metrics) | Which label names do the outbound and object-store metrics use? | (b) `kind` for the outbound purpose; `operation` for the object-store requests | — |
+| [Q-OPS-27](spec/operations-and-observability.md#q-ops-27--secret-values-in-configuration-dumps-and-logs) | How are secret values kept out of dumps and logs? | (b) `config.Secret` implements `MarshalJSON` and `LogValue` | — |
+| [Q-OPS-28](spec/operations-and-observability.md#q-ops-28--instance-name-source) | Where does the instance name come from? | (b) `TROVE_POD_NAME`, `POD_NAME`, `HOSTNAME` inside Kubernetes, otherwise `<hostname>-<pid>` | — |
+| [Q-OPS-29](spec/operations-and-observability.md#q-ops-29--a-replica-started-on-a-database-that-is-not-yet-migrated) | What does a replica do on a database that is not yet migrated? | (b) wait, not ready, until the schema check passes; a schema below the floor stops the start | — |
 | [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach) | How is the OpenAPI document produced? | (a) spec-first: oapi-codegen models and `net/http` server interface, openapi-typescript types, thin hand-written Angular clients | [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) |
 | [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes) | Is `If-Match` mandatory on writes? | (b) required on PUT and PATCH of revisioned resources; `If-Match: *` is the explicit blind write | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
 | [Q-API-3](spec/api-and-ui.md#q-api-3--cluster-wide-rate-limiting) | Cluster-wide rate limiting? | (e) cluster-wide sliding-window counters in Valkey (R-ARCH-034) with a per-replica fallback; revisited 2026-10-28; H-43 narrowed; same choice as Q-ARCH-17 | [ADR-102](#adr-102--cluster-wide-rate-limits-in-valkey-with-a-per-replica-fallback) |
@@ -4870,6 +5056,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-API-10](spec/api-and-ui.md#q-api-10--starting-a-backup-from-the-api-or-the-ui) | Starting a backup from the API or the UI? | (a) no start, delete, verify or restore endpoint; the UI shows a copyable `kubectl` command | [ADR-108](#adr-108--backup-credentials-stay-in-backup-pods-the-api-and-ui-only-read-runs) |
 | [Q-API-11](spec/api-and-ui.md#q-api-11--where-the-apis-list-of-stored-backups-comes-from) | Where does the API's list of stored backups come from? | (c) the stored-backup list recorded by the newest create or delete run | [ADR-108](#adr-108--backup-credentials-stay-in-backup-pods-the-api-and-ui-only-read-runs) |
 | [Q-API-12](spec/api-and-ui.md#q-api-12--visibility-of-a-management-write-on-the-other-replicas) | Visibility of a management write on the other replicas? | (e) management reads from PostgreSQL; an unknown repository key is looked up, with a change-log poll and a grant-index rebuild, before `404`; `Trove-Authz-Min-Epoch` for grant changes; the propagation bound otherwise. Revisited 2026-10-28: was (c) | [ADR-096](#adr-096--no-state-between-requests-on-a-replica-inv-18), [ADR-057](#adr-057--a-compiled-grant-index-per-replica-consistent-through-an-epoch-failing-closed) |
+| [Q-API-13](spec/api-and-ui.md#q-api-13--problem-member-name-problem-type-status-of-validation-errors-and-error-codes) | Problem member name, type, validation status and error codes? | (b) relative `type` `/api/v1/problems/<code>`; `requestId`; 400 `malformed_request`, 422 `validation_failed`; codes `server_busy` and `database_timeout` | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) |
+| [Q-API-14](spec/api-and-ui.md#q-api-14--stand-in-for-systemread-until-authentication-ships) | What stands in for `system.read` until authentication ships? | (b) `system.bootstrap_anonymous_read`, default `false`, refused with an `https` base URL; a presented credential gets 401 | — |
 | [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) | Which component library? | (a) Angular Material with the CDK and `@angular/aria`; font icons | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested) | Shell layout and density? | (c) a left side bar, compact density, container queries | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested) | Layout of the package details page? | (c) two columns with a sticky install panel from 960 CSS px of content width; one column below | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
@@ -4877,7 +5065,23 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-UI-5](spec/api-and-ui.md#q-ui-5--internationalization-mechanism) | Internationalization mechanism? | (a) `@angular/localize`, one build per locale under `/ui/{locale}/` | [ADR-088](#adr-088--english-and-german-in-the-mvp) |
 | [Q-UI-6](spec/api-and-ui.md#q-ui-6--external-images-in-readmes) | External images in READMEs? | (d) blocked by default; an operator allowlist of exact `https` origins, mirrored into the CSP | [ADR-087](#adr-087--readmes-rendered-on-the-server-through-an-allowlist-sanitizer) |
 | [Q-UI-7](spec/api-and-ui.md#q-ui-7--roles-drain-readiness-and-valkey-on-the-system-status-screen) | Roles, drain readiness and Valkey on the system status screen? | (b) the registry gains node and Sentinel reachability; replicas grouped by role, with drain safety per role and a Valkey summary on the status screen | [ADR-104](#adr-104--subsystems-per-role-web-serves-worker-owns-background-work-and-leases), [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) |
+| [Q-UI-8](spec/api-and-ui.md#q-ui-8--bundle-budget-csp-nonce-and-inline-code) | How are the bundle budget, the CSP nonce and inline code handled? | (b) and (c) together: the raw guard of `angular.json` and the 400 kB compressed budget of `scripts/check-budget.mjs`; nonce placeholder; inlining off | — |
+| [Q-UI-9](spec/api-and-ui.md#q-ui-9--test-tiers-of-the-web-ui-at-m0) | Which web test tiers exist at M0? | (b) unit and component tiers on jsdom; browser, contract, Playwright and axe tiers with the M1 screens | — |
+| [Q-EP-1](spec/endpoints.md#q-ep-1--how-the-endpoint-of-a-request-is-identified) | How is the endpoint of a request identified? | (a) by the listener the connection arrived on; `Host` only selects among the endpoint's own hosts, a foreign host answers `421` | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-2](spec/endpoints.md#q-ep-2--where-endpoint-configuration-and-exposure-rules-live) | Where do endpoint configuration and exposure rules live? | (c) network binding in the file, exposure rules in PostgreSQL, compiled into the grant index | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-3](spec/endpoints.md#q-ep-3--separate-pool-or-shared-pods-for-a-further-endpoint) | Separate pool or shared pods for a further endpoint? | (c) an optional pool per endpoint, off by default, recommended for endpoints with exposure rules | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-4](spec/endpoints.md#q-ep-4--the-answer-for-content-an-endpoint-does-not-expose) | What answers content an endpoint does not expose? | (a) `404` identical to a missing resource; writes `403` `endpoint_read_only` | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-5](spec/endpoints.md#q-ep-5--cache-fill-from-upstreams-on-further-endpoints) | Cache fill from upstreams on further endpoints? | (b) off by default, `cache_fill` per endpoint | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-6](spec/endpoints.md#q-ep-6--how-far-wildcard-hosts-and-host-root-bindings-go) | How far do wildcard hosts and host-root bindings go? | (b) exact hosts and at most one single-label wildcard per endpoint, host-root bindings of exact hosts or the wildcard label; the mechanism in the MVP, its consumers P1 | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-7](spec/endpoints.md#q-ep-7--endpoints-in-the-beta) | Do endpoints belong in the beta? | (a) MVP, split over M0 to M3 with the journal entries in M5; the owner was asked, and the choice stands until he objects | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-8](spec/endpoints.md#q-ep-8--how-exposure-rules-select-repositories) | How do exposure rules select repositories? | (a) one repository per rule, named by key and stored by ID | — |
+| [Q-EP-9](spec/endpoints.md#q-ep-9--writes-through-an-endpoint-with-exposure-rules) | Writes through an endpoint with exposure rules? | (a) read only | — |
+| [Q-EP-10](spec/endpoints.md#q-ep-10--credentials-a-further-endpoint-accepts-by-default) | Which credentials does a further endpoint accept by default? | (b) service-account tokens bound to the endpoint; no anonymous access, no session | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-11](spec/endpoints.md#q-ep-11--exposure-on-virtual-repositories-the-addressed-repository-or-its-members) | Is exposure decided on the addressed repository or on its members? | (a) on the addressed repository | — |
+| [Q-EP-12](spec/endpoints.md#q-ep-12--whether-administrators-pass-the-exposure-ceiling) | Do administrators pass the exposure ceiling? | (a) no: exposure binds every subject, `content:bypass` included | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| [Q-EP-13](spec/endpoints.md#q-ep-13--sign-in-and-the-ui-on-further-endpoints) | Sign-in and the UI on further endpoints? | (a) the default endpoint only | — |
 | [Q-ROAD-1](coverage/roadmap.md#q-road-1--generic-local-repositories-in-m1) | Generic local repositories in M1? | (a) the local class of the generic format is built in M1 as MVP, from a new spec page `formats/generic.md`; remote and virtual generic stay P1 | — |
 | [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-the-beta) | Backup and restore in the beta? | (e) trove's own backup create and restore, the platform layer (R-HA-023, R-HA-025) and the revocation journal (R-HA-054, R-AUTHZ-031) are MVP and gate in M5; their work runs in its own lane from M1 on, and M0 gives every table its export class. Revisited 2026-10-28: was (a), both kept at P1 and the journal after 1.0 | [ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-ROAD-3](coverage/roadmap.md#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget) | Which ecosystems after npm and NuGet? | (a) the P1 format order of the roadmap stands; revisited 2026-10-29: Ansible Galaxy (owner demand) is F0 and P1, ahead of F1 | — |
 | [Q-ROAD-4](coverage/roadmap.md#q-road-4--how-the-coverage-generator-learns-implementation-status) | How does the coverage generator learn implementation status? | (a) tests name the requirement IDs they verify, and the generator derives the status from CI results | — |
+| [Q-ROAD-5](coverage/roadmap.md#q-road-5--evidence-rules-of-the-coverage-generator) | Which evidence counts for the coverage generator? | (b) a failing test vetoes its ID; a skip counts as neither; an unknown ID fails the run | — |
