@@ -15,8 +15,8 @@ commonLabels: {}                        # default (proposed)
 commonAnnotations: {}                   # default (proposed)
 
 image:
-  registry: ghcr.io                     # default (proposed) (Q-HA-11)
-  repository: guided-traffic/trove      # default (proposed)
+  registry: docker.io                   # default: Docker Hub (build.yml publishes there)
+  repository: guidedtraffic/trove       # default: the image of the release pipeline
   tag: ""                               # default (proposed): empty = chart appVersion
   digest: ""                            # default (proposed); example: sha256:<64 hex>; wins over tag
   pullPolicy: IfNotPresent              # default (proposed)
