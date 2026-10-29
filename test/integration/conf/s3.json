@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "trove",
+      "credentials": [
+        { "accessKey": "trove-it-access", "secretKey": "trove-it-secret-0123456789abcdef" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

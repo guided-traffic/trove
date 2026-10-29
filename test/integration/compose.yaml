@@ -1,0 +1,204 @@
+# Integration stack: PostgreSQL 16 (the floor version), PgBouncer in transaction
+# mode, Valkey with a replica and three Sentinels over TLS only, and SeaweedFS
+# as the S3 store. Started by test/integration/up.sh, which sets the variables
+# below from tools/versions.env.
+#
+# The five Valkey processes share one network namespace (the `net` container),
+# and every port is published on the host under the same number. An address
+# such as 127.0.0.1:16379 therefore reaches the same process from inside the
+# stack (replication, Sentinel monitoring) and from the host (the tests), so the
+# addresses that Sentinel announces are valid for a client on the host and a
+# failover can be followed from there.
+name: trove-it
+
+x-valkey: &valkey
+  image: ${VALKEY_IMAGE:?set by test/integration/up.sh}
+  network_mode: "service:net"
+  restart: "no"
+  depends_on:
+    net:
+      condition: service_started
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?set by test/integration/up.sh}
+    container_name: trove-it-postgres
+    environment:
+      POSTGRES_USER: trove
+      POSTGRES_PASSWORD: trove-it
+      POSTGRES_DB: trove
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: ["postgres", "-c", "max_connections=200", "-c", "password_encryption=scram-sha-256"]
+    ports:
+      - "127.0.0.1:15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trove -d trove -h 127.0.0.1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  pgbouncer:
+    image: ${PGBOUNCER_IMAGE:?set by test/integration/up.sh}
+    container_name: trove-it-pgbouncer
+    entrypoint: ["/usr/bin/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
+    volumes:
+      - ./conf/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./conf/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:16432:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  net:
+    image: ${TOOLS_IMAGE:?set by test/integration/up.sh}
+    container_name: trove-it-net
+    command: ["sleep", "infinity"]
+    init: true
+    ports:
+      - "127.0.0.1:16379:16379"
+      - "127.0.0.1:16380:16380"
+      - "127.0.0.1:26381:26381"
+      - "127.0.0.1:26382:26382"
+      - "127.0.0.1:26383:26383"
+
+  valkey-primary:
+    <<: *valkey
+    container_name: trove-it-valkey-primary
+    entrypoint: ["/conf/node.sh"]
+    environment:
+      NODE_PORT: "16379"
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ./conf:/conf:ro
+      - valkey-primary:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 -p 16379 --user ops --pass ops-valkey-it --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey-replica:
+    <<: *valkey
+    container_name: trove-it-valkey-replica
+    entrypoint: ["/conf/node.sh"]
+    environment:
+      NODE_PORT: "16380"
+      REPLICAOF: "127.0.0.1 16379"
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ./conf:/conf:ro
+      - valkey-replica:/data
+    depends_on:
+      net:
+        condition: service_started
+      valkey-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 -p 16380 --user ops --pass ops-valkey-it --no-auth-warning info replication | grep -q master_link_status:up"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey-sentinel-1:
+    <<: *valkey
+    container_name: trove-it-valkey-sentinel-1
+    entrypoint: ["/conf/sentinel.sh"]
+    environment:
+      SENTINEL_PORT: "26381"
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ./conf:/conf:ro
+      - valkey-sentinel-1:/data
+    depends_on:
+      net:
+        condition: service_started
+      valkey-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 -p 26381 -a sentinel-valkey-it --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey-sentinel-2:
+    <<: *valkey
+    container_name: trove-it-valkey-sentinel-2
+    entrypoint: ["/conf/sentinel.sh"]
+    environment:
+      SENTINEL_PORT: "26382"
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ./conf:/conf:ro
+      - valkey-sentinel-2:/data
+    depends_on:
+      net:
+        condition: service_started
+      valkey-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 -p 26382 -a sentinel-valkey-it --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey-sentinel-3:
+    <<: *valkey
+    container_name: trove-it-valkey-sentinel-3
+    entrypoint: ["/conf/sentinel.sh"]
+    environment:
+      SENTINEL_PORT: "26383"
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ./conf:/conf:ro
+      - valkey-sentinel-3:/data
+    depends_on:
+      net:
+        condition: service_started
+      valkey-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 -p 26383 -a sentinel-valkey-it --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  seaweedfs:
+    image: ${SEAWEEDFS_IMAGE:?set by test/integration/up.sh}
+    container_name: trove-it-seaweedfs
+    command:
+      - server
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -ip.bind=0.0.0.0
+      - -master.volumeSizeLimitMB=512
+      - -volume.max=24
+      - -filer
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - ./conf/s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweedfs:/data
+    ports:
+      - "127.0.0.1:18333:8333"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9333/cluster/status >/dev/null && curl -s -o /dev/null http://127.0.0.1:8333/"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+volumes:
+  valkey-primary:
+  valkey-replica:
+  valkey-sentinel-1:
+  valkey-sentinel-2:
+  valkey-sentinel-3:
+  seaweedfs:
