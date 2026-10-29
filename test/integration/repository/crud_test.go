@@ -122,7 +122,7 @@ func TestCreateReadUpdate(t *testing.T) {
 	t.Run("R-REPO-011 a stale If-Match is 412 with the current version, If-Match * passes", func(t *testing.T) {
 		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), []byte(`{"description":"stale"}`))
 		wantCode(t, err, 412, errs.CodePreconditionFailed)
-		var sv *repository.StaleVersion
+		var sv *errs.StaleRevision
 		if !errors.As(err, &sv) || sv.Current != 2 {
 			t.Fatalf("cause = %v", err)
 		}

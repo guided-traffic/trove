@@ -97,14 +97,11 @@ func TestRepositoryPrecondition(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-API-012 the 412 of a stale version carries the current tag", func(t *testing.T) {
-		err := staleToFailed(errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed, "x", errs.WithCause(&repository.StaleVersion{Current: 5})))
+	t.Run("R-API-012 the repository service answers the one stale error, with the current tag", func(t *testing.T) {
+		err := errs.Stale("The repository", 5)
 		var e *errs.Error
-		if !errors.As(err, &e) || e.Extensions["currentEtag"] != `"5"` {
+		if !errors.As(err, &e) || e.Extensions["currentEtag"] != `"5"` || e.Status() != 412 {
 			t.Fatalf("err = %#v", err)
-		}
-		if staleToFailed(nil) != nil {
-			t.Error("nil stays nil")
 		}
 	})
 }

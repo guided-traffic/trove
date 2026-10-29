@@ -68,11 +68,24 @@ func (e *env) apiHandler(name string, db *postgres.DB, changes *cluster.Changes,
 	e.mu.Lock()
 	e.components = append(e.components, apiParts{db: db, changes: changes, manager: manager, tokens: tokens})
 	e.mu.Unlock()
-	return idapi.Handler(t, idapi.Components{
+	c := idapi.Components{
 		Name: name, DB: db, Changes: changes, Stage: stage, Manager: manager, Tokens: tokens, Settings: settings,
 		Sessions: store, Login: login, Recorder: e.audit, Auth: authCfg, BaseURL: e.baseURL, AcceptsSession: true,
 		Validator: e.validator, Log: quiet,
-	})
+	}
+	if e.extend != nil {
+		e.extend(&c, replicaParts{name: name, db: db, changes: changes, caches: caches, principals: principals})
+	}
+	return idapi.Handler(t, c)
+}
+
+// replicaParts are the components of one replica that a test adds services for.
+type replicaParts struct {
+	name       string
+	db         *postgres.DB
+	changes    *cluster.Changes
+	caches     *cache.Registry
+	principals principal.Store
 }
 
 // apiParts are the components of a replica a test uses directly (to create users

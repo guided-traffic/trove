@@ -73,7 +73,18 @@ describe('Groups (R-UI-025)', () => {
     typeInto(root, 'Description', 'Platform and infra');
     buttonByText(root, 'Save group').click();
     await settle(fixture);
-    expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('updateGroup platform {"description":"Platform and infra"}');
+    const api = get(IdentityApi) as FakeIdentityApi;
+    expect(api.calls).toContain('updateGroup platform {"description":"Platform and infra"}');
+    expect(api.ifMatch).toEqual(['"1"']);
     expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('R-UI-042 a 412 on a group PATCH opens the conflict dialog', async () => {
+    const { fixture, root, get } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
+    (get(IdentityApi) as FakeIdentityApi).bumpRevision('group:platform');
+    typeInto(root, 'Description', 'Platform and infra');
+    buttonByText(root, 'Save group').click();
+    await settle(fixture);
+    expect(document.querySelector('.cdk-overlay-container trove-conflict-dialog')).toBeTruthy();
   });
 });

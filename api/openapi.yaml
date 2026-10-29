@@ -992,6 +992,7 @@ paths:
       x-trove-permission:
         permission: identities:read
       parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
         - name: username
           in: path
           required: true
@@ -1002,10 +1003,15 @@ paths:
       responses:
         "200":
           description: The user.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+        "304":
+          description: The `If-None-Match` tag is the current one.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1028,7 +1034,9 @@ paths:
         record are accepted and ignored, so a body obtained by `GET` can be sent back.
       x-trove-permission:
         permission: identities:write
+      x-trove-if-match: required
       parameters:
+        - $ref: "#/components/parameters/IfMatch"
         - name: username
           in: path
           required: true
@@ -1045,6 +1053,9 @@ paths:
       responses:
         "200":
           description: The user after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
           content:
             application/json:
               schema:
@@ -1057,12 +1068,16 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1388,6 +1403,7 @@ paths:
       x-trove-permission:
         permission: identities:read
       parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
         - name: name
           in: path
           required: true
@@ -1396,10 +1412,15 @@ paths:
       responses:
         "200":
           description: The group.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Group"
+        "304":
+          description: The `If-None-Match` tag is the current one.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1422,7 +1443,9 @@ paths:
         `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019). JSON merge patch; read-only members are ignored.
       x-trove-permission:
         permission: identities:write
+      x-trove-if-match: required
       parameters:
+        - $ref: "#/components/parameters/IfMatch"
         - name: name
           in: path
           required: true
@@ -1437,6 +1460,9 @@ paths:
       responses:
         "200":
           description: The group after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
           content:
             application/json:
               schema:
@@ -1451,12 +1477,16 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1701,6 +1731,7 @@ paths:
       x-trove-permission:
         permission: identities:read
       parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
         - name: name
           in: path
           required: true
@@ -1709,10 +1740,15 @@ paths:
       responses:
         "200":
           description: The service account.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServiceAccount"
+        "304":
+          description: The `If-None-Match` tag is the current one.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1733,7 +1769,9 @@ paths:
         Changes the description (R-AUTH-020; owners are P1). JSON merge patch; read-only members are ignored.
       x-trove-permission:
         permission: identities:write
+      x-trove-if-match: required
       parameters:
+        - $ref: "#/components/parameters/IfMatch"
         - name: name
           in: path
           required: true
@@ -1748,6 +1786,9 @@ paths:
       responses:
         "200":
           description: The service account after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
           content:
             application/json:
               schema:
@@ -1760,12 +1801,16 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1892,6 +1937,7 @@ paths:
         The token value is in this answer only; no other operation returns it. The answer is never cached
         (`Cache-Control: no-store`). A retry with the same `Idempotency-Key` answers `409 token_already_issued` with
         the `tokenId`, because the value is not stored.
+      x-trove-recent-auth: true
       x-trove-permission:
         authenticated: true
       x-trove-idempotency-key: optional
@@ -2224,6 +2270,7 @@ paths:
         administrator or under the derivation rule. Another user's PAT answers `403 forbidden`, even for an
         administrator. `overlapSeconds` keeps the old value valid for that long (0 revokes it with reason `rotated`).
         The answer holds the new value and is never cached.
+      x-trove-recent-auth: true
       x-trove-permission:
         authenticated: true
       x-trove-idempotency-key: optional
@@ -2347,6 +2394,7 @@ paths:
         with `admin: true`) or a SAT of the same account under the derivation rule. A non-expiring token
         (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`. The value is in this
         answer only and the answer is never cached.
+      x-trove-recent-auth: true
       x-trove-permission:
         authenticated: true
       x-trove-idempotency-key: optional
@@ -2474,16 +2522,12 @@ paths:
         ceiling (`400 exceeds_ceiling`) and each default at most its maximum (`400 default_above_maximum`); anonymous
         access while the ceiling forbids it answers `409 anonymous_not_allowed`.  A session needs a recent authentication (`401 reauthentication_required`). The change is in force on
         every replica within the revocation bound and writes `settings.auth.changed`.
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: settings:write
       x-trove-if-match: required
       parameters:
-        - name: If-Match
-          in: header
-          required: false
-          description: The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -2780,12 +2824,7 @@ paths:
         authenticated: true
       x-trove-if-match: required
       parameters:
-        - name: If-Match
-          in: header
-          required: false
-          description: The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -2925,6 +2964,7 @@ paths:
         `unknown_format`, `invalid_pattern`, `invalid_action`, `duplicate_principal`,
         `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
         `virtual_action_not_applicable`, `action_not_allowed`).
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
       x-trove-idempotency-key: optional
@@ -3043,6 +3083,7 @@ paths:
         are ignored. The answer carries the new `ETag` and `Trove-Authz-Epoch`. The audit event
         `authz.policy.updated` records the access-bearing state before and after and is journaled
         (R-AUTHZ-031).
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
       x-trove-if-match: required
@@ -3105,6 +3146,7 @@ paths:
         `entries` is replaced as a whole. The result is validated and written exactly like a
         replacement, so the rules, `If-Match` and the epoch header of `PUT` apply. `null` resets
         `description` to the empty string. `name` is immutable: a different value answers `422`.
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
       x-trove-if-match: required
@@ -3168,14 +3210,11 @@ paths:
         Removes the policy with its selectors, patterns and entries. `If-Match` is optional here; when
         sent, a version that is not current answers `412`. The answer carries `Trove-Authz-Epoch`. The
         audit event `authz.policy.deleted` is journaled (R-AUTHZ-031).
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
       parameters:
-        - name: If-Match
-          in: header
-          description: The `ETag` of the policy, or `*`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatchOptional"
       responses:
         "204":
           description: The policy was deleted.
@@ -3358,6 +3397,7 @@ paths:
         groups and service accounts only (`422 role_not_allowed`); a role on an auto-join group is
         `409 auto_join_admin_conflict`. A new binding writes `authz.role.bound` and carries
         `Trove-Authz-Epoch`; for an existing one the header is the current epoch.
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: roles:write
       responses:
@@ -3417,6 +3457,7 @@ paths:
         Removes the binding (`authz.role.unbound`, journaled). Removing the last `admin` binding while
         the break-glass administrator is disabled answers `409 last_admin`; a binding that does not
         exist answers `404`.
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: roles:write
       responses:
@@ -3928,6 +3969,7 @@ paths:
         `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
         honoured when sent. With `detach=true` references from virtual repositories are removed in the
         same transaction; virtual repositories arrive after milestone M1, so the flag changes nothing yet.
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: repositories:write-config
       x-trove-idempotency-key: optional
@@ -3937,12 +3979,7 @@ paths:
           schema:
             type: boolean
             default: false
-        - name: If-Match
-          in: header
-          required: false
-          description: The ETag loaded with the repository, or `*`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatchOptional"
         - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "202":
@@ -4876,11 +4913,7 @@ paths:
           schema:
             type: string
             pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
-        - name: If-Match
-          in: header
-          description: The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -4955,11 +4988,7 @@ paths:
           schema:
             type: string
             pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
-        - name: If-Match
-          in: header
-          description: The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: true
         content:
@@ -5035,11 +5064,7 @@ paths:
           schema:
             type: string
             pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
-        - name: If-Match
-          in: header
-          description: The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
-          schema:
-            type: string
+        - $ref: "#/components/parameters/IfMatchOptional"
       responses:
         "204":
           description: The rule is deleted.
@@ -5202,6 +5227,13 @@ components:
       in: header
       required: true
       description: The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+      schema:
+        type: string
+    IfMatchOptional:
+      name: If-Match
+      in: header
+      required: false
+      description: The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
       schema:
         type: string
     IfNoneMatch:
@@ -6518,8 +6550,8 @@ components:
     Token:
       type: object
       description: A token as a list or an inspection shows it (R-AUTH-028). Neither the value nor its hash is part of it.
-      required: [id, type, hint, owner, description, scope, createdAt, createdBy, createdVia, expiresAt, lastUsedAt,
-                 lastUsedAddr, state, revokedAt, revokedBy, revocationReason, rotatedFrom, selfRotatable, ciContext]
+      required: [id, type, hint, owner, description, scope, unknownEndpoints, createdAt, createdBy, createdVia, expiresAt,
+                 lastUsedAt, lastUsedAddr, state, revokedAt, revokedBy, revocationReason, rotatedFrom, selfRotatable, ciContext]
       properties:
         id:
           type: string
@@ -6536,6 +6568,14 @@ components:
           type: string
         scope:
           $ref: "#/components/schemas/TokenScope"
+        unknownEndpoints:
+          type: array
+          description: |
+            The endpoint names in `scope.endpoints` that no configured endpoint carries. An endpoint removed from the
+            configuration leaves its bound tokens unchanged; they are valid on no endpoint that no longer exists
+            (R-EP-011). Empty when every bound endpoint is configured, and for an unbound token.
+          items:
+            type: string
         createdAt:
           type: string
           format: date-time

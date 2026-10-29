@@ -229,7 +229,7 @@ Services of `api/` (abstract class, HTTP implementation, fake in [api/testing/ac
 | Service | File | Operations |
 |---|---|---|
 | `SessionApi`, `LoginApi`, `PreferencesApi` | `session-api.ts`, `login-api.ts`, `preferences-api.ts` | `whoami`, `authz/me`, `authz/check`, `login-options`, `users/me/preferences` (generated types since wave 3; `PermissionCheck.action` stays a string) |
-| `IdentityApi` | `identity-api.ts` | users, groups and service accounts; merge patches without `ETag` (`ApiClient.patchMerge`), memberships as plain JSON (`patchJson`) |
+| `IdentityApi` | `identity-api.ts` | users, groups and service accounts; reads return `Versioned<T>` (body and `ETag`), merge patches take the loaded tag (`ApiClient.patch`), memberships as plain JSON without a tag (`patchJson`) |
 | `TokensApi` | `tokens-api.ts` | list with filters, create (own and for a service account), rotate, revoke, revoke by value, revoke all |
 | `SessionsApi` | `sessions-api.ts` | own sessions, `keepCurrent`, sessions of a user |
 | `AuthSettingsApi` | `auth-settings-api.ts` | `GET`, `PATCH /settings/auth` with `If-Match` |
@@ -239,13 +239,14 @@ Services of `api/` (abstract class, HTTP implementation, fake in [api/testing/ac
 Building blocks under [shared/access/](../../web/src/app/shared/access/): `TextField` and `SelectField` (label, hint,
 error text tied with `aria-describedby`), `Needs` (the reason behind a missing write control, R-UI-005),
 `TokenForm`, `TokenSecret` (one-time display), `TokenTable`, `PrincipalRoles`, `formatDuration`; the shared pieces they use (`PagedResource`, `Confirm`, `DraftStore`, `fieldErrorAt`) live one level up in `shared/`. [features/tokens/token-manager.ts](../../web/src/app/features/tokens/token-manager.ts)
-is the one token list-and-create component used by the profile, the user detail and the service account detail.
+is the one token list-and-create component used by the profile, the user detail and the service account detail. `TokenTable` marks a token whose `unknownEndpoints` is not empty (its binding names an endpoint that is not configured, R-EP-011) with a warning in the scope cell.
 
 Conventions these screens follow:
 
-- **Writes.** Creates send the `Idempotency-Key` generated when the form or dialog opened. Resources with an `ETag` (preferences, authentication settings, policies) are written
-  with it; a 412 opens the conflict dialog and "Overwrite" sends the user's version with the tag read at that moment. Users, groups and service accounts have no tag: their
-  `PATCH` is a merge patch of the members that changed.
+- **Writes.** Creates send the `Idempotency-Key` generated when the form or dialog opened. Resources with an `ETag` (users, groups, service accounts, preferences, authentication settings, policies, repositories) are written
+  with it; a 412 opens the conflict dialog and "Overwrite" sends the user's version with the tag read at that moment (Q-UI-22, reversed by Q-API-42 and Q-AUTH-50). The detail screens of
+  users, groups and service accounts do this through `ConflictResolver.save` ([conflict-dialog.ts](../../web/src/app/shared/conflict-dialog.ts)): the merge patch, the loaded tag and
+  a re-read of the record go in, the outcome (`saved`, `reloaded`, `dismissed`) comes out. Membership changes, disable, enable and unlock carry no tag.
 - **Own permission changes.** A write of a policy or role binding answers `Trove-Authz-Epoch`; `conventionsInterceptor` keeps the highest one in `AuthzEpoch` and sends it as
   `Trove-Authz-Min-Epoch` on whatever follows, so the screens re-read without extra code ([access-http.spec.ts](../../web/src/app/api/access-http.spec.ts) proves the hand-off for a
   policy `PUT` and a role binding). After such a write the screen also calls `SessionStore.refreshCapabilities()`.

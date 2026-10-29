@@ -3,7 +3,6 @@ package token
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -51,17 +50,11 @@ type SettingsPatch struct {
 	SATDefaultTTL   *time.Duration
 	SATMaxTTL       *time.Duration
 	ExpiryNotice    *time.Duration
-	// IfRevision, when not zero, is the revision the caller loaded: the update
-	// fails with [SettingsChangedError] when the row has another one (If-Match).
-	IfRevision int64
-}
-
-// SettingsChangedError is the refusal of an update whose IfRevision no longer
-// matches (R-API-012); the API answers it as 412 with the current tag.
-type SettingsChangedError struct{ Revision int64 }
-
-func (e SettingsChangedError) Error() string {
-	return "token: the settings changed since they were loaded"
+	// Expected is the revision the caller loaded (If-Match), or errs.AnyRevision
+	// for the deliberate blind write; the update is conditional on it in the same
+	// statement and fails with errs.Stale when the row has moved on (R-API-012).
+	// The zero value matches no revision.
+	Expected int64
 }
 
 // SettingsOptions configure [NewSettingsStore].
@@ -207,9 +200,6 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 		if err != nil {
 			return err
 		}
-		if p.IfRevision != 0 && p.IfRevision != before.Revision {
-			return SettingsChangedError{Revision: before.Revision}
-		}
 		after = before
 		if p.AnonymousAccess != nil {
 			after.AnonymousAccess = *p.AnonymousAccess
@@ -231,13 +221,21 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 		if err := s.validate(after, p); err != nil {
 			return err
 		}
-		if err := qs.IdentityUpdateSettings(ctx, q.IdentityUpdateSettingsParams{
+		written, err := qs.IdentityUpdateSettings(ctx, q.IdentityUpdateSettingsParams{
 			AnonymousAccess: after.AnonymousAccess,
 			PatDefaultSecs:  fromSecs(after.PATDefaultTTL), PatMaxSecs: fromSecs(after.PATMaxTTL),
 			SatDefaultSecs: fromSecs(after.SATDefaultTTL), SatMaxSecs: fromSecs(after.SATMaxTTL),
-			ExpiryNoticeSecs: fromSecs(after.ExpiryNotice), UpdatedBy: c.Actor.ID,
-		}); err != nil {
+			ExpiryNoticeSecs: fromSecs(after.ExpiryNotice), UpdatedBy: c.Actor.ID, Expected: p.Expected,
+		})
+		if err != nil {
 			return err
+		}
+		if len(written) == 0 {
+			cur, err := readSettings(ctx, qs)
+			if err != nil {
+				return err
+			}
+			return errs.Stale("The authentication settings", cur.Revision)
 		}
 		if err := principal.NotifySettings(s.o.Notifier, tx); err != nil {
 			return err
@@ -255,8 +253,7 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 			Journal: mustJSON(entry),
 		})
 	})
-	var changed SettingsChangedError
-	if errors.As(err, &changed) {
+	if _, stale := errs.CurrentRevision(err); stale {
 		return after, err
 	}
 	return after, principal.DBErr("token.settings.update", err)

@@ -89,7 +89,18 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
                 @if (showOwner()) {
                   <td translate="no">{{ ownerName(t) }}</td>
                 }
-                <td>{{ summary(t) }}</td>
+                <td>
+                  {{ summary(t) }}
+                  @if (t.unknownEndpoints.length > 0) {
+                    <br /><span class="badge warn"
+                      ><span class="material-icons" aria-hidden="true">warning</span
+                      ><ng-container i18n="@@token-table.unknown-endpoints"
+                        >Bound to an endpoint that is not configured:</ng-container
+                      >
+                      <code translate="no">{{ t.unknownEndpoints.join(', ') }}</code></span
+                    >
+                  }
+                </td>
                 <td>{{ t.createdAt | date: 'medium' }}</td>
                 <td>
                   @if (t.expiresAt) {

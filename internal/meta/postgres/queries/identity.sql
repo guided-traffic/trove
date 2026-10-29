@@ -26,6 +26,11 @@ SELECT DISTINCT g.group_id::text AS id, p.name
 -- name: IdentityLockPrincipal :many
 SELECT id::text AS id, kind, status FROM principal WHERE id = sqlc.arg(id)::text::uuid FOR UPDATE;
 
+-- name: IdentityLockRevision :many
+-- The revision of a principal, locking the row: the If-Match of an update is
+-- compared with it in the transaction that writes (R-API-012).
+SELECT revision FROM principal WHERE id = sqlc.arg(id)::text::uuid FOR UPDATE;
+
 -- name: IdentityInsertPrincipal :many
 INSERT INTO principal (id, kind, name, created_by)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(kind)::text, sqlc.arg(name)::text, NULLIF(sqlc.arg(created_by)::text, '')::uuid)
@@ -55,7 +60,7 @@ VALUES (sqlc.arg(id)::text::uuid, NULLIF(sqlc.arg(email)::text, ''), sqlc.arg(em
         CASE WHEN sqlc.arg(logged_in)::boolean THEN now() END, CASE WHEN sqlc.arg(logged_in)::boolean THEN now() END);
 
 -- name: IdentityGetUser :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at,
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
        u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
@@ -70,7 +75,7 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at,
 -- while its lockout is in force, R-AUTH-038) or ''; origin and group are '' for any;
 -- admin is 'true', 'false' or '' (the user holds the role admin directly or through
 -- a group, or is the break-glass account).
-SELECT p.id::text AS id, p.name, p.status, p.created_at,
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
        u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, 'null'::text AS group_claim_missing
@@ -197,13 +202,13 @@ INSERT INTO user_group (principal_id, description, auto_join, origin)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text, sqlc.arg(auto_join)::boolean, sqlc.arg(origin)::text);
 
 -- name: IdentityGetGroup :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name = sqlc.arg(name)::text;
 
 -- name: IdentityListGroups :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name > sqlc.arg(after)::text
@@ -271,12 +276,12 @@ SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = sqlc.arg(id
 INSERT INTO service_account (principal_id, description) VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text);
 
 -- name: IdentityGetServiceAccount :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, s.description
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
   FROM principal p JOIN service_account s ON s.principal_id = p.id
  WHERE p.kind = 'service_account' AND p.name = sqlc.arg(name)::text;
 
 -- name: IdentityListServiceAccounts :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, s.description
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
   FROM principal p JOIN service_account s ON s.principal_id = p.id
  WHERE p.kind = 'service_account' AND p.name > sqlc.arg(after)::text
    AND (sqlc.arg(query)::text = '' OR p.name ILIKE '%' || sqlc.arg(query)::text || '%')
@@ -428,10 +433,12 @@ SELECT anonymous_access,
        coalesce(extract(epoch FROM sat_default_ttl), -1)::float8 AS sat_default_secs,
        coalesce(extract(epoch FROM sat_max_ttl), -1)::float8 AS sat_max_secs,
        coalesce(extract(epoch FROM expiry_notice), -1)::float8 AS expiry_notice_secs,
-       (extract(epoch FROM updated_at) * 1000000)::bigint AS revision
+       revision
   FROM auth_settings;
 
--- name: IdentityUpdateSettings :exec
+-- name: IdentityUpdateSettings :many
+-- expected is the revision the caller loaded, or -1 for a blind write (If-Match: *);
+-- no returned row means the revision moved on.
 UPDATE auth_settings
    SET anonymous_access = sqlc.arg(anonymous_access)::boolean,
        pat_default_ttl = CASE WHEN sqlc.arg(pat_default_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(pat_default_secs)::float8) END,
@@ -439,8 +446,9 @@ UPDATE auth_settings
        sat_default_ttl = CASE WHEN sqlc.arg(sat_default_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(sat_default_secs)::float8) END,
        sat_max_ttl = CASE WHEN sqlc.arg(sat_max_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(sat_max_secs)::float8) END,
        expiry_notice = CASE WHEN sqlc.arg(expiry_notice_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(expiry_notice_secs)::float8) END,
-       updated_at = greatest(now(), updated_at + interval '1 microsecond'), updated_by = NULLIF(sqlc.arg(updated_by)::text, '')::uuid
- WHERE singleton;
+       revision = revision + 1, updated_at = now(), updated_by = NULLIF(sqlc.arg(updated_by)::text, '')::uuid
+ WHERE singleton AND (sqlc.arg(expected)::bigint < 0 OR revision = sqlc.arg(expected)::bigint)
+RETURNING revision;
 
 -- Group members, one row per member (R-AUTH-018) --------------------------------
 

@@ -171,7 +171,7 @@ Every pool of a `DB` shares one `dbTLS`; `postgres.WithTLSMetrics` passes the fa
 
 ## Access-core tables (M1)
 
-Migrations 00006 to 00012 create every table of milestone M1 at once, so the work packages of M1 start from one
+Migrations 00006 to 00012 create every table of milestone M1 at once (00013 adds the revision columns of the identity resources), so the work packages of M1 start from one
 schema and their foreign keys resolve. The migrations hold no queries: each work package adds its own
 `queries/*.sql`. The columns are the specification's sketches; where the migration differs, a decision (Q-ID) on the
 owning spec page says why. Every table is registered in [tables_m1.go](../../internal/meta/postgres/tables_m1.go)
@@ -212,6 +212,7 @@ Rules that hold for all of them:
 | [00010_repositories](../../internal/meta/postgres/migrations/00010_repositories.sql) | repository (WP1.4) | columns of `repositories` |
 | [00011_authz](../../internal/meta/postgres/migrations/00011_authz.sql) | authz (WP1.3) | `authz_policy`, `authz_policy_selector`, `authz_policy_pattern`, `authz_policy_entry`, `authz_role_binding` |
 | [00012_endpoints](../../internal/meta/postgres/migrations/00012_endpoints.sql) | endpoints (WP1.9) | `endpoint_exposure_rule` |
+| [00013_identity_revisions](../../internal/meta/postgres/migrations/00013_identity_revisions.sql) | identity (Q-AUTH-50) | `principal.revision` and `auth_settings.revision` (registered revision columns, R-BAK-022) and the triggers that bump a principal's revision when a member of its representation changes |
 
 Files (WP1.5) need no migration: `items`, `item_properties`, `item_download_stats`, `blobs` and the usage counters
 of 00002 and 00003 carry R-STOR-007, R-STOR-012, R-STOR-013, R-STOR-016 and R-STOR-018. Jobs (R-OPS-019, R-OPS-020)

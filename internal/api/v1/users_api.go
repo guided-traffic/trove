@@ -181,7 +181,7 @@ func (s *Server) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUser implements GET /api/v1/users/{username} (R-AUTH-016).
-func (s *Server) GetUser(w http.ResponseWriter, r *http.Request, username string) {
+func (s *Server) GetUser(w http.ResponseWriter, r *http.Request, username string, _ gen.GetUserParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
@@ -190,6 +190,11 @@ func (s *Server) GetUser(w http.ResponseWriter, r *http.Request, username string
 		failIdentity(w, r, err)
 		return
 	}
+	tag := ETag(u.Revision, "")
+	if NotModified(w, r, tag) {
+		return
+	}
+	SetETag(w, u.Revision, "")
 	writeJSON(w, r, http.StatusOK, toUser(u))
 }
 
@@ -217,16 +222,20 @@ type userPatchBody struct {
 }
 
 // UpdateUser implements PATCH /api/v1/users/{username} (R-AUTH-016).
-func (s *Server) UpdateUser(w http.ResponseWriter, r *http.Request, username string) {
+func (s *Server) UpdateUser(w http.ResponseWriter, r *http.Request, username string, _ gen.UpdateUserParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
-	raw, err := ReadMergePatch(w, r, s.bodyLimit())
+	pre, err := ParseIfMatch(r)
+	var raw []byte
+	if err == nil {
+		raw, err = ReadMergePatch(w, r, s.bodyLimit())
+	}
 	var in userPatchBody
 	if err == nil {
 		err = StrictUnmarshal(raw, &in)
 	}
-	var p principal.UserPatch
+	p := principal.UserPatch{Expected: expectedRevision(pre)}
 	if err == nil {
 		err = errorsFirst(
 			func() (e error) { p.Email, e = patchString(in.Email, "/email"); return },
@@ -244,6 +253,7 @@ func (s *Server) UpdateUser(w http.ResponseWriter, r *http.Request, username str
 		failIdentity(w, r, err)
 		return
 	}
+	SetETag(w, u.Revision, "")
 	writeJSON(w, r, http.StatusOK, toUser(u))
 }
 

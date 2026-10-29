@@ -152,6 +152,12 @@ ri.SetPrincipal(name, "user", principalID)
 ri.SetToken(tokenID, "bearer")                    // the ID, never the token
 ```
 
+The authentication stage fills the principal the same way: the request log stage is outside it (R-ARCH-005), so it reads the
+facts after the request. `app.authenticate` calls `recordPrincipal` ([wire_observability.go](../../internal/app/wire_observability.go))
+after a successful authentication, with the log vocabulary of R-OPS-010 (`principal_type` `breakglass`, `auth_method`
+`nuget_apikey`, `token_id` for a token only); an anonymous or refused request keeps `anonymous` and `none` (Q-API-41,
+`TestR_OPS_010_RequestLogRecordsThePrincipal`).
+
 A handler never name-builds the handler label from request data; the label set is capped at 1000 values and
 folds into `unmatched`.
 

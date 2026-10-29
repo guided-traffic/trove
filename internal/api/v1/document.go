@@ -30,6 +30,16 @@ type Operation struct {
 	Permission map[string]any
 	// Requirement is Permission in the form the authorization step enforces.
 	Requirement Requirement
+	// RecentAuth is x-trove-recent-auth: true. A caller that authenticates with a
+	// session must have signed in at the identity provider within
+	// auth.sessions.recent_auth_window, otherwise the shared step answers 401
+	// reauthentication_required (R-API-007, R-AUTH-011). A token is not asked.
+	RecentAuth bool
+	// IfMatchRequired is x-trove-if-match: required (R-API-012). The operation
+	// declares the shared IfMatch parameter, the generated wrapper refuses a
+	// request without the header, and bindError answers it with 428
+	// precondition_required (Q-API-43).
+	IfMatchRequired bool
 }
 
 // Document is the parsed OpenAPI document.
@@ -89,7 +99,14 @@ func LoadDocument(raw []byte) (*Document, error) {
 			} else {
 				req = r
 			}
-			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req}
+			recent, err := parseRecentAuth(op)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-recent-auth: %w", pattern, id, err))
+			}
+			if v, has := op["x-trove-if-match"]; has && v != "required" {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-if-match must be required, not %v", pattern, id, v))
+			}
+			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required"}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
 			} else {
@@ -101,6 +118,19 @@ func LoadDocument(raw []byte) (*Document, error) {
 		return nil, fmt.Errorf("openapi document: %w", err)
 	}
 	return d, nil
+}
+
+// parseRecentAuth reads x-trove-recent-auth of an operation: absent is false, and
+// the only other accepted value is true (leave the member out instead of false).
+func parseRecentAuth(op map[string]any) (bool, error) {
+	raw, has := op["x-trove-recent-auth"]
+	if !has {
+		return false, nil
+	}
+	if v, ok := raw.(bool); ok && v {
+		return true, nil
+	}
+	return false, fmt.Errorf("must be true (leave it out instead of %v)", raw)
 }
 
 // FileOperations returns the operations of the raw file path (/files/...) keyed

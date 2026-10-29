@@ -335,7 +335,7 @@ func (q *Queries) IdentityEndSessions(ctx context.Context, arg IdentityEndSessio
 }
 
 const identityGetGroup = `-- name: IdentityGetGroup :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name = $1::text
@@ -348,6 +348,7 @@ type IdentityGetGroupRow struct {
 	AutoJoin    bool
 	Origin      string
 	CreatedAt   pgtype.Timestamptz
+	Revision    int64
 	MemberCount int64
 }
 
@@ -367,6 +368,7 @@ func (q *Queries) IdentityGetGroup(ctx context.Context, name string) ([]Identity
 			&i.AutoJoin,
 			&i.Origin,
 			&i.CreatedAt,
+			&i.Revision,
 			&i.MemberCount,
 		); err != nil {
 			return nil, err
@@ -380,7 +382,7 @@ func (q *Queries) IdentityGetGroup(ctx context.Context, name string) ([]Identity
 }
 
 const identityGetServiceAccount = `-- name: IdentityGetServiceAccount :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, s.description
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
   FROM principal p JOIN service_account s ON s.principal_id = p.id
  WHERE p.kind = 'service_account' AND p.name = $1::text
 `
@@ -390,6 +392,7 @@ type IdentityGetServiceAccountRow struct {
 	Name        string
 	Status      string
 	CreatedAt   pgtype.Timestamptz
+	Revision    int64
 	Description string
 }
 
@@ -407,6 +410,7 @@ func (q *Queries) IdentityGetServiceAccount(ctx context.Context, name string) ([
 			&i.Name,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Revision,
 			&i.Description,
 		); err != nil {
 			return nil, err
@@ -427,7 +431,7 @@ SELECT anonymous_access,
        coalesce(extract(epoch FROM sat_default_ttl), -1)::float8 AS sat_default_secs,
        coalesce(extract(epoch FROM sat_max_ttl), -1)::float8 AS sat_max_secs,
        coalesce(extract(epoch FROM expiry_notice), -1)::float8 AS expiry_notice_secs,
-       (extract(epoch FROM updated_at) * 1000000)::bigint AS revision
+       revision
   FROM auth_settings
 `
 
@@ -472,7 +476,7 @@ func (q *Queries) IdentityGetSettings(ctx context.Context) ([]IdentityGetSetting
 }
 
 const identityGetUser = `-- name: IdentityGetUser :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at,
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
        u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
@@ -488,6 +492,7 @@ type IdentityGetUserRow struct {
 	Name              string
 	Status            string
 	CreatedAt         pgtype.Timestamptz
+	Revision          int64
 	Email             string
 	EmailVerified     bool
 	DisplayName       string
@@ -513,6 +518,7 @@ func (q *Queries) IdentityGetUser(ctx context.Context, name string) ([]IdentityG
 			&i.Name,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Revision,
 			&i.Email,
 			&i.EmailVerified,
 			&i.DisplayName,
@@ -947,7 +953,7 @@ func (q *Queries) IdentityInsertUser(ctx context.Context, arg IdentityInsertUser
 }
 
 const identityListGroups = `-- name: IdentityListGroups :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name > $1::text
@@ -971,6 +977,7 @@ type IdentityListGroupsRow struct {
 	AutoJoin    bool
 	Origin      string
 	CreatedAt   pgtype.Timestamptz
+	Revision    int64
 	MemberCount int64
 }
 
@@ -995,6 +1002,7 @@ func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroups
 			&i.AutoJoin,
 			&i.Origin,
 			&i.CreatedAt,
+			&i.Revision,
 			&i.MemberCount,
 		); err != nil {
 			return nil, err
@@ -1008,7 +1016,7 @@ func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroups
 }
 
 const identityListServiceAccounts = `-- name: IdentityListServiceAccounts :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, s.description
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
   FROM principal p JOIN service_account s ON s.principal_id = p.id
  WHERE p.kind = 'service_account' AND p.name > $1::text
    AND ($2::text = '' OR p.name ILIKE '%' || $2::text || '%')
@@ -1027,6 +1035,7 @@ type IdentityListServiceAccountsRow struct {
 	Name        string
 	Status      string
 	CreatedAt   pgtype.Timestamptz
+	Revision    int64
 	Description string
 }
 
@@ -1044,6 +1053,7 @@ func (q *Queries) IdentityListServiceAccounts(ctx context.Context, arg IdentityL
 			&i.Name,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Revision,
 			&i.Description,
 		); err != nil {
 			return nil, err
@@ -1169,7 +1179,7 @@ func (q *Queries) IdentityListTokens(ctx context.Context, arg IdentityListTokens
 }
 
 const identityListUsers = `-- name: IdentityListUsers :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at,
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
        u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id, 'null'::text AS group_claim_missing
@@ -1210,6 +1220,7 @@ type IdentityListUsersRow struct {
 	Name              string
 	Status            string
 	CreatedAt         pgtype.Timestamptz
+	Revision          int64
 	Email             string
 	EmailVerified     bool
 	DisplayName       string
@@ -1247,6 +1258,7 @@ func (q *Queries) IdentityListUsers(ctx context.Context, arg IdentityListUsersPa
 			&i.Name,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Revision,
 			&i.Email,
 			&i.EmailVerified,
 			&i.DisplayName,
@@ -1290,6 +1302,32 @@ func (q *Queries) IdentityLockPrincipal(ctx context.Context, id string) ([]Ident
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityLockRevision = `-- name: IdentityLockRevision :many
+SELECT revision FROM principal WHERE id = $1::text::uuid FOR UPDATE
+`
+
+// The revision of a principal, locking the row: the If-Match of an update is
+// compared with it in the transaction that writes (R-API-012).
+func (q *Queries) IdentityLockRevision(ctx context.Context, id string) ([]int64, error) {
+	rows, err := q.db.Query(ctx, identityLockRevision, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var revision int64
+		if err := rows.Scan(&revision); err != nil {
+			return nil, err
+		}
+		items = append(items, revision)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2089,7 +2127,7 @@ func (q *Queries) IdentityUpdateServiceAccount(ctx context.Context, arg Identity
 	return err
 }
 
-const identityUpdateSettings = `-- name: IdentityUpdateSettings :exec
+const identityUpdateSettings = `-- name: IdentityUpdateSettings :many
 UPDATE auth_settings
    SET anonymous_access = $1::boolean,
        pat_default_ttl = CASE WHEN $2::float8 < 0 THEN NULL ELSE make_interval(secs => $2::float8) END,
@@ -2097,8 +2135,9 @@ UPDATE auth_settings
        sat_default_ttl = CASE WHEN $4::float8 < 0 THEN NULL ELSE make_interval(secs => $4::float8) END,
        sat_max_ttl = CASE WHEN $5::float8 < 0 THEN NULL ELSE make_interval(secs => $5::float8) END,
        expiry_notice = CASE WHEN $6::float8 < 0 THEN NULL ELSE make_interval(secs => $6::float8) END,
-       updated_at = greatest(now(), updated_at + interval '1 microsecond'), updated_by = NULLIF($7::text, '')::uuid
- WHERE singleton
+       revision = revision + 1, updated_at = now(), updated_by = NULLIF($7::text, '')::uuid
+ WHERE singleton AND ($8::bigint < 0 OR revision = $8::bigint)
+RETURNING revision
 `
 
 type IdentityUpdateSettingsParams struct {
@@ -2109,10 +2148,13 @@ type IdentityUpdateSettingsParams struct {
 	SatMaxSecs       float64
 	ExpiryNoticeSecs float64
 	UpdatedBy        string
+	Expected         int64
 }
 
-func (q *Queries) IdentityUpdateSettings(ctx context.Context, arg IdentityUpdateSettingsParams) error {
-	_, err := q.db.Exec(ctx, identityUpdateSettings,
+// expected is the revision the caller loaded, or -1 for a blind write (If-Match: *);
+// no returned row means the revision moved on.
+func (q *Queries) IdentityUpdateSettings(ctx context.Context, arg IdentityUpdateSettingsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, identityUpdateSettings,
 		arg.AnonymousAccess,
 		arg.PatDefaultSecs,
 		arg.PatMaxSecs,
@@ -2120,8 +2162,24 @@ func (q *Queries) IdentityUpdateSettings(ctx context.Context, arg IdentityUpdate
 		arg.SatMaxSecs,
 		arg.ExpiryNoticeSecs,
 		arg.UpdatedBy,
+		arg.Expected,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var revision int64
+		if err := rows.Scan(&revision); err != nil {
+			return nil, err
+		}
+		items = append(items, revision)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const identityUpdateUserFields = `-- name: IdentityUpdateUserFields :exec

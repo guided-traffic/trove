@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
@@ -235,6 +236,9 @@ type replicaOpts struct {
 	deleteBatch int
 	poll        time.Duration
 	rec         *recorder
+	// exposure attaches the delete hook that records the exposure rules a deletion
+	// takes with it (H-164).
+	exposure bool
 }
 
 // replica is one in-process replica with pools and components of its own.
@@ -332,9 +336,13 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var hooks repository.Hooks
+	if o.exposure {
+		hooks = authz.NewExposureHook(authz.NewExposureService(authz.ExposureServiceOptions{DB: r.db, Changes: r.changes, Recorder: o.rec}))
+	}
 	r.svc, err = repository.NewService(repository.Options{
 		Runner: r.db, Catalog: catalog{}, Recorder: o.rec, Notifier: r.changes, Jobs: r.queue,
-		DeleteBatch: o.deleteBatch, Log: quiet,
+		DeleteBatch: o.deleteBatch, Hooks: hooks, Log: quiet,
 	})
 	if err != nil {
 		t.Fatal(err)

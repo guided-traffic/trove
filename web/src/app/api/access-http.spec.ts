@@ -103,17 +103,17 @@ describe('access services over HTTP', () => {
     expect((await created).etag).toBe('"1"');
   });
 
-  it('R-API-013 users, groups and service accounts are patched without a precondition, memberships as plain JSON', async () => {
+  it('R-API-013 R-API-012 users, groups and service accounts are patched with the loaded ETag, memberships as plain JSON without one', async () => {
     const { http } = setup();
     const api = TestBed.inject(HttpIdentityApi);
 
-    const user = api.updateUser('a@b+c', { displayName: 'A' });
+    const user = api.updateUser('a@b+c', { displayName: 'A' }, '"7"');
     const patch = http.expectOne('/api/v1/users/a%40b%2Bc');
     expect(patch.request.method).toBe('PATCH');
     expect(patch.request.headers.get('Content-Type')).toBe('application/merge-patch+json');
-    expect(patch.request.headers.has('If-Match')).toBe(false);
-    patch.flush({});
-    await user;
+    expect(patch.request.headers.get('If-Match')).toBe('"7"');
+    patch.flush({}, { headers: { ETag: '"8"' } });
+    expect((await user).etag).toBe('"8"');
 
     const groups = api.changeUserGroups('alice', { add: ['team-web'] });
     const memberships = http.expectOne('/api/v1/users/alice/groups');

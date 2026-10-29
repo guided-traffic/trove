@@ -25,10 +25,6 @@ import (
 // stores, notifies the change area authz and audits; every read comes from
 // PostgreSQL (R-API-052).
 
-// HeaderAuthzEpoch is the answer header of a write that changed authorization
-// state (R-AUTHZ-032).
-const HeaderAuthzEpoch = "Trove-Authz-Epoch"
-
 // EndpointServices are what the endpoint operations need.
 type EndpointServices struct {
 	// Endpoints are the configured endpoints, the default first (R-EP-001).
@@ -130,24 +126,6 @@ func docOfRule(r authz.ExposureRule) exposureRuleDoc {
 
 func ruleURL(ctx context.Context, endpoint, name string) string {
 	return strings.TrimSuffix(httpserver.InfoFrom(ctx).BaseURL, "/") + "/api/v1/endpoints/" + endpoint + "/exposure-rules/" + name
-}
-
-// staleOr turns the service's 412 into the convention's, with currentEtag.
-func staleOr(err error) error {
-	if cur, ok := authz.IsStale(err); ok {
-		return Failed(cur, "")
-	}
-	return err
-}
-
-// expectedRevision reads If-Match into the service's expected revision:
-// authz.AnyVersion for no header or *, the revision otherwise (0 for a tag the
-// server never issued, which matches nothing).
-func expectedRevision(p Precondition) int64 {
-	if rev, ok := p.Revision(""); ok {
-		return rev
-	}
-	return authz.AnyVersion
 }
 
 // ---- endpoints ----
@@ -409,18 +387,17 @@ func (s *Server) CreateExposureRule(w http.ResponseWriter, r *http.Request, endp
 	}
 	actor := caller(r)
 	in := doc.input()
+	var epoch int64
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		// The epoch is known when the change log raised it, just before the
-		// commit; the hook fills the header of this answer then. A replay of the
-		// stored outcome carries no epoch: the rule itself is current on every
-		// replica within the bound.
-		hdr := map[string]string{}
-		rule, err := svc.Create(ctx, tx, actor, endpoint, in, func(epoch int64) { hdr[HeaderAuthzEpoch] = strconv.FormatInt(epoch, 10) })
+		rule, err := svc.Create(ctx, tx, actor, endpoint, in, func(e int64) { epoch = e })
 		if err != nil {
 			return Outcome{}, err
 		}
-		hdr["Location"], hdr["ETag"] = ruleURL(ctx, endpoint, rule.Name), ETag(rule.Revision, "")
-		return Outcome{Status: http.StatusCreated, Body: docOfRule(rule), Header: hdr}, nil
+		return Outcome{
+			Status: http.StatusCreated, Body: docOfRule(rule),
+			Header: map[string]string{"Location": ruleURL(ctx, endpoint, rule.Name), "ETag": ETag(rule.Revision, "")},
+			Finish: finishEpoch(&epoch),
+		}, nil
 	}})
 	if err != nil {
 		httpserver.Problem(w, r, errs.Wrap(err, "api.createExposureRule"))
@@ -428,14 +405,14 @@ func (s *Server) CreateExposureRule(w http.ResponseWriter, r *http.Request, endp
 }
 
 // replaceRule runs a replacement and answers it.
-func (s *Server) replaceRule(w http.ResponseWriter, r *http.Request, svc *authz.ExposureService, endpoint, name string, pre Precondition, in authz.ExposureRuleInput) {
-	rule, epoch, err := svc.Replace(r.Context(), caller(r), endpoint, name, expectedRevision(pre), in)
+func (s *Server) replaceRule(w http.ResponseWriter, r *http.Request, svc *authz.ExposureService, endpoint, name string, expected int64, in authz.ExposureRuleInput) {
+	rule, epoch, err := svc.Replace(r.Context(), caller(r), endpoint, name, expected, in)
 	if err != nil {
-		httpserver.Problem(w, r, errs.Wrap(staleOr(err), "api.replaceExposureRule"))
+		httpserver.Problem(w, r, errs.Wrap(err, "api.replaceExposureRule"))
 		return
 	}
 	SetETag(w, rule.Revision, "")
-	w.Header().Set(HeaderAuthzEpoch, strconv.FormatInt(epoch, 10))
+	setEpoch(w, epoch)
 	writeJSON(w, r, http.StatusOK, docOfRule(rule))
 }
 
@@ -447,9 +424,6 @@ func (s *Server) ReplaceExposureRule(w http.ResponseWriter, r *http.Request, end
 	var pre Precondition
 	if err == nil {
 		pre, err = ParseIfMatch(r)
-	}
-	if err == nil {
-		err = pre.Require()
 	}
 	var doc exposureRuleDoc
 	if err == nil {
@@ -464,7 +438,7 @@ func (s *Server) ReplaceExposureRule(w http.ResponseWriter, r *http.Request, end
 		httpserver.Problem(w, r, err)
 		return
 	}
-	s.replaceRule(w, r, svc, endpoint, name, pre, doc.input())
+	s.replaceRule(w, r, svc, endpoint, name, expectedRevision(pre), doc.input())
 }
 
 // PatchExposureRule implements PATCH .../exposure-rules/{name}: the merge patch
@@ -475,9 +449,6 @@ func (s *Server) PatchExposureRule(w http.ResponseWriter, r *http.Request, endpo
 	var pre Precondition
 	if err == nil {
 		pre, err = ParseIfMatch(r)
-	}
-	if err == nil {
-		err = pre.Require()
 	}
 	var raw []byte
 	if err == nil {
@@ -498,7 +469,14 @@ func (s *Server) PatchExposureRule(w http.ResponseWriter, r *http.Request, endpo
 		httpserver.Problem(w, r, errs.Wrap(err, "api.patchExposureRule"))
 		return
 	}
-	s.replaceRule(w, r, svc, endpoint, name, pre, next.input())
+	if !pre.Matches(current.Revision, "") {
+		httpserver.Problem(w, r, Failed(current.Revision))
+		return
+	}
+	// The patch was computed on one revision and is written conditional on exactly
+	// that one, also for If-Match: *, so a concurrent change is a 412 and never a
+	// silently merged-over one (as the policy PATCH does).
+	s.replaceRule(w, r, svc, endpoint, name, current.Revision, next.input())
 }
 
 // DeleteExposureRule implements DELETE .../exposure-rules/{name}; If-Match is
@@ -515,10 +493,10 @@ func (s *Server) DeleteExposureRule(w http.ResponseWriter, r *http.Request, endp
 	}
 	epoch, err := svc.Delete(r.Context(), caller(r), endpoint, name, expectedRevision(pre))
 	if err != nil {
-		httpserver.Problem(w, r, errs.Wrap(staleOr(err), "api.deleteExposureRule"))
+		httpserver.Problem(w, r, errs.Wrap(err, "api.deleteExposureRule"))
 		return
 	}
-	w.Header().Set(HeaderAuthzEpoch, strconv.FormatInt(epoch, 10))
+	setEpoch(w, epoch)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

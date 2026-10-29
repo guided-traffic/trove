@@ -123,6 +123,18 @@ Changes WP1.3 made to the contracts above (see [authorization.md](authorization.
 | `m1Wiring` | `authzEngine` and `anonymousAccess func() bool` (set by identity before the authz wiring; nil: off) in the authz marker |
 | `permission` strings of `Require` | capability names, and `role:<role>` for the role form |
 
+Changes of the leftover items of the backend (wave 3, [http-api.md](http-api.md), Q-API-40 to Q-API-44, Q-AUTH-50, Q-EP-24 to Q-EP-26):
+
+| Contract | Change |
+|---|---|
+| `errs` | `AnyRevision`, `StaleRevision`, `Stale(what, current)`, `CurrentRevision` ([revision.go](../../internal/errs/revision.go)): the one 412 with `currentEtag` and the one value of a blind write. `authz.AnyVersion`, `authz.StaleRevision`, `authz.IsStale`, `repository.StaleVersion` and `token.SettingsChangedError` are gone; `v1.Failed(current)` lost its `view` parameter |
+| `v1.Operation` | `RecentAuth` (from `x-trove-recent-auth: true`) and `IfMatchRequired`; `Server.authorize` enforces the first after the permission |
+| `repository.Hooks` | `OnDelete(ctx, tx, caller, repo)` joins `OnUpdated`; `repository.MultiHooks`; `authz.ExposureHook` records the rules a deletion takes with it |
+| `principal` | `User`, `Group`, `ServiceAccount` carry `Revision`; `UserPatch.Expected`, `GroupPatch.Expected`, `UpdateServiceAccount(…, expected)`; `token.SettingsPatch.IfRevision` became `Expected` (zero matches no revision; `errs.AnyRevision` is the blind write) |
+| `v1.AuthServices` | `EndpointConfigured func(string) bool` for `unknownEndpoints` |
+| `idapi.Components` | `Authenticate`, `Engine`, `Options`, `Routes`: the stack of the authorization and audit tests is built on `idapi.Handler` |
+| Migration | `00013_identity_revisions` |
+
 ## Marked sections in shared files
 
 Each area edits only between its own `>>> M1 <area>` and `<<< M1 <area>` lines and does not move, reformat or

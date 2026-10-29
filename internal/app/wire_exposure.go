@@ -36,6 +36,23 @@ func (a *App) exposureCeiling() *authz.ExposureCeiling {
 	return a.m1.exposureCeiling
 }
 
+// exposureService returns the rule service, built once on a replica with
+// PostgreSQL and the change log, nil otherwise. The repository wiring needs it
+// before the endpoints marker, for the delete hook that records the rules a
+// repository takes with it (H-164).
+func (a *App) exposureService() *authz.ExposureService {
+	if a.m1.exposure == nil {
+		db, changes := a.database(), a.changesOrNil()
+		if db == nil || changes == nil {
+			return nil
+		}
+		a.m1.exposure = authz.NewExposureService(authz.ExposureServiceOptions{
+			DB: db, Changes: changes, Recorder: a.auditRecorder(), Ceiling: a.exposureCeiling(),
+		})
+	}
+	return a.m1.exposure
+}
+
 // wireEndpoints runs at the endpoints marker of step 8: the rule service on a
 // replica with PostgreSQL, the start-up warning for inert rules (H-58), and the
 // rate-limit classes of the endpoints this process serves. Nothing here can
@@ -43,11 +60,7 @@ func (a *App) exposureCeiling() *authz.ExposureCeiling {
 // client listener (wireFailureLimiter), and a failed count read only loses the
 // warning.
 func (a *App) wireEndpoints(ctx context.Context) {
-	db, changes := a.database(), a.changesOrNil()
-	if db != nil && changes != nil {
-		a.m1.exposure = authz.NewExposureService(authz.ExposureServiceOptions{
-			DB: db, Changes: changes, Recorder: a.auditRecorder(), Ceiling: a.exposureCeiling(),
-		})
+	if a.exposureService() != nil {
 		a.warnInertEndpoints(ctx)
 	}
 	if a.sub.ClientListener && a.m1.limiters != nil {

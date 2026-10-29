@@ -2,7 +2,6 @@ package v1
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -123,9 +122,6 @@ func (s *Server) UpdateAuthSettings(w http.ResponseWriter, r *http.Request, _ ge
 		return
 	}
 	pre, err := ParseIfMatch(r)
-	if err == nil {
-		err = pre.Require()
-	}
 	var raw []byte
 	if err == nil {
 		raw, err = ReadMergePatch(w, r, s.bodyLimit())
@@ -133,9 +129,6 @@ func (s *Server) UpdateAuthSettings(w http.ResponseWriter, r *http.Request, _ ge
 	var in settingsPatchBody
 	if err == nil {
 		err = StrictUnmarshal(raw, &in)
-	}
-	if err == nil {
-		err = s.requireRecentAuth(r)
 	}
 	if err != nil {
 		failIdentity(w, r, err)
@@ -151,24 +144,8 @@ func (s *Server) UpdateAuthSettings(w http.ResponseWriter, r *http.Request, _ ge
 			p.SATDefaultTTL, p.SATMaxTTL = duration(t.SAT.DefaultTTLSeconds), duration(t.SAT.MaxTTLSeconds)
 		}
 	}
-	if rev, byRevision := pre.Revision(""); byRevision {
-		p.IfRevision = rev
-		if rev == 0 {
-			// A tag the server never issued matches nothing: the row has another one.
-			cur, err := s.o.Auth.Settings.Read(r.Context())
-			if err != nil {
-				failIdentity(w, r, err)
-				return
-			}
-			failIdentity(w, r, Failed(cur.Revision, ""))
-			return
-		}
-	}
+	p.Expected = expectedRevision(pre)
 	row, err := s.o.Auth.Settings.Update(r.Context(), s.caller(r), p)
-	var changed token.SettingsChangedError
-	if errors.As(err, &changed) {
-		err = Failed(changed.Revision, "")
-	}
 	if err != nil {
 		failIdentity(w, r, err)
 		return

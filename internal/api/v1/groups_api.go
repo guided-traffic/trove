@@ -87,7 +87,7 @@ func (s *Server) CreateGroup(w http.ResponseWriter, r *http.Request, _ gen.Creat
 }
 
 // GetGroup implements GET /api/v1/groups/{name} (R-AUTH-018).
-func (s *Server) GetGroup(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) GetGroup(w http.ResponseWriter, r *http.Request, name string, _ gen.GetGroupParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
@@ -96,6 +96,10 @@ func (s *Server) GetGroup(w http.ResponseWriter, r *http.Request, name string) {
 		failIdentity(w, r, err)
 		return
 	}
+	if NotModified(w, r, ETag(g.Revision, "")) {
+		return
+	}
+	SetETag(w, g.Revision, "")
 	writeJSON(w, r, http.StatusOK, toGroup(g))
 }
 
@@ -114,16 +118,20 @@ type groupPatchBody struct {
 }
 
 // UpdateGroup implements PATCH /api/v1/groups/{name} (R-AUTH-018, R-AUTH-019).
-func (s *Server) UpdateGroup(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) UpdateGroup(w http.ResponseWriter, r *http.Request, name string, _ gen.UpdateGroupParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
-	raw, err := ReadMergePatch(w, r, s.bodyLimit())
+	pre, err := ParseIfMatch(r)
+	var raw []byte
+	if err == nil {
+		raw, err = ReadMergePatch(w, r, s.bodyLimit())
+	}
 	var in groupPatchBody
 	if err == nil {
 		err = StrictUnmarshal(raw, &in)
 	}
-	var p principal.GroupPatch
+	p := principal.GroupPatch{Expected: expectedRevision(pre)}
 	if err == nil {
 		err = errorsFirst(
 			func() (e error) { p.Name, e = patchRequiredString(in.Name, "/name"); return },
@@ -140,6 +148,7 @@ func (s *Server) UpdateGroup(w http.ResponseWriter, r *http.Request, name string
 		failIdentity(w, r, err)
 		return
 	}
+	SetETag(w, g.Revision, "")
 	writeJSON(w, r, http.StatusOK, toGroup(g))
 }
 
@@ -284,7 +293,7 @@ func (s *Server) CreateServiceAccount(w http.ResponseWriter, r *http.Request, _ 
 }
 
 // GetServiceAccount implements GET /api/v1/service-accounts/{name}.
-func (s *Server) GetServiceAccount(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) GetServiceAccount(w http.ResponseWriter, r *http.Request, name string, _ gen.GetServiceAccountParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
@@ -293,6 +302,10 @@ func (s *Server) GetServiceAccount(w http.ResponseWriter, r *http.Request, name 
 		failIdentity(w, r, err)
 		return
 	}
+	if NotModified(w, r, ETag(a.Revision, "")) {
+		return
+	}
+	SetETag(w, a.Revision, "")
 	writeJSON(w, r, http.StatusOK, toServiceAccount(a))
 }
 
@@ -307,11 +320,15 @@ type serviceAccountPatchBody struct {
 }
 
 // UpdateServiceAccount implements PATCH /api/v1/service-accounts/{name}.
-func (s *Server) UpdateServiceAccount(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) UpdateServiceAccount(w http.ResponseWriter, r *http.Request, name string, _ gen.UpdateServiceAccountParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
-	raw, err := ReadMergePatch(w, r, s.bodyLimit())
+	pre, err := ParseIfMatch(r)
+	var raw []byte
+	if err == nil {
+		raw, err = ReadMergePatch(w, r, s.bodyLimit())
+	}
 	var in serviceAccountPatchBody
 	if err == nil {
 		err = StrictUnmarshal(raw, &in)
@@ -333,14 +350,20 @@ func (s *Server) UpdateServiceAccount(w http.ResponseWriter, r *http.Request, na
 			failIdentity(w, r, err)
 			return
 		}
+		if !pre.Matches(a.Revision, "") {
+			failIdentity(w, r, Failed(a.Revision))
+			return
+		}
+		SetETag(w, a.Revision, "")
 		writeJSON(w, r, http.StatusOK, toServiceAccount(a))
 		return
 	}
-	a, err := s.o.Auth.Manager.UpdateServiceAccount(r.Context(), s.caller(r), name, *desc)
+	a, err := s.o.Auth.Manager.UpdateServiceAccount(r.Context(), s.caller(r), name, *desc, expectedRevision(pre))
 	if err != nil {
 		failIdentity(w, r, err)
 		return
 	}
+	SetETag(w, a.Revision, "")
 	writeJSON(w, r, http.StatusOK, toServiceAccount(a))
 }
 

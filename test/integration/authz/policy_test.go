@@ -97,11 +97,11 @@ func TestR_AUTHZ_021_PolicyLifecycle(t *testing.T) {
 			t.Fatalf("%+v %d %v", got, epoch, err)
 		}
 		// the deliberate blind write of If-Match: *
-		got, _, err = a.svc.Update(ctx, admin, "team-web-publish", authz.AnyVersion, in)
+		got, _, err = a.svc.Update(ctx, admin, "team-web-publish", errs.AnyRevision, in)
 		if err != nil || got.Version != 3 || len(got.Entries) != 2 {
 			t.Fatalf("%+v %v", got, err)
 		}
-		_, _, err = a.svc.Update(ctx, admin, "missing", authz.AnyVersion, in)
+		_, _, err = a.svc.Update(ctx, admin, "missing", errs.AnyRevision, in)
 		problem(t, err, 404, errs.CodeNotFound)
 	})
 
@@ -131,7 +131,7 @@ func TestR_AUTHZ_021_PolicyLifecycle(t *testing.T) {
 		if err != nil || epoch != e.authzEpoch() {
 			t.Fatal(epoch, err)
 		}
-		_, err = a.svc.Delete(ctx, admin, "team-web-publish", authz.AnyVersion)
+		_, err = a.svc.Delete(ctx, admin, "team-web-publish", errs.AnyRevision)
 		problem(t, err, 404, errs.CodeNotFound)
 		if e.number("SELECT count(*) FROM authz_policy_entry")+e.number("SELECT count(*) FROM authz_policy_selector")+e.number("SELECT count(*) FROM authz_policy_pattern") != 0 {
 			t.Error("the children of a deleted policy remain")
@@ -368,10 +368,10 @@ func TestR_AUTHZ_028_EveryWriteAdvancesTheEpoch(t *testing.T) {
 		do   func() error
 	}{
 		{"create a policy", func() error { _, _, err := a.svc.Create(ctx, actor, in); return err }},
-		{"update a policy", func() error { _, _, err := a.svc.Update(ctx, actor, "p", authz.AnyVersion, in); return err }},
+		{"update a policy", func() error { _, _, err := a.svc.Update(ctx, actor, "p", errs.AnyRevision, in); return err }},
 		{"bind a role", func() error { _, _, err := a.svc.BindRole(ctx, actor, authz.RoleAuditor, "group:team-web"); return err }},
 		{"unbind a role", func() error { _, err := a.svc.UnbindRole(ctx, actor, authz.RoleAuditor, "group:team-web"); return err }},
-		{"delete a policy", func() error { _, err := a.svc.Delete(ctx, actor, "p", authz.AnyVersion); return err }},
+		{"delete a policy", func() error { _, err := a.svc.Delete(ctx, actor, "p", errs.AnyRevision); return err }},
 	}
 	for _, s := range steps {
 		epoch, changes := e.authzEpoch(), e.authzChanges()

@@ -188,7 +188,9 @@ request ─► stage 7: authz.WithEndpoint ─► Decide / Readable ─► ceili
 - **The fingerprint** (`ExposureCeiling.ExposureFingerprint`) is computed from the index without a query, for the
   validators of filtered documents in M2; the dry run computes the same value from the stored rows.
 - **Deletion of a repository.** A repository in `lifecycle = 'deleting'` drops out of the build query at once; its rows go
-  with the repository's row through the foreign key. That cascade writes no `endpoint.exposure.deleted` (H-164).
+  with the repository's row through the foreign key, and the delete hook of the repository service (`authz.ExposureHook`) records
+  one `endpoint.exposure.deleted` per rule with the cause `repository_deleted` and its journal entry in the same transaction
+  (Q-EP-25).
 
 ## Rate-limit class (R-EP-015)
 
@@ -221,9 +223,10 @@ with the first format that has routes (M2).
   under a row lock of the endpoint's rules).
 - The rule list reads the endpoint's rules (bounded by the limit) in one query and pages over `(name, id)` in the handler,
   because the `package` filter is a pattern match.
-- `x-trove-recent-auth: true` is declared on the writes; nothing in this build enforces the extension yet (H-165).
-- The idempotent create learns its epoch in the commit hook; the first answer carries `Trove-Authz-Epoch`, a replay of the
-  stored outcome does not.
+- `x-trove-recent-auth: true` is declared on the writes; the shared authorization step enforces it (Q-API-40).
+- The idempotent create learns its epoch in the commit hook and hands it to the stored outcome through `Outcome.Finish`
+  (`finishEpoch`), so the first answer and every replay carry `Trove-Authz-Epoch` (Q-API-44).
+- `PATCH` computes the merge on the stored rule and writes conditional on that revision, also for `If-Match: *` (Q-EP-26).
 - **For the UI wave (endpoint screen, rule editor and preview):** the list is `listEndpoints` (inert names flagged,
   `ruleCount`, `configuration` for the read-only panel); the rule table is `listExposureRules` with `enabled` from the
   representation and `patchExposureRule {"enabled": …}` for a toggle; the editor loads with `getExposureRule` (keep the

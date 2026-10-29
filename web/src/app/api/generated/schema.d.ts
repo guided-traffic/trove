@@ -2473,6 +2473,12 @@ export interface components {
             owner: components["schemas"]["TokenOwner"];
             description: string;
             scope: components["schemas"]["TokenScope"];
+            /**
+             * @description The endpoint names in `scope.endpoints` that no configured endpoint carries. An endpoint removed from the
+             *     configuration leaves its bound tokens unchanged; they are valid on no endpoint that no longer exists
+             *     (R-EP-011). Empty when every bound endpoint is configured, and for an unbound token.
+             */
+            unknownEndpoints: string[];
             /** Format: date-time */
             createdAt: string;
             /** @description The ID of the principal that created the token. */
@@ -3467,6 +3473,8 @@ export interface components {
         Cursor: string;
         /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
         IfMatch: string;
+        /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+        IfMatchOptional: string;
         /** @description An ETag the client holds; a match answers `304` (R-API-012). */
         IfNoneMatch: string;
         /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
@@ -4202,7 +4210,10 @@ export interface operations {
     getUser: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
             path: {
                 /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
                 username: string;
@@ -4214,11 +4225,19 @@ export interface operations {
             /** @description The user. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["User"];
                 };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
@@ -4259,7 +4278,10 @@ export interface operations {
     updateUser: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
             path: {
                 /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
                 username: string;
@@ -4275,6 +4297,7 @@ export interface operations {
             /** @description The user after the change. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4285,9 +4308,11 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -4499,7 +4524,10 @@ export interface operations {
     getGroup: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
             path: {
                 name: string;
             };
@@ -4510,11 +4538,19 @@ export interface operations {
             /** @description The group. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Group"];
                 };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
@@ -4554,7 +4590,10 @@ export interface operations {
     updateGroup: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
             path: {
                 name: string;
             };
@@ -4569,6 +4608,7 @@ export interface operations {
             /** @description The group after the change. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4580,9 +4620,11 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -4739,7 +4781,10 @@ export interface operations {
     getServiceAccount: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
             path: {
                 name: string;
             };
@@ -4750,11 +4795,19 @@ export interface operations {
             /** @description The service account. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ServiceAccount"];
                 };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
@@ -4793,7 +4846,10 @@ export interface operations {
     updateServiceAccount: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
             path: {
                 name: string;
             };
@@ -4808,6 +4864,7 @@ export interface operations {
             /** @description The service account after the change. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4818,9 +4875,11 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -5336,9 +5395,9 @@ export interface operations {
     updateAuthSettings: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`. */
-                "If-Match"?: string;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
             };
             path?: never;
             cookie?: never;
@@ -5585,9 +5644,9 @@ export interface operations {
     updatePreferences: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`. */
-                "If-Match"?: string;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
             };
             path?: never;
             cookie?: never;
@@ -5873,8 +5932,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description The `ETag` of the policy, or `*`. */
-                "If-Match"?: string;
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
             };
             path: {
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
@@ -6532,8 +6591,8 @@ export interface operations {
                 detach?: boolean;
             };
             header?: {
-                /** @description The ETag loaded with the repository, or `*`. */
-                "If-Match"?: string;
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
                 /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -7375,9 +7434,9 @@ export interface operations {
     replaceExposureRule: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`. */
-                "If-Match"?: string;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
                 /** @description An endpoint name, `default` for the default endpoint. */
@@ -7424,8 +7483,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`. */
-                "If-Match"?: string;
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
             };
             path: {
                 /** @description An endpoint name, `default` for the default endpoint. */
@@ -7459,9 +7518,9 @@ export interface operations {
     patchExposureRule: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`. */
-                "If-Match"?: string;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
                 /** @description An endpoint name, `default` for the default endpoint. */

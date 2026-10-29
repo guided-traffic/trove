@@ -12321,6 +12321,15 @@
         <target>Nicht erfasst</target>
       </segment>
     </unit>
+    <unit id="token-table.unknown-endpoints">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:98,100</note>
+      </notes>
+      <segment>
+        <source>Bound to an endpoint that is not configured:</source>
+        <target>An einen Endpunkt gebunden, der nicht konfiguriert ist:</target>
+      </segment>
+    </unit>
     <unit id="token-table.state.active">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:118,119</note>

@@ -42,7 +42,7 @@ func TestR_AUTHZ_028_RemovedGrantIsRefusedOnEveryReplica(t *testing.T) {
 				return r.engine.Decide(ctx, bobSub, read("npm-internal", "x", "")).Outcome == authz.Allow
 			})
 		}
-		if _, err := a.svc.Delete(ctx, admin, name, authz.AnyVersion); err != nil {
+		if _, err := a.svc.Delete(ctx, admin, name, errs.AnyRevision); err != nil {
 			t.Fatal(err)
 		}
 		start := time.Now()
@@ -106,7 +106,7 @@ func TestR_AUTHZ_028_ReusedEpoch(t *testing.T) {
 	e.exec("DELETE FROM cluster_change WHERE area = 'authz' AND epoch = $1", eEpoch)
 	e.exec("UPDATE cluster_epoch SET epoch = $1, changed_at = changed_at - interval '1 minute' WHERE area = 'authz'", eEpoch-1)
 	// A removal of one of Alice's grants commits through A as epoch e again.
-	if _, err := a.svc.Delete(ctx, admin, "alice-reads", authz.AnyVersion); err != nil {
+	if _, err := a.svc.Delete(ctx, admin, "alice-reads", errs.AnyRevision); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.authzEpoch(); got != eEpoch {
@@ -169,7 +169,7 @@ func TestR_AUTHZ_028_ConsistentBuild(t *testing.T) {
 		}
 	}()
 	for i := 1; i <= 40; i++ {
-		if _, _, err := a.svc.Update(ctx, admin, "flip", authz.AnyVersion, states[i%2]); err != nil {
+		if _, _, err := a.svc.Update(ctx, admin, "flip", errs.AnyRevision, states[i%2]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -268,7 +268,7 @@ func TestE1_12_OwnPermissionChangeOnEveryReplica(t *testing.T) {
 		t.Errorf("the checks reached %v, want all three replicas", seen)
 	}
 
-	m, err := a.svc.Delete(ctx, admin, "mobile-deploy", authz.AnyVersion)
+	m, err := a.svc.Delete(ctx, admin, "mobile-deploy", errs.AnyRevision)
 	if err != nil {
 		t.Fatal(err)
 	}

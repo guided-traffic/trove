@@ -227,16 +227,30 @@ How the pieces fit:
   `409 token_already_issued` with the token ID.
 - **The caller's rights that depend on the data are decided in the handler.** The authorization step has checked the declaration; the
   handlers add the rules of the specification that need the record: the owner of a token, the derivation rule (`presenting` builds the
-  parent `token.Info` from the token row), the recent sign-in of a session (`requireRecentAuth`, R-AUTH-011), no impersonation, and
-  `404` for what the caller may not see. A capability check is never repeated here.
+  parent `token.Info` from the token row), no impersonation, and `404` for what the caller may not see. A capability check is never
+  repeated here, and neither is the recent sign-in of a session: the operations that mint a credential declare
+  `x-trove-recent-auth: true` and the shared step enforces it (R-AUTH-011, [http-api.md](http-api.md), Q-API-40).
 - **Every management `GET` reads PostgreSQL.** The handlers call `Manager.Get*`, `Tokens.Get`, `Settings.Read` and the preference query,
   which read the database, never the replica's cache of the authentication stage (R-API-052).
 - **Merge patches** of users, groups and service accounts are decoded into structs of `json.RawMessage` members (`userPatchBody` and the
   like), so an absent member, a `null` and a value are told apart; the read-only members of the record are listed in the struct and
-  ignored, so a body obtained by `GET` can be sent back (R-API-013). The settings and preferences patches take `If-Match`
-  (Q-AUTH-41, Q-API-24, Q-API-26).
-- **The settings revision** is the change time of the row in microseconds (`token.Settings.Revision`); `SettingsStore.Update` compares
-  `SettingsPatch.IfRevision` inside the updating transaction and returns `SettingsChangedError`, which the handler answers as 412.
+  ignored, so a body obtained by `GET` can be sent back (R-API-013). Every one of those patches, and the settings and
+  preferences patches, require `If-Match` (Q-AUTH-50, Q-API-26, [http-api.md](http-api.md)).
+- **Revisions of the identity resources** (Q-AUTH-50, migration `00013_identity_revisions`). `principal.revision` is the ETag of a
+  user, a group and a service account, `auth_settings.revision` the one of the settings; both are registered revision columns.
+  Triggers bump a principal's revision when a member of its representation changes (name, status, e-mail, display name,
+  disabled reason, description, auto-join, an identity link), only when the value differs, so a sign-in that changes nothing and
+  the login counters leave it alone; membership deltas do not move it. `Manager.UpdateUser`, `UpdateGroup` and
+  `UpdateServiceAccount` take the revision the caller loaded (`UserPatch.Expected`, `GroupPatch.Expected`, a parameter) or
+  `errs.AnyRevision`, and compare it under the lock of the principal row (`checkRevision`); the zero value matches nothing, so
+  a caller that forgets it gets a 412. `SettingsStore.Update` writes with `SettingsPatch.Expected` in the `UPDATE` itself
+  (`revision = $expected OR $expected < 0`) and reads the current revision for the 412 when no row came back. All of them answer
+  `errs.Stale`. The `GET`s answer the `ETag` and honour `If-None-Match`; the bodies carry no revision member (Q-API-43).
+- **The convention suite runs on all three** (`apitest.RunContract` at the end of `TestAPIOperations`, E1.6): cursor paging, `ETag`
+  and 304, `If-Match` 428/412/200/`*`, merge patch and idempotent creates on users, groups and service accounts, every request
+  answered by another of three replicas.
+- **Token representations list `unknownEndpoints`** (R-EP-011, Q-EP-24): `toToken` asks `AuthServices.EndpointConfigured`, which the
+  composition root fills with the predicate of the scope check.
 
 Extension checklist, **a new identity operation**: add the path and schemas between the markers of `api/openapi.yaml` (the permission, the
 `429`, the problem responses, `x-trove-reserved-names` for a literal next to a key), run `make generate`, write the handler on `*Server`

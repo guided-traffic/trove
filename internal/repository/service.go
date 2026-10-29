@@ -40,13 +40,43 @@ type JobEnqueuer interface {
 	Enqueue(ctx context.Context, tx meta.Tx, e jobs.EnqueueSpec) (jobs.Result, error)
 }
 
-// Hooks lets another area write in the transaction of a repository update. The
-// authorization area uses it to record authz.settings.changed when
-// cacheFillAction, packageOwnership, requireAuthentication or hideExistence
-// changed (R-AUTHZ-031). The hook runs in the same transaction as the update, its
-// audit event and its change-log row.
+// Hooks lets another area write in the transaction of a repository update or
+// deletion. The authorization area uses OnUpdated to record
+// authz.settings.changed when cacheFillAction, packageOwnership,
+// requireAuthentication or hideExistence changed (R-AUTHZ-031), and OnDelete to
+// record the exposure rules that the removal of the row takes with it (H-164).
+// A hook runs in the same transaction as the write, its audit event and its
+// change-log row; an error fails the whole transaction.
 type Hooks interface {
 	OnUpdated(ctx context.Context, tx meta.Tx, caller Caller, before, after Repository) error
+	// OnDelete runs in the transaction that removes the repository row, just
+	// before the row goes: what refers to the row by a cascading foreign key is
+	// still readable. The caller of a deletion that ran as a job is the actor
+	// stored with the job (no source).
+	OnDelete(ctx context.Context, tx meta.Tx, caller Caller, r Repository) error
+}
+
+// MultiHooks runs several hooks in order and stops at the first error.
+func MultiHooks(hooks ...Hooks) Hooks { return multiHooks(hooks) }
+
+type multiHooks []Hooks
+
+func (m multiHooks) OnUpdated(ctx context.Context, tx meta.Tx, c Caller, before, after Repository) error {
+	for _, h := range m {
+		if err := h.OnUpdated(ctx, tx, c, before, after); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m multiHooks) OnDelete(ctx context.Context, tx meta.Tx, c Caller, r Repository) error {
+	for _, h := range m {
+		if err := h.OnDelete(ctx, tx, c, r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Options configure [NewService].
@@ -146,18 +176,8 @@ func MatchVersion(v int64) Precondition { return Precondition{Version: v} }
 // MatchAny is If-Match: *, which passes for a repository that exists.
 func MatchAny() Precondition { return Precondition{Any: true} }
 
-// StaleVersion is the cause of a 412: the stored version differs from the one the
-// caller read. The handler puts Current into currentEtag (R-API-009).
-type StaleVersion struct{ Current int64 }
-
-func (e *StaleVersion) Error() string {
-	return "the repository is at version " + strconv.FormatInt(e.Current, 10)
-}
-
-func stale(current int64) error {
-	return errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed,
-		"the repository changed since it was read", errs.WithCause(&StaleVersion{Current: current}))
-}
+// stale is the 412 of a mismatching config_version (R-REPO-011).
+func stale(current int64) error { return errs.Stale("The repository", current) }
 
 // Create implements R-REPO-009: validate, then write the row, the audit event and
 // the change-log row in one transaction. Create is never an upsert: a key that is

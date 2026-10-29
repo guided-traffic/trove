@@ -98,13 +98,20 @@ func (p Precondition) Matches(revision int64, view string) bool {
 	return p.Tag == ETag(revision, view)
 }
 
-// Failed is the 412 of a mismatching If-Match, with the extension currentEtag
-// (R-API-012). Pass the revision and view the resource has now.
-func Failed(currentRevision int64, view string) error {
-	return errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed,
-		"The resource changed since you loaded it; reload it and try again.",
-		errs.WithExtension("currentEtag", ETag(currentRevision, view)))
+// expectedRevision reads If-Match into the service's expected revision:
+// errs.AnyRevision for no header or *, the revision otherwise (0 for a tag the
+// server never issued, which matches nothing).
+func expectedRevision(p Precondition) int64 {
+	if rev, ok := p.Revision(""); ok {
+		return rev
+	}
+	return errs.AnyRevision
 }
+
+// Failed is the 412 of a mismatching If-Match for a handler that compares before
+// it calls the domain (R-API-012): the one error of [errs.Stale], with the
+// extension currentEtag. The domain packages return the same error themselves.
+func Failed(currentRevision int64) error { return errs.Stale("The resource", currentRevision) }
 
 // NotModified answers a GET whose If-None-Match matches etag with 304 and
 // reports true; the handler then returns. The ETag header is set on the

@@ -17,6 +17,22 @@ describe('Token administration (R-UI-030)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('R-EP-011 a token bound to an endpoint that is not configured says so, and passes axe', async () => {
+    const { root } = await renderScreen(TokenAdmin, {
+      setup: (api) => {
+        (api(TokensApi) as FakeTokensApi).tokenList = [
+          sampleToken({ id: 't1', description: 'bound', unknownEndpoints: ['retired-ep'] }),
+          sampleToken({ id: 't2', description: 'plain' }),
+        ];
+      },
+    });
+    const rows = root.querySelectorAll('tbody tr');
+    expect(text(rows[0]!)).toContain('Bound to an endpoint that is not configured:');
+    expect(text(rows[0]!)).toContain('retired-ep');
+    expect(text(rows[1]!)).not.toContain('not configured');
+    expect(await seriousViolations(root)).toEqual([]);
+  });
+
   it('R-UI-030 the state filter "All" also lists revoked tokens', async () => {
     const { fixture, root } = await renderScreen(TokenAdmin);
     typeInto(root, 'State', 'all');

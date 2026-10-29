@@ -95,8 +95,15 @@ the declarations are in `api/openapi.yaml` (Q-AUTH-43).
   another user's PAT is never rotated, only revoked. A service-account token is created by an administrator, or by a token of that account
   under the derivation rule; the answer for anyone else is the same `403` whether the account exists or not.
 - **A session that mints a credential proves a recent sign-in.** Creating a PAT or SAT, rotating through a session and changing the
-  authentication settings answer `401 reauthentication_required` when `authenticated_at` is older than `auth.sessions.recent_auth_window`
-  (R-AUTH-011). A token caller is not asked: its limits are the derivation rule's.
+  authentication settings declare `x-trove-recent-auth: true`; the shared authorization step answers `401 reauthentication_required` when
+  `authenticated_at` is older than `auth.sessions.recent_auth_window`, after the permission was decided (R-AUTH-011, R-API-007,
+  Q-API-40). A token caller is not asked: its limits are the derivation rule's.
+- **Two administrators do not overwrite each other.** A user, a group, a service account and the authentication settings carry a
+  revision, the `ETag`; their `PATCH` requires `If-Match` (`428` without it, `412` with the current tag for a stale one), compared
+  under the row lock of the principal or in the conditional update of the settings row (Q-AUTH-50). A restore raises the revision
+  columns, so a tag taken before it never matches different content (R-BAK-022).
+- **A token shows where it is bound.** A token bound to endpoints that the configuration no longer holds lists the names under
+  `unknownEndpoints`; it is valid on none of them (R-EP-011, Q-EP-24).
 - **Hidden existence.** A token the caller may neither see nor revoke answers `404`, so token IDs cannot be enumerated; a list shows the
   caller's own tokens unless it holds `tokens:read`.
 - **Revocation by value is open.** `POST /api/v1/tokens/revoke` takes no credential (Q-AUTH-6). It answers `202` for a live token, a dead one and
@@ -152,11 +159,3 @@ address of a company's egress fills the budget, and the sign-ins from that addre
 no token and gains nothing but the denial. A trusted-proxy list with the real client address, and `starts_per_address` sized for the
 largest office, are the mitigations; a separate budget for the revocation would remove the coupling.
 
-### H-135 · Two administrators patching one identity record: the last write wins
-
-Component: `PATCH /api/v1/users/{username}`, `/groups/{name}` and `/service-accounts/{name}` (Q-API-25). Subject: display name,
-e-mail, description, the auto-join flag, the pending identity links. Live in the MVP. These resources have no revision, so a patch
-does not carry `If-Match` and two administrators who change the same member concurrently overwrite each other. Each change is audited
-with the changed member names (`user.updated`, `group.updated`, `serviceaccount.updated`), which shows that an overwrite happened and
-not the value that was lost. What makes it real: two administrators editing the same group or user at the same time; the
-auto-join check of R-AUTH-019 runs in the updating transaction, so the race does not skip it.

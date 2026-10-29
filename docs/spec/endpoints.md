@@ -1749,6 +1749,53 @@ asked for, and would then add (b).
 
 **Applied in the spec:** R-EP-001 (the startup validation list).
 
+### Q-EP-24 · Token listings show the bound endpoints that are not configured
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-EP-011 says that an endpoint removed from the configuration leaves its bound tokens unchanged and that token listings show the names under `"unknownEndpoints"`; the token representation had no such member.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Listings only | The member is on list items | Where the spec says it | `GET /tokens/{id}` and `/tokens/current` differ from a list item |
+| (b) The token representation (chosen) | `unknownEndpoints` is a required array member of `Token` (list, inspection, current) | One representation | A member on an answer that creates a token would be empty by construction |
+
+**Choice:** (b), not on the answer that creates a token (`TokenCreated`: its endpoints were validated a moment ago). The member holds the names of `scope.endpoints` that no configured endpoint carries, `[]` for an unbound token and when every name is configured. The API server asks the configuration through `AuthServices.EndpointConfigured` (the predicate of the scope check, `TokenScopeOptions`); without one nothing is unknown.
+
+**Rationale:** the member is derived from the configuration at read time, so adding the endpoint back removes the name from it. The development agent would revisit this if a listing must filter on it.
+
+**Applied in the spec:** none.
+
+### Q-EP-25 · A deleted repository records the exposure rules it takes with it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`endpoint_exposure_rule.repo_id` deletes with the repository row, so the rules vanished without `endpoint.exposure.deleted` (R-EP-012 asks the event with cause `repository_deleted`, H-164).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A trigger on the row | The database writes the audit row | Cannot be bypassed | The audit writer, its journal entry and the epoch are the application's |
+| (b) A delete hook of the repository service (chosen) | `repository.Hooks.OnDelete` runs in the transaction that removes the row, just before it goes; `authz.ExposureHook` reads the rules of the repository under a row lock, notifies the change area `authz` and records one event per rule with `cause: repository_deleted`, the journal entry of R-EP-020 and the actor stored with the deletion job | The same transaction as the removal; the epoch and the journal are the ones of an API delete | Every path to the row must call the hook |
+| (c) The job records after the fact | Read the rules, delete, then record | No hook | A crash between the two loses the events |
+
+**Choice:** (b). Both ways to the row call it: the job (`finishDelete`) and the immediate removal of a virtual repository (`deleteNow`). `repository.MultiHooks` composes it with the settings hook; the composition root builds one `ExposureService` before the repository wiring for both. An error of the hook fails the transaction, so a deletion never happens without its events: the integration test makes the recorder fail and sees the repository and its rules stay until the retry succeeds.
+
+**Rationale:** the rules stop exposing when the repository is marked `deleting` (the grant index leaves them out), so the event completes the trail and the revocation journal. The development agent would revisit this if a second kind of row refers to a repository by a cascading key and needs the same.
+
+**Applied in the spec:** none; R-EP-012 reads unchanged. Closes H-164.
+
+### Q-EP-26 · A rule patch is written conditional on the revision it was computed on
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`PATCH` of an exposure rule computed the merge on the stored rule and wrote it with the revision of `If-Match`; for `If-Match: *` the write had no revision condition, so a change between the read and the write was merged over silently. The policy `PATCH` already writes conditional on exactly the version it read (Q-AUTHZ-26).
+
+**Choice:** the handler compares `If-Match` with the revision it read (412 with the current tag), merges, and writes with that revision, also for `*`. A concurrent change is a 412, never a lost update. `PUT` keeps the blind write of `*`, which is its meaning: the caller supplies the whole document.
+
+**Rationale:** a merge is computed from what was read, so the write must be valid only against what was read. The development agent would revisit this if clients retry a 412 of a `*` patch automatically and the retry storm matters.
+
+**Applied in the spec:** none.
+
 ## What this does not cover
 
 ### H-57 · A further endpoint runs with every credential of a `web` replica

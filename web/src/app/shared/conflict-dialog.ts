@@ -6,6 +6,8 @@ import {
   MatDialogModule,
 } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
+import { Versioned } from '../api/repositories-api';
+import { ApiError } from '../api/problem';
 
 export type ConflictDecision = 'reload' | 'overwrite';
 
@@ -111,6 +113,27 @@ export class ConflictDialog {
   }
 }
 
+/** A merge-patch write guarded by the loaded `ETag`, with the way to re-read the resource. */
+export interface GuardedPatch<T> {
+  /** The `ETag` the draft was loaded with. */
+  readonly etag: string;
+  /** The members the user changed (the merge patch); only these are compared in the dialog. */
+  readonly patch: Readonly<Record<string, unknown>>;
+  /** Sends the patch with the given `ETag`. */
+  send(etag: string): Promise<Versioned<T>>;
+  /** Reads the stored resource again. */
+  reload(): Promise<Versioned<T>>;
+}
+
+/**
+ * `saved`: the write went through (first try, after "Overwrite", or because a retried first
+ * attempt had committed); `reloaded`: the user discarded the draft for the stored version;
+ * `dismissed`: the dialog was closed without a choice.
+ */
+export type GuardedOutcome<T> =
+  | { readonly outcome: 'saved' | 'reloaded'; readonly current: Versioned<T> }
+  | { readonly outcome: 'dismissed' };
+
 /** Opens the conflict dialog; resolves with the choice, or null when it was dismissed. */
 @Injectable({ providedIn: 'root' })
 export class ConflictResolver {
@@ -122,5 +145,30 @@ export class ConflictResolver {
       maxWidth: '48rem',
     });
     return (await firstValueFrom(ref.afterClosed())) ?? null;
+  }
+
+  /**
+   * Sends a merge patch with the loaded `ETag` (R-API-012). A 412 reads the stored resource and
+   * opens the dialog (R-UI-042): "Overwrite" sends the same patch with the tag read now. Every
+   * other failure is thrown for the caller's error notice.
+   */
+  async save<T>(write: GuardedPatch<T>): Promise<GuardedOutcome<T>> {
+    try {
+      return { outcome: 'saved', current: await write.send(write.etag) };
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 412) throw e;
+      const theirs = await write.reload();
+      const stored = theirs.value as Readonly<Record<string, unknown>>;
+      const mine = write.patch;
+      const theirPart = Object.fromEntries(Object.keys(mine).map((k) => [k, stored[k] ?? null]));
+      if (e.afterRetry && JSON.stringify(theirPart) === JSON.stringify(mine)) {
+        // The first attempt of a retried write did commit: that is a success, not a conflict.
+        return { outcome: 'saved', current: theirs };
+      }
+      const decision = await this.resolve({ mine, theirs: theirPart });
+      if (decision === 'overwrite') return { outcome: 'saved', current: await write.send(theirs.etag) };
+      if (decision === 'reload') return { outcome: 'reloaded', current: theirs };
+      return { outcome: 'dismissed' };
+    }
   }
 }

@@ -108,7 +108,7 @@ func TestIdentityRepresentations(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTH-028 a record never shows the value or its hash", func(t *testing.T) {
-		raw, _ := json.Marshal(toToken(token.Record{ID: "0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e11", Type: token.TypePAT, Hint: "trv_pat_3kQ9", State: "active", Owner: token.Owner{Kind: principal.KindUser, Name: "alice"}}))
+		raw, _ := json.Marshal((&Server{}).toToken(token.Record{ID: "0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e11", Type: token.TypePAT, Hint: "trv_pat_3kQ9", State: "active", Owner: token.Owner{Kind: principal.KindUser, Name: "alice"}}))
 		for _, banned := range []string{`"token"`, `"secret`, `"hash`} {
 			if strings.Contains(string(raw), banned) {
 				t.Errorf("%s in %s", banned, raw)

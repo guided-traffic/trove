@@ -1331,7 +1331,7 @@ API (administrator unless stated; read operations also accept the system scope
 | `GET /api/v1/users/{username}` | — | User record (below) | 200, 404 |
 | `GET /api/v1/users/me` | — | Own record; any authenticated user | 200, 401 |
 | `POST /api/v1/users` | `{"username", "email", "displayName", "identities": [{"provider": "corp", "subject": null}]}` | User with origin `admin`; `subject: null` is a pending link (R-AUTH-007) | 201, 400, 409, 422 `reserved_name` (reserved username, R-AUTH-007) |
-| `PATCH /api/v1/users/{username}` | Any of `displayName`, `email` (the IdP overwrites both at the next login), `identities` | User | 200, 400, 404 |
+| `PATCH /api/v1/users/{username}` | Any of `displayName`, `email` (the IdP overwrites both at the next login), `identities` | User | 200, 400, 404, 412, 428 |
 | `POST /api/v1/users/{username}/disable` | `{"reason": "…", "revokeTokens": true}` | — | 204, 404, 409 (break-glass) |
 | `POST /api/v1/users/{username}/enable` | — | — | 204, 404 |
 | `DELETE /api/v1/users/{username}` | — | — | 204, 404, 409 (break-glass) |
@@ -1476,7 +1476,7 @@ API (administrator; read operations also accept `identities:read`):
 | `POST /api/v1/groups` | `{"name": "team-web", "description": "…", "autoJoin": false, "members": ["alice", "sa:ci-bot"]}` | Group | 201, 400, 404 (unknown member; nothing created), 409 |
 | `GET /api/v1/groups?q=&origin=&limit=&cursor=` | — | Page of groups with member counts | 200 |
 | `GET /api/v1/groups/{name}` | — | Group, including `roles` (read-only) | 200, 404 |
-| `PATCH /api/v1/groups/{name}` | Any of `description`, `autoJoin`, `name` (rename) | Group | 200, 400, 404, 409 |
+| `PATCH /api/v1/groups/{name}` | Any of `description`, `autoJoin`, `name` (rename) | Group | 200, 400, 404, 409, 412, 428 |
 | `DELETE /api/v1/groups/{name}` | — | — | 204, 404, 409 (`managed_by_scim`) |
 | `GET /api/v1/groups/{name}/members?source=&limit=&cursor=` | — | `{"items": [{"principal": "alice", "kind": "user", "sources": ["manual", "oidc:corp"]}]}` | 200, 404 |
 | `PATCH /api/v1/groups/{name}/members` | `{"add": ["bob"], "remove": ["sa:old-bot"]}` | Resulting member page | 200, 404 (unknown member; nothing applied), 409 |
@@ -1560,7 +1560,7 @@ API (administrator; token operations also by owners from P1):
 |---|---|---|
 | `POST /api/v1/service-accounts` | `{"name": "ci-bot", "description": "…", "owners": ["alice"]}` | 201, 400, 409 |
 | `GET /api/v1/service-accounts?q=&limit=&cursor=`, `GET /api/v1/service-accounts/{name}` | — | 200, 404 |
-| `PATCH /api/v1/service-accounts/{name}` | `description`, `owners` | 200, 404 |
+| `PATCH /api/v1/service-accounts/{name}` | `description`, `owners` | 200, 404, 412, 428 |
 | `POST /api/v1/service-accounts/{name}/disable`, `…/enable` | — | 204, 404 |
 | `DELETE /api/v1/service-accounts/{name}` | — | 204, 404 |
 | `POST /api/v1/service-accounts/{name}/tokens` | See R-AUTH-027 | 201 |
@@ -3082,7 +3082,7 @@ YAML (INV-15).
   empty), and the SCIM state.
 
 **Change:** `PATCH /api/v1/settings/auth` (administrator, session with recent authentication or
-token with `admin: true`; `If-Match` with the `ETag` of the `GET`, Q-AUTH-41) accepts:
+token with `admin: true`; `If-Match` with the `ETag` of the `GET`, Q-AUTH-50) accepts:
 
 ```json
 {
@@ -4469,24 +4469,7 @@ a component of the login before the identity area is wired.
 
 ### Q-AUTH-41 · The ETag of the runtime authentication settings
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-R-AUTH-040 and R-API-012 want `GET /api/v1/settings/auth` to answer an `ETag` and `PATCH` to take `If-Match`, but `auth_settings`
-has no revision column (migration 00007 is wave 1's and the table is a singleton).
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) A `revision` column | A new migration adds it and registers it with `meta.RegisterRevisionColumn` | Same as every other resource | A migration for one row; the other area agents number their migrations in parallel |
-| (b) The change time in microseconds (chosen) | The tag is `extract(epoch from updated_at)` in microseconds; every update sets `updated_at = greatest(now(), updated_at + 1 µs)`, so it grows with every change | No schema change; strictly increasing; the check runs in the updating transaction | A restore sets the tag back to the time of the restored row, and the restore rule of R-BAK-022 (raise revision columns by 2^32) does not reach it |
-| (c) A hash of the content | The tag is a hash of the row's values | No column | A change back to an earlier value restores the earlier tag, so an `If-Match` taken before both changes passes |
-
-**Choice:** (b), implemented as `token.Settings.Revision` and `SettingsStore.Update` with `SettingsPatch.IfRevision`.
-
-**Rationale:** the row is changed rarely by administrators and its tag only has to tell "changed since I loaded it". The development agent
-would revisit this when a restore of the table matters for a client that holds a tag across it (then (a), with the column registered), or
-when a second singleton settings row needs the same.
-
-**Applied in the spec:** R-AUTH-040 (the `GET` representation and its `ETag`).
+Status: **Reversed** by [Q-AUTH-50](#q-auth-50--users-groups-and-service-accounts-carry-a-revision-so-does-the-authentication-settings-row). The tag was the change time of the row in microseconds (`updated_at`, forced to grow by one microsecond per update), chosen to avoid a migration; a restore sets such a tag back to the restored row's time, and the rule of R-BAK-022 does not reach it. `auth_settings.revision` is a registered revision column now, and `token.Settings.Revision` reads it.
 
 ### Q-AUTH-42 · A disabled service account keeps its tokens
 
@@ -4619,6 +4602,24 @@ Status: **Decided by the development agent** — selected from the options below
 `max_per_user` may be raised into the hundreds.
 
 **Applied in the spec:** none; the operation's description.
+
+### Q-AUTH-50 · Users, groups and service accounts carry a revision, so does the authentication settings row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-012 gives every mutable configuration resource an integer revision as its ETag and requires `If-Match` on its `PUT` and `PATCH`. R-AUTH-016, R-AUTH-018 and R-AUTH-020 named none, Q-API-25 therefore left the three identity resources last-write-wins (H-135), and Q-AUTH-41 derived the settings tag from a time.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep last-write-wins | Q-API-25 and Q-AUTH-41 stand | No migration | Two administrators overwrite each other; the restore rule does not reach the settings tag |
+| (b) A column per table | `app_user`, `user_group` and `service_account` each get `revision`, `auth_settings` too | Each table is its own resource | Three registrations; every writer of the principal row must bump the right one |
+| (c) One column on `principal`, one on `auth_settings` (chosen) | Migration `00013_identity_revisions` adds `principal.revision` (the ETag of a user, a group or a service account, which are one `principal` row plus the row of their kind) and `auth_settings.revision`; both are registered with `meta.RegisterRevisionColumn`, so a restore raises them by 2^32 (R-BAK-022) | The three kinds share the column; a rename and a status change are on the row anyway | A member on the kind table must reach the principal row |
+
+**Choice:** (c). The revision grows by triggers on the tables that hold a member of the representation: `principal` (name, status), `app_user` (e-mail, display name, disabled reason), `user_group` (description, auto-join), `service_account` (description) and `user_identity` (every insert, update and delete of a link), each `WHEN` the value differs, so a sign-in that changes nothing, and the counters `last_login_at` and `last_interactive_auth_at`, do not move it. No writer (the API, the sign-in, a later SCIM client) can forget it. Group membership is edited as deltas and carries no tag (R-API-012), so it does not bump the group's revision. The settings revision is set by the update statement itself, which is conditional on the expected revision (`revision = $expected OR $expected < 0`), so the check and the write are one statement. `PATCH /users/{username}`, `/groups/{name}`, `/service-accounts/{name}` and `/settings/auth` require `If-Match`; `GET` answers the `ETag` and honours `If-None-Match`; the update compares under the row lock of the principal (`checkRevision`). The patch structs (`UserPatch.Expected`, `GroupPatch.Expected`, `SettingsPatch.Expected`) and the `UpdateServiceAccount` parameter take the revision the caller loaded or `errs.AnyRevision`; the zero value matches no revision, so a caller that forgets it gets a 412, not a blind write. The representations carry no revision member ([Q-API-43](api-and-ui.md#q-api-43--the-revision-of-an-identity-resource-is-in-the-etag-not-in-the-body)).
+
+**Rationale:** the compare-and-write has to be in the transaction that writes, and the triggers keep the revision true for writers that do not exist yet. The development agent would revisit the triggers if a representation member is added to a table without one (a test lists the members that bump), and would then add it to the trigger's `WHEN`.
+
+**Applied in the spec:** R-AUTH-016, R-AUTH-018, R-AUTH-020 (the `PATCH` rows: `412`, `428`), R-AUTH-040 (`If-Match` with the `ETag` of the `GET`). Closes H-135.
 
 ## What this does not cover
 

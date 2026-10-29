@@ -120,7 +120,7 @@ export class DraftPolicyExplainer extends PolicyExplainer {
     if (principal.startsWith('user:')) {
       try {
         const user = await this.identity.user(principal.slice('user:'.length));
-        for (const g of user.groups) refs.push({ ref: `group:${g.name}` });
+        for (const g of user.value.groups) refs.push({ ref: `group:${g.name}` });
       } catch {
         steps.push({
           outcome: 'info',

@@ -4,9 +4,11 @@ import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { IdentityApi, ServiceAccount } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
+import { Versioned } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
+import { ConflictResolver } from '../../shared/conflict-dialog';
 import { TextField } from '../../shared/access/fields';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
@@ -93,11 +95,14 @@ export class ServiceAccountDetail {
 
   private readonly api = inject(IdentityApi);
   private readonly confirmer = inject(Confirm);
+  private readonly conflicts = inject(ConflictResolver);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
   protected readonly account = signal<ServiceAccount | null>(null);
+  /** The `ETag` the record was read with; every write sends it as `If-Match` (Q-API-42). */
+  private etag = '';
   protected readonly loadError = signal<ApiError | null>(null);
   protected readonly actionError = signal<ApiError | null>(null);
   protected readonly description = signal('');
@@ -116,13 +121,17 @@ export class ServiceAccountDetail {
   protected async load(): Promise<void> {
     this.loadError.set(null);
     try {
-      const a = await this.api.serviceAccount(this.name());
-      this.account.set(a);
-      this.description.set(a.description);
+      this.adopt(await this.api.serviceAccount(this.name()));
     } catch (e) {
       this.account.set(null);
       this.loadError.set(asApiError(e));
     }
+  }
+
+  private adopt(loaded: Versioned<ServiceAccount>): void {
+    this.etag = loaded.etag;
+    this.account.set(loaded.value);
+    this.description.set(loaded.value.description);
   }
 
   protected fieldError(pointer: string): string | null {
@@ -133,9 +142,23 @@ export class ServiceAccountDetail {
     event.preventDefault();
     const a = this.account();
     if (!a || this.description().trim() === a.description) return;
-    await this.act(async () => {
-      this.account.set(await this.api.updateServiceAccount(a.name, { description: this.description().trim() }));
-    }, $localize`:@@sa.saved:Service account saved.`);
+    const patch = { description: this.description().trim() };
+    this.busy.set(true);
+    this.actionError.set(null);
+    try {
+      const result = await this.conflicts.save<ServiceAccount>({
+        etag: this.etag,
+        patch,
+        send: (etag) => this.api.updateServiceAccount(a.name, patch, etag),
+        reload: () => this.api.serviceAccount(a.name),
+      });
+      if (result.outcome !== 'dismissed') this.adopt(result.current);
+      if (result.outcome === 'saved') this.notifier.status($localize`:@@sa.saved:Service account saved.`);
+    } catch (e) {
+      this.actionError.set(asApiError(e));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected async disable(): Promise<void> {

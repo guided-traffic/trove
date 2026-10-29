@@ -17,6 +17,8 @@ type ServiceAccount struct {
 	Description string
 	Status      Status
 	CreatedAt   time.Time
+	// Revision is the ETag of the account (principal.revision, R-API-012); filled by GetServiceAccount.
+	Revision int64
 }
 
 // NewServiceAccount is the request of CreateServiceAccount.
@@ -79,7 +81,7 @@ func (m *Manager) GetServiceAccount(ctx context.Context, name string) (ServiceAc
 			return ErrNotFound
 		}
 		r := rows[0]
-		sa = ServiceAccount{ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time}
+		sa = ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time}
 		return nil
 	})
 	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped above
@@ -101,7 +103,7 @@ func (m *Manager) ListServiceAccounts(ctx context.Context, query, after string, 
 		}
 		out = out[:0]
 		for _, r := range rows {
-			out = append(out, ServiceAccount{ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time})
+			out = append(out, ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time})
 		}
 		return nil
 	})
@@ -109,7 +111,10 @@ func (m *Manager) ListServiceAccounts(ctx context.Context, query, after string, 
 }
 
 // UpdateServiceAccount changes the description (R-AUTH-020; owners are P1).
-func (m *Manager) UpdateServiceAccount(ctx context.Context, c Caller, name, description string) (ServiceAccount, error) {
+//
+// expected is the revision the caller loaded (If-Match) or errs.AnyRevision for the
+// deliberate blind write (R-API-012).
+func (m *Manager) UpdateServiceAccount(ctx context.Context, c Caller, name, description string, expected int64) (ServiceAccount, error) {
 	err := m.db.InTx(ctx, func(tx meta.Tx) error {
 		qs := Queries(tx)
 		rows, err := qs.IdentityGetServiceAccount(ctx, name)
@@ -120,6 +125,9 @@ func (m *Manager) UpdateServiceAccount(ctx context.Context, c Caller, name, desc
 			return NotFound("The service account")
 		}
 		id := rows[0].ID
+		if err := checkRevision(ctx, qs, id, expected, "The service account"); err != nil {
+			return err
+		}
 		if err := qs.IdentityUpdateServiceAccount(ctx, q.IdentityUpdateServiceAccountParams{ID: id, Description: description}); err != nil {
 			return err
 		}

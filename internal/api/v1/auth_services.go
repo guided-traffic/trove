@@ -42,6 +42,10 @@ type AuthServices struct {
 	// that run on the client address (R-AUTH-038); the revocation by value takes
 	// it. Nil: no limit.
 	FlowStarts FlowLimiter
+	// EndpointConfigured reports whether the configuration holds an endpoint of
+	// that name. A token listing shows the bound names it does not hold under
+	// unknownEndpoints (R-EP-011). Nil: every name counts as configured.
+	EndpointConfigured func(name string) bool
 	// Config is the auth section: the session windows, the provider issuers for a
 	// pending identity link, the break-glass username, the ceilings.
 	Config config.Auth

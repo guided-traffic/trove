@@ -3,7 +3,6 @@ package v1
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"math"
 	"net/http"
 	"reflect"
@@ -248,15 +247,6 @@ func repositoryPrecondition(p Precondition) repository.Precondition {
 		return repository.MatchVersion(math.MaxInt64)
 	}
 	return repository.MatchVersion(rev)
-}
-
-// staleToFailed gives the 412 of the service its currentEtag (R-API-012).
-func staleToFailed(err error) error {
-	var sv *repository.StaleVersion
-	if errors.As(err, &sv) {
-		return Failed(sv.Current, "")
-	}
-	return err
 }
 
 func repositoryURL(r *http.Request, key string) string {
@@ -600,9 +590,6 @@ func (s *Server) writeRepository(w http.ResponseWriter, r *http.Request,
 	if err == nil {
 		pre, err = ParseIfMatch(r)
 	}
-	if err == nil {
-		err = pre.Require()
-	}
 	var doc []byte
 	if err == nil {
 		doc, err = body()
@@ -614,7 +601,6 @@ func (s *Server) writeRepository(w http.ResponseWriter, r *http.Request,
 	var st repository.Stored
 	if err == nil {
 		st, err = write(svc, repositoryPrecondition(pre), doc)
-		err = staleToFailed(err)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -648,7 +634,7 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, key st
 	err = s.idem.Do(w, r, nil, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
 		res, err := svc.DeleteTx(ctx, tx, caller, key, detach, cond)
 		if err != nil {
-			return Outcome{}, staleToFailed(err)
+			return Outcome{}, err
 		}
 		if res.Done {
 			return Outcome{Status: http.StatusNoContent}, nil

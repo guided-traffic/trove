@@ -63,9 +63,14 @@ func toOwner(o token.Owner) gen.TokenOwner {
 	return gen.TokenOwner{Kind: gen.TokenOwnerKind(o.Kind), Name: o.Name}
 }
 
-func toToken(r token.Record) gen.Token {
+// toToken renders a token record. unknown is the endpoint predicate of the
+// configuration (nil: every name is configured): the endpoint names the token is
+// bound to that no configured endpoint carries are listed as unknownEndpoints,
+// because the token is valid on none of them (R-EP-011).
+func (s *Server) toToken(r token.Record) gen.Token {
 	out := gen.Token{
-		Id: uuidOf(r.ID), Type: gen.TokenType(r.Type), Hint: r.Hint, Owner: toOwner(r.Owner), Description: r.Description,
+		UnknownEndpoints: s.unknownEndpoints(r.Scope.Endpoints),
+		Id:               uuidOf(r.ID), Type: gen.TokenType(r.Type), Hint: r.Hint, Owner: toOwner(r.Owner), Description: r.Description,
 		Scope: toScope(r.Scope), CreatedAt: utc(r.CreatedAt), CreatedBy: optString(r.CreatedBy), CreatedVia: r.CreatedVia,
 		ExpiresAt: optTime(deref1(r.ExpiresAt)), LastUsedAt: optTime(deref1(r.LastUsedAt)), LastUsedAddr: optString(r.LastUsedAddr),
 		State: gen.TokenState(r.State), RevokedAt: optTime(deref1(r.RevokedAt)), RevokedBy: optString(r.RevokedBy),
@@ -79,6 +84,19 @@ func toToken(r token.Record) gen.Token {
 		var m map[string]any
 		if json.Unmarshal(r.CIContext, &m) == nil {
 			out.CiContext = &m
+		}
+	}
+	return out
+}
+
+func (s *Server) unknownEndpoints(bound []string) []string {
+	out := []string{}
+	if s.o.Auth.EndpointConfigured == nil {
+		return out
+	}
+	for _, n := range bound {
+		if !s.o.Auth.EndpointConfigured(n) {
+			out = append(out, n)
 		}
 	}
 	return out
@@ -112,9 +130,11 @@ func tokenAuthenticated(p httpserver.Principal) bool {
 }
 
 // requireRecentAuth is the rule of R-AUTH-011: an action that mints a long-lived
-// credential through a UI session needs an interactive authentication within
-// auth.sessions.recent_auth_window (401 reauthentication_required). A caller that
-// presents a token is not asked: the token has its own rules.
+// credential or widens permissions through a UI session needs an interactive
+// authentication within auth.sessions.recent_auth_window (401
+// reauthentication_required). The shared authorization step calls it for every
+// operation that declares x-trove-recent-auth (R-API-007); no handler does. A
+// caller that presents a token is not asked: the token has its own rules.
 func (s *Server) requireRecentAuth(r *http.Request) error {
 	p := httpserver.PrincipalFrom(r.Context())
 	if p.Credential.Method != httpserver.MethodSession {
@@ -223,7 +243,7 @@ func (s *Server) CreateToken(w http.ResponseWriter, r *http.Request, _ gen.Creat
 		scope, err = scopeBytes(in.Scope)
 	}
 	if err == nil {
-		err = firstErr(refuseBreakGlass(p), refuseOtherOwner(in.Owner, p), s.requireRecentAuth(r))
+		err = firstErr(refuseBreakGlass(p), refuseOtherOwner(in.Owner, p))
 	}
 	var parent *token.Info
 	if err == nil {
@@ -284,9 +304,6 @@ func (s *Server) CreateServiceAccountToken(w http.ResponseWriter, r *http.Reques
 	admin, err := s.holds(ctx, "role:admin")
 	if err == nil && !admin && !derived {
 		err = errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, or a token of the account itself, creates its tokens.")
-	}
-	if err == nil && admin && !derived {
-		err = s.requireRecentAuth(r)
 	}
 	var parent *token.Info
 	if err == nil && derived {
@@ -362,7 +379,7 @@ func (s *Server) ListTokens(w http.ResponseWriter, r *http.Request, _ gen.ListTo
 		}
 	}
 	page := NewPage(lq, rows, func(t token.Record) []string { return []string{t.ID} })
-	WritePage(w, r, MapPage(page, toToken))
+	WritePage(w, r, MapPage(page, s.toToken))
 }
 
 // listOwner resolves the owner filter of the token list. A caller without
@@ -432,7 +449,7 @@ func (s *Server) GetToken(w http.ResponseWriter, r *http.Request, id string) {
 		failIdentity(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, toToken(rec))
+	writeJSON(w, r, http.StatusOK, s.toToken(rec))
 }
 
 func notAToken() error {
@@ -454,7 +471,7 @@ func (s *Server) GetCurrentToken(w http.ResponseWriter, r *http.Request) {
 		failIdentity(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, toToken(rec))
+	writeJSON(w, r, http.StatusOK, s.toToken(rec))
 }
 
 func noContent(w http.ResponseWriter) {
@@ -633,7 +650,7 @@ func (s *Server) RotateToken(w http.ResponseWriter, r *http.Request, id string, 
 	}
 	var parent *token.Info
 	if err == nil {
-		parent, err = s.rotationParent(ctx, r, p, rec)
+		parent, err = s.rotationParent(ctx, p, rec)
 	}
 	if err != nil {
 		failIdentity(w, r, err)
@@ -646,7 +663,7 @@ func (s *Server) RotateToken(w http.ResponseWriter, r *http.Request, id string, 
 // rotationParent decides who may rotate a token and returns the presenting token
 // whose limits then apply (R-AUTH-030). Nobody rotates a token for another user:
 // the new value would act as that user (Q-AUTH-7).
-func (s *Server) rotationParent(ctx context.Context, r *http.Request, p httpserver.Principal, rec token.Record) (*token.Info, error) {
+func (s *Server) rotationParent(ctx context.Context, p httpserver.Principal, rec token.Record) (*token.Info, error) {
 	forbidden := errs.E(errs.Forbidden, errs.CodeForbidden, "Only the owner rotates a personal token; an administrator can revoke it.")
 	switch rec.Type {
 	case token.TypeCIT:
@@ -654,9 +671,6 @@ func (s *Server) rotationParent(ctx context.Context, r *http.Request, p httpserv
 	case token.TypePAT:
 		if rec.Owner.ID != p.ID {
 			return nil, forbidden
-		}
-		if err := s.requireRecentAuth(r); err != nil {
-			return nil, err
 		}
 		return s.presenting(ctx, p)
 	}
@@ -671,7 +685,7 @@ func (s *Server) rotationParent(ctx context.Context, r *http.Request, p httpserv
 	if !admin {
 		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, or a token of the account itself, rotates a service-account token.")
 	}
-	return nil, s.requireRecentAuth(r)
+	return nil, nil
 }
 
 // RotateCurrentToken implements POST /api/v1/tokens/current/rotate (R-AUTH-030):

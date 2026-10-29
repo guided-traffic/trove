@@ -7,9 +7,11 @@ import { PermissionPolicy, PolicyApi } from '../../api/authz-api';
 import { Group, GroupMember, GroupPatch, IdentityApi } from '../../api/identity-api';
 import { collectAll } from '../../api/pagination';
 import { ApiError } from '../../api/problem';
+import { Versioned } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
+import { ConflictResolver } from '../../shared/conflict-dialog';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
@@ -36,11 +38,14 @@ export class GroupDetail {
   private readonly api = inject(IdentityApi);
   private readonly policyApi = inject(PolicyApi);
   private readonly confirmer = inject(Confirm);
+  private readonly conflicts = inject(ConflictResolver);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
   protected readonly group = signal<Group | null>(null);
+  /** The `ETag` the record was read with; every write sends it as `If-Match` (Q-API-42). */
+  private etag = '';
   protected readonly loadError = signal<ApiError | null>(null);
   protected readonly editError = signal<ApiError | null>(null);
   protected readonly memberError = signal<ApiError | null>(null);
@@ -77,17 +82,21 @@ export class GroupDetail {
   protected async load(): Promise<void> {
     this.loadError.set(null);
     try {
-      const g = await this.api.group(this.name());
-      this.group.set(g);
-      this.newName.set(g.name);
-      this.description.set(g.description);
-      this.autoJoin.set(g.autoJoin);
+      this.adopt(await this.api.group(this.name()));
     } catch (e) {
       this.group.set(null);
       this.loadError.set(asApiError(e));
       return;
     }
     await this.loadPolicies();
+  }
+
+  private adopt(loaded: Versioned<Group>): void {
+    this.etag = loaded.etag;
+    this.group.set(loaded.value);
+    this.newName.set(loaded.value.name);
+    this.description.set(loaded.value.description);
+    this.autoJoin.set(loaded.value.autoJoin);
   }
 
   private async loadPolicies(): Promise<void> {
@@ -120,10 +129,23 @@ export class GroupDetail {
     this.busy.set(true);
     this.editError.set(null);
     try {
-      const next = await this.api.updateGroup(g.name, patch);
+      const result = await this.conflicts.save<Group>({
+        etag: this.etag,
+        patch,
+        send: (etag) => this.api.updateGroup(g.name, patch, etag),
+        reload: () => this.api.group(g.name),
+      });
+      if (result.outcome === 'dismissed') return;
+      if (result.outcome === 'reloaded') {
+        this.adopt(result.current);
+        return;
+      }
       this.notifier.status($localize`:@@group.saved:Group saved.`);
-      if (next.name !== g.name) await this.router.navigate(['/admin/groups', next.name]);
-      else await this.load();
+      if (result.current.value.name !== g.name) {
+        await this.router.navigate(['/admin/groups', result.current.value.name]);
+      } else {
+        await this.load();
+      }
     } catch (e) {
       this.editError.set(asApiError(e));
     } finally {

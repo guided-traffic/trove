@@ -95,6 +95,29 @@ func annotate(r *http.Request, info httpserver.RequestInfo) {
 	ri.SetHost(info.Host)
 }
 
+// recordPrincipal puts the authenticated caller into the request-scoped holder
+// that the request log reads after the request (R-OPS-010). The log stage runs
+// before the authentication stage (R-ARCH-005), so the stage cannot hand the
+// principal to it by return value; the holder in the context is the one channel.
+// The values are the log vocabulary: break_glass is "breakglass" and the NuGet
+// API key is "nuget_apikey". An anonymous caller leaves the record's defaults.
+func recordPrincipal(r *http.Request, p httpserver.Principal) {
+	if p.Anonymous {
+		return
+	}
+	ri := observability.RequestInfoFrom(r.Context())
+	typ := string(p.Kind)
+	if p.Kind == httpserver.KindBreakGlass {
+		typ = "breakglass"
+	}
+	ri.SetPrincipal(p.Name, typ, p.ID)
+	method := string(p.Credential.Method)
+	if p.Credential.Method == httpserver.MethodAPIKey {
+		method = "nuget_apikey"
+	}
+	ri.SetToken(p.Credential.TokenID, method)
+}
+
 func (t *telemetry) shutdown(ctx context.Context) {
 	_ = t.tracer.Shutdown(ctx)
 }

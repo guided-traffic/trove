@@ -332,7 +332,7 @@ func (a *widgetAPI) update(w http.ResponseWriter, r *http.Request, name string, 
 		err = errs.E(errs.NotFound, errs.CodeNotFound, "No widget has this name.")
 	}
 	if err == nil && !pre.Matches(cur.Revision, "") {
-		err = v1.Failed(cur.Revision, "")
+		err = v1.Failed(cur.Revision)
 	}
 	var nw Widget
 	if err == nil {
@@ -372,7 +372,7 @@ func (a *widgetAPI) update(w http.ResponseWriter, r *http.Request, name string, 
 		case !ok:
 			err = errs.E(errs.NotFound, errs.CodeNotFound, "No widget has this name.")
 		default:
-			err = v1.Failed(latest.Revision, "")
+			err = v1.Failed(latest.Revision)
 		}
 	}
 	if err != nil {
@@ -408,7 +408,7 @@ func (a *widgetAPI) delete(w http.ResponseWriter, r *http.Request) {
 		case !found:
 			err = errs.E(errs.NotFound, errs.CodeNotFound, "No widget has this name.")
 		default:
-			err = v1.Failed(cur.Revision, "")
+			err = v1.Failed(cur.Revision)
 		}
 	}
 	if err != nil {

@@ -4,10 +4,12 @@ import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { IdentityApi, User, UserGroupMembership, UserPatch } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
+import { Versioned } from '../../api/repositories-api';
 import { SessionsApi, UserSession } from '../../api/sessions-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
+import { ConflictResolver } from '../../shared/conflict-dialog';
 import { TextField } from '../../shared/access/fields';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
@@ -37,11 +39,14 @@ export class UserDetail {
   private readonly api = inject(IdentityApi);
   private readonly sessionsApi = inject(SessionsApi);
   private readonly confirmer = inject(Confirm);
+  private readonly conflicts = inject(ConflictResolver);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
   protected readonly user = signal<User | null>(null);
+  /** The `ETag` the record was read with; every write sends it as `If-Match` (Q-API-42). */
+  private etag = '';
   protected readonly loadError = signal<ApiError | null>(null);
   protected readonly actionError = signal<ApiError | null>(null);
   protected readonly editError = signal<ApiError | null>(null);
@@ -74,16 +79,20 @@ export class UserDetail {
   protected async load(): Promise<void> {
     this.loadError.set(null);
     try {
-      const u = await this.api.user(this.username());
-      this.user.set(u);
-      this.email.set(u.email ?? '');
-      this.displayName.set(u.displayName ?? '');
+      this.adopt(await this.api.user(this.username()));
     } catch (e) {
       this.user.set(null);
       this.loadError.set(asApiError(e));
       return;
     }
     await this.loadSessions();
+  }
+
+  private adopt(loaded: Versioned<User>): void {
+    this.etag = loaded.etag;
+    this.user.set(loaded.value);
+    this.email.set(loaded.value.email ?? '');
+    this.displayName.set(loaded.value.displayName ?? '');
   }
 
   private async loadSessions(): Promise<void> {
@@ -111,8 +120,15 @@ export class UserDetail {
     await this.run(
       this.editError,
       async () => {
-        const next = await this.api.updateUser(u.username, patch as UserPatch);
-        this.user.set(next);
+        const result = await this.conflicts.save<User>({
+          etag: this.etag,
+          patch,
+          send: (etag) => this.api.updateUser(u.username, patch as UserPatch, etag),
+          reload: () => this.api.user(u.username),
+        });
+        if (result.outcome === 'dismissed') return false;
+        this.adopt(result.current);
+        return result.outcome === 'saved';
       },
       $localize`:@@user.saved:User saved.`,
     );
@@ -226,14 +242,13 @@ export class UserDetail {
 
   private async run(
     target: { set(value: ApiError | null): void },
-    call: () => Promise<void>,
+    call: () => Promise<void | boolean>,
     done: string,
   ): Promise<void> {
     this.busy.set(true);
     target.set(null);
     try {
-      await call();
-      this.notifier.status(done);
+      if ((await call()) !== false) this.notifier.status(done);
     } catch (e) {
       target.set(asApiError(e));
     } finally {

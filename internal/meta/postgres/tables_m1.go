@@ -67,4 +67,8 @@ func init() {
 	meta.RegisterRevisionColumn("authz_policy", "version")
 	meta.RegisterRevisionColumn("endpoint_exposure_rule", "revision")
 	meta.RegisterRevisionColumn("user_preferences", "revision")
+	// principal.revision is the ETag of a user, a group and a service account; auth_settings.revision of
+	// the runtime authentication settings (00013_identity_revisions, R-API-012).
+	meta.RegisterRevisionColumn("principal", "revision")
+	meta.RegisterRevisionColumn("auth_settings", "revision")
 }

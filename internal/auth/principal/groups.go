@@ -21,6 +21,8 @@ type Group struct {
 	Origin      string
 	MemberCount int
 	CreatedAt   time.Time
+	// Revision is the ETag of the group (principal.revision, R-API-012); filled by GetGroup.
+	Revision int64
 	// Roles are the system roles bound to the group, read only (R-AUTH-018);
 	// filled by GetGroup.
 	Roles []string
@@ -100,8 +102,8 @@ func (m *Manager) CreateGroup(ctx context.Context, c Caller, in NewGroup) (Group
 	return m.GetGroup(ctx, in.Name)
 }
 
-func groupFrom(id, name, desc string, autoJoin bool, origin string, created time.Time, members int64) Group {
-	return Group{ID: id, Name: name, Description: desc, AutoJoin: autoJoin, Origin: origin, CreatedAt: created, MemberCount: int(members)}
+func groupFrom(id, name, desc string, autoJoin bool, origin string, created time.Time, members, revision int64) Group {
+	return Group{Revision: revision, ID: id, Name: name, Description: desc, AutoJoin: autoJoin, Origin: origin, CreatedAt: created, MemberCount: int(members)}
 }
 
 // GetGroup returns the group, or a 404.
@@ -116,7 +118,7 @@ func (m *Manager) GetGroup(ctx context.Context, name string) (Group, error) {
 			return ErrNotFound
 		}
 		r := rows[0]
-		g = groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount)
+		g = groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision)
 		roles, err := q.New(db).IdentityGroupRoles(ctx, r.ID)
 		if err != nil {
 			return err
@@ -150,7 +152,7 @@ func (m *Manager) ListGroups(ctx context.Context, f GroupFilter) ([]Group, error
 		}
 		out = out[:0]
 		for _, r := range rows {
-			out = append(out, groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount))
+			out = append(out, groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision))
 		}
 		return nil
 	})
@@ -166,6 +168,10 @@ type GroupPatch struct {
 	Name        *string
 	Description *string
 	AutoJoin    *bool
+	// Expected is the revision the caller loaded (If-Match) or errs.AnyRevision
+	// for the deliberate blind write; the zero value matches no revision
+	// (R-API-012).
+	Expected int64
 }
 
 // UpdateGroup renames a group or changes its description or auto-join flag
@@ -184,6 +190,9 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 			return NotFound("The group")
 		}
 		g := rows[0]
+		if err := checkRevision(ctx, qs, g.ID, p.Expected, "The group"); err != nil {
+			return err
+		}
 		if g.Origin == "scim" && (p.Name != nil || p.Description != nil) {
 			return managedBySCIM()
 		}

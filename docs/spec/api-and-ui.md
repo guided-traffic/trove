@@ -334,7 +334,8 @@ operations that require it when called with a session; the OpenAPI document mark
 | Endpoints | Creating, replacing, changing and deleting exposure rules ([endpoints.md](endpoints.md) R-EP-016) |
 | Configuration | Applying configuration as code (R-API-044) |
 
-Token-authenticated callers are not affected; their token scope bounds them.
+Token-authenticated callers are not affected; their token scope bounds them. The shared
+authorization step enforces the extension after the permission check ([Q-API-40](#q-api-40--recent-authentication-is-enforced-by-the-shared-authorization-step)).
 
 Acceptance criteria:
 
@@ -4677,19 +4678,19 @@ Status: **Decided by the development agent** — selected from the options below
 
 ### Q-UI-22 · Users, groups and service accounts are edited without a version tag
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Reversed** by [Q-API-42](#q-api-42--one-mechanism-for-a-missing-if-match-and-one-stale-error) and [Q-AUTH-50](identity-and-authentication.md#q-auth-50--users-groups-and-service-accounts-carry-a-revision-so-does-the-authentication-settings-row) (originally decided by the development agent; the owner reviews it at the walkthrough). The decision below was taken because the API gave these resources no tag; it now does.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Merge patch of the changed members, last writer wins on those members (chosen) | The documented behaviour of the operations (R-API-013); the screens send only what the user changed | Two administrators editing different fields do not conflict; matches the API | Two edits of the same field overwrite silently |
-| (b) Require `ETag` and `If-Match` and the conflict dialog | Needs the API to return tags for these resources | Uniform with policies and settings | Not in the API; a UI-only tag would be invented |
+| (a) Merge patch of the changed members, last writer wins on those members (was chosen) | The documented behaviour of the operations (R-API-013); the screens send only what the user changed | Two administrators editing different fields do not conflict; matches the API | Two edits of the same field overwrite silently |
+| (b) Require `ETag` and `If-Match` and the conflict dialog (now chosen) | The API returns tags for these resources | Uniform with policies and settings | Needed the API to return tags |
 | (c) Read-only screens | No edits | No conflicts | Not the requirement |
 
-**Choice:** (a). `ApiClient.patchMerge` sends no `If-Match`, so the retry layer of R-UI-042 does not repeat such a request after a network error: the screen shows the error with "Retry" and the user decides. Membership changes use plain JSON (`patchJson`).
+**Choice (current):** (b). The user, group and service account screens keep the `ETag` of the loaded record, and `PATCH` sends it as `If-Match` (`ApiClient.patch`, the same call as for repositories and policies); the screens that already used a tag (authentication settings, preferences, policies) are unchanged. A 412 opens the conflict dialog through `ConflictResolver.save` ([conflict-dialog.ts](../../web/src/app/shared/conflict-dialog.ts)): it reads the record again and shows only the members of the patch, stored now against the user's. "Overwrite" sends the same merge patch with the tag read at that moment, "Reload" adopts the stored record, closing the dialog writes nothing. A 412 on a retried write whose stored members already equal the patch is a success (the first attempt committed). The answer's `ETag` is the tag of the next write. Membership changes (`PATCH /users/{username}/groups`, `/groups/{name}/members`), disable, enable and unlock carry no tag (R-API-012 exempts the deltas); after an action the screen reads the record and its tag again. `ApiClient.patchMerge` is removed, so every merge patch carries `If-Match` and the retry layer of R-UI-042 may repeat it.
 
-**Rationale:** The resources have no tag in `api/openapi.yaml`. The development agent revisits this if the API adds tags.
+**Rationale:** the API now requires the header (a missing one is 428), so the screen cannot omit it, and a tag the user loaded is what makes two edits of the same field visible. The development agent revisits this if a screen edits a member that the tag does not cover.
 
-**Applied in the spec:** R-UI-042's conflict dialog applies to preferences, authentication settings and policies only.
+**Applied in the spec:** R-UI-042's conflict dialog applies to users, groups, service accounts, preferences, authentication settings, policies, repositories and exposure rules. The token tables show a warning for a token whose binding names an endpoint that is not configured (`unknownEndpoints`, R-EP-011, Q-EP-24).
 
 ### Q-UI-23 · Drafts across re-authentication and an ended session
 
@@ -4869,58 +4870,29 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-API-015 and R-OPS-019 say "or the caller started the job"; the answer for others is as above.
 
-### Q-API-28 · A missing `If-Match` is 428, and a write keeps its epoch through an idempotent replay
+### Q-API-28 · A missing `If-Match` is 428 by one rule, and a write keeps its epoch through an idempotent replay
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Two behaviors of the shared conventions showed when the first resource with a version header and an epoch used them.
+Two behaviors of the shared conventions showed when the first resource with a version header and an epoch used them. The first is
+the rule for a missing `If-Match`; it replaces what Q-API-24 and Q-API-32 said separately, and [Q-API-42](#q-api-42--one-mechanism-for-a-missing-if-match-and-one-stale-error) applies it to every resource.
 
 | Question | Options | Choice |
 |---|---|---|
-| The document marks `If-Match` required on `PUT` and `PATCH`, and the generated wrapper answers a missing required header with 400 before any handler runs. R-API-012 says 428 | (a) Mark the header optional in the document and let each handler answer 428. (b) Keep it required and map the wrapper's missing-`If-Match` error to the 428 problem in `bindError` | (b): the document keeps saying the header is needed, one place answers it for every resource, and the problem is the 428 of `Precondition.Require` |
-| `Trove-Authz-Epoch` is raised by the change log in a hook just before `COMMIT`, after the operation returned its outcome, yet an idempotent create stores its outcome (R-API-014) and a replay must carry the epoch of the first answer | (a) Leave the header out of a replay. (b) Read the epoch in the operation by locking the epoch row early. (c) Let an outcome complete itself after the commit hooks: `Outcome.Finish` runs in a hook registered after the operation's own, before the outcome is stored | (c): (a) loses what a client that lost the first response needs; (b) takes the epoch row before the policy rows and can deadlock with a writer that takes them in the other order |
+| The document marks `If-Match` required on `PUT` and `PATCH`, and the generated wrapper answers a missing required header with 400 before any handler runs. R-API-012 says 428 | (a) Mark the header optional in the document and let each handler answer 428. (b) Keep it required and map the wrapper's missing-`If-Match` error to the 428 problem in `bindError` | (b): the document keeps saying the header is needed (a client generated from it sends it), one place answers it for every resource, and the problem is the 428 of `Precondition.Require`. A handler does not check the header again |
+| `Trove-Authz-Epoch` is raised by the change log in a hook just before `COMMIT`, after the operation returned its outcome, yet an idempotent create stores its outcome (R-API-014) and a replay must carry the epoch of the first answer | (a) Leave the header out of a replay. (b) Read the epoch in the operation by locking the epoch row early. (c) Let an outcome complete itself after the commit hooks: `Outcome.Finish` runs in a hook registered after the operation's own, before the outcome is stored | (c): (a) loses what a client that lost the first response needs; (b) takes the epoch row before the policy rows and can deadlock with a writer that takes them in the other order. Every idempotent create that changes authorization data uses it through `finishEpoch` ([Q-API-44](#q-api-44--one-header-name-and-one-setter-for-the-authorization-epoch)) |
 
-**Rationale:** both keep the convention in the shared package and add nothing a resource has to remember. The development agent would revisit (c) if a second use shows that a resource needs to change the status after the hooks, which `Finish` allows but no one needs.
+**Rationale:** both keep the convention in the shared package and add nothing a resource has to remember. The development agent would revisit (c) if a second use shows that a resource needs to change the status after the hooks, which `Finish` allows but no one needs; it would revisit the binder mapping if the code generator offers a hook for required headers.
 
 **Applied in the spec:** none; [http-api.md](../developer/http-api.md) lists both.
 
 ### Q-API-24 · `If-Match` is an optional header in the document
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-The shared parameter `IfMatch` is `required: true`. The generated binding refuses a missing required header with `400 malformed_request`
-before the handler runs, while R-API-012 answers `428 precondition_required`.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Keep the shared parameter | A missing header is a 400 | No new text | Contradicts R-API-012 |
-| (b) Declare the header inline as optional (chosen) | The operations of the identity area (`PATCH /settings/auth`, `PATCH /users/me/preferences`) carry their own `If-Match` parameter, `required: false`, and the handler answers 428 | The document and the behaviour agree | Two spellings of one header in the document |
-
-**Choice:** (b). The shared component is not edited, since it belongs to no area; a later change of the generator binding (a required header
-answering 428) would let every operation use the shared parameter again.
-
-**Rationale:** the document describes what the server does. The development agent would revisit this when the api area changes the binding.
-
-**Applied in the spec:** none.
+Status: **Superseded** by [Q-API-28](#q-api-28--a-missing-if-match-is-428-by-one-rule-and-a-write-keeps-its-epoch-through-an-idempotent-replay) and [Q-API-42](#q-api-42--one-mechanism-for-a-missing-if-match-and-one-stale-error). The development agent had declared the header inline and optional on the first two operations that used it (`PATCH /settings/auth`, `PATCH /users/me/preferences`) and let the handler answer 428; the binding was mapped in the meantime, so those operations reference the shared required parameter like every other one, and no inline `If-Match` parameter is left on a `PUT` or `PATCH`.
 
 ### Q-API-25 · The identity resources have no revision
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-R-API-012 gives `ETag` and `If-Match` to resources that carry a revision column. Users, groups and service accounts carry none, and R-AUTH-016,
-R-AUTH-018 and R-AUTH-020 do not ask for one.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Add revision columns | Three columns, three registrations | Same as the rest | Three migrations in parallel with other areas; the pages do not ask |
-| (b) A merge patch changes the members it names (chosen) | `PATCH` takes `application/merge-patch+json`, needs no `If-Match`, and writes the members the patch names; an absent member stays, `null` resets, a read-only member is ignored | Matches the pages | Two administrators patching one member race, the last write wins |
-
-**Choice:** (b); recorded as the gap H-135 on [the token and credential page](../security/tokens-and-credentials.md).
-
-**Rationale:** the members are descriptive (display name, e-mail, description, flags) and the audit event names the changed members. The
-development agent would revisit this when an identity member becomes security-relevant to concurrent edits.
-
-**Applied in the spec:** none.
+Status: **Reversed** by [Q-AUTH-50](identity-and-authentication.md#q-auth-50--users-groups-and-service-accounts-carry-a-revision-so-does-the-authentication-settings-row). It had decided that users, groups and service accounts carry no revision and that a merge patch is last-write-wins (the gap H-135). R-API-012 asks `If-Match` for every `PUT` and `PATCH` of a mutable configuration resource, and an administrator editing a group concurrently with another is the case it exists for, so the three resources and the authentication settings now carry a revision, and their `PATCH` requires `If-Match` like every other resource. The merge-patch semantics of this block (a member the patch names is written, an absent one stays, `null` resets, a read-only member is ignored) are unchanged. Membership edits stay exempt: they send a delta (R-API-012).
 
 ### Q-API-26 · Preferences without a row
 
@@ -4942,20 +4914,7 @@ reader must not see as a default.
 
 ### Q-API-32 · A missing If-Match is 428 even where the generated binder reads the header
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-The shared parameter `IfMatch` is `required: true` in the document, so the generated server wrapper refuses a request without it before the handler runs, with a generic 400.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Declare the parameter optional | The binder lets the request through | No change to the binder error | The document no longer says the header is required (`x-trove-if-match: required` stays, but a client generated from it sends nothing) |
-| (b) Map the binder error of If-Match to 428 (chosen) | `bindError` answers `precondition_required` for a missing If-Match | The document stays true and R-API-012 holds for every resource that uses the parameter | One special case in the binder error handler |
-
-**Choice:** (b).
-
-**Rationale:** The rule of R-API-012 is a status and a detail that names the header; the binder error is an implementation detail. The development agent would revisit this if the code generator offers a hook for required headers.
-
-**Applied in the spec:** R-API-012 reads unchanged.
+Status: **Folded into** [Q-API-28](#q-api-28--a-missing-if-match-is-428-by-one-rule-and-a-write-keeps-its-epoch-through-an-idempotent-replay), which states the rule once: the document keeps the header required and `bindError` answers the binder's error with `precondition_required`.
 
 ### Q-API-33 · The /files/ operations are in the document, outside the generated interface and outside the authorization step
 
@@ -4990,6 +4949,87 @@ R-REPO-009 returns "the stored document plus warnings", R-API-003 says a body ob
 **Rationale:** It is what the conventions of R-API-003 ask. The development agent would revisit this if a read-only member must be refused rather than ignored.
 
 **Applied in the spec:** The schema `Repository` in api/openapi.yaml.
+
+### Q-API-40 · Recent authentication is enforced by the shared authorization step
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-007 lists the operations that need a recent interactive authentication when called with a session, and the document marked a few of them with `x-trove-recent-auth: true`; only the token and settings handlers checked it, each in its own way.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each handler checks | `requireRecentAuth` stays a call in the handlers | Nothing to change | An operation that declares the extension and forgets the call is open (the exposure rule writes were, H-165); the table of R-API-007 is not what runs |
+| (b) The shared step, after the permission (chosen) | `Operation.RecentAuth` is read from `x-trove-recent-auth` at load; `authorize` calls `requireRecentAuth` once `decide` allowed the caller; a declaration other than `true` refuses start-up | One mechanism; the document is what runs; a caller who may not act gets 403, not an invitation to sign in again | An operation decided inside its handler (`authenticated: true` with an own check, such as token creation) answers 401 before its own 403 |
+| (c) The shared step before the permission | Check first, decide second | A stale session never reaches the evaluator | Tells a caller without the permission to sign in again, and the audit event of the denial is lost |
+
+**Choice:** (b). The declaration is on every operation of the table that exists in this build: creating and rotating a token (`createToken`, `rotateToken`, `createServiceAccountToken`), changing the authentication settings, creating, replacing, patching and deleting a permission policy, binding and unbinding a role, deleting a repository, and the four writes of exposure rules. The rows that name operations of later milestones (approving a command-line login, CI issuers and mappings, applying configuration as code) take the declaration with those operations; `TestR_API_007_DocumentDeclaresRecentAuth` lists the set, so a new declaration or a missing one is a deliberate edit. A token is not asked (R-API-007): its scope bounds it. With no session store the step answers 503 instead of passing.
+
+**Rationale:** the question of R-API-007 is "does the document say it", and a rule that the document states must not depend on a handler remembering. The development agent would revisit the 401-before-403 order for the handler-decided operations if a client is shown to leak information through it (the answer names no resource, so none is known).
+
+**Applied in the spec:** none; R-API-007 reads unchanged. Closes H-165.
+
+### Q-API-41 · The request log learns the principal through the request-scoped holder
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The request log (R-OPS-010) writes `principal`, `principal_type`, `principal_id`, `token_id` and `auth_method`, and recorded `"principal":"anonymous"` even for authenticated management-API requests: the log stage is outside the authentication stage (R-ARCH-005 fixes the order), so it cannot receive the principal from the stage's return value, and nothing set the per-request facts it reads after the request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Move the log stage inside the authentication stage | The order of R-ARCH-005 changes | The record has the principal as a value | A request refused before the stage (421, 503 server busy, a panic) is not logged; the order is a contract |
+| (b) The authentication stage fills the holder (chosen) | `observability.RequestInfo` is the mutable holder the log stage put in the context before the request; `app.authenticate` calls `recordPrincipal` after a successful authentication, and the log stage reads the holder after the request | Nothing moves; the facts exist for every outcome, including a 401 after the stage | The composition root is the one place that knows both packages |
+
+**Choice:** (b). The values follow the log vocabulary of R-OPS-010: `principal_type` `breakglass` for the break-glass administrator (the kind is `break_glass`), `auth_method` `nuget_apikey` for the NuGet API key (the method is `api_key`), `token_id` only for a token credential. An anonymous caller and a request the stage refused keep the record's defaults (`anonymous`, `none`). `TestR_OPS_010_RequestLogRecordsThePrincipal` drives the chain order with the holder, and the E1.5 integration test finds the principal in the stream.
+
+**Rationale:** a holder in the context is the idiom the record already uses for the handler, the address and the host. The development agent would revisit this if a second stage needs to publish facts, and would then give the holder a typed setter per stage.
+
+**Applied in the spec:** none; R-OPS-010 reads unchanged.
+
+### Q-API-42 · One mechanism for a missing If-Match, and one stale error
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The rule for a missing `If-Match` was written in three decision blocks (Q-API-24, Q-API-28, Q-API-32) and implemented three ways: the shared required parameter with the binder mapping, an inline optional parameter whose handler answered 428, and an inline parameter without `required` on the `DELETE` operations. A stale tag was rendered by five different constructors.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the variants | Each resource decides | Nothing to change | A new resource picks one; the document and the behavior drift |
+| (b) One declaration and one error (chosen) | A `PUT` or `PATCH` that requires the header declares `x-trove-if-match: required` and references the shared `IfMatch` parameter; a `DELETE` references the shared `IfMatchOptional`; `bindError` maps the binder's error to the 428; `errs.Stale(what, current)` is the one 412 with `currentEtag` and the cause `errs.StaleRevision`; `errs.AnyRevision` is the one value for the blind write | The document is what runs; a handler cannot forget the check | The domain packages import `errs` for the constant, which they already do |
+
+**Choice:** (b). `TestR_API_012_OneMechanismForAMissingIfMatch` reads the document: every `PUT` and `PATCH` either requires the header with the shared parameter alone or is on the list of exemptions (membership deltas, role bindings, file content), and documents the 428; `TestR_API_012_MissingIfMatchIs428` sends every such operation without the header through the generated wrapper. The domain returns the cause and the extension itself (`repository`, `authz`, `token` settings, the principal manager), the handler adds nothing, and `Failed` is the same error for a handler that compares in memory before it calls the domain. A tag the server never issued is revision 0, which no row has, so it answers 412 with the current tag.
+
+**Rationale:** one declaration in the document and one answer in code is what R-API-012 states ("there is no switch to turn the rule off"). The development agent would revisit the exemption list if a new resource edits a collection member by member without a delta endpoint.
+
+**Applied in the spec:** none; Q-API-24 is superseded, Q-API-32 folded into Q-API-28, Q-API-25 reversed ([Q-AUTH-50](identity-and-authentication.md#q-auth-50--users-groups-and-service-accounts-carry-a-revision-so-does-the-authentication-settings-row)).
+
+### Q-API-43 · The revision of an identity resource is in the ETag, not in the body
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The policy shows its revision as `version`, the repository as `version`, an exposure rule as `revision`, and each also sends it as the `ETag`. The identity resources (users, groups, service accounts) and the authentication settings gain a revision (Q-AUTH-50), and a body member would be a fourth name or a fifth copy.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `revision` member in the body | The ETag and the body say the same | A client reads it without the header | A write answers a member the client must not send back; a name for the fourth time |
+| (b) The ETag only (chosen) | `GET` and the write answers carry `ETag: "<revision>"`; the representations have no revision member | One place; a body obtained by `GET` is a valid `PATCH` body without a read-only member to ignore | The three older resources keep their member names |
+
+**Choice:** (b) for the new ones. The older members (`version` of a policy and a repository, `revision` of a rule) stay: renaming them changes a contract that the interface screens already read.
+
+**Rationale:** the ETag is the concurrency token (R-API-012), and a representation that repeats it can only disagree with it. The development agent would revisit this if a client cannot read response headers (a browser behind a proxy that strips them), and would then add `revision` to all representations at once.
+
+**Applied in the spec:** none.
+
+### Q-API-44 · One header name and one setter for the authorization epoch
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`Trove-Authz-Epoch` was written by `authz.HeaderEpoch` in the policy handlers and by a second constant in the endpoint handlers, and the exposure rule create gave its epoch to the first answer only (a replay carried none).
+
+**Choice:** `authz.HeaderEpoch` is the one name, `setEpoch` the one setter for a plain answer, and `finishEpoch` the one `Outcome.Finish` for an idempotent create: the change log raises the epoch in a hook just before `COMMIT`, `Finish` runs after that hook and before the outcome is stored, so a replay carries the epoch of the first answer (Q-API-28). The exposure rule create uses it like the policy create. The endpoint integration test sends the same create twice and compares the epochs.
+
+**Rationale:** a client waits for a replica to reach an epoch it was given (R-AUTHZ-032); a replay that lacks it breaks that wait. The development agent would revisit this if a third kind of write returns an epoch in the body instead.
+
+**Applied in the spec:** none.
 
 ## What this does not cover
 

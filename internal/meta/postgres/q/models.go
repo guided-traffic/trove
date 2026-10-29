@@ -113,6 +113,7 @@ type AuthSetting struct {
 	ExpiryNotice    pgtype.Interval
 	UpdatedAt       pgtype.Timestamptz
 	UpdatedBy       pgtype.UUID
+	Revision        int64
 }
 
 type AuthzPolicy struct {
@@ -355,6 +356,7 @@ type Principal struct {
 	Status    string
 	CreatedAt pgtype.Timestamptz
 	CreatedBy pgtype.UUID
+	Revision  int64
 }
 
 type Replica struct {

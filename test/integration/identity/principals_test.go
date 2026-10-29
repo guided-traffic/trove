@@ -432,7 +432,7 @@ func TestR_AUTH_018_GroupsAndMemberships(t *testing.T) {
 			t.Fatal("not retroactive")
 		}
 		e.exec(`INSERT INTO authz_role_binding (role, principal_id) SELECT 'admin', id FROM principal WHERE name = 'team-web'`)
-		_, err = a.manager.UpdateGroup(ctx, admin, "team-web", principal.GroupPatch{AutoJoin: ptr(true)})
+		_, err = a.manager.UpdateGroup(ctx, admin, "team-web", principal.GroupPatch{Expected: errs.AnyRevision, AutoJoin: ptr(true)})
 		wantCode(t, err, 409, errs.CodeAutoJoinAdminConflict)
 	})
 	t.Run("a group with origin scim answers 409 managed_by_scim", func(t *testing.T) {
@@ -440,14 +440,14 @@ func TestR_AUTH_018_GroupsAndMemberships(t *testing.T) {
 		_, err := a.manager.PatchMembers(ctx, admin, "scim-group", "", []string{"alice"}, nil)
 		wantCode(t, err, 409, errs.CodeManagedBySCIM)
 		wantCode(t, a.manager.DeleteGroup(ctx, admin, "scim-group"), 409, errs.CodeManagedBySCIM)
-		_, err = a.manager.UpdateGroup(ctx, admin, "scim-group", principal.GroupPatch{Name: ptr("renamed")})
+		_, err = a.manager.UpdateGroup(ctx, admin, "scim-group", principal.GroupPatch{Expected: errs.AnyRevision, Name: ptr("renamed")})
 		wantCode(t, err, 409, errs.CodeManagedBySCIM)
 	})
 	t.Run("renaming keeps the grants and the memberships", func(t *testing.T) {
 		if _, err := a.manager.PatchMembers(ctx, admin, "team-web", "", []string{"alice"}, nil); err != nil {
 			t.Fatal(err)
 		}
-		g, err := a.manager.UpdateGroup(ctx, admin, "team-web", principal.GroupPatch{Name: ptr("web-team"), Description: ptr("renamed")})
+		g, err := a.manager.UpdateGroup(ctx, admin, "team-web", principal.GroupPatch{Expected: errs.AnyRevision, Name: ptr("web-team"), Description: ptr("renamed")})
 		if err != nil || g.Name != "web-team" || g.MemberCount != 1 {
 			t.Fatalf("%+v %v", g, err)
 		}
@@ -576,11 +576,11 @@ func TestR_AUTH_016_DisableEnableDelete(t *testing.T) {
 		wantCode(t, err, 422, "reserved_name")
 		_, err = a.manager.CreateUser(ctx, admin, principal.NewUser{Name: "Dave Smith"})
 		wantCode(t, err, 400, errs.CodeUsernameInvalid)
-		got, err := a.manager.UpdateUser(ctx, admin, "dave", principal.UserPatch{DisplayName: ptr("Dave D."), Email: ptr("d@example.org")})
+		got, err := a.manager.UpdateUser(ctx, admin, "dave", principal.UserPatch{Expected: errs.AnyRevision, DisplayName: ptr("Dave D."), Email: ptr("d@example.org")})
 		if err != nil || got.DisplayName != "Dave D." || got.Email != "d@example.org" || got.ID != u.ID {
 			t.Fatalf("%+v %v", got, err)
 		}
-		_, err = a.manager.UpdateUser(ctx, admin, "nobody", principal.UserPatch{})
+		_, err = a.manager.UpdateUser(ctx, admin, "nobody", principal.UserPatch{Expected: errs.AnyRevision})
 		wantCode(t, err, 404, errs.CodeNotFound)
 	})
 	t.Run("list filters by name, status and group", func(t *testing.T) {
@@ -658,7 +658,7 @@ func TestR_AUTH_020_ServiceAccounts(t *testing.T) {
 		})
 	})
 	t.Run("update and list", func(t *testing.T) {
-		got, err := a.manager.UpdateServiceAccount(ctx, admin, "ci-bot", "deploys")
+		got, err := a.manager.UpdateServiceAccount(ctx, admin, "ci-bot", "deploys", errs.AnyRevision)
 		if err != nil || got.Description != "deploys" {
 			t.Fatalf("%+v %v", got, err)
 		}

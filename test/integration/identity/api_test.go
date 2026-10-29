@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
@@ -173,19 +174,48 @@ func TestAPIOperations(t *testing.T) {
 			}
 		})
 		t.Run("a patch corrects the profile; a body obtained by GET can be sent back", func(t *testing.T) {
-			rp := next().call(patch, "/api/v1/users/carol", admin, map[string]any{"displayName": "Carol C", "email": nil})
+			rp := next().call(patch, "/api/v1/users/carol", admin, map[string]any{"displayName": "Carol C", "email": nil}, "If-Match", "*")
 			want(t, rp, 200, "")
 			u := rp.json(t)
 			if u["displayName"] != "Carol C" || u["email"] != nil {
 				t.Fatalf("%v", u)
 			}
-			back := next().call(patch, "/api/v1/users/carol", admin, string(next().call(get, "/api/v1/users/carol", admin, nil).Body))
+			back := next().call(patch, "/api/v1/users/carol", admin, string(next().call(get, "/api/v1/users/carol", admin, nil).Body), "If-Match", "*")
 			want(t, back, 200, "")
-			want(t, next().call(patch, "/api/v1/users/carol", admin, map[string]any{"username": "other"}), 422, "validation_failed")
-			want(t, next().call(patch, "/api/v1/users/carol", admin, map[string]any{"nonsense": 1}), 400, "malformed_request")
-			want(t, next().call(patch, "/api/v1/users/nobody", admin, map[string]any{"displayName": "x"}), 404, "")
-			rp = next().call(patch, "/api/v1/users/carol", admin, map[string]any{"identities": []any{}})
+			want(t, next().call(patch, "/api/v1/users/carol", admin, map[string]any{"username": "other"}, "If-Match", "*"), 422, "validation_failed")
+			want(t, next().call(patch, "/api/v1/users/carol", admin, map[string]any{"nonsense": 1}, "If-Match", "*"), 400, "malformed_request")
+			want(t, next().call(patch, "/api/v1/users/nobody", admin, map[string]any{"displayName": "x"}, "If-Match", "*"), 404, "")
+			rp = next().call(patch, "/api/v1/users/carol", admin, map[string]any{"identities": []any{}}, "If-Match", "*")
 			want(t, rp, 200, "")
+		})
+		t.Run("R-API-012 a user has an ETag; a missing If-Match is 428, a stale one 412 with the current tag", func(t *testing.T) {
+			g := next().call(get, "/api/v1/users/carol", admin, nil)
+			want(t, g, 200, "")
+			tag := g.Header.Get("ETag")
+			if tag == "" {
+				t.Fatal("no ETag")
+			}
+			if _, has := g.json(t)["revision"]; has {
+				t.Error("the revision is in the ETag, not in the body")
+			}
+			want(t, next().call(get, "/api/v1/users/carol", admin, nil, "If-None-Match", tag), 304, "")
+			want(t, next().call(patch, "/api/v1/users/carol", admin, map[string]any{"displayName": "R1"}), 428, "precondition_required")
+			ok := next().call(patch, "/api/v1/users/carol", admin, map[string]any{"displayName": "R1"}, "If-Match", tag)
+			want(t, ok, 200, "")
+			if ok.Header.Get("ETag") == tag {
+				t.Errorf("the ETag did not change with the write: %s", tag)
+			}
+			stale := next().call(patch, "/api/v1/users/carol", admin, map[string]any{"displayName": "R2"}, "If-Match", tag)
+			want(t, stale, 412, "precondition_failed")
+			if stale.json(t)["currentEtag"] != ok.Header.Get("ETag") {
+				t.Errorf("currentEtag = %v, want %s", stale.json(t)["currentEtag"], ok.Header.Get("ETag"))
+			}
+			// A patch that changes nothing keeps the revision.
+			same := next().call(patch, "/api/v1/users/carol", admin, map[string]any{"displayName": "R1"}, "If-Match", ok.Header.Get("ETag"))
+			want(t, same, 200, "")
+			if same.Header.Get("ETag") != ok.Header.Get("ETag") {
+				t.Errorf("a no-op patch moved the ETag: %s -> %s", ok.Header.Get("ETag"), same.Header.Get("ETag"))
+			}
 		})
 		t.Run("disable ends access, enable does not restore revoked tokens (R-AUTH-016)", func(t *testing.T) {
 			carol, err := c.manager.GetUser(t.Context(), "carol")
@@ -251,12 +281,12 @@ func TestAPIOperations(t *testing.T) {
 		if got := list(t, next().call(get, "/api/v1/service-accounts?q=ci", admin, nil)); len(got) != 1 {
 			t.Fatalf("%v", got)
 		}
-		rp = next().call(patch, "/api/v1/service-accounts/ci-bot", admin, map[string]any{"description": "Deploys"})
+		rp = next().call(patch, "/api/v1/service-accounts/ci-bot", admin, map[string]any{"description": "Deploys"}, "If-Match", "*")
 		want(t, rp, 200, "")
 		if rp.json(t)["description"] != "Deploys" {
 			t.Fatalf("%s", rp.Body)
 		}
-		want(t, next().call(patch, "/api/v1/service-accounts/ci-bot", admin, map[string]any{"name": "other"}), 422, "validation_failed")
+		want(t, next().call(patch, "/api/v1/service-accounts/ci-bot", admin, map[string]any{"name": "other"}, "If-Match", "*"), 422, "validation_failed")
 		sat := next().call(post, "/api/v1/service-accounts/ci-bot/tokens", admin, map[string]any{"description": "pipeline", "ttlSeconds": 3600})
 		want(t, sat, 201, "")
 		secret := str(sat.json(t), "token")
@@ -276,7 +306,7 @@ func TestAPIOperations(t *testing.T) {
 		want(t, next().call(del, "/api/v1/service-accounts/none/tokens", admin, nil), 404, "")
 		want(t, next().call(post, "/api/v1/service-accounts/none/disable", admin, nil), 404, "")
 		want(t, next().call(post, "/api/v1/service-accounts/none/enable", admin, nil), 404, "")
-		want(t, next().call(patch, "/api/v1/service-accounts/none", admin, map[string]any{"description": "x"}), 404, "")
+		want(t, next().call(patch, "/api/v1/service-accounts/none", admin, map[string]any{"description": "x"}, "If-Match", "*"), 404, "")
 		want(t, next().call(del, "/api/v1/service-accounts/none", admin, nil), 404, "")
 		want(t, next().call(post, "/api/v1/service-accounts", admin, map[string]any{"name": "tmp-bot"}), 201, "")
 		want(t, next().call(del, "/api/v1/service-accounts/tmp-bot", admin, nil), 204, "")
@@ -340,13 +370,13 @@ func TestAPIOperations(t *testing.T) {
 				t.Fatalf("walk: %v", seen)
 			}
 		})
-		rp = next().call(patch, "/api/v1/groups/team-web", admin, map[string]any{"description": "Web team", "autoJoin": true})
+		rp = next().call(patch, "/api/v1/groups/team-web", admin, map[string]any{"description": "Web team", "autoJoin": true}, "If-Match", "*")
 		want(t, rp, 200, "")
 		if g := rp.json(t); g["autoJoin"] != true || g["description"] != "Web team" {
 			t.Fatalf("%v", g)
 		}
-		want(t, next().call(patch, "/api/v1/groups/team-web", admin, map[string]any{"name": nil}), 422, "validation_failed")
-		want(t, next().call(patch, "/api/v1/groups/team-web", admin, map[string]any{"name": "team-frontend"}), 200, "")
+		want(t, next().call(patch, "/api/v1/groups/team-web", admin, map[string]any{"name": nil}, "If-Match", "*"), 422, "validation_failed")
+		want(t, next().call(patch, "/api/v1/groups/team-web", admin, map[string]any{"name": "team-frontend"}, "If-Match", "*"), 200, "")
 		want(t, next().call(get, "/api/v1/groups/team-web", admin, nil), 404, "")
 		g := next().call(get, "/api/v1/groups/team-frontend", admin, nil)
 		want(t, g, 200, "")
@@ -356,7 +386,7 @@ func TestAPIOperations(t *testing.T) {
 		t.Run("a group with an administration role takes no auto-join (R-AUTH-019)", func(t *testing.T) {
 			want(t, next().call(post, "/api/v1/groups", admin, map[string]any{"name": "platform-admins"}), 201, "")
 			e.exec(`INSERT INTO authz_role_binding (role, principal_id) SELECT 'admin', id FROM principal WHERE kind = 'group' AND name = 'platform-admins'`)
-			want(t, next().call(patch, "/api/v1/groups/platform-admins", admin, map[string]any{"autoJoin": true}), 409, "auto_join_admin_conflict")
+			want(t, next().call(patch, "/api/v1/groups/platform-admins", admin, map[string]any{"autoJoin": true}, "If-Match", "*"), 409, "auto_join_admin_conflict")
 			if r := list(t, next().call(get, "/api/v1/groups", admin, nil)); len(r) != 2 {
 				t.Fatalf("%v", r)
 			}
@@ -367,7 +397,7 @@ func TestAPIOperations(t *testing.T) {
 		t.Run("a group owned by SCIM is read only (R-AUTH-018)", func(t *testing.T) {
 			e.exec(`WITH p AS (INSERT INTO principal (id, kind, name) VALUES ('00000000-0000-7000-8000-000000000099', 'group', 'idp-owned') RETURNING id)
 			        INSERT INTO user_group (principal_id, origin) SELECT id, 'scim' FROM p`)
-			want(t, next().call(patch, "/api/v1/groups/idp-owned", admin, map[string]any{"description": "x"}), 409, "managed_by_scim")
+			want(t, next().call(patch, "/api/v1/groups/idp-owned", admin, map[string]any{"description": "x"}, "If-Match", "*"), 409, "managed_by_scim")
 			want(t, next().call(patch, "/api/v1/groups/idp-owned/members", admin, map[string]any{"add": []string{"alice"}}), 409, "managed_by_scim")
 			want(t, next().call(del, "/api/v1/groups/idp-owned", admin, nil), 409, "managed_by_scim")
 		})
@@ -581,7 +611,7 @@ func TestAPIOperations(t *testing.T) {
 			t.Fatalf("If-None-Match: %d", nm.Status)
 		}
 		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}), 428, "precondition_required")
-		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}, "If-Match", `"1"`), 412, "precondition_failed")
+		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}, "If-Match", `"9999"`), 412, "precondition_failed")
 		want(t, next().call(patch, "/api/v1/settings/auth", admin, map[string]any{"anonymousAccess": true}, "If-Match", "bogus"), 400, "invalid_header")
 		want(t, next().call(get, "/api/v1/settings/auth", alicePAT, nil), 403, "")
 		want(t, next().call(patch, "/api/v1/settings/auth", alicePAT, map[string]any{"anonymousAccess": true}, "If-Match", "*"), 403, "")
@@ -690,6 +720,58 @@ func TestAPIOperations(t *testing.T) {
 			t.Errorf("no token.revoked with reason parent_revoked")
 		}
 	})
+
+	// E1.6, Q-AUTH-50: the convention suite on the three identity resources, now that they carry
+	// a revision: ETag and 304, PATCH needs If-Match (428), a stale tag is 412 with currentEtag, merge
+	// patch, cursor paging and idempotent creates, every request answered by another replica.
+	contractDo := func(req *http.Request) (*http.Response, error) {
+		node := next()
+		req.URL.Scheme, req.URL.Host = "http", node.srv.Listener.Addr().String()
+		req.Host = "trove.test"
+		req.Header.Set("Authorization", "Bearer "+admin)
+		return http.DefaultClient.Do(req)
+	}
+	unique := fmt.Sprintf("%x", time.Now().UnixNano()%0xffffff)
+	for _, res := range []apitest.Resource{
+		{
+			Name: "users", Collection: baseURL + "/api/v1/users",
+			Create: func(n int) map[string]any {
+				return map[string]any{"username": fmt.Sprintf("ct%s-%d", unique, n), "displayName": "Contract"}
+			},
+			Key:   func(m map[string]any) string { return m["username"].(string) },
+			Patch: map[string]any{"displayName": "patched"}, PatchMember: "displayName", PatchValue: "patched",
+			AltPatch:    map[string]any{"displayName": "patched again"},
+			ClearMember: "displayName", ClearedValue: nil,
+			ImmutableMember: "username", ImmutableValue: "someone-else",
+			OtherQuery: "origin=admin",
+		},
+		{
+			Name: "groups", Collection: baseURL + "/api/v1/groups",
+			Create: func(n int) map[string]any {
+				return map[string]any{"name": fmt.Sprintf("ct%s-%d", unique, n), "description": "Contract"}
+			},
+			Key:   func(m map[string]any) string { return m["name"].(string) },
+			Patch: map[string]any{"description": "patched"}, PatchMember: "description", PatchValue: "patched",
+			AltPatch:    map[string]any{"description": "patched again"},
+			ClearMember: "description", ClearedValue: "",
+			OtherQuery: "origin=admin",
+		},
+		{
+			Name: "service-accounts", Collection: baseURL + "/api/v1/service-accounts",
+			Create: func(n int) map[string]any {
+				return map[string]any{"name": fmt.Sprintf("ct%s-%d", unique, n), "description": "Contract"}
+			},
+			Key:   func(m map[string]any) string { return m["name"].(string) },
+			Patch: map[string]any{"description": "patched"}, PatchMember: "description", PatchValue: "patched",
+			AltPatch:    map[string]any{"description": "patched again"},
+			ClearMember: "description", ClearedValue: "",
+			ImmutableMember: "name", ImmutableValue: "someone-else",
+			OtherQuery: "q=zzz",
+		},
+	} {
+		res.Do = contractDo
+		apitest.RunContract(t, res)
+	}
 
 	if missing := val.Uncovered(identityOperations...); len(missing) > 0 {
 		t.Errorf("R-API-002 operations no test reached: %v", missing)

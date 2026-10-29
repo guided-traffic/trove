@@ -23,7 +23,7 @@ Milestone M1 implements the local class of the generic format only; remote and v
 | [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `Pattern.Match`, `Admission` (include and exclude lists, folder admission) |
 | [format.go](../../internal/repository/format.go) | `FormatInfo` and `FormatCatalog`: what the model needs of a format, without importing `internal/formats` |
 | [store.go](../../internal/repository/store.go) | rows to `Repository` and `Document`; the sqlc `queries(tx)` seam; fail-closed load of an undecodable row |
-| [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, `StaleVersion`, the `Hooks` seam |
+| [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, the `Hooks` seam (`OnUpdated`, `OnDelete`, `MultiHooks`); a stale version is `errs.Stale` |
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
@@ -76,7 +76,11 @@ grant). A handler calls, after it has authorized:
 Errors are `*errs.Error`: `invalid_document` (400), the codes of R-REPO-008 (422, with `Fields`), `repository_exists`
 (409), `repository_not_found` (404), `precondition_failed` (412, with `*StaleVersion` as the cause carrying the current
 version for `currentEtag`). An update that changes nothing writes nothing: same version, no event, no change row.
-`Hooks.OnUpdated` runs in the update's transaction with the repository before and after; the authorization area uses it
+`Hooks.OnDelete` runs in the transaction that removes the row, just before the row goes (the job's `finishDelete`, and
+`deleteNow` for a virtual repository): `authz.ExposureHook` ([exposure_hook.go](../../internal/authz/exposure_hook.go))
+records the exposure rules the foreign key takes with it (`endpoint.exposure.deleted`, cause `repository_deleted`, Q-EP-25);
+`repository.MultiHooks` composes the hooks, and a hook error fails the deletion. `Hooks.OnUpdated` runs in the update's
+transaction with the repository before and after; the authorization area uses it
 to record `authz.settings.changed` for `cacheFillAction`, `packageOwnership`, `requireAuthentication` and `hideExistence`
 (R-AUTHZ-031): `authz.SettingsHook` ([settings.go](../../internal/authz/settings.go)), which `wireRepository` sets as `Options.Hooks`.
 It records only the settings that changed, before and after, with a journal entry, and nothing for another change.

@@ -142,7 +142,9 @@ func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.
 		if err != nil {
 			return httpserver.Principal{}, err
 		}
-		return principalFromResult(res), nil
+		p := principalFromResult(res)
+		recordPrincipal(r, p)
+		return p, nil
 	})
 }
 

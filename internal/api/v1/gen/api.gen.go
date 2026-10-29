@@ -2711,6 +2711,11 @@ type Token struct {
 	SelfRotatable bool       `json:"selfRotatable"`
 	State         TokenState `json:"state"`
 	Type          TokenType  `json:"type"`
+
+	// UnknownEndpoints The endpoint names in `scope.endpoints` that no configured endpoint carries. An endpoint removed from the
+	// configuration leaves its bound tokens unchanged; they are valid on no endpoint that no longer exists
+	// (R-EP-011). Empty when every bound endpoint is configured, and for an unbound token.
+	UnknownEndpoints []string `json:"unknownEndpoints"`
 }
 
 // TokenState defines model for Token.State.
@@ -2963,6 +2968,9 @@ type IdempotencyKey = string
 // IfMatch defines model for IfMatch.
 type IfMatch = string
 
+// IfMatchOptional defines model for IfMatchOptional.
+type IfMatchOptional = string
+
 // IfNoneMatch defines model for IfNoneMatch.
 type IfNoneMatch = string
 
@@ -3119,8 +3127,8 @@ type CreateExposureRuleParams struct {
 
 // DeleteExposureRuleParams defines parameters for DeleteExposureRule.
 type DeleteExposureRuleParams struct {
-	// IfMatch The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
 }
 
 // GetExposureRuleParams defines parameters for GetExposureRule.
@@ -3134,14 +3142,14 @@ type PatchExposureRuleApplicationMergePatchPlusJSONBody = map[string]interface{}
 
 // PatchExposureRuleParams defines parameters for PatchExposureRule.
 type PatchExposureRuleParams struct {
-	// IfMatch The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // ReplaceExposureRuleParams defines parameters for ReplaceExposureRule.
 type ReplaceExposureRuleParams struct {
-	// IfMatch The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // ListGroupsParams defines parameters for ListGroups.
@@ -3170,6 +3178,18 @@ type ListGroupsParamsSort string
 type CreateGroupParams struct {
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetGroupParams defines parameters for GetGroup.
+type GetGroupParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateGroupParams defines parameters for UpdateGroup.
+type UpdateGroupParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // ListGroupMembersParams defines parameters for ListGroupMembers.
@@ -3216,8 +3236,8 @@ type CreatePermissionPolicyParams struct {
 
 // DeletePermissionPolicyParams defines parameters for DeletePermissionPolicy.
 type DeletePermissionPolicyParams struct {
-	// IfMatch The `ETag` of the policy, or `*`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
 }
 
 // PatchPermissionPolicyParams defines parameters for PatchPermissionPolicy.
@@ -3270,8 +3290,8 @@ type CreateRepositoryParams struct {
 type DeleteRepositoryParams struct {
 	Detach *bool `form:"detach,omitempty" json:"detach,omitempty"`
 
-	// IfMatch The ETag loaded with the repository, or `*`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
 
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
@@ -3374,6 +3394,18 @@ type CreateServiceAccountParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// GetServiceAccountParams defines parameters for GetServiceAccount.
+type GetServiceAccountParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateServiceAccountParams defines parameters for UpdateServiceAccount.
+type UpdateServiceAccountParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
 // CreateServiceAccountTokenParams defines parameters for CreateServiceAccountToken.
 type CreateServiceAccountTokenParams struct {
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
@@ -3388,8 +3420,8 @@ type GetAuthSettingsParams struct {
 
 // UpdateAuthSettingsParams defines parameters for UpdateAuthSettings.
 type UpdateAuthSettingsParams struct {
-	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // ListJobsParams defines parameters for ListJobs.
@@ -3509,13 +3541,25 @@ type GetPreferencesParams struct {
 
 // UpdatePreferencesParams defines parameters for UpdatePreferences.
 type UpdatePreferencesParams struct {
-	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
-	IfMatch *string `json:"If-Match,omitempty"`
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // EndOwnSessionsParams defines parameters for EndOwnSessions.
 type EndOwnSessionsParams struct {
 	KeepCurrent *bool `form:"keepCurrent,omitempty" json:"keepCurrent,omitempty"`
+}
+
+// GetUserParams defines parameters for GetUser.
+type GetUserParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateUserParams defines parameters for UpdateUser.
+type UpdateUserParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // CheckPermissionsJSONRequestBody defines body for CheckPermissions for application/json ContentType.
@@ -3799,10 +3843,10 @@ type ServerInterface interface {
 	DeleteGroup(w http.ResponseWriter, r *http.Request, name string)
 	// GetGroup Read a group
 	// (GET /api/v1/groups/{name})
-	GetGroup(w http.ResponseWriter, r *http.Request, name string)
+	GetGroup(w http.ResponseWriter, r *http.Request, name string, params GetGroupParams)
 	// UpdateGroup Change a group
 	// (PATCH /api/v1/groups/{name})
-	UpdateGroup(w http.ResponseWriter, r *http.Request, name string)
+	UpdateGroup(w http.ResponseWriter, r *http.Request, name string, params UpdateGroupParams)
 	// ListGroupMembers List the members of a group
 	// (GET /api/v1/groups/{name}/members)
 	ListGroupMembers(w http.ResponseWriter, r *http.Request, name string, params ListGroupMembersParams)
@@ -3889,10 +3933,10 @@ type ServerInterface interface {
 	DeleteServiceAccount(w http.ResponseWriter, r *http.Request, name string)
 	// GetServiceAccount Read a service account
 	// (GET /api/v1/service-accounts/{name})
-	GetServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	GetServiceAccount(w http.ResponseWriter, r *http.Request, name string, params GetServiceAccountParams)
 	// UpdateServiceAccount Change a service account
 	// (PATCH /api/v1/service-accounts/{name})
-	UpdateServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	UpdateServiceAccount(w http.ResponseWriter, r *http.Request, name string, params UpdateServiceAccountParams)
 	// DisableServiceAccount Disable a service account
 	// (POST /api/v1/service-accounts/{name}/disable)
 	DisableServiceAccount(w http.ResponseWriter, r *http.Request, name string)
@@ -4000,10 +4044,10 @@ type ServerInterface interface {
 	DeleteUser(w http.ResponseWriter, r *http.Request, username string)
 	// GetUser Read a user
 	// (GET /api/v1/users/{username})
-	GetUser(w http.ResponseWriter, r *http.Request, username string)
+	GetUser(w http.ResponseWriter, r *http.Request, username string, params GetUserParams)
 	// UpdateUser Correct a user's profile data
 	// (PATCH /api/v1/users/{username})
-	UpdateUser(w http.ResponseWriter, r *http.Request, username string)
+	UpdateUser(w http.ResponseWriter, r *http.Request, username string, params UpdateUserParams)
 	// DisableUser Disable a user
 	// (POST /api/v1/users/{username}/disable)
 	DisableUser(w http.ResponseWriter, r *http.Request, username string)
@@ -4757,7 +4801,7 @@ func (siw *ServerInterfaceWrapper) DeleteExposureRule(w http.ResponseWriter, r *
 
 	// ------------- Optional header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatchOptional
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
@@ -4873,23 +4917,27 @@ func (siw *ServerInterfaceWrapper) PatchExposureRule(w http.ResponseWriter, r *h
 
 	headers := r.Header
 
-	// ------------- Optional header parameter "If-Match" -------------
+	// ------------- Required header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatch
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
 			return
 		}
 
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
 		if err != nil {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
 			return
 		}
 
-		params.IfMatch = &IfMatch
+		params.IfMatch = IfMatch
 
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -4932,23 +4980,27 @@ func (siw *ServerInterfaceWrapper) ReplaceExposureRule(w http.ResponseWriter, r 
 
 	headers := r.Header
 
-	// ------------- Optional header parameter "If-Match" -------------
+	// ------------- Required header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatch
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
 			return
 		}
 
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
 		if err != nil {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
 			return
 		}
 
-		params.IfMatch = &IfMatch
+		params.IfMatch = IfMatch
 
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5143,8 +5195,32 @@ func (siw *ServerInterfaceWrapper) GetGroup(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetGroup(w, r, name)
+		siw.Handler.GetGroup(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5169,8 +5245,36 @@ func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateGroupParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateGroup(w, r, name)
+		siw.Handler.UpdateGroup(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5463,7 +5567,7 @@ func (siw *ServerInterfaceWrapper) DeletePermissionPolicy(w http.ResponseWriter,
 
 	// ------------- Optional header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatchOptional
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
@@ -5851,7 +5955,7 @@ func (siw *ServerInterfaceWrapper) DeleteRepository(w http.ResponseWriter, r *ht
 
 	// ------------- Optional header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatchOptional
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
@@ -6599,8 +6703,32 @@ func (siw *ServerInterfaceWrapper) GetServiceAccount(w http.ResponseWriter, r *h
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetServiceAccountParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetServiceAccount(w, r, name)
+		siw.Handler.GetServiceAccount(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6625,8 +6753,36 @@ func (siw *ServerInterfaceWrapper) UpdateServiceAccount(w http.ResponseWriter, r
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateServiceAccountParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateServiceAccount(w, r, name)
+		siw.Handler.UpdateServiceAccount(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6816,23 +6972,27 @@ func (siw *ServerInterfaceWrapper) UpdateAuthSettings(w http.ResponseWriter, r *
 
 	headers := r.Header
 
-	// ------------- Optional header parameter "If-Match" -------------
+	// ------------- Required header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatch
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
 			return
 		}
 
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
 		if err != nil {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
 			return
 		}
 
-		params.IfMatch = &IfMatch
+		params.IfMatch = IfMatch
 
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -7703,23 +7863,27 @@ func (siw *ServerInterfaceWrapper) UpdatePreferences(w http.ResponseWriter, r *h
 
 	headers := r.Header
 
-	// ------------- Optional header parameter "If-Match" -------------
+	// ------------- Required header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch string
+		var IfMatch IfMatch
 		n := len(valueList)
 		if n != 1 {
 			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
 			return
 		}
 
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
 		if err != nil {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
 			return
 		}
 
-		params.IfMatch = &IfMatch
+		params.IfMatch = IfMatch
 
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -7861,8 +8025,32 @@ func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUserParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetUser(w, r, username)
+		siw.Handler.GetUser(w, r, username, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7887,8 +8075,36 @@ func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateUserParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateUser(w, r, username)
+		siw.Handler.UpdateUser(w, r, username, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

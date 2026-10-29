@@ -93,6 +93,11 @@ func toMap(s accessSettings) map[string]any {
 	return m
 }
 
+// OnDelete implements [repository.Hooks]: a deletion changes none of the settings.
+func (h *SettingsHook) OnDelete(context.Context, meta.Tx, repository.Caller, repository.Repository) error {
+	return nil
+}
+
 // OnUpdated implements [repository.Hooks].
 func (h *SettingsHook) OnUpdated(ctx context.Context, tx meta.Tx, c repository.Caller, before, after repository.Repository) error {
 	b, a := changedSettings(settingsOf(before), settingsOf(after))

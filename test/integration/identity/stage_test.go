@@ -50,7 +50,7 @@ func TestR_AUTH_001_StageAgainstTheRealStores(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTH-001 an expired PAT on a repository anonymous may read is 401, not the anonymous response", func(t *testing.T) {
-		if _, err := a.settings.Update(ctx, admin, token.SettingsPatch{AnonymousAccess: ptr(true)}); err != nil {
+		if _, err := a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(true)}); err != nil {
 			t.Fatal(err)
 		}
 		short := a.pat(alice, func(r *token.CreateRequest) { s := int64(60); r.TTL.Seconds = &s })
@@ -122,11 +122,11 @@ func TestR_AUTH_037_AnonymousSwitchReachesEveryReplica(t *testing.T) {
 			if anonymous(a) || anonymous(b) {
 				t.Fatal("anonymous access is off by default")
 			}
-			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: ptr(true)}); err != nil {
+			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(true)}); err != nil {
 				t.Fatal(err)
 			}
 			waitFor(t, "anonymous access on replica B", revocationBound, func() bool { return anonymous(b) })
-			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{AnonymousAccess: ptr(false)}); err != nil {
+			if _, err := a.settings.Update(context.Background(), admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(false)}); err != nil {
 				t.Fatal(err)
 			}
 			waitFor(t, "anonymous access off on replica B", revocationBound, func() bool { return !anonymous(b) })
@@ -145,19 +145,19 @@ func TestR_AUTH_040_RuntimeSettings(t *testing.T) {
 	day := func(n int) *time.Duration { d := time.Duration(n) * 24 * time.Hour; return &d }
 
 	t.Run("a value above its YAML ceiling is 400 exceeds_ceiling", func(t *testing.T) {
-		_, err := a.settings.Update(ctx, admin, token.SettingsPatch{PATMaxTTL: day(400)})
+		_, err := a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, PATMaxTTL: day(400)})
 		wantCode(t, err, 400, errs.CodeExceedsCeiling)
 	})
 	t.Run("a default above the maximum is 400 default_above_maximum", func(t *testing.T) {
-		_, err := a.settings.Update(ctx, admin, token.SettingsPatch{PATMaxTTL: day(30), PATDefaultTTL: day(60)})
+		_, err := a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, PATMaxTTL: day(30), PATDefaultTTL: day(60)})
 		wantCode(t, err, 400, errs.CodeDefaultAboveMaximum)
-		_, err = a.settings.Update(ctx, admin, token.SettingsPatch{SATDefaultTTL: ptr(30 * time.Second)})
+		_, err = a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, SATDefaultTTL: ptr(30 * time.Second)})
 		wantCode(t, err, 400, errs.CodeInvalidTTL)
 	})
 	t.Run("lowering the maximum refuses longer tokens and leaves existing ones alone", func(t *testing.T) {
 		u := a.user("alice")
 		old := a.pat(u)
-		if _, err := a.settings.Update(ctx, admin, token.SettingsPatch{PATMaxTTL: day(30), PATDefaultTTL: day(7)}); err != nil {
+		if _, err := a.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, PATMaxTTL: day(30), PATDefaultTTL: day(7)}); err != nil {
 			t.Fatal(err)
 		}
 		s := int64(60 * 24 * 3600)
@@ -177,7 +177,7 @@ func TestR_AUTH_040_RuntimeSettings(t *testing.T) {
 	})
 	t.Run("anonymous access cannot be enabled while the ceiling forbids it", func(t *testing.T) {
 		r := e.newReplicaWithAnonymousCeiling(false)
-		_, err := r.settings.Update(ctx, admin, token.SettingsPatch{AnonymousAccess: ptr(true)})
+		_, err := r.settings.Update(ctx, admin, token.SettingsPatch{Expected: errs.AnyRevision, AnonymousAccess: ptr(true)})
 		wantCode(t, err, 409, errs.CodeAnonymousNotAllowed)
 	})
 }

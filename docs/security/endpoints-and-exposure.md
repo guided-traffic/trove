@@ -64,6 +64,16 @@ alone cannot give anyone a right, because exposure only narrows. The endpoints t
 have no write operation. Updated and deleted rules carry a revocation-journal entry with the states before and after
 (R-EP-020), written in the transaction of the change.
 
+- **A session proves a recent sign-in for every write.** The four rule writes declare `x-trove-recent-auth: true`, and the shared
+  authorization step answers `401 reauthentication_required` to a session whose interactive sign-in is older than
+  `auth.sessions.recent_auth_window`, after it decided that the caller holds `endpoints:write` (R-API-007, Q-API-40). A token caller is
+  not asked; its scope bounds it.
+- **A repository takes its rules with it, and the trail says so.** Deleting a repository removes its rules through the foreign key; the
+  delete hook records one `endpoint.exposure.deleted` per rule with the cause `repository_deleted` and the journal entry of R-EP-020,
+  in the transaction that removes the row (Q-EP-25). The rules stopped exposing when the repository was marked `deleting`.
+- **A merge patch does not merge over a concurrent change.** `PATCH` is written conditional on the revision it was computed on, also
+  for `If-Match: *` (Q-EP-26).
+
 ## Rate limit of an endpoint
 
 The class of `server.endpoint_rate_limits` an endpoint names is a cluster limiter per class, bucketed per endpoint and
@@ -71,26 +81,6 @@ token (or client address), in front of the management API's classes. While Valke
 share, the budget divided by the live replicas of its pool, so the cluster stays within the budget.
 
 ## What this does not cover
-
-### H-164 · Deleting a repository removes its exposure rules without an audit event
-
-Stage: the deletion job of a repository ([repositories.md](../developer/repositories.md)), the foreign key of
-`endpoint_exposure_rule.repo_id`.
-
-Live whenever a repository with exposure rules is deleted. Subject: the audit trail and the revocation journal. The rules stop
-exposing as soon as the repository is marked `deleting` (the index build reads rules of active repositories only), and the
-row's deletion removes them through the cascade, but no `endpoint.exposure.deleted` with cause `repository_deleted` is
-recorded, so the trail shows the repository's deletion and not the rules it took with it. What makes it real: an
-investigation that reconstructs from the audit trail alone what an endpoint exposed.
-
-### H-165 · Recent authentication is declared on the rule writes and not enforced
-
-Stage: `POST`, `PUT`, `PATCH` and `DELETE` of `/api/v1/endpoints/{endpoint}/exposure-rules` (`x-trove-recent-auth: true`).
-
-Live for session callers of the management API on the default endpoint: no step of this build enforces the extension
-(R-API-007), so a session whose interactive sign-in is older than `auth.sessions.recent_auth_window` can still widen what an
-endpoint exposes. Token callers are not affected; their scope bounds them. Subject: the content of every repository a rule
-can name. What makes it real: a session left open or taken over, together with `endpoints:write`.
 
 ### H-166 · A decision made outside the request's context has no endpoint ceiling
 

@@ -105,7 +105,7 @@ The helpers live in [internal/api/v1](../../internal/api/v1). A handler calls th
 |---|---|---|---|
 | Strict JSON body: content type (415), size (413), unknown or duplicate member and wrong type (400 `malformed_request` with `errors[0].pointer`, R-API-003) | `ReadBody`, `DecodeJSON`, `StrictUnmarshal` | [decode.go](../../internal/api/v1/decode.go) | The request type is the response type, so a body obtained by GET can be sent back and read-only members are accepted and ignored. Member names compare exactly. |
 | Cursor pagination, filters, sort (R-API-010, R-API-011) | `ParseList`, `ListSpec`, `ListQuery`, `NewPage`, `MapPage`, `WritePage` | [paging.go](../../internal/api/v1/paging.go) | `limit` default `api.page_size_default`, clamped to `api.page_size_max` (Q-API-16). An unknown parameter or sort field is 400; a cursor for other filters or another sort is 400 `invalid_cursor`. |
-| `ETag` from a revision column, `If-Match`, `If-None-Match` (R-API-012) | `ETag`, `SetETag`, `ParseIfMatch`, `Precondition.Require/Revision/Matches`, `Failed`, `NotModified` | [etag.go](../../internal/api/v1/etag.go) | 428 without `If-Match` on PUT/PATCH; 412 with `currentEtag`. |
+| `ETag` from a revision column, `If-Match`, `If-None-Match` (R-API-012) | `ETag`, `SetETag`, `ParseIfMatch`, `expectedRevision`, `Precondition.Revision/Matches`, `Failed`, `NotModified`; `errs.Stale`, `errs.AnyRevision` | [etag.go](../../internal/api/v1/etag.go), [revision.go](../../internal/errs/revision.go) | 428 without `If-Match` on PUT/PATCH (the binder, below); 412 with `currentEtag`, from the one `errs.Stale`. |
 | JSON merge patch (R-API-013) | `ReadMergePatch`, `MergePatch`, `ApplyMergePatch`, `CheckImmutable` | [patch.go](../../internal/api/v1/patch.go) | RFC 7396; an immutable member that differs is 422 `validation_failed` with its pointer. |
 | Idempotency keys, stored in PostgreSQL (R-API-014, R-API-051) | `Idempotency.Do`, `IdempotentOp`, `Outcome` | [idempotency.go](../../internal/api/v1/idempotency.go) | The row is inserted in the transaction of the change. |
 | Item paths and reserved names (R-API-004) | `CheckItemPath`, `CheckReservedName` | [path.go](../../internal/api/v1/path.go) | `invalid_path` is registered by the files area. |
@@ -115,8 +115,37 @@ The helpers live in [internal/api/v1](../../internal/api/v1). A handler calls th
 Problem extensions: `errs.WithExtension(name, value)` adds a member (`currentEtag`, `job`, `tokenId`); `errs.WithBadRequest()`
 keeps a 400 that lists fields; `errs.Unprocessable` (422 without fields) and `errs.PreconditionRequired` (428) are kinds.
 
-A missing `If-Match` on an operation that uses the shared `IfMatch` parameter is refused by the generated binder before the handler;
-`bindError` turns that into the 428 of R-API-012 (Q-API-32), so a handler of `PUT` and `PATCH` can rely on the answer.
+### One mechanism for `If-Match` (Q-API-28, Q-API-42)
+
+- A `PUT` or `PATCH` that needs the header declares `x-trove-if-match: required` and references the shared parameter
+  `#/components/parameters/IfMatch` (required) and no other `If-Match`; a `DELETE` references `IfMatchOptional`. The generated
+  binder refuses a request without a required header before the handler, `bindError` turns that into the 428 of R-API-012,
+  and a handler never checks the header again: it reads `expectedRevision(pre)` (the revision, `errs.AnyRevision` for `*`,
+  0 for a tag the server never issued) and passes it to the write.
+- The write is conditional on that revision in the same statement or under the row lock, and a mismatch is `errs.Stale(what,
+  current)`: 412 with `currentEtag` and the cause `*errs.StaleRevision`. The domain packages return it themselves
+  (repository, authz policies and rules, the principal manager, the authentication settings); `Failed` is the same error for
+  a handler that compares in memory first. A merge patch computes on the revision it read and writes conditional on that
+  one, also for `*` (policies, exposure rules).
+- [ifmatch_test.go](../../internal/api/v1/ifmatch_test.go) reads the document: every `PUT` and `PATCH` requires the header with
+  the shared parameter or is on the short exemption list (membership deltas, role bindings, file content), and every required
+  operation answers 428 without the header.
+
+### Recent authentication (R-API-007, Q-API-40)
+
+`x-trove-recent-auth: true` on an operation is read into `Operation.RecentAuth` when the document loads (any other value stops
+start-up). `Server.authorize` ([authorize.go](../../internal/api/v1/authorize.go)) calls `requireRecentAuth` once `decide`
+allowed the caller, so a caller who may not act gets 403 and not an invitation to sign in again. It looks the session up
+(`SessionService.Validate`), compares `authenticated_at` with `auth.sessions.recent_auth_window` and answers 401
+`reauthentication_required`; a token is not asked; a replica without a session store answers 503. No handler checks it. The
+operations that declare it are listed in `recentAuthOperations` in
+[recent_auth_test.go](../../internal/api/v1/recent_auth_test.go); adding a declaration without extending that list fails the test.
+
+### Authorization epoch of a write
+
+`authz.HeaderEpoch` is the header name. A plain answer sets it with `setEpoch`; an idempotent create gives its outcome
+`Finish: finishEpoch(&epoch)` ([authz_api.go](../../internal/api/v1/authz_api.go)), so the stored outcome and every replay carry
+the epoch of the first answer (Q-API-44).
 
 ### Idempotency in detail
 
@@ -146,7 +175,8 @@ The task `idempotency-cleanup` ([cleanup.go](../../internal/api/v1/cleanup.go), 
 
 The worked example is the widget resource of the contract tests,
 [test/integration/api/widgets_test.go](../../test/integration/api/widgets_test.go): a keyed collection with list, get,
-create, update (merge patch and PUT) and delete. Follow its shape. The steps:
+create, update (merge patch and PUT) and delete. Follow its shape; the widgets are served by a hand-written router, so
+they call `pre.Require()` themselves, where a resource behind the generated wrapper relies on the binder (below). The steps:
 
 1. **Table.** Migration with `revision bigint NOT NULL DEFAULT 1`, `created_at`, `updated_at`; a composite index
    `(sort field, id)` for every sortable field (R-API-010). Register the revision column with
@@ -162,9 +192,11 @@ create, update (merge patch and PUT) and delete. Follow its shape. The steps:
      answer 429 anywhere; `TestEveryOperationCanBeRateLimited` fails otherwise);
    - lists: parameters `$ref: "#/components/parameters/Limit"` and `Cursor`, the filters and `sort`, response header `Link`,
      and a list schema `{items: [...], nextCursor: [string, "null"]}` (copy `JobList`);
-   - `PUT`/`PATCH`: `x-trove-if-match: required`, parameter `IfMatch`, responses 412 and 428 (a missing header is answered 428 by
-     `bindError`, because the generated wrapper rejects a missing required header before the handler runs); the `GET` and the write
-     answer the `ETag` header (`#/components/headers/ETag`); `PATCH` takes `application/merge-patch+json`;
+   - `PUT`/`PATCH`: `x-trove-if-match: required`, the shared parameter `IfMatch` (no inline `If-Match`), responses 412 and 428 (a
+     missing header is answered 428 by `bindError`, because the generated wrapper rejects a missing required header before the
+     handler runs; `TestR_API_012_OneMechanismForAMissingIfMatch` checks the declaration); `DELETE` references `IfMatchOptional`;
+     the `GET` and the write answer the `ETag` header (`#/components/headers/ETag`); `PATCH` takes `application/merge-patch+json`;
+   - an operation that mints a credential or widens permissions adds `x-trove-recent-auth: true` (the shared step enforces it);
    - creating `POST` and `DELETE` with 202: `x-trove-idempotency-key: optional`, parameter `IdempotencyKey`, response header
      `Idempotency-Replayed`, and `Location` on 201/202;
    - a collection whose key sits next to a literal route (`/users/me`): list the literals as `x-trove-reserved-names` in the
@@ -193,14 +225,14 @@ create, update (merge patch and PUT) and delete. Follow its shape. The steps:
    }})
 
    // update (PATCH): 428 first, then the patch on the current representation, immutable members, one UPDATE with the revision
-   pre, err := ParseIfMatch(r); err = pre.Require()
+   pre, err := ParseIfMatch(r)                      // the header is there: the binder answered 428 otherwise
    raw, err := ReadMergePatch(w, r, limit)
    next, err := ApplyMergePatch(current, raw); err = CheckImmutable(current, next, "key", "format")
-   rev, byRevision := pre.Revision("")             // not ok for If-Match: *
-   // UPDATE t SET ..., revision = revision + 1 WHERE key = $1 AND ($2::bigint IS NULL OR revision = $2) RETURNING ...
-   // zero rows: the resource is gone (404) or changed (412 with Failed(currentRevision, ""))
+   expected := expectedRevision(pre)               // errs.AnyRevision for If-Match: *
+   // UPDATE t SET ..., revision = revision + 1 WHERE key = $1 AND ($2::bigint < 0 OR revision = $2) RETURNING ...
+   // zero rows: the resource is gone (404) or changed: return errs.Stale("The widget", currentRevision)
 
-   // delete: honours If-Match when sent (pre.Revision), 204 or 202 with a job
+   // delete: honours If-Match when sent (expectedRevision), 204 or 202 with a job
    ```
    A change that also writes an audit event, enqueues a job or notifies a change area does so in the same transaction
    (`RecordTx`, `Queue.Enqueue(ctx, tx, …)`, `cluster.Notify`).

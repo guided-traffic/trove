@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -25,10 +24,6 @@ type changePayload struct {
 	ID   string `json:"id"`
 }
 
-// AnyVersion is the expected version of a deliberate blind write
-// (If-Match: *, R-API-012).
-const AnyVersion int64 = -1
-
 func queriesOf(tx meta.Tx) (*q.Queries, error) {
 	ptx, ok := postgres.Unwrap(tx)
 	if !ok {
@@ -41,11 +36,7 @@ func notFoundPolicy(name string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The permission policy %q does not exist.", name))
 }
 
-func staleVersion(name string, current int64) error {
-	return errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed,
-		fmt.Sprintf("The permission policy %q is at version %d.", name, current),
-		errs.WithExtension("currentEtag", fmt.Sprintf("%q", strconv.FormatInt(current, 10))))
-}
+func staleVersion(current int64) error { return errs.Stale("The permission policy", current) }
 
 // nonNilStrings makes "no warnings" an empty list on the wire, not null.
 func nonNilStrings(s []string) []string {
@@ -149,7 +140,7 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 }
 
 // Update replaces a policy as a whole (R-AUTHZ-021: full replacements). expected
-// is the version the client saw (If-Match); AnyVersion is the deliberate blind
+// is the version the client saw (If-Match); errs.AnyRevision is the deliberate blind
 // write. A different version answers 412, a missing policy 404.
 func (s *Service) Update(ctx context.Context, actor Subject, name string, expected int64, in PolicyInput) (Policy, int64, error) {
 	in.Name = name // the name is immutable
@@ -189,7 +180,7 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 			if len(cur) == 0 {
 				return notFoundPolicy(name)
 			}
-			return staleVersion(name, cur[0])
+			return staleVersion(cur[0])
 		}
 		id := rows[0].ID
 		if err := qs.AuthzClearPolicyChildren(ctx, id); err != nil {
@@ -245,7 +236,7 @@ func (s *Service) Delete(ctx context.Context, actor Subject, name string, expect
 			if len(cur) == 0 {
 				return notFoundPolicy(name)
 			}
-			return staleVersion(name, cur[0])
+			return staleVersion(cur[0])
 		}
 		if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "policy", ID: rows[0].ID}); err != nil {
 			return err

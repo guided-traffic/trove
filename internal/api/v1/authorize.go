@@ -195,6 +195,14 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 			httpserver.Problem(w, r, err)
 			return
 		}
+		// Recent authentication comes after the permission: a caller who may not
+		// do the action is refused with 403, not asked to sign in again.
+		if op.RecentAuth {
+			if err := s.requireRecentAuth(r); err != nil {
+				httpserver.Problem(w, r, err)
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }

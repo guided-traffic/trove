@@ -42,6 +42,21 @@ describe('Service accounts (R-UI-026)', () => {
     expect(text(root)).toContain('Disabled');
   });
 
+  it('R-API-012 saving the description sends If-Match; a 412 opens the conflict dialog', async () => {
+    const { fixture, root, get } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
+    const api = get(IdentityApi) as FakeIdentityApi;
+    typeInto(root, 'Description', 'Deploy and release jobs');
+    buttonByText(root, 'Save description').click();
+    await settle(fixture);
+    expect(api.ifMatch).toEqual(['"1"']);
+    api.bumpRevision('service-account:ci-bot');
+    api.bumpRevision('service-account:ci-bot');
+    typeInto(root, 'Description', 'Something else');
+    buttonByText(root, 'Save description').click();
+    await settle(fixture);
+    expect(overlay().querySelector('trove-conflict-dialog')).toBeTruthy();
+  });
+
   it('R-UI-026 issues a token on the Tokens section, shows it once and never stores it', async () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
     buttonByText(root, 'Create token').click();

@@ -242,7 +242,10 @@ func (a *App) registerIdentityJobs(r *jobs.Registry) {
 func (a *App) authServices() v1.AuthServices {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	svc := v1.AuthServices{Manager: a.m1.principalManager, Tokens: a.m1.tokens, Settings: a.m1.authSettings, Config: a.cfg.Auth}
+	svc := v1.AuthServices{
+		Manager: a.m1.principalManager, Tokens: a.m1.tokens, Settings: a.m1.authSettings, Config: a.cfg.Auth,
+		EndpointConfigured: TokenScopeOptions(a.cfg).Endpoint,
+	}
 	// A nil *session.Store or *oidc.Service must not become a non-nil interface.
 	if a.m1.sessions != nil {
 		svc.Sessions = a.m1.sessions

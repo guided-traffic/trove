@@ -39,8 +39,26 @@ func (s *Server) policies() (*authz.Service, error) {
 func caller(r *http.Request) authz.Subject { return SubjectFrom(httpserver.PrincipalFrom(r.Context())) }
 
 // setEpoch puts the epoch a write produced in Trove-Authz-Epoch (R-AUTHZ-032).
+// authz.HeaderEpoch is the one name of the header and this the one setter: a write
+// answers it through here, and an idempotent create through [finishEpoch].
 func setEpoch(w http.ResponseWriter, epoch int64) {
 	w.Header().Set(authz.HeaderEpoch, strconv.FormatInt(epoch, 10))
+}
+
+// finishEpoch is the Outcome.Finish of an idempotent create that changes
+// authorization data. The change log raises the epoch in a hook just before
+// COMMIT, after the operation returned its outcome; Finish runs after that hook
+// and before the outcome is stored, so the stored outcome, and with it every
+// replay, carries the epoch of the first answer (R-AUTHZ-032, Q-API-28). The
+// write stores its epoch through *epoch.
+func finishEpoch(epoch *int64) func(context.Context, meta.Tx, *Outcome) error {
+	return func(_ context.Context, _ meta.Tx, out *Outcome) error {
+		if out.Header == nil {
+			out.Header = map[string]string{}
+		}
+		out.Header[authz.HeaderEpoch] = strconv.FormatInt(*epoch, 10)
+		return nil
+	}
 }
 
 func (s *Server) bodyLimit() int64 { return int64(s.o.API.Config.MaxRequestBodyBytes) }
@@ -147,12 +165,7 @@ func (s *Server) CreatePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 		return Outcome{
 			Status: http.StatusCreated, Body: p,
 			Header: map[string]string{"Location": policyHref(base, p.Name), "ETag": ETag(p.Version, "")},
-			// The change log raises the epoch in a hook just before COMMIT; the stored
-			// outcome, and so every replay, carries it (R-AUTHZ-032).
-			Finish: func(_ context.Context, _ meta.Tx, out *Outcome) error {
-				out.Header[authz.HeaderEpoch] = strconv.FormatInt(epoch, 10)
-				return nil
-			},
+			Finish: finishEpoch(&epoch),
 		}, nil
 	}})
 	if err != nil {
@@ -188,9 +201,6 @@ func (s *Server) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	pre, err := ParseIfMatch(r)
-	if err == nil {
-		err = pre.Require()
-	}
 	var in authz.Policy
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
@@ -205,7 +215,7 @@ func (s *Server) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request,
 		httpserver.Problem(w, r, err)
 		return
 	}
-	expected := authz.AnyVersion
+	expected := errs.AnyRevision
 	if rev, ok := pre.Revision(""); ok {
 		expected = rev
 	}
@@ -229,9 +239,6 @@ func (s *Server) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, n
 		return
 	}
 	pre, err := ParseIfMatch(r)
-	if err == nil {
-		err = pre.Require()
-	}
 	var raw []byte
 	if err == nil {
 		raw, err = ReadMergePatch(w, r, s.bodyLimit())
@@ -241,7 +248,7 @@ func (s *Server) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, n
 		cur, err = svc.Get(r.Context(), name)
 	}
 	if err == nil && !pre.Matches(cur.Version, "") {
-		err = Failed(cur.Version, "")
+		err = Failed(cur.Version)
 	}
 	var next authz.Policy
 	if err == nil {
@@ -281,7 +288,7 @@ func (s *Server) DeletePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	expected := authz.AnyVersion
+	expected := errs.AnyRevision
 	if rev, ok := pre.Revision(""); ok {
 		expected = rev
 	}

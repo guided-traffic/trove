@@ -129,13 +129,24 @@ func (s *Service) deleteNow(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 			return err
 		}
 	}
+	r, _ := toRepository(row, s.cat)
+	if err := s.onDelete(ctx, tx, c, r); err != nil {
+		return err
+	}
 	if _, err := qs.DeleteRepositoryRow(ctx, row.ID); err != nil {
 		return err
 	}
-	r, _ := toRepository(row, s.cat)
 	res.Done = true
 	return s.recordAndNotify(ctx, tx, c, EventDeleted, r,
 		eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, "deleted")
+}
+
+// onDelete runs the delete hook in the transaction that removes the row.
+func (s *Service) onDelete(ctx context.Context, tx meta.Tx, c Caller, r Repository) error {
+	if s.hooks == nil {
+		return nil
+	}
+	return s.hooks.OnDelete(ctx, tx, c, r)
 }
 
 // RunDeleteJob is the handler of [DeleteJobKind]. It is idempotent and resumable:
@@ -214,6 +225,9 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 			return nil // an earlier attempt finished
 		}
 		r, _ := toRepository(rows[0], s.cat)
+		if err := s.onDelete(ctx, tx, Caller{Actor: a.Actor}, r); err != nil {
+			return err
+		}
 		n, err := qs.DeleteRepositoryRow(ctx, a.RepoID)
 		if err != nil {
 			return err

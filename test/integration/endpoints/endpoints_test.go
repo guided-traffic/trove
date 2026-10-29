@@ -153,12 +153,17 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 
 			var epoch string
 			t.Run("R-EP-012 R-EP-016 a rule created through the API takes effect on every replica within the bound, at once with the epoch", func(t *testing.T) {
-				a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(releasesRule))
+				a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(releasesRule), "Idempotency-Key", "releases-rule-create")
 				if a.status != 201 || a.header.Get("ETag") != `"1"` || a.header.Get("Location") != "http://trove.test/api/v1/endpoints/customers/exposure-rules/releases" {
 					t.Fatalf("%d %v %s", a.status, a.header, a.body)
 				}
 				if epoch = a.header.Get("Trove-Authz-Epoch"); epoch == "" {
 					t.Fatal("no Trove-Authz-Epoch")
+				}
+				// R-API-014, Q-API-28: a replay carries the epoch of the first answer (Outcome.Finish).
+				if again := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(releasesRule), "Idempotency-Key", "releases-rule-create"); again.status != 201 ||
+					again.header.Get("Idempotency-Replayed") != "true" || again.header.Get("Trove-Authz-Epoch") != epoch {
+					t.Fatalf("replay: %d replayed=%q epoch=%q, want epoch %q", again.status, again.header.Get("Idempotency-Replayed"), again.header.Get("Trove-Authz-Epoch"), epoch)
 				}
 				for _, r := range e.reps {
 					if a := e.onCustomers(r, file, e.acmeSAT, "Trove-Authz-Min-Epoch", epoch); a.status != 200 || string(a.body) != "app 1.0" {

@@ -149,6 +149,51 @@ describe('User detail (R-UI-024)', () => {
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('updateUser alice {"displayName":"Alice B."}');
   });
 
+  it('R-API-012 a user PATCH sends If-Match with the ETag of the loaded record', async () => {
+    const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    const api = get(IdentityApi) as FakeIdentityApi;
+    expect(api.etagOf('user:alice')).toBe('"1"');
+    typeInto(root, 'Display name', 'Alice B.');
+    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    expect(api.ifMatch).toEqual(['"1"']);
+    // The answer's ETag is the one for the next write.
+    typeInto(root, 'Display name', 'Alice C.');
+    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    expect(api.ifMatch).toEqual(['"1"', '"2"']);
+  });
+
+  it('R-UI-042 a 412 on a user PATCH opens the conflict dialog; Overwrite sends the patch with the ETag read now', async () => {
+    const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    const api = get(IdentityApi) as FakeIdentityApi;
+    api.bumpRevision('user:alice');
+    typeInto(root, 'Display name', 'Alice B.');
+    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    const dialog = overlay().querySelector('trove-conflict-dialog') as HTMLElement;
+    expect(dialog).toBeTruthy();
+    expect(text(dialog)).toContain('displayName');
+    buttonByText(dialog, 'Overwrite').click();
+    await sleep(fixture, 300);
+    // The stale tag was refused (it never reached the guard's bump), then the tag read after the 412 went through.
+    expect(api.ifMatch).toEqual(['"1"', '"2"']);
+    expect(api.userList[0]!.displayName).toBe('Alice B.');
+  });
+
+  it('R-UI-042 "Reload" on the conflict dialog drops the draft and writes nothing', async () => {
+    const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
+    const api = get(IdentityApi) as FakeIdentityApi;
+    api.bumpRevision('user:alice');
+    typeInto(root, 'Display name', 'Alice B.');
+    buttonByText(root, 'Save correction').click();
+    await settle(fixture);
+    buttonByText(overlay().querySelector('trove-conflict-dialog') as HTMLElement, 'Reload (discard mine)').click();
+    await sleep(fixture, 300);
+    expect(api.userList[0]!.displayName).toBe('Alice Example');
+    expect(api.ifMatch).toEqual(['"1"']);
+  });
+
   it('R-UI-005 a user the caller may not see is an error notice, not a blank page', async () => {
     const { root } = await renderScreen(UserDetail, { inputs: { username: 'nobody' } });
     expect(root.querySelector('[role="alert"]')).toBeTruthy();

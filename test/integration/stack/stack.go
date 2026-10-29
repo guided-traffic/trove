@@ -51,6 +51,7 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/test/integration/idapi"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
@@ -485,6 +486,10 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 	return r
 }
 
+// FormatCatalog is the format catalog the composition root builds from the
+// registry, for tests of other areas that build a repository reader.
+func FormatCatalog() repository.FormatCatalog { return catalog{} }
+
 // catalog is the format catalog the composition root builds from the registry.
 type catalog struct{}
 
@@ -538,33 +543,21 @@ func (r *Replica) testAuth(req *http.Request) (httpserver.Principal, error) {
 
 func (r *Replica) serve(o Options, rec audit.Recorder) {
 	t := r.E.T
-	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
-	if err != nil {
-		t.Fatal(err)
-	}
 	cfg := config.API{
 		PageSizeDefault: 50, PageSizeMax: 500, IdempotencyRetention: time.Hour,
 		MaxRequestBodyBytes: config.ByteSize(1 << 20),
 	}
-	api := v1.New(v1.Options{
-		Document: doc, Identity: v1.Identity{Replica: r.Name, Role: "web"}, Ready: func() bool { return true },
-		Access:     v1.NewAccess(r.Engine),
-		AuditStore: r.Store,
-		Authz:      v1.AuthzServices{Policies: r.Service, Engine: r.Engine},
-		API:        v1.Services{Config: cfg, Store: r.DB, Audit: rec},
+	// The handler is the one the identity and login tests use (test/integration/idapi),
+	// with the stand-in authentication and the engine and services of this replica.
+	h := idapi.Handler(t, idapi.Components{
+		Name: r.Name, DB: r.DB, Changes: r.Changes, Recorder: rec, BaseURL: "http://trove.test", Log: quiet(),
+		Engine: r.Engine, Authenticate: r.testAuth, Validator: o.Validator,
+		Options: func(_ *authz.Engine, o *v1.Options) {
+			o.AuditStore = r.Store
+			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine}
+			o.API = v1.Services{Config: cfg, Store: r.DB, Audit: rec}
+		},
 	})
-	router := httpserver.NewClientRouter()
-	api.Register(router)
-	res, err := httpserver.NewResolver(nil, "http://trove.test", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h := httpserver.Chain{
-		Router: router, Resolver: res, Authenticate: r.testAuth, Replica: r.Name, ReplicaHeader: httpserver.ReplicaAlways,
-	}.Handler()
-	if o.Validator != nil {
-		h = o.Validator.Handler(t, h)
-	}
 	r.Server = httptest.NewServer(h)
 }
 

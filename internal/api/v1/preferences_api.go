@@ -146,9 +146,6 @@ func (s *Server) UpdatePreferences(w http.ResponseWriter, r *http.Request, _ gen
 		return
 	}
 	pre, err := ParseIfMatch(r)
-	if err == nil {
-		err = pre.Require()
-	}
 	var uid string
 	if err == nil {
 		uid, err = preferencesUser(r)
@@ -177,7 +174,7 @@ func (s *Server) UpdatePreferences(w http.ResponseWriter, r *http.Request, _ gen
 			return err
 		}
 		if byRevision && rev != cur.revision {
-			return Failed(cur.revision, "")
+			return Failed(cur.revision)
 		}
 		next, err := in.apply(cur)
 		if err != nil {
@@ -199,7 +196,7 @@ func (s *Server) UpdatePreferences(w http.ResponseWriter, r *http.Request, _ gen
 			if err != nil {
 				return err
 			}
-			return Failed(latest.revision, "")
+			return Failed(latest.revision)
 		}
 		r0 := rows[0]
 		out = prefs{locale: r0.Locale, theme: r0.Theme, projectFilter: r0.ProjectFilter, keyboardShortcuts: r0.KeyboardShortcuts, revision: r0.Revision}

@@ -48,6 +48,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/outbound"
 	"github.com/guided-traffic/trove/internal/tlsfiles/tlstest"
+	"github.com/guided-traffic/trove/test/integration/idapi"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
@@ -78,6 +79,10 @@ type env struct {
 	realAPI    bool
 	validator  *apitest.Validator
 	components []apiParts
+	// extend, when set, adds the services of further areas to the API handler of
+	// every replica (the audit store, the policy service, the raw file path;
+	// e1_5_test.go).
+	extend func(c *idapi.Components, p replicaParts)
 
 	secretFile string
 	edge       *httptest.Server
@@ -123,8 +128,9 @@ func newEnv(t *testing.T) *env {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	retention := 365 // the audit partitions the real audit writer (e1_5_test.go) inserts into
 	if _, err := postgres.Migrate(ctx, cfg, postgres.MigrateOptions{
-		Instance: "it-migrate", Version: "0.1.0", Log: quiet,
+		Instance: "it-migrate", Version: "0.1.0", Log: quiet, AuditRetentionDays: &retention,
 		Migrate: config.Migrate{AdvisoryLockWait: 20 * time.Second, DDLLockTimeout: 2 * time.Second, DDLLockRetries: 3},
 	}); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -298,7 +304,9 @@ func (e *env) newReplica(name string, auth config.Auth, wait bool) *replica {
 	rep.mux.HandleFunc(oidc.RouteLogout, login.HandleLogout)
 	rep.mux.HandleFunc(oidc.RouteLocalLogin, login.HandleLocalLogin)
 	if e.realAPI {
-		rep.mux.Handle("/api/v1/", e.apiHandler(name, db, changes, caches, reg, store, login, authMetrics, auth))
+		h := e.apiHandler(name, db, changes, caches, reg, store, login, authMetrics, auth)
+		rep.mux.Handle("/api/v1/", h)
+		rep.mux.Handle("/files/", h) // mounted by e.extend when a test adds the raw file path
 	} else {
 		// The authentication stage of the identity area resolves the cookie through
 		// session.Validator and applies CheckCSRF; these two routes stand in for it.
@@ -528,21 +536,32 @@ func (p *fakeProvisioner) last() principal.LoginClaims {
 	return p.claims[len(p.claims)-1]
 }
 
-// spy records audit events.
+// spy records audit events. With next set it also hands every event on to a real
+// recorder (the audit writer), so a test sees them in the audit trail and the log
+// stream as well.
 type spy struct {
-	mu  sync.Mutex
-	evs []audit.Event
+	mu   sync.Mutex
+	evs  []audit.Event
+	next audit.Recorder
 }
 
-func (s *spy) RecordTx(ctx context.Context, _ meta.Tx, ev audit.Event) error {
-	s.Record(ctx, ev)
-	return nil
-}
-
-func (s *spy) Record(_ context.Context, ev audit.Event) {
+func (s *spy) RecordTx(ctx context.Context, tx meta.Tx, ev audit.Event) error {
 	s.mu.Lock()
 	s.evs = append(s.evs, ev)
 	s.mu.Unlock()
+	if s.next != nil {
+		return s.next.RecordTx(ctx, tx, ev)
+	}
+	return nil
+}
+
+func (s *spy) Record(ctx context.Context, ev audit.Event) {
+	s.mu.Lock()
+	s.evs = append(s.evs, ev)
+	s.mu.Unlock()
+	if s.next != nil {
+		s.next.Record(ctx, ev)
+	}
 }
 
 // events returns the recorded events of a type.

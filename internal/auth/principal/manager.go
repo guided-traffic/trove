@@ -113,8 +113,10 @@ type User struct {
 	SCIMExternalID string
 	LastLoginAt    time.Time
 	CreatedAt      time.Time
-	Identities     []Identity
-	Groups         []Membership
+	// Revision is the ETag of the user (principal.revision, R-API-012).
+	Revision   int64
+	Identities []Identity
+	Groups     []Membership
 	// GroupClaimMissing is set while the last login carried no usable group claim.
 	GroupClaimMissing *ClaimMissing
 	// IsAdmin and AdminVia are derived from the role bindings, never stored
@@ -237,10 +239,11 @@ func (m *Manager) GetUser(ctx context.Context, name string) (User, error) {
 }
 
 func userFrom(id, name, status, email string, emailVerified bool, displayName, origin string, bg bool, reason, scim string,
-	lastLogin, created time.Time, claim string,
+	lastLogin, created time.Time, revision int64, claim string,
 ) User {
 	u := User{
-		ID: id, Name: name, Status: Status(status), Email: email, EmailVerified: emailVerified, DisplayName: displayName,
+		Revision: revision,
+		ID:       id, Name: name, Status: Status(status), Email: email, EmailVerified: emailVerified, DisplayName: displayName,
 		Origin: origin, BreakGlass: bg, DisabledReason: reason, SCIMExternalID: scim, LastLoginAt: lastLogin, CreatedAt: created,
 	}
 	if claim != "" && claim != "null" {
@@ -262,7 +265,7 @@ func loadUser(ctx context.Context, qs *q.Queries, name string) (User, error) {
 	}
 	r := rows[0]
 	u := userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
-		r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.GroupClaimMissing)
+		r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, r.GroupClaimMissing)
 	if err := fillUser(ctx, qs, &u); err != nil {
 		return u, err
 	}
@@ -362,7 +365,7 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 		out = out[:0]
 		for _, r := range rows {
 			u := userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
-				r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, "")
+				r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, "")
 			if err := fillUser(ctx, qs, &u); err != nil {
 				return err
 			}
@@ -371,6 +374,27 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 		return fillAdmin(ctx, qs, out)
 	})
 	return out, DBErr("principal.ListUsers", err)
+}
+
+// checkRevision is the If-Match of an update (R-API-012): it locks the principal's
+// row and compares the stored revision with the one the caller loaded. A mismatch
+// is the 412 of errs.Stale; errs.AnyRevision is the deliberate blind write and
+// takes no lock of its own.
+func checkRevision(ctx context.Context, qs *q.Queries, id string, expected int64, what string) error {
+	if expected == errs.AnyRevision {
+		return nil
+	}
+	rows, err := qs.IdentityLockRevision(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return NotFound(what)
+	}
+	if rows[0] != expected {
+		return errs.Stale(what, rows[0])
+	}
+	return nil
 }
 
 func clampLimit(n int) int {
@@ -390,6 +414,10 @@ type UserPatch struct {
 	// Identities, when non-nil, replaces the pending links (a linked identity
 	// stays).
 	Identities *[]PendingIdentity
+	// Expected is the revision the caller loaded (If-Match) or errs.AnyRevision
+	// for the deliberate blind write; the zero value matches no revision
+	// (R-API-012).
+	Expected int64
 }
 
 // UpdateUser changes the profile data an administrator may correct (R-AUTH-016).
@@ -404,6 +432,9 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 			return NotFound("The user")
 		}
 		id := pr[0].ID
+		if err := checkRevision(ctx, qs, id, p.Expected, "The user"); err != nil {
+			return err
+		}
 		var fields []string
 		if p.Email != nil || p.DisplayName != nil {
 			arg := q.IdentityUpdateUserFieldsParams{ID: id}

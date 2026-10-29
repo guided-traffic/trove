@@ -2,13 +2,16 @@ import { Injectable, inject } from '@angular/core';
 import { ApiClient } from './client';
 import { PageFetcher } from './pagination';
 import { cleanQuery, seg } from './query';
+import { Versioned } from './repositories-api';
 import { Schema } from './types';
 
 /*
  * Users, groups and service accounts (R-AUTH-016, R-AUTH-018, R-AUTH-020; docs/developer/identity.md).
- * The shapes are the generated ones. None of these resources has an ETag: a PATCH is a merge
- * patch of the members it names (R-API-013), so there is no conflict dialog for them. Disable,
- * enable and unlock answer 204; the screens read the record again.
+ * The shapes are the generated ones. A user, a group and a service account carry an `ETag`
+ * (Q-API-42, Q-API-43): the reads return it with the body, a PATCH is a merge patch of the members
+ * it names (R-API-013) sent with the loaded tag, and a stale tag is a 412 that opens the conflict
+ * dialog. Membership changes, disable, enable and unlock carry no tag; disable, enable and unlock
+ * answer 204 and the screens read the record again.
  */
 
 export type User = Schema<'User'>;
@@ -55,9 +58,9 @@ export abstract class IdentityApi {
   abstract me(): Promise<User>;
 
   abstract users(filters: UserFilters): PageFetcher<User>;
-  abstract user(username: string): Promise<User>;
+  abstract user(username: string): Promise<Versioned<User>>;
   abstract createUser(body: NewUser, idempotencyKey: string): Promise<User>;
-  abstract updateUser(username: string, patch: UserPatch): Promise<User>;
+  abstract updateUser(username: string, patch: UserPatch, etag: string): Promise<Versioned<User>>;
   abstract deleteUser(username: string): Promise<void>;
   abstract disableUser(username: string, options: DisableOptions): Promise<void>;
   abstract enableUser(username: string): Promise<void>;
@@ -68,20 +71,28 @@ export abstract class IdentityApi {
   abstract unlockUser(username: string): Promise<void>;
 
   abstract groups(filters: GroupFilters): PageFetcher<Group>;
-  abstract group(name: string): Promise<Group>;
+  abstract group(name: string): Promise<Versioned<Group>>;
   abstract createGroup(body: NewGroup, idempotencyKey: string): Promise<Group>;
-  abstract updateGroup(name: string, patch: GroupPatch): Promise<Group>;
+  abstract updateGroup(name: string, patch: GroupPatch, etag: string): Promise<Versioned<Group>>;
   abstract deleteGroup(name: string): Promise<void>;
   abstract groupMembers(name: string, source?: string): PageFetcher<GroupMember>;
   abstract changeGroupMembers(name: string, change: GroupMembersChange): Promise<readonly GroupMember[]>;
 
   abstract serviceAccounts(filters: ServiceAccountFilters): PageFetcher<ServiceAccount>;
-  abstract serviceAccount(name: string): Promise<ServiceAccount>;
+  abstract serviceAccount(name: string): Promise<Versioned<ServiceAccount>>;
   abstract createServiceAccount(body: NewServiceAccount, idempotencyKey: string): Promise<ServiceAccount>;
-  abstract updateServiceAccount(name: string, patch: { description?: string }): Promise<ServiceAccount>;
+  abstract updateServiceAccount(
+    name: string,
+    patch: { description?: string },
+    etag: string,
+  ): Promise<Versioned<ServiceAccount>>;
   abstract deleteServiceAccount(name: string): Promise<void>;
   abstract disableServiceAccount(name: string, options: DisableOptions): Promise<void>;
   abstract enableServiceAccount(name: string): Promise<void>;
+}
+
+function versioned<T>(r: { readonly body: T; readonly etag: string | null }): Versioned<T> {
+  return { value: r.body, etag: r.etag ?? '' };
 }
 
 @Injectable()
@@ -96,16 +107,16 @@ export class HttpIdentityApi extends IdentityApi {
     return this.client.page<User>('/api/v1/users', cleanQuery(filters));
   }
 
-  override async user(username: string): Promise<User> {
-    return (await this.client.getJson<User>(`/api/v1/users/${seg(username)}`)).body;
+  override async user(username: string): Promise<Versioned<User>> {
+    return versioned(await this.client.getJson<User>(`/api/v1/users/${seg(username)}`));
   }
 
   override async createUser(body: NewUser, idempotencyKey: string): Promise<User> {
     return (await this.client.post<User>('/api/v1/users', body, { idempotencyKey })).body;
   }
 
-  override async updateUser(username: string, patch: UserPatch): Promise<User> {
-    return (await this.client.patchMerge<User>(`/api/v1/users/${seg(username)}`, patch)).body;
+  override async updateUser(username: string, patch: UserPatch, etag: string): Promise<Versioned<User>> {
+    return versioned(await this.client.patch<User>(`/api/v1/users/${seg(username)}`, patch, etag));
   }
 
   override async deleteUser(username: string): Promise<void> {
@@ -139,16 +150,16 @@ export class HttpIdentityApi extends IdentityApi {
     return this.client.page<Group>('/api/v1/groups', cleanQuery(filters));
   }
 
-  override async group(name: string): Promise<Group> {
-    return (await this.client.getJson<Group>(`/api/v1/groups/${seg(name)}`)).body;
+  override async group(name: string): Promise<Versioned<Group>> {
+    return versioned(await this.client.getJson<Group>(`/api/v1/groups/${seg(name)}`));
   }
 
   override async createGroup(body: NewGroup, idempotencyKey: string): Promise<Group> {
     return (await this.client.post<Group>('/api/v1/groups', body, { idempotencyKey })).body;
   }
 
-  override async updateGroup(name: string, patch: GroupPatch): Promise<Group> {
-    return (await this.client.patchMerge<Group>(`/api/v1/groups/${seg(name)}`, patch)).body;
+  override async updateGroup(name: string, patch: GroupPatch, etag: string): Promise<Versioned<Group>> {
+    return versioned(await this.client.patch<Group>(`/api/v1/groups/${seg(name)}`, patch, etag));
   }
 
   override async deleteGroup(name: string): Promise<void> {
@@ -174,8 +185,8 @@ export class HttpIdentityApi extends IdentityApi {
     return this.client.page<ServiceAccount>('/api/v1/service-accounts', cleanQuery(filters));
   }
 
-  override async serviceAccount(name: string): Promise<ServiceAccount> {
-    return (await this.client.getJson<ServiceAccount>(`/api/v1/service-accounts/${seg(name)}`)).body;
+  override async serviceAccount(name: string): Promise<Versioned<ServiceAccount>> {
+    return versioned(await this.client.getJson<ServiceAccount>(`/api/v1/service-accounts/${seg(name)}`));
   }
 
   override async createServiceAccount(
@@ -189,9 +200,11 @@ export class HttpIdentityApi extends IdentityApi {
   override async updateServiceAccount(
     name: string,
     patch: { description?: string },
-  ): Promise<ServiceAccount> {
-    return (await this.client.patchMerge<ServiceAccount>(`/api/v1/service-accounts/${seg(name)}`, patch))
-      .body;
+    etag: string,
+  ): Promise<Versioned<ServiceAccount>> {
+    return versioned(
+      await this.client.patch<ServiceAccount>(`/api/v1/service-accounts/${seg(name)}`, patch, etag),
+    );
   }
 
   override async deleteServiceAccount(name: string): Promise<void> {

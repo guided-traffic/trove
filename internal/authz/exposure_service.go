@@ -2,11 +2,9 @@ package authz
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -80,18 +78,7 @@ func (s *ExposureService) Configured(endpoint string) bool {
 // Mode returns the exposure mode of a configured endpoint.
 func (s *ExposureService) Mode(endpoint string) string { return s.o.Ceiling.Mode(endpoint) }
 
-// StaleRevision is the cause of a 412: the stored revision differs from the one
-// the caller read. The handler puts Current into currentEtag (R-API-012).
-type StaleRevision struct{ Current int64 }
-
-func (e *StaleRevision) Error() string {
-	return "the rule is at revision " + strconv.FormatInt(e.Current, 10)
-}
-
-func staleRevision(current int64) error {
-	return errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed,
-		"The exposure rule changed since you loaded it; reload it and try again.", errs.WithCause(&StaleRevision{Current: current}))
-}
+func staleRevision(current int64) error { return errs.Stale("The exposure rule", current) }
 
 func notFoundRule(endpoint, name string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The endpoint %q has no exposure rule %q.", endpoint, name))
@@ -550,7 +537,7 @@ func (s *ExposureService) Create(ctx context.Context, tx meta.Tx, actor Subject,
 
 // Replace replaces a rule as a whole (R-EP-016 PUT, and the merge patch the
 // handler applies on the stored rule). expected is the revision the client saw
-// (If-Match); AnyVersion is the deliberate blind write. Name and repository are
+// (If-Match); errs.AnyRevision is the deliberate blind write. Name and repository are
 // immutable: a different repository answers 422. A different revision answers
 // 412 with [StaleRevision] as the cause, a missing rule 404.
 func (s *ExposureService) Replace(ctx context.Context, actor Subject, endpoint, name string, expected int64, in ExposureRuleInput) (ExposureRule, int64, error) {
@@ -816,13 +803,4 @@ func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored [
 		return 0
 	})
 	return out, nil
-}
-
-// IsStale returns the current revision of a 412 the service answered.
-func IsStale(err error) (int64, bool) {
-	var st *StaleRevision
-	if errors.As(err, &st) {
-		return st.Current, true
-	}
-	return 0, false
 }

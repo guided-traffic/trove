@@ -249,7 +249,7 @@ func TestETag(t *testing.T) {
 	})
 	t.Run("R-API-012 a mismatch is 412 with currentEtag", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		errs.Write(rec, httptest.NewRequest("PATCH", "/x", nil), Failed(5, ""), "id", nil)
+		errs.Write(rec, httptest.NewRequest("PATCH", "/x", nil), Failed(5), "id", nil)
 		var m map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &m)
 		if rec.Code != 412 || m["currentEtag"] != `"5"` || m["code"] != "precondition_failed" {

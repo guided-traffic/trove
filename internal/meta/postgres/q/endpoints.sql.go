@@ -373,6 +373,91 @@ func (q *Queries) EndpointsListRules(ctx context.Context, endpoint string) ([]En
 	return items, nil
 }
 
+const endpointsListRulesOfRepository = `-- name: EndpointsListRulesOfRepository :many
+SELECT r.id::text AS id, r.endpoint, r.name, r.description, r.repo_id, p.key AS repository, p.format, p.class,
+       r.enabled, r.packages::text AS packages, r.paths::text AS paths, r.versions::text AS versions,
+       r.prereleases, r.dist_tags::text AS dist_tags, r.revision,
+       (extract(epoch FROM r.created_at) * 1000000)::bigint AS created_us,
+       (extract(epoch FROM r.updated_at) * 1000000)::bigint AS updated_us,
+       COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
+       COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
+  FROM endpoint_exposure_rule r
+  JOIN repositories p ON p.id = r.repo_id
+  LEFT JOIN principal cb ON cb.id = r.created_by
+  LEFT JOIN principal ub ON ub.id = r.updated_by
+ WHERE r.repo_id = $1::bigint
+ ORDER BY r.endpoint, r.name
+   FOR UPDATE OF r
+`
+
+type EndpointsListRulesOfRepositoryRow struct {
+	ID            string
+	Endpoint      string
+	Name          string
+	Description   string
+	RepoID        int64
+	Repository    string
+	Format        string
+	Class         string
+	Enabled       bool
+	Packages      string
+	Paths         string
+	Versions      string
+	Prereleases   bool
+	DistTags      string
+	Revision      int64
+	CreatedUs     int64
+	UpdatedUs     int64
+	CreatedByKind string
+	CreatedByName string
+	UpdatedByKind string
+	UpdatedByName string
+}
+
+// The rules that refer to a repository, locked: the deletion of the repository
+// removes them by the foreign key and records each one first (H-164).
+func (q *Queries) EndpointsListRulesOfRepository(ctx context.Context, repoID int64) ([]EndpointsListRulesOfRepositoryRow, error) {
+	rows, err := q.db.Query(ctx, endpointsListRulesOfRepository, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EndpointsListRulesOfRepositoryRow{}
+	for rows.Next() {
+		var i EndpointsListRulesOfRepositoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Endpoint,
+			&i.Name,
+			&i.Description,
+			&i.RepoID,
+			&i.Repository,
+			&i.Format,
+			&i.Class,
+			&i.Enabled,
+			&i.Packages,
+			&i.Paths,
+			&i.Versions,
+			&i.Prereleases,
+			&i.DistTags,
+			&i.Revision,
+			&i.CreatedUs,
+			&i.UpdatedUs,
+			&i.CreatedByKind,
+			&i.CreatedByName,
+			&i.UpdatedByKind,
+			&i.UpdatedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const endpointsLockRuleCount = `-- name: EndpointsLockRuleCount :one
 SELECT count(*)::bigint AS rules
   FROM (SELECT 1 FROM endpoint_exposure_rule WHERE endpoint = $1::text FOR UPDATE) locked

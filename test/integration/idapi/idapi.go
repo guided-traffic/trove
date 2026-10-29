@@ -1,12 +1,16 @@
 //go:build integration
 
-// Package idapi builds the HTTP side of the identity and login integration tests:
+// Package idapi builds the HTTP side of the integration tests of the access core:
 // the real management API handlers (internal/api/v1) behind the real
-// authentication stage and the real decision point, on the production request chain
-// (internal/httpserver) without the rate-limit stage. A test drives the operations
-// over HTTP the way a client does, with the components of an in-process replica
-// (pools, change log, caches) that it built itself. The package is test support: no
-// production package imports it.
+// authentication stage (or a stand-in for it) and the real decision point, on the
+// production request chain (internal/httpserver) without the rate-limit stage. A
+// test drives the operations over HTTP the way a client does, with the components
+// of an in-process replica (pools, change log, caches) that it built itself. The
+// identity and login areas use it with the real stage; the authorization and
+// audit areas (test/integration/stack) use it with a stand-in that names the
+// caller in a header, with a decision point of their own and the services of
+// their areas added through Components.Options and Components.Routes. The package
+// is test support: no production package imports it.
 package idapi
 
 import (
@@ -55,6 +59,19 @@ type Components struct {
 	Log *slog.Logger
 	// Validator, when not nil, validates every answer against the document.
 	Validator *apitest.Validator
+
+	// Authenticate, when set, replaces Stage as the authentication stage of the
+	// chain: a stand-in for tests whose subject is not the identity area.
+	Authenticate func(*http.Request) (httpserver.Principal, error)
+	// Engine is a decision point the caller built and started; nil builds one from
+	// the other components (the engine then needs Settings for the anonymous
+	// switch) and stops it when the test ends.
+	Engine *authz.Engine
+	// Options, when set, adds the services of further areas to the API options
+	// before the server is built (the policy service, the audit store).
+	Options func(engine *authz.Engine, o *v1.Options)
+	// Routes, when set, mounts further routes on the router (the raw file path).
+	Routes func(engine *authz.Engine, r *httpserver.Router)
 }
 
 // APIConfig is the api section of the tests.
@@ -125,40 +142,51 @@ func Handler(t testing.TB, c Components) http.Handler {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	engine, err := authz.New(authz.Options{
-		Source: authz.NewPostgresSource(c.DB, 10*time.Second), Changes: c.Changes,
-		Config:            config.Authz{HideExistence: true, Cache: config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: time.Hour}},
-		EpochPollInterval: time.Second, RetryBudget: 5 * time.Second, Recorder: c.Recorder, Replica: c.Name, Log: slog.New(slog.DiscardHandler),
-		AnonymousAccess: func() bool {
-			eff, err := c.Settings.Effective(context.Background())
-			return err == nil && eff.AnonymousAccess
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+	engine := c.Engine
+	if engine == nil {
+		var err error
+		engine, err = authz.New(authz.Options{
+			Source: authz.NewPostgresSource(c.DB, 10*time.Second), Changes: c.Changes,
+			Config:            config.Authz{HideExistence: true, Cache: config.AuthzCache{MaxStaleness: 10 * time.Second, SafetyTTL: time.Hour}},
+			EpochPollInterval: time.Second, RetryBudget: 5 * time.Second, Recorder: c.Recorder, Replica: c.Name, Log: slog.New(slog.DiscardHandler),
+			AnonymousAccess: func() bool {
+				eff, err := c.Settings.Effective(context.Background())
+				return err == nil && eff.AnonymousAccess
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := engine.Start(ctx); err != nil {
+			t.Fatalf("engine.Start: %v", err)
+		}
+		t.Cleanup(func() {
+			sctx, scancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer scancel()
+			_ = engine.Stop(sctx)
+		})
 	}
-	if err := engine.Start(ctx); err != nil {
-		t.Fatalf("engine.Start: %v", err)
-	}
-	t.Cleanup(func() {
-		sctx, scancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer scancel()
-		_ = engine.Stop(sctx)
-	})
 	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := v1.New(v1.Options{
+	opts := v1.Options{
 		Document: doc, Identity: v1.Identity{Replica: c.Name, Role: "web"}, Ready: func() bool { return true },
 		Access: v1.NewAccess(engine),
 		API:    v1.Services{Config: APIConfig(), Store: c.DB, Audit: c.Recorder},
 		Auth: v1.AuthServices{
 			Manager: c.Manager, Tokens: c.Tokens, Settings: c.Settings, Sessions: c.Sessions, Login: c.Login, FlowStarts: c.FlowStarts, Config: c.Auth,
 		},
-	})
+	}
+	if c.Options != nil {
+		c.Options(engine, &opts)
+	}
+	api := v1.New(opts)
 	router := httpserver.NewClientRouter()
 	api.Register(router)
+	if c.Routes != nil {
+		c.Routes(engine, router)
+	}
 	resolver, err := httpserver.NewResolver(nil, c.BaseURL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -175,15 +203,19 @@ func Handler(t testing.TB, c Components) http.Handler {
 	if log == nil {
 		log = TestLogger(t)
 	}
-	chain := httpserver.Chain{
-		Log: log, Router: router, Resolver: resolver, Replica: c.Name, ReplicaHeader: httpserver.ReplicaAlways,
-		Authenticate: func(req *http.Request) (httpserver.Principal, error) {
+	authenticate := c.Authenticate
+	if authenticate == nil {
+		authenticate = func(req *http.Request) (httpserver.Principal, error) {
 			res, err := c.Stage.Authenticate(req, rules)
 			if err != nil {
 				return httpserver.Principal{}, err
 			}
 			return principalOf(res), nil
-		},
+		}
+	}
+	chain := httpserver.Chain{
+		Log: log, Router: router, Resolver: resolver, Replica: c.Name, ReplicaHeader: httpserver.ReplicaAlways,
+		Authenticate: authenticate,
 	}.Handler()
 	if c.Validator != nil {
 		return c.Validator.Handler(t, chain)

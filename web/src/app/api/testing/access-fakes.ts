@@ -35,6 +35,7 @@ import {
 import { Page, PageFetcher } from '../pagination';
 import { DraftPolicyExplainer, PolicyExplainer } from '../policy-explainer';
 import { ApiError } from '../problem';
+import { Versioned } from '../repositories-api';
 import { SessionsApi, UserSession } from '../sessions-api';
 import {
   CreateTokenRequest,
@@ -98,6 +99,7 @@ export function sampleToken(over: Partial<Token> = {}): Token {
     owner: { kind: 'user', name: 'alice' },
     description: 'laptop npm',
     scope: { inherit: true, admin: false, repositories: [], system: [] },
+    unknownEndpoints: [],
     createdAt: '2026-10-01T10:00:00Z',
     createdBy: null,
     createdVia: 'api',
@@ -186,6 +188,26 @@ export class FakeIdentityApi extends IdentityApi {
   ];
   failure: ApiError | null = null;
   keys: string[] = [];
+  /** The `If-Match` of every guarded write, in order, for assertions. */
+  readonly ifMatch: string[] = [];
+  private readonly revisions = new Map<string, number>();
+
+  /** The `ETag` the fake serves for `user:alice`, `group:platform` or `service-account:ci-bot`. */
+  etagOf(key: string): string {
+    return `"${this.revisions.get(key) ?? 1}"`;
+  }
+
+  /** Simulates a write by someone else: the stored revision moves on. */
+  bumpRevision(key: string): void {
+    this.revisions.set(key, (this.revisions.get(key) ?? 1) + 1);
+  }
+
+  /** The precondition of a PATCH: a stale tag is a 412 with the current one (Q-API-42). */
+  private guard(key: string, etag: string): void {
+    this.ifMatch.push(etag);
+    if (etag !== this.etagOf(key)) throw problem(412, 'precondition_failed', { currentEtag: this.etagOf(key) });
+    this.bumpRevision(key);
+  }
 
   private fail(): void {
     if (this.failure) {
@@ -212,10 +234,10 @@ export class FakeIdentityApi extends IdentityApi {
       )(cursor, Math.min(limit, this.pageSize));
   }
 
-  override async user(username: string): Promise<User> {
+  override async user(username: string): Promise<Versioned<User>> {
     const found = this.userList.find((u) => u.username === username);
     if (!found) throw problem(404, 'not_found');
-    return found;
+    return { value: found, etag: this.etagOf(`user:${username}`) };
   }
 
   override async createUser(body: NewUser, idempotencyKey: string): Promise<User> {
@@ -237,17 +259,18 @@ export class FakeIdentityApi extends IdentityApi {
     return created;
   }
 
-  override async updateUser(username: string, patch: UserPatch): Promise<User> {
+  override async updateUser(username: string, patch: UserPatch, etag: string): Promise<Versioned<User>> {
     this.fail();
     this.calls.push(`updateUser ${username} ${JSON.stringify(patch)}`);
-    const current = await this.user(username);
+    const current = (await this.user(username)).value;
+    this.guard(`user:${username}`, etag);
     const next: User = {
       ...current,
       email: patch.email === undefined ? current.email : patch.email,
       displayName: patch.displayName === undefined ? current.displayName : patch.displayName,
     };
     this.userList = this.userList.map((u) => (u.username === username ? next : u));
-    return next;
+    return { value: next, etag: this.etagOf(`user:${username}`) };
   }
 
   override async deleteUser(username: string): Promise<void> {
@@ -278,7 +301,7 @@ export class FakeIdentityApi extends IdentityApi {
   ): Promise<readonly UserGroupMembership[]> {
     this.fail();
     this.calls.push(`changeUserGroups ${username} +${(change.add ?? []).join(',')} -${(change.remove ?? []).join(',')}`);
-    const current = await this.user(username);
+    const current = (await this.user(username)).value;
     const kept = current.groups.filter((g) => !(change.remove ?? []).includes(g.name));
     const added = (change.add ?? []).map((name) => ({ name, source: 'manual' }));
     const groups = [...kept, ...added];
@@ -300,10 +323,13 @@ export class FakeIdentityApi extends IdentityApi {
       )(cursor, Math.min(limit, this.pageSize));
   }
 
-  override async group(name: string): Promise<Group> {
+  override async group(name: string): Promise<Versioned<Group>> {
     const found = this.groupList.find((g) => g.name === name);
     if (!found) throw problem(404, 'not_found');
-    return { ...found, memberCount: (this.members[name] ?? []).length };
+    return {
+      value: { ...found, memberCount: (this.members[name] ?? []).length },
+      etag: this.etagOf(`group:${name}`),
+    };
   }
 
   override async createGroup(body: NewGroup, idempotencyKey: string): Promise<Group> {
@@ -324,16 +350,17 @@ export class FakeIdentityApi extends IdentityApi {
     return created;
   }
 
-  override async updateGroup(name: string, patch: GroupPatch): Promise<Group> {
+  override async updateGroup(name: string, patch: GroupPatch, etag: string): Promise<Versioned<Group>> {
     this.fail();
     this.calls.push(`updateGroup ${name} ${JSON.stringify(patch)}`);
-    const current = await this.group(name);
+    const current = (await this.group(name)).value;
+    this.guard(`group:${name}`, etag);
     const next: Group = { ...current, ...patch };
     this.groupList = this.groupList.map((g) => (g.name === name ? next : g));
     if (patch.name && patch.name !== name) {
       this.members[patch.name] = this.members[name] ?? [];
     }
-    return next;
+    return { value: next, etag: this.etagOf(`group:${name}`) };
   }
 
   override async deleteGroup(name: string): Promise<void> {
@@ -377,10 +404,10 @@ export class FakeIdentityApi extends IdentityApi {
       );
   }
 
-  override async serviceAccount(name: string): Promise<ServiceAccount> {
+  override async serviceAccount(name: string): Promise<Versioned<ServiceAccount>> {
     const found = this.accounts.find((a) => a.name === name);
     if (!found) throw problem(404, 'not_found');
-    return found;
+    return { value: found, etag: this.etagOf(`service-account:${name}`) };
   }
 
   override async createServiceAccount(
@@ -404,12 +431,15 @@ export class FakeIdentityApi extends IdentityApi {
   override async updateServiceAccount(
     name: string,
     patch: { description?: string },
-  ): Promise<ServiceAccount> {
+    etag: string,
+  ): Promise<Versioned<ServiceAccount>> {
     this.fail();
     this.calls.push(`updateServiceAccount ${name}`);
-    const next = { ...(await this.serviceAccount(name)), ...patch };
+    const current = (await this.serviceAccount(name)).value;
+    this.guard(`service-account:${name}`, etag);
+    const next = { ...current, ...patch };
     this.accounts = this.accounts.map((a) => (a.name === name ? next : a));
-    return next;
+    return { value: next, etag: this.etagOf(`service-account:${name}`) };
   }
 
   override async deleteServiceAccount(name: string): Promise<void> {
