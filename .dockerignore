@@ -1,0 +1,17 @@
+# The build context of the Containerfile. Build outputs, local state and the web workspace's
+# installed packages stay out; the stages install and build what they need.
+.git
+.github
+.out
+.bin
+.dev
+bin
+trove
+node_modules
+**/node_modules
+web/dist
+web/.angular
+web/coverage
+# The embedded UI is built by the web stage; a locale directory left over from a local build is not
+# copied in (the placeholder index.html stays).
+internal/webui/dist/*/

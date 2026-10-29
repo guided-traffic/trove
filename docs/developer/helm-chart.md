@@ -40,7 +40,7 @@ Gaps in what is there:
 
 ```text
 deploy/helm/trove/
-├── Chart.yaml              apiVersion v2; version = appVersion = 0.0.0-dev (the release rewrites both)
+├── Chart.yaml              apiVersion v2; version = appVersion = 0.0.0-dev (the release pipeline, build.yml, rewrites both)
 ├── values.yaml             defaults; every value commented "default (proposed)" or "example"
 ├── values.schema.json      draft-07, additionalProperties false for everything the chart owns
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
@@ -385,6 +385,7 @@ file to `ci/` adds it to every per-set assertion with no code change.
 | `make chart-lint` → [test/chart/lint.sh](../../test/chart/lint.sh) | `helm lint --strict` and `helm template` for every `ci/` set, `values-dev.yaml`, and `values-dev.yaml` with `values-pooler.yaml` |
 | `make chart-test` → [test/chart/test.sh](../../test/chart/test.sh) | the Go package [test/chart](../../test/chart/chart_test.go) with build tag `chart`; writes `.out/test-chart.json` for the coverage generator |
 | `go test -tags chart ./test/chart/...` | the same, without the wrapper |
+| [test/chart/image_test.go](../../test/chart/image_test.go) | the default image is `docker.io/guidedtraffic/trove` at the appVersion, and `values.yaml` has one `  tag:` line, which the release pipeline rewrites |
 
 Both need only `helm` at the version in `tools/versions.env` (the test binary and `lint.sh` fail
 with the install command when it differs) and no cluster. The tests run `helm template` and parse

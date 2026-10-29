@@ -5,6 +5,9 @@
 # Local dev state: integration certificates and env, dev cluster kubeconfig
 /.dev/
 
+# Root release tooling (semantic-release, package.json): installed packages
+/node_modules/
+
 # Web workspace build output (internal/webui/dist is committed on purpose)
 /web/node_modules/
 /web/dist/

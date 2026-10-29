@@ -1,0 +1,16 @@
+# actionlint's configuration (the pinned version, tools/versions.env ACTIONLINT_VERSION).
+#
+# The two errors below are not about the workflows: actionlint 1.7.12, the newest release, bundles
+# the inputs of actions/create-github-app-token as they were before v2. It asks for app-id and does not
+# know client-id, which the action's own action.yml (v3.3.0) takes; app-id is deprecated there. The
+# App token steps of the workflows pass client-id and private-key, as the organisation's apps do.
+# Only these two messages are ignored, and only in the two files that mint the App token.
+paths:
+  .github/workflows/release.yml:
+    ignore:
+      - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+      - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
+  .github/workflows/renovate.yml:
+    ignore:
+      - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+      - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'

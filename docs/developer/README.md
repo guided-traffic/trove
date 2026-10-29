@@ -37,7 +37,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 |---|---|
 | [architecture.md](architecture.md) | Components, layers, request path, startup and shutdown, coordination, configuration and secrets |
 | [build-and-test.md](build-and-test.md) | Build, generate, lint and test targets, and the test tiers and their build tags |
-| [ci.md](ci.md) | CI and nightly workflows, jobs, pins, and what the release process does and does not do yet |
+| [releasing.md](releasing.md) | The CI jobs and their make targets, semantic-release and the release pipeline (Docker Hub and the Helm chart repository), the Renovate policy, the secrets and settings the pipeline needs |
 | [configuration.md](configuration.md) | How `trove.yaml`, environment variables and flags combine, and how a key is added |
 | [coverage.md](coverage.md) | The requirement coverage generator, its rules and its evidence record |
 | [database.md](database.md) | PostgreSQL connections, pools, migrations, sqlc and the job and change tables |
@@ -82,9 +82,13 @@ One fact per line; each links to the page that explains it.
 
 ```text
 trove/
-├── Makefile                  # the task runner: build, generate, lint, test, chart, dev profile, integration
+├── Makefile                  # the task runner: build, generate, lint, scans, test, web, chart, image, dev profile, integration, MinIO
 ├── go.mod                    # go 1.27.3; sqlc and oapi-codegen as tool directives
 ├── tools/versions.env        # pins of every tool and image that is not a Go module or an npm package
+├── Containerfile             # the release image: web build, cross-compiled Go build, distroless final stage
+├── package.json              # release tooling only (semantic-release); its lockfile is package-lock.json, web/ has its own
+├── .releaserc.json           # semantic-release: conventional commits, releases from main
+├── renovate.json             # Renovate: the Go, npm, GitHub Actions, Docker and tools/versions.env managers
 ├── cmd/trove/                # main.go (dispatch), serve.go, migrate.go, admin.go
 ├── api/openapi.yaml          # OpenAPI 3.1 source of truth; go generate copies it into internal/api/v1
 ├── internal/
@@ -117,8 +121,12 @@ trove/
 │   ├── chart/                # build tag `chart`: render assertions and the lint script
 │   └── e2e/                  # build tag `e2e`: scenarios against the dev cluster, with a k6 load script
 ├── .github/
-│   ├── workflows/            # ci.yml, nightly.yml
+│   ├── workflows/            # release.yml (Test and Release), build.yml (Release Docker & Helm), renovate.yml
+│   ├── actionlint.yaml       # actionlint's configuration (the App token inputs of the pinned version)
+│   ├── scripts/              # s3-conformance.sh, run by make s3-conformance
 │   └── actions/load-pins/    # loads tools/versions.env into the job
+├── hack/                     # verify-release-tooling.mjs: the release notes of .releaserc.json rendered
+├── test/coverage/            # report.sh: merges the unit and integration profiles into the badge
 └── docs/                     # README.md, decisions.md, developer/, spec/, security/, coverage/, features/
 ```
 
@@ -132,7 +140,7 @@ the remote fetch engine (`internal/proxy/`) and the audit package (`internal/aud
 |---|---|---|
 | Unit | `make test` (`go test -race`, JSON to `.out/test-unit.json`) | next to the code; `_test.go` |
 | Architecture | part of unit: `go test ./internal/archtest` | `internal/archtest/` |
-| Integration | `make integration-up`, then `make test-integration`; build tag `integration`; `-p 1` | `test/integration/<area>/` |
+| Integration | `make integration-up`, then `make test-integration`; build tag `integration`; `-p 1`; S3 conformance against MinIO: `make minio-up`, `make s3-conformance` | `test/integration/<area>/` |
 | Chart | `make chart-lint`, `make chart-test`; build tag `chart` | `test/chart/` |
 | End-to-end | `make e2e` against the dev cluster; build tag `e2e` | `test/e2e/` |
 | Web unit | Angular's `unit-test` builder with Vitest and jsdom | `web/` |

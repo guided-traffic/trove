@@ -32,13 +32,21 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `generate` | `go generate` over every package: the configuration schema today, sqlc and oapi-codegen as their packages arrive |
 | `generate-check` | `generate`, then `git diff --exit-code` and a check for untracked generated files (E0.1) |
 | `lint` | pinned golangci-lint over `./...` (configuration in [.golangci.yml](../../.golangci.yml)), then `go vet` |
+| `gosec` | the same golangci-lint with only gosec enabled (CI: GoSec Security Scan) |
+| `vuln` | pinned govulncheck over `./...` |
+| `cyclo`, `cyclo-report` | pinned gocyclo: fails above `CYCLO_THRESHOLD`; the report lists the most complex functions, tests included |
+| `malware-scan` | ClamAV (`clamscan`) over the source tree; needs `clamscan` on `PATH` (CI installs ClamAV) |
+| `versions-check` (continued) | also compares the Node.js of `PATH` with `web/.nvmrc` and `docker buildx` with `BUILDX_VERSION` |
 | `fmt` | the formatters of `.golangci.yml` (gofumpt, goimports) over `./...`; this rewrites files, so run it on your own working tree |
 | `versions-check` | the E0.2 checks listed above |
-| `test` | `go test -race ./...`; the `go test -json` stream goes to `.out/test-unit.json`, which the coverage generator reads |
+| `test` | `go test -race ./...` with a coverage profile of the unit tier (`.out/coverage/unit.out`); the `go test -json` stream goes to `.out/test-unit.json`, which the coverage generator reads |
 | `integration-up`, `integration-down` | start and stop the integration stack, see below |
-| `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json` |
-| `web` | `cd web && npm ci && npm run build:embed` (the web workspace provides the script) |
-| `image` | builds the binary for `linux/<arch>` (host build, with the Angular build embedded) and wraps it in the distroless base of [Dockerfile](../../Dockerfile). The binary's version is `VERSION`: the number of a `v0.*` tag on `HEAD` (the `v` stripped), else `dev`, else what the caller passes (CI passes `VERSION=dev`). A commit hash is never a version: the binary would not become ready |
+| `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json`, the profile to `.out/coverage/integration-<line>.out` |
+| `minio-up`, `minio-down`, `s3-conformance` | MinIO built at `MINIO_COMMIT`, served over TLS, and the conformance tests against it ([test/integration/minio.sh](../../test/integration/minio.sh)) |
+| `coverage-report` | merges `.out/coverage` into `coverage.txt`, `summary.md` and the badge `coverage.json` ([test/coverage/report.sh](../../test/coverage/report.sh)) |
+| `test-release-tooling` | `npm ci`, `npm audit signatures`, and [hack/verify-release-tooling.mjs](../../hack/verify-release-tooling.mjs) |
+| `web-ci`, `web-lint`, `web-test`, `web-embed` | `npm ci`, the lint script, the Angular unit tests and `npm run build:embed` in `web/`; `web` is `web-ci` and `web-embed` |
+| `image` | builds the release image for `linux/<arch>` (`IMAGE`, default `guidedtraffic/trove:dev`) with the [Containerfile](../../Containerfile): the Angular build, the Go build and the distroless base, no Node.js on the host. The binary's version is `VERSION`: the number of a `v0.*` tag on `HEAD` (the `v` stripped), else `dev`, else what the caller passes (CI passes `VERSION=dev`). A commit hash is never a version: the binary would not become ready |
 | `coverage` | `go run ./internal/tools/coverage`, see [coverage.md](coverage.md) |
 | `chart-lint`, `chart-test` | call `test/chart/lint.sh` and `test/chart/test.sh`; provided by the chart work package |
 | `dev-up`, `dev-down`, `dev-failover`, `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` (`DURATION=60s`), `dev-drain`, `e2e` | call `deploy/dev/<name>.sh` (`up`, `down`, `failover`, `valkey-failover`, `valkey-kill`, `valkey-outage`, `drain`, `e2e`); provided by the chart and dev-profile work packages, not implemented in this repository state unless the script exists |
@@ -215,7 +223,7 @@ stay. A stack created before the per-service certificates existed is recreated b
 
 ## Known gaps
 
-- No CI workflow exists yet (WP0.2). `make lint`, `make test`, `make generate-check` and
-  `make versions-check` are what it will run.
+- The CI workflow [release.yml](../../.github/workflows/release.yml) calls these targets; it has not run on
+  GitHub yet. See [releasing.md](releasing.md#not-in-place-yet).
 - `make lint` reports findings in packages that other work packages own (`internal/tools/coverage`);
   they are not hidden by an exclusion.

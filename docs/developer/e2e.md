@@ -50,10 +50,10 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
 ## Running it
 
 ```shell
-make image IMAGE=ghcr.io/guided-traffic/trove:dev VERSION=dev
+make image VERSION=dev          # IMAGE defaults to guidedtraffic/trove:dev
 make dev-up                  # TROVE_DEV_HTTP_PORT=28080 make dev-up when 8080 is taken
 make e2e SET=push            # E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, then E0.11 (what CI runs on every push to main)
-make e2e SET=failover        # E0.4, E0.6 and the E0.13 failovers (CI runs it nightly)
+make e2e SET=failover        # E0.4, E0.6 and the E0.13 failovers (CI runs it on every change too)
 make e2e SET=full            # everything, in the order of the milestone
 make e2e SET=drain           # E0.14 only
 make e2e SET='^TestE06'      # any go test -run expression

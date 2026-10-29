@@ -1,0 +1,236 @@
+# Release Docker & Helm: runs on every published release (semantic-release publishes it on main, see
+# release.yml). The release's tag is the version: the image guidedtraffic/trove (Docker Hub) for
+# linux/amd64 and linux/arm64, built from the Containerfile, and the Helm chart in the gh-pages branch
+# (the chart repository https://guided-traffic.github.io/trove/) with the release's assets.
+# docs/developer/releasing.md (The release pipeline) describes the jobs and the secrets.
+name: Release Docker & Helm
+
+on:
+  release:
+    types: [published]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: read
+  attestations: write
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: Docker meta
+        id: tag_names
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            guidedtraffic/trove
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+          labels: |
+            org.opencontainers.image.title=trove
+            org.opencontainers.image.description=trove, an artifact repository manager for package formats
+            org.opencontainers.image.vendor=Guided Traffic
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.documentation=https://github.com/guided-traffic/trove
+            org.opencontainers.image.source=https://github.com/guided-traffic/trove
+
+      # The build arguments read the same pins as the Makefile: the Go line of go.mod, web/.nvmrc for the
+      # Node.js of the web stage, and tools/versions.env for the base image.
+      - name: Name the toolchain pins of the build
+        id: pins
+        run: |
+          set -euo pipefail
+          echo "go=$(awk '$1=="go"{print $2}' go.mod)" >> "$GITHUB_OUTPUT"
+          echo "node=$(tr -d '[:space:]' < web/.nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract version without v prefix
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: ${VERSION}"
+
+      # The build date is the commit's date, not the clock's, so that the same tag gives the same binary.
+      - name: Get the commit date
+        id: time
+        run: echo "date=$(date -u -d "@$(git log -1 --format=%ct HEAD)" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        id: build
+        with:
+          file: Containerfile
+          context: .
+          build-args: |
+            NODE_VERSION=${{ steps.pins.outputs.node }}
+            GO_VERSION=${{ steps.pins.outputs.go }}
+            RUNTIME_BASE_IMAGE=${{ env.RUNTIME_BASE_IMAGE }}
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.time.outputs.date }}
+          # Both architectures are cross-compiled by the Go stage of the Containerfile: no emulation.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tag_names.outputs.tags }}
+          labels: ${{ steps.tag_names.outputs.labels }}
+          # Security features for better Docker Hub score
+          provenance: true
+          sbom: true
+          outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=trove
+
+      - name: Generate and upload SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: guidedtraffic/trove:${{ steps.version.outputs.version }}
+          format: spdx-json
+          syft-version: ${{ env.SYFT_VERSION }}
+          upload-artifact: true
+          upload-release-assets: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SBOM to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            ${{ github.workspace }}/guidedtraffic-trove_*.spdx.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Scout scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: guidedtraffic/trove:${{ steps.version.outputs.version }}
+          sarif-file: scout-report.sarif
+          summary: true
+          dockerhub-user: guidedtraffic
+          dockerhub-password: ${{ secrets.DOCKERHUB_PAT }}
+
+  release-helm-gh:
+    name: Release Helm Chart to GitHub Pages
+    needs: build
+    runs-on: self-hosted
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # Update the chart version and the app version to the release, and the image tag in values.yaml
+      # (the only line that starts with two spaces and "tag:", see test/chart/image_test.go).
+      - name: Update Chart Version
+        id: version
+        run: |
+          # Extract the version from the release tag (without the 'v' prefix)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # Update the chart version and the app version
+          sed -i "s/^version:.*$/version: ${VERSION}/" deploy/helm/trove/Chart.yaml
+          sed -i "s/^appVersion:.*$/appVersion: \"${VERSION}\"/" deploy/helm/trove/Chart.yaml
+          # Update the image tag in values.yaml
+          sed -i "s/^  tag:.*$/  tag: \"${VERSION}\"/" deploy/helm/trove/values.yaml
+
+      - name: Create Helm Package
+        run: |
+          cd deploy/helm
+          helm package trove/
+          mkdir -p repo
+          mv ./*.tgz repo/
+          # Create a temporary index for the new chart
+          helm repo index repo/ --url https://guided-traffic.github.io/trove/
+          cd ../..
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Save Chart Package
+        run: |
+          mkdir -p /tmp/helm-charts
+          cp -r deploy/helm/repo/* /tmp/helm-charts/
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Pages
+        run: |
+          # Copy the new charts into the root directory
+          cp /tmp/helm-charts/*.tgz .
+
+          # Merge with the existing index.yaml, if there is one
+          if [ -f index.yaml ]; then
+            # Create a temporary directory for the merge
+            mkdir -p temp-repo
+            cp ./*.tgz temp-repo/
+            # Merge with the existing index
+            helm repo index temp-repo/ --url https://guided-traffic.github.io/trove/ --merge index.yaml
+            cp temp-repo/index.yaml .
+            rm -rf temp-repo
+          else
+            # Create a new index if none exists
+            helm repo index . --url https://guided-traffic.github.io/trove/
+          fi
+
+          git add --force ./*.tgz index.yaml
+          git commit -m "Release Helm chart for $GITHUB_REF_NAME"
+          git push --force origin gh-pages
+
+      # The working directory is the gh-pages checkout, which holds every chart ever published: a *.tgz
+      # glob here would attach the whole chart history to each release. Only this release's package
+      # belongs on it. index.yaml is the full repository index and stays as a restorable snapshot.
+      - name: Update Release Assets
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            trove-${{ steps.version.outputs.version }}.tgz
+            index.yaml
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,7 +11,8 @@ You are the development agent of trove. Follow every step below in order.
 The owner has authorized the following for every run of this file:
 
 - Develop autonomously. Do not stop to ask design questions: decide them and document them (step 3).
-- Commit directly on `main`, push to `origin main`, push tags `v0.*`, and create GitHub releases.
+- Commit directly on `main` and push to `origin main`. Tags and GitHub releases are made by the
+  pipeline (Semantic Release), never by hand (step 6).
 - Orchestrate several subagents in parallel (Agent tool; the Workflow tool is allowed for larger
   fan-outs, with `agentType` set to the subagent types below).
 
@@ -33,8 +34,10 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    `.git`); it must print nothing. Third-party standards and ecosystems (npm, NuGet, GitLab, OCI,
    Kubernetes, PostgreSQL, Valkey, RFCs) may be named.
 3. **Versions.** trove stays on major version 0 until the owner explicitly says otherwise
-   ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)). A completed phase is the
-   next minor release; fixes are patch releases. Never create `v1` or higher.
+   ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)). Semantic Release on `main`
+   sets every version from the conventional commits: `feat` is a minor release, `fix` a patch release,
+   a breaking change a minor release while trove is on major version 0
+   ([release flow](../developer/releasing.md#release-flow)). Never create `v1` or higher.
 4. **Spec first.** [docs/spec/](../spec/README.md) is the source of truth; requirement IDs
    (`R-…`) appear in test names or comments and in commit messages. A deviation from the spec is
    decided and written back into the spec in the same change.
@@ -56,9 +59,9 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    in document order: block A as one phase; in block B each format (F0, F1, …) is one phase; in
    block C each milestone (M6, M7, …) is one phase; in block D one table row is one phase; in block
    E one bullet is one phase; blocks F and G need a spec page first, which is then the phase.
-4. Version of the phase: BETA.md's **Version** column; after the beta the next minor after the
-   highest tag (`git tag --list 'v0.*' --sort=-v:refname | head -1`). Check that the previous
-   phase's tag exists.
+4. Version of the phase: none is chosen in advance. The phase closes with the release that the
+   pipeline cuts from its commits (step 6); BETA.md's **Version** column records it. Check that the
+   previous phase's release exists (`git tag --list 'v0.*' --sort=-v:refname | head -1`).
 5. If the pipeline on `main` is red (`gh run list --branch main --limit 5`), repairing it is the
    first task of this run.
 6. Tell the owner in two or three German sentences which phase, which version and what it
@@ -137,8 +140,9 @@ The phase is done only when all of the following hold:
 
 - Every checklist item of the phase is 🟢, and every exit criterion of the roadmap section passes.
   For each exit criterion note the evidence (test name, CI job, command and output).
-- Unit, integration and e2e tests are green locally and in CI. Exit criteria that need nightly or
-  long-running jobs have been triggered (`gh workflow run …`) and have passed.
+- Unit, integration and e2e tests are green locally and in CI. Exit criteria that need a long-running
+  job (the e2e failover set, the S3 conformance leg) have passed in the run of `Test and Release` on the
+  commit (`gh run list --workflow "Test and Release" --branch main`).
 - Documentation is current: README (naming tables; the TL;DR once trove is installable),
   docs/developer, docs/security (a page per mechanism that now exists, open gaps as `H-…` items),
   spec deviations recorded, coverage numbers regenerated.
@@ -158,15 +162,24 @@ The phase is done only when all of the following hold:
 
 ## 6 · Release
 
-1. Commit the final plan update (phase row 🟢 with its version) before tagging, and wait for its
-   pipeline to be green.
-2. Create the annotated tag: `git tag -a v0.N.0 -m "trove v0.N.0: <phase name>"`, then
-   `git push origin v0.N.0`.
-3. Once a release pipeline exists (it is built in phase 6), wait until the run for the tag is
-   green; it publishes the image and the chart to `ghcr.io/guided-traffic`.
-4. Create the GitHub release: `gh release create v0.N.0 --prerelease --title "trove v0.N.0" --notes-file <notes>`.
-   The notes list what the phase delivers, the requirement IDs, how it was tested, new decisions
-   and known limitations, without attribution.
+The pipeline releases; the run does not tag, create releases or write notes by hand. Semantic Release
+cuts the release from the commits on `main` ([release flow](../developer/releasing.md#release-flow)),
+and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the chart.
+
+1. Commit the phase's work with conventional commit messages: `feat:` for what the phase adds, `fix:`
+   for fixes, `docs:` or `chore:` for the plan and the rest. Commit the final plan update (phase row 🟢,
+   Version column still open) with them.
+2. Push, and wait until `Test and Release` is green on that commit. Semantic Release has then cut the
+   release of the push, if the commits held a `feat` or a `fix`, and `Release Docker & Helm` has run for
+   it: `gh run list --workflow "Release Docker & Helm" --limit 3`, then `gh run watch <run-id> --exit-status`.
+3. Record the release that closes the phase: `git pull --rebase origin main` (the release commit moves
+   `main` with the coverage badge), then the newest release (`gh release list --limit 3`) into the
+   **Version** column of the phase's row in BETA.md. Commit it as `docs(plan): record vX.Y.Z as the
+   release of phase N` and push. That commit cuts no release.
+4. Check the published artifacts of the release: `gh release view vX.Y.Z`, the image
+   `guidedtraffic/trove:X.Y.Z` on Docker Hub, and the chart index
+   `https://guided-traffic.github.io/trove/index.yaml`. The release notes are generated from the commit
+   messages; they name the requirement IDs, so the commits carry them (rule 4, the commit messages).
 
 ## 7 · Report to the owner
 

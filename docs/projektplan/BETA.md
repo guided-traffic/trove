@@ -14,9 +14,10 @@ The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M
 owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
 section linked under each heading.
 
-**Versions:** trove stays on major version 0 until the owner decides otherwise. Every completed
-phase is released as the next minor version, starting with `v0.1.0`; fixes in between are patch
-releases. The beta release is `v0.7.0`.
+**Versions:** trove stays on major version 0 until the owner decides otherwise. Semantic Release
+sets the versions from the conventional commits on `main` (`feat` minor, `fix` patch). A phase closes
+with the release that the pipeline cuts from its commits; the Version column records it when the phase
+completes. The beta release is the release that closes phase 7.
 
 ## Where we are
 
@@ -24,12 +25,12 @@ releases. The beta release is `v0.7.0`.
 |---|---|---|---|
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
-| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.2.0` | ⚪ |
-| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | `v0.3.0` | ⚪ |
-| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | `v0.4.0` | ⚪ |
-| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | `v0.5.0` | ⚪ |
-| [6 · HA, backup, Helm](#phase-6--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | `v0.6.0` | ⚪ |
-| [7 · Walkthrough and beta](#phase-7--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | `v0.7.0` | ⚪ |
+| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | — | ⚪ |
+| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | ⚪ |
+| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
+| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
+| [6 · HA, backup, Helm](#phase-6--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | — | ⚪ |
+| [7 · Walkthrough and beta](#phase-7--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | — | ⚪ |
 
 ## Testing rule for every registry
 
@@ -134,7 +135,7 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - ⚪ E2E tests: browser journeys across replicas with random distribution
 
 **Release**
-- ⚪ `v0.2.0`
+- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 3 · npm registry (M2)
 
@@ -161,7 +162,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - ⚪ npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
 **Release**
-- ⚪ `v0.3.0`
+- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 4 · NuGet (.NET) registry (M3)
 
@@ -186,7 +187,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - ⚪ NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
 
 **Release**
-- ⚪ `v0.4.0`
+- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 5 · GitLab CI OIDC (M4)
 
@@ -200,7 +201,7 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
 - ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
 - ⚪ E2E tests against a GitLab test instance for npm and NuGet, with a `web` node drained during the run
-- ⚪ `v0.5.0`
+- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 6 · HA hardening, backup and Helm (M5)
 
@@ -221,8 +222,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **Helm chart and release**
 - ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
-- 🟢 Release pipeline: image and chart published to `ghcr.io/guided-traffic`, signed keyless. Pulled forward from this phase for the owner's permanent preview; `v0.1.0` is the first release it published ([release.yml](../../.github/workflows/release.yml))
-- ⚪ Beta candidate `v0.6.0` published
+- ⚪ Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)). `v0.1.0` was published by the pipeline before it, to `ghcr.io`; the new pipeline has not published a release yet
+- ⚪ Beta candidate published (the release that closes phase 6)
 
 ## Phase 7 · Walkthrough and beta release
 
@@ -237,7 +238,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 - ⚪ Objections from the walkthrough worked off
 - ⚪ All exit checks green again
 - ⚪ Beta documentation: installation guide, configuration reference, known limitations
-- ⚪ **Beta release `v0.7.0`**
+- ⚪ **Beta release**: the release that closes phase 7; its version goes into the table
 
 ---
 

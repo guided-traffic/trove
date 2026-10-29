@@ -3,8 +3,8 @@
 # namespace of the kind cluster "trove". The backup CronJob of R-HA-051 is not part of the chart
 # skeleton yet, so no backup target is configured here.
 image:
-  registry: ghcr.io
-  repository: guided-traffic/trove
+  registry: docker.io
+  repository: guidedtraffic/trove
   tag: dev                       # built by `make image`, loaded by up.sh with `kind load docker-image`
   pullPolicy: IfNotPresent       # the image never leaves the kind nodes
 

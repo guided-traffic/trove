@@ -1,560 +1,1101 @@
-# Release pipeline of v0.* tags (R-HA-047, Q-HA-11). Publishes the multi-architecture image and the
-# Helm chart to ghcr.io/guided-traffic, signs both keyless with cosign from this workflow's GitHub OIDC
-# identity, attests the image's SBOM and the provenance of both, verifies all of it, and writes the
-# digests and the verify commands into the notes of the GitHub release of the tag. docs/developer/ci.md
-# (Release pipeline) describes the pipeline, the identity and the recovery.
+# Test and Release: the pipeline of every push to main and every pull request. Every check is a job
+# of its own, and every job calls a Makefile target (or a command that the Makefile would run), so a
+# failure reproduces on a laptop with the same command. Semantic Release needs every job: on main it
+# cuts the release from the conventional commits since the last tag (.releaserc.json), and the
+# release's "published" event starts build.yml (Release Docker & Helm). What each job runs and how to
+# reproduce it: docs/developer/releasing.md#ci.
 #
-# The source is the tag. The release tooling (.github, Makefile, Dockerfile, tools/versions.env) is
-# taken from the commit this run started on, which is main for a manual run and the tag itself for a
-# tag push. That lets a tag that predates the tooling be published; see the jobs' "Take the release
-# tooling" steps.
-name: release
+# Linux jobs run on the repository variable LINUX_RUNNER when it is set (for example ubuntu-latest),
+# and on the organisation's self-hosted runners otherwise.
+name: Test and Release
 
 on:
   push:
-    tags: ["v0.*"]
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Existing v0.MINOR.PATCH tag to publish, for example v0.1.0. The run builds this tag's source."
-        required: true
-        type: string
-      overwrite:
-        description: "Replace the versions that already exist in ghcr.io (a re-publish after a partial failure). Off: an existing version stops the run before anything is pushed."
-        required: false
-        type: boolean
-        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push supersedes a run, on main too: Semantic Release releases every commit since the last
+  # tag, so a cancelled run loses nothing.
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
-concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
-  cancel-in-progress: false
-
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
-  CHART_REPOSITORY: ghcr.io/${{ github.repository_owner }}/charts
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  resolve:
-    name: resolve the tag
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read   # the ci runs of the tagged commit
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      version: ${{ steps.tag.outputs.version }}
-      overwrite: ${{ steps.tag.outputs.overwrite }}
-      commit: ${{ steps.commit.outputs.commit }}
-      date: ${{ steps.commit.outputs.date }}
-    steps:
-      - name: Name the tag and check its form
-        id: tag
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-          INPUT_OVERWRITE: ${{ inputs.overwrite }}
-        run: |
-          set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = push ]; then tag="$GITHUB_REF_NAME"; else tag="$INPUT_TAG"; fi
-          # The binary accepts only major.minor.patch versions, so a pre-release tag cannot be built.
-          if ! [[ "$tag" =~ ^v0\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::$tag is not a v0.MINOR.PATCH tag"
-            exit 1
-          fi
-          # The signature identity names the branch of a manual run, so only main may start one.
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
-            echo "::error::a manual run must be dispatched from main, not $GITHUB_REF"
-            exit 1
-          fi
-          {
-            echo "tag=$tag"
-            echo "version=${tag#v}"
-            echo "overwrite=${INPUT_OVERWRITE:-false}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Check out the tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: refs/tags/${{ steps.tag.outputs.tag }}
-          persist-credentials: false
-
-      - name: Name the commit and its build date
-        id: commit
-        run: |
-          set -euo pipefail
-          # The build date is the commit's date, not the clock's, so that the same tag gives the same binary.
-          {
-            echo "commit=$(git rev-parse HEAD)"
-            echo "date=$(date -u -d "@$(git log -1 --format=%ct HEAD)" +%Y-%m-%dT%H:%M:%SZ)"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Check out the release tooling of this run
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          path: .release-tooling
-          persist-credentials: false
-      - name: Take the release tooling, keep the tag's source
-        run: |
-          set -euo pipefail
-          for p in .github Makefile Dockerfile tools; do
-            rm -rf "$p"
-            cp -R ".release-tooling/$p" "$p"
-          done
-      - uses: ./.github/actions/load-pins
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: Install the pinned gh
-        uses: ./.github/actions/install-gh
-
-      - name: The commit passed ci
-        env:
-          GH_TOKEN: ${{ github.token }}
-          COMMIT: ${{ steps.commit.outputs.commit }}
-        run: |
-          set -euo pipefail
-          # A release is built only from a commit whose ci run passed. preview.yml applies the same rule to main.
-          passed="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$COMMIT" --status success --json databaseId --jq 'length')"
-          if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful ci run of $COMMIT"
-            exit 1
-          fi
-          echo "$passed successful ci run(s) of $COMMIT"
-
-      - name: The GitHub release of the tag exists
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # The notes are written last. Checking now keeps a run from publishing a version it cannot annotate.
-          if ! out="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1)"; then
-            echo "$out" >&2
-            echo "::error::there is no GitHub release for $TAG; create it (a prerelease is fine) and run this workflow again"
-            exit 1
-          fi
-
+  # One version per tool (E0.2): the Makefile compares go, node, sqlc, oapi-codegen and every CI tool
+  # on PATH with its pin. The runner image's own helm, kubectl and kind are replaced by the pinned
+  # ones first, so that the check looks at those.
   versions:
     name: versions (E0.2)
-    needs: resolve
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ needs.resolve.outputs.tag }}
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          path: .release-tooling
-          persist-credentials: false
-      - name: Take the release tooling, keep the tag's source
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Install build tools
         run: |
-          set -euo pipefail
-          for p in .github Makefile Dockerfile tools; do
-            rm -rf "$p"
-            cp -R ".release-tooling/$p" "$p"
-          done
-      - uses: ./.github/actions/load-pins
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
+
       - name: Install the pinned helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
-      - name: Install the pinned cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: ${{ env.COSIGN_VERSION }}
-      # make versions-check compares every kubectl and kind on PATH with its pin, so the runner
-      # image's own copies must not be the ones that are checked (the same steps as in ci.yml).
+
       - name: Install the pinned kubectl
-        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+        uses: azure/setup-kubectl@v5
         with:
           version: ${{ env.KUBECTL_VERSION }}
+
       - name: Install the pinned kind
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bin"
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: The installed tools are the pins
+
+      - name: Install the pinned Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Show the tool versions in the log
         run: |
           set -euo pipefail
-          test "$(helm version --template '{{.Version}}')" = "$HELM_VERSION"
-          cosign_have="$(cosign version 2>/dev/null | sed -n 's/^GitVersion: *//p')"
-          if [ "$cosign_have" != "$COSIGN_VERSION" ]; then
-            echo "::error::cosign $cosign_have is on PATH, tools/versions.env pins $COSIGN_VERSION"
-            exit 1
-          fi
-          want="v$(tr -d '[:space:]' < web/.nvmrc)"
-          have="$(node --version)"
-          if [ "$have" != "$want" ]; then
-            echo "::error::node $have is on PATH, web/.nvmrc pins $want"
-            exit 1
-          fi
-          echo "go $(go env GOVERSION), node $have, helm $HELM_VERSION, cosign $cosign_have"
-      - name: One version per tool (go, sqlc, oapi-codegen, golangci-lint)
+          go version
+          node --version
+          helm version --short
+          kubectl version --client
+          kind version
+          docker buildx version
+
+      - name: make versions-check
         run: make versions-check
 
-  image:
-    name: image (linux/amd64, linux/arm64)
-    needs: [resolve, versions]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write       # push the image to ghcr.io
-      id-token: write       # keyless signatures and attestations
-      attestations: write   # the provenance attestation, stored in the registry
-    env:
-      VERSION: ${{ needs.resolve.outputs.version }}
-      COMMIT: ${{ needs.resolve.outputs.commit }}
-      DATE: ${{ needs.resolve.outputs.date }}
-      OVERWRITE: ${{ needs.resolve.outputs.overwrite }}
-      GH_TOKEN: ${{ github.token }}
-    outputs:
-      digest: ${{ steps.image.outputs.digest }}
+  lint:
+    name: Code Linting
+    runs-on: self-hosted
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ needs.resolve.outputs.tag }}
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          path: .release-tooling
-          persist-credentials: false
-      - name: Take the release tooling, keep the tag's source
-        run: |
-          set -euo pipefail
-          for p in .github Makefile Dockerfile tools; do
-            rm -rf "$p"
-            cp -R ".release-tooling/$p" "$p"
-          done
-      - uses: ./.github/actions/load-pins
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Name the Go toolchain for the lint cache key
+        run: echo "CI_GO_VERSION=$(go env GOVERSION)" >> "$GITHUB_ENV"
+
+      # The Makefile builds .bin/golangci-lint-<pin>-<go version>. The name carries both inputs, so
+      # the key does too, and the binary is platform-specific.
+      - name: Restore the golangci-lint build
+        uses: actions/cache@v6
+        with:
+          path: .bin
+          key: golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.CI_GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: make lint
+        run: make lint
+
+  gosec:
+    name: GoSec Security Scan
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make gosec
+        run: make gosec
+
+  govulncheck:
+    name: Vulnerability Check
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make vuln
+        run: make vuln
+
+  cyclomatic-complexity:
+    name: Cyclomatic Complexity
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make cyclo
+        run: make cyclo
+
+      - name: Complexity report
+        if: always()
+        run: |
+          {
+            echo "## Cyclomatic complexity"
+            echo
+            echo "Threshold: $(sed -n -E 's/^CYCLO_THRESHOLD *\?= *([0-9]+).*/\1/p' Makefile) (no function above it). The 20 most complex functions:"
+            echo
+            echo '```'
+            make -s cyclo-report
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # The generated code (sqlc, oapi-codegen, the config schema) regenerated and compared with the tree.
+  generate:
+    name: generate (E0.1)
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make generate-check
+        run: make generate-check
+
+  build-no-node:
+    name: build without Node.js (E0.1)
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential file
+
+      - name: Build with Node.js off PATH and check the binary
+        run: |
+          set -euo pipefail
+          # The runner image puts Node.js on PATH. Drop every PATH entry that holds a Node.js
+          # executable, then check that no Node.js executable resolves and that the build tools
+          # survived the trimming.
+          trimmed=""
+          IFS=: read -r -a dirs <<< "$PATH"
+          for d in "${dirs[@]}"; do
+            [ -n "$d" ] || continue
+            if [ -e "$d/node" ] || [ -e "$d/npm" ] || [ -e "$d/npx" ] || [ -e "$d/corepack" ]; then
+              echo "dropping $d from PATH (it holds a Node.js executable)"
+              continue
+            fi
+            trimmed="${trimmed:+$trimmed:}$d"
+          done
+          export PATH="$trimmed"
+          for tool in node npm npx corepack; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "::error::$tool still resolves to $(command -v "$tool")"
+              exit 1
+            fi
+          done
+          for tool in go make git file; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::error::$tool is not on the trimmed PATH"
+              exit 1
+            fi
+          done
+          go version
+          make build
+          desc="$(file bin/trove)"
+          echo "$desc"
+          case "$desc" in
+            *"statically linked"*) ;;
+            *) echo "::error::bin/trove is not statically linked"; exit 1 ;;
+          esac
+          if ! go version -m bin/trove | grep -q 'CGO_ENABLED=0'; then
+            echo "::error::bin/trove was not built with CGO_ENABLED=0"
+            exit 1
+          fi
+
+  unit:
+    name: unit tests
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make test
+        run: make test
+
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-unit
+          path: .out/test-unit.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the unit coverage profile
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: profile-unit
+          path: .out/coverage/unit.out
+          if-no-files-found: warn
+          retention-days: 14
+
+  web:
+    name: web (Angular)
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install the pinned gh
-        uses: ./.github/actions/install-gh
-      - name: Install the pinned cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          cosign-release: ${{ env.COSIGN_VERSION }}
-      - name: Install the pinned buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      # npm ci installs exactly package-lock.json and fails when package.json and the lockfile
+      # disagree (E0.2: the Angular packages must match the lockfile).
+      - name: make web-ci
+        run: make web-ci
+
+      - name: make web-lint (ESLint and the R-UI-046 rules)
+        run: make web-lint
+
+      - name: make web-test
+        run: make web-test
+
+      - name: make web-embed (build and embed into internal/webui)
+        run: make web-embed
+
+  malware-scan:
+    name: Malware Scan (source code)
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          version: ${{ env.BUILDX_VERSION }}
-      - name: Log in to ghcr.io
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Refuse to overwrite a published version
+          go-version-file: go.mod
+
+      - name: Install build tools and ClamAV
         run: |
-          set -euo pipefail
-          # Login comes first: an anonymous request to a private package answers like a missing one.
-          if out="$(docker manifest inspect "$IMAGE:$VERSION" 2>&1)"; then
-            if [ "$OVERWRITE" != true ]; then
-              echo "::error::$IMAGE:$VERSION exists; run again with the overwrite input set, or publish a new version"
-              exit 1
-            fi
-            echo "::warning::$IMAGE:$VERSION exists and is replaced (overwrite is set)"
-          elif grep -qE 'manifest unknown|not found' <<<"$out"; then
-            echo "$IMAGE:$VERSION is not published yet"
-          else
-            echo "$out" >&2
-            echo "::error::cannot tell whether $IMAGE:$VERSION exists"
-            exit 1
-          fi
-      - name: Build the binaries and push the image (make image-push)
-        id: image
+          sudo apt-get update
+          sudo apt-get install -y build-essential clamav clamav-daemon
+
+      - name: Update the ClamAV database
         run: |
-          set -euo pipefail
-          # image-push builds the Angular bundle (make web), both binaries, and the distroless image of both.
-          make image-push IMAGE_TAGS="$IMAGE:$VERSION" VERSION="$VERSION" COMMIT="$COMMIT" DATE="$DATE"
-          digest="$(jq -r '."containerimage.digest"' .out/image-metadata.json)"
-          if ! [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::no image digest in the buildx metadata"
-            exit 1
-          fi
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "Image: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
-      - name: The binaries report the tag and embed the Angular build
-        run: |
-          set -euo pipefail
-          have="$(bin/trove-linux-amd64 version)"
-          echo "$have"
-          if [[ "$have" != "trove $VERSION (commit $COMMIT, built $DATE, "* ]]; then
-            echo "::error::bin/trove-linux-amd64 reports: $have"
-            exit 1
-          fi
-          # Every asset that the English index refers to is in both binaries (R-ARCH-004).
-          assets="$(grep -oE '(src|href)="[^"]+\.(js|css)"' internal/webui/dist/en/index.html | sed -E 's/^[a-z]+="//; s/"$//; s#.*/##' | sort -u)"
-          if [ -z "$assets" ]; then
-            echo "::error::internal/webui/dist/en/index.html names no asset"
-            exit 1
-          fi
-          for arch in amd64 arm64; do
-            modinfo="$(go version -m "bin/trove-linux-$arch")"
-            if ! grep -q "GOARCH=$arch" <<<"$modinfo"; then
-              echo "::error::bin/trove-linux-$arch is not a $arch binary"
-              exit 1
-            fi
-            for asset in $assets; do
-              grep -aqF "$asset" "bin/trove-linux-$arch" || { echo "::error::$asset is not embedded in bin/trove-linux-$arch"; exit 1; }
-            done
-          done
-          echo "embedded: $(tr '\n' ' ' <<<"$assets")"
-      - name: The pushed index has both platforms
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-        run: |
-          set -euo pipefail
-          platforms="$(docker buildx imagetools inspect --raw "$IMAGE@$DIGEST" | jq -r '.manifests[].platform | select(. != null) | "\(.os)/\(.architecture)"' | sort -u)"
-          for want in linux/amd64 linux/arm64; do
-            if ! grep -qx "$want" <<<"$platforms"; then
-              echo "::error::$want is missing from the index $DIGEST"
-              exit 1
-            fi
-          done
-          echo "$platforms"
-      - name: Sign the image (keyless)
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-        run: cosign sign --yes "$IMAGE@$DIGEST"
-      - name: Install the pinned syft
-        id: syft
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-        with:
-          syft-version: ${{ env.SYFT_VERSION }}
-      - name: Generate the SPDX SBOM and attest it (keyless)
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-          SYFT: ${{ steps.syft.outputs.cmd }}
-        run: |
-          set -euo pipefail
-          "$SYFT" "$IMAGE@$DIGEST" -o spdx-json=sbom.spdx.json
-          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$IMAGE@$DIGEST"
-      - name: Attest the build provenance (SLSA, pushed to ghcr.io)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
-      - name: Verify the signature, the SBOM attestation and the provenance
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-        run: |
-          set -euo pipefail
-          ref="$IMAGE@$DIGEST"
-          identity="https://github.com/$GITHUB_WORKFLOW_REF"
-          issuer=https://token.actions.githubusercontent.com
-          cosign verify "$ref" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" >/dev/null
-          cosign verify-attestation --type spdxjson "$ref" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" >/dev/null
-          gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" >/dev/null
-          echo "verified $ref against $identity"
-      - name: Keep the SBOM and the build metadata
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam
+
+      - name: make malware-scan
+        run: make malware-scan
+
+      - name: Upload the ClamAV report
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7
         with:
-          name: release-image
-          path: |
-            sbom.spdx.json
-            .out/image-metadata.json
+          name: clamav-report
+          path: .out/clamav-report.txt
           if-no-files-found: warn
-          retention-days: 90
+          retention-days: 30
 
   chart:
-    name: chart
-    needs: [resolve, versions]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write       # push the chart to ghcr.io
-      id-token: write       # keyless signatures and attestations
-      attestations: write   # the provenance attestation, stored in the registry
-    env:
-      VERSION: ${{ needs.resolve.outputs.version }}
-      OVERWRITE: ${{ needs.resolve.outputs.overwrite }}
-      GH_TOKEN: ${{ github.token }}
-    outputs:
-      digest: ${{ steps.chart.outputs.digest }}
+    name: chart (E0.7)
+    runs-on: self-hosted
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ needs.resolve.outputs.tag }}
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          path: .release-tooling
-          persist-credentials: false
-      - name: Take the release tooling, keep the tag's source
-        run: |
-          set -euo pipefail
-          for p in .github Makefile Dockerfile tools; do
-            rm -rf "$p"
-            cp -R ".release-tooling/$p" "$p"
-          done
-      - uses: ./.github/actions/load-pins
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Install the pinned gh
-        uses: ./.github/actions/install-gh
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
       - name: Install the pinned helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@v5
         with:
           version: ${{ env.HELM_VERSION }}
-      - name: Install the pinned cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: ${{ env.COSIGN_VERSION }}
-      - name: Log in to ghcr.io (helm)
-        env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$REGISTRY_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      # helm keeps its own login. cosign and the attestation action read the Docker credentials.
-      - name: Log in to ghcr.io (cosign, attestation)
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Refuse to overwrite a published version
-        run: |
-          set -euo pipefail
-          if out="$(helm show chart "oci://$CHART_REPOSITORY/trove" --version "$VERSION" 2>&1)"; then
-            if [ "$OVERWRITE" != true ]; then
-              echo "::error::oci://$CHART_REPOSITORY/trove:$VERSION exists; run again with the overwrite input set, or publish a new version"
-              exit 1
-            fi
-            echo "::warning::oci://$CHART_REPOSITORY/trove:$VERSION exists and is replaced (overwrite is set)"
-          elif grep -qE 'not found|manifest unknown' <<<"$out"; then
-            echo "trove $VERSION is not published yet"
-          else
-            echo "$out" >&2
-            echo "::error::cannot tell whether oci://$CHART_REPOSITORY/trove:$VERSION exists"
-            exit 1
-          fi
-      - name: Package the chart at the release version
-        run: |
-          set -euo pipefail
-          # The chart in the repository keeps 0.0.0-dev; only the package carries the release version (R-HA-028).
-          helm lint deploy/helm/trove -f deploy/helm/trove/ci/required-only.yaml
-          helm package deploy/helm/trove --version "$VERSION" --app-version "$VERSION" --destination "$RUNNER_TEMP/dist"
-          tgz="$RUNNER_TEMP/dist/trove-$VERSION.tgz"
-          chart_yaml="$(helm show chart "$tgz")"
-          grep -qx "version: $VERSION" <<<"$chart_yaml"
-          grep -qx "appVersion: $VERSION" <<<"$chart_yaml"
-          echo "TGZ=$tgz" >> "$GITHUB_ENV"
-      - name: Push the chart
-        id: chart
-        run: |
-          set -euo pipefail
-          # helm reports "Pushed:" and "Digest:" on stderr, so both streams are captured.
-          out="$(helm push "$TGZ" "oci://$CHART_REPOSITORY" 2>&1)"
-          echo "$out"
-          digest="$(sed -n 's/^Digest: //p' <<<"$out")"
-          if ! [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::no digest in the helm push output"
-            exit 1
-          fi
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "Chart: \`oci://$CHART_REPOSITORY/trove:$VERSION\` (\`$digest\`)" >> "$GITHUB_STEP_SUMMARY"
-      - name: Sign the chart (keyless)
-        env:
-          DIGEST: ${{ steps.chart.outputs.digest }}
-        run: cosign sign --yes "$CHART_REPOSITORY/trove@$DIGEST"
-      - name: Attest the build provenance (SLSA, pushed to ghcr.io)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.CHART_REPOSITORY }}/trove
-          subject-digest: ${{ steps.chart.outputs.digest }}
-          push-to-registry: true
-      - name: Verify the signature and the provenance
-        env:
-          DIGEST: ${{ steps.chart.outputs.digest }}
-        run: |
-          set -euo pipefail
-          ref="$CHART_REPOSITORY/trove@$DIGEST"
-          identity="https://github.com/$GITHUB_WORKFLOW_REF"
-          issuer=https://token.actions.githubusercontent.com
-          cosign verify "$ref" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" >/dev/null
-          gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" >/dev/null
-          echo "verified $ref against $identity"
-      - name: Keep the chart package
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-chart
-          path: ${{ env.TGZ }}
-          if-no-files-found: warn
-          retention-days: 90
 
-  release-notes:
-    name: release notes
-    needs: [resolve, image, chart]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write   # edit the notes of the GitHub release
-    env:
-      GH_TOKEN: ${{ github.token }}
-      TAG: ${{ needs.resolve.outputs.tag }}
-      VERSION: ${{ needs.resolve.outputs.version }}
-      COMMIT: ${{ needs.resolve.outputs.commit }}
-      IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
-      CHART_DIGEST: ${{ needs.chart.outputs.digest }}
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      IDENTITY: https://github.com/${{ github.workflow_ref }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the pinned kubectl
+        uses: azure/setup-kubectl@v5
         with:
-          ref: refs/tags/${{ needs.resolve.outputs.tag }}
-          persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          path: .release-tooling
-          persist-credentials: false
-      - name: Take the release tooling, keep the tag's source
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Check the installed versions against the pins
         run: |
           set -euo pipefail
-          for p in .github Makefile Dockerfile tools; do
-            rm -rf "$p"
-            cp -R ".release-tooling/$p" "$p"
-          done
-      - uses: ./.github/actions/load-pins
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+          test "$(helm version --template '{{.Version}}')" = "$HELM_VERSION"
+          kubectl version --client -o json | grep -q "\"gitVersion\": \"$KUBECTL_VERSION\""
+
+      - name: make chart-lint
+        run: make chart-lint
+
+      - name: make chart-test
+        run: make chart-test
+
+      - name: Upload the chart render report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-chart
+          path: .out/test-chart.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The release image as build.yml builds it, for the host architecture only: the image runs as the
+  # non-root UID of R-HA-033.
+  image:
+    name: image (host architecture, no push)
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Install the pinned gh
-        uses: ./.github/actions/install-gh
-      - name: Add the published artifacts to the notes of the release
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (base image pulls)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make image
+        run: make image IMAGE=trove:ci
+
+      - name: The image runs as the non-root UID of R-HA-033
         run: |
           set -euo pipefail
-          # The notes keep their text; only the section between the markers of the script is replaced.
-          notes="$RUNNER_TEMP/release-notes.md"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
-            | .github/scripts/release-notes.sh > "$notes"
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
-          echo "Release notes of $TAG: image \`$IMAGE:$VERSION\` \`$IMAGE_DIGEST\`, chart \`$CHART_REPOSITORY/trove:$VERSION\` \`$CHART_DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+          user="$(docker image inspect trove:ci --format '{{.Config.User}}')"
+          echo "user: $user"
+          test "$user" = "65532:65532"
+
+  # Trivy on the built image, as valkey-operator's container job runs it: vulnerabilities of the OS
+  # and the libraries (fixed ones only), secrets and misconfigurations. A finding of CRITICAL or HIGH
+  # fails the job.
+  container-scan:
+    name: Container Scan (Trivy, built image)
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (base image pulls)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make image (for the scan)
+        run: make image IMAGE=trove:scan
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: trove:scan
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          scanners: vuln,secret,misconfig
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Run Trivy scan (SARIF output)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: trove:scan
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln,secret,misconfig
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Upload Trivy scan results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-container-report
+          path: trivy-results.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+  integration:
+    name: integration (Valkey ${{ matrix.valkey }})
+    runs-on: self-hosted
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        valkey: ["9.0", "9.1"]
+    env:
+      TROVE_TEST_VALKEY_LINE: ${{ matrix.valkey }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Install the Docker Compose plugin (the integration stack)
+        run: |
+          set -euo pipefail
+          docker compose version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y docker-compose-v2; }
+          docker compose version
+
+      - name: Log in to Docker Hub (stack image pulls)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make integration-up
+        run: make integration-up
+
+      - name: make test-integration
+        run: make test-integration
+
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-integration-${{ matrix.valkey }}
+          path: .out/test-integration.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the integration coverage profile
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: profile-integration-${{ matrix.valkey }}
+          path: .out/coverage/integration-${{ matrix.valkey }}.out
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Container logs (failure only)
+        if: failure()
+        run: |
+          docker compose -f test/integration/compose.yaml ps -a || true
+          for c in $(docker ps -a --filter "name=trove-it-" --format '{{.Names}}'); do
+            echo "::group::logs of $c"
+            docker logs --timestamps "$c" 2>&1 | tail -n 300 || true
+            echo "::endgroup::"
+          done
+
+      - name: make integration-down
+        if: always()
+        run: make integration-down
+
+  # S3 conformance (R-STOR-035) against MinIO, built from source at MINIO_COMMIT and served over TLS only
+  # (INV-20). This is the leg that ran nightly; it runs on every change now.
+  s3-conformance:
+    name: S3 conformance (MinIO at the pinned commit)
+    runs-on: self-hosted
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Log in to Docker Hub (the openssl image of the certificates)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make minio-up (build MinIO at the pin, serve it over TLS, seed the buckets)
+        run: make minio-up
+
+      - name: make s3-conformance
+        run: make s3-conformance
+
+      - name: make minio-down
+        if: always()
+        run: make minio-down
+
+      - name: Upload the MinIO server log (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: minio-server-log
+          path: .out/minio.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The failure suite on a kind cluster: the push set (every change) and the failover set (E0.13,
+  # E0.4, E0.6: PostgreSQL switchover, kill and stop, Valkey failover, kill and outage under k6 load).
+  # The legs run side by side on one Docker host, so each has its own cluster name and edge port.
+  e2e:
+    name: e2e on kind (${{ matrix.set }})
+    runs-on: self-hosted
+    needs: [chart, image]
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - set: push
+            port: "8080"
+          - set: failover
+            port: "8081"
+    env:
+      # The image is built with an explicit VERSION=dev: the binary refuses a version that is not
+      # major.minor.patch or "dev" (see docs/developer/e2e.md). make image builds it into the local Docker.
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: Tools on the runner
+        run: |
+          set -euo pipefail
+          docker version --format '{{.Server.Version}}'
+          kind version
+          kubectl version --client
+          helm version --short
+          jq --version
+          nproc
+          free -g
+
+      - name: The dev profile's dependency pins and the runner architecture
+        run: |
+          set -euo pipefail
+          # The Valkey operator and the internal-secrets-operator images are published for linux/amd64
+          # only (tools/versions.env); the hosted runner is amd64, so no emulation is needed here.
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "HAProxy Ingress chart $DEV_HAPROXY_INGRESS_CHART_VERSION, image $DEV_HAPROXY_INGRESS_IMAGE"
+          echo "cert-manager chart $DEV_CERT_MANAGER_CHART_VERSION (images pinned by digest)"
+          echo "valkey-operator chart $DEV_VALKEY_OPERATOR_CHART_VERSION, internal-secrets-operator chart $DEV_ISO_CHART_VERSION"
+          echo "CloudNativePG chart $CNPG_CHART_VERSION"
+          # up.sh installs the charts from these repositories; fail early, not 5 minutes into make dev-up.
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: make dev-up
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        timeout-minutes: 60
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the k6 logs and summaries, the pod watch, the events and the driver output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure()
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          kubectl config get-contexts || true
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
+            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
+          done
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always()
+        run: make dev-down
+
+  workflows:
+    name: workflow files (actionlint)
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install actionlint at the pin
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # shellcheck is not pinned, so its findings are not gated here; the runner image's copy would
+      # make the result depend on the image. See docs/developer/releasing.md.
+      - name: actionlint
+        run: actionlint -shellcheck=
+
+  # The requirement rules and the committed pages: the generator's -check, and every relative link and anchor.
+  coverage:
+    name: coverage generator (links and rules)
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Rules and the committed pages
+        run: go run ./internal/tools/coverage -check
+
+      - name: Relative links and anchors
+        run: go run ./internal/tools/coverage -links
+
+  # The evidence record: implemented.txt must equal what the test reports of this run imply. It runs on
+  # every change, so a stale file fails the pull request, not main. To refresh the file, run
+  # `make coverage-refresh` (see docs/developer/releasing.md).
+  coverage-evidence:
+    name: coverage evidence (implemented.txt)
+    needs: [unit, integration, chart]
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Download the test reports of this run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: test-*
+          path: .out/reports
+
+      - name: Every expected report is present
+        run: |
+          set -euo pipefail
+          # A missing report would drop the requirements only that report proves, so it is an error.
+          for dir in test-unit test-chart test-integration-9.0 test-integration-9.1; do
+            if ! compgen -G ".out/reports/$dir/*.json" >/dev/null; then
+              echo "::error::report artifact $dir is missing"
+              exit 1
+            fi
+          done
+          ls -l .out/reports/*/*.json
+
+      - name: Rules, and implemented.txt against the reports
+        run: go run ./internal/tools/coverage -check -tests .out/reports/*/*.json
+
+  # The unit and integration profiles merged (make coverage-report): the job summary, and the README's
+  # badge, which Semantic Release commits with the release.
+  coverage-report:
+    name: Combined Coverage Report
+    needs: [unit, integration]
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Download the coverage profiles of this run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: profile-*
+          merge-multiple: true
+          path: .out/coverage
+
+      - name: make coverage-report
+        run: make coverage-report
+
+      - name: The combined report in the job summary
+        run: cat .out/coverage/summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the combined report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-combined
+          path: |
+            .out/coverage/coverage.txt
+            .out/coverage/summary.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload the coverage badge
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-badge
+          path: .out/coverage/coverage.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # The npm dependency set of semantic-release, verified and exercised: the release notes of the
+  # commit types the release reads are rendered (hack/verify-release-tooling.mjs), so a dependency bump
+  # that breaks the release fails the pull request, not main.
+  release-tooling:
+    name: Release Tooling
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "lts/*"
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make test-release-tooling
+        run: make test-release-tooling
+
+  # The version from the commits since the last tag, the release notes, the release commit with the
+  # badge ([skip ci]), the tag and the GitHub release (.releaserc.json; docs/developer/releasing.md).
+  semantic-release:
+    name: Semantic Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      # The GitHub App of the organisation, scoped to this repository; the token expires after an hour
+      # and is revoked at the end of the job. Not GITHUB_TOKEN: a release created with it would not
+      # start "Release Docker & Helm" (build.yml).
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write  # tag, release, @semantic-release/git commit
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Download the coverage badge
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-badge
+          path: .github/badges
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "lts/*"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
+        run: npm audit signatures
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: npx semantic-release

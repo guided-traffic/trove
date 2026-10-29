@@ -18,7 +18,7 @@
 #                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
 #                         (pooler.yaml, values-pooler.yaml, R-HA-058).
-#   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default ghcr.io/guided-traffic/trove:dev,
+#   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default guidedtraffic/trove:dev,
 #                         built by `make image`). It must be present in the local Docker.
 #   TROVE_DEV_HTTP_PORT=n the host port of the edge, default 8080 (https://localhost:8080). Set it when
 #                         8080 is taken; the chart's base_url follows. Fixed when the cluster is created.
@@ -31,7 +31,7 @@ SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
 case "$PROFILE" in default|scatter) ;; *) die "TROVE_PROFILE must be default or scatter, not '$PROFILE'" ;; esac
-IMAGE="${TROVE_IMAGE:-ghcr.io/guided-traffic/trove:dev}"
+IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 LOGS="$STATE_DIR/logs"
 START="$(date +%s)"
 
