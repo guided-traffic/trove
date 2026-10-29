@@ -23,7 +23,7 @@ releases. The beta release is `v0.7.0`.
 | Phase | Result | Version | Status |
 |---|---|---|---|
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
-| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown | `v0.1.0` | 🟡 |
+| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.2.0` | ⚪ |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | `v0.3.0` | ⚪ |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | `v0.4.0` | ⚪ |
@@ -60,40 +60,40 @@ The [test matrix](#test-matrix) at the end tracks both levels per registry.
 Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 
 **Repository and toolchain**
-- ⚪ Go module (Go 1.27.3) with pinned tools, task runner, architecture test
-- ⚪ Angular 22 workspace; UI embedded in the Go binary
-- ⚪ CI pipeline: lint, unit tests, integration tier, image build, chart lint, one version per tool
-- ⚪ Coverage generator as a Go tool in the repository
+- 🟢 Go module (Go 1.27.3) with pinned tools, task runner, architecture test
+- 🟢 Angular 22 workspace; UI embedded in the Go binary
+- 🟢 CI pipeline: lint, unit tests, integration tier, image build, chart lint, one version per tool
+- 🟢 Coverage generator as a Go tool in the repository
 
 **Data and storage**
-- ⚪ PostgreSQL connection classes, transaction-mode pooler support, migration runner and migration Job
-- ⚪ S3 blob store: spooling, hashing, content-addressed commit, multipart transfer, garbage collection
-- ⚪ S3 conformance check against the local S3 store
+- 🟢 PostgreSQL connection classes, transaction-mode pooler support, migration runner and migration Job
+- 🟢 S3 blob store: spooling, hashing, content-addressed commit, multipart transfer, garbage collection
+- 🟢 S3 conformance check against the local S3 store
 
 **Coordination across replicas**
-- ⚪ Job queue with leases, claimed only by `worker` replicas
-- ⚪ Change log and epochs in PostgreSQL for cache invalidation
-- ⚪ Valkey client with Sentinel discovery, TLS, ACL and degraded mode
+- 🟢 Job queue with leases, claimed only by `worker` replicas
+- 🟢 Change log and epochs in PostgreSQL for cache invalidation
+- 🟢 Valkey client with Sentinel discovery, TLS, ACL and degraded mode
 
 **Server and deployment**
-- ⚪ Server shell: roles `web`, `worker`, `all`; configuration; middleware; error model
-- ⚪ Drain-safe shutdown: readiness off, endpoint delay, in-flight requests finish, jobs released
-- ⚪ Helm chart skeleton: one Deployment per role, Services, PodDisruptionBudgets, topology spread
-- ⚪ Local HA-shaped stack: PostgreSQL with standby, Valkey with three Sentinels, S3 store
-- ⚪ Metrics, JSON request log, health and readiness endpoints
-- ⚪ TLS on every connection, trove's listeners included; certificate rotation without restart
-- ⚪ Endpoints: further client listeners with their own port, hosts (one wildcard allowed), base URL and certificates chosen by SNI; the endpoint is the listener's, a foreign host gets `421`; route families per endpoint; host-root binding reserved for later registries ([spec](../spec/endpoints.md))
-- ⚪ Helm chart per endpoint: Service or own pool, Ingress or Gateway route with its own class, hosts and TLS Secret, NetworkPolicy per port
+- 🟢 Server shell: roles `web`, `worker`, `all`; configuration; middleware; error model
+- 🟢 Drain-safe shutdown: readiness off, endpoint delay, in-flight requests finish, jobs released
+- 🟢 Helm chart skeleton: one Deployment per role, Services, PodDisruptionBudgets, topology spread
+- 🟢 Local HA-shaped stack on the owner's toolstack: CloudNativePG with standby, valkey-operator with three Sentinels, SeaweedFS, HAProxy Ingress, cert-manager, internal-secrets-operator (dev-only deviation: the operator's default Valkey user, see [local-profile](../developer/local-profile.md))
+- 🟢 Metrics, JSON request log, health and readiness endpoints
+- 🟢 TLS on every connection, trove's listeners included; certificate rotation without restart
+- 🟢 Endpoints: further client listeners with their own port, hosts (one wildcard allowed), base URL and certificates chosen by SNI; the endpoint is the listener's, a foreign host gets `421`; route families per endpoint; host-root binding reserved for later registries ([spec](../spec/endpoints.md))
+- 🟢 Helm chart per endpoint: Service or own pool, Ingress with its own class, hosts and TLS Secret, NetworkPolicy per port (the Gateway route per endpoint arrives with the chart's Gateway support, R-HA-038, in phase 6)
 
 **Exit checks**
-- ⚪ PostgreSQL and Valkey failover under load without a failed request
-- ⚪ Node drain under load without a failed request
-- ⚪ No state between requests: test profile with random distribution across replicas
-- ⚪ Listener certificate rotated under load without a failed request
-- ⚪ A second endpoint with its own host and certificate answers `421` for a foreign host and serves only its route families
+- 🟢 PostgreSQL and Valkey failover under load without a failed request
+- 🟢 Node drain under load without a failed request
+- 🟢 No state between requests: test profile with random distribution across replicas
+- 🟢 Listener certificate rotated under load without a failed request
+- 🟢 A second endpoint with its own host and certificate answers `421` for a foreign host and serves only its route families
 
 **Release**
-- ⚪ `v0.1.0`
+- 🟢 `v0.1.0`
 
 ## Phase 2 · Access core (M1)
 
@@ -245,7 +245,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 
 | Area | Integration tests | E2E tests | Drain and failover load |
 |---|---|---|---|
-| Foundation (storage, coordination) | ⚪ | — | ⚪ |
+| Foundation (storage, coordination) | 🟢 | — | 🟢 |
 | Access core (login, tokens, permissions) | ⚪ | ⚪ | — |
 | **npm** | ⚪ | ⚪ | ⚪ |
 | **NuGet (.NET)** | ⚪ | ⚪ | ⚪ |
