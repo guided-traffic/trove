@@ -121,6 +121,9 @@ func (d *Database) Validate(r *Report) {
 	if msg := d.TLSProblem(); msg != "" {
 		r.Add("ssl_mode", "%s", msg)
 	}
+	if (d.SSLCertFile == "") != (d.SSLKeyFile == "") {
+		r.Add("ssl_cert_file", "and ssl_key_file must be set together (certificate authentication)")
+	}
 	if d.Pool.MinConns > d.Pool.MaxConns {
 		r.Add("pool.min_conns", "must not exceed pool.max_conns")
 	}

@@ -131,7 +131,26 @@ func displayValue(v reflect.Value) any {
 			return map[string]any{}
 		}
 	}
+	if isStructList(v.Type()) {
+		return elementMaps(v)
+	}
 	return v.Interface()
+}
+
+// elementMaps renders a list of structs with the yaml names of the fields, the
+// names an operator writes, for the effective view and the JSON Schema default.
+func elementMaps(v reflect.Value) []map[string]any {
+	out := make([]map[string]any, v.Len())
+	t := v.Type().Elem()
+	for i := range out {
+		m := map[string]any{}
+		for j := 0; j < t.NumField(); j++ {
+			name, _, _ := strings.Cut(t.Field(j).Tag.Get("yaml"), ",")
+			m[name] = v.Index(i).Field(j).Interface()
+		}
+		out[i] = m
+	}
+	return out
 }
 
 // formatValue renders a value on one line for `admin config validate`.

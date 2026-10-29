@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
 
 // DB holds the connection classes of one replica (R-ARCH-019).
@@ -34,6 +35,7 @@ type DB struct {
 	control *pgxpool.Pool
 	lease   *pgxpool.Pool
 	retry   retrier
+	tls     *dbTLS
 
 	closeOnce sync.Once
 }
@@ -50,9 +52,13 @@ type DB struct {
 //
 // A configuration error or a failed preflight is a plain error and will not
 // pass by retrying; a database that stays unreachable is IsUnavailable.
-func Open(ctx context.Context, cfg config.Database, instance, role string, log *slog.Logger) (*DB, error) {
+func Open(ctx context.Context, cfg config.Database, instance, role string, log *slog.Logger, opts ...Option) (*DB, error) {
 	if log == nil {
 		log = slog.Default()
+	}
+	var o openOptions
+	for _, opt := range opts {
+		opt(&o)
 	}
 	switch role {
 	case meta.RoleWeb, meta.RoleWorker, meta.RoleAll, meta.RoleBackup:
@@ -66,18 +72,21 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		return nil, err
 	}
 	db := &DB{cfg: cfg, log: log, instance: instance, role: role, retry: newRetrier(cfg.Retry)}
+	var err error
+	if db.tls, err = newDBTLS(cfg, tlsfiles.WithLogger(log), tlsfiles.WithMetrics(o.tlsMetrics)); err != nil {
+		return nil, err
+	}
 
 	pooled := cfg.Pooler.Mode == "transaction"
 	mainMax := int32(cfg.Pool.MaxConns - 1)           //nolint:gosec // validated range
 	mainMin := min(int32(cfg.Pool.MinConns), mainMax) //nolint:gosec // validated range
 	pool := func(s poolSpec) (*pgxpool.Pool, error) {
-		pc, err := newPoolConfig(cfg, s)
+		pc, err := newPoolConfig(cfg, s, db.tls)
 		if err != nil {
 			return nil, err
 		}
 		return pgxpool.NewWithConfig(ctx, pc)
 	}
-	var err error
 	common := poolSpec{
 		instance: instance,
 		lifetime: cfg.Pool.MaxConnLifetime, jitter: cfg.Pool.MaxConnLifetimeJitter,
@@ -119,6 +128,17 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 	}
 	return db, nil
 }
+
+// Option configures Open.
+type Option func(*openOptions)
+
+type openOptions struct {
+	tlsMetrics *tlsfiles.Metrics
+}
+
+// WithTLSMetrics records the expiry, reload and reload-error families of the
+// root CA and the client certificate (kind database).
+func WithTLSMetrics(m *tlsfiles.Metrics) Option { return func(o *openOptions) { o.tlsMetrics = m } }
 
 // Main is the request pool: every request-path transaction, job claims and
 // completions, job handlers. It has database.pool.max_conns - 1 connections;

@@ -1115,6 +1115,80 @@
           "type": "string",
           "x-trove-env": "TROVE_SERVER_OPS_LISTEN"
         },
+        "ops_tls": {
+          "additionalProperties": false,
+          "properties": {
+            "certificates": {
+              "default": [],
+              "description": "With inherit false: the ops listener's certificate/key pairs; empty means plain HTTP, allowed only while server.tls is plain too.",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "cert_file": {
+                    "description": "PEM certificate chain, leaf first.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "key_file": {
+                    "description": "PEM private key of the certificate; read again on every reload, never logged.",
+                    "minLength": 1,
+                    "type": "string",
+                    "x-trove-secret": "file-only"
+                  }
+                },
+                "required": [
+                  "cert_file",
+                  "key_file"
+                ],
+                "type": "object"
+              },
+              "type": "array",
+              "x-trove-env": "TROVE_SERVER_OPS_TLS_CERTIFICATES"
+            },
+            "client_auth": {
+              "default": "none",
+              "description": "With inherit false: client certificates on the ops listener; probes present none, so require breaks HTTPS probes.",
+              "enum": [
+                "none",
+                "verify_if_given",
+                "require"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_OPS_TLS_CLIENT_AUTH"
+            },
+            "client_ca_file": {
+              "default": "",
+              "description": "With inherit false: CAs a client certificate on the ops listener must chain to.",
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_OPS_TLS_CLIENT_CA_FILE"
+            },
+            "inherit": {
+              "default": true,
+              "description": "true: the ops listener serves server.tls's certificates, min_version and reload_interval without client certificates; false: the keys below are its own block.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_SERVER_OPS_TLS_INHERIT"
+            },
+            "min_version": {
+              "default": "1.2",
+              "description": "With inherit false: lowest TLS version of the ops listener.",
+              "enum": [
+                "1.2",
+                "1.3"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_OPS_TLS_MIN_VERSION"
+            },
+            "reload_interval": {
+              "default": "10s",
+              "description": "With inherit false: reload interval of the ops listener's files.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_OPS_TLS_RELOAD_INTERVAL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
         "read_header_timeout": {
           "default": "10s",
           "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
@@ -1143,16 +1217,67 @@
         "tls": {
           "additionalProperties": false,
           "properties": {
-            "cert_file": {
-              "default": "",
-              "type": "string",
-              "x-trove-env": "TROVE_SERVER_TLS_CERT_FILE"
+            "certificates": {
+              "default": [],
+              "description": "Certificate/key pairs (PEM). SNI selects the pair whose names match, wildcard certificates included; the first pair is the default. Empty means plain HTTP.",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "cert_file": {
+                    "description": "PEM certificate chain, leaf first.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "key_file": {
+                    "description": "PEM private key of the certificate; read again on every reload, never logged.",
+                    "minLength": 1,
+                    "type": "string",
+                    "x-trove-secret": "file-only"
+                  }
+                },
+                "required": [
+                  "cert_file",
+                  "key_file"
+                ],
+                "type": "object"
+              },
+              "type": "array",
+              "x-trove-env": "TROVE_SERVER_TLS_CERTIFICATES"
             },
-            "key_file": {
-              "default": "",
+            "client_auth": {
+              "default": "none",
+              "description": "none: no client certificate is requested; verify_if_given: a presented certificate must chain to client_ca_file; require: a client without one is refused in the handshake.",
+              "enum": [
+                "none",
+                "verify_if_given",
+                "require"
+              ],
               "type": "string",
-              "x-trove-env": "TROVE_SERVER_TLS_KEY_FILE",
-              "x-trove-secret": "file-only"
+              "x-trove-env": "TROVE_SERVER_TLS_CLIENT_AUTH"
+            },
+            "client_ca_file": {
+              "default": "",
+              "description": "PEM bundle of the CAs a client certificate must chain to (mutual TLS for the edge). Required unless client_auth is none.",
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_TLS_CLIENT_CA_FILE"
+            },
+            "min_version": {
+              "default": "1.2",
+              "description": "Lowest TLS version accepted; TLS 1.3 is preferred either way.",
+              "enum": [
+                "1.2",
+                "1.3"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_TLS_MIN_VERSION"
+            },
+            "reload_interval": {
+              "default": "10s",
+              "description": "How often every file of the block is read and compared by content. A changed certificate serves new handshakes within this interval.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_SERVER_TLS_RELOAD_INTERVAL",
+              "x-trove-type": "duration"
             }
           },
           "type": "object"

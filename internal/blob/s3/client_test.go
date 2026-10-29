@@ -431,10 +431,10 @@ func TestConfiguration(t *testing.T) {
 			t.Fatalf("got %v", err)
 		}
 	})
-	t.Run("R-STOR-030 a private CA file is refused until the outbound factory can take one, not ignored", func(t *testing.T) {
+	t.Run("R-STOR-030 a CA file that does not load is a configuration error naming storage.s3.ca_file", func(t *testing.T) {
 		cfg := base(t)
-		cfg.CAFile = "/etc/ssl/private-ca.pem"
-		if _, err := s3.NewFromFactory(context.Background(), cfg, hc()); err == nil || !strings.Contains(err.Error(), "proxy.outbound.tls.ca_files") {
+		cfg.CAFile = filepath.Join(t.TempDir(), "missing-ca.pem")
+		if _, err := s3.NewFromFactory(context.Background(), cfg, hc()); err == nil || !strings.Contains(err.Error(), "storage.s3.ca_file") {
 			t.Fatalf("got %v", err)
 		}
 	})

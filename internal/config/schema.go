@@ -136,6 +136,12 @@ func (s *Schema) walk(t reflect.Type, prefix string, idx []int, errs *[]error) {
 				*errs = append(*errs, fmt.Errorf("%s: unsupported type %s", where, f.Type))
 				continue
 			}
+			if isStructList(f.Type) {
+				if err := checkElement(f.Type.Elem()); err != nil {
+					*errs = append(*errs, fmt.Errorf("%s: list element %s: %w", where, f.Type.Elem(), err))
+					continue
+				}
+			}
 			if def, has := f.Tag.Lookup("default"); has {
 				k.Default, k.HasDefault = def, true
 				if _, err := parseText(f.Type, def); err != nil {
@@ -200,11 +206,43 @@ func supportedType(t reflect.Type) bool {
 	case reflect.String, reflect.Bool, reflect.Int, reflect.Int32, reflect.Int64, reflect.Float64:
 		return true
 	case reflect.Slice:
-		return t.Elem().Kind() == reflect.String
+		return t.Elem().Kind() == reflect.String || isStructList(t)
 	case reflect.Map:
 		return t.Key().Kind() == reflect.String
 	}
 	return false
+}
+
+// isStructList reports a list of structs, such as server.tls.certificates. The
+// list is one key like any other list: its environment value is JSON, and its
+// elements are decoded strictly.
+func isStructList(t reflect.Type) bool {
+	return t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Struct && t.Elem() != durTyp
+}
+
+// checkElement holds a list element to the rules of the tree: exported fields
+// with snake_case yaml names and scalar types only, so the element is flat and
+// its JSON Schema is complete.
+func checkElement(t reflect.Type) error {
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			return fmt.Errorf("field %s is unexported", f.Name)
+		}
+		name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if !isSnakeCase(name) {
+			return fmt.Errorf("field %s has no snake_case yaml name", f.Name)
+		}
+		switch f.Type.Kind() {
+		case reflect.String, reflect.Bool, reflect.Int, reflect.Int32, reflect.Int64, reflect.Float64:
+		default:
+			return fmt.Errorf("field %s has type %s; list elements hold scalars only", f.Name, f.Type)
+		}
+		if sec := f.Tag.Get("secret"); sec != "" && (sec != "file" || f.Type.Kind() != reflect.String || !strings.HasSuffix(name, "_file")) {
+			return fmt.Errorf("field %s: secret:%q needs a string field whose yaml name ends in _file", f.Name, sec)
+		}
+	}
+	return nil
 }
 
 // Paths returns every key path in sorted order.

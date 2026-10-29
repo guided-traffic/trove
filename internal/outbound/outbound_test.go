@@ -52,6 +52,18 @@ func allowLoopback() config.Outbound {
 	return c
 }
 
+// transportOf returns the http.Transport a client uses now: the one of the
+// current generation of its trust store.
+func transportOf(t *testing.T, c *http.Client) *http.Transport {
+	t.Helper()
+	tt, ok := c.Transport.(*roundTripper).base.(*trustedTransport)
+	if !ok {
+		t.Fatalf("client transport is %T, not the trust-aware transport", c.Transport.(*roundTripper).base)
+	}
+	tr, _ := tt.current()
+	return tr
+}
+
 func get(t *testing.T, c *http.Client, u string) (*http.Response, error) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
@@ -83,7 +95,7 @@ func TestFactoryTimeouts(t *testing.T) {
 			if c.Timeout != wantOverall {
 				t.Errorf("%s: overall timeout %s, want %s", purpose, c.Timeout, wantOverall)
 			}
-			tr := c.Transport.(*roundTripper).base.(*http.Transport)
+			tr := transportOf(t, c)
 			if tr.TLSHandshakeTimeout == 0 || tr.ResponseHeaderTimeout == 0 || tr.IdleConnTimeout == 0 {
 				t.Errorf("%s: transport without timeouts: %+v", purpose, tr)
 			}
@@ -98,7 +110,7 @@ func TestFactoryTimeouts(t *testing.T) {
 
 	t.Run("R-ARCH-022 a remote's socket timeout maps to connect and response-header timeouts", func(t *testing.T) {
 		c := f.Client(PurposeRemote, WithSocketTimeout(7*time.Second), WithTimeout(time.Minute))
-		tr := c.Transport.(*roundTripper).base.(*http.Transport)
+		tr := transportOf(t, c)
 		if tr.ResponseHeaderTimeout != 7*time.Second || c.Timeout != time.Minute {
 			t.Errorf("header %s overall %s", tr.ResponseHeaderTimeout, c.Timeout)
 		}
@@ -439,7 +451,7 @@ func TestTrustStore(t *testing.T) {
 	t.Run("R-ARCH-022 min_version 1.3 raises the floor", func(t *testing.T) {
 		cfg := allowLoopback()
 		cfg.TLS.MinVersion = "1.3"
-		tr := New(cfg).Client(PurposeRemote).Transport.(*roundTripper).base.(*http.Transport)
+		tr := transportOf(t, New(cfg).Client(PurposeRemote))
 		if tr.TLSClientConfig.MinVersion != tls.VersionTLS13 {
 			t.Error("floor not raised")
 		}

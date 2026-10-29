@@ -62,7 +62,7 @@ func (v *Valkey) probeSentinel(ctx context.Context, addr string) sentinelProbe {
 			ClientName:        "trove:" + v.instance + ":probe",
 			TLSConfig:         v.sentinelTLS,
 			AuthCredentialsFn: v.creds.fn,
-			DialCtxFn:         dialFn(v.sentinelResolver),
+			DialCtxFn:         dialFn(v.sentinelResolver, v.tls.prepare),
 			DisableCache:      true,
 			DisableRetry:      true,
 			PipelineMultiplex: -1,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/blob/s3"
@@ -17,11 +18,19 @@ import (
 // ends the process on a configuration error such as a wrong bucket or credential.
 func (a *App) startBlob(ctx context.Context) error {
 	cfg := a.cfg.Storage
-	if err := a.out.Err(); err != nil {
-		// The outbound configuration error holds the first readiness back (the
-		// outbound check); without a client there is nothing to build.
-		a.log.Error("object store not started: outbound configuration error", "error", err)
-		return nil
+	// The outbound configuration error holds the first readiness back (the
+	// outbound check). A CA file of proxy.outbound.tls.ca_files that loads later
+	// clears it without a restart, so wait for it here rather than skip the object
+	// store: skipping would let the replica turn ready without one.
+	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
+		err := a.out.Err()
+		if err == nil {
+			break
+		}
+		a.log.Error("object store waits for the outbound configuration", "error", err, "retry_in", delay.String())
+		if !sleep(ctx, delay) {
+			return ctx.Err()
+		}
 	}
 	client, err := s3.NewFromFactory(ctx, cfg.S3, a.out)
 	if err != nil {

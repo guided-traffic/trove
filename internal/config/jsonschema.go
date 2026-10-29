@@ -80,6 +80,9 @@ func (k Key) schemaNode() map[string]any {
 		case reflect.Slice:
 			n["type"] = "array"
 			n["items"] = map[string]any{"type": "string"}
+			if isStructList(t) {
+				n["items"] = elementSchema(t.Elem())
+			}
 		case reflect.Map:
 			n["type"] = "object"
 		}
@@ -126,4 +129,42 @@ func applyBound(n map[string]any, t reflect.Type, r rule) {
 			n[key] = int64(r.num)
 		}
 	}
+}
+
+// elementSchema describes the struct element of a list: a closed object of its
+// scalar fields, the ones tagged required listed as such.
+func elementSchema(t reflect.Type) map[string]any {
+	props := map[string]any{}
+	var required []string
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		p := map[string]any{}
+		switch f.Type.Kind() {
+		case reflect.String:
+			p["type"] = "string"
+		case reflect.Bool:
+			p["type"] = "boolean"
+		case reflect.Int, reflect.Int32, reflect.Int64:
+			p["type"] = "integer"
+		case reflect.Float64:
+			p["type"] = "number"
+		}
+		if d := f.Tag.Get("doc"); d != "" {
+			p["description"] = d
+		}
+		if f.Tag.Get("secret") == "file" {
+			p["x-trove-secret"] = "file-only"
+		}
+		if strings.Contains(","+f.Tag.Get("validate")+",", ",required,") {
+			required = append(required, name)
+			p["minLength"] = 1
+		}
+		props[name] = p
+	}
+	out := map[string]any{"type": "object", "additionalProperties": false, "properties": props}
+	if len(required) > 0 {
+		out["required"] = required
+	}
+	return out
 }

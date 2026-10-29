@@ -66,6 +66,9 @@ type App struct {
 	ops    *httpserver.Server
 	client *httpserver.Server
 	router *httpserver.Router
+	// opsTLS and clientTLS are the listeners' TLS (nil: plain HTTP).
+	opsTLS    *httpserver.ListenerTLS
+	clientTLS *httpserver.ListenerTLS
 
 	started   atomic.Bool
 	startedCh chan struct{}
@@ -209,11 +212,14 @@ func (a *App) Start(ctx context.Context) error {
 		}
 		return nil
 	}, false)
+	if err := a.startTLS(); err != nil {
+		return err
+	}
 	opsHandler := httpserver.OpsHandler(httpserver.OpsOptions{
 		Live: a.health.LiveHandler(), Ready: a.health.ReadyHandler(), Metrics: a.metricsHandler(),
 		AccessLog: a.tele.opsStages(a.cfg), Log: a.log,
 	})
-	ops, err := a.newServer("ops", a.cfg.Server.OpsListen, opsHandler)
+	ops, err := a.newServer("ops", a.cfg.Server.OpsListen, opsHandler, a.opsTLS)
 	if err != nil {
 		return err
 	}
@@ -275,7 +281,8 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// The outbound factory reports a configuration error through Err; it holds the
 	// first readiness back instead of stopping the process.
 	a.out = outbound.New(cfg.Proxy.Outbound, outbound.WithTracer(a.tele.tracer), outbound.WithMetrics(a.tele.metrics),
-		outbound.WithUpstreamLog(a.log), outbound.WithVersion(a.versionString()))
+		outbound.WithUpstreamLog(a.log), outbound.WithVersion(a.versionString()),
+		outbound.WithLogger(a.log), outbound.WithTLSMetrics(a.tele.tls))
 	a.health.AddReadiness("outbound", func(context.Context) error { return a.out.Err() }, true)
 
 	// Steps 3 to 9: the infrastructure, in the order of docs/developer/coordination.md.
@@ -403,7 +410,7 @@ func (a *App) startClient() error {
 		Draining: a.health.Draining,
 	}.Handler()
 
-	srv, err := a.newServer("client", cfg.Server.Listen, handler)
+	srv, err := a.newServer("client", cfg.Server.Listen, handler, a.clientTLS)
 	if err != nil {
 		return err
 	}
@@ -422,14 +429,10 @@ func (a *App) startClient() error {
 	return nil
 }
 
-func (a *App) newServer(name, addr string, h httpHandler) (*httpserver.Server, error) {
+func (a *App) newServer(name, addr string, h httpHandler, tls *httpserver.ListenerTLS) (*httpserver.Server, error) {
 	s := a.cfg.Server
-	var tlsFiles *httpserver.TLSFiles
-	if s.TLS.CertFile != "" {
-		tlsFiles = &httpserver.TLSFiles{CertFile: s.TLS.CertFile, KeyFile: s.TLS.KeyFile}
-	}
 	return httpserver.NewServer(httpserver.ServerConfig{
-		Name: name, Addr: addr, Handler: h, TLS: tlsFiles, Log: a.log.With("component", "http", "listener", name),
+		Name: name, Addr: addr, Handler: h, TLS: tls, Log: a.log.With("component", "http", "listener", name),
 		ReadHeaderTimeout: s.ReadHeaderTimeout, IdleTimeout: s.IdleTimeout, MaxHeaderBytes: s.MaxHeaderBytes,
 		StallTimeout: s.TransferStallTimeout, OnTransferCut: a.tele.metrics.TransferCut,
 	})

@@ -124,7 +124,17 @@ cluster-wide role `trove_app` and never drops it.
 
 TLS: `database.ssl_mode: require` without `ssl_root_cert_file` needs `allow_insecure` (it encrypts but accepts any
 certificate); `verify-ca` without a CA file is refused (`config.Database.TLSProblem`, used by the load and by
-`Open`).
+`Open`); `ssl_cert_file` and `ssl_key_file` are set together.
+
+The TLS files are read again for every new connection (R-HA-015, R-ARCH-035), by `dbTLS` in
+[connect.go](../../internal/meta/postgres/connect.go): the connection string names no `sslrootcert`, `sslcert` or
+`sslkey` (pgx would read them once, at parse time), and `BeforeConnect` re-reads the files through a
+`tlsfiles.Reloader` and sets the material on the connection's own TLS configuration and on each fallback of a host
+list. `verify-full` is crypto/tls's verification (chain and host name) against the CA pool read for this connection;
+`verify-ca` and `require` with a CA file verify the chain against that pool in `VerifyConnection`; the client pair is
+presented through `GetClientCertificate`. A file that does not load at `Open` is a configuration error; a file that
+breaks later keeps the last good material, is logged and counted (`trove_tls_reload_errors_total{kind="database"}`).
+Every pool of a `DB` shares one `dbTLS`; `postgres.WithTLSMetrics` passes the families, see [tls.md](tls.md).
 
 ### Compatibility gate
 
@@ -152,5 +162,8 @@ which M1 creates with the first list endpoint.
 `set -a; . .dev/integration/env; set +a; go test -tags integration -race ./test/integration/postgres/...`.
 Every test creates its own database `trove_pg_<random>`. `stepsWith` injects extra or edited migration files.
 The PgBouncer tests set role defaults with `ALTER ROLE` in a database of their own, because the pooler keeps
-server connections per database. Not covered: a TLS handshake (the stack's PostgreSQL serves no TLS), and a
-real PostgreSQL switchover (E0.13, e2e harness).
+server connections per database. The stack serves TLS only (verify-full from the host);
+[test/integration/tls](../../test/integration/tls) rewrites a copy of its CA in place and shows that the next new
+connection uses it. Not covered: client-certificate authentication against the real server (the stack requests no
+client certificate; the unit tests prove the per-connection reload against a fake server that answers the SSLRequest),
+and a real PostgreSQL switchover (E0.13, e2e harness).

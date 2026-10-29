@@ -184,13 +184,18 @@ The factory (`outbound.New(cfg.Proxy.Outbound, opts...)`; call `Err()` at start-
 
 | Setting | Behaviour |
 |---|---|
-| trust store | system roots (if enabled) plus `proxy.outbound.tls.ca_files`; no switch turns verification off; read at start-up (reload within 60 s, R-REPO-035, is P1 and not built) |
+| trust store | system roots (if enabled) plus `proxy.outbound.tls.ca_files`; no switch turns verification off; read again on a request at most every `outbound.DefaultTrustCheckEvery` (10 s), so a changed bundle applies within the 60 s of R-REPO-035 and R-ARCH-022; each client builds a new `http.Transport` per trust generation (the old one keeps its open connections and loses its idle ones); a bundle that breaks after a good load keeps the last good one; a bundle that never loaded fails the clients closed and is reported by `Err()` until it loads. `TrustStore(purpose, files...)` with `WithRootCAs` gives one client a trust store of its own (`storage.s3.ca_file`) |
 | minimum TLS | `proxy.outbound.tls.min_version` |
 | egress policy | `deny_cidrs` / `allow_cidrs` checked in the dialer's `Control` hook after resolution, and behind a proxy on the resolved target; applies to every purpose except `objectstore`; a refusal is `errors.Is(err, outbound.ErrEgressDenied)`. Before the lists: a zoned IPv6 address (`fe80::1%eth0`, `::1%1`) is refused whatever `allow_cidrs` says (a zone scopes an address to an interface of this host, and `netip.Prefix.Contains` is false for every zoned address, so it would pass every rule unchecked); IPv4-mapped IPv6 is unmapped; an address of the NAT64 prefix `64:ff9b::/96` is also checked as the IPv4 address it translates to (`64:ff9b::a9fe:a9fe` is refused like `169.254.169.254`; an explicit allow of the IPv6 address wins). Default deny list: `127.0.0.0/8`, `::1/128`, `0.0.0.0/8`, `::/128`, `::/96`, `169.254.0.0/16`, `fe80::/10`, `fd00:ec2::254/128`, `100.100.100.200/32`, `168.63.129.16/32`, `224.0.0.0/4`, `ff00::/8`, `255.255.255.255/32` |
 | proxy | `WithProxyURL(url, bypass...)`, or `proxy.outbound.proxy_from_environment`; behind a proxy trove resolves and checks the target itself first (the proxy's own connection is unchecked, H-6) |
 | timeouts | connect 10 s, TLS handshake 10 s, response headers 30 s; overall 30 s for `oidc_discovery`, `jwks`, `webhook`, none for `remote` and `objectstore`; `WithSocketTimeout` maps a remote's socket timeout |
 | redirects | at most 5 hops (`WithMaxRedirects`), `https` to `http` refused, `WithRedirectCheck` for format rules |
 | compression | not transparent: callers choose `Accept-Encoding` |
+
+The trust stores report `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total` and
+`trove_tls_reload_errors_total` with `kind="outbound"` (the factory's) or the purpose (`objectstore`) when the factory
+gets `outbound.WithTLSMetrics`; reload errors are logged through `outbound.WithLogger`. The families and their labels
+are on [tls.md](tls.md#metrics).
 
 Build one client per purpose or per remote repository and keep it: a client owns a connection pool.
 `outbound.NewDialer` and the alias `outbound.Dialer` serve drivers (PostgreSQL, Valkey) that need a socket

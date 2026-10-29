@@ -10,7 +10,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, authz, auth, jobs, audit, backup
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -53,6 +53,7 @@ func layerTable() []layerRule {
 		{"internal/cache", layerLeaf},
 		{"internal/meta", layerLeaf},
 		{"internal/backup/tables", layerLeaf},
+		{"internal/tlsfiles", layerLeaf},
 
 		{"internal/meta/postgres", layerInfra},
 		{"internal/blob", layerInfra},

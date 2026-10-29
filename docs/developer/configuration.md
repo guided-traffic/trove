@@ -11,7 +11,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 | File | Content |
 |---|---|
 | [config.go](../../internal/config/config.go) | the root struct `Config`, one field per section; the `go:generate` line |
-| [process.go](../../internal/config/process.go), [server.go](../../internal/config/server.go), [database.go](../../internal/config/database.go), [migrate.go](../../internal/config/migrate.go), [runtime.go](../../internal/config/runtime.go), [valkey.go](../../internal/config/valkey.go), [storage.go](../../internal/config/storage.go), [jobs.go](../../internal/config/jobs.go), [cluster.go](../../internal/config/cluster.go), [cache.go](../../internal/config/cache.go), [secrets.go](../../internal/config/secrets.go), [system.go](../../internal/config/system.go), [health.go](../../internal/config/health.go), [log.go](../../internal/config/log.go), [metrics.go](../../internal/config/metrics.go), [trace.go](../../internal/config/trace.go), [audit.go](../../internal/config/audit.go), [maintenance.go](../../internal/config/maintenance.go), [outbound.go](../../internal/config/outbound.go) | one section each (`Process`, `Server`, `Database`, `Migrate`, `Runtime`, `Valkey`, `Storage`, `Jobs`, `Cluster`, `Cache`, `Secrets`, `System`, `Health`, `Log`, `Metrics`, `Tracing`, `Audit`, `Maintenance`, `Proxy` with `Outbound`); the owner of a subsystem edits only its file |
+| [process.go](../../internal/config/process.go), [server.go](../../internal/config/server.go) with [tls.go](../../internal/config/tls.go) (`server.tls`, `server.ops_tls`), [database.go](../../internal/config/database.go), [migrate.go](../../internal/config/migrate.go), [runtime.go](../../internal/config/runtime.go), [valkey.go](../../internal/config/valkey.go), [storage.go](../../internal/config/storage.go), [jobs.go](../../internal/config/jobs.go), [cluster.go](../../internal/config/cluster.go), [cache.go](../../internal/config/cache.go), [secrets.go](../../internal/config/secrets.go), [system.go](../../internal/config/system.go), [health.go](../../internal/config/health.go), [log.go](../../internal/config/log.go), [metrics.go](../../internal/config/metrics.go), [trace.go](../../internal/config/trace.go), [audit.go](../../internal/config/audit.go), [maintenance.go](../../internal/config/maintenance.go), [outbound.go](../../internal/config/outbound.go) | one section each (`Process`, `Server`, `Database`, `Migrate`, `Runtime`, `Valkey`, `Storage`, `Jobs`, `Cluster`, `Cache`, `Secrets`, `System`, `Health`, `Log`, `Metrics`, `Tracing`, `Audit`, `Maintenance`, `Proxy` with `Outbound`); the owner of a subsystem edits only its file |
 | [schema.go](../../internal/config/schema.go) | `Describe`: flattens the tree into `Key`s, checks tags, derives environment names |
 | [load.go](../../internal/config/load.go) | `Load`: defaults, file, environment, flags; strict matching; secret resolution; validation |
 | [rules.go](../../internal/config/rules.go), [value.go](../../internal/config/value.go), [units.go](../../internal/config/units.go) | `validate` tag rules, text and YAML value parsing, `ByteSize` |
@@ -34,8 +34,12 @@ until their owner adds the section. The chart must render only keys the tree kno
 | `doc:"…"` | description for the JSON Schema |
 
 Supported types: `string`, `bool`, `int`, `int32`, `int64`, `float64`, `time.Duration`, `config.ByteSize`,
-`[]string`, `map[string]T`, nested structs, and `config.Secret`. Lists and maps are one key; their
-environment value is JSON.
+`[]string`, lists of flat structs (`server.tls.certificates`), `map[string]T`, nested structs, and `config.Secret`.
+Lists and maps are one key; their environment value is JSON:
+`TROVE_SERVER_TLS_CERTIFICATES='[{"cert_file":"/tls/tls.crt","key_file":"/tls/tls.key"}]'` # example. A list
+element has scalar fields with snake_case `yaml` names only (`Describe` refuses anything else), is decoded strictly
+(an unknown field is an error), and appears in the JSON Schema as `items` with its properties; `validate:"required"`
+on an element field marks it required there, and the section's `Validate` enforces it, because elements are not keys.
 
 Cross-field rules go on the section as `func (s *Section) Validate(r *Report)` (runs on every load,
 messages read `<section>.<key> <problem>`). A rule that applies only to some commands is
@@ -60,7 +64,8 @@ Two shapes:
 
 - **File-only.** A string field `…_file` tagged `secret:"file"`: `database.password_file`,
   `valkey.password_file`, `storage.s3.credentials.secret_access_key_file`, `metrics.bearer_token_file`,
-  TLS private keys. The consumer reads the file on every use, so a rotated Secret applies without a
+  TLS private keys (`database.ssl_key_file`, `valkey.tls.key_file`, `key_file` of each `server.tls.certificates`
+  entry, which the JSON Schema marks `x-trove-secret: file-only`). The consumer reads the file on every use, so a rotated Secret applies without a
   restart. The effective view shows the path, which is not a secret.
 - **Value and file.** A field of type `config.Secret` expands to two keys, `<name>` and `<name>_file`.
   The value may come from the environment (`TROVE_<NAME>`); written inline into the YAML file it stops
@@ -104,3 +109,35 @@ A new section is a new file next to the others and a field on `Config`.
 `x-trove-secret` (`env-only`, `file` or `file-only`) and `x-trove-type` (`duration`, `bytes`). Durations
 are strings, sizes are strings or integers. The chart may reference or copy the file to validate
 `config:` values; the loader does not read it.
+
+## TLS keys of the listeners
+
+`server.tls` (client listener) and `server.ops_tls` (ops listener), [tls.go](../../internal/config/tls.go). A listener
+serves TLS when its `certificates` list is non-empty. Behaviour and rotation: [tls.md](tls.md).
+
+```yaml
+server:
+  tls:
+    certificates: []                    # default: plain HTTP; one or more pairs, SNI picks, the first is the default
+    # certificates:                     # example
+    #   - cert_file: /var/run/secrets/trove/tls/tls.crt
+    #     key_file: /var/run/secrets/trove/tls/tls.key
+    client_ca_file: ""                  # default: no client certificates
+    client_auth: none                   # default; none | verify_if_given | require (needs client_ca_file)
+    min_version: "1.2"                  # default; "1.2" | "1.3"
+    reload_interval: 10s                # default; at least 1s
+  ops_tls:
+    inherit: true                       # default: server.tls's certificates, min_version, reload_interval; no client certificates
+    certificates: []                    # default; with inherit false: the ops listener's own pairs
+    client_ca_file: ""                  # default
+    client_auth: none                   # default
+    min_version: "1.2"                  # default
+    reload_interval: 10s                # default
+```
+
+Rules (`Server.Validate`): every entry names both files, no `cert_file` twice; `client_auth` other than `none` needs
+`client_ca_file`, and `client_ca_file` with `client_auth: none` is refused (it would look like mutual TLS and be none);
+client certificates need certificates on the listener; with `inherit: true` every other `ops_tls` key must keep its
+default (it would be ignored); with `inherit: false` and no certificates the ops listener would be plain HTTP beside a
+TLS client listener, which is refused. `database.ssl_cert_file` and `database.ssl_key_file` are set together.
+

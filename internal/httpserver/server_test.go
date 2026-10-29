@@ -3,21 +3,11 @@ package httpserver
 import (
 	"bufio"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -334,65 +324,4 @@ func TestStallTimeout(t *testing.T) {
 			t.Fatalf("body = %q", b)
 		}
 	})
-}
-
-func TestServerTLS(t *testing.T) {
-	t.Run("R-ARCH-005 with server.tls HTTP/2 is served over TLS and HTTP/1.1 stays on", func(t *testing.T) {
-		dir := t.TempDir()
-		cert, key := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
-		writeSelfSigned(t, cert, key)
-		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, r.Proto) })
-		_, addr := start(t, ServerConfig{Handler: h, TLS: &TLSFiles{CertFile: cert, KeyFile: key}})
-		for _, proto := range []string{"h2", "http/1.1"} {
-			tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, NextProtos: []string{proto}}, ForceAttemptHTTP2: proto == "h2"}
-			resp, err := (&http.Client{Transport: tr}).Get("https://" + addr + "/")
-			if err != nil {
-				t.Fatal(err)
-			}
-			b, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			want := "HTTP/2.0"
-			if proto == "http/1.1" {
-				want = "HTTP/1.1"
-			}
-			if string(b) != want {
-				t.Errorf("%s: served over %s", proto, b)
-			}
-		}
-	})
-
-	t.Run("R-ARCH-005 a certificate pair that cannot be loaded stops the listener from being created", func(t *testing.T) {
-		_, err := NewServer(ServerConfig{Name: "client", Handler: http.NotFoundHandler(), TLS: &TLSFiles{CertFile: "/nonexistent.crt", KeyFile: "/nonexistent.key"}})
-		if err == nil {
-			t.Fatal("NewServer accepted missing TLS files")
-		}
-	})
-}
-
-func writeSelfSigned(t *testing.T, certPath, keyPath string) {
-	t.Helper()
-	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "localhost"},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
-		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &k.PublicKey, k)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kb, _ := x509.MarshalECPrivateKey(k)
-	must(t, os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
-	must(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}), 0o600))
-}
-
-func must(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
 }

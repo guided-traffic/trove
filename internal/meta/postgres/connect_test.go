@@ -194,7 +194,7 @@ func TestCredentialFiles(t *testing.T) {
 	c.UsernameFile, c.PasswordFile = user, pw
 	write(user, "trove_app_a\n")
 	write(pw, "s3cret\n")
-	bc := beforeConnect(c)
+	bc := beforeConnect(c, nil)
 
 	t.Run("R-HA-015 user and password come from their files", func(t *testing.T) {
 		cc := &pgx.ConnConfig{}
@@ -217,7 +217,7 @@ func TestCredentialFiles(t *testing.T) {
 	})
 	t.Run("R-HA-015 a missing file names the key", func(t *testing.T) {
 		c.PasswordFile = filepath.Join(dir, "missing")
-		err := beforeConnect(c)(context.Background(), &pgx.ConnConfig{})
+		err := beforeConnect(c, nil)(context.Background(), &pgx.ConnConfig{})
 		if err == nil || !strings.Contains(err.Error(), "database.password_file") {
 			t.Fatalf("err = %v", err)
 		}

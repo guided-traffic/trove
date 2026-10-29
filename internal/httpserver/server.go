@@ -34,8 +34,10 @@ type ServerConfig struct {
 	// host binds every interface on IPv4 and IPv6.
 	Addr    string
 	Handler http.Handler
-	TLS     *TLSFiles
-	Log     *slog.Logger
+	// TLS serves the listener over TLS (R-ARCH-035); nil means plain HTTP.
+	// Serve runs its reloader until the listener stops accepting.
+	TLS *ListenerTLS
+	Log *slog.Logger
 
 	ReadHeaderTimeout time.Duration
 	IdleTimeout       time.Duration
@@ -139,12 +141,8 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		},
 		ConnState: s.connState,
 	}
-	if cfg.TLS != nil && (cfg.TLS.CertFile != "" || cfg.TLS.KeyFile != "") {
-		tc, err := tlsConfig(*cfg.TLS)
-		if err != nil {
-			return nil, fmt.Errorf("%s listener: %w", cfg.Name, err)
-		}
-		s.srv.TLSConfig = tc
+	if cfg.TLS != nil {
+		s.srv.TLSConfig = cfg.TLS.base
 	}
 	return s, nil
 }
@@ -174,8 +172,13 @@ func (s *Server) Serve() error {
 		return fmt.Errorf("%s listener: Serve before Bind", s.cfg.Name)
 	}
 	var err error
-	if s.srv.TLSConfig != nil {
+	if s.cfg.TLS != nil {
+		// The reloader runs while the listener accepts: after Shutdown starts no
+		// new handshake happens, and the open connections keep what they have.
+		ctx, cancel := context.WithCancel(context.Background())
+		go s.cfg.TLS.Run(ctx)
 		err = s.srv.ServeTLS(s.ln, "", "")
+		cancel()
 	} else {
 		err = s.srv.Serve(s.ln)
 	}

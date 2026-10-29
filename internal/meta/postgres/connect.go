@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -16,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
 
 // The connection classes of R-ARCH-019. The class is the last part of the
@@ -118,6 +121,8 @@ func quote(v string) string {
 // connString is the libpq key/value string of an endpoint. It carries no user
 // and no password: BeforeConnect reads those from their files for every new
 // connection, so a rotated Secret applies without a restart (R-HA-015, R-HA-017).
+// It names no TLS file either: pgx would read sslrootcert, sslcert and sslkey
+// once, at parse time; dbTLS sets them on every new connection instead.
 func connString(c config.Database, e endpoint) string {
 	kv := []string{
 		"host=" + quote(e.host),
@@ -126,16 +131,104 @@ func connString(c config.Database, e endpoint) string {
 		"sslmode=" + quote(c.SSLMode),
 		"target_session_attrs=" + quote(c.TargetSessionAttrs),
 	}
+	return strings.Join(kv, " ")
+}
+
+// dbTLS is the TLS material of the database connections: the root CA
+// (ssl_root_cert_file) and the optional client pair (ssl_cert_file,
+// ssl_key_file). It is read again for every new connection; a file that does
+// not load keeps the last good material and is logged and counted (R-HA-015,
+// R-ARCH-035). Every pool of a DB shares one.
+type dbTLS struct {
+	mode   string
+	roots  *tlsfiles.Reloader // nil without ssl_root_cert_file: the system roots verify
+	client *tlsfiles.Reloader // nil without a client pair
+}
+
+// newDBTLS reads the files once. A file that does not load at start is a
+// configuration error: the connection would otherwise trust the system roots or
+// connect without its certificate.
+func newDBTLS(c config.Database, opts ...tlsfiles.Option) (*dbTLS, error) {
+	t := &dbTLS{mode: c.SSLMode}
+	labels := tlsfiles.Labels{Kind: tlsfiles.KindDatabase}
 	if c.SSLRootCertFile != "" {
-		kv = append(kv, "sslrootcert="+quote(c.SSLRootCertFile))
+		t.roots = tlsfiles.New(tlsfiles.Spec{CAFiles: []string{c.SSLRootCertFile}}, labels, opts...)
+		if err := t.roots.Loaded(); err != nil {
+			return nil, fmt.Errorf("database.ssl_root_cert_file: %w", err)
+		}
+	}
+	if (c.SSLCertFile == "") != (c.SSLKeyFile == "") {
+		return nil, errors.New("database.ssl_cert_file and database.ssl_key_file must be set together")
 	}
 	if c.SSLCertFile != "" {
-		kv = append(kv, "sslcert="+quote(c.SSLCertFile))
+		t.client = tlsfiles.New(tlsfiles.Spec{Pairs: []tlsfiles.Pair{{CertFile: c.SSLCertFile, KeyFile: c.SSLKeyFile}}}, labels, opts...)
+		if err := t.client.Loaded(); err != nil {
+			return nil, fmt.Errorf("database.ssl_cert_file: %w", err)
+		}
 	}
-	if c.SSLKeyFile != "" {
-		kv = append(kv, "sslkey="+quote(c.SSLKeyFile))
+	return t, nil
+}
+
+// connect re-reads the files and sets the material on every TLS configuration of
+// one new connection: the primary and the fallbacks of a host list (R-HA-009).
+// cc is the connection's own copy, so nothing is shared between connections.
+func (t *dbTLS) connect(cc *pgconn.Config) {
+	if t == nil {
+		return
 	}
-	return strings.Join(kv, " ")
+	if t.roots != nil {
+		t.roots.Refresh(0)
+	}
+	if t.client != nil {
+		t.client.Refresh(0)
+	}
+	t.patch(cc.TLSConfig)
+	for _, fb := range cc.Fallbacks {
+		t.patch(fb.TLSConfig)
+	}
+}
+
+func (t *dbTLS) patch(tc *tls.Config) {
+	if tc == nil { // sslmode disable, or the plaintext fallback of allow/prefer
+		return
+	}
+	tc.MinVersion = max(tc.MinVersion, tls.VersionTLS12)
+	if t.roots != nil {
+		pool := t.roots.Pool()
+		tc.RootCAs = pool
+		switch t.mode {
+		case "verify-ca", "require":
+			// libpq: require with a root certificate file behaves like verify-ca.
+			// The chain is verified, the host name is not; crypto/tls skips both
+			// together, so the chain is verified here, against this connection's
+			// pool. pgx's own check would use the pool it parsed, which is none.
+			tc.InsecureSkipVerify = true //nolint:gosec // G402: VerifyConnection verifies the chain against the configured CA
+			tc.VerifyPeerCertificate = nil
+			tc.VerifyConnection = verifyChain(pool)
+		}
+		// verify-full: crypto/tls verifies chain and host name (ServerName is the
+		// host, set by pgx) against RootCAs.
+	}
+	if t.client != nil {
+		tc.Certificates = nil
+		tc.GetClientCertificate = t.client.ClientCertificate
+	}
+}
+
+// verifyChain verifies the server's chain against pool without the host name
+// (verify-ca).
+func verifyChain(pool *x509.CertPool) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return errors.New("the database server presented no certificate")
+		}
+		inter := x509.NewCertPool()
+		for _, c := range cs.PeerCertificates[1:] {
+			inter.AddCert(c)
+		}
+		_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: pool, Intermediates: inter})
+		return err
+	}
 }
 
 // readSecretFile reads a one-value file and trims the trailing newline.
@@ -148,9 +241,10 @@ func readSecretFile(key, path string) (string, error) {
 }
 
 // beforeConnect fills user and password from their files on every new
-// connection.
-func beforeConnect(c config.Database) func(context.Context, *pgx.ConnConfig) error {
+// connection, and sets the TLS material read for it.
+func beforeConnect(c config.Database, t *dbTLS) func(context.Context, *pgx.ConnConfig) error {
 	return func(_ context.Context, cc *pgx.ConnConfig) error {
+		t.connect(&cc.Config)
 		user, err := readSecretFile("database.username_file", c.UsernameFile)
 		if err != nil {
 			return err
@@ -251,7 +345,7 @@ type poolSpec struct {
 }
 
 // newPoolConfig builds the pgxpool configuration of one pool.
-func newPoolConfig(c config.Database, s poolSpec) (*pgxpool.Config, error) {
+func newPoolConfig(c config.Database, s poolSpec, t *dbTLS) (*pgxpool.Config, error) {
 	pc, err := pgxpool.ParseConfig(connString(c, s.ep))
 	if err != nil {
 		return nil, fmt.Errorf("database connection settings for %s: %w", s.ep, err)
@@ -261,7 +355,7 @@ func newPoolConfig(c config.Database, s poolSpec) (*pgxpool.Config, error) {
 	cc.RuntimeParams = runtimeParams(c, s.instance, s.kind)
 	cc.DefaultQueryExecMode = execMode(c, s.kind.pooled)
 	cc.DialFunc = tuneDial(cc.DialFunc, c.Keepalive)
-	pc.BeforeConnect = beforeConnect(c)
+	pc.BeforeConnect = beforeConnect(c, t)
 	pc.MaxConns, pc.MinConns = s.maxConns, s.minConns
 	pc.MaxConnLifetime, pc.MaxConnLifetimeJitter = s.lifetime, s.jitter
 	pc.MaxConnIdleTime, pc.HealthCheckPeriod = s.idleTime, s.healthEach
@@ -278,7 +372,11 @@ func connectConfig(c config.Database, ep endpoint, instance, class string, noLim
 	cc.ConnectTimeout = c.ConnectTimeout
 	cc.RuntimeParams = runtimeParams(c, instance, connKind{class: class, noLimit: noLimit})
 	cc.DialFunc = tuneDial(cc.DialFunc, c.Keepalive)
-	if err := beforeConnect(c)(context.Background(), cc); err != nil {
+	t, err := newDBTLS(c)
+	if err != nil {
+		return nil, err
+	}
+	if err := beforeConnect(c, t)(context.Background(), cc); err != nil {
 		return nil, err
 	}
 	return cc, nil

@@ -20,7 +20,7 @@ Nothing outside `internal/cluster` reads or writes a Valkey key (Q-ARCH-16: noth
 | [`valkey_sentinel.go`](../../internal/cluster/valkey_sentinel.go) | Sentinel probe (`trove_valkey_sentinels_reachable`) and startup classification (Q-HA-13) |
 | [`valkey_breaker.go`](../../internal/cluster/valkey_breaker.go) | Circuit breaker |
 | [`valkey_errors.go`](../../internal/cluster/valkey_errors.go) | Error kinds (`trove_valkey_errors_total{kind}`) and what counts for the breaker |
-| [`valkey_tls.go`](../../internal/cluster/valkey_tls.go), [`valkey_auth.go`](../../internal/cluster/valkey_auth.go) | TLS modes; credential files read per connection attempt |
+| [`valkey_tls.go`](../../internal/cluster/valkey_tls.go), [`valkey_auth.go`](../../internal/cluster/valkey_auth.go) | TLS modes and the CA bundle and client pair read again for every handshake; credential files read per connection attempt |
 | [`valkey_metrics.go`](../../internal/cluster/valkey_metrics.go), [`valkey_version.go`](../../internal/cluster/valkey_version.go) | `trove_valkey_*` families; the 9.0 floor |
 
 ## Connections and discovery
@@ -47,6 +47,15 @@ The Sentinel probe is separate: every refresh interval, every configured Sentine
 | Server below 9.0 (HELLO `version`) | false, reason `valkey 8.1.11 is not supported; trove requires 9.0 or later` | `unsupported` | nil |
 
 Later states: `circuit_open` (breaker open), `probe_failed` (last health probe failed), `closed` (after `Close`). `Status().DegradedReason` is the free text: it can name addresses and server replies, so it goes to the log (`valkey degraded` carries `reason_code` and `reason`) and the authenticated replica list; `/readyz?verbose=1` on the ops listener shows only the code (`cluster.ReasonCodes()` lists them).
+
+**TLS material reload** (R-HA-056, R-ARCH-035). `newValkeyTLS` holds a `tlsfiles.Reloader` for `valkey.tls.ca_file`
+(or the system roots) and one for `cert_file`/`key_file`. valkey-go carries only a base `tls.Config` as the "TLS on"
+marker; the dial function (`dialFn(resolver, prepare)`) turns it into the configuration of each handshake, data nodes
+and Sentinels alike: the CA pool read now, the client certificate read when the server asks for it, the hand-written
+chain check of `verify-ca` against this handshake's pool. A file that does not load at start fails `NewValkey`; one
+that breaks later keeps the last good material and is counted (`trove_tls_reload_errors_total{kind="valkey"}`).
+Connections are recycled every `max_conn_lifetime`, so a rotated CA or client certificate is in use within that
+lifetime even without reconnects. `cluster.WithTLSMetrics` passes the families, see [tls.md](tls.md).
 
 **Start-up warnings.** In Sentinel mode `NewValkey` logs one WARN each when `valkey.sentinel.password_file` is unset (anyone who reaches a Sentinel can name another primary) and when TLS verifies against the system roots (`valkey.tls.ca_file` unset: a primary a Sentinel names passes with any publicly issued certificate for that name). The configuration has no strictness switch that turns them into errors. `tls.mode: verify-ca` without `tls.ca_file` is refused by the configuration check and by `NewValkey`: verify-ca skips the host name, and with the system roots any public certificate would pass.
 

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
 
 // Purposes of outbound clients. They are the kind label of the outbound metrics
@@ -60,14 +60,20 @@ func WithVersion(v string) Option { return func(f *Factory) { f.version = v } }
 
 // Factory builds the outbound clients of the process.
 type Factory struct {
-	cfg         config.Outbound
-	roots       *x509.CertPool
-	minVersion  uint16
-	policy      addressPolicy
+	cfg        config.Outbound
+	trust      *tlsfiles.Reloader // system roots plus proxy.outbound.tls.ca_files
+	trustEvery time.Duration
+	minVersion uint16
+	policy     addressPolicy
+	// setupErr is what no reload can fix: the policy lists, a trust store with
+	// neither system roots nor files. A CA file that does not load yet is the
+	// trust store's own state (Err reports both).
 	setupErr    error
 	tracer      *observability.Tracer
 	upstreamLog *slog.Logger
+	log         *slog.Logger
 	metrics     *observability.Metrics
+	tlsMetrics  *tlsfiles.Metrics
 	version     string
 	scrub       *observability.Scrubber
 
@@ -79,9 +85,15 @@ type Factory struct {
 // New builds the factory. Problems with the trust store or the address policy
 // do not fail New; they are reported by Err, and every client of a failed
 // factory fails each request with that error rather than connecting with a
-// weaker setup. The composition root calls Err at start-up.
+// weaker setup. The composition root calls Err at start-up. A CA file that does
+// not load at start fails the clients until it does: the trust store is read
+// again at most every DefaultTrustCheckEvery, and a file that becomes valid
+// later is used without a restart (R-ARCH-022, R-REPO-035).
 func New(cfg config.Outbound, opts ...Option) *Factory {
-	f := &Factory{cfg: cfg, version: buildinfo.Get().Version, scrub: observability.NewScrubber(observability.DefaultQueryParams())}
+	f := &Factory{
+		cfg: cfg, version: buildinfo.Get().Version, scrub: observability.NewScrubber(observability.DefaultQueryParams()),
+		trustEvery: DefaultTrustCheckEvery,
+	}
 	for _, o := range opts {
 		o(f)
 	}
@@ -90,7 +102,11 @@ func New(cfg config.Outbound, opts ...Option) *Factory {
 	if cfg.TLS.MinVersion == "1.3" {
 		f.minVersion = tls.VersionTLS13
 	}
-	f.roots, errs = loadRoots(cfg.TLS, errs)
+	if !cfg.TLS.UseSystemRoots && len(cfg.TLS.CAFiles) == 0 {
+		errs = append(errs, errors.New("proxy.outbound.tls: use_system_roots is false and ca_files is empty: no upstream certificate could verify"))
+	}
+	f.trust = tlsfiles.New(tlsfiles.Spec{CAFiles: cfg.TLS.CAFiles, SystemRoots: cfg.TLS.UseSystemRoots},
+		tlsfiles.Labels{Kind: tlsfiles.KindOutbound}, f.reloaderOptions()...)
 	var err error
 	if f.policy.deny, err = parsePrefixes(cfg.AddressPolicy.DenyCIDRs); err != nil {
 		errs = append(errs, fmt.Errorf("proxy.outbound.address_policy.deny_cidrs: %w", err))
@@ -108,38 +124,18 @@ func New(cfg config.Outbound, opts ...Option) *Factory {
 	return f
 }
 
-func loadRoots(c config.OutboundTLS, errs []error) (*x509.CertPool, []error) {
-	var pool *x509.CertPool
-	if c.UseSystemRoots {
-		sys, err := x509.SystemCertPool()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("proxy.outbound.tls: system roots: %w", err))
-			sys = x509.NewCertPool()
-		}
-		pool = sys
-	} else {
-		pool = x509.NewCertPool()
-	}
-	for _, file := range c.CAFiles {
-		pem, err := os.ReadFile(file) //nolint:gosec // operator-configured path
-		if err != nil {
-			errs = append(errs, fmt.Errorf("proxy.outbound.tls.ca_files: %w", err))
-			continue
-		}
-		if !pool.AppendCertsFromPEM(pem) {
-			errs = append(errs, fmt.Errorf("proxy.outbound.tls.ca_files: %s holds no PEM certificate", file))
-		}
-	}
-	if !c.UseSystemRoots && len(c.CAFiles) == 0 {
-		errs = append(errs, errors.New("proxy.outbound.tls: use_system_roots is false and ca_files is empty: no upstream certificate could verify"))
-	}
-	return pool, errs
-}
-
 // Err reports a problem with the trust store or the address policy. Nil means
 // every client verifies certificates against the configured roots and enforces
-// the policy.
-func (f *Factory) Err() error { return f.setupErr }
+// the policy. A CA file that never loaded is reported until it does; Err looks
+// at the files again at most every DefaultTrustCheckEvery, so a readiness check
+// that calls it sees a file that became valid.
+func (f *Factory) Err() error {
+	f.trust.Refresh(f.trustEvery)
+	if err := f.trust.Loaded(); err != nil {
+		return errors.Join(f.setupErr, fmt.Errorf("proxy.outbound.tls.ca_files: %w", err))
+	}
+	return f.setupErr
+}
 
 // CheckAddr applies the egress address policy to one address.
 func (f *Factory) CheckAddr(a netip.Addr) error { return f.policy.check(a) }
@@ -161,6 +157,7 @@ type clientSettings struct {
 	clientCert     []tls.Certificate
 	egress         bool
 	logAttrs       []slog.Attr
+	trust          *tlsfiles.Reloader // WithRootCAs; nil means the factory's
 }
 
 // WithTimeout sets the client's overall timeout including the body. The default
@@ -257,7 +254,14 @@ func (f *Factory) Client(purpose string, opts ...ClientOption) *http.Client {
 	if f.setupErr != nil {
 		rt.base = failing{err: fmt.Errorf("outbound client unavailable: %w", f.setupErr)}
 	} else {
-		rt.base = f.transport(purpose, s)
+		trust, what := f.trust, "proxy.outbound.tls.ca_files"
+		if s.trust != nil {
+			trust, what = s.trust, "the client's CA bundle"
+		}
+		rt.base = &trustedTransport{
+			trust: trust, every: f.trustEvery, what: what,
+			build: func(roots *x509.CertPool) *http.Transport { return f.transport(purpose, s, roots) },
+		}
 	}
 	c := &http.Client{Transport: rt, Timeout: s.overall}
 	maxHops, extra := s.maxRedirects, s.redirectCheck
@@ -276,7 +280,9 @@ func (f *Factory) Client(purpose string, opts ...ClientOption) *http.Client {
 	return c
 }
 
-func (f *Factory) transport(purpose string, s clientSettings) *http.Transport {
+// transport builds the transport of one client for one generation of its trust
+// store.
+func (f *Factory) transport(purpose string, s clientSettings, roots *x509.CertPool) *http.Transport {
 	var onDeny func()
 	if f.denied != nil {
 		c := f.denied.WithLabelValues(purpose)
@@ -297,7 +303,7 @@ func (f *Factory) transport(purpose string, s clientSettings) *http.Transport {
 		ForceAttemptHTTP2:     true,
 		DisableCompression:    true,
 		TLSClientConfig: &tls.Config{
-			RootCAs:      f.roots,
+			RootCAs:      roots,
 			MinVersion:   f.minVersion,
 			Certificates: s.clientCert,
 		},

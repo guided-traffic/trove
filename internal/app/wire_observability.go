@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
 
 // telemetry bundles logging, metrics and tracing, the first things a replica
@@ -22,6 +23,9 @@ type telemetry struct {
 	metrics *observability.Metrics
 	tracer  *observability.Tracer
 	passing *prometheus.GaugeVec
+	// tls holds the TLS material families (R-ARCH-035), shared by the listeners
+	// and every client.
+	tls *tlsfiles.Metrics
 }
 
 func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, error) {
@@ -31,6 +35,9 @@ func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, err
 	t.metrics = observability.NewMetrics(id.Role, observability.WithMetricsConfig(cfg.Metrics))
 	t.passing = t.metrics.NewGaugeVec("trove_health_check_passing", "1 while the readiness check passes, 0 while it fails.", "name")
 	var err error
+	if t.tls, err = tlsfiles.NewMetrics(t.metrics.Registry()); err != nil {
+		return nil, err
+	}
 	t.tracer, err = observability.Tracing(cfg.Tracing,
 		observability.WithTraceResource(id.Instance, id.Role, buildinfo.Get().Version),
 		observability.WithTraceMetrics(t.metrics),

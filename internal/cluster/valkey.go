@@ -17,6 +17,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
 
 // monitorTick is how often the monitor compares the primary the client is
@@ -36,6 +37,9 @@ type Valkey struct {
 	creds    credentials
 
 	dataTLS, sentinelTLS *tls.Config
+	// tls re-reads the CA and the client pair for every handshake (R-HA-056);
+	// dataTLS and sentinelTLS are its base, or nil without TLS.
+	tls *valkeyTLS
 	// sentinelResolver tags dialers that go to Sentinels: valkey-go copies the
 	// data-node option for them, and the dial function tells them apart by it.
 	sentinelResolver *net.Resolver
@@ -105,7 +109,8 @@ type ValkeyStatus struct {
 type ValkeyOption func(*valkeyOptions)
 
 type valkeyOptions struct {
-	keyspace string
+	keyspace   string
+	tlsMetrics *tlsfiles.Metrics
 }
 
 // WithKeyspaceID sets the keyspace from system_state.keyspace_id
@@ -144,10 +149,11 @@ func NewValkey(ctx context.Context, cfg config.Valkey, instance, role string, lo
 			return nil, fmt.Errorf("valkey credentials: %w", err)
 		}
 	}
-	dataTLS, err := tlsConfig(cfg.TLS)
+	vt, err := newValkeyTLS(cfg.TLS, tlsfiles.WithLogger(log.With("component", "valkey")), tlsfiles.WithMetrics(o.tlsMetrics))
 	if err != nil {
 		return nil, err
 	}
+	dataTLS := vt.baseConfig()
 	var sentinelTLS *tls.Config
 	if cfg.Mode == "sentinel" && cfg.Sentinel.TLS {
 		sentinelTLS = dataTLS
@@ -159,7 +165,7 @@ func NewValkey(ctx context.Context, cfg config.Valkey, instance, role string, lo
 
 	v := &Valkey{
 		cfg: cfg, instance: instance, role: role, log: log.With("component", "valkey"), m: m,
-		creds: creds, dataTLS: dataTLS, sentinelTLS: sentinelTLS,
+		creds: creds, dataTLS: dataTLS, sentinelTLS: sentinelTLS, tls: vt,
 		sentinelResolver: &net.Resolver{},
 	}
 	v.warnWeakTrust()
@@ -391,7 +397,7 @@ func (v *Valkey) clientOption() valkey.ClientOption {
 		ClientName:        "trove:" + v.instance + ":main",
 		TLSConfig:         v.dataTLS,
 		AuthCredentialsFn: v.creds.fn,
-		DialCtxFn:         dialFn(v.sentinelResolver),
+		DialCtxFn:         dialFn(v.sentinelResolver, v.tls.prepare),
 		DisableCache:      true, // R-ARCH-031: trove's caches are its own
 		SelectDB:          cfg.Database,
 		Dialer:            outbound.NewDialer(cfg.ConnectTimeout, nil),

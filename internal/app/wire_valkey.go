@@ -20,7 +20,7 @@ func (c *valkeyComponent) Name() string { return "valkey" }
 
 func (c *valkeyComponent) Start(ctx context.Context) error {
 	a := c.a
-	var opts []cluster.ValkeyOption
+	opts := []cluster.ValkeyOption{cluster.WithTLSMetrics(a.tele.tls)}
 	if f, ok := a.systemFacts(); ok {
 		opts = append(opts, cluster.WithKeyspaceID(keyspaceHex(f.KeyspaceID)))
 	}

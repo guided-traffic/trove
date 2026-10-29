@@ -97,9 +97,14 @@ func readSecretFile(name string) (string, error) {
 }
 
 // dialFn builds the DialCtxFn: TLS as configured for the kind of peer, and the
-// remote address tagged with that kind.
-func dialFn(sentinelResolver *net.Resolver) func(context.Context, string, *outbound.Dialer, *tls.Config) (net.Conn, error) {
+// remote address tagged with that kind. prepare turns the TLSConfig valkey-go
+// hands over into the configuration of this handshake, with the CA bundle and
+// the client certificate read now (R-HA-056).
+func dialFn(sentinelResolver *net.Resolver, prepare func(*tls.Config) *tls.Config) func(context.Context, string, *outbound.Dialer, *tls.Config) (net.Conn, error) {
 	return func(ctx context.Context, dst string, d *outbound.Dialer, cfg *tls.Config) (net.Conn, error) {
+		if prepare != nil {
+			cfg = prepare(cfg)
+		}
 		kind := peerData
 		if d.Resolver != nil && d.Resolver == sentinelResolver {
 			kind = peerSentinel

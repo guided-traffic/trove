@@ -17,7 +17,8 @@ type Server struct {
 	MaxHeaderBytes       int           `yaml:"max_header_bytes" default:"65536" validate:"min=4096"`
 	MaxInFlight          int           `yaml:"max_in_flight" default:"4096" validate:"min=1" doc:"Concurrent requests per replica."`
 	ShutdownTimeout      time.Duration `yaml:"shutdown_timeout" default:"0s" validate:"min=0s" doc:"Bound for in-flight requests and running work at SIGTERM. 0 derives it: runtime.termination_grace_period minus health.shutdown_drain_delay minus 5 s, or 25 s when the grace period is unknown. An explicit value must fit the grace period."`
-	TLS                  ServerTLS     `yaml:"tls"`
+	TLS                  ServerTLS     `yaml:"tls" doc:"TLS of the client listener (R-ARCH-035)."`
+	OpsTLS               ServerOpsTLS  `yaml:"ops_tls" doc:"TLS of the ops listener (Q-ARCH-33)."`
 	ContentBaseURL       string        `yaml:"content_base_url" default:"" doc:"Separate content origin (P1); empty means one origin."`
 	ContentURLTTL        time.Duration `yaml:"content_url_ttl" default:"300s" doc:"Lifetime of a signed content URL."`
 	BaseURL              string        `yaml:"base_url" default:"" doc:"Canonical external origin; empty is allowed for development only."`
@@ -27,17 +28,9 @@ type Server struct {
 	ReplicaHeader        string        `yaml:"replica_header" default:"authenticated" validate:"oneof=authenticated|always|never"`
 }
 
-// ServerTLS terminates TLS on the listeners; empty means plain HTTP.
-type ServerTLS struct {
-	CertFile string `yaml:"cert_file" default:""`
-	KeyFile  string `yaml:"key_file" default:"" secret:"file"`
-}
-
 // Validate checks the cross-field rules of the section.
 func (s *Server) Validate(r *Report) {
-	if (s.TLS.CertFile == "") != (s.TLS.KeyFile == "") {
-		r.Add("tls", "cert_file and key_file must be set together")
-	}
+	s.validateTLS(r)
 	for _, h := range []string{s.Listen, s.OpsListen} {
 		if _, _, err := net.SplitHostPort(h); err != nil {
 			r.Add("listen", "%q is not a host:port address", h)

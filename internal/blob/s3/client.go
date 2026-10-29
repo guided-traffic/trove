@@ -26,6 +26,7 @@ import (
 type Client struct {
 	api     *awss3.Client
 	presign *awss3.PresignClient
+	http    *http.Client
 	bucket  string
 	cfg     config.StorageS3
 	idle    time.Duration
@@ -36,24 +37,34 @@ var _ blob.ObjectStore = (*Client)(nil)
 // NewFromFactory builds a client whose HTTP goes through the outbound factory
 // with the purpose objectstore and the timeouts of storage.s3.http.
 //
+// storage.s3.ca_file, when set, is the object store's whole trust store: the
+// client verifies the endpoint against that bundle only, not against the system
+// roots or proxy.outbound.tls.ca_files, and the factory re-reads the file
+// without a restart (R-ARCH-035, R-STOR-030). A bundle that does not load at
+// start is a configuration error.
+//
 // Three settings of storage.s3.http need options the factory does not have yet
 // (max_connections, tls_handshake_timeout, idle_conn_timeout use its defaults),
-// storage.s3.ca_file needs a per-client trust store and
-// storage.s3.http.proxy_credentials_file needs a credential the proxy hook can
-// re-read; a ca_file and a proxy_credentials_file are refused rather than
-// ignored: add the CA to proxy.outbound.tls.ca_files, and until the outbound
-// layer takes a proxy credential, use a proxy that authenticates by address.
+// and storage.s3.http.proxy_credentials_file needs a credential the proxy hook
+// can re-read; a proxy_credentials_file is refused rather than ignored: until
+// the outbound layer takes a proxy credential, use a proxy that authenticates by
+// address.
 func NewFromFactory(ctx context.Context, cfg config.StorageS3, f *outbound.Factory) (*Client, error) {
+	var opts []outbound.ClientOption
 	if cfg.CAFile != "" {
-		return nil, errors.New("storage.s3.ca_file is not supported yet: add the CA to proxy.outbound.tls.ca_files")
+		trust, err := f.TrustStore(outbound.PurposeObjectStore, cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("storage.s3.ca_file: %w", err)
+		}
+		opts = append(opts, outbound.WithRootCAs(trust))
 	}
 	if cfg.HTTP.ProxyCredentialsFile != "" {
 		return nil, errors.New("storage.s3.http.proxy_credentials_file is not supported yet: the outbound layer cannot send a proxy credential read from a file; use a proxy that authenticates by source address")
 	}
-	opts := []outbound.ClientOption{
+	opts = append(opts,
 		outbound.WithConnectTimeout(cfg.HTTP.DialTimeout),
 		outbound.WithResponseHeaderTimeout(cfg.HTTP.ResponseHeaderTimeout),
-	}
+	)
 	if cfg.HTTP.ProxyURL != "" {
 		u, err := url.Parse(cfg.HTTP.ProxyURL)
 		if err != nil {
@@ -91,7 +102,7 @@ func New(ctx context.Context, cfg config.StorageS3, hc *http.Client) (*Client, e
 			}
 		})
 	}
-	c := &Client{api: mk(cfg.Endpoint), bucket: cfg.Bucket, cfg: cfg, idle: cfg.HTTP.IdleTransferTimeout}
+	c := &Client{api: mk(cfg.Endpoint), http: hc, bucket: cfg.Bucket, cfg: cfg, idle: cfg.HTTP.IdleTransferTimeout}
 	pe := cfg.Presign.Endpoint
 	if pe == "" {
 		c.presign = awss3.NewPresignClient(c.api)
@@ -100,6 +111,12 @@ func New(ctx context.Context, cfg config.StorageS3, hc *http.Client) (*Client, e
 	}
 	return c, nil
 }
+
+// HTTPClient returns the HTTP client the object store is reached with: the same
+// trust store (storage.s3.ca_file or the factory's), proxy and timeouts. A caller
+// that fetches a presigned URL itself, such as the conformance check of
+// R-STOR-035, uses it, so the fetch verifies the store the way the client does.
+func (c *Client) HTTPClient() *http.Client { return c.http }
 
 // checkEndpoint applies R-STOR-030: an absolute https URL, http only when
 // allowed.

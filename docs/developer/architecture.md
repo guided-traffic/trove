@@ -11,7 +11,8 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 |---|---|
 | [cmd/trove/serve.go](../../cmd/trove/serve.go) | Loads the configuration, turns `SIGTERM`/`SIGINT` into a context, calls `app.RunWith`. A second signal ends the process at once |
 | [internal/app](../../internal/app) | Composition root: role subsystems, start order, shutdown sequence, wiring of every infrastructure client |
-| [internal/httpserver](../../internal/httpserver) | Listeners, `Router` (ServeMux wrapper), the middleware `Chain`, client address, in-flight limit, route-table rules, graceful shutdown |
+| [internal/httpserver](../../internal/httpserver) | Listeners and their TLS (`ListenerTLS`), `Router` (ServeMux wrapper), the middleware `Chain`, client address, in-flight limit, route-table rules, graceful shutdown |
+| [internal/tlsfiles](../../internal/tlsfiles) | Reloadable TLS material of every listener and client (leaf package), see [tls.md](tls.md) |
 | [internal/observability/health](../../internal/observability/health) | Readiness checks with debounce, the liveness watchdog, the probe handlers |
 | [internal/api/v1](../../internal/api/v1) | Management API handlers and the OpenAPI document, see [http-api.md](http-api.md) |
 
@@ -24,6 +25,7 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | [roles.go](../../internal/app/roles.go) | `SubsystemsFor(role)`: the table of R-ARCH-001 as data |
 | [identity.go](../../internal/app/identity.go) | Instance name (`TROVE_POD_NAME`, `POD_NAME`, `HOSTNAME` in Kubernetes, else `hostname-pid`), random instance UID, node name |
 | [wire_observability.go](../../internal/app/wire_observability.go), [wire_postgres.go](../../internal/app/wire_postgres.go), [wire_valkey.go](../../internal/app/wire_valkey.go) | One file per infrastructure client; `WIRING POINT` comments in `bootstrap` mark what later work packages add |
+| [wire_tls.go](../../internal/app/wire_tls.go) | `startTLS`: one `ListenerTLS` per listener of the role, the `tls` first-readiness check |
 | [access.go](../../internal/app/access.go) | M0 stand-ins for authentication and authorization (see below) |
 | [facts.go](../../internal/app/facts.go) | System information from the configuration; the replica list (this replica only until the registry exists) |
 | [fixture_on.go](../../internal/app/fixture_on.go) / [fixture_off.go](../../internal/app/fixture_off.go) | The `drainfixture` test build |
@@ -85,6 +87,28 @@ host change the base URL only from a trusted peer and only when the origin is on
 Every response of both listeners carries `X-Content-Type-Options: nosniff`, set once by the outermost
 stage of the chain ([chain.go](../../internal/httpserver/chain.go)).
 
+## TLS on the listeners
+
+Both listeners serve TLS when their block has certificates (R-ARCH-035): the client listener from `server.tls`, the
+ops listener from `server.ops_tls` (`inherit: true`, the default, takes `server.tls`'s pairs, `min_version` and
+`reload_interval` without client certificates; `inherit: false` is its own block). Without certificates a listener is
+plain HTTP; a TLS client listener beside a plain ops listener is refused by the configuration.
+
+```text
+startTLS (step 2)                        per handshake
+  NewListenerTLS("ops", OpsListenerTLS)    GetConfigForClient ── one *tls.Config per material generation
+  NewListenerTLS("client", server.tls)       GetCertificate ── SNI: exact name, wildcard, else the first pair
+  AddReadiness("tls", Loaded…, first)        ClientAuth + ClientCAs (client_auth, client_ca_file)
+Serve
+  ListenerTLS.Run ── poll every reload_interval, swap on content change, keep the old pair on a bad one
+```
+
+`httpserver.NewListenerTLS` never fails on a file: a pair that does not load at start lets the listener bind and refuse
+handshakes, and the `tls` check holds the first readiness until it loads (no restart). A rotation that does not load
+keeps the previous pair, counts `trove_tls_reload_errors_total` and logs an error; readiness does not change. TLS 1.2
+offers ECDHE AEAD suites only, ALPN offers `h2` and `http/1.1`. Each further endpoint listener will take its own block
+the same way. Details, rotation and tests: [tls.md](tls.md).
+
 ## Start-up
 
 `App.Start` returns after step 2; `bootstrap` runs the rest in the background so a replica that cannot
@@ -93,11 +117,11 @@ reach PostgreSQL stays alive and unready.
 | Step (R-ARCH-024) | Where |
 |---|---|
 | 1 configuration | `config.Load` in `serve.go` |
-| 2 logging, metrics, tracing; ops listener; readiness 503, liveness 200 | `Start` |
+| 2 logging, metrics (with the TLS families), tracing; the listeners' TLS and the `tls` check (`startTLS`); ops listener; readiness 503, liveness 200 | `Start`, [wire_tls.go](../../internal/app/wire_tls.go) |
 | 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process; the component closes the pools it opened on every error or cancel return, because `startComponent` records a component only after `Start` succeeded) | `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
 | 4 `audit_maintain_partitions()` | `WIRING POINT` in `bootstrap` (the audit package does not exist yet) |
 | 5 key ring; `outbound.New` with its `Err()` as a first-readiness check | `bootstrap` |
-| 6 object store: `s3.NewFromFactory`, `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
+| 6 object store: wait while `outbound.Err()` reports a problem (a CA file of `proxy.outbound.tls.ca_files` that loads later clears it without a restart), `s3.NewFromFactory` (a `storage.s3.ca_file` that does not load is a configuration error), `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
 | 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `valkeyComponent`, `startCoordination` ([wire_coordination.go](../../internal/app/wire_coordination.go)) |
 | 8 snapshots and caches of the domain packages | `WIRING POINT` (register on `App.Caches()`) |
 | 9 client listener (`web`, `all`) | `startClient` |
@@ -115,7 +139,8 @@ registry ([wire_jobs.go](../../internal/app/wire_jobs.go)) is frozen where it is
 fallback `*/30 * * * *` and `0 2 * * 0`, dedup key `gc`). It is a registry per replica, not `jobs.Default` itself, so
 several replicas in one test process do not collide.
 
-Readiness: `startup`, `database`, `schema`, `invalidation`, `outbound` gate; `objectStore` gates the first readiness only
+Readiness: `startup`, `database`, `schema`, `invalidation`, `outbound` gate; `tls` (when a listener serves TLS) gates the
+first readiness only: every listener pair and client CA has loaded once; `objectStore` gates the first readiness only
 unless `health.require_object_store`; `valkey` is reported and holds back the first readiness only on a configuration
 error (Q-HA-13). `/readyz?verbose=1` shows Valkey only through the fixed reason codes `connecting`,
 `no_sentinel`, `timeout`, `auth_failed`, `circuit_open`, `probe_failed`, `unsupported`, `config_error`
@@ -183,6 +208,8 @@ The budget constants (`defaultBudget`: margin 5 s from `config.ShutdownMargin`, 
 [test/integration/server](../../test/integration/server) builds the binary and runs `migrate up`, `serve --role all`, `web` and
 `worker` side by side against the integration stack, then SIGTERM under load. Run it with
 `set -a; . .dev/integration/env; set +a; go test -tags integration -race ./test/integration/server/...`.
+[test/integration/tls](../../test/integration/tls) builds the binary as well and runs `serve --role all` with TLS on both
+listeners, rotating the certificate under load (E0.15 at process level, [tls.md](tls.md#how-to-test)).
 
 ## Test builds
 

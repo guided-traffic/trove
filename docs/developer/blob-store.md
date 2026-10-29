@@ -118,10 +118,15 @@ are answers, not failures; a cancelled caller is no evidence. Metrics: `trove_st
 `trove_storage_s3_bytes_total{direction}`, `trove_storage_s3_circuit_open`. The composition root builds
 `blob.NewMetrics(m)` once and passes it to the spool, the guard and the collector.
 
+TLS: an `https://` endpoint verifies against the factory's trust store (system roots plus
+`proxy.outbound.tls.ca_files`), or, with `storage.s3.ca_file` set, against that bundle only: `NewFromFactory` builds a
+trust store of its own (`outbound.Factory.TrustStore` + `outbound.WithRootCAs`), read again like the factory's, so a
+rotated CA applies to the next connection without a restart (R-ARCH-035). A `ca_file` that does not load at start is a
+configuration error naming the key. `Client.HTTPClient()` is the client the store is reached with; a caller that
+fetches a presigned URL itself (the conformance check) uses it, so the fetch trusts the same CA.
+
 Gaps against the specification, all visible at construction (nothing is silently ignored):
 
-- `storage.s3.ca_file`: `NewFromFactory` refuses it. Add the CA to `proxy.outbound.tls.ca_files` until
-  `internal/outbound` has a per-client trust option.
 - `storage.s3.http.proxy_credentials_file`: `NewFromFactory` refuses it. `outbound.WithProxyURL` sends only the user information of the proxy URL, which the configuration forbids (R-OPS-013: URL keys carry no credentials), and a file read once would not follow a rotation. Use a proxy that authenticates by source address until the outbound layer takes a re-read proxy credential.
 - `http.max_connections`, `tls_handshake_timeout`, `idle_conn_timeout`: the outbound factory has
   no options for them, so its defaults apply (`proxy_url` and `no_proxy` as host patterns are passed through; CIDR
@@ -211,8 +216,8 @@ go test -tags integration -run Conformance -v ./test/integration/blob/...
 Store-specific settings (all optional): `TROVE_TEST_S3_PAYLOAD_CHECKSUM` (`sha256` default, `md5`, `none`),
 `TROVE_TEST_S3_REQUEST_CHECKSUM` and `TROVE_TEST_S3_RESPONSE_CHECKSUM` (`when_supported` default, `when_required`),
 `TROVE_TEST_S3_BATCH_DELETE` (`true` default). Against SeaweedFS (the stack) the checks pass with the defaults, with
-`md5`, and with `none` plus `when_required`. An endpoint with a private CA needs the CA in the system trust store
-(`ca_file` is not supported, above). SeaweedFS creates a missing bucket on the first write, so a wrong bucket name is
+`md5`, and with `none` plus `when_required`. The stack's gateway is https with a private CA, which the suite passes as
+`storage.s3.ca_file`; the presigned fetch must use `Client.HTTPClient()` (or a client with `WithRootCAs`) to trust it. SeaweedFS creates a missing bucket on the first write, so a wrong bucket name is
 not an error there; the credential test uses a wrong secret key instead.
 
 ## Tests
