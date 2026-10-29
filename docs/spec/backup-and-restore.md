@@ -307,10 +307,17 @@ keeps a single-use subject token used before the snapshot from being exchanged a
 restore; tokens used after the snapshot are refused through the `system_state` key `restored_at`
 ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018).
 
+`trove migrate up` checks the registry after it has applied the migrations: it compares the tables of the schema with
+`tables.Default()` and refuses with exit `3`, naming the unregistered tables, so an installation never runs with a
+table that no backup classifies. The check is built in M0 (the `cmd/trove` binary links the blob, cluster and jobs
+packages that own the tables).
+
 Acceptance criteria:
 
 - The migration test above runs in CI and fails on a test migration that adds an unregistered
   table.
+- `trove migrate up` on a schema with an unregistered table exits `3` and names the table.
+
 - A run against a schema with an extra table `x_new` (created by hand) exports it and lists it in
   `result.unregisteredTables`.
 

@@ -42,6 +42,16 @@ Given by the project owner; not up for redesign in these pages:
   picks up its own rotated certificates and the rotated client material it uses without a restart
   ([architecture.md](architecture.md) R-ARCH-035, [ha-and-helm.md](ha-and-helm.md) R-HA-063, INV-20). Plain HTTP
   remains a chart choice (`tls.enabled: false`), recorded as an open gap ([ha-and-helm.md](ha-and-helm.md) H-38).
+- **The owner's Kubernetes operators (2026-10-29).** The chart and the production topology use the owner's
+  operators: [internal-secrets-operator](https://github.com/guided-traffic/internal-secrets-operator) for the generated
+  Secrets, HAProxy Ingress as the edge, [valkey-operator](https://github.com/guided-traffic/valkey-operator) for Valkey
+  with Sentinel over TLS, CloudNativePG for PostgreSQL, [stackit-s3-provisioner](https://github.com/guided-traffic/stackit-s3-provisioner)
+  for buckets and object-store credentials (SeaweedFS stands in for the local profile, because the provisioner has no
+  other backend), [dex-operator](https://github.com/guided-traffic/dex-operator) for the OIDC client from M1, and
+  cert-manager for certificates. Where an operator cannot yet provide what a requirement needs, the requirement stays as
+  written and the gap is recorded on the page of its mechanism: the Valkey gaps in [ha-and-helm.md](ha-and-helm.md) Q-HA-15,
+  the edge in Q-HA-24, and the security consequences in [../security/](../security/README.md). The record is
+  [ADR-129](../decisions.md#adr-129--the-owners-kubernetes-operators-are-the-standard-stack).
 
 ## Design invariants
 

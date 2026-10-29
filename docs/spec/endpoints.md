@@ -1,6 +1,8 @@
 # Endpoints
 
-Status: specification — not implemented
+Status: specification; the M0 parts are implemented: listeners and identification by listener, the host set with `421`, the
+surface per listener, TLS per endpoint, the chart rendering, and the metrics, logs and spans that carry the endpoint. The
+credential, exposure, cache-fill and rate-limit rules are M1 and later.
 
 This page specifies endpoints: the named network entry points through which clients reach trove,
 and what each of them may serve. It covers:
@@ -194,9 +196,9 @@ arrive through the environment as JSON (`TROVE_SERVER_ENDPOINTS`), like every ot
 
 Acceptance criteria:
 
-- With the `customers` example set, `trove admin config validate` prints every key of
-  `server.endpoints.customers` with its value and source, the defaults of a further endpoint
-  included.
+- With the `customers` example set, `trove admin config validate` prints `server.endpoints` as one row whose value is the
+  map as one JSON value, with its source; the defaults of a further endpoint are in that value
+  ([Q-EP-16](#q-ep-16--rendering-of-the-endpoint-map-and-of-the-pool-values)).
 - `listen: ":8080"` for `customers` stops startup and names `server.endpoints.customers.listen` and
   `server.listen`. `server.endpoints.default.listen` stops startup and names `server.listen`.
 - A host listed by `customers` and by `partners`, or `packages.example.com` listed by `customers`
@@ -270,11 +272,12 @@ Priority: **MVP** · Covers: OPS-051, OPS-052, HA-025
   host label, which R-EP-006 may bind to a repository.
 - **Effective host.** The request's `:authority` or `Host`, lower-cased and without its port. When
   the TCP peer lies in the endpoint's trusted proxies (`trusted_proxies`, else
-  `server.trusted_proxies`) and the request carries a forwarded host (`Forwarded: host=` of
-  [RFC 7239](https://www.rfc-editor.org/rfc/rfc7239), else `X-Forwarded-Host`), the forwarded
-  host is the effective host if it lies in the endpoint's host set. A forwarded host outside the
-  set is ignored for the check and for URL generation, and counted in
-  `trove_endpoint_forwarded_host_ignored_total{endpoint}`.
+  `server.trusted_proxies`) and the request carries a forwarded host in the one header family that
+  `server.forwarded_header` selects (`host=` of `Forwarded`, [RFC 7239](https://www.rfc-editor.org/rfc/rfc7239), or
+  `X-Forwarded-Host`; [Q-EP-15](#q-ep-15--which-forwarded-host-counts-on-an-endpoint)), the forwarded
+  host is the effective host if it lies in the endpoint's host set. The other family is never read,
+  not even as a fallback. A forwarded host outside the set is ignored for the check and for URL
+  generation, and counted in `trove_endpoint_forwarded_host_ignored_total{endpoint}`.
 - **Host check.** A further endpoint always checks; the default endpoint checks only when its
   `hosts` or `wildcard_host` is configured. A checking endpoint answers a request whose effective
   host is not in its host set, an empty host or an IP literal with `421 Misdirected Request`
@@ -337,10 +340,11 @@ Every endpoint listener uses the TLS machinery of [architecture.md](architecture
   ([ha-and-helm.md](ha-and-helm.md) R-HA-063), while `Host` carries the public name.
 - **Reload.** Every pair is checked by the reloader of R-ARCH-035 every `server.tls.reload_interval`
   and swapped atomically for new handshakes; a pair that does not load keeps the previous one in
-  service. `trove_tls_reload_failures_total` and `trove_tls_certificate_not_after_timestamp_seconds`
-  carry `listener="client"`, `endpoint` and `certificate`, the 0-based position of the pair in
-  `tls.certificates` (`0` for the inherited pair of `server.tls`). Startup refuses an absent,
-  unreadable or non-matching pair and names the endpoint and the file.
+  service. The families `trove_tls_reload_errors_total` and `trove_tls_certificate_expiry_timestamp_seconds`
+  carry `kind="listener"`, `listener="client:customers"` and `name`, the configured file of the pair (its path
+  names the position in `tls.certificates`; [Q-EP-14](#q-ep-14--labels-of-the-tls-series-and-of-the-ops-series)).
+  A broken pair at start holds the first readiness and does not stop the process; the listener serves once
+  the pair loads (R-ARCH-035).
 - **Client certificates.** `tls.client_ca_file` of a further endpoint, when set, requires and
   verifies a client certificate on that listener ([architecture.md](architecture.md) Q-ARCH-32).
   A further endpoint does not inherit `server.tls.client_ca_file`, because its clients are usually
@@ -358,7 +362,8 @@ Acceptance criteria:
 - Rotating pair 1 under E0.13's k6 load: k6 records only `200`, the new certificate is served within
   `server.tls.reload_interval` + 1 s, and the process start time does not change.
 - A rotated pair 1 whose key does not match keeps the old pair in service and increments
-  `trove_tls_reload_failures_total{listener="client",endpoint="customers",certificate="1"}`.
+  `trove_tls_reload_errors_total{kind="listener",listener="client:customers",name="/var/run/secrets/trove/endpoints/customers/1/tls.crt"}`
+  (the name is the certificate path; example).
 - With `tls.client_ca_file` set on `customers` only, a handshake on `:8443` without a client
   certificate fails before any HTTP request is read, and `:8080` is unaffected.
 
@@ -529,12 +534,12 @@ endpoints: {}                             # default (proposed): only the default
 #    maxInFlight: 1024                    # default (proposed)
 #    trustedProxies: []                   # default (proposed): config.server.trusted_proxies
 #    tls:
-#      existingSecret: ""                 # default (proposed): "" = the listener pair of tls.existingSecret (R-HA-063)
+#      existingSecret: ""                 # default (proposed): "" = the listener pair of tls.secretName (R-HA-063)
 #      extraSecrets: []                   # default (proposed); example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
 #      clientCaSecret: ""                 # default (proposed): no client certificates
 #    pool:
 #      enabled: false                     # default (proposed): served by <fullname>-web (Q-EP-3)
-#      replicaCount: 2                    # default (proposed) when enabled; every key of web may be overridden here
+#      replicaCount: 2                    # default (proposed) when enabled; every key of web may be overridden here, merged key by key over the web values ([Q-EP-16](#q-ep-16--rendering-of-the-endpoint-map-and-of-the-pool-values))
 #    service:
 #      type: ClusterIP                    # default (proposed): ClusterIP | LoadBalancer | NodePort
 #      annotations: {}                    # default (proposed)
@@ -556,7 +561,7 @@ endpoints: {}                             # default (proposed): only the default
 | Configuration | `server.endpoints.<name>` in `trove.yaml`; chart-managed ([ha-and-helm.md](ha-and-helm.md) R-HA-030) | per entry |
 | Service | `<fullname>-ep-<name>`, one port `<port>` with `appProtocol: https` under `tls.enabled`, `sessionAffinity: None`, selecting the pods that serve the endpoint | per further endpoint |
 | Deployment, PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>-web-ep-<name>` with `--role web`, `TROVE_POOL_NAME=ep-<name>`, pod label `trove/pool: ep-<name>`; the rendered `pool` of the endpoint is `ep-<name>` | `pool.enabled` |
-| Ingress | `<fullname>-ep-<name>`: `ingressClassName`, one rule per host of the endpoint (the base URL's host, every exact host, the wildcard host), path `/` with `pathType: Prefix`, backend `<fullname>-ep-<name>:<port>` over TLS as R-HA-063 wires it, and the `tls` entries | `ingress.enabled` |
+| Ingress | `<fullname>-ep-<name>`: `ingressClassName`, one rule per host of the endpoint (the base URL's host, every exact host, the wildcard host), path `/` with `pathType: Prefix`, backend `<fullname>-ep-<name>:<port>` over TLS as R-HA-063 wires it, with the endpoint's own `ingress.backendTLS` keys overriding the global block key by key ([Q-EP-17](#q-ep-17--backend-tls-of-a-further-endpoints-ingress)), and the `tls` entries | `ingress.enabled` |
 | HTTPRoute, BackendTLSPolicy | `<fullname>-ep-<name>`: `parentRefs`, `hostnames` with the same hosts (a wildcard as a leading `*.` label), one rule `PathPrefix /` | `gateway.enabled` |
 | NetworkPolicy | `<fullname>-ep-<name>`: admits `<port>` on the pods that serve the endpoint, from `networkPolicy.from` only | `networkPolicy.enabled` |
 | Secret mounts | `tls.existingSecret` and each of `extraSecrets` at `/var/run/secrets/trove/endpoints/<name>/<n>/` (keys `tls.crt`, `tls.key`), rendered as `tls.certificates`; `clientCaSecret` (`ca.crt`) as `tls.client_ca_file` | per entry that names them |
@@ -1511,6 +1516,88 @@ reopen the login design for a use case nobody asked for. The development agent w
 when a customer portal is requested.
 
 **Applied in the spec:** R-EP-005, R-EP-010.
+
+### Q-EP-14 · Labels of the TLS series and of the ops series
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the TLS families name the material of every listener, the endpoint listeners included, and the request families already
+carry an `endpoint` label.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `kind`, `listener`, `name`; the listener is `client:<endpoint>` for a further endpoint | one family set for every listener | bounded by the configuration; one set of alerts; the endpoint is named where its listener is | the endpoint is part of the listener label, not its own label |
+| (b) one family set per endpoint | a family name carries the endpoint | a dashboard selects one endpoint by name | the family set multiplies with the endpoints; names are not bounded by one rule |
+| (c) an `endpoint` label on each TLS family | the same label as the request families | one label for every endpoint-scoped series | a second label that repeats `listener` for the same listener |
+
+**Choice:** (a). The ops listener's series carry `endpoint=""`, the empty value the request families use on the ops listener.
+
+**Rationale:** The listener label is already bounded by the configuration (at most sixteen further endpoints), and one family
+set keeps the expiry and failed-rotation alerts identical for every listener. The development agent would revisit this when an
+alert must select one endpoint across kinds of material.
+
+**Applied in the spec:** [R-OPS-007](operations-and-observability.md) (label set of `trove_tls_*`), [R-EP-004](#r-ep-004--tls-on-endpoint-listeners-certificates-by-sni-wildcard-certificates-reload),
+[R-EP-009](#r-ep-009--endpoint-observability) (the empty `endpoint` value on the ops listener).
+
+### Q-EP-15 · Which forwarded host counts on an endpoint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the header family `server.forwarded_header` selects; no fallback | `Forwarded` `host=` or `X-Forwarded-Host`, one of them | the client cannot choose the host the edge did not write; the rule is one line | an edge that can only send the other family needs its setting changed |
+| (b) `Forwarded` first, then `X-Forwarded-Host` | the earlier wording of this page | works with either edge | a client can send both, and the fallback picks the one the client chose when the edge sent none |
+| (c) The request's `Host` only | no forwarded host | no header to trust | an edge that terminates on another host cannot route to an endpoint |
+
+**Choice:** (a).
+
+**Rationale:** The forwarded-host and the forwarded-address rules have one trust rule (R-ARCH-006): read the one family the edge
+writes, never the other. An audit finding showed the fallback let a client choose the address that the edge had not written; the
+same reasoning applies to the host. The development agent would revisit this only if the edge could not write its own family, and
+then changes the setting, not the rule.
+
+**Applied in the spec:** [R-ARCH-006](architecture.md#r-arch-006--client-address-and-trusted-proxies) (one family for address,
+scheme and host), [R-EP-003](#r-ep-003--hosts-of-an-endpoint-allowlist-421-and-the-response-base-url) (forwarded host only from
+the configured family).
+
+### Q-EP-16 · Rendering of the endpoint map and of the pool values
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `admin config validate` prints `server.endpoints` as one JSON row; a pool's values are merged key by key over the web values | one value per map, the merge per key | the table stays readable; a value a pool does not set is kept | a JSON cell is less readable than a row per endpoint |
+| (b) One row per endpoint key | a flat listing | every key is greppable | the listing grows with the endpoints and loses the map's shape |
+| (c) A pool's values replace the web values as a whole | the pool is a complete copy | simple to read | a key that is not repeated in the pool is silently lost |
+
+**Choice:** (a). The chart's merge (`trove.mergeValues`) takes each key of the pool over the web values, recursively, and a key set
+to `false`, `0` or empty wins.
+
+**Rationale:** The effective view is for the operator's review, and a map is one value in the environment as well (JSON in
+`TROVE_SERVER_ENDPOINTS`), so one row matches what the operator writes. A key-wise merge is the only choice that keeps every web
+setting a pool does not state. The development agent would revisit this when the effective view gets a structured form.
+
+**Applied in the spec:** [R-EP-001](#r-ep-001--endpoints-and-their-configuration) (the effective view),
+[R-EP-008](#r-ep-008--chart-rendering-of-endpoints) (pool values).
+
+### Q-EP-17 · Backend TLS of a further endpoint's Ingress
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each key of the endpoint's `ingress.backendTLS` overrides the global block for that endpoint | a per-key override | a customer endpoint changes only the CA or the server name it needs | a reader must merge two blocks in the head |
+| (b) A complete block per endpoint | each endpoint states every key | nothing is inherited | the same controller setting is repeated per endpoint |
+| (c) The global block only | one setting for every Ingress | simplest | an endpoint that needs another CA cannot be served |
+
+**Choice:** (a).
+
+**Rationale:** Most of the backend settings (the controller, the verification on) are the same for every endpoint, and a
+customer endpoint usually differs in one key. The merge is the one of Q-EP-16. The development agent would revisit this when an
+endpoint needs a different controller in the same release.
+
+**Applied in the spec:** [R-EP-008](#r-ep-008--chart-rendering-of-endpoints) (the Ingress of a further endpoint),
+[R-HA-063](ha-and-helm.md#r-ha-063--chart-tls-wiring) (the backend settings of the Ingress).
 
 ## What this does not cover
 

@@ -2110,7 +2110,10 @@ Priority: **P1** · Covers: RMT-008
   every certificate in `proxy.outbound.tls.ca_files`. No per-repository switch disables verification.
 - The bundle files are mounted from Kubernetes Secrets or ConfigMaps ([ha-and-helm.md](ha-and-helm.md))
   and MUST be reloaded within 60 s of a change without a restart; new connections use the new pool,
-  open connections are not torn down.
+  open connections are not torn down. The reload is built in M0: the outbound clients read their trust
+  store again at most every 10 s on use (`DefaultTrustCheckEvery`), so the bound holds with margin, and the
+  object store's `storage.s3.ca_file` takes the same path ([R-STOR-030](storage.md)). The mechanism is
+  described in [security/transport-encryption.md](../security/transport-encryption.md).
 - A verification failure answers 502 `upstream_tls_untrusted`, is logged as a security event and does
   not count toward the circuit (R-REPO-029): a certificate that suddenly fails to verify may be an
   interception attempt, not an outage.
@@ -2235,15 +2238,24 @@ Priority: **MVP** · Covers: trove-only
   check and use cannot pass. Addresses in `allow_cidrs` are permitted even inside a denied range;
   addresses in a denied range are refused; everything else is permitted.
 - Denied by default: loopback, unspecified, link-local (IPv4 and IPv6, which includes the
-  169.254.169.254 cloud metadata endpoints), the IPv6 metadata address `fd00:ec2::254`, multicast and
+  169.254.169.254 cloud metadata endpoints), the IPv6 metadata address `fd00:ec2::254`, the metadata
+  addresses `100.100.100.200` and `168.63.129.16`, the deprecated IPv4-compatible range `::/96`, multicast and
   broadcast, and the IPv4-mapped IPv6 forms of all of these (ranges per the IANA
   [IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/) and
   [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) special-purpose registries).
+- Before any CIDR rule runs: a zoned IPv6 address (`fe80::1%eth0`, `::1%1`, any address with a zone) is refused,
+  whatever `allow_cidrs` says, because a zone scopes an address to an interface of this host and no prefix
+  contains a zoned address ([Q-REPO-10](#q-repo-10--zoned-ipv6-and-the-nat64-prefix-in-the-egress-rules)).
+  An IPv4-mapped IPv6 address is checked as the IPv4 address it maps to. An address of the NAT64 prefix
+  `64:ff9b::/96` that no rule decides is checked as the IPv4 address in its last 32 bits, so
+  `64:ff9b::a9fe:a9fe` is refused like `169.254.169.254`. The NAT64 prefix is the well-known one; a
+  network-specific prefix is not checked ([H-78](../security/egress.md#h-78--the-nat64-check-knows-only-the-well-known-prefix)).
 - Private ranges ([RFC 1918](https://www.rfc-editor.org/rfc/rfc1918)), shared address space and
   unique-local IPv6 are permitted by default, unlike for webhooks
   ([R-OPS-042](operations-and-observability.md)): remote URLs are set by repository administrators,
-  and internal registries are the common case. The Helm chart's egress `NetworkPolicy` is the second
-  layer ([ha-and-helm.md](ha-and-helm.md)).
+  and internal registries are the common case. The Helm chart's egress `NetworkPolicy` would be the
+  second layer ([ha-and-helm.md](ha-and-helm.md)); the chart renders none yet
+  ([H-41](operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
 - A refused connection answers 502 `egress_denied`, is logged as a security event and does not count
   toward the circuit.
 - Through an outbound proxy, trove resolves and checks the target name itself before sending, but
@@ -2263,6 +2275,9 @@ proxy:
         - 169.254.0.0/16
         - fe80::/10
         - fd00:ec2::254/128
+        - ::/96
+        - 100.100.100.200/32
+        - 168.63.129.16/32
         - 224.0.0.0/4
         - ff00::/8
         - 255.255.255.255/32
@@ -3252,6 +3267,30 @@ warning `source_network_single_address`. R-REPO-047: the metric
 `trove_remote_source_network_unavailable_total`. Deliberate deviations: new row. Cross-page:
 [operations-and-observability.md](operations-and-observability.md) metrics catalog (the new
 counter). No other spec page names `sourceAddress` (checked on 2026-10-28).
+
+### Q-REPO-10 · Zoned IPv6 and the NAT64 prefix in the egress rules
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+An audit found two ways past the CIDR rules: an IPv6 address with a zone is in no prefix, so no deny rule sees it, and an
+address in the NAT64 prefix can stand for an internal IPv4 address that the deny list protects.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse a zoned IPv6 address before the CIDR rules, and check the IPv4 address of the well-known NAT64 prefix as well | two fixed checks; the deny list grows by four ranges | closes both paths with no configuration; the allow list cannot open a zoned address | a network-specific NAT64 prefix stays unchecked until a setting exists |
+| (b) Strip the zone and check the address | the zone is dropped and the rules run on the bare address | keeps the rules as they are | a zone can name a different interface; the bare address may be allowed where the scoped one is not |
+| (c) Make the NAT64 prefix a setting, with no default | the operator names the prefix | exact for every network | a cluster without the setting is unprotected by default |
+
+**Choice:** (a). The deny list adds `::/96`, `100.100.100.200/32` and `168.63.129.16/32`, the deprecated IPv4-compatible range and
+two metadata addresses of other clouds. A configurable prefix (c) is the next step if a network uses another one.
+
+**Rationale:** A zoned address is a local-host address and no remote repository needs one, so refusing it costs nothing. The NAT64
+check follows the translation of the well-known prefix, which is the one the cluster DNS64 setups use by default. The development
+agent would revisit this when a network uses a different NAT64 prefix in a supported setup.
+
+**Applied in the spec:** R-REPO-038 (the zoned and NAT64 rules, the deny list); the default of
+`proxy.outbound.address_policy.deny_cidrs` in [config/outbound.go](../../internal/config/outbound.go) and in
+[security/egress.md](../security/egress.md).
 
 ## What this does not cover
 

@@ -161,6 +161,7 @@ their `degraded` state.
 | `invalidation` | The last successful change-log poll is younger than `cluster.epoch_max_staleness` ([architecture.md](architecture.md) R-ARCH-018) | gating | A replica that cannot poll the change log cannot bound how stale its revocations and policies are (INV-8, INV-9). The check depends on PostgreSQL only, never on Valkey. The poll runs on the replica's reserved control connection ([architecture.md](architecture.md) R-ARCH-019), so a saturated request pool does not fail it. Its evaluations start failing only once the poll has been stale for `cluster.epoch_max_staleness`, and it is debounced like `database`, so for the same outage it never turns a replica unready sooner than `database` does ([ha-and-helm.md](ha-and-helm.md) R-HA-008) |
 | `objectStore` | A `HEAD` request on the bucket (or on a sentinel object under the configured prefix) succeeds within the timeout | gating until the replica is first ready, then reported; gating throughout with `health.require_object_store: true` (Q-OPS-2) | The first readiness also requires the object-store startup check of [storage.md](storage.md) R-STOR-035, so a release with a wrong bucket never replaces working pods |
 | `valkey` | The Valkey health probe ([architecture.md](architecture.md) R-ARCH-030: a `SET` of the replica's probe key with its expiry) succeeds within `valkey.command_timeout`, and the replica's Valkey circuit is closed ([ha-and-helm.md](ha-and-helm.md) R-HA-057) | reported; before the replica is first ready it gates on a *configuration error* only (Q-HA-13) | Valkey holds shared ephemeral state only (INV-3). While it is unavailable every mechanism runs its fallback, so the replica still answers correctly and stays in the Service (INV-12) |
+| `tls` | Every TLS material of the listeners that this process serves has loaded at least once (the pairs and the client CA of each listener; [architecture.md](architecture.md) R-ARCH-035). A rotation that does not load keeps the previous material and does not change the check | gating until the replica is first ready, then never again | A replica whose listeners cannot serve a handshake does not enter the Service; a later broken rotation is counted in `trove_tls_reload_errors_total` and does not make the replica unready |
 | `configBootstrap` | Startup configuration documents were applied (R-OPS-031); passes trivially when none are configured | gating | An invalid document stalls a rollout instead of breaking the service |
 | `draining` | No termination signal was received | gating | Removes a `web` replica from the Service and stops a `worker` from claiming before either stops |
 
@@ -989,6 +990,13 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_events_undispatched` | gauge | — | Outbox rows not yet dispatched (R-OPS-035) |
 | `trove_tracing_spans_dropped_total` | counter | — | Spans lost to a full export queue |
 | `trove_outbound_requests_total` | counter | `kind` (purpose), `code` | Requests sent to other systems, by purpose and result code (Q-OPS-26) |
+| `trove_outbound_egress_denied_total` | counter | `kind` (purpose) | Connections refused by the egress address policy ([security/egress.md](../security/egress.md)) |
+| `trove_tls_certificate_expiry_timestamp_seconds` | gauge | `kind` (`listener`, `database`, `valkey`, `objectstore`, `outbound`), `listener` (`client`, `client:<endpoint>`, `ops`, or empty for a client), `name` (the configured file) | notAfter of the served leaf of a pair, or the earliest of a CA bundle ([security/transport-encryption.md](../security/transport-encryption.md)) |
+| `trove_tls_reloads_total` | counter | `kind`, `listener`, `name` | Changed TLS material that loaded and replaced the previous one; the first load is not counted |
+| `trove_tls_reload_errors_total` | counter | `kind`, `listener`, `name` | TLS material that did not load; counted once per distinct content, exported at 0 from the start |
+| `trove_endpoint_listener_up` | gauge | `endpoint` | 1 while this replica's listener of the endpoint accepts connections ([endpoints.md](endpoints.md) R-EP-009) |
+| `trove_endpoint_misdirected_total` | counter | `endpoint` | `421` answers of the host check |
+| `trove_endpoint_forwarded_host_ignored_total` | counter | `endpoint` | Forwarded hosts outside the endpoint's host set |
 | `trove_outbound_request_duration_seconds` | histogram | `kind` (purpose) | Time of an outbound request including the body, by purpose |
 | `trove_outbound_egress_denied_total` | counter | `kind` (purpose) | Connections refused by the egress address policy, by purpose |
 | `trove_metrics_label_overflow_total` | counter | `family`, `label` | Values folded into `_other` |
@@ -1186,7 +1194,12 @@ Fields present in every record:
 - **`log.format: text`** switches to slog's text handler for local development. Field names stay
   the same.
 - **The ring buffer.** Every replica keeps its last `log.ring_buffer_records` records in memory,
-  after redaction. Support bundles (R-OPS-027) take their logs from it, because trove itself
+  after redaction, and never more than `log.ring_buffer_bytes` bytes (default `8MiB`); the oldest records go
+  first when either bound is reached. A record above 16 KiB is kept as the JSON stub
+  `{"ring_truncated":true,"original_bytes":N,"head":"…"}`, so the line stays valid JSON and the bundle shows
+  where the cut was. Standard output carries the whole record, which is
+  [H-70](../security/data-and-secret-flow.md#h-70--the-standard-output-log-carries-every-record-in-full).
+  Support bundles (R-OPS-027) take their logs from the ring, because trove itself
   holds no log files. The buffer dies with its pod; a drained or deleted replica's records exist
   only in the platform's log stack from then on.
 
@@ -1197,6 +1210,7 @@ log:
   levels: {}                      # default (proposed); example {proxy: debug, auth: warn}
   add_source: false               # default (proposed)
   ring_buffer_records: 5000       # default (proposed)
+  ring_buffer_bytes: 8MiB         # default (proposed); the bytes the ring holds at most
 ```
 
 **Acceptance criteria:** `kubectl -n trove logs deploy/trove-web | jq -e 'has("time") and has("level") and has("log") and has("replica") and has("role")'`
@@ -1248,6 +1262,12 @@ of several replicas; `trace_id`, `principal_id` and `token_id` join them, never 
 
 Requests on the operations listener are logged only with `log.request.ops_listener: true`. Request
 and response bodies and headers other than `User-Agent` are never logged (R-OPS-013).
+
+Length limits of the request-log fields and of the matching span attributes: `user_agent` at most 512 bytes,
+`path` (with its query string) at most 2 KiB, `host` at most 255 bytes. A longer value is cut at a UTF-8
+boundary and ends with the marker `…[truncated]`. The redaction of [R-OPS-013](#r-ops-013--secret-redaction) runs
+before the cut, so a secret is never cut into a fragment that no pattern recognises. A field that the code
+writes with no limit is outside this rule; the rule covers the three fields above and their spans.
 
 ```yaml
 log:
@@ -1838,11 +1858,18 @@ receives it as `X-Request-Id`.
 **Incoming context.** An incoming `traceparent` is continued according to
 `tracing.incoming_context`:
 
-- `trusted_proxies` (default): continued only from peers in `server.trusted_proxies`. From any other
-  client trove starts a new trace and attaches the incoming context as a span link, so clients
-  cannot choose the trace IDs written into the audit trail.
-- `all`: continued from every client.
+- `trusted_peers` (default): continued only from a TCP peer that lies in `tracing.trusted_peers`. The list
+  is empty by default, so no incoming context is continued until an operator names a peer, such as a mesh
+  sidecar or an internal caller. The peer is the TCP peer of the connection, never a forwarded address.
+  `server.trusted_proxies` grants no trace trust: the edge forwards the client's own `traceparent`
+  unchanged, so trusting the edge would let a client choose the trace ID that `X-Request-Id` and the audit
+  trail carry. A catch-all prefix in `tracing.trusted_peers` is refused. The decision is
+  [Q-OPS-32](#q-ops-32--trace-trust-for-an-incoming-traceparent).
+- `all`: continued from every client. Use only where every client is trusted.
 - `none`: never continued.
+
+A context that is not continued becomes a span link, so the incoming trace stays visible without
+choosing the ID that the request carries.
 
 **Export** (`tracing.enabled: true`). Spans go over OTLP (gRPC or HTTP/protobuf) through a bounded
 queue of the process (Q-OPS-25). When the trove keys are unset, the standard `OTEL_EXPORTER_OTLP_*` variables of the
@@ -1903,7 +1930,8 @@ tracing:
   ca_file: ""                            # example /etc/trove/tls/otel-ca.pem
   headers_file: ""                       # example /var/run/secrets/trove/otel-headers (one "Name: value" per line)
   sample_ratio: 0.1                      # default (proposed)
-  incoming_context: trusted_proxies      # default (proposed); trusted_proxies | all | none
+  incoming_context: trusted_peers        # default (proposed); trusted_peers | all | none
+  trusted_peers: []                      # default (proposed); example ["10.42.0.0/24"] (a mesh sidecar's range)
   propagate_to_upstreams: false          # default (proposed)
   queue_size: 2048                       # default (proposed)
 ```
@@ -2721,7 +2749,8 @@ tracing:
   endpoint: ""                                     # default (proposed)
   protocol: http/protobuf                          # default (proposed)
   sample_ratio: 0.1                                # default (proposed)
-  incoming_context: trusted_proxies                # default (proposed)
+  incoming_context: trusted_peers                  # default (proposed)
+  trusted_peers: []                                # default (proposed)
   propagate_to_upstreams: false                    # default (proposed)
 audit:
   retention_days: 365                              # default (proposed)
@@ -4084,9 +4113,9 @@ MVP and P1 features of the catalog pages above that this page does not specify:
   ([backup-and-restore.md](backup-and-restore.md) R-BAK-015), so a compromised replica can see that
   backups run but cannot read or delete them.
 - **Forwarded headers.** They are believed only from `server.trusted_proxies`. That rule governs
-  URL generation (R-OPS-005), client addresses in logs and audit (R-OPS-010, R-OPS-015) and the
-  continuation of trace context (R-OPS-018). A too-wide `trusted_proxies` lets clients forge their
-  audit address.
+  URL generation (R-OPS-005) and client addresses in logs and audit (R-OPS-010, R-OPS-015). It grants
+  no trace trust: the continuation of trace context is governed by `tracing.trusted_peers` alone
+  (R-OPS-018). A too-wide `trusted_proxies` lets clients forge their audit address.
 - **Audit integrity.** Every state change and its audit record are atomic (R-OPS-015). Access
   events can be dropped under overload, which the dropped counter makes visible. In two-role mode
   the runtime role can only insert and read audit rows, and retention is owner data, so a
@@ -4854,6 +4883,53 @@ platform's switchover is measured above 15 s.
 **Applied in the spec:** R-OPS-001 (`database` and `schema` rows, the paragraph on the outage grace, the configuration
 blocks and the first acceptance criterion); ha-and-helm.md R-HA-008 and its failure table.
 
+### Q-OPS-32 · Trace trust for an incoming traceparent
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A client that sends a `traceparent` chooses the trace ID that the request carries, the audit trail and `X-Request-Id`
+record. An audit of the first design found that the edge's trusted proxies also decided whether that ID was continued,
+and the edge forwards the client's header unchanged.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A separate list, `tracing.trusted_peers`, empty by default; `tracing.incoming_context` with `trusted_peers`, `all` or `none` | continuation only from a TCP peer on the list | an internal caller or a mesh sidecar can continue its trace; the edge cannot | an operator has to list the peers that should continue |
+| (b) Never continue an incoming context | every request starts a trace, the incoming one becomes a link | simplest; nothing to configure | a mesh that propagates trace context loses its end-to-end trace |
+| (c) Continue from `server.trusted_proxies` (the first design) | the edge's list also grants trace trust | one list | the client's own header is continued through the edge |
+
+**Choice:** (a), with the default `trusted_peers` and an empty list, which is (b) until a peer is named. A catch-all
+prefix in the list is refused, and `incoming_context: all` is an explicit choice.
+
+**Rationale:** The trace ID is an input of the audit trail, so it needs the same care as the client address. The edge is
+trusted to report the client's address and not to report the client's trace; the two lists keep the two decisions apart.
+The development agent would revisit this when a deployment cannot list its internal callers.
+
+**Applied in the spec:** [R-OPS-018](#r-ops-018--trace-context-and-opentelemetry-export) (the incoming-context rule and the
+YAML of the section); the forwarded-headers note of this page's Security notes (no trace trust from `trusted_proxies`).
+
+### Q-OPS-33 · Bounding the in-memory log ring by bytes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The ring keeps the last records of each replica for support bundles. Records are as large as the fields that go into them,
+and a client can make a field large (the user agent, the path).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Record count only (`log.ring_buffer_records`) | 5000 records, of any size | simplest | 5000 records of 60 KiB each take about 300 MB per replica |
+| (b) Record count and bytes (`log.ring_buffer_bytes`, default 8 MiB); a record above 16 KiB is kept as a stub with its head and original size | the oldest records go first when either bound is reached | memory is bounded regardless of the client; the line stays valid JSON | the bundle shows a stub for a large record, not its full text |
+| (c) Truncate each record to a fixed size before it enters the ring | every record is cut | one rule | cuts the fields that matter for the support case; the stub of (b) keeps the head and the size |
+
+**Choice:** (b). Standard output keeps the whole record in every case, so the platform's log stack is still the place for
+full text ([H-70](../security/data-and-secret-flow.md#h-70--the-standard-output-log-carries-every-record-in-full)).
+
+**Rationale:** A support bundle is read by a person, and a stub that says what was cut and how large it was serves that
+reading, while the byte bound caps the memory that a client can take. The development agent would revisit this when the
+ring is the only copy of the logs, which it is not by design.
+
+**Applied in the spec:** [R-OPS-009](#r-ops-009--log-stream-and-record-format) (the ring bounds and the stub) and
+[R-OPS-010](#r-ops-010--request-log) (the field limits).
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy
@@ -4893,16 +4969,18 @@ resolves differently for the proxy, or changes in between, reaches whatever addr
 chooses. Proxy-side egress rules are the only full control. The gap is live only for subscriptions
 that use a proxy.
 
-### H-41 · Egress is unrestricted, and the ingress policy's enforcement is unverified
+### H-41 · Egress is unrestricted, and ingress enforcement is verified on one CNI only
 
 With the default `metrics.auth: none`, any pod that can reach port 8081 of a `web` or `worker`
 replica reads metrics: repository keys, request and byte volumes, queue depth, backup run state. It
 also reads verbose readiness: dependency latency, schema version, whether Valkey is reachable. The chart ships an
 ingress NetworkPolicy, enabled by default, that admits port 8081 only from the monitoring namespace and the probe
-CIDRs (R-HA-042). Its enforcement on the cluster's CNI is not verified in this build. Clusters whose CNI does not
-enforce NetworkPolicy, or installations that switch it off, expose this data cluster-wide unless
-`metrics.auth: static` is set. Separately, the replicas' egress is not restricted: the chart renders no egress
-policy, so a compromised replica can reach any address (R-HA-042, H-6).
+CIDRs (R-HA-042). Its enforcement is verified on the kind profile's CNI (kindnet) in the end-to-end suite and on no other
+CNI. Clusters whose CNI does not enforce NetworkPolicy, or installations that switch it off, expose this data cluster-wide
+unless `metrics.auth: static` is set. Separately, the replicas' egress is not restricted: the chart renders no egress
+policy, so a compromised replica can reach any address the pod network reaches (R-HA-042, H-6). The security
+perspective is in [security/privilege-footprint.md](../security/privilege-footprint.md) and
+[security/egress.md](../security/egress.md).
 
 ### H-42 · Secret masking in the delivery log matches known encodings only
 

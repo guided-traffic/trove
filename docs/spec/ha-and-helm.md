@@ -243,13 +243,21 @@ Priority: **MVP** · Covers: HA-018
 
 The chart wires TLS through trove's listeners and the platform's connections. `tls.enabled` defaults to `true`
 (Q-HA-32).
-- `tls.existingSecret` names a Secret that the chart never creates. It holds `tls.crt`, `tls.key` and `ca.crt`: the
-  keys of a cert-manager TLS Secret with its CA. Rendering fails with `tls.enabled: true` and no such Secret, naming
-  it, as the encryption key and the backup target do (R-HA-029). `tls.enabled: false` renders no TLS wiring, and H-38
-  applies.
-- The Secret is mounted read-only at `/var/run/secrets/trove/tls/`. The chart sets `server.tls.cert_file`,
-  `server.tls.key_file` and, when mutual TLS is configured, `server.tls.client_ca_file` (R-ARCH-035). A rotated Secret
-  replaces the mounted files, and the reloader of R-ARCH-035 applies them.
+- `tls.secretName` names a Secret that the chart never creates. It holds `tls.crt`, `tls.key` and `ca.crt`: the
+  keys of a cert-manager TLS Secret with its CA. Rendering fails with `tls.enabled: true` and no `tls.secretName`,
+  naming it, as the encryption key and the backup target do (R-HA-029). `tls.enabled: false` renders no TLS wiring,
+  and H-38 applies.
+- The Secret is mounted read-only at `/var/run/secrets/trove/tls/`, as a directory volume with items and without
+  `subPath`, mode `0440`, with only `tls.crt` and `tls.key` projected. `ca.crt` is not mounted into the process: the
+  listener never reads it, and the Secret still carries it for the edge and for monitoring. The chart sets
+  `server.tls.certificates` to that one pair and, when mutual TLS is configured, `server.tls.client_ca_file` with
+  `client_auth` from `tls.clientCA.auth` (R-ARCH-035). A rotated Secret reaches the pod through the kubelet's swap and
+  the reloader of R-ARCH-035 applies it. The checksum annotation follows the settings and the paths, not the Secret's
+  content, so a rotation does not roll the pods.
+- `server.ops_tls` is explicit when `tls.clientCA` is set, or when `tls.ops.secretName` names its own pair. The
+  explicit block has `inherit: false`, the same pair as the client listener, and no client CA: probes and scrapers
+  present no client certificate, so mutual TLS on `:8080` never extends to `:8081`. With `tls.ops.secretName` the
+  block takes that Secret's pair instead.
 - A further endpoint serves the same pair unless its `tls.existingSecret` or `tls.extraSecrets` name pairs of its own,
   wildcard certificates included; each is mounted under `/var/run/secrets/trove/endpoints/<name>/<n>/`, rendered as
   that endpoint's `tls.certificates`, chosen by SNI and reloaded the same way ([endpoints.md](endpoints.md) R-EP-004,
@@ -258,11 +266,20 @@ The chart wires TLS through trove's listeners and the platform's connections. `t
 - Probes use `scheme: HTTPS` on the ops port (R-HA-034). The kubelet does not verify the served certificate for
   probes, so they need no CA.
 - The client and ops Service ports declare `appProtocol: https`.
-- The ServiceMonitor sets `tlsConfig` with `ca` from `ca.crt` and `serverName` equal to the Service name, so
-  Prometheus verifies the certificate.
-- The Ingress or Gateway connects to the backend over TLS and verifies it against `ca.crt`. The chart renders the
-  backend-protocol setting of each supported controller, and the chart documentation names the annotation per
-  controller. A Gateway route uses a `BackendTLSPolicy`.
+- A ServiceMonitor with `tlsConfig` (`ca` from `ca.crt`, `serverName` equal to the Service name) is **not rendered
+  yet**: the chart has no ServiceMonitor template, so Prometheus scrapes the ops port without a configuration of
+  its own. This is pending, not implemented.
+- The Ingress connects to the backend over TLS. `ingress.backendTLS.controller` selects the controller-specific
+  settings: `haproxy` (the default, the primary target: `haproxy-ingress.github.io/secure-backends`,
+  `secure-verify-ca-secret` with the CA of `ingress.backendTLS.caSecret`, `secure-sni` set to `<fullname>.<namespace>.svc`,
+  and `secure-crt-secret` for `clientCertSecret`), `traefik` (the `serversscheme` and `serverstransport` of the Service),
+  `ingress-nginx` (`backend-protocol`, `proxy-ssl-*`) or `manual` (the settings are the operator's, in
+  `ingress.annotations`). `ingress.backendTLS.verify` defaults to `true`: the controller verifies the trove certificate,
+  and the render fails when `caSecret` is missing for `haproxy` and `ingress-nginx`, or `serversTransport` for
+  `traefik`. `verify: false` encrypts the connection without verifying it, and the choice is explicit.
+- A Gateway route uses a `BackendTLSPolicy`, rendered only with `tls.backendTLSPolicy.enabled`, which takes its CA from
+  a ConfigMap (`caConfigMapName`) because the Gateway API takes no Secret there; `tls.clientCA`, `tls.ops` and
+  `tls.backendTLSPolicy` need `tls.enabled: true`.
 - The chart test renders `tls.enabled: true` and checks the HTTPS probes, the `appProtocol` and the Secret mount, and
   checks that rendering without the Secret fails.
 
@@ -1176,6 +1193,15 @@ GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
     exists and holds `SELECT` on every table and sequence of the schema, `INSERT`, `UPDATE` and
     `DELETE` on `backup_run` and `backup_blob_pin`, and `INSERT` on `audit_event`. `trove backup
     create` checks the same grants at start and exits `2` naming a missing one (R-BAK-015).
+  - After migration 5 has applied (it revokes `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` on `schema_migration` and
+    `schema_state` from the runtime role), that the runtime login cannot write either table. A login that can is refused
+    at start, and the error names the `REVOKE` that fixes it. `system_state` stays writable: the runtime sets the deletion
+    pause and later keys of its own. A superuser and the owner of the tables are skipped, and so is a database that has
+    not reached migration 5 yet.
+  - Implemented in M0: the server version, the encoding, the superuser refusal, the bookkeeping check of the item above and,
+    behind a transaction-mode pooler, the session settings that the role's defaults must carry. Not implemented in M0: the
+    audit-object and backup-role checks, because the tables they name do not exist yet
+    ([security/privilege-footprint.md](../security/privilege-footprint.md), H-75).
 - Managed services: on Amazon RDS the administrator account is not a true superuser, and the SQL
   above runs as that account unchanged. With CloudNativePG, `bootstrap.initdb.owner` creates the
   owner; the two runtime roles are added through the cluster's managed roles or with the SQL above.
@@ -1734,6 +1760,14 @@ credentials for Sentinels:
 - TLS: `valkey.tls.mode` is `verify-full` (default), `verify-ca` or `disable`; `disable` needs
   `valkey.allow_insecure: true`, otherwise the replica refuses to start. `valkey.sentinel.tls`
   applies the same TLS settings to the Sentinels.
+- `verify-ca` requires `valkey.tls.ca_file`: the configuration check refuses it without, and the client
+  refuses to dial with it. Without a CA file the system roots would verify the chain and no host name would
+  be checked, so any publicly issued certificate would pass.
+- Sentinel mode warns once at start, and the warnings do not stop the replica: `valkey.sentinel.password_file`
+  is empty (anyone who reaches a Sentinel can name another primary), or `valkey.tls.mode` is not `disable` and
+  `valkey.tls.ca_file` is empty (the primary is verified against the system roots). No configuration switch makes
+  either an error yet ([Q-HA-33](#q-ha-33--sentinel-trust-settings-warn-or-refuse-at-start)); the trust
+  consequences are in [security/transport-encryption.md](../security/transport-encryption.md), H-64.
 
 Configuration:
 
@@ -5404,6 +5438,19 @@ the profile then moves to (a), provided the failover scenarios of R-HA-057 pass 
 **Applied in the spec:** R-HA-051: the `valkey.yaml` row, the certificate and Secret steps, the
 Valkey targets and the validity bullet. R-HA-056: the bullet on what the chart does not bundle.
 
+**Owner decision, 2026-10-29 (revisits this question).** The owner's standard is the guided-traffic
+[valkey-operator](https://github.com/guided-traffic/valkey-operator) (chart 1.14.12, custom resource `Valkey`
+of `vko.gtrfc.com/v1`, checked on 2026-10-29). Option (c) is therefore the owner's constraint, not the development
+agent's choice, and the local profile moves from `deploy/dev/valkey.yaml` to the operator's resource with
+cert-manager as its certificate source. The operator gives Sentinel mode, TLS only, no persistence, PodDisruptionBudgets
+and zone anti-affinity, and it lacks three things this page requires: ACL users (R-ARCH-031, R-HA-056), a Sentinel
+password separate from the data nodes' and `maxmemory`. The owner was asked whether to extend the operator; until
+the owner decides, the dev profile runs trove as the operator's `default` user, and the requirements of R-ARCH-031 and
+R-HA-056 stay as written for production. Those gaps are recorded where their mechanisms are:
+[H-72](../security/privilege-footprint.md#h-72--the-default-valkey-user-holds-every-right-until-acl-users-exist) and
+[H-64](../security/transport-encryption.md#h-64--sentinel-trust-with-the-chart-defaults). The dev profile's switch is pending
+(see [local-profile.md](../developer/local-profile.md)); this paragraph supersedes choice (d) for the dev profile only.
+
 ### Q-HA-16 · Default replica counts and the capacity rule for drains
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5673,6 +5720,15 @@ is pinned. The development agent would revisit the edge if the Ingress path cann
 
 **Applied in the spec:** R-HA-051 and the local profile describe the same mechanisms; no requirement text changed.
 
+**Owner decision, 2026-10-29 (revisits this question).** The edge of the local profile is the owner's controller, HAProxy
+Ingress: the chart `haproxy-ingress` at the owner's pin of 0.15.3 in the owner's own cluster base, with the annotation prefix
+`haproxy-ingress.github.io/`. Choice (a) therefore names HAProxy Ingress instead of Traefik, and the Traefik pins of the
+profile are withdrawn when the profile switches. The scatter profile keeps its purpose (one request, one backend) and moves
+to HAProxy's keys: a round-robin balance, and no upstream keep-alive through `option http-server-close` in a backend
+configuration snippet. That mechanism is not verified in this repository yet, so R-HA-051 does not state it as done. The
+failover choice (patching `status.targetPrimary`) is unchanged, because the owner's PostgreSQL operator is the same.
+The edge's TLS to the backend is described in [security/transport-encryption.md](../security/transport-encryption.md).
+
 ### Q-HA-25 · AWS leg of the nightly run when no AWS account is configured
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5823,6 +5879,30 @@ default if a supported platform cannot provide a certificate at first install, w
 default for that platform only.
 
 **Applied in the spec:** R-HA-063 states the default and the failure; H-38 is limited to `tls.enabled: false`.
+
+### Q-HA-33 · Sentinel trust settings: warn or refuse at start
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Two settings weaken the Sentinel trust without being plaintext: a Sentinel without a password, and data nodes verified
+against the system roots without a CA file. The chart defaults to both (its Valkey Sentinel Secret and its Valkey CA
+Secret are empty), and the owner's operator cannot yet provide a Sentinel password.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse at start, unless a switch names the weakness | the replica exits with the names of the keys | the weakness cannot be left by accident | the chart's defaults and the owner's operator would stop every install until the operator gains the password |
+| (b) Warn once at start; never refuse | one warning per weakness, naming the fix | an install starts and shows the gap in its logs | a warning is easy to miss |
+| (c) Warn and add a switch that makes each an error | the operator opts in to strictness | the strict setup is one key | a second switch to read; the default stays lenient |
+
+**Choice:** (b), without a strictness switch yet.
+
+**Rationale:** The chart's defaults are the owner's current deployment, and refusing them would stop it without a
+safety gain that the warning does not already give. The gap is recorded as an open item on the transport page
+(H-64) and the warning names the fix. The development agent would revisit this when the valkey-operator provides a
+Sentinel password: then the missing password becomes an error (a) for the production values, and the choice becomes (c).
+
+**Applied in the spec:** [R-HA-056](#r-ha-056--valkey-with-sentinel-connection-and-supported-topologies) (the warnings of the
+connection bullet); the code is `warnWeakTrust` in [internal/cluster/valkey.go](../../internal/cluster/valkey.go).
 
 ## What this does not cover
 

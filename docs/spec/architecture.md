@@ -405,6 +405,13 @@ Acceptance criteria:
 
 ## Code layout
 
+`internal/tlsfiles` is a leaf layer, like the table registry of `internal/backup/tables`: every layer may
+use it, it imports only the standard library and the Prometheus client, and it never dials. The packages that present
+or trust TLS material import it: `httpserver` (listeners), `meta/postgres`, `cluster` (Valkey), `outbound` (the trust
+stores, which the object-store client uses), and `app` for its metric families. The OTLP trace exporter reads its CA file
+directly, once ([H-69](../security/transport-encryption.md#h-69--tracingca_file-is-read-once-at-start)). The rules of
+[R-ARCH-035](#r-arch-035--tls-on-troves-listeners-and-reloadable-tls-material) apply to every importer.
+
 ### R-ARCH-003 · Go module and package layout
 Priority: **MVP** · Covers: trove-only
 
@@ -455,6 +462,7 @@ trove/
 │   │   └── tables/              # table registry: the export class of every table (leaf layer)
 │   ├── outbound/
 │   ├── secrets/
+│   ├── tlsfiles/                # TLS material read from PEM files and reloaded by content (leaf layer, R-ARCH-035)
 │   ├── errs/
 │   ├── observability/
 │   ├── webui/                   # go:embed all:dist; dist/ is filled by the web build
@@ -701,10 +709,13 @@ Several pages rely on this mechanism: rate limits, audit, authorization conditio
 exchange limits.
 - The client address is the TCP peer, unless the peer lies in the trusted proxies of the request's
   endpoint (`server.trusted_proxies`, or a further endpoint's `trusted_proxies`,
-  [endpoints.md](endpoints.md) R-EP-001). In that case it is the right-most address in
-  `X-Forwarded-For`, or in `Forwarded: for=`
-  ([RFC 7239](https://www.rfc-editor.org/rfc/rfc7239)), that is not itself a trusted proxy.
-- Forwarded scheme and host are evaluated only under the rules of the public base URL. Those rules,
+  [endpoints.md](endpoints.md) R-EP-001). In that case it is the right-most address of the one header
+  family that `server.forwarded_header` selects, `x-forwarded-for` (the default, `X-Forwarded-For`) or
+  `forwarded` (the `for=` parameters of [RFC 7239](https://www.rfc-editor.org/rfc/rfc7239)), that is not
+  itself a trusted proxy. The other family is never read, not even as a fallback
+  ([Q-ARCH-35](#q-arch-35--which-forwarded-header-family-does-the-edge-rewrite)). An entry that is not an
+  address stops the walk, and the peer stays the client. A prefix of length 0 is refused.
+- Forwarded scheme and host are read from the same family, and evaluated only under the rules of the public base URL. Those rules,
   the `server.base_url`, `server.trusted_proxies` and `server.additional_base_urls` keys, and their
   defaults are owned by [operations-and-observability.md](operations-and-observability.md). On every
   endpoint a forwarded host counts only when it lies in that endpoint's host set; it never selects
@@ -719,9 +730,13 @@ exchange limits.
 Acceptance criteria:
 - `grep -rnE 'X-Forwarded|\.Host\b|"Forwarded"' internal --include=*.go` matches only in
   `internal/httpserver` and in tests.
-- With `trusted_proxies: ["10.42.0.0/16"]`, a request from `10.42.1.7` carrying
-  `X-Forwarded-For: 198.51.100.4, 10.42.0.9` is logged with client address `198.51.100.4`. The same
-  header from `203.0.113.5` is logged as `203.0.113.5`.
+- With `trusted_proxies: ["10.42.0.9"]` (the edge's address, example), a request from `10.42.0.9` carrying
+  `X-Forwarded-For: 198.51.100.4` is logged with client address `198.51.100.4`. The same header from
+  `203.0.113.5` is logged as `203.0.113.5`.
+- Spoof case: with `forwarded_header: x-forwarded-for`, a request from the trusted `10.42.0.9` carrying
+  `X-Forwarded-For: 203.0.113.5` and `Forwarded: for=198.51.100.9` is logged as `203.0.113.5`; with
+  `forwarded_header: forwarded` the same request is logged as `198.51.100.9`. The unselected family
+  never changes the answer.
 
 ### R-ARCH-007 · One origin for UI and package content
 Priority: **MVP** · Covers: trove-only
@@ -2652,27 +2667,42 @@ Every listener of trove serves TLS when `server.tls` is set, and every TLS mater
 or trusts can be replaced without a restart (INV-20, [ADR-127](../decisions.md#adr-127--transport-encryption-on-every-connection-troves-listeners-included)).
 
 Listener side:
-- `server.tls.cert_file` and `server.tls.key_file` name PEM files. They serve the client listener and
-  the ops listener. `server.ops_tls.cert_file` and `server.ops_tls.key_file`, when set, give the ops
-  listener its own pair (Q-ARCH-33). Startup refuses an absent, unreadable or non-matching pair.
-- `server.tls.client_ca_file`, when set, makes the client listener require and verify a client
-  certificate that chains to that CA (mutual TLS for a proxy that connects to trove). It is off by
-  default (Q-ARCH-32).
-- Minimum TLS 1.2; TLS 1.3 is preferred. HTTP/2 is negotiated over TLS with ALPN.
+- `server.tls.certificates` is a list of `{cert_file, key_file}` pairs of PEM files, leaf first. The first
+  pair is the default; SNI picks the pair whose names hold the requested name exactly, else the first pair a
+  wildcard covers that the client accepts, else the default. An empty list is plain HTTP. The pairs serve the
+  client listener; the ops listener takes them through `server.ops_tls` (below).
+- `server.ops_tls.inherit` (default `true`) gives the ops listener the client listener's pairs, `min_version` and
+  `reload_interval`, and no client authentication, because the kubelet's probes present no certificate. With
+  `inherit: false` the ops listener has its own `certificates`, `client_ca_file`, `client_auth`, `min_version`
+  and `reload_interval` (Q-ARCH-33); with `inherit: true` a setting of the block other than `inherit` is refused.
+- `server.tls.client_auth` is `none` (default: no certificate is requested), `verify_if_given` (a presented
+  certificate must chain to `client_ca_file`; a client without one is admitted) or `require` (a client without a
+  verifying certificate is refused in the handshake). A `client_auth` other than `none` needs `client_ca_file`,
+  and `client_ca_file` with `none` is refused. Mutual TLS lets a proxy connect to trove (Q-ARCH-32); it is off by default.
+- Minimum TLS 1.2 (default) or 1.3, TLS 1.3 preferred. TLS 1.2 is offered with ECDHE key exchange and AES-GCM or
+  ChaCha20-Poly1305 only. HTTP/2 is negotiated over TLS with ALPN (`h2`, `http/1.1`).
 - A reloader checks both files every `server.tls.reload_interval` (default `10s`). It compares the
   content, not the file times, and a change is loaded into a new `tls.Config.GetCertificate` lookup, so
   the new certificate serves every new handshake at once. Connections already open keep the certificate
   they negotiated until they close (Q-ARCH-31).
-- A new pair that does not load, or whose key does not match its certificate, is refused. The previous
-  pair stays in service, `trove_tls_reload_failures_total{listener}` increments, and an error is logged
-  with the file names and the reason. Nothing else changes.
-- `trove_tls_certificate_not_after_timestamp_seconds{listener}` exposes the expiry of the served
-  certificate, so an expiry alert needs no log parsing.
+- A changed pair or bundle is compared by content, not by time, once per pass. A new pair that does not load
+  (unreadable, an incomplete PEM block, a key that does not match its certificate, an expired leaf) keeps the
+  previous content in service, counts once per distinct content in
+  `trove_tls_reload_errors_total{kind,listener,name}`, and logs an error with the file names and the reason.
+  Readiness does not change, and no other piece of the material is affected.
+- A pair that is missing or broken at start does not stop the process: the listener binds and refuses handshakes,
+  and the `tls` readiness check holds the first readiness until every listener's material has loaded, then clears
+  without a restart. Client-side material that is missing at start (PostgreSQL, Valkey, outbound CA bundles)
+  fails the construction of that client, and the process ends ([tls.md](../developer/tls.md)).
+- The expiry of every served piece is `trove_tls_certificate_expiry_timestamp_seconds{kind,listener,name}`: the
+  notAfter of a pair's leaf, or the earliest notAfter of a CA bundle, so an expiry alert needs no log parsing.
+  `trove_tls_reloads_total{kind,listener,name}` counts the swaps after the first load. The label values are
+  fixed in [Q-EP-14](endpoints.md#q-ep-14--labels-of-the-tls-series-and-of-the-ops-series) for endpoint listeners.
 - **Endpoint listeners.** The listener of every further endpoint uses the same reloader, bound and
   failure rule for each pair of its certificate set, and chooses among its own pairs by the TLS
   server name, wildcard certificates included; with no pair of its own it serves the pair of
-  `server.tls`. On client listeners both families also carry `endpoint` and `certificate`
-  ([endpoints.md](endpoints.md) R-EP-004).
+  `server.tls`. The TLS series of an endpoint listener carry `listener="client:<endpoint>"`
+  ([endpoints.md](endpoints.md) R-EP-004, [Q-EP-14](endpoints.md#q-ep-14--labels-of-the-tls-series-and-of-the-ops-series)).
 
 Client side: every TLS material trove presents or trusts is re-read without a restart, and an error
 keeps the last good material in service:
@@ -2680,14 +2710,14 @@ keeps the last good material in service:
   ([ha-and-helm.md](ha-and-helm.md) R-HA-015).
 - Valkey and Sentinel CA, client certificate and key: read for each new handshake
   ([ha-and-helm.md](ha-and-helm.md) R-HA-056).
-- Outbound CA bundles and client certificates, and the object store's CA when supported: reloaded within
-  the bound of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-035 and R-ARCH-022.
+- Outbound CA bundles, and the object store's `storage.s3.ca_file` (supported since M0, R-STOR-030): reloaded
+  within the bound of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-035 and R-ARCH-022.
 
 Acceptance criteria:
 - Rotating the listener certificate under a constant k6 load (E0.15) produces no failed request, the new
   certificate is served within `server.tls.reload_interval` + 1 s, and the process start time does not change.
 - A new pair whose key does not match its certificate keeps the old pair in service, increments
-  `trove_tls_reload_failures_total`, and logs an error; the next valid pair is served.
+  `trove_tls_reload_errors_total`, and logs an error; the next valid pair is served.
 - A connection opened before a rotation keeps the old certificate until it closes; a connection opened after
   the bound sees the new certificate.
 - With `client_ca_file` set, a client certificate that does not chain to it is refused in the TLS handshake,
@@ -2733,8 +2763,12 @@ before they are written. Examples are remote upstream credentials and webhook se
 
 - Algorithm: AES-256-GCM with a random 96-bit nonce.
   - Ciphertext format: `v1:<key id>:<base64(nonce ‖ ciphertext ‖ tag)>`.
-  - The additional authenticated data is the table, the row's primary key and the column. A database
-    writer cannot move a ciphertext to another row and have it decrypt there.
+  - The additional authenticated data is the number of primary-key parts, then the strings `trove/sealed/v1`,
+    the table, the column and each primary-key part, every string prefixed with its length (an unsigned
+    varint). A composite key is registered as `repository_id,name` and passed as `secrets.Row(parts...)`; a
+    row key whose part count differs from the registered key fails with `ErrRowKey`, and two row keys that
+    differ only in where a separator falls encode differently. A database writer cannot move a ciphertext to
+    another row or column and have it decrypt there.
 - Key ring: `secrets.encryption_key_files` lists files. Each file holds 32 random bytes, either as
   base64 text (43 or 44 characters, surrounding white space ignored) or raw (a file of exactly 32
   bytes, as a random-byte generator writes it; Q-ARCH-34), and the file name without `.key` is the
@@ -4623,6 +4657,30 @@ before `TrimSpace` because a random key may begin or end with a white-space byte
 256 bits is ever allowed, since the length then no longer tells the formats apart.
 
 **Applied in the spec:** R-ARCH-021 states both formats in the key-ring bullet.
+
+### Q-ARCH-35 · Which forwarded header family does the edge rewrite?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A client can send both `X-Forwarded-For` and `Forwarded`; the edge writes one of them. An audit of the first design
+found that the address resolver preferred `Forwarded` and fell back to `X-Forwarded-For`, so a client could choose the
+address the log records.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One family, chosen by `server.forwarded_header` (`x-forwarded-for`, the default, or `forwarded`), no fallback | the other family is never read | a client cannot choose the address through the family the edge does not write; one rule for address, scheme and host | an edge that writes the other family needs the setting changed |
+| (b) `Forwarded` first, `X-Forwarded-For` second | the first design | works with either edge | the client chooses whenever it sends the preferred family |
+| (c) `X-Forwarded-For` only | no RFC 7239 support | one family, one format | an edge that writes only `Forwarded` cannot be configured |
+
+**Choice:** (a). The chart's default is `x-forwarded-for`, which is what the ingress controllers write.
+
+**Rationale:** The client address is the input of rate limits, audit and authorization conditions, so it is the most
+exposed input of the request. One family and no fallback make the trust rule a statement about one header. The
+development agent would revisit this when an edge can write only the other family; the change is the setting, not the rule.
+
+**Applied in the spec:** [R-ARCH-006](#r-arch-006--client-address-and-trusted-proxies) (the family rule and the spoof
+acceptance case), [R-OPS-005](operations-and-observability.md#r-ops-005--external-base-url-and-forwarded-hosts) and
+[endpoints.md](endpoints.md) R-EP-003 ([Q-EP-15](endpoints.md#q-ep-15--which-forwarded-host-counts-on-an-endpoint)).
 
 ## What this does not cover
 

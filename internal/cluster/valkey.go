@@ -240,7 +240,7 @@ func checkValkeyConfig(cfg config.Valkey, instance string) error {
 // a Sentinel without authentication can be told to name another primary, and
 // with the system roots that primary passes verification with any publicly
 // issued certificate for the name it is given. The configuration has no switch
-// that makes them errors (H-item of the Valkey security page), so they are
+// that makes them errors (H-64 in docs/security/transport-encryption.md), so they are
 // warnings.
 func (v *Valkey) warnWeakTrust() {
 	if v.cfg.Mode != "sentinel" {

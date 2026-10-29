@@ -556,7 +556,10 @@ Acceptance criteria:
   answers `413`.
 - `npm publish` of a tarball whose `dist.integrity` was edited to a wrong value answers an error
   and stores nothing.
-- A replica restarted with files in its spool directory starts with an empty spool directory.
+- A replica restarted with files in its spool directory starts with an empty spool directory. Only the
+  files the spool creates are removed: regular files named by a random UUID, as R-STOR-004 creates them. Any
+  other entry makes the start fail, and a `lost+found` directory is the one entry tolerated
+  ([Q-STOR-16](#q-stor-16--what-the-spool-may-delete-at-start)).
 - A test build delays the S3 write of a 500 MiB `curl -T` past the end of the shutdown margin and
   the serving pod is deleted: `curl` reports an error, no item row and no blob row exists, and
   `aws s3api list-multipart-uploads` lists no upload of that pod. Repeating the same `curl -T`
@@ -582,7 +585,7 @@ loop (at most storage.upload.commit_attempts times):
   BEGIN (READ COMMITTED)
   SELECT state, content_status FROM blobs WHERE sha256 = $h FOR SHARE
   case no row:
-      if not putDone or now - putAt > storage.upload.commit_deadline:
+      if not putDone or now - putAt > min(storage.upload.commit_deadline, storage.gc.delete_settle / 2):
           ROLLBACK; write object (R-STOR-006); putDone, putAt := true, now; continue
       INSERT INTO blobs (…, state = 'live') ON CONFLICT DO NOTHING
       if no row inserted: ROLLBACK; continue          -- a concurrent uploader won; re-read
@@ -603,6 +606,10 @@ loop (at most storage.upload.commit_attempts times):
 - `putDone` is reset whenever a `deleting` row is seen: an object written before a collection
   claimed the row may have been deleted by it, so the object is written again after the row is
   gone.
+- The insert of a new blob row is bounded by `min(storage.upload.commit_deadline, storage.gc.delete_settle / 2)`
+  counted from the end of the object write. After that bound the object is written again before the insert, so
+  an insert never follows a collection's delete that may still be in flight (R-STOR-024). `delete_settle` has a
+  minimum of 1 s.
 - `storage.upload.commit_deadline` bounds the time between a successful object write and the
   insert of a new blob row. The orphan sweep deletes only objects older than
   `storage.orphans.min_age` (R-STOR-026); the deadline MUST be less than half of that age, so an
@@ -1166,7 +1173,7 @@ Configuration:
 storage:
   download:
     verify: true          # default (proposed)
-    hold_back: 64KiB      # default (proposed)
+    hold_back: 64KiB      # default (proposed); at least 1 KiB: 0 would release bytes before the digest check
 ```
 
 Acceptance criteria:
@@ -1847,7 +1854,7 @@ Configuration:
 storage:
   gc:
     grace_period: 24h        # default (proposed)
-    delete_settle: 30s       # default (proposed)
+    delete_settle: 30s       # default (proposed); at least 1 s
     handover_delay: 10m      # default (proposed); must exceed jobs.lease_duration + 2 × delete_settle
     batch_size: 1000         # default (proposed)
     batch_delete: true       # default (proposed); false for stores without DeleteObjects
@@ -2217,7 +2224,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: STOR-006, STOR-020, STOR-029
 
 **TLS (R-ARCH-035, INV-20).** An `https://` endpoint is the production form. The object store's CA trust is part of
-the TLS material of R-ARCH-035 once `storage.s3.ca_file` is supported (Q-STOR-14); until then it is refused. An
+the TLS material of R-ARCH-035: `storage.s3.ca_file` is supported since M0 and replaces the system roots for the
+object-store client, and the file is reloaded like the other bundles (Q-STOR-14). A proxy credential file is still refused. An
 `http://` endpoint is a development exception behind `storage.s3.allow_insecure_endpoint: true`, and the development
 and integration profiles use TLS, so no profile needs the exception. Where the endpoint rules below name plain HTTP as
 a permitted form, this paragraph governs.
@@ -3199,7 +3207,7 @@ storage:
   download:
     buffer_size: 256KiB                  # default (proposed)
     verify: true                         # default (proposed)
-    hold_back: 64KiB                     # default (proposed)
+    hold_back: 64KiB                     # default (proposed); at least 1 KiB
   stats:
     flush_interval: 10s                  # default (proposed)
   delete:
@@ -3212,7 +3220,7 @@ storage:
     fold_interval: 5s                    # default (proposed); also the lag of quota decisions (R-STOR-029)
   gc:
     grace_period: 24h                    # default (proposed)
-    delete_settle: 30s                   # default (proposed)
+    delete_settle: 30s                   # default (proposed); at least 1 s
     handover_delay: 10m                  # default (proposed)
     batch_size: 1000                     # default (proposed)
     batch_delete: true                   # default (proposed)
@@ -3897,8 +3905,15 @@ timeouts have a sane factory default, so a refusal would only block the operator
 agent would revisit (c) when the outbound layer gains `WithRootCAFile` and the remaining options, because then the keys
 are applied rather than defaulted.
 
+**Revisited in M0 (2026-10-29):** the outbound layer gained the trust store of a single client
+(`outbound.TrustStore`), so `storage.s3.ca_file` is supported and replaces the system roots for the object-store client,
+reloaded like every other bundle ([blob/s3/client.go](../../internal/blob/s3/client.go)). The option (c) reasoning holds
+for `proxy_credentials_file`, which is still refused with an error naming the reason, and for the timeouts and the
+connection limit, which still take the factory's defaults.
+
 **Applied in the spec:** R-STOR-033 names the metric label `operation` (replacing `op`, Q-OPS-26) in its metrics line,
-and the acceptance criterion of R-STOR-005 that reads the same counter uses `operation` too; no other requirement text changed.
+and the acceptance criterion of R-STOR-005 that reads the same counter uses `operation` too; no other requirement text changed
+except R-STOR-030, which now states that `ca_file` is supported.
 
 ### Q-STOR-15 · Object-store endpoint without a scheme
 
@@ -3918,6 +3933,29 @@ URL. `storage.s3.credentials.sts_endpoint` is not rewritten: it is not a store a
 development agent would revisit this if a provisioner appears whose host values already include a scheme or a path.
 
 **Applied in the spec:** R-STOR-030 (validation bullet and the configuration block).
+
+### Q-STOR-16 · What the spool may delete at start
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The spool directory is scratch space of one pod. Its files are removed at start, and the directory may be a volume that
+holds more than the spool wrote.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Empty the whole directory | every entry is removed | simplest; the directory is always clean | a misconfigured `storage.spool.dir` pointing at shared data deletes that data |
+| (b) Remove only the regular files named by a UUID; refuse the start on any other entry (a `lost+found` directory is tolerated) | the spool's own files, nothing else | a wrong path fails before anything is deleted | a directory with any other content stops the replica until someone looks |
+| (c) Remove the files named by a UUID and leave other entries alone | a lenient delete | the replica starts | a foreign entry stays in a scratch directory that is meant to be empty |
+
+**Choice:** (b).
+
+**Rationale:** The spool directory is configured by path, and a deletion at start is irreversible. The rule removes exactly
+the files the spool creates, which are regular files with random UUID names and mode `0600`, and it refuses to act on a
+directory that is not the spool's. The development agent would revisit this only if a supported volume puts entries of its
+own into the spool directory, which the chart does not do (an `emptyDir` or an ephemeral volume).
+
+**Applied in the spec:** [R-STOR-004](#r-stor-004--upload-pipeline-admission-spool-and-single-pass-hashing) (the start rule of
+the spool, the bullet after the restart rule); the implementation is `NewSpool` in [internal/blob/spool.go](../../internal/blob/spool.go).
 
 ## What this does not cover
 

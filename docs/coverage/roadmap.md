@@ -354,8 +354,10 @@ end-to-end reports.
   lease's advisory lock in `pg_locks` (`locktype = 'advisory'`) at any sample, because leases are session
   advisory locks with no table (R-HA-006, Q-ARCH-14). No `web` replica's instance ID ever appears in
   `job.locked_by`, and no `web` replica holds a lease connection (R-ARCH-001). In the same run,
-  `GET /api/v1/system/replicas` shows the deleted pod with `"lost": true` within 30 s and then
-  lists its replacement (R-OPS-003). On the dev profile, change propagation reaches p99 ≤ 100 ms
+  `GET /api/v1/system/replicas` shows the killed pod with `"lost": true` within 30 s and then
+  lists its replacement (R-OPS-003). A force delete with `--grace-period=0` still delivers SIGTERM, so the replica
+  shuts down cleanly and its row is removed, not marked lost. The lost case is produced by a real SIGKILL of the
+  container, which the test sends through the node's container runtime; the lease holder is read from `pg_locks`. On the dev profile, change propagation reaches p99 ≤ 100 ms
   with Valkey and p99 ≤ `cluster.epoch_poll_interval` + 1 s with Valkey stopped (P-13), and job
   pick-up reaches p99 ≤ 1 s with Valkey and p99 ≤ `jobs.poll_interval` + 1 s without it (P-14).
 - **E0.7** `helm lint` and `helm template` pass with the dev values. `helm template` without the
@@ -1309,6 +1311,47 @@ the E0.6 wording above now uses `pg_locks` (a wording correction, not a decision
 
 The ADR log's index [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists this block
 as Q-ROAD-5.
+
+### Q-ROAD-6 · How the end-to-end driver reads and drives the cluster
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The end-to-end tests of E0.13 and E0.14 must measure change propagation and job pick-up from a process that is not a `web` or
+`worker` replica, and the test must not add a second write path to the product before the job API exists (M1).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A diagnostic job kind `system.probe` in the release image, registered only with `jobs.RegisterProbeKind`, enqueueable only with write access to the job table; the driver is a pod built from this module, on a control-plane node, with the release ConfigMap and Secrets | the driver uses the product's own job and change paths | measures the real paths, with the real timings; the probe is inert unless enqueued | a diagnostic kind ships in the release image; it is removed or kept behind the job API in M1 |
+| (b) The driver writes rows of the product tables directly | no code in the product | no kind in the release | the driver then measures a write path that no product code takes |
+| (c) A separate test image with its own copy of the cluster code | the product image stays clean | no kind in the release | the copy can drift from the code it claims to test |
+
+**Choice:** (a). The probe source is `internal/jobs/probe.go`, linked by `jobs.RegisterProbeKind` in `wire_jobs.go`.
+
+**Rationale:** P-13 and P-14 are latency requirements of the product's own paths; a driver that bypasses them measures
+nothing that a user sees. The development agent would revisit this when the M1 job API exists: the probe then becomes an
+API-level test and its kind is removed from the release image.
+
+**Applied in the roadmap:** E0.13 and E0.14 (the driver). The probe kind is a test tool of the release image, and the
+spec page does not describe it as a feature.
+
+### Q-ROAD-7 · Which end-to-end jobs run on each push and which nightly
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every end-to-end test on every push | one job, all scenarios | nothing is skipped | the failover and drain scenarios take minutes per push and make the push job flaky |
+| (b) A push set and a nightly set | `SET=push` (E0.3, E0.4, E0.6, E0.7, E0.11, E0.12, E0.14) on every push; the nightly failover set (E0.4, E0.6, E0.13) runs the failure scripts | the push job stays short; the failures run on a schedule with their own timeouts | a failure in the nightly set is seen a day later |
+| (c) Nightly only | every end-to-end test runs at night | cheapest | a regression reaches the main branch unseen |
+
+**Choice:** (b). The AWS leg of the nightly run stays skipped and never green until the owner provides an account (E0.4).
+
+**Rationale:** The push set covers the install, the lease and the scatter profile, which fail on a plain code change. The failure
+scripts need the full load and the time, so they run where a time budget is available. The development agent would revisit
+this when the failover set runs in under the push budget.
+
+**Applied in the roadmap:** E0.4, E0.6, E0.13 and E0.14 (the sets they belong to); the workflow files
+`.github/workflows/ci.yml` (`make e2e SET=push`) and `.github/workflows/nightly.yml` (`make e2e SET=failover`) carry the two sets.
 
 The ADR log's index
 [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists
