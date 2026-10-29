@@ -101,7 +101,10 @@ func TestChangePropagation(t *testing.T) {
 		n      int
 		spread time.Duration
 	}{
-		{"with Valkey", vkLive, 2 * time.Second, func(time.Duration) time.Duration { return 100 * time.Millisecond }, 60, 120 * time.Millisecond},
+		// 200 samples, so the p99 that P-13 bounds is the second largest and not the
+		// maximum: one scheduling outlier of a shared CI runner must not stand for
+		// the 99th percentile.
+		{"with Valkey", vkLive, 2 * time.Second, func(time.Duration) time.Duration { return 100 * time.Millisecond }, 200, 120 * time.Millisecond},
 		{"without Valkey", vkDead, time.Second, func(poll time.Duration) time.Duration { return poll + time.Second }, 30, 400 * time.Millisecond},
 	} {
 		t.Run("R-ARCH-027 P-13 change propagation "+mode.name, func(t *testing.T) {
