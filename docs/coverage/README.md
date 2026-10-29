@@ -284,11 +284,14 @@ What the open entries are, on 2026-10-29:
 7. **Output.** It writes all of [checklist.md](checklist.md), and only the four marked blocks of
    this file.
 
-**Gap: the generator is not in the repository.** For this version it ran outside the repository.
-Until it is committed and its compare-only mode runs in CI, nothing keeps
-[checklist.md](checklist.md) and the tables above current when a catalog or spec heading
-changes. Until then, the rules above are its specification. The roadmap builds it in M0 (WP0.9,
-exit criterion E0.8).
+**Gap: the generator is an interim script, not yet in CI.** Until M0, the generator is the
+standard-library Python script [tools/coverage/coverage_gen.py](../../tools/coverage/coverage_gen.py)
+(`python3 -I tools/coverage/coverage_gen.py --repo .`, add `--check` to compare only), next to two
+link checkers ([check_links.py](../../tools/coverage/check_links.py) for file links,
+[check_anchors.py](../../tools/coverage/check_anchors.py) for heading anchors). No CI job runs them
+yet, so nothing keeps [checklist.md](checklist.md) and the tables above current when a catalog or
+spec heading changes unless the script is run by hand. The rules above are its specification. The
+roadmap replaces the scripts with a Go tool that CI runs in M0 (WP0.9, exit criterion E0.8).
 
 ## Honesty notes
 
