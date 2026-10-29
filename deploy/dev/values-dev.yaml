@@ -11,6 +11,9 @@ image:
 highAvailability:
   enforce: true
 
+tls:
+  enabled: false                 # TLS for the dev profile follows in WP0.12 part 2
+
 web:
   replicaCount: 2
   resources:
@@ -23,6 +26,7 @@ web:
 
 worker:
   replicaCount: 2
+  terminationGracePeriodSeconds: 60      # the drain test (E0.14) waits for the grace period of a worker whose job outlasts it; the chart default is 300
   resources:
     requests:
       cpu: 100m
@@ -40,7 +44,8 @@ spool:
 config:
   server:
     base_url: http://localhost:8080
-    trusted_proxies: ["10.244.0.0/16"]    # the pod CIDR of kind, where the Ingress controller runs
+    trusted_proxies: ["10.244.0.0/24"]    # the pod range of the control-plane node, where Traefik is pinned (traefik-values.yaml); up.sh checks it against the node's podCIDR
+    replica_header: always                 # X-Trove-Replica on every response: the scatter profile (E0.11) counts replicas per request, also anonymous ones
   log:
     level: debug
   system:

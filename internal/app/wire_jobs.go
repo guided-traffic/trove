@@ -32,6 +32,7 @@ func (a *App) jobRegistry() (*jobs.Registry, error) {
 		r.RegisterTask(name, t)
 	}
 	jobs.RegisterCoordinationKinds(r, a.cfg.Cluster)
+	jobs.RegisterProbeKind(r)
 	a.registerGC(r)
 	if err := jobs.ValidateSchedules(a.cfg.Maintenance); err != nil {
 		return nil, err

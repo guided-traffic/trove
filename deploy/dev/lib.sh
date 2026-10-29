@@ -132,3 +132,20 @@ elapsed() {
   local s=$(( $(date +%s) - $1 ))
   printf '%dm %ds' $((s / 60)) $((s % 60))
 }
+
+# pg_wait_healthy <timeout-seconds> waits until the CloudNativePG cluster trove-db has two ready
+# instances and reports a healthy state, and prints the seconds it took.
+pg_wait_healthy() {
+  local timeout="$1" start ready phase
+  start="$(date +%s)"
+  while :; do
+    ready="$(kn get cluster trove-db -o jsonpath='{.status.readyInstances}' 2>/dev/null || true)"
+    phase="$(kn get cluster trove-db -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    if [ "$ready" = "2" ] && [ "$phase" = "Cluster in healthy state" ]; then
+      echo $(( $(date +%s) - start ))
+      return 0
+    fi
+    [ $(( $(date +%s) - start )) -lt "$timeout" ] || { echo "trove-db is not healthy after ${timeout}s (ready '$ready', phase '$phase')" >&2; return 1; }
+    sleep 1
+  done
+}

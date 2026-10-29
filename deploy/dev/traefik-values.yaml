@@ -3,8 +3,23 @@
 # (DEV_TRAEFIK_CHART_VERSION, DEV_TRAEFIK_IMAGE; the image is passed with --set because the chart
 # wants registry, repository and digest separately). The chart's own security context already
 # satisfies the restricted Pod Security Standard.
+# The edge runs on the control-plane node, two replicas. The control-plane node is never drained or
+# killed by the tests, so the drain test (E0.14) measures trove and not the edge: a Traefik pod that
+# is evicted with its node resets the connections of its clients. The kind port mapping (kind.yaml)
+# also lives on that node. It makes the source address of every proxied request predictable: it comes
+# from the control-plane node's pod range, which values-dev.yaml trusts as config.server.trusted_proxies
+# and nothing wider. Production runs its own redundant edge (R-HA-059).
 deployment:
-  replicas: 1
+  replicas: 2
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
 service:
   spec:
     type: NodePort

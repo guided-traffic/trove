@@ -13,12 +13,12 @@ E0.14) and the base of the end-to-end tests. The requirement is
 | Component | Where | What | Pinned by (`tools/versions.env`) |
 |---|---|---|---|
 | kind cluster `trove` | Docker | `trove-control-plane` and `trove-worker`, `trove-worker2`, `trove-worker3` in zones `trove-zone-a`, `-b`, `-c`; pod CIDR `10.244.0.0/16` | `KIND_VERSION`, `DEV_KIND_NODE_IMAGE` |
-| Traefik | namespace `traefik` | Ingress controller, class `traefik` (default); NodePort 30080, mapped to `localhost:8080` | `DEV_TRAEFIK_CHART_VERSION`, `DEV_TRAEFIK_IMAGE` |
+| Traefik | namespace `traefik` | Ingress controller, class `traefik` (default), two replicas pinned to the control-plane node (never drained by the tests, and the source of every proxied request is that node's pod range, which `config.server.trusted_proxies` names); NodePort 30080, mapped to `localhost:8080` (`TROVE_DEV_HTTP_PORT`) | `DEV_TRAEFIK_CHART_VERSION`, `DEV_TRAEFIK_IMAGE` |
 | CloudNativePG operator | namespace `cnpg-system` | operator only | `CNPG_CHART_VERSION`, `DEV_CNPG_OPERATOR_IMAGE` |
 | PostgreSQL 16 | namespace `trove` | CloudNativePG `Cluster` `trove-db`: 2 instances (primary and standby), synchronous replication with `dataDurability: preferred`, database and owner `trove`, TLS | `DEV_CNPG_POSTGRES_IMAGE` |
 | Valkey 9.1 | namespace `trove` | StatefulSet `trove-valkey` (2 pods) and StatefulSet `trove-valkey-sentinel` (3 pods), TLS only, ACL user `trove` | `DEV_VALKEY_IMAGE` |
 | SeaweedFS | namespace `trove` | Deployment `trove-s3` (one `weed server`), Service `trove-s3:9000`, buckets `trove-blobs` (versioning on), `trove-pg-archive`, `trove-backups` | `DEV_SEAWEEDFS_IMAGE`, `DEV_AWSCLI_IMAGE` |
-| trove | namespace `trove` | Helm release `trove` with [values-dev.yaml](../../deploy/dev/values-dev.yaml): 2 `web`, 2 `worker`, migration Job | image `ghcr.io/guided-traffic/trove:dev` |
+| trove | namespace `trove` | Helm release `trove` with [values-dev.yaml](../../deploy/dev/values-dev.yaml): 2 `web`, 2 `worker` (grace period 60 s, so a drain test does not wait 300 s), migration Job, the chart's NetworkPolicies; `up.sh` adds the Docker `kind` network ranges as `networkPolicy.probeCIDRs` | image `ghcr.io/guided-traffic/trove:dev` |
 
 The namespace `trove` enforces the restricted Pod Security Standard (`enforce`, `audit` and `warn`),
 and every dependency manifest satisfies it. Images are pinned by digest; the manifests carry
@@ -39,20 +39,21 @@ selects are never touched.
 | `make dev-valkey-failover` | `valkey-failover.sh` | `SENTINEL FAILOVER trove`, waits until another pod is primary |
 | `make dev-valkey-kill` | `valkey-kill.sh` | force-deletes the Valkey primary pod, waits for a primary and a connected replica |
 | `make dev-valkey-outage DURATION=60s` | `valkey-outage.sh 60s` | scales Valkey and the Sentinels to 0 for the duration, then back |
-| `make dev-drain` | `drain.sh [node]` | drains a node that hosts a `web` and a `worker` pod, then uncordons it |
+| `make dev-pg-kill` | `pg-kill.sh` | force-deletes the PostgreSQL primary pod, waits until the operator reports a healthy cluster |
+| `make dev-pg-stop DURATION=30s` | `pg-stop.sh 30s` | fences every instance of `trove-db` (`cnpg.io/fencedInstances`, PostgreSQL stops, pods and volumes stay), waits, removes the fence, waits for a healthy cluster |
+| `make dev-drain` | `drain.sh` | the E0.14 test: drains a node with a web and a worker pod under the k6 load and cursor-persisting jobs; `drain.sh <node>` is the drain alone, `drain.sh --pick` prints the node |
+| `make e2e SET=push\|full\|drain\|<regexp>` | `e2e.sh` | the end-to-end suite, see [e2e.md](e2e.md) |
 | `make chart-lint`, `make chart-test` | `test/chart/lint.sh`, `test/chart/test.sh` | see [helm-chart.md](helm-chart.md#value-sets-and-tests) |
 
-What the scripts do not do yet (work package WP0.11 adds it): `drain.sh` runs the drain and shows
-where the pods went, but it does not run the k6 load of E0.13/E0.14, the test job that persists its
-cursor, or the checks for `SIGKILL` and `Pending` longer than 60 s. The failover scripts show that
-the failover happens and how long it takes; they do not measure failed requests.
+The failover scripts show that the failover happens and how long it takes. What they cost the clients
+is measured by [the end-to-end suite](e2e.md), which runs them under load.
 
 ### Environment
 
 | Variable | Default | Effect |
 |---|---|---|
 | `TROVE_SKIP_RELEASE=1` | unset | `up.sh` installs the dependency stack only, not the trove release. Use it while the image does not serve yet, or to work on the dependencies |
-| `TROVE_IMAGE` | `ghcr.io/guided-traffic/trove:dev` | the image `up.sh` loads into the cluster with `kind load docker-image`; build it with `make image` first |
+| `TROVE_IMAGE` | `ghcr.io/guided-traffic/trove:dev` | the image `up.sh` loads into the cluster with `kind load docker-image`; build it with `make image IMAGE=ghcr.io/guided-traffic/trove:dev VERSION=dev` first. Without `VERSION=dev` the Makefile takes the version from `git describe`; in a checkout without tags that is a commit hash, which the binary refuses (it waits for the schema forever, see [e2e.md](e2e.md#open-findings)) |
 | `TROVE_DEV_HTTP_PORT` | `8080` | host port of the edge. Set it when 8080 is taken (`up.sh` checks and says so); `config.server.base_url` follows. Fixed when the cluster is created |
 | `TROVE_PROFILE=scatter` | `default` | the `scatter` e2e profile, see below |
 | `TROVE_POOLER=1` | unset | also installs the two transaction-mode poolers ([pooler.yaml](../../deploy/dev/pooler.yaml)) and layers [values-pooler.yaml](../../deploy/dev/values-pooler.yaml). The manifests are applied and the poolers start; the pooler profile itself is verified in M5 |
@@ -65,9 +66,7 @@ the failover happens and how long it takes; they do not measure failed requests.
 R-ARCH-032 and E0.11: three `web` replicas ([values-scatter.yaml](../../deploy/dev/values-scatter.yaml)),
 and Traefik started with `--serversTransport.maxIdleConnsPerHost=-1`, so it keeps no idle
 connection to a pod and balances every request round robin. Run `up.sh` without the variable to
-switch back. The e2e suites that use the profile are later work; what is verified is the edge's
-behaviour: nine consecutive requests reached three pods three times each, each on a new source
-port.
+switch back. [TestE99Scatter](../../test/e2e/e99_scatter_test.go) (E0.11) switches to the profile, runs the M0 checks, shows sixty sequential requests reaching the three pods twenty times each and runs the 100 requests/s load; `e2e.sh` returns the cluster to the default profile afterwards.
 
 ## How `up.sh` works
 
@@ -188,26 +187,15 @@ The scripts run under macOS `/bin/bash` 3.2 as well as bash 5.
 
 ## What is verified, and what is not
 
-Verified on this profile (cluster up, dependencies only, plus the chart installed with a stand-in
-image that serves the probe and ping paths, because the trove image does not serve yet):
-
-- the cluster has three workers in three zones; the Valkey and Sentinel pods and the `web` and
-  `worker` pods spread over the nodes;
-- the chart installs into a namespace that enforces the restricted Pod Security Standard; the
-  migration Job completes before the Deployments exist; secrets are readable by UID 65532, the root
-  file system is read-only, the spool and `/tmp` are writable;
-- `SENTINEL get-master-addr-by-name trove` over TLS names a pod; `valkey-failover.sh` moves the
-  primary within seconds; `valkey-kill.sh` and `valkey-outage.sh 20s` recover; plaintext is
-  refused; the NetworkPolicy blocks an unlabelled pod;
-- `failover.sh` switches the PostgreSQL primary in both directions in about 10 to 15 s;
-- the buckets exist and `trove-blobs` has versioning enabled;
-- a request through `http://localhost:<port>/` reaches the `web` pods round robin; `drain.sh`
-  reschedules the drained node's pods onto the remaining nodes.
-
-Not verified, because it needs the server shell: that every trove pod answers `200` on
-`/readyz`, that `GET /api/v1/system/replicas` lists two `web` and two `worker` replicas, and
-everything under E0.12 to E0.14 that involves trove traffic (Valkey connection names and counts,
-failed requests during a failover or a drain).
+Verified by [the end-to-end suite](e2e.md) on this profile, with the release image: the cold `make dev-up`
+(about 2 min 20 s for the dependencies plus the release step, budget 15 min), every trove pod answering
+`200` on `:8081/readyz`, the replica list and ping through the Ingress, the restricted Pod Security
+Standard and the chart's NetworkPolicy (enforced by kindnet: a pod of another namespace reaches `:8080`
+and not `:8081`), the failing migration Job, the lease failover, the Valkey connection names and the
+start-up cases, the Valkey failover, kill and outage under load, the `scatter` profile, the PostgreSQL
+failovers under load and the node drain. `e2e.md` lists what failed in the product and why.
 
 Not configured: WAL archiving to `trove-pg-archive` (point-in-time recovery is M5), the backup
-CronJob (the chart skeleton has none), an OIDC provider.
+CronJob (the chart skeleton has none), an OIDC provider. TLS between the edge and trove (`tls.enabled`
+is `false` in [values-dev.yaml](../../deploy/dev/values-dev.yaml) until the TLS work package switches the
+profile).

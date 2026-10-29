@@ -177,7 +177,17 @@ else
   kind load docker-image "$IMAGE" --name "$CLUSTER" > "$LOGS/image-load.log" 2>&1 \
     || { tail -20 "$LOGS/image-load.log" >&2; die "kind load docker-image failed"; }
 
-  values=(-f "$DEV_DIR/values-dev.yaml")
+  # trusted_proxies of values-dev.yaml is the pod range of the control-plane node, where Traefik runs.
+  cp_cidr="$(k get node "${CLUSTER}-control-plane" -o jsonpath='{.spec.podCIDR}')"
+  grep -q "\"$cp_cidr\"" "$DEV_DIR/values-dev.yaml" \
+    || die "the control-plane node's pod range is $cp_cidr; set config.server.trusted_proxies in deploy/dev/values-dev.yaml to it"
+  # Kubelet probes come from the node addresses, which are on the kind Docker network. A CNI that
+  # enforces the chart's NetworkPolicy for them needs the range in networkPolicy.probeCIDRs.
+  node_cidrs="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)"
+  probe_cidrs="["; sep=""
+  for c in $node_cidrs; do probe_cidrs="$probe_cidrs$sep\"$c\""; sep=","; done
+  probe_cidrs="$probe_cidrs]"
+  values=(-f "$DEV_DIR/values-dev.yaml" --set-json "networkPolicy.probeCIDRs=$probe_cidrs")
   [ "$EDGE_PORT" = "8080" ] || values+=(--set "config.server.base_url=http://localhost:$EDGE_PORT")
   [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
   [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")

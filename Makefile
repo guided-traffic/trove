@@ -188,10 +188,18 @@ dev-valkey-kill: ## Kill the Valkey primary under load (deploy/dev/valkey-kill.s
 dev-valkey-outage: ## Stop Valkey for DURATION (default 60s) under load (deploy/dev/valkey-outage.sh)
 	deploy/dev/valkey-outage.sh $(or $(DURATION),60s)
 
+.PHONY: dev-pg-kill
+dev-pg-kill: ## Force-delete the PostgreSQL primary pod, wait for the recovery (deploy/dev/pg-kill.sh)
+	deploy/dev/pg-kill.sh
+
+.PHONY: dev-pg-stop
+dev-pg-stop: ## Stop PostgreSQL for DURATION (default 30s) by fencing the CloudNativePG cluster (deploy/dev/pg-stop.sh)
+	deploy/dev/pg-stop.sh $(or $(DURATION),30s)
+
 .PHONY: dev-drain
-dev-drain: ## Drain a node under load (deploy/dev/drain.sh)
+dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a failed request (deploy/dev/drain.sh, E0.14)
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh)
-	deploy/dev/e2e.sh
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|full|drain|<go test -run regexp>, default: all but the profile switch
+	deploy/dev/e2e.sh $(SET)

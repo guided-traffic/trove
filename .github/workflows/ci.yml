@@ -364,6 +364,106 @@ jobs:
         if: always()
         run: make integration-down
 
+  e2e:
+    name: e2e on kind (E0.3, E0.7, E0.11 to E0.14)
+    runs-on: ubuntu-24.04
+    needs: [chart, image]
+    timeout-minutes: 75
+    env:
+      # make image takes the version from git describe, which has no tag to find here; the
+      # binary refuses a version that is not major.minor.patch or "dev" (see docs/developer/e2e.md).
+      TROVE_IMAGE: ghcr.io/guided-traffic/trove:dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install the pinned helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install the pinned kubectl
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+      - name: Install the pinned kind
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Tools on the runner
+        run: |
+          set -euo pipefail
+          docker version --format '{{.Server.Version}}'
+          kind version
+          kubectl version --client
+          helm version --short
+          jq --version
+          nproc
+          free -g
+      - name: make image
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+      - name: make dev-up
+        timeout-minutes: 25
+        run: make dev-up
+      - name: make e2e SET=push
+        timeout-minutes: 40
+        run: make e2e SET=push
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-e2e
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload the k6 logs and summaries, the pod watch, the events and the driver output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Cluster state (failure only)
+        if: failure()
+        run: |
+          set -u
+          mkdir -p .out/cluster-state
+          kubectl config get-contexts || true
+          for ns in trove traefik cnpg-system kube-system; do
+            kubectl --context kind-trove -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context kind-trove -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context kind-trove -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          for p in $(kubectl --context kind-trove -n trove get pods -o name 2>/dev/null); do
+            kubectl --context kind-trove -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
+          done
+          kubectl --context kind-trove get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context kind-trove -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+      - name: Upload the cluster state (failure only)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-cluster-state
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: make dev-down
+        if: always()
+        run: make dev-down
+
   workflows:
     name: workflow files (actionlint)
     runs-on: ubuntu-24.04

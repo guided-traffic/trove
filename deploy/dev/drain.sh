@@ -1,33 +1,45 @@
 #!/usr/bin/env bash
-# Node drain (R-HA-051 dev-drain, variant A of R-HA-059): picks the worker node that hosts both a
-# web and a worker pod of the trove release and no CloudNativePG primary, drains it with
-# `kubectl drain --ignore-daemonsets --delete-emptydir-data`, reports where the evicted pods
-# went and uncordons the node again.
+# Node drain, variant A of R-HA-059 (R-HA-051 dev-drain, E0.14).
 #
-# This is the drain only. WP0.11 adds the parts that make it a test: the k6 load of E0.13
-# (100 requests/s against /api/v1/system/ping and /api/v1/system/replicas), the test job that
-# persists its cursor, the check that no trove container received SIGKILL and that no pod
-# stays Pending for more than 60 s. Until then this script proves the PodDisruptionBudgets and
-# the node-taint-aware spreading, not zero failed requests.
+#   drain.sh               the whole test: the k6 load of E0.13, the driver's change and job traffic and
+#                          probe jobs that persist a cursor every second run while a node with a web and a
+#                          worker pod is drained; it fails on a failed request, a job that did not resume
+#                          from its cursor with its attempt unchanged, a SIGKILL of a trove container or
+#                          a trove pod Pending for more than 60 s. It is `e2e.sh drain`.
+#   drain.sh <node>        the drain alone (this is what the test calls): `kubectl drain
+#                          --ignore-daemonsets --delete-emptydir-data`, wait for the rollouts, uncordon.
+#   drain.sh --pick        print the node the test would drain.
+#
+# The test picks a worker node that hosts a web and a worker pod and not the CloudNativePG primary,
+# whose PodDisruptionBudget (minAvailable 1) refuses its eviction; when only the primary's node
+# hosts both, `failover.sh` moves the primary first (variant B).
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 require_cluster
 
 sel='app.kubernetes.io/instance=trove,trove/serve=true'
-node="${1:-}"
-if [ -z "$node" ]; then
-  # A node that hosts a web and a worker pod.
+
+pick_node() {
+  local webs workers dbprimary
   webs="$(kn get pods -l "$sel,app.kubernetes.io/component=web" -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u)"
   workers="$(kn get pods -l "$sel,app.kubernetes.io/component=worker" -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u)"
-  # The primary's own PodDisruptionBudget (minAvailable 1) refuses its eviction; moving the
-  # PostgreSQL primary is `failover.sh` first (R-HA-059 variant B).
-  dbprimary="$(kn get pods -l 'cnpg.io/cluster=trove-db,cnpg.io/instanceRole=primary' -o jsonpath='{.items[0].spec.nodeName}')"
-  node="$(comm -12 <(printf '%s\n' "$webs") <(printf '%s\n' "$workers") | grep -vx "$dbprimary" | head -1 || true)"
-  [ -n "$node" ] || node="$(printf '%s\n' "$webs" | grep -vx "$dbprimary" | head -1 || true)"
-fi
-[ -n "$node" ] || die "no trove pods found; install the release first (unset TROVE_SKIP_RELEASE)"
+  dbprimary="$(kn get pod "$(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}')" -o jsonpath='{.spec.nodeName}')"
+  comm -12 <(printf '%s\n' "$webs") <(printf '%s\n' "$workers") | grep -vx "$dbprimary" | head -1 || true
+}
 
+case "${1:-}" in
+  "")
+    exec "$DEV_DIR/e2e.sh" drain ;;
+  --pick)
+    node="$(pick_node)"
+    [ -n "$node" ] || die "no node hosts a web and a worker pod apart from the PostgreSQL primary's"
+    echo "$node"
+    exit 0 ;;
+  -*) die "unknown option $1" ;;
+esac
+
+node="$1"
 log "draining $node"
 kn get pods -l "$sel" -o wide --field-selector "spec.nodeName=$node"
 # A CloudNativePG standby on this node stays Pending until the uncordon: its volume is local to

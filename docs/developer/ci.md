@@ -44,12 +44,16 @@ test of the Linux-only steps (see [Not in place yet](#not-in-place-yet)).
 | `ci` | `chart` | `make chart-lint`, `make chart-test`; uploads `.out/test-chart.json` as `test-chart` | E0.7: the chart lints and renders as specified |
 | `ci` | `image` | `make image IMAGE=trove:ci` (no push), then the image user must be `65532:65532` | R-HA-033's non-root user; the image builds |
 | `ci` | `integration` (matrix `9.0`, `9.1`) | `make integration-up`, `make test-integration`, then `make integration-down` always; container logs on failure | E0.5 once the S3 conformance tests exist (they are under `test/integration/`), and every other integration test |
+| `ci` | `e2e` | `make image VERSION=dev`, `make dev-up`, `make e2e SET=push`; uploads `.out/test-e2e.json` (`test-e2e`), `.out/e2e/` (`e2e-artifacts`: k6 logs and summaries, pod watch, events, driver output) and, on failure, the cluster state (`e2e-cluster-state`); always `make dev-down`. Needs `chart` and `image` | E0.3, E0.4 (chart part), E0.6, E0.7, E0.11, E0.12 and the E0.14 drain on every change to `main` ([e2e.md](e2e.md)) |
 | `ci` | `workflows` | actionlint at `ACTIONLINT_VERSION` over `.github/workflows/` | The workflow files themselves |
 | `nightly` | `minio` | Builds MinIO from source at `MINIO_COMMIT`, starts it, seeds the buckets, runs the conformance tests | E0.5 nightly, MinIO leg |
+| `nightly` | `e2e-failover` | the same preparation, then `make e2e SET=failover` | E0.13: PostgreSQL switchover, kill and 30 s stop, Valkey failover, kill and 60 s outage under k6 load, with E0.4 and E0.6. Nightly because it needs a runner's CPU for about 20 minutes and k6 at 100 requests/s must not share a small runner with a kind cluster in a pull request |
 | `nightly` | `aws-gate` and `aws-s3` | See [Nightly](#nightly-workflow) | E0.5 nightly, AWS leg, reported as skipped |
 
-The end-to-end job of E0.13 and E0.14 (`make dev-up`, `make e2e`) is not in the workflows yet. It
-belongs to WP0.11, and [Not in place yet](#not-in-place-yet) says why.
+The `e2e` job has not run on a GitHub runner either. Its design is in [e2e.md](e2e.md): it builds the release
+image, brings the dev profile up on kind and runs the suite. Measured on a laptop, `SET=push` takes about 9
+minutes and `SET=failover` about 7, each after about 5 minutes of image build and `make dev-up`. The job
+sets a 75-minute limit (90 for the nightly one) and dumps the cluster state on failure.
 
 ### The shared steps
 
@@ -190,11 +194,12 @@ failure says so, and it does not read as a pass.
   details I could not check: the Node-free `PATH` trimming in `build-no-node` assumes that `node`
   sits in a directory that does not also hold `go`, `make` or `file`, and the `versions` job assumes
   the Azure setup actions install the pinned helm and kubectl first on `PATH`.
-- **The end-to-end job (WP0.11).** `deploy/dev/up.sh` exists, but `deploy/dev/e2e.sh` does not, so
-  `make e2e` fails. A job that runs it would be red by design, so it is absent. When WP0.11 adds
-  `e2e.sh`, the job goes into `ci.yml` with `runs-on: ubuntu-24.04`, needs `chart` and `image`, installs
-  the pinned helm, kubectl and kind, builds `trove:dev` (`make image IMAGE=trove:dev`), runs
-  `make dev-up` and `make e2e`, and always runs `make dev-down`.
+- **The e2e test report in the evidence record.** `coverage-evidence` reads four reports; the e2e report
+  (`.out/test-e2e.json`, test names carry the requirement IDs) is not among them, so the requirements it
+  proves are not in `implemented.txt` yet. Wiring it needs the coverage generator and the record to
+  take a fifth report.
+- **Runner capacity of the e2e job.** The suite is sized on a 20-CPU laptop. The runner has 4 vCPUs; if
+  k6 drops iterations there, the job fails on `dropped_iterations` instead of passing.
 - **Image scanning.** No Trivy or grype job. Adding one needs a pinned scanner version in
   `tools/versions.env`, which this package does not add.
 - **`MINIO_COMMIT`.** The pin is not in `tools/versions.env` yet. The nightly MinIO job fails with a
