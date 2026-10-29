@@ -27,7 +27,9 @@ func TestE99Scatter(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command(upScript)
 		cmd.Dir = cfg.repo
-		cmd.Env = append(os.Environ(), "TROVE_PROFILE="+profile, "TROVE_DEV_CLUSTER=trove")
+		// The cluster name comes from the environment (TROVE_DEV_CLUSTER, as make dev-up got it):
+		// CI names one cluster per run, so a fixed name here would make up.sh create a second one.
+		cmd.Env = append(os.Environ(), "TROVE_PROFILE="+profile)
 		out, err := cmd.CombinedOutput()
 		_ = os.WriteFile(filepath.Join(cfg.out, "profile-"+profile+".log"), out, 0o644)
 		if err != nil {
