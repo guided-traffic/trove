@@ -22,6 +22,7 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 func open(t *testing.T, cfg config.Database, instance, role string) *postgres.DB {
@@ -243,19 +244,19 @@ func TestOpenPreflight(t *testing.T) {
 		}
 	})
 
-	t.Run("R-HA-015 TLS is on by default: verify-full against a server without TLS fails", func(t *testing.T) {
+	t.Run("R-HA-015 verify-full trusts only the configured CA: the system roots do not vouch for the server", func(t *testing.T) {
 		cfg := st.config(t, name)
-		cfg.SSLMode, cfg.AllowInsecure = "verify-full", false
+		cfg.SSLRootCertFile = ""
 		cfg.Retry.MaxElapsed = 500 * time.Millisecond
 		_, err := postgres.Open(ctxT(t, 20*time.Second), cfg, "pod-tls", meta.RoleWeb, quiet)
-		if err == nil {
-			t.Fatal("Open must not fall back to a plain connection")
+		if err == nil || !strings.Contains(err.Error(), "certificate") {
+			t.Fatalf("Open must refuse a server whose certificate the trust roots do not vouch for, err = %v", err)
 		}
 	})
 
 	t.Run("R-HA-015 ssl_mode disable without allow_insecure is refused before any connection", func(t *testing.T) {
 		cfg := st.config(t, name)
-		cfg.AllowInsecure = false
+		cfg.SSLMode, cfg.SSLRootCertFile, cfg.AllowInsecure = "disable", "", false
 		_, err := postgres.Open(ctxT(t, 10*time.Second), cfg, "pod-ins", meta.RoleWeb, quiet)
 		if err == nil || !strings.Contains(err.Error(), "allow_insecure") {
 			t.Fatalf("err = %v", err)
@@ -588,8 +589,7 @@ func TestFailoverRetry(t *testing.T) {
 // of one client land on different server connections.
 func loadPooler(t *testing.T, st stack, database string) (stop func()) {
 	t.Helper()
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable&default_query_exec_mode=simple_protocol",
-		st.user, st.secret, st.host, st.bouncerPort, database)
+	dsn := testenv.PgBouncerDSNFor(t, database) + "&default_query_exec_mode=simple_protocol"
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	for i := 0; i < 24; i++ {

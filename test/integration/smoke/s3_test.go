@@ -8,6 +8,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +28,7 @@ func s3Client(t *testing.T) (*s3.Client, testenv.S3) {
 	return s3.New(s3.Options{
 		Region:       cfg.Region,
 		BaseEndpoint: aws.String(cfg.Endpoint),
+		HTTPClient:   testenv.HTTPClient(t),
 		Credentials:  credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
 		UsePathStyle: cfg.ForcePathStyle,
 	}), cfg
@@ -105,12 +109,60 @@ func TestS3RejectsWrongCredentials(t *testing.T) {
 	bad := s3.New(s3.Options{
 		Region:       cfg.Region,
 		BaseEndpoint: aws.String(cfg.Endpoint),
+		HTTPClient:   testenv.HTTPClient(t),
 		Credentials:  credentials.NewStaticCredentialsProvider(cfg.AccessKey, "not-the-secret", ""),
 		UsePathStyle: cfg.ForcePathStyle,
 	})
 	if _, err := bad.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(cfg.BlobsBucket), Key: aws.String("smoke/denied"), Body: bytes.NewReader([]byte("x"))}); err == nil {
 		t.Fatal("a write with a wrong secret key succeeded: the gateway does not enforce credentials")
 	}
+}
+
+// TestS3IsTLSOnly proves the gateway serves nothing over plaintext (INV-20, R-HA-063): a signed
+// request over http:// never reaches the S3 handler, and https:// with a client that does not
+// trust the stack's CA is refused.
+func TestS3IsTLSOnly(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cfg := testenv.S3Config(t)
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil || u.Scheme != "https" {
+		t.Fatalf("endpoint %q is not https: %v", cfg.Endpoint, err)
+	}
+
+	t.Run("INV-20 a plaintext request is refused", func(t *testing.T) {
+		plain := "http://" + u.Host
+		bucketURL := plain + "/" + cfg.BlobsBucket + "/smoke/plain"
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPut, bucketURL, strings.NewReader("x"))
+		resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+		if err == nil {
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "HTTP request to an HTTPS server") {
+				t.Fatalf("plaintext PUT answered %d %q: the gateway handles plaintext", resp.StatusCode, body)
+			}
+		}
+		c := s3.New(s3.Options{
+			Region:       cfg.Region,
+			BaseEndpoint: aws.String(plain),
+			Credentials:  credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+			UsePathStyle: cfg.ForcePathStyle,
+			HTTPClient:   &http.Client{Timeout: 10 * time.Second},
+			Retryer:      aws.NopRetryer{},
+		})
+		if _, err := c.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(cfg.BlobsBucket), Key: aws.String("smoke/plain"), Body: bytes.NewReader([]byte("x"))}); err == nil {
+			t.Fatal("a signed PutObject over plaintext succeeded")
+		}
+	})
+
+	t.Run("INV-20 a client that does not trust the stack's CA is refused", func(t *testing.T) {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, cfg.Endpoint+"/", nil)
+		resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+		if err == nil {
+			resp.Body.Close()
+			t.Fatal("the gateway's certificate verified against the system roots")
+		}
+	})
 }
 
 // deleteAllVersions removes every version and delete marker of a key.

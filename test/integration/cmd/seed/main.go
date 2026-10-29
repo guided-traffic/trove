@@ -5,8 +5,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -42,9 +45,24 @@ func run() error {
 	}
 	endpoint, region, access, secret, blobs, backups := vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]
 
+	// The gateway is TLS-only; trust exactly the stack's CA.
+	caFile, err := env("TROVE_TEST_CA_FILE")
+	if err != nil {
+		return err
+	}
+	pem, err := os.ReadFile(caFile) //nolint:gosec // G304: the CA path is the seed command's own argument from up.sh
+	if err != nil {
+		return fmt.Errorf("read CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return fmt.Errorf("%s holds no certificate", caFile)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	client := s3.New(s3.Options{
+		HTTPClient:   &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}},
 		Region:       region,
 		BaseEndpoint: aws.String(endpoint),
 		Credentials:  credentials.NewStaticCredentialsProvider(access, secret, ""),

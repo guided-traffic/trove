@@ -94,23 +94,43 @@ they are real Go modules, so `go list` and the type loader run on them unchanged
 
 `make integration-up` runs [test/integration/up.sh](../../test/integration/up.sh), which
 
-1. creates a throwaway CA and one server certificate in `.dev/integration/certs`
-   ([certs.sh](../../test/integration/certs.sh); the certificate covers `localhost`, `127.0.0.1`, `::1`
+1. creates a throwaway CA and one server certificate per service in `.dev/integration/certs`
+   ([certs.sh](../../test/integration/certs.sh); every certificate covers `localhost`, `127.0.0.1`, `::1`
    and the compose service names; openssl runs from `OPENSSL_IMAGE`, the script needs only Docker);
 2. starts [test/integration/compose.yaml](../../test/integration/compose.yaml) with `docker compose up --wait`;
 3. creates the buckets (`go run ./test/integration/cmd/seed`);
 4. writes `.dev/integration/env`.
+
+**Every connection is TLS (INV-20, R-HA-063).** PostgreSQL runs with `ssl=on` and a
+[pg_hba.conf](../../test/integration/conf/pg_hba.conf) that has `hostssl` lines only, so a client without TLS is
+refused. PgBouncer takes clients with `client_tls_sslmode = require` and talks to PostgreSQL with
+`server_tls_sslmode = verify-full` against the stack's CA. The SeaweedFS S3 gateway serves HTTPS only
+(`-s3.cert.file`, `-s3.key.file`); a plaintext request to its port is answered with a 400 by the TLS
+server and never reaches the S3 handler. Valkey and the Sentinels were TLS-only already. The tests verify the
+servers from the host (`sslmode=verify-full`, trove's `ssl_mode: verify-full` with `ssl_root_cert_file`,
+`storage.s3.ca_file`) and no integration config uses `allow_insecure`, `allow_insecure_endpoint` or
+`ssl_mode: disable`, with two deliberate exceptions that test the refusal itself: the Valkey test
+"R-HA-056 the data node accepts TLS only" configures a client without TLS to prove it never connects,
+and the PostgreSQL test "R-HA-015 ssl_mode disable without allow_insecure is refused" proves the
+configuration check. Every `TestMain` of a suite calls `testenv.Main`, which fails the whole package before
+any test when a `TROVE_TEST_*` endpoint is plaintext or unverified or the CA file is missing; the smoke tests
+`TestPostgresIsTLSOnly` and `TestS3IsTLSOnly` prove the refusal against the running stack.
+
+What is not covered: the SeaweedFS master, volume and filer talk to each other plaintext inside the one
+container (loopback, not published on the host); the Unix socket of PostgreSQL inside its container
+uses `trust` for the image's init and `pg_isready`; and the certificates are RSA 2048 signed for 365 days,
+fine for a test stack and not a model for production.
 
 `TROVE_TEST_VALKEY_LINE=9.0` or `9.1` (default `9.1`) selects the Valkey line. Switching the line recreates
 the stack, because Sentinel rewrote the configuration of the data nodes.
 
 | Service | Container | Host address | Notes |
 |---|---|---|---|
-| PostgreSQL 16 (the floor version) | `trove-it-postgres` | `127.0.0.1:15432` | user `trove`, database `trove`, superuser; data on tmpfs; no TLS |
-| PgBouncer | `trove-it-pgbouncer` | `127.0.0.1:16432` | `pool_mode = transaction`, a catch-all database entry, `max_prepared_statements = 100`; the admin console is the database `pgbouncer` |
+| PostgreSQL 16 (the floor version) | `trove-it-postgres` | `127.0.0.1:15432` | user `trove`, database `trove`, superuser; data on tmpfs; TLS only (`hostssl`) |
+| PgBouncer | `trove-it-pgbouncer` | `127.0.0.1:16432` | `pool_mode = transaction`, a catch-all database entry, `max_prepared_statements = 100`; the admin console is the database `pgbouncer`; TLS in (`require`) and out (`verify-full`) |
 | Valkey primary, replica | `trove-it-valkey-primary`, `trove-it-valkey-replica` | `127.0.0.1:16379`, `:16380` | `port 0`, `tls-port`, `tls-replication yes`, ACL file with the users below |
 | Sentinels | `trove-it-valkey-sentinel-{1,2,3}` | `127.0.0.1:26381` to `:26383` | TLS only, password-protected, monitor name `trove`, quorum 2, `down-after-milliseconds 3000` |
-| SeaweedFS (S3 gateway) | `trove-it-seaweedfs` | `http://127.0.0.1:18333` | path-style, static credentials; buckets `trove-blobs` (versioning on) and `trove-backups` |
+| SeaweedFS (S3 gateway) | `trove-it-seaweedfs` | `https://127.0.0.1:18333` | HTTPS only, path-style, static credentials; buckets `trove-blobs` (versioning on) and `trove-backups` |
 
 **How a client on the host follows a failover.** The five Valkey processes run in separate containers
 that share one network namespace (the container `trove-it-net`), and every port is published on the host
@@ -131,7 +151,9 @@ tests never skip.
 
 | Variable | Meaning |
 |---|---|
-| `TROVE_TEST_PG_DSN`, `TROVE_TEST_PG_PGBOUNCER_DSN` | PostgreSQL direct and through PgBouncer |
+| `TROVE_TEST_CA_FILE` | absolute path of the stack's CA certificate (`.dev/integration/certs/ca.crt`) |
+| `TROVE_TEST_CERT_DIR` | the directory of the stack's certificates and keys |
+| `TROVE_TEST_PG_DSN`, `TROVE_TEST_PG_PGBOUNCER_DSN` | PostgreSQL direct and through PgBouncer, `sslmode=verify-full&sslrootcert=<CA>` |
 | `TROVE_TEST_PG_HOST`, `_PORT`, `_PGBOUNCER_PORT`, `_USER`, `_PASSWORD`, `_DATABASE` | the same, split up |
 | `TROVE_TEST_VALKEY_LINE` | `9.0` or `9.1` |
 | `TROVE_TEST_VALKEY_SENTINELS`, `TROVE_TEST_VALKEY_NODES` | comma-separated `host:port` of the Sentinels and the data nodes |
@@ -139,15 +161,43 @@ tests never skip.
 | `TROVE_TEST_VALKEY_USERNAME`, `_PASSWORD` | the least-privilege user |
 | `TROVE_TEST_VALKEY_SENTINEL_PASSWORD` | the Sentinels' password |
 | `TROVE_TEST_VALKEY_ADMIN_USERNAME`, `_ADMIN_PASSWORD` | the unrestricted user |
-| `TROVE_TEST_VALKEY_CA_FILE` | absolute path of the CA certificate |
+| `TROVE_TEST_VALKEY_CA_FILE` | absolute path of the CA certificate (the same file as `TROVE_TEST_CA_FILE`) |
 | `TROVE_TEST_VALKEY_KEY_PREFIX` | `trove:`, the prefix the ACL rule allows |
 | `TROVE_TEST_VALKEY_CONTAINERS` | container names, for `docker stop` and `docker start` |
-| `TROVE_TEST_S3_ENDPOINT`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_FORCE_PATH_STYLE` | the S3 gateway |
+| `TROVE_TEST_S3_ENDPOINT` (`https://127.0.0.1:18333`), `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_FORCE_PATH_STYLE` | the S3 gateway |
 | `TROVE_TEST_S3_BUCKET_BLOBS`, `TROVE_TEST_S3_BUCKET_BACKUPS` | bucket names |
 
 `TROVE_TEST_` is a reserved prefix of the configuration loader (see
 [configuration.md](configuration.md)), so sourcing the file in a shell does not make `trove` reject its
 environment.
+
+**Certificate layout** in `.dev/integration/certs` (keys are world-readable on purpose, the stack protects
+nothing):
+
+| Files | Used by |
+|---|---|
+| `ca.crt`, `ca.key` | the CA; `ca.crt` is `TROVE_TEST_CA_FILE` |
+| `server.crt`, `server.key` | the five Valkey processes |
+| `postgres.crt`, `postgres.key` | PostgreSQL (copied by [conf/postgres.sh](../../test/integration/conf/postgres.sh) to a directory owned by `postgres` with mode 0600, which the server insists on) |
+| `pgbouncer.crt`, `pgbouncer.key` | PgBouncer, client side |
+| `s3.crt`, `s3.key` | the SeaweedFS S3 gateway |
+
+Every certificate has the SANs `localhost`, `127.0.0.1`, `::1` and the service names, so one name list
+verifies from the host and between containers.
+
+**Helpers for tests.** `testenv.CAFile`, `testenv.CertDir`, `testenv.RootCAs`, `testenv.TLSConfig` and
+`testenv.HTTPClient` give a client that trusts exactly the stack's CA; `testenv.PgDSN(tb, database)` and
+`testenv.PgBouncerDSNFor` build verify-full DSNs; `testenv.SecureDatabase` and `testenv.SecureS3` set
+trove's `database.ssl_mode`/`ssl_root_cert_file` and `storage.s3.endpoint`/`ca_file`. A new suite starts with
+`func TestMain(m *testing.M) { os.Exit(testenv.Main(m)) }`.
+
+**Rotating a certificate in place.** [rotate-cert.sh](../../test/integration/rotate-cert.sh)
+`<postgres|pgbouncer|valkey|s3> [days]` re-issues that service's certificate with a new key and serial from
+the existing CA and makes the running service serve it: PostgreSQL by `pg_reload_conf()`, PgBouncer by
+SIGHUP, Valkey by `CONFIG SET tls-cert-file` on all five processes, and the S3 gateway by a container restart
+(SeaweedFS reads the pair at start only; the script waits for health). The CA does not change, so clients
+keep verifying. Pass a short `days` to test expiry. A test shells out to the script from the repository
+root, as the Valkey tests do with `docker`.
 
 The smoke tests in [test/integration/smoke](../../test/integration/smoke) check one thing per
 dependency: PostgreSQL 16 direct (including a session advisory lock), PgBouncer in transaction mode,
@@ -160,7 +210,8 @@ Packages under `test/` may import pgx, valkey-go and the AWS SDK directly: the a
 check them.
 
 `make integration-down` removes the containers, volumes and `.dev/integration/env`; the certificates
-stay.
+stay. A stack created before the per-service certificates existed is recreated by `make integration-up`
+(`certs.sh` sees the missing files and issues a new set).
 
 ## Known gaps
 

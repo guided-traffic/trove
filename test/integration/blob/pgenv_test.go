@@ -41,7 +41,7 @@ func newPG(tb testing.TB) *pgEnv {
 		tb.Fatalf("TROVE_TEST_PG_PORT: %v", err)
 	}
 	connect := func(database string) *pgx.Conn {
-		c, err := pgx.Connect(context.Background(), "postgres://"+user+":"+secret+"@"+host+":"+strconv.Itoa(port)+"/"+database+"?sslmode=disable")
+		c, err := pgx.Connect(context.Background(), testenv.PgDSN(tb, database))
 		if err != nil {
 			tb.Fatalf("connect to %s: %v", database, err)
 		}
@@ -68,7 +68,7 @@ func newPG(tb testing.TB) *pgEnv {
 	cfg := config.Database{
 		Host: host, Port: port, Name: name, Schema: "trove",
 		UsernameFile: userFile, PasswordFile: passFile,
-		SSLMode: "disable", AllowInsecure: true,
+		SSLMode: "verify-full", SSLRootCertFile: testenv.CAFile(tb),
 		ConnectTimeout: 5 * time.Second, TargetSessionAttrs: "read-write",
 		Pooler:        config.DatabasePooler{Mode: "none"},
 		Pool:          config.DatabasePool{MaxConns: 24, MinConns: 1, MaxConnLifetime: 30 * time.Minute, MaxConnLifetimeJitter: time.Minute, MaxConnIdleTime: 5 * time.Minute, HealthCheckPeriod: 30 * time.Second},

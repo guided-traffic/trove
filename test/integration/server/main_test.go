@@ -13,12 +13,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 // binary is the trove executable built once for the package.
 var binary string
 
 func TestMain(m *testing.M) {
+	// The stack is TLS-only (INV-20): fail before building anything when the environment is not.
+	if err := testenv.CheckTLS(); err != nil {
+		fmt.Fprintf(os.Stderr, "integration environment: %v\n", err)
+		os.Exit(1)
+	}
 	dir, err := os.MkdirTemp("", "trove-it-server-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

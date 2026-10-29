@@ -4,6 +4,7 @@ package smoke
 
 import (
 	"context"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -106,5 +107,40 @@ func TestPostgresThroughPgBouncer(t *testing.T) {
 	}
 	if mode != "transaction" {
 		t.Fatalf("PgBouncer pool_mode = %q, want transaction", mode)
+	}
+}
+
+// TestPostgresIsTLSOnly proves that neither PostgreSQL nor PgBouncer takes a plaintext session
+// (INV-20, R-HA-063): a client that refuses TLS is rejected by the server, not downgraded.
+func TestPostgresIsTLSOnly(t *testing.T) {
+	for name, dsn := range map[string]string{"postgres": testenv.PostgresDSN(t), "pgbouncer": testenv.PgBouncerDSN(t)} {
+		t.Run("INV-20 "+name+" refuses a plaintext connection", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			u, err := url.Parse(dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u.RawQuery = "sslmode=disable"
+			conn, err := pgx.Connect(ctx, u.String())
+			if err == nil {
+				_ = conn.Close(ctx)
+				t.Fatalf("%s accepted a connection with sslmode=disable", name)
+			}
+		})
+		t.Run("INV-20 "+name+" is not satisfied by a client that does not trust the CA", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			u, err := url.Parse(dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u.RawQuery = "sslmode=verify-full"
+			conn, err := pgx.Connect(ctx, u.String())
+			if err == nil {
+				_ = conn.Close(ctx)
+				t.Fatalf("%s verified against the system roots", name)
+			}
+		})
 	}
 }

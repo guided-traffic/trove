@@ -57,7 +57,7 @@ func (s stack) admin(t testing.TB, database string) *pgx.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cfg, err := pgx.ParseConfig("postgres://" + s.user + ":" + s.secret + "@" + s.host + ":" + strconv.Itoa(s.port) + "/" + database + "?sslmode=disable")
+	cfg, err := pgx.ParseConfig(testenv.PgDSN(t, database))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,15 +104,15 @@ func (s stack) credentials(t testing.TB) (userFile, passFile string) {
 	return userFile, passFile
 }
 
-// config is a direct configuration for the database. The stack's role is a
-// superuser and the stack serves no TLS, so both are allowed explicitly.
+// config is a direct configuration for the database over verify-full TLS against
+// the stack's CA. The stack's role is a superuser, which is allowed explicitly.
 func (s stack) config(t testing.TB, database string) config.Database {
 	t.Helper()
 	user, pass := s.credentials(t)
 	return config.Database{
 		Host: s.host, Port: s.port, Name: database, Schema: schemaName,
 		UsernameFile: user, PasswordFile: pass,
-		SSLMode: "disable", AllowInsecure: true,
+		SSLMode: "verify-full", SSLRootCertFile: testenv.CAFile(t),
 		ConnectTimeout: 5 * time.Second, TargetSessionAttrs: "read-write",
 		Pooler:        config.DatabasePooler{Mode: "none"},
 		Pool:          config.DatabasePool{MaxConns: 6, MinConns: 1, MaxConnLifetime: 30 * time.Minute, MaxConnLifetimeJitter: time.Minute, MaxConnIdleTime: 5 * time.Minute, HealthCheckPeriod: 30 * time.Second},

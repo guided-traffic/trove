@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts the integration stack, waits until it is healthy, creates the buckets
+# Starts the integration stack (TLS on every connection, verified from the host), waits until it is healthy, creates the buckets
 # and writes .dev/integration/env with the TROVE_TEST_* variables the tests read
 # (see test/integration/testenv). Safe to run again: running containers are kept.
 #
@@ -52,8 +52,10 @@ env_file="$state/env"
 q() { printf "'%s'" "$1"; }
 {
   echo "# Written by test/integration/up.sh; sourced by make test-integration."
-  echo "TROVE_TEST_PG_DSN=$(q 'postgres://trove:trove-it@127.0.0.1:15432/trove?sslmode=disable')"
-  echo "TROVE_TEST_PG_PGBOUNCER_DSN=$(q 'postgres://trove:trove-it@127.0.0.1:16432/trove?sslmode=disable')"
+  echo "TROVE_TEST_CA_FILE=$(q "$state/certs/ca.crt")"
+  echo "TROVE_TEST_CERT_DIR=$(q "$state/certs")"
+  echo "TROVE_TEST_PG_DSN=$(q "postgres://trove:trove-it@127.0.0.1:15432/trove?sslmode=verify-full&sslrootcert=$state/certs/ca.crt")"
+  echo "TROVE_TEST_PG_PGBOUNCER_DSN=$(q "postgres://trove:trove-it@127.0.0.1:16432/trove?sslmode=verify-full&sslrootcert=$state/certs/ca.crt")"
   echo "TROVE_TEST_PG_HOST=127.0.0.1"
   echo "TROVE_TEST_PG_PORT=15432"
   echo "TROVE_TEST_PG_PGBOUNCER_PORT=16432"
@@ -72,7 +74,7 @@ q() { printf "'%s'" "$1"; }
   echo "TROVE_TEST_VALKEY_CA_FILE=$(q "$state/certs/ca.crt")"
   echo "TROVE_TEST_VALKEY_KEY_PREFIX=trove:"
   echo "TROVE_TEST_VALKEY_CONTAINERS=trove-it-valkey-primary,trove-it-valkey-replica,trove-it-valkey-sentinel-1,trove-it-valkey-sentinel-2,trove-it-valkey-sentinel-3"
-  echo "TROVE_TEST_S3_ENDPOINT=http://127.0.0.1:18333"
+  echo "TROVE_TEST_S3_ENDPOINT=https://127.0.0.1:18333"
   echo "TROVE_TEST_S3_REGION=us-east-1"
   echo "TROVE_TEST_S3_ACCESS_KEY=trove-it-access"
   echo "TROVE_TEST_S3_SECRET_KEY=trove-it-secret-0123456789abcdef"

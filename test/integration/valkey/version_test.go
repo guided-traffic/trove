@@ -46,18 +46,20 @@ func docker(t *testing.T, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// throwaway starts a standalone, plaintext Valkey of the pinned image on a
+// throwaway starts a standalone, TLS-only Valkey of the pinned image on a
 // random local port, with the stack's least-privilege ACL user, and removes it
 // when the test ends. It returns the host:port.
 func throwaway(t *testing.T, image string, delifeq bool) string {
 	t.Helper()
 	v := testenv.ValkeyConfig(t)
 	name := "trove-it-throwaway-" + randHex(3)
-	docker(t, "run", "-d", "--rm", "--name", name, "-p", "127.0.0.1::6379", image, "valkey-server", "--save", "", "--appendonly", "no")
+	docker(t, "run", "-d", "--rm", "--name", name, "-p", "127.0.0.1::6379", "-v", testenv.CertDir(t)+":/certs:ro", image, "valkey-server",
+		"--port", "0", "--tls-port", "6379", "--tls-cert-file", "/certs/server.crt", "--tls-key-file", "/certs/server.key",
+		"--tls-ca-cert-file", "/certs/ca.crt", "--tls-auth-clients", "no", "--save", "", "--appendonly", "no")
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		if out, err := exec.Command("docker", "exec", name, "valkey-cli", "ping").Output(); err == nil && strings.Contains(string(out), "PONG") {
+		if out, err := exec.Command("docker", "exec", name, "valkey-cli", "--tls", "--cacert", "/certs/ca.crt", "ping").Output(); err == nil && strings.Contains(string(out), "PONG") {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -70,7 +72,7 @@ func throwaway(t *testing.T, image string, delifeq bool) string {
 		delifeqRule = "" // the command does not exist before 9.0, and ACL SETUSER refuses an unknown one
 	}
 	rule := fmt.Sprintf("user %s on >%s resetkeys ~trove:* resetchannels &trove:* -@all +get +set %s+incr +expire +multi +exec +publish +subscribe +unsubscribe +ping +hello +role +client|setname +client|setinfo", v.Username, v.Password, delifeqRule)
-	args := append([]string{"exec", name, "valkey-cli", "ACL", "SETUSER"}, strings.Fields(strings.TrimPrefix(rule, "user "))...)
+	args := append([]string{"exec", name, "valkey-cli", "--tls", "--cacert", "/certs/ca.crt", "ACL", "SETUSER"}, strings.Fields(strings.TrimPrefix(rule, "user "))...)
 	if out := docker(t, args...); out != "OK" {
 		t.Fatalf("ACL SETUSER: %s", out)
 	}
@@ -82,7 +84,6 @@ func standalone(t *testing.T, addr string) config.Valkey {
 	cfg := stackConfig(t, 2*time.Second)
 	cfg.Mode, cfg.Address = "standalone", addr
 	cfg.Sentinel = config.ValkeySentinel{TLS: true, RefreshInterval: 2 * time.Second}
-	cfg.TLS, cfg.AllowInsecure = cfgTLSDisabled(), true
 	return cfg
 }
 

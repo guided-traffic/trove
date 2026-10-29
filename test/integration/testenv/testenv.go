@@ -24,10 +24,18 @@ func Get(tb testing.TB, name string) string {
 }
 
 // PostgresDSN is the DSN of PostgreSQL, direct.
-func PostgresDSN(tb testing.TB) string { return Get(tb, "TROVE_TEST_PG_DSN") }
+func PostgresDSN(tb testing.TB) string {
+	tb.Helper()
+	RequireTLS(tb)
+	return Get(tb, "TROVE_TEST_PG_DSN")
+}
 
 // PgBouncerDSN is the DSN through PgBouncer in transaction mode.
-func PgBouncerDSN(tb testing.TB) string { return Get(tb, "TROVE_TEST_PG_PGBOUNCER_DSN") }
+func PgBouncerDSN(tb testing.TB) string {
+	tb.Helper()
+	RequireTLS(tb)
+	return Get(tb, "TROVE_TEST_PG_PGBOUNCER_DSN")
+}
 
 // PgPooled reports whether the suites that support it should open their main
 // PostgreSQL pool through PgBouncer in transaction mode instead of direct
@@ -67,6 +75,7 @@ type Valkey struct {
 // ValkeyConfig returns the Valkey settings.
 func ValkeyConfig(tb testing.TB) Valkey {
 	tb.Helper()
+	RequireTLS(tb)
 	return Valkey{
 		Sentinels:        split(Get(tb, "TROVE_TEST_VALKEY_SENTINELS")),
 		Nodes:            split(Get(tb, "TROVE_TEST_VALKEY_NODES")),
@@ -96,6 +105,7 @@ type S3 struct {
 // S3Config returns the object-store settings.
 func S3Config(tb testing.TB) S3 {
 	tb.Helper()
+	RequireTLS(tb)
 	return S3{
 		Endpoint:       Get(tb, "TROVE_TEST_S3_ENDPOINT"),
 		Region:         Get(tb, "TROVE_TEST_S3_REGION"),

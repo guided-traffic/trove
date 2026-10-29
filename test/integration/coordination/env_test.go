@@ -75,7 +75,7 @@ func (s stack) admin(t testing.TB, database string) *pgx.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cfg, err := pgx.ParseConfig("postgres://" + s.user + ":" + s.secret + "@" + s.host + ":" + strconv.Itoa(s.port) + "/" + database + "?sslmode=disable")
+	cfg, err := pgx.ParseConfig(testenv.PgDSN(t, database))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func newEnv(t *testing.T) *env {
 	cfg := config.Database{
 		Host: st.host, Port: st.port, Name: name, Schema: schemaName,
 		UsernameFile: userFile, PasswordFile: passFile,
-		SSLMode: "disable", AllowInsecure: true,
+		SSLMode: "verify-full", SSLRootCertFile: testenv.CAFile(t),
 		ConnectTimeout: 5 * time.Second, TargetSessionAttrs: "read-write",
 		Pooler:        config.DatabasePooler{Mode: "none"},
 		Pool:          config.DatabasePool{MaxConns: 6, MinConns: 1, MaxConnLifetime: 30 * time.Minute, MaxConnLifetimeJitter: time.Minute, MaxConnIdleTime: 5 * time.Minute, HealthCheckPeriod: 30 * time.Second},

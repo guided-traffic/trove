@@ -83,7 +83,8 @@ func newS3(tb testing.TB, name string) *s3Env {
 	cfg.Region = testenv.Get(tb, "TROVE_TEST_S3_REGION")
 	cfg.Bucket = testenv.Get(tb, "TROVE_TEST_S3_BUCKET_BLOBS")
 	cfg.ForcePathStyle = testenv.Get(tb, "TROVE_TEST_S3_FORCE_PATH_STYLE") == "true"
-	cfg.AllowInsecureEndpoint = true // the stack serves plain HTTP; a TLS endpoint passes too
+	cfg.AllowInsecureEndpoint = false
+	cfg.CAFile = testenv.CAFile(tb) // the gateway is HTTPS-only, signed by the stack's CA
 	cfg.Prefix = "it-blob/" + runID(tb) + "/" + name
 	cfg.PayloadChecksum = optional("TROVE_TEST_S3_PAYLOAD_CHECKSUM", cfg.PayloadChecksum)
 	cfg.Checksums.RequestCalculation = optional("TROVE_TEST_S3_REQUEST_CHECKSUM", cfg.Checksums.RequestCalculation)
@@ -98,7 +99,7 @@ func newS3(tb testing.TB, name string) *s3Env {
 	if err != nil {
 		tb.Fatalf("object store client: %v", err)
 	}
-	e := &s3Env{cfg: cfg, factory: f, http: f.Client(outbound.PurposeObjectStore), raw: c, prefix: cfg.Prefix}
+	e := &s3Env{cfg: cfg, factory: f, http: c.HTTPClient(), raw: c, prefix: cfg.Prefix}
 	tb.Cleanup(func() { e.removeAll(tb) })
 	return e
 }

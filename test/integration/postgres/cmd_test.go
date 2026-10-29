@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 // buildTrove compiles cmd/trove once per test into a temporary directory.
@@ -54,7 +56,7 @@ func TestMigrateCommand(t *testing.T) {
 	env := []string{
 		"TROVE_DATABASE_HOST=" + st.host, "TROVE_DATABASE_PORT=" + itoa(st.port), "TROVE_DATABASE_NAME=" + name,
 		"TROVE_DATABASE_USERNAME_FILE=" + cfg.UsernameFile, "TROVE_DATABASE_PASSWORD_FILE=" + cfg.PasswordFile,
-		"TROVE_DATABASE_SSL_MODE=disable", "TROVE_DATABASE_ALLOW_INSECURE=true",
+		"TROVE_DATABASE_SSL_MODE=verify-full", "TROVE_DATABASE_SSL_ROOT_CERT_FILE=" + testenv.CAFile(t),
 		"TROVE_DATABASE_PREFLIGHT_ALLOW_SUPERUSER=true", "TROVE_POD_NAME=trove-migrate-abc",
 		"TROVE_VALKEY_SENTINEL_ADDRESSES=[\"s1:26379\"]", "TROVE_VALKEY_SENTINEL_PRIMARY_NAME=trove",
 		"TROVE_STORAGE_S3_BUCKET=blobs",

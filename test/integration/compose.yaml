@@ -1,6 +1,7 @@
-# Integration stack: PostgreSQL 16 (the floor version), PgBouncer in transaction
-# mode, Valkey with a replica and three Sentinels over TLS only, and SeaweedFS
-# as the S3 store. Started by test/integration/up.sh, which sets the variables
+# Integration stack, TLS on every connection (INV-20): PostgreSQL 16 (the floor
+# version, hostssl only), PgBouncer in transaction mode (TLS in, verify-full out),
+# Valkey with a replica and three Sentinels over TLS only, and SeaweedFS as the
+# HTTPS-only S3 store. The certificates come from certs.sh, mounted at /certs. Started by test/integration/up.sh, which sets the variables
 # below from tools/versions.env.
 #
 # The five Valkey processes share one network namespace (the `net` container),
@@ -28,11 +29,31 @@ services:
       POSTGRES_PASSWORD: trove-it
       POSTGRES_DB: trove
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
-    command: ["postgres", "-c", "max_connections=200", "-c", "password_encryption=scram-sha-256"]
+    entrypoint: ["/conf/postgres.sh"]
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ./conf/postgres.sh:/conf/postgres.sh:ro
+      - ./conf/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     ports:
       - "127.0.0.1:15432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trove -d trove -h 127.0.0.1"]
+      test: ["CMD-SHELL", "pg_isready -U trove -d trove -h /var/run/postgresql"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -46,6 +67,7 @@ services:
     volumes:
       - ./conf/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./conf/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+      - ${CERT_DIR}:/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -184,13 +206,16 @@ services:
       - -s3
       - -s3.port=8333
       - -s3.config=/etc/seaweedfs/s3.json
+      - -s3.cert.file=/certs/s3.crt
+      - -s3.key.file=/certs/s3.key
     volumes:
+      - ${CERT_DIR}:/certs:ro
       - ./conf/s3.json:/etc/seaweedfs/s3.json:ro
       - seaweedfs:/data
     ports:
       - "127.0.0.1:18333:8333"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9333/cluster/status >/dev/null && curl -s -o /dev/null http://127.0.0.1:8333/"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9333/cluster/status >/dev/null && curl -s -o /dev/null --cacert /certs/ca.crt https://127.0.0.1:8333/"]
       interval: 3s
       timeout: 5s
       retries: 40

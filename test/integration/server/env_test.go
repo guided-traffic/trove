@@ -60,7 +60,7 @@ func newInstall(t *testing.T) *install {
 	t.Helper()
 	host, port := testenv.Get(t, "TROVE_TEST_PG_HOST"), testenv.Get(t, "TROVE_TEST_PG_PORT")
 	user, pass := testenv.Get(t, "TROVE_TEST_PG_USER"), testenv.Get(t, "TROVE_TEST_PG_PASSWORD")
-	adminDSN := "postgres://" + user + ":" + pass + "@" + host + ":" + port + "/postgres?sslmode=disable"
+	adminDSN := testenv.PgDSN(t, "postgres")
 	ctx := context.Background()
 	maint, err := pgx.Connect(ctx, adminDSN)
 	if err != nil {
@@ -76,7 +76,7 @@ func newInstall(t *testing.T) *install {
 		_, _ = maint.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
 		_ = maint.Close(context.Background())
 	})
-	conn, err := pgx.Connect(ctx, "postgres://"+user+":"+pass+"@"+host+":"+port+"/"+name+"?sslmode=disable")
+	conn, err := pgx.Connect(ctx, testenv.PgDSN(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,14 +92,14 @@ func newInstall(t *testing.T) *install {
 	env := []string{
 		"TROVE_DATABASE_HOST=" + host, "TROVE_DATABASE_PORT=" + port, "TROVE_DATABASE_NAME=" + name,
 		"TROVE_DATABASE_USERNAME_FILE=" + write(t, dir, "db-user", user+"\n"), "TROVE_DATABASE_PASSWORD_FILE=" + write(t, dir, "db-pass", pass+"\n"),
-		"TROVE_DATABASE_SSL_MODE=disable", "TROVE_DATABASE_ALLOW_INSECURE=true", "TROVE_DATABASE_PREFLIGHT_ALLOW_SUPERUSER=true",
+		"TROVE_DATABASE_SSL_MODE=verify-full", "TROVE_DATABASE_SSL_ROOT_CERT_FILE=" + testenv.CAFile(t), "TROVE_DATABASE_PREFLIGHT_ALLOW_SUPERUSER=true",
 		"TROVE_DATABASE_RETRY_MAX_ELAPSED=3s",
 		"TROVE_VALKEY_SENTINEL_ADDRESSES=[" + strings.Join(sentinels, ",") + "]", "TROVE_VALKEY_SENTINEL_PRIMARY_NAME=" + vk.PrimaryName,
 		"TROVE_VALKEY_SENTINEL_PASSWORD_FILE=" + write(t, dir, "vk-sentinel-pass", vk.SentinelPassword),
 		"TROVE_VALKEY_USERNAME_FILE=" + write(t, dir, "vk-user", vk.Username), "TROVE_VALKEY_PASSWORD_FILE=" + write(t, dir, "vk-pass", vk.Password),
 		"TROVE_VALKEY_TLS_CA_FILE=" + vk.CAFile, "TROVE_VALKEY_KEY_PREFIX=" + vk.KeyPrefix,
 		"TROVE_STORAGE_S3_BUCKET=" + s3.BlobsBucket, "TROVE_STORAGE_S3_ENDPOINT=" + s3.Endpoint, "TROVE_STORAGE_S3_REGION=" + s3.Region,
-		"TROVE_STORAGE_S3_FORCE_PATH_STYLE=true", "TROVE_STORAGE_S3_ALLOW_INSECURE_ENDPOINT=true",
+		"TROVE_STORAGE_S3_FORCE_PATH_STYLE=true", "TROVE_STORAGE_S3_CA_FILE=" + testenv.CAFile(t),
 		"TROVE_STORAGE_S3_CREDENTIALS_SOURCE=static",
 		"TROVE_STORAGE_S3_CREDENTIALS_ACCESS_KEY_ID_FILE=" + write(t, dir, "s3-id", s3.AccessKey),
 		"TROVE_STORAGE_S3_CREDENTIALS_SECRET_ACCESS_KEY_FILE=" + write(t, dir, "s3-secret", s3.SecretKey),
