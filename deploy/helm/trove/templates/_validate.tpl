@@ -91,7 +91,7 @@ pools) are added with those features.
 {{- end -}}
 
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}
-{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" -}}
+{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.ca_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" -}}
 {{- if $t.enabled -}}
 {{- $managedPaths = concat $managedPaths (list "server.tls" "server.ops_tls") -}}
 {{- end -}}
@@ -236,6 +236,19 @@ Endpoints (R-EP-008, R-HA-029): every failure names the value. Argument: the roo
 {{- end -}}
 {{- if and $e.tlsClientCaSecret (not (or $e.tlsSecret $v.tls.secretName)) -}}
 {{- fail (printf "trove: %s.tls.clientCaSecret needs a certificate: set %s.tls.existingSecret or tls.secretName" $key $key) -}}
+{{- end -}}
+{{- /* The endpoint's Ingress follows the rules of the default one: a merged backendTLS block that verifies needs its CA (R-HA-063). */ -}}
+{{- if and $v.tls.enabled $e.ingressEnabled -}}
+{{- $bt := include "trove.endpointBackendTLS" (dict "root" $ "name" $name) | fromYaml -}}
+{{- if and $bt.verify (or (eq $bt.controller "haproxy") (eq $bt.controller "ingress-nginx")) (not $bt.caSecret) -}}
+{{- fail (printf "trove: %s.ingress.backendTLS.caSecret is required for controller %s while verify is true (set it here or in ingress.backendTLS): name a Secret in the release namespace with the CA as ca.crt, or set %s.ingress.backendTLS.verify: false to accept an unverified connection" $key $bt.controller $key) -}}
+{{- end -}}
+{{- if and $bt.verify (eq $bt.controller "traefik") (not $bt.serversTransport) -}}
+{{- fail (printf "trove: %s.ingress.backendTLS.serversTransport is required for controller traefik while verify is true (set it here or in ingress.backendTLS; <namespace>-<name>@kubernetescrd of a ServersTransport that verifies trove), or set %s.ingress.backendTLS.verify: false" $key $key) -}}
+{{- end -}}
+{{- if and $e.tlsClientCaSecret (eq $bt.controller "haproxy") (not $bt.clientCertSecret) -}}
+{{- fail (printf "trove: %s.tls.clientCaSecret requires %s.ingress.backendTLS.clientCertSecret (or ingress.backendTLS.clientCertSecret) with controller haproxy: trove demands a client certificate on this endpoint and HAProxy Ingress needs a Secret with tls.crt and tls.key to present" $key $key) -}}
+{{- end -}}
 {{- end -}}
 {{- /* A pool follows the rules of a web pool (R-HA-062). */ -}}
 {{- if $e.poolEnabled -}}

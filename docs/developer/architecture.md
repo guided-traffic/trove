@@ -150,7 +150,8 @@ fallback `*/30 * * * *` and `0 2 * * 0`, dedup key `gc`). It is a registry per r
 several replicas in one test process do not collide.
 
 Readiness: `startup`, `database`, `schema`, `invalidation`, `outbound` gate; `tls` (when a listener serves TLS) gates the
-first readiness only: every listener pair and client CA has loaded once; `objectStore` gates the first readiness only
+first readiness only: every listener pair and client CA has loaded once (until then the ops listener answers with a
+temporary certificate, `/healthz` 200 and `/readyz` 503, so HTTPS probes do not restart the container, Q-ARCH-36); `objectStore` gates the first readiness only
 unless `health.require_object_store`; `valkey` is reported and holds back the first readiness only on a configuration
 error (Q-HA-13). `/readyz?verbose=1` shows Valkey only through the fixed reason codes `connecting`,
 `no_sentinel`, `timeout`, `auth_failed`, `circuit_open`, `probe_failed`, `unsupported`, `config_error`
@@ -160,7 +161,10 @@ run a check. `database` and `schema` carry `health.WithGrace(health.database_out
 `markOutage` ([wire_postgres.go](../../internal/app/wire_postgres.go)): once the replica has been ready, a failure
 that is `health.Transient` (a connectivity failure, `postgres.IsOutage`; a check that timed out counts) shows as
 `degraded` and does not gate until it has lasted the grace (Q-OPS-31); a schema that is behind gates after the debounce.
-The run of failures ends only when the check passes again, and the first readiness never gets a grace.
+The run of failures starts at its first failing answer and ends only when the check passes again; one answer that is
+not transient ends the grace for the rest of the run (CR2-1), and the first readiness never gets a grace. `invalidation`
+carries the same grace: `Changes.Check` reports a stale poll whose last error is an outage as transient, so it cannot gate
+before `database` does (Q-OPS-34). `bootstrapAccess` opens `system.read` anonymously on the default endpoint only.
 `Health.Serving()` is what `GET /api/v1/system/ping` answers from: no gating check other than `draining` fails, and a
 draining replica had been ready (Q-OPS-30), so the drain delay answers every request; `Ready()` stays the readiness. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
 `Stop()` when it ends on purpose.

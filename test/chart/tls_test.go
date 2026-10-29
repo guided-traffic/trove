@@ -158,13 +158,21 @@ func TestTLS(t *testing.T) {
 				t.Errorf("the migration Job mounts %s", str(m, "mountPath"))
 			}
 		}
-		// The probes of web and worker, by contrast, carry the HTTPS scheme and the Secrets are there.
-		for _, role := range []string{"web", "worker"} {
-			pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
-			for _, s := range []string{"trove-tls", "trove-edge-ca", "trove-ops-tls"} {
-				if secretVolume(pod, s) == nil {
-					t.Errorf("trove-%s does not mount %s", role, s)
-				}
+		// The web pods hold every listener Secret. The worker opens the operations listener only, which has its own pair here:
+		// the listener private key and the client CA of :8080 stay out of it (SA5, H-57).
+		web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec")
+		for _, s := range []string{"trove-tls", "trove-edge-ca", "trove-ops-tls"} {
+			if secretVolume(web, s) == nil {
+				t.Errorf("trove-web does not mount %s", s)
+			}
+		}
+		worker := at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec")
+		if secretVolume(worker, "trove-ops-tls") == nil {
+			t.Error("trove-worker does not mount trove-ops-tls")
+		}
+		for _, s := range []string{"trove-tls", "trove-edge-ca"} {
+			if secretVolume(worker, s) != nil {
+				t.Errorf("trove-worker mounts %s although it serves no listener that loads it", s)
 			}
 		}
 	})
@@ -371,4 +379,103 @@ func TestTLS(t *testing.T) {
 func toStr(v any) string {
 	b, _ := yaml.Marshal(v)
 	return string(b)
+}
+
+func TestTLSMountsFollowTheListeners(t *testing.T) {
+	t.Run("R-HA-030 without tls.ops every runtime pod mounts the listener pair, the operations listener inherits it", func(t *testing.T) {
+		_, docs := render(t, required())
+		for _, role := range []string{"web", "worker"} {
+			if secretVolume(at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec"), "trove-tls") == nil {
+				t.Errorf("trove-%s does not mount trove-tls", role)
+			}
+		}
+	})
+
+	t.Run("R-HA-030 with tls.ops the worker does not mount the private key of :8080 and the web pods do", func(t *testing.T) {
+		_, docs := render(t, required(), "tls.ops.secretName=trove-ops-tls")
+		if secretVolume(at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"), "trove-tls") != nil {
+			t.Error("trove-worker mounts trove-tls")
+		}
+		if secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "trove-tls") == nil {
+			t.Error("trove-web does not mount trove-tls")
+		}
+	})
+
+	t.Run("R-HA-030 with tls.ops an endpoint pool mounts the pair only when an endpoint it serves has none of its own", func(t *testing.T) {
+		pool := []string{"tls.ops.secretName=trove-ops-tls", "endpoints.c.port=8443", "endpoints.c.baseUrl=https://p.example.com", "endpoints.c.pool.enabled=true"}
+		_, docs := render(t, required(), pool...)
+		podOf := func(docs []doc) any {
+			return at(find(docs, "Deployment", "trove-web-ep-c"), "spec", "template", "spec")
+		}
+		if secretVolume(podOf(docs), "trove-tls") == nil {
+			t.Error("the pool serves an endpoint on the listener pair and does not mount it")
+		}
+		_, docs = render(t, required(), append(pool, "endpoints.c.tls.existingSecret=c-tls")...)
+		if secretVolume(podOf(docs), "trove-tls") != nil {
+			t.Error("the pool mounts trove-tls although its endpoint has a pair of its own and the operations listener has one")
+		}
+		if secretVolume(podOf(docs), "c-tls") == nil {
+			t.Error("the pool does not mount the pair of its endpoint")
+		}
+		if secretVolume(podOf(docs), "trove-ops-tls") == nil {
+			t.Error("the pool does not mount trove-ops-tls")
+		}
+		// The main web pods keep the default endpoint's pair.
+		if secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "trove-tls") == nil {
+			t.Error("trove-web does not mount trove-tls")
+		}
+	})
+
+	t.Run("R-HA-030 the client CA of :8080 reaches the main web pods only", func(t *testing.T) {
+		_, docs := render(t, required(), "tls.clientCA.secretName=trove-edge-ca", "endpoints.c.port=8443", "endpoints.c.baseUrl=https://p.example.com", "endpoints.c.pool.enabled=true")
+		for name, want := range map[string]bool{"trove-web": true, "trove-worker": false, "trove-web-ep-c": false} {
+			if got := secretVolume(at(find(docs, "Deployment", name), "spec", "template", "spec"), "trove-edge-ca") != nil; got != want {
+				t.Errorf("%s mounts the client CA: %v, want %v", name, got, want)
+			}
+		}
+	})
+}
+
+func TestS3CA(t *testing.T) {
+	t.Run("R-HA-030 secrets.s3CA mounts the CA read-only without subPath and renders storage.s3.ca_file", func(t *testing.T) {
+		_, docs := render(t, required(), "secrets.s3CA.existingSecret=trove-s3-tls")
+		if got := str(configOf(t, docs), "storage", "s3", "ca_file"); got != "/var/run/secrets/trove/s3-ca/ca.crt" {
+			t.Errorf("storage.s3.ca_file = %q", got)
+		}
+		for _, role := range []string{"web", "worker"} {
+			pod := at(find(docs, "Deployment", "trove-"+role), "spec", "template", "spec")
+			vol := secretVolume(pod, "trove-s3-tls")
+			if vol == nil {
+				t.Fatalf("trove-%s does not mount trove-s3-tls", role)
+			}
+			m := mountOf(pod, vol)
+			if str(m, "mountPath") != "/var/run/secrets/trove/s3-ca" || at(m, "readOnly") != true || at(m, "subPath") != nil {
+				t.Errorf("trove-%s mount = %v", role, m)
+			}
+			items := list(vol, "secret", "items")
+			if len(items) != 1 || str(items[0], "key") != "ca.crt" || str(items[0], "path") != "ca.crt" {
+				t.Errorf("trove-%s items = %v", role, items)
+			}
+		}
+		job := at(find(docs, "Job", "trove-migrate"), "spec", "template", "spec")
+		if secretVolume(job, "trove-s3-tls") != nil {
+			t.Error("the migration Job mounts the object-store CA")
+		}
+	})
+
+	t.Run("R-HA-030 a different key is projected as ca.crt", func(t *testing.T) {
+		_, docs := render(t, required(), "secrets.s3CA.existingSecret=s3-ca", "secrets.s3CA.key=root.pem")
+		vol := secretVolume(at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"), "s3-ca")
+		if got := str(list(vol, "secret", "items")[0], "key"); got != "root.pem" {
+			t.Errorf("key = %q", got)
+		}
+	})
+
+	t.Run("R-HA-030 without secrets.s3CA no ca_file is rendered and none may be set in config", func(t *testing.T) {
+		_, docs := render(t, required())
+		if at(configOf(t, docs), "storage", "s3", "ca_file") != nil {
+			t.Error("storage.s3.ca_file rendered without secrets.s3CA")
+		}
+		renderFails(t, required(), []string{"config.storage.s3.ca_file=/x"}, "config.storage.s3.ca_file", "managed")
+	})
 }

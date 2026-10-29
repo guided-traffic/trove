@@ -2040,8 +2040,15 @@
     "tracing": {
       "additionalProperties": false,
       "properties": {
+        "allow_insecure": {
+          "default": false,
+          "description": "Lets spans go to the collector in plaintext (an http:// endpoint, OTEL_EXPORTER_OTLP_INSECURE=true). Span metadata crosses the network unencrypted and unauthenticated; for a collector reached over loopback or a mesh sidecar only (INV-20).",
+          "type": "boolean",
+          "x-trove-env": "TROVE_TRACING_ALLOW_INSECURE"
+        },
         "ca_file": {
           "default": "",
+          "description": "CA bundle that verifies the collector. Refused with an http:// endpoint, where it would have no effect.",
           "type": "string",
           "x-trove-env": "TROVE_TRACING_CA_FILE"
         },
@@ -2052,7 +2059,7 @@
         },
         "endpoint": {
           "default": "",
-          "description": "Collector endpoint, e.g. http://otel-collector.observability:4318. Without user information: credentials go into headers_file.",
+          "description": "Collector endpoint, e.g. https://otel-collector.observability:4318. https unless allow_insecure is true. Without user information: credentials go into headers_file.",
           "type": "string",
           "x-trove-env": "TROVE_TRACING_ENDPOINT"
         },

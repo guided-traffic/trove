@@ -227,9 +227,10 @@ func (e *Endpoint) HostRoot(host string) string {
 
 type ctxEndpoint struct{}
 
-// WithEndpoint places the endpoint in ctx. Only the chain of the endpoint's
-// listener calls it (R-EP-002); tests use it to build a request context.
-func WithEndpoint(ctx context.Context, e *Endpoint) context.Context {
+// withEndpoint places the endpoint in ctx. It is unexported: only the chain of the endpoint's
+// listener calls it (R-EP-002), and the archtest check allows only internal/app
+// to build the endpoint and the chain.
+func withEndpoint(ctx context.Context, e *Endpoint) context.Context {
 	return context.WithValue(ctx, ctxEndpoint{}, e)
 }
 
@@ -252,6 +253,15 @@ func hostOnly(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return ""
+	}
+	// Only ASCII text can be a host name here: a non-ASCII byte (a Unicode letter
+	// whose lower case is ASCII, an IDN that arrived undecoded) or a control byte
+	// is no host (R-EP-003). HTTP/2 does not validate :authority, so this is the
+	// only gate on that path.
+	for i := 0; i < len(v); i++ {
+		if c := v[i]; c < 0x20 || c >= 0x7f {
+			return ""
+		}
 	}
 	if h, _, err := net.SplitHostPort(v); err == nil {
 		v = h

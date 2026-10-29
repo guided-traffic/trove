@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -618,6 +619,75 @@ func TestOutageGrace(t *testing.T) {
 		}
 		if h.Ready() {
 			t.Fatal("25 s since the first failure must be past the 20 s grace")
+		}
+	})
+
+	t.Run("R-OPS-001 CR2-1 a check already failing for a non-transient reason never earns a grace", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		db.set(errors.New("schema is behind"))
+		for range 3 {
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() {
+			t.Fatal("setup: a schema that is behind must gate")
+		}
+		db.set(outage) // the database goes away as well
+		advance(5 * time.Second)
+		h.Refresh(t.Context())
+		if h.Ready() {
+			t.Fatalf("a replica whose schema is behind turned ready on a transient answer; failing=%v degraded=%v", h.Failing(), h.Degraded())
+		}
+	})
+
+	t.Run("R-OPS-001 CR2-1 the grace is not reopened by a non-transient answer inside one failing run", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		db.set(outage)
+		for range 6 { // 30 s
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() {
+			t.Fatal("setup: 30 s of outage with a 20 s grace must gate")
+		}
+		db.set(errors.New("password authentication failed"))
+		advance(5 * time.Second)
+		h.Refresh(t.Context())
+		db.set(outage)
+		advance(5 * time.Second)
+		h.Refresh(t.Context())
+		if h.Ready() {
+			t.Fatal("after 40 s of one unbroken failing run the replica is ready again (grace reopened)")
+		}
+	})
+
+	t.Run("R-OPS-001 gap-b a second check with the same grace never takes the replica out before the database check does", func(t *testing.T) {
+		clk := &clock{t: time.Unix(1_700_000_000, 0)}
+		h := New(cfg(), WithClock(func() time.Time { clk.mu.Lock(); defer clk.mu.Unlock(); return clk.t }))
+		var db, inv toggle
+		h.AddReadiness("database", db.check, false, WithGrace(20*time.Second))
+		h.AddReadiness("invalidation", inv.check, false, WithGrace(20*time.Second))
+		h.Refresh(t.Context())
+		// The database goes away at once; the poll goes stale 20 s later, as
+		// cluster.epoch_max_staleness (20 s) makes it.
+		db.set(outage)
+		for i := range 8 { // 40 s in steps of 5 s
+			clk.mu.Lock()
+			clk.t = clk.t.Add(5 * time.Second)
+			clk.mu.Unlock()
+			if i >= 4 {
+				inv.set(outage)
+			}
+			h.Refresh(t.Context())
+			failing := h.Failing()
+			for _, f := range failing {
+				if f == "invalidation" && !slices.Contains(failing, "database") {
+					t.Fatalf("at %d s the invalidation check gated alone; failing=%v", (i+1)*5, failing)
+				}
+			}
+		}
+		if h.Ready() {
+			t.Fatal("40 s of outage must have gated through the database check")
 		}
 	})
 

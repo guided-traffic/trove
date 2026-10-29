@@ -135,7 +135,7 @@ func (c Chain) recoverStage(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), keyLogger, log)
 		if c.Endpoint != nil {
-			ctx = WithEndpoint(ctx, c.Endpoint)
+			ctx = withEndpoint(ctx, c.Endpoint)
 		}
 		r = r.WithContext(ctx)
 		// Label the request before any stage copies it: stages 2 and 3 read r.Pattern

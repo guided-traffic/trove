@@ -25,7 +25,12 @@ func FamilyOf(pattern string) string {
 	if pattern == RootPattern {
 		return config.SurfaceUI
 	}
-	path := patternPath(pattern)
+	return familyOfPath(patternPath(pattern))
+}
+
+// familyOfPath is FamilyOf for a path without method and host. A request path
+// goes through it as it is: unlike a pattern it may contain spaces.
+func familyOfPath(path string) string {
 	switch {
 	case path == "/ui" || strings.HasPrefix(path, "/ui/"),
 		path == "/auth" || strings.HasPrefix(path, "/auth/"):
@@ -55,6 +60,18 @@ func (e *Endpoint) servesPattern(pattern string) bool {
 		return e.IsDefault()
 	}
 	return e.Serves(f)
+}
+
+// servesPath reports whether the endpoint serves the family a request path
+// belongs to. A path of a family outside the surface is answered like any
+// unknown path (R-EP-005).
+func (e *Endpoint) servesPath(path string) bool {
+	switch f := familyOfPath(path); f {
+	case FamilyOther:
+		return true // the router has nothing for it unless the default endpoint registered it
+	default:
+		return e.Serves(f)
+	}
 }
 
 // CheckSurface returns the patterns among the registered ones that the

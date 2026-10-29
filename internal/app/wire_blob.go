@@ -18,19 +18,23 @@ import (
 // ends the process on a configuration error such as a wrong bucket or credential.
 func (a *App) startBlob(ctx context.Context) error {
 	cfg := a.cfg.Storage
-	// The outbound configuration error holds the first readiness back (the
-	// outbound check). A CA file of proxy.outbound.tls.ca_files that loads later
-	// clears it without a restart, so wait for it here rather than skip the object
-	// store: skipping would let the replica turn ready without one.
+	// A CA file of proxy.outbound.tls.ca_files that has not loaded yet holds the
+	// first readiness back (the outbound check) and loads later without a restart,
+	// so wait for it here rather than skip the object store: skipping would let the
+	// replica turn ready without one. Any other outbound configuration error is
+	// fixed for the life of the process and ends the start (CR2-8).
 	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
-		err := a.out.Err()
+		err := a.out.TrustPending()
 		if err == nil {
 			break
 		}
-		a.log.Error("object store waits for the outbound configuration", "error", err, "retry_in", delay.String())
+		a.log.Error("object store waits for the outbound trust store", "error", err, "retry_in", delay.String())
 		if !sleep(ctx, delay) {
 			return ctx.Err()
 		}
+	}
+	if err := a.out.Err(); err != nil {
+		return fmt.Errorf("object store: outbound configuration: %w", err)
 	}
 	client, err := s3.NewFromFactory(ctx, cfg.S3, a.out)
 	if err != nil {

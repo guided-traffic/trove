@@ -792,6 +792,18 @@
           },
           "additionalProperties": false
         },
+        "s3CA": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "valkeyCA": {
           "type": "object",
           "properties": {

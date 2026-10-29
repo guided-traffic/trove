@@ -167,14 +167,15 @@ never as an environment variable (the one exception is the non-secret S3 setting
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/database-client/` | `database.ssl_cert_file`, `database.ssl_key_file` | all |
 | `secrets.encryption` | the names in `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered), `secrets.active_key_id` (first entry without `.key`) | `web`, `worker`, the same Secret (R-HA-027); the migration Job never mounts it (R-HA-030) |
 | `secrets.s3` (`source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `..._secret_access_key_file` | `web`, `worker` |
+| `secrets.s3CA` | `ca.crt` (the Secret's `key`) | `/var/run/secrets/trove/s3-ca/` | `storage.s3.ca_file` (also refused inside `config`) | `web`, `worker`; never the Job |
 | `secrets.valkey` | `username` (omit with `usernameKey: ""`), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` | `web`, `worker` |
 | `secrets.valkeySentinel` | `username` (default: none), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` | `web`, `worker` |
 | `secrets.valkeyCA` | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` | `web`, `worker` |
 | `secrets.valkeyClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` | `web`, `worker` |
 | `secrets.metricsToken` (`config.metrics.auth: static`) | `token` | `/var/run/secrets/trove/metrics/` | `metrics.bearer_token_file` | `web`, `worker` |
-| `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | `server.tls.certificates[0]` | `web`, `worker`; never the Job |
-| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | `web`, `worker` |
-| `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | `ops_tls.certificates[0]`, `ops_tls.inherit: false` | `web`, `worker` |
+| `tls.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls/` | `server.tls.certificates[0]` | the pods that load the pair, see [Mounts follow the listeners](#mounts-follow-the-listeners); never the Job |
+| `tls.clientCA.secretName` | `ca.crt` | `/var/run/secrets/trove/tls-client-ca/` | `server.tls.client_ca_file`, `server.tls.client_auth` | the main `web` pods |
+| `tls.ops.secretName` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/tls-ops/` | `ops_tls.certificates[0]`, `ops_tls.inherit: false` | every pod that opens the operations listener (`web`, `worker`, pools) |
 | `endpoints.<name>.tls.existingSecret`, each of `extraSecrets` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`n` = position in `tls.certificates`) | `server.endpoints.<name>.tls.certificates` | the pods that serve the endpoint (`web` or its pool) |
 | `endpoints.<name>.tls.clientCaSecret` | `ca.crt` | `/var/run/secrets/trove/endpoints/<name>/client-ca/` | `server.endpoints.<name>.tls.client_ca_file` | the pods that serve the endpoint |
 
@@ -218,7 +219,15 @@ What the chart does with them:
   so it is not projected), read-only, mode 0440, no `subPath`. The kubelet replaces the files with
   an atomic symlink swap on a Secret update; the process polls the content every
   `tls.reloadInterval` and swaps the certificate without a restart. A subPath mount would never
-  see the update. Only `web` and `worker` mount it; the migration Job serves no listener (R-HA-030).
+  see the update. Only the pods that load a pair mount it, see below; the migration Job serves no listener (R-HA-030).
+- <a id="mounts-follow-the-listeners"></a>**Mounts follow the listeners.** The private key of `tls.secretName` is mounted
+  into a pod only when its process loads that pair (`trove.secretMounts`, `_secrets.tpl`): the main `web` pods
+  (client listener of the default endpoint), a pod that serves a further endpoint without a pair of its own, and every pod
+  whose operations listener inherits it, which is every pod while `tls.ops.secretName` is empty. With `tls.ops`, the
+  `worker` and an endpoint pool whose endpoints each bring `tls.existingSecret` hold no copy of the client listener's key;
+  **set `tls.ops` when you run endpoint pools** (the residual credentials of a pool are H-57 in
+  [endpoints.md](../spec/endpoints.md)). The client CA (`tls.clientCA`) mounts into the main `web` pods only, because the
+  operations listener never carries it and a further endpoint has its own `clientCaSecret`.
 - **Config.** `server.tls` (and `ops_tls`) are chart-managed keys: setting `config.server.tls` or
   `config.ops_tls` fails while `tls.enabled` is true. `checksum/config` follows `min_version` and
   the paths, not the Secret content, so a certificate rotation does not roll the pods.
@@ -359,7 +368,7 @@ tests in `chart_test.go` assert both, row by row.
 | a chart-managed key set inside `config` | implemented (secret file paths, `storage.spool.dir`) |
 | `config.metrics.auth: static` without `secrets.metricsToken` | implemented |
 | `spool.headroom` not smaller than the spool; sizes that are not quantities | implemented |
-| `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
+| `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; the same three rules for the merged `ingress.backendTLS` of each further endpoint with `ingress.enabled` (`endpoints.<name>.ingress.backendTLS.caSecret`, `.serversTransport`, `.clientCertSecret` with the endpoint's `tls.clientCaSecret`); `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
 | pooler (`session_host`, control endpoint), backup, restore, pools, gateway, ServiceMonitor, `contentOrigin` | with those features |
 | a `ReadWriteMany` spool, `--set ingress.path=…`, any unknown key | schema |
 
@@ -405,6 +414,8 @@ is where the coverage generator reads the IDs from.
 | `R-HA-056` | Valkey wiring reaches `web` and `worker` only |
 | `R-EP-008` (`TestEndpoints`) | two endpoints render two Services (own port, selecting the main web pods), two Ingresses (class, hosts incl. the wildcard, TLS entry, backend), a NetworkPolicy per port, the `server.endpoints` block and the default endpoint's hosts; mounts of the pairs without `subPath`; backend TLS per controller; the pool (Deployment, PDB, Service, spread selector, policy with the operations port, no port on the main pods); NOTES; each validation row |
 | `R-HA-030`, `R-HA-029` (`TestS3ProvisionerSecret`) | bucket, region, endpoint by `secretKeyRef`, credentials as files with only their two keys, the Job reads none, the bucket is required unless the Secret carries it |
+| `R-HA-030` (`TestTLSMountsFollowTheListeners`) | the listener pair is mounted by the pods that load it: everywhere without `tls.ops`; with it, not into the worker, into an endpoint pool only while an endpoint it serves has no pair of its own; the client CA reaches the main `web` pods only |
+| `R-HA-030` (`TestS3CA`) | `secrets.s3CA` mounts read-only without `subPath` with the one projected key, renders `storage.s3.ca_file`, stays out of the Job; without it nothing is rendered and `config.storage.s3.ca_file` is refused |
 | `R-HA-063`, `R-HA-030` (`TestTLS`) | HTTPS probes, mount without `subPath` of exactly the certificate and key, config paths, `appProtocol`; missing `tls.secretName` fails; opt-out renders no TLS wiring; no TLS mount in the migration Job; client CA and `ops_tls` separation; per-controller Ingress settings (HAProxy Ingress default, verification and client-certificate rules); `BackendTLSPolicy`; every value set agrees between config and probe scheme |
 
 Not covered by these tests (needs a cluster): that the pods start in a restricted namespace, that

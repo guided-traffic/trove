@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -28,6 +29,8 @@ type ListenerTLS struct {
 	base     *tls.Config
 	cached   atomic.Pointer[generationConfig]
 	running  atomic.Bool
+	listener string
+	temp     *temporaryCert
 }
 
 type generationConfig struct {
@@ -51,6 +54,11 @@ func NewListenerTLS(listener string, b config.ServerTLS, opts ...tlsfiles.Option
 	if err != nil {
 		return nil, fmt.Errorf("%s listener: %w", listener, err)
 	}
+	if auth != tls.NoClientCert && b.ClientCAFile == "" {
+		// Without a pool Go verifies client certificates against the system roots,
+		// which would admit any certificate a public CA issued (SA8).
+		return nil, fmt.Errorf("%s listener: client_auth %q needs a client_ca_file", listener, b.ClientAuth)
+	}
 	spec := tlsfiles.Spec{}
 	for _, c := range b.Certificates {
 		spec.Pairs = append(spec.Pairs, tlsfiles.Pair{CertFile: c.CertFile, KeyFile: c.KeyFile})
@@ -60,7 +68,7 @@ func NewListenerTLS(listener string, b config.ServerTLS, opts ...tlsfiles.Option
 	}
 	l := &ListenerTLS{
 		material: tlsfiles.New(spec, tlsfiles.Labels{Kind: tlsfiles.KindListener, Listener: listener}, opts...),
-		interval: b.ReloadInterval, auth: auth, min: minVer,
+		interval: b.ReloadInterval, auth: auth, min: minVer, listener: listener,
 	}
 	if l.interval <= 0 {
 		l.interval = config.DefaultTLSReloadInterval
@@ -69,7 +77,7 @@ func NewListenerTLS(listener string, b config.ServerTLS, opts ...tlsfiles.Option
 		MinVersion:         minVer,
 		CipherSuites:       cipherSuites(),
 		NextProtos:         []string{"h2", "http/1.1"},
-		GetCertificate:     l.material.Certificate,
+		GetCertificate:     l.certificate,
 		GetConfigForClient: l.configFor,
 	}
 	return l, nil
@@ -102,12 +110,16 @@ func (l *ListenerTLS) configFor(*tls.ClientHelloInfo) (*tls.Config, error) {
 		MinVersion:     l.min,
 		CipherSuites:   cipherSuites(),
 		NextProtos:     []string{"h2", "http/1.1"},
-		GetCertificate: l.material.Certificate,
+		GetCertificate: l.certificate,
 		ClientAuth:     l.auth,
 	}
 	if l.auth != tls.NoClientCert {
-		// Empty, never nil, when the CA did not load: nothing verifies.
-		cfg.ClientCAs = l.material.Pool()
+		// NewListenerTLS refused a listener that asks for client certificates
+		// without a CA file. A CA that has not loaded yet gives an empty pool, so
+		// nothing verifies; a nil pool would mean the system roots.
+		if cfg.ClientCAs = l.material.Pool(); cfg.ClientCAs == nil {
+			cfg.ClientCAs = x509.NewCertPool()
+		}
 	}
 	l.cached.Store(&generationConfig{gen: gen, cfg: cfg})
 	return cfg, nil

@@ -174,7 +174,7 @@ tls:
     secretName: ""                      # default (proposed): empty = no client certificates requested; example: trove-edge-ca
     key: ca.crt                         # default (proposed): key of the CA bundle in that Secret
     auth: require                       # default (proposed): require | verify_if_given (server.tls.client_auth)
-  ops:                                  # optional separate certificate for :8081 (probes, metrics); empty = same material as :8080
+  ops:                                  # optional separate certificate for :8081 (probes, metrics); empty = same material as :8080. Recommended with endpoint pools and workers: only then the listener private key of :8080 stays out of the pods that do not serve it (H-57)
     secretName: ""                      # default (proposed); example: trove-ops-tls
     certKey: tls.crt                    # default (proposed)
     keyKey: tls.key                     # default (proposed)
@@ -215,6 +215,9 @@ secrets:
     existingSecret: ""                  # default (proposed): Sentinels without authentication; example: trove-valkey-sentinel
     usernameKey: ""                     # default (proposed): empty = no Sentinel user, the file is not mounted
     passwordKey: password               # default (proposed)
+  s3CA:
+    existingSecret: ""                  # default (proposed): empty = the outbound trust store (system roots plus config.proxy.outbound.tls.ca_files); example: trove-s3-tls. Renders storage.s3.ca_file
+    key: ca.crt                         # default (proposed)
   valkeyCA:
     existingSecret: ""                  # default (proposed): empty = system roots; example: trove-valkey-ca
     key: ca.crt                         # default (proposed)

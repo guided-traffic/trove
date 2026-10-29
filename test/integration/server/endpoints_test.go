@@ -77,10 +77,12 @@ func TestEndpoints(t *testing.T) {
 
 	ca := tlstest.NewCA(t, "endpoint integration ca")
 	dir := t.TempDir()
-	exact, exactKey := ca.Issue(t, tlstest.Options{DNSNames: []string{"packages.example.com", "pkgs.example.org"}, Serial: big.NewInt(5001)}).Files(t, dir, "exact")
+	exact, exactKey := ca.Issue(t, tlstest.Options{DNSNames: []string{"packages.trove.localhost", "pkgs.example.org"}, Serial: big.NewInt(5001)}).Files(t, dir, "exact")
 	wild, wildKey := ca.Issue(t, tlstest.Options{DNSNames: []string{"*.registry.example.com"}, Serial: big.NewInt(5002)}).Files(t, dir, "wild")
+	// The install enables the bootstrap anonymous read, whose guard accepts only loopback
+	// origins; a name below .localhost (RFC 6761) is one.
 	custAddr := freeAddr(t)
-	endpoints := fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com","hosts":["pkgs.example.org"],`+
+	endpoints := fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.trove.localhost","hosts":["pkgs.example.org"],`+
 		`"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"docker-hub"},`+
 		`"tls":{"certificates":[{"cert_file":%q,"key_file":%q},{"cert_file":%q,"key_file":%q}]}}}`,
 		custAddr, exact, exactKey, wild, wildKey)
@@ -105,7 +107,7 @@ func TestEndpoints(t *testing.T) {
 		if code, _, body := web.get(t, "/api/v1/system/ping"); code != 200 || body != "OK" {
 			t.Fatalf("default ping: %d %q", code, body)
 		}
-		if code, body := endpointGet(t, ca, custAddr, "packages.example.com", "packages.example.com", "/does-not-exist"); code != 404 {
+		if code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", "/does-not-exist"); code != 404 {
 			t.Fatalf("customers unknown path: %d %s", code, body)
 		}
 		_, metrics := opsGet(web.ops, "/metrics")
@@ -117,25 +119,25 @@ func TestEndpoints(t *testing.T) {
 	})
 
 	t.Run("R-EP-003 a request on the second listener with the host of the default endpoint answers 421 and is counted", func(t *testing.T) {
-		code, body := endpointGet(t, ca, custAddr, "packages.example.com", "trove.test", "/api/npm/npm-all/")
+		code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "trove.test", "/api/npm/npm-all/")
 		var p map[string]any
 		_ = json.Unmarshal([]byte(body), &p)
 		if code != 421 || p["code"] != "misdirected_request" {
 			t.Fatalf("%d %s", code, body)
 		}
 		for _, host := range []string{"10.0.0.5", "registry.example.com", "a.b.registry.example.com"} {
-			if code, _ := endpointGet(t, ca, custAddr, "packages.example.com", host, "/api/npm/npm-all/"); code != 421 {
+			if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", host, "/api/npm/npm-all/"); code != 421 {
 				t.Errorf("Host %s: %d", host, code)
 			}
 		}
 		// 127.0.0.0/8 is a trusted proxy here: a forwarded host within the set is honoured, one outside it is ignored.
-		if code, _ := endpointGet(t, ca, custAddr, "packages.example.com", "evil.example", "/does-not-exist", "X-Forwarded-Host", "packages.example.com"); code != 404 {
+		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "evil.example", "/does-not-exist", "X-Forwarded-Host", "packages.trove.localhost"); code != 404 {
 			t.Errorf("trusted proxy, forwarded host in the set: %d (404 means the host check passed)", code)
 		}
-		if code, _ := endpointGet(t, ca, custAddr, "packages.example.com", "packages.example.com", "/does-not-exist", "X-Forwarded-Host", "evil.example"); code != 404 {
+		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", "/does-not-exist", "X-Forwarded-Host", "evil.example"); code != 404 {
 			t.Errorf("trusted proxy, forwarded host outside the set: %d", code)
 		}
-		if code, _ := endpointGet(t, ca, custAddr, "packages.example.com", "docker-all.registry.example.com", "/does-not-exist"); code != 404 {
+		if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", "docker-all.registry.example.com", "/does-not-exist"); code != 404 {
 			t.Errorf("wildcard host: %d", code)
 		}
 		_, metrics := opsGet(web.ops, "/metrics")
@@ -147,7 +149,7 @@ func TestEndpoints(t *testing.T) {
 
 	t.Run("R-EP-002 R-EP-009 the endpoint of the log and the metrics is the listener's, whatever Host and forwarded host claim", func(t *testing.T) {
 		const tid = "2af7651916cd43dd8448eb211c80319e"
-		code, _, _ := web.get(t, "/api/v1/system/ping", "traceparent", "00-"+tid+"-b7ad6b7169203331-01", "X-Forwarded-Host", "packages.example.com")
+		code, _, _ := web.get(t, "/api/v1/system/ping", "traceparent", "00-"+tid+"-b7ad6b7169203331-01", "X-Forwarded-Host", "packages.trove.localhost")
 		if code != 200 {
 			t.Fatalf("ping: %d", code)
 		}
@@ -184,7 +186,7 @@ func TestEndpoints(t *testing.T) {
 	t.Run("R-EP-005 the customers endpoint answers 404 for the UI, the API and the management API, and keeps /v2/ and /.well-known/ reserved", func(t *testing.T) {
 		var want string
 		for _, p := range []string{"/does-not-exist", "/ui/", "/", "/auth/oidc/corp/start", "/api/v1/system/ping", "/api/v1/system/info", "/api/v1/system/replicas", "/api/v1/openapi.json", "/files/generic-local/x", "/v2/", "/v2/docker-all/manifests/latest", "/.well-known/terraform.json"} {
-			code, body := endpointGet(t, ca, custAddr, "packages.example.com", "packages.example.com", p)
+			code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "packages.trove.localhost", p)
 			var pr map[string]any
 			_ = json.Unmarshal([]byte(body), &pr)
 			delete(pr, "instance")
@@ -220,7 +222,7 @@ func TestEndpoints(t *testing.T) {
 			}
 		}
 		// A binding to a host outside the endpoint stops startup and names the key.
-		bad := in.with(`TROVE_SERVER_ENDPOINTS={"customers":{"listen":":0","base_url":"https://packages.example.com","host_roots":{"other.example.com":"docker-hub"}}}`)
+		bad := in.with(`TROVE_SERVER_ENDPOINTS={"customers":{"listen":":0","base_url":"https://packages.trove.localhost","host_roots":{"other.example.com":"docker-hub"}}}`)
 		code, _, stderr := bad.run(t, "admin", "config", "validate")
 		if code == 0 || !strings.Contains(stderr+"", "server.endpoints.customers.host_roots") {
 			t.Errorf("exit %d, stderr %s", code, stderr)
@@ -229,7 +231,7 @@ func TestEndpoints(t *testing.T) {
 
 	t.Run("R-EP-004 SNI picks the endpoint's certificate incl. the wildcard, the default listener never serves it", func(t *testing.T) {
 		for sni, want := range map[string]int64{
-			"packages.example.com": 5001, "docker-all.registry.example.com": 5002, "other.example": 5001, "": 5001,
+			"packages.trove.localhost": 5001, "docker-all.registry.example.com": 5002, "other.example": 5001, "": 5001,
 		} {
 			if got := served(t, ca, custAddr, sni); got != want {
 				t.Errorf("SNI %q: serial %d, want %d", sni, got, want)
@@ -263,7 +265,7 @@ func TestEndpoints(t *testing.T) {
 		if code, _ := endpointGet(t, ca, custAddr, "docker-all.registry.example.com", "docker-all.registry.example.com", "/does-not-exist"); code != 404 {
 			t.Errorf("request after the rotation: %d", code)
 		}
-		if got := served(t, ca, custAddr, "packages.example.com"); got != 5001 {
+		if got := served(t, ca, custAddr, "packages.trove.localhost"); got != 5001 {
 			t.Errorf("the other pair changed: %d", got)
 		}
 		if web.cmd.ProcessState != nil {
@@ -273,7 +275,7 @@ func TestEndpoints(t *testing.T) {
 
 	t.Run("R-EP-002 a worker opens no endpoint listener", func(t *testing.T) {
 		wAddr := freeAddr(t)
-		ep := fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.example.com"}}`, wAddr)
+		ep := fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.trove.localhost"}}`, wAddr)
 		in.start(t, "worker", "trove-ep-worker-it", "TROVE_SERVER_ENDPOINTS="+ep)
 		if c, err := net.DialTimeout("tcp", wAddr, 300*time.Millisecond); err == nil {
 			c.Close()

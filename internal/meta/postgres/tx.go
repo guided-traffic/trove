@@ -108,7 +108,17 @@ func readOnce(ctx context.Context, pool *pgxpool.Pool, fn func(q.DBTX) error) er
 	if err != nil {
 		return err
 	}
+	// Whatever way fn ends, the connection goes back or is destroyed. A panic
+	// leaves it in an unknown state (a half-read result, an open statement): it
+	// is destroyed, and the panic goes on to the recovery stage (CR2-3).
+	settled := false
+	defer func() {
+		if !settled {
+			_ = conn.Hijack().Close(context.Background())
+		}
+	}()
 	err = fn(conn)
+	settled = true
 	if conn.Conn().IsClosed() || classify(err) == retryFailover {
 		_ = conn.Hijack().Close(context.Background())
 		if err != nil && classify(err) == retryNo {

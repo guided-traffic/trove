@@ -1607,12 +1607,18 @@ Stage: every request on a further endpoint (R-EP-002), served by the main `web` 
 endpoint's pool (R-EP-008).
 
 Live for every installation that configures a further endpoint, most of all one reachable from the
-internet. Subject: the database, object-store and Valkey credentials and the stored-secret key ring
+internet. Subject: the database, object-store and Valkey credentials, the stored-secret key ring
+and the private key of the listener pair the pod loads (its own endpoint pair, and the pair of
+`tls.secretName` when the operations listener inherits it or an endpoint has no pair of its own)
 of the process that serves it. A pool keeps external load off internal pods and keeps the internal
 listener closed on its pods, but its process holds the same credentials as every `web` replica, so
 a flaw reachable through the external endpoint (request parsing, format code, H-1) reaches internal
-data as from any other request. No reduced-privilege role exists for endpoint pools. What makes it
-real: an exploitable flaw in a code path that the endpoint's surface exposes.
+data as from any other request. No reduced-privilege role exists for endpoint pools. The chart
+mounts the private key of the default endpoint's pair (`tls.secretName`) only into pods that load it:
+with `tls.ops.secretName` set and pairs of their own on the pool's endpoints, an endpoint pool and
+the workers hold no copy of it; without `tls.ops`, every pod holds it, because its operations
+listener inherits the pair. Set `tls.ops` when you run pools. What makes it real: an exploitable flaw in a code path that the
+endpoint's surface exposes.
 
 ### H-58 · Exposure rules are bound to an endpoint name
 

@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/meta/postgres"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/guided-traffic/trove/internal/config"
@@ -89,6 +91,7 @@ type Changes struct {
 	fmu       sync.Mutex
 	lastStart time.Time // start of the last successful poll
 	lastEnd   time.Time // end of the last successful poll
+	lastErr   error     // result of the last poll, nil when it succeeded
 
 	pollMu sync.Mutex // one poll at a time
 
@@ -200,13 +203,32 @@ func (c *Changes) FreshWithin(d time.Duration) bool {
 	return !c.lastStart.IsZero() && time.Since(c.lastStart) < d
 }
 
-// Check is the `invalidation` readiness check (R-ARCH-018).
+// Check is the `invalidation` readiness check (R-ARCH-018). A poll that is stale
+// because PostgreSQL is away or in a failover is reported as an outage, which the
+// health registry gives the same grace as the `database` check (R-OPS-001,
+// Q-OPS-31); a poll that is stale for any other reason gates as soon as the
+// check is debounced.
 func (c *Changes) Check(context.Context) error {
 	if c.Fresh() {
 		return nil
 	}
-	return fmt.Errorf("the last successful change-log poll is older than cluster.epoch_max_staleness (%s)", c.o.Config.EpochMaxStaleness)
+	err := fmt.Errorf("the last successful change-log poll is older than cluster.epoch_max_staleness (%s)", c.o.Config.EpochMaxStaleness)
+	c.fmu.Lock()
+	cause := c.lastErr
+	c.fmu.Unlock()
+	if cause != nil && postgres.IsOutage(cause) {
+		return outageError{fmt.Errorf("%w: %w", err, cause)}
+	}
+	return err
 }
+
+// outageError marks a stale poll whose cause is the database being away. The
+// method is the one the health registry looks for (health.Transient); cluster
+// does not import the registry.
+type outageError struct{ error }
+
+func (e outageError) Unwrap() error       { return e.error }
+func (outageError) HealthTransient() bool { return true }
 
 // Name implements the composition root's Component.
 func (c *Changes) Name() string { return "changes" }

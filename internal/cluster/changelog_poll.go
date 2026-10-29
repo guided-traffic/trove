@@ -16,6 +16,15 @@ import (
 func (c *Changes) pollOnce(ctx context.Context) error {
 	c.pollMu.Lock()
 	defer c.pollMu.Unlock()
+	err := c.poll(ctx)
+	c.fmu.Lock()
+	c.lastErr = err
+	c.fmu.Unlock()
+	return err
+}
+
+// poll is one poll; the caller holds pollMu.
+func (c *Changes) poll(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, c.pollTimeout())
 	defer cancel()
 	start := time.Now()

@@ -111,11 +111,13 @@ never an address or a raw error text. Reachability of the listener is the one fe
 ## Installation facts before identity ships
 
 Until the identity work of M1 nobody holds `system.read`. The switch `system.bootstrap_anonymous_read` (default `false`)
-lets an anonymous caller read `/api/v1/system/info` and `/api/v1/system/replicas` on the client listener
-([config/system.go](../../internal/config/system.go), [app.go](../../internal/app/app.go), `bootstrapAccess`;
+lets an anonymous caller read `/api/v1/system/info` and `/api/v1/system/replicas` on the default endpoint's client
+listener, and only there: the bridge answers for a request only when the endpoint it arrived on is the default endpoint and
+admits anonymous requests (`server.endpoints.default.auth.anonymous`, [access.go](../../internal/app/access.go), `Require`); a
+further endpoint refuses the same request as unauthenticated ([config/system.go](../../internal/config/system.go), [app.go](../../internal/app/app.go), `bootstrapAccess`;
 [access.go](../../internal/app/access.go)). Startup logs a warning while it is set
-([warnings.go](../../internal/app/warnings.go)) and refuses it when `server.base_url` is an `https` origin other than
-localhost ([config/finalize.go](../../internal/config/finalize.go), `Validate`). The dev profile sets it
+([warnings.go](../../internal/app/warnings.go)) and refuses it when `server.base_url` or the `base_url` of any further endpoint
+is an `https` origin other than localhost ([config/finalize.go](../../internal/config/finalize.go), `Validate`). The dev profile sets it
 ([values-dev.yaml](../../deploy/dev/values-dev.yaml)). See [H-63](#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships).
 
 ## Valkey is a boundary of its own
@@ -149,16 +151,17 @@ configuration is outside trove, and trove cannot check it.
 
 ### H-63 · Anonymous read of installation facts and the replica list until identity ships
 
-Stage: `GET /api/v1/system/info` and `GET /api/v1/system/replicas` on the client listener, reached through the edge
-([app.go](../../internal/app/app.go), `bootstrapAccess`).
+Stage: `GET /api/v1/system/info` and `GET /api/v1/system/replicas` on the default endpoint's client listener, reached
+through the edge ([access.go](../../internal/app/access.go), `bootstrapAccess.Require`).
 
 Live in the dev profile today, because [values-dev.yaml](../../deploy/dev/values-dev.yaml) sets
 `system.bootstrap_anonymous_read: true`. Dormant on an installation that leaves the default `false`. The startup guard covers
-only `https` origins other than localhost, so an `http` base URL with the switch on starts with a warning.
+only `https` origins other than localhost (the default endpoint's and every further endpoint's), so an `http` base URL with
+the switch on starts with a warning. A further endpoint is not reached by the bridge, whatever its surface lists.
 
 Subject: the bucket name, the object-store endpoint, the Valkey mode and the topology of the replicas (their names, nodes
-and versions, lease names, and the check results of [replica registry](../spec/ha-and-helm.md)). Anyone who reaches `:8080`
-reads them. The switch is removed with the identity work of M1 ([config/system.go](../../internal/config/system.go)).
+and versions, lease names, and the check results of [replica registry](../spec/ha-and-helm.md)). Anyone who reaches the default
+endpoint's listener (`:8080`) reads them. The switch is removed with the identity work of M1 ([config/system.go](../../internal/config/system.go)).
 
 What makes it real: the switch set on an installation that is reachable from clients. The dev profile is not, but its edge
 is on `localhost`.

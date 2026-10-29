@@ -35,7 +35,12 @@ func (a bootstrapAccess) Require(ctx context.Context, permission string) error {
 	if !p.Anonymous {
 		return nil
 	}
-	if a.anonymousRead && permission == v1.PermissionSystemRead {
+	// The bridge opens system.read to anonymous callers on the default endpoint
+	// only, and only while that endpoint admits anonymous requests (R-EP-010): a
+	// further endpoint serves an outside audience, and a request on a listener
+	// without an endpoint is none of the bridge's business (SA3).
+	if ep := httpserver.EndpointFrom(ctx); a.anonymousRead && permission == v1.PermissionSystemRead &&
+		ep != nil && ep.IsDefault() && ep.AnonymousAllowed() {
 		return nil
 	}
 	return errs.E(errs.Unauthenticated, errs.CodeUnauthenticated, "This endpoint requires an authenticated caller.", errs.WithChallenge("Bearer"))

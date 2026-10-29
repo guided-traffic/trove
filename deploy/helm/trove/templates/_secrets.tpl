@@ -29,6 +29,9 @@ Secrets never become environment variables.
 {{- if eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "s3" "secret" $s.s3.existingSecret "path" "/var/run/secrets/trove/s3" "items" (list (dict "key" $s.s3.accessKeyIdKey "path" "access-key-id") (dict "key" $s.s3.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}
+{{- if $s.s3CA.existingSecret -}}
+{{- $out = append $out (dict "name" "s3-ca" "secret" $s.s3CA.existingSecret "path" "/var/run/secrets/trove/s3-ca" "items" (list (dict "key" $s.s3CA.key "path" "ca.crt"))) -}}
+{{- end -}}
 {{- $vkItems := list -}}
 {{- if $s.valkey.usernameKey -}}
 {{- $vkItems = append $vkItems (dict "key" $s.valkey.usernameKey "path" "username") -}}
@@ -52,11 +55,33 @@ Secrets never become environment variables.
 {{- if eq (dig "metrics" "auth" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "metrics" "secret" $s.metricsToken.existingSecret "path" "/var/run/secrets/trove/metrics" "items" (list (dict "key" $s.metricsToken.key "path" "token"))) -}}
 {{- end -}}
-{{- /* TLS material of the listeners (R-HA-063): only the pods whose process serves them; the Job serves no listener. */ -}}
+{{- /*
+TLS material of the listeners (R-HA-063): only the pods whose process loads it; the Job serves no
+listener. The listener pair of tls.secretName is read by the ops listener of every pod unless tls.ops
+gives it its own pair, and by the client listener (web pods of the main pool) and by every further
+endpoint without a certificate of its own (the pods that serve it). The client CA belongs to the
+client listener of the default endpoint only. A pod that loads none of them does not get the private key.
+*/ -}}
 {{- $t := .root.Values.tls -}}
 {{- if $t.enabled -}}
+{{- $role := .role | default "" -}}
+{{- $pool := .pool | default "" -}}
+{{- $client := and (eq $role "web") (not $pool) -}}
+{{- $mainPair := or $client (not $t.ops.secretName) -}}
+{{- if and (eq $role "web") (not $mainPair) -}}
+{{- range $name := include "trove.endpointNames" .root | fromYamlArray -}}
+{{- if eq (include "trove.endpointPool" (dict "root" $.root "name" $name)) $pool -}}
+{{- $e := include "trove.endpoint" (dict "root" $.root "name" $name) | fromYaml -}}
+{{- if not $e.tlsSecret -}}
+{{- $mainPair = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $mainPair -}}
 {{- $out = append $out (dict "name" "tls" "secret" $t.secretName "path" "/var/run/secrets/trove/tls" "items" (list (dict "key" $t.certKey "path" "tls.crt") (dict "key" $t.keyKey "path" "tls.key"))) -}}
-{{- if $t.clientCA.secretName -}}
+{{- end -}}
+{{- if and $client $t.clientCA.secretName -}}
 {{- $out = append $out (dict "name" "tls-client-ca" "secret" $t.clientCA.secretName "path" "/var/run/secrets/trove/tls-client-ca" "items" (list (dict "key" $t.clientCA.key "path" "ca.crt"))) -}}
 {{- end -}}
 {{- if $t.ops.secretName -}}

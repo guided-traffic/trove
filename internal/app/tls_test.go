@@ -29,6 +29,21 @@ func httpsGet(t *testing.T, ca *tlstest.CA, url string) (int, string, *tls.Conne
 	return resp.StatusCode, string(b), resp.TLS, nil
 }
 
+// insecureGet is a probe that does not verify the certificate, as the kubelet's.
+func insecureGet(url string) (int, string, *tls.ConnectionState, error) {
+	c := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		DisableKeepAlives: true,
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // models a kubelet probe
+	}}
+	resp, err := c.Get(url)
+	if err != nil {
+		return 0, "", nil, err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b), resp.TLS, nil
+}
+
 func certificatesEnv(certFile, keyFile string) string {
 	return fmt.Sprintf(`[{"cert_file":%q,"key_file":%q}]`, certFile, keyFile)
 }
@@ -81,8 +96,24 @@ func TestListenerTLSWiring(t *testing.T) {
 		if h.app.Health().Ready() {
 			t.Fatal("ready without a certificate")
 		}
-		if _, _, _, err := httpsGet(t, ca, "https://"+h.app.OpsAddr().String()+"/readyz"); err == nil {
-			t.Fatal("a handshake succeeded without a certificate")
+		opsURL := "https://" + h.app.OpsAddr().String()
+		// R-ARCH-035 H-68: nothing the configured CA signed is served, but the ops
+		// listener answers a client that does not verify (the kubelet's probe), so
+		// the container is not restarted while the files are missing.
+		if _, _, _, err := httpsGet(t, ca, opsURL+"/readyz"); err == nil {
+			t.Fatal("a verified handshake succeeded without a configured certificate")
+		}
+		if code, body, cs, err := insecureGet(opsURL + "/healthz"); err != nil || code != 200 || cs.PeerCertificates[0].Subject.CommonName != h.app.id.Instance {
+			t.Fatalf("healthz under an unverified probe: %d %q %v", code, body, err)
+		}
+		if code, body, _, err := insecureGet(opsURL + "/readyz?verbose=1"); err != nil || code != 503 || !strings.Contains(body, "tls") {
+			t.Fatalf("readyz under an unverified probe: %d %q %v", code, body, err)
+		}
+		if code, body, _, err := insecureGet(opsURL + "/metrics"); err != nil || code != 200 || !strings.Contains(body, `trove_tls_temporary_certificate{listener="ops"} 1`) {
+			t.Fatalf("metrics: %d %v\n%s", code, err, grepLines(body, "trove_tls_"))
+		}
+		if _, _, _, err := insecureGet("https://" + h.app.ClientAddr().String() + "/api/v1/system/ping"); err == nil {
+			t.Fatal("the client listener answered a handshake without a configured certificate")
 		}
 		if !strings.Contains(h.logs.String(), "TLS material did not load") {
 			t.Errorf("no error logged:\n%s", h.logs.String())
@@ -92,6 +123,9 @@ func TestListenerTLSWiring(t *testing.T) {
 		for {
 			code, _, cs, err := httpsGet(t, ca, "https://"+h.app.OpsAddr().String()+"/readyz")
 			if err == nil && code == 200 && cs.PeerCertificates[0].SerialNumber.Int64() == 77 {
+				if _, m, _, _ := httpsGet(t, ca, "https://"+h.app.OpsAddr().String()+"/metrics"); !strings.Contains(m, `trove_tls_temporary_certificate{listener="ops"} 0`) {
+					t.Errorf("the temporary certificate is not marked retired:\n%s", grepLines(m, "trove_tls_temporary"))
+				}
 				break
 			}
 			if time.Now().After(deadline) {

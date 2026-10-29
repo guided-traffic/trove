@@ -1872,7 +1872,9 @@ A context that is not continued becomes a span link, so the incoming trace stays
 choosing the ID that the request carries.
 
 **Export** (`tracing.enabled: true`). Spans go over OTLP (gRPC or HTTP/protobuf) through a bounded
-queue of the process (Q-OPS-25). When the trove keys are unset, the standard `OTEL_EXPORTER_OTLP_*` variables of the
+queue of the process (Q-OPS-25). The collector endpoint is `https://` (INV-20); an `http://` endpoint, or
+`OTEL_EXPORTER_OTLP_INSECURE=true`, is refused at load unless `tracing.allow_insecure: true`, and `tracing.ca_file` is
+refused next to an `http://` endpoint, where it would have no effect ([Q-OPS-35](#q-ops-35--tls-to-the-span-collector)). When the trove keys are unset, the standard `OTEL_EXPORTER_OTLP_*` variables of the
 [OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/) apply.
 Resource attributes:
 
@@ -1925,7 +1927,8 @@ OpenMetrics exemplar.
 ```yaml
 tracing:
   enabled: false                         # default (proposed)
-  endpoint: ""                           # example http://otel-collector.observability:4318
+  endpoint: ""                           # example https://otel-collector.observability:4318
+  allow_insecure: false                  # default (proposed); true accepts an http:// endpoint and OTEL_EXPORTER_OTLP_INSECURE
   protocol: http/protobuf                # default (proposed); grpc | http/protobuf
   ca_file: ""                            # example /etc/trove/tls/otel-ca.pem
   headers_file: ""                       # example /var/run/secrets/trove/otel-headers (one "Name: value" per line)
@@ -1939,7 +1942,7 @@ tracing:
 **Acceptance criteria:**
 
 - With an OpenTelemetry Collector using the `debug` exporter, `TROVE_TRACING_ENABLED=true`,
-  `TROVE_TRACING_ENDPOINT=http://otel-collector:4318` and `TROVE_TRACING_SAMPLE_RATIO=1`, a
+  `TROVE_TRACING_ENDPOINT=https://otel-collector:4318` and `TROVE_TRACING_SAMPLE_RATIO=1`, a
   cold `npm install lodash --registry …/npm-all/` yields one trace containing:
   - a server span with `http.route`;
   - database spans;
@@ -4877,7 +4880,7 @@ A failure counts as an outage when it is a connectivity failure (a refused or ti
 the first failed evaluation of an unbroken run and restarts only after the check has passed again
 (`health.success_threshold`). The first readiness gets no grace, so a replica never becomes ready on an unreachable
 database. The `invalidation` check keeps its own window (`cluster.epoch_max_staleness`, at least 15 s, plus its debounce),
-which for one outage never ends before the `database` grace does. The development agent would revisit the default when a
+which for one outage never ends before the `database` grace does ([Q-OPS-34](#q-ops-34--the-invalidation-check-and-the-outage-grace)). The development agent would revisit the default when a
 platform's switchover is measured above 15 s.
 
 **Applied in the spec:** R-OPS-001 (`database` and `schema` rows, the paragraph on the outage grace, the configuration
@@ -4929,6 +4932,56 @@ ring is the only copy of the logs, which it is not by design.
 
 **Applied in the spec:** [R-OPS-009](#r-ops-009--log-stream-and-record-format) (the ring bounds and the stub) and
 [R-OPS-010](#r-ops-010--request-log) (the field limits).
+
+### Q-OPS-34 · The invalidation check and the outage grace
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The `invalidation` check fails once the last successful change-log poll is older than `cluster.epoch_max_staleness`. With
+the defaults (20 s, check interval 5 s, `failure_threshold` 2) it can gate within one check interval of the end of the
+`database` grace (20 s), so Q-OPS-31's statement that it never ends before could not be proved from the values.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Validate the values at load | `epoch_max_staleness + (failure_threshold - 1) * check_interval - epoch_poll_interval >= database_outage_grace + check_interval` | No code path | The defaults would not pass; three keys coupled by a formula |
+| (b) Same grace when the cause is the database (chosen) | A stale poll whose last error is an outage (`postgres.IsOutage`) is a transient failure and the check carries `health.WithGrace(database_outage_grace)`; any other cause gates as before | Cannot gate before the `database` check; no coupling of keys | The poll may be up to one grace older at the moment the `database` check gates |
+
+**Choice:** (b). The grace of a check is one run from its first failing answer: a failure that is not transient ends the
+grace for the rest of the run, and only a passing check (`success_threshold`) starts a new one, so an alternation
+between causes cannot reopen it (CR2-1). A control connection that landed on a standby is destroyed by the `database`
+check, so the next one finds the new primary.
+
+**Rationale:** The poll fails for the same reason the database check does during an outage; the two should answer alike.
+The development agent would revisit this if a poll can go stale for a transient reason that is not the database.
+
+**Applied in the spec:** R-OPS-001 (the grace paragraph).
+
+### Q-OPS-35 · TLS to the span collector
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The scheme decides, silently | `http://` is plaintext, a `ca_file` is ignored | Nothing to configure | Span metadata can leave in plaintext by a typo; a CA file that does nothing looks like protection |
+| (b) https unless `tracing.allow_insecure` (chosen) | `http://` endpoint and `OTEL_EXPORTER_OTLP_INSECURE=true` need the switch; `ca_file` with `http://` is refused | Plaintext is a named decision (INV-20) | One more key |
+
+**Choice:** (b), checked at load, also for the endpoint of the standard variables.
+
+**Applied in the spec:** R-OPS-018, INV-20.
+
+### Q-OPS-36 · Bootstrap anonymous read is the default endpoint's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every endpoint that serves `api` | Same as before | Simple | An outside-audience endpoint with `api` in its surface opens `system.read` to anyone |
+| (b) Default endpoint only, and only while it admits anonymous requests (chosen) | `Require` reads the endpoint of the request | The bridge cannot reach a further endpoint | None while the bridge exists (it goes with the identity milestone) |
+
+**Choice:** (b). The load-time guard checks the `base_url` of every endpoint, not only `server.base_url`; a host below
+`.localhost` counts as loopback (RFC 6761 reserves the name space), as `localhost`, `127.0.0.1` and `::1` do.
+
+**Applied in the spec:** R-OPS-002 (the `system.bootstrap_anonymous_read` paragraph).
 
 ## What this does not cover
 

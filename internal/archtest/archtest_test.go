@@ -312,7 +312,7 @@ func TestFixtureModules(t *testing.T) {
 			t.Fatalf("got %v", Strings(vs))
 		}
 	})
-	t.Run("R-EP-002 R-STOR-046 a session-level advisory lock below internal/blob is named, the transaction-level one is not, and only internal/httpserver may set the endpoint", func(t *testing.T) {
+	t.Run("R-STOR-046 a session-level advisory lock below internal/blob is named, the transaction-level one is not", func(t *testing.T) {
 		vs, err := CheckSourceBans(fixtureDir(t, "outbound"))
 		if err != nil {
 			t.Fatal(err)
@@ -326,9 +326,6 @@ func TestFixtureModules(t *testing.T) {
 			if !strings.Contains(joined, want) {
 				t.Errorf("missing %q in\n%s", want, joined)
 			}
-		}
-		if !strings.Contains(joined, "R-EP-002 internal/webish/ep.go") || strings.Contains(joined, "R-EP-002 internal/httpserver") {
-			t.Errorf("R-EP-002 must name internal/webish and exempt internal/httpserver:\n%s", joined)
 		}
 		if strings.Contains(joined, "fine.go") {
 			t.Errorf("pg_advisory_xact_lock must not be flagged:\n%s", joined)
@@ -361,6 +358,31 @@ func realTree(t *testing.T) (root, module string, pkgs []Package) {
 	return realRoot, realMod, realPkgs
 }
 
+func TestEndpointConstruction(t *testing.T) {
+	t.Run("R-EP-002 construction outside internal/app is found through aliases, function values, new, literals and type aliases", func(t *testing.T) {
+		dir := fixtureDir(t, "endpoint")
+		pkgs, err := LoadTyped(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		vs := CheckEndpointConstruction("example.test/fix", pkgs)
+		got := map[string]bool{}
+		for _, v := range vs {
+			got[v.From] = true
+		}
+		for _, want := range []string{"alias.go", "funcvalue.go", "newt.go", "typealias.go", "literal.go"} {
+			if !got["internal/webish/"+want] {
+				t.Errorf("%s not named:\n%s", want, strings.Join(Strings(vs), "\n"))
+			}
+		}
+		for from := range got {
+			if !strings.HasPrefix(from, "internal/webish/") || strings.HasSuffix(from, "clean.go") {
+				t.Errorf("%s must not be named (internal/httpserver and internal/app build endpoints, reading one is fine)", from)
+			}
+		}
+	})
+}
+
 func TestRealTree(t *testing.T) {
 	t.Run("R-ARCH-002 the layer and import rules hold on the current tree", func(t *testing.T) {
 		_, module, pkgs := realTree(t)
@@ -386,6 +408,14 @@ func TestRealTree(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantClean(t, vs)
+	})
+	t.Run("R-EP-002 only internal/app builds an endpoint or a chain", func(t *testing.T) {
+		root, module, _ := realTree(t)
+		pkgs, err := LoadTyped(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantClean(t, CheckEndpointConstruction(module, pkgs))
 	})
 	t.Run("R-ARCH-018 no LISTEN or NOTIFY, no change-log write outside internal/cluster, no session-level SQL, no assembled SQL", func(t *testing.T) {
 		root, _, _ := realTree(t)

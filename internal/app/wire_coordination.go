@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/observability/health"
 )
 
 // closer adapts a type with Close to a Component.
@@ -63,8 +64,11 @@ func (a *App) startCoordination(ctx context.Context) error {
 	if err := a.startComponent(ctx, changes); err != nil {
 		return err
 	}
-	// The poll depends on PostgreSQL only, never on Valkey (R-OPS-001).
-	a.health.AddReadiness("invalidation", changes.Check, false)
+	// The poll depends on PostgreSQL only, never on Valkey (R-OPS-001). A stale poll
+	// that is the database being away gets the same grace as the database check, so
+	// this check cannot take the replica out of the Service before the database
+	// check would (Q-OPS-31).
+	a.health.AddReadiness("invalidation", changes.Check, false, health.WithGrace(a.cfg.Health.DatabaseOutageGrace))
 
 	reps, err := cluster.NewRegistry(a.registryOptions())
 	if err != nil {

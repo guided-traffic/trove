@@ -19,6 +19,11 @@ const (
 	// FamilyReloadErrors counts content that did not load; the previous content of
 	// the piece stays in service. One distinct content counts once.
 	FamilyReloadErrors = "trove_tls_reload_errors_total"
+	// FamilyTemporary is 1 while a listener answers handshakes with its temporary
+	// self-generated certificate because its configured pair has not loaded, and 0
+	// once the configured pair serves. Only a listener that may use one has the
+	// series (the ops listener, R-ARCH-035).
+	FamilyTemporary = "trove_tls_temporary_certificate"
 )
 
 // Kinds of material: the value of the kind label. A listener's material also
@@ -37,6 +42,7 @@ type Metrics struct {
 	expiry  *prometheus.GaugeVec
 	reloads *prometheus.CounterVec
 	errors  *prometheus.CounterVec
+	temp    *prometheus.GaugeVec
 }
 
 func labelNames() []string { return []string{"kind", "listener", "name"} }
@@ -58,6 +64,10 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Help: "TLS material that did not load; the previous material stays in service. Counted once per distinct content.",
 		}, labelNames()),
 	}
+	m.temp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: FamilyTemporary,
+		Help: "1 while the listener serves its temporary self-generated certificate because its configured pair has not loaded.",
+	}, []string{"listener"})
 	var err error
 	if m.expiry, err = register(reg, m.expiry); err != nil {
 		return nil, err
@@ -68,7 +78,22 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 	if m.errors, err = register(reg, m.errors); err != nil {
 		return nil, err
 	}
+	if m.temp, err = register(reg, m.temp); err != nil {
+		return nil, err
+	}
 	return m, nil
+}
+
+// SetTemporary records whether the listener serves its temporary certificate.
+func (m *Metrics) SetTemporary(listener string, on bool) {
+	if m == nil {
+		return
+	}
+	v := 0.0
+	if on {
+		v = 1
+	}
+	m.temp.WithLabelValues(listener).Set(v)
 }
 
 func register[C prometheus.Collector](reg prometheus.Registerer, c C) (C, error) {

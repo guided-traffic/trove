@@ -67,9 +67,17 @@ type Server struct {
 	// flushing holds the connections whose committing request has returned from
 	// its handler but whose response net/http has not yet written: the connection
 	// turns idle or closes once it has. Cutting before that would lose the answer
-	// of a commit that went through.
-	flushing map[net.Conn]struct{}
+	// of a commit that went through. An HTTP/1 entry is the connection, removed by
+	// its next state change. An HTTP/2 handler runs on its own goroutine and the
+	// connection serves other streams, so its entry is the request, released after
+	// h2FlushWindow (CR2-2).
+	flushing map[any]struct{}
 }
+
+// h2FlushWindow is how long a committing HTTP/2 request counts as flushing after
+// its handler returned: the time the serve loop needs to put the response
+// frames on the wire.
+const h2FlushWindow = 250 * time.Millisecond
 
 // activeRequest is one request between its first and its last byte.
 type activeRequest struct {
@@ -129,7 +137,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.CommitGrace == 0 {
 		cfg.CommitGrace = DefaultCommitGrace
 	}
-	s := &Server{cfg: cfg, active: map[*activeRequest]struct{}{}, flushing: map[net.Conn]struct{}{}}
+	s := &Server{cfg: cfg, active: map[*activeRequest]struct{}{}, flushing: map[any]struct{}{}}
 	s.srv = &http.Server{
 		Handler:           s.track(cfg.Handler),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
@@ -176,9 +184,14 @@ func (s *Server) Serve() error {
 		// The reloader runs while the listener accepts: after Shutdown starts no
 		// new handshake happens, and the open connections keep what they have.
 		ctx, cancel := context.WithCancel(context.Background())
-		go s.cfg.TLS.Run(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			s.cfg.TLS.Run(ctx)
+		}()
 		err = s.srv.ServeTLS(s.ln, "", "")
 		cancel()
+		<-done // CR2-9: nothing outlives Serve
 	} else {
 		err = s.srv.Serve(s.ln)
 	}
@@ -290,9 +303,7 @@ func (s *Server) track(next http.Handler) http.Handler {
 		s.mu.Unlock()
 		defer func() {
 			s.mu.Lock()
-			if c, ok := r.Context().Value(ctxKeyConn{}).(net.Conn); ok && a.inCommit() {
-				s.flushing[c] = struct{}{}
-			}
+			s.holdFlushing(r, a)
 			delete(s.active, a)
 			s.mu.Unlock()
 		}()
@@ -316,6 +327,29 @@ func (s *Server) track(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(&stallWriter{ResponseWriter: w, extend: extend}, r)
 	})
+}
+
+// holdFlushing keeps a committing request that is about to return in the
+// flushing set until its response is out. A request whose context is already
+// done lost its client (closed connection, reset stream): no response will be
+// delivered, and the event that would remove its entry may have fired already.
+// The caller holds s.mu.
+func (s *Server) holdFlushing(r *http.Request, a *activeRequest) {
+	if !a.inCommit() || r.Context().Err() != nil {
+		return
+	}
+	if r.ProtoMajor >= 2 {
+		s.flushing[a] = struct{}{}
+		time.AfterFunc(h2FlushWindow, func() {
+			s.mu.Lock()
+			delete(s.flushing, a)
+			s.mu.Unlock()
+		})
+		return
+	}
+	if c, ok := r.Context().Value(ctxKeyConn{}).(net.Conn); ok {
+		s.flushing[c] = struct{}{}
+	}
 }
 
 // trackedBody notes the end of the request body and moves the read deadline

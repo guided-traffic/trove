@@ -27,7 +27,7 @@ pass (Reload / Refresh / Run tick)
     sha256(len|bytes …)
       == content served now ──────────────────────► nothing to do (a touched mtime changes nothing)
       == content that failed last ───────────────► nothing to do (counted and logged already)
-      parse: pair (X509KeyPair, complete PEM, leaf not expired) / bundle (≥ 1 certificate, complete PEM)
+      parse: pair (X509KeyPair, complete PEM, leaf neither expired nor not yet valid; a not-yet-valid content is looked at again every pass) / bundle (≥ 1 certificate, complete PEM)
         fails, pair ──► read both files once more; changed? parse that   (a rotation caught half-way)
         fails ────────► keep the last good content; count + log once for this content
         loads ────────► swap the piece; trove_tls_reloads_total + info log (not for the first load)
@@ -40,7 +40,7 @@ The handshake callbacks never touch a file. They read the snapshot:
 |---|---|---|
 | `Certificate` (`GetCertificate`) | listeners | the pair whose DNS names hold the SNI name exactly; else the first pair the client supports whose names match (wildcards, via `ClientHelloInfo.SupportsCertificate`); else the first pair. No pair loaded: the handshake fails |
 | `ClientCertificate` (`GetClientCertificate`) | PostgreSQL, Valkey | the configured pair; none configured: no certificate; configured but never loaded: the handshake fails (never a silent connection without it) |
-| `Pool` | listeners (client CAs), all clients (roots) | system roots (if asked) plus every bundle that loaded. **Never nil when a bundle is configured**: a bundle that never loaded gives an empty pool, which trusts nothing, because a nil `RootCAs` would mean the system roots |
+| `Pool` | listeners (client CAs), all clients (roots) | system roots (if asked) plus every bundle that loaded. **Never nil when a bundle is configured** (a listener that asks for client certificates without a `client_ca_file` is refused by `NewListenerTLS`): a bundle that never loaded gives an empty pool, which trusts nothing, because a nil `RootCAs` would mean the system roots |
 
 `Loaded()` is nil once every piece has loaded at least once; `Err()` reports the pieces whose current files did not
 load (they serve their previous content). `Generation()` lets a consumer cache derived state: read it before `Pool`.
@@ -61,7 +61,7 @@ content hash on a timer sees that on every volume type and cannot miss an event.
 
 | Situation | Listener | Client (PostgreSQL, Valkey, object store, outbound) |
 |---|---|---|
-| file absent or broken **at start** | the listener binds and refuses handshakes; the `tls` readiness check (first readiness only) holds the replica unready; the pair is served as soon as it is valid, no restart | configuration error: `Open`, `NewValkey`, `NewFromFactory` fail and the process ends, as before; the outbound factory's own CA files hold the `outbound` first readiness and its clients fail closed until the files load |
+| file absent or broken **at start** | the listener binds and refuses handshakes, except the ops listener, which answers with a temporary in-memory certificate (ECDSA, one hour, CN = instance, `trove_tls_temporary_certificate{listener="ops"}`) so HTTPS probes reach `/healthz` 200 and `/readyz` 503 (Q-ARCH-36); the `tls` readiness check (first readiness only) holds the replica unready; the pair is served as soon as it is valid, no restart | configuration error: `Open`, `NewValkey`, `NewFromFactory` fail and the process ends, as before; the outbound factory's own CA files hold the `outbound` first readiness and its clients fail closed until the files load |
 | file broken **after** a good load | the previous pair stays; `trove_tls_reload_errors_total` +1; ERROR log with the file names and the reason; readiness unchanged | the previous material stays; the same counter and log |
 
 A connection keeps what it negotiated: an open TLS connection is not touched by a rotation, and the outbound

@@ -66,6 +66,11 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `getVersion` | `GET /api/v1/system/version` | authenticated, or anonymous with `system.public_version` |
 | `getSystemInfo` | `GET /api/v1/system/info` | `system.read` |
 | `listReplicas` | `GET /api/v1/system/replicas` | `system.read` |
+
+Until the identity packages exist, `bootstrapAccess` ([access.go](../../internal/app/access.go)) lets
+`system.bootstrap_anonymous_read` open `system.read` to anonymous callers on the **default endpoint only**, and only
+while that endpoint admits anonymous requests; a further endpoint that serves `api` answers 401 (Q-OPS-36). The route
+check at start compares the document with the registered and the dropped patterns of each endpoint that serves `api`.
 | `getOpenApiJson` / `getOpenApiYaml` | `GET /api/v1/openapi.json`, `.yaml` | anonymous; `servers[0].url` is the public base URL |
 | `getProblemType` | `GET /api/v1/problems/{code}` | anonymous; resolves the `type` URI of a problem |
 

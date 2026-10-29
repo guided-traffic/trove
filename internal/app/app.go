@@ -396,7 +396,7 @@ func (a *App) startClient() error {
 		// that breaks a rule stops start-up (R-API-002, R-HA-041). The management API
 		// is checked against its document where it is served in full.
 		if rt.ep.Serves(config.SurfaceAPI) {
-			if err := doc.CheckRoutes(router.Patterns()); err != nil {
+			if err := checkAPIRoutes(doc, router); err != nil {
 				return fmt.Errorf("route table of endpoint %s: %w", rt.cfg.Name, err)
 			}
 		}
@@ -414,6 +414,15 @@ func (a *App) startClient() error {
 		}
 	}
 	return nil
+}
+
+// checkAPIRoutes compares the management API routes of one endpoint's router with
+// the document. The routes the endpoint's surface leaves out (the ci_exchange
+// route on a surface without it) count as present: the check is about the
+// document and the registration agreeing, not about what this endpoint serves
+// (CR2-4).
+func checkAPIRoutes(doc *v1.Document, router *httpserver.Router) error {
+	return doc.CheckRoutes(append(router.Patterns(), router.Dropped()...))
 }
 
 func (a *App) newServer(name, addr string, h httpHandler, tls *httpserver.ListenerTLS) (*httpserver.Server, error) {

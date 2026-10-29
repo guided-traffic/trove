@@ -299,7 +299,9 @@ repository makes or accepts can run with TLS, trove's own listeners included. TL
 trusts is reloaded without a restart. The product does not depend on a connection being plaintext inside a cluster.
 This is the owner constraint of 2026-10-29, recorded as [ADR-127](../decisions.md#adr-127--transport-encryption-on-every-connection-troves-listeners-included).
 An installation may set `tls.enabled: false` (H-38); the invariant forbids a design that needs plaintext, not that
-choice.
+choice. The plaintext switches are explicit and named: `tls.enabled: false` (chart), `server.tls` left empty,
+`tracing.allow_insecure: true` (an `http://` collector endpoint or `OTEL_EXPORTER_OTLP_INSECURE=true`, refused without it,
+[Q-OPS-35](operations-and-observability.md#q-ops-35--tls-to-the-span-collector)) and the `sslmode`/`tls` keys of each client.
 
 ## Requirement format
 

@@ -99,20 +99,10 @@ func sourceBans() []sourceBan {
 			why:     "the remote fetch engine uses the Valkey flight lock, never a PostgreSQL advisory lock",
 			withSQL: true,
 		},
-		{
-			rule: "R-EP-002",
-			dirs: []string{"internal"},
-			// The endpoint of a request is the one whose listener accepted it: only the
-			// chain in internal/httpserver places a snapshot in a request context, and
-			// no other package makes one up as a literal.
-			re:     regexp.MustCompile(`\bhttpserver\.(WithEndpoint\(|Endpoint\{)`),
-			why:    "only internal/httpserver sets the endpoint of a request; read it with httpserver.EndpointFrom",
-			except: []string{"internal/httpserver"},
-		},
 	}
 }
 
-// CheckSourceBans implements the source rules of R-STOR-046, R-ARCH-033 and R-EP-002.
+// CheckSourceBans implements the source rules of R-STOR-046 and R-ARCH-033.
 func CheckSourceBans(root string) ([]Violation, error) {
 	var out []Violation
 	for _, ban := range sourceBans() {

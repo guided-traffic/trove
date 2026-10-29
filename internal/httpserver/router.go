@@ -37,6 +37,10 @@ type Router struct {
 	// allow, when set, decides which patterns the router registers: a pattern of
 	// a route family the endpoint does not serve is dropped (R-EP-005).
 	allow func(pattern string) bool
+	// servesPath, when set, tells the fallback whether a request path belongs to a
+	// family the endpoint serves: for one that does not, the answer is the plain
+	// 404, never a 405 that would show a route of another family exists (R-EP-005).
+	servesPath func(path string) bool
 
 	mu       sync.Mutex
 	patterns []string
@@ -60,6 +64,7 @@ func NewClientRouter() *Router {
 func NewEndpointRouter(e *Endpoint) *Router {
 	r := newRouter()
 	r.allow = func(pattern string) bool { return e.servesPattern(pattern) }
+	r.servesPath = e.servesPath
 	if e.Serves(config.SurfaceUI) {
 		r.Handle(RootPattern, http.RedirectHandler("/ui/", http.StatusFound))
 	}
@@ -133,6 +138,10 @@ func probeMethods() []string {
 // asks the mux itself whether the path exists for another method.
 func (r *Router) fallback(w http.ResponseWriter, req *http.Request) {
 	var allow []string
+	if r.servesPath != nil && !r.servesPath(req.URL.Path) {
+		Problem(w, req, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
+		return
+	}
 	for _, m := range probeMethods() {
 		probe := &http.Request{Method: m, URL: &url.URL{Path: req.URL.Path, RawPath: req.URL.RawPath}, Host: req.Host, Header: req.Header}
 		if _, p := r.mux.Handler(probe); p != "" && p != CatchAllPattern {

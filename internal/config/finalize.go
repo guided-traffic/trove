@@ -2,6 +2,7 @@ package config
 
 import (
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -53,8 +54,20 @@ func (c *Config) Validate(r *Report) {
 				t, c.Health.ShutdownDrainDelay, ShutdownMargin, grace)
 		}
 	}
-	if c.System.BootstrapAnonymousRead && !localOrigin(c.Server.BaseURL) && strings.HasPrefix(strings.ToLower(c.Server.BaseURL), "https://") {
-		r.Add("system.bootstrap_anonymous_read", "must not be true while server.base_url is an https origin other than localhost: it opens system.read to everyone who reaches the edge")
+	if c.System.BootstrapAnonymousRead {
+		// Every endpoint's origin counts: the bridge is checked against the origins
+		// that reach the edge, not only the default one (SA3).
+		bases := map[string]string{"server.base_url": c.Server.BaseURL}
+		for n, ep := range c.Server.Endpoints {
+			if n != DefaultEndpoint {
+				bases["server.endpoints."+n+".base_url"] = ep.BaseURL
+			}
+		}
+		for _, key := range sortedKeys(bases) {
+			if b := bases[key]; !localOrigin(b) && strings.HasPrefix(strings.ToLower(b), "https://") {
+				r.Add("system.bootstrap_anonymous_read", "must not be true while %s is an https origin other than localhost: it opens system.read to everyone who reaches the edge", key)
+			}
+		}
 	}
 }
 
@@ -64,11 +77,13 @@ func localOrigin(raw string) bool {
 	if err != nil {
 		return false
 	}
-	switch strings.ToLower(u.Hostname()) {
+	h := strings.ToLower(u.Hostname())
+	switch h {
 	case "localhost", "127.0.0.1", "::1":
 		return true
 	}
-	return false
+	// RFC 6761 reserves the whole localhost. name space for loopback.
+	return strings.HasSuffix(h, ".localhost")
 }
 
 // Finalize adds https:// to an object-store endpoint without a scheme (Q-STOR-15) and
@@ -87,4 +102,13 @@ func (c *Config) Finalize(sources map[string]Source) {
 		return
 	}
 	c.Server.ShutdownTimeout = DefaultShutdownTimeout
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

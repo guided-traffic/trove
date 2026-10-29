@@ -152,6 +152,13 @@ func TestGarbageCollection(t *testing.T) {
 		if cur.After == "" {
 			t.Fatal("no checkpoint")
 		}
+		// The stopped run handed its deleted rows over: a row is dropped only once
+		// delete_settle has passed since its object was deleted (R-STOR-024), and a
+		// run finishes rows before it takes candidates and then waits only for rows it
+		// deleted itself. The next run is therefore one that starts after the settle,
+		// as a scheduled run does; started at once, it would leave the rows of the
+		// stopped run in state deleting.
+		time.Sleep(r.cfg.GC.DeleteSettle + 100*time.Millisecond)
 		second := run(t, r, blob.RunOptions{Mode: blob.GCFull, Cursor: cur})
 		if first.Deleted+second.Deleted != 7 {
 			t.Fatalf("deleted %d + %d, want 7", first.Deleted, second.Deleted)
@@ -161,7 +168,8 @@ func TestGarbageCollection(t *testing.T) {
 		}
 		for _, d := range ds {
 			if !gone(t, e, p, d) {
-				t.Fatalf("%s not collected", d)
+				st, _, ok := p.state(t, d)
+				t.Fatalf("%s not collected: row=%v state=%s object=%v", d, ok, st, objectExists(t, e, e.prefix, d))
 			}
 		}
 		if state, _, ok := p.state(t, kept); !ok || state != "live" {

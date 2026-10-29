@@ -38,8 +38,11 @@ type OutboundAddressPolicy struct {
 	AllowCIDRs []string `yaml:"allow_cidrs" default:"[]"`
 }
 
-// Validate checks that every CIDR parses.
+// Validate checks that every CIDR parses and that the trust store is not empty.
 func (o *Outbound) Validate(r *Report) {
+	if !o.TLS.UseSystemRoots && len(o.TLS.CAFiles) == 0 {
+		r.Add("tls.use_system_roots", "is false and tls.ca_files is empty: no upstream certificate could verify")
+	}
 	for _, list := range []struct {
 		key   string
 		cidrs []string

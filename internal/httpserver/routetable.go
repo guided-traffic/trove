@@ -2,8 +2,12 @@ package httpserver
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/config"
 )
 
 // ReservedOCIPrefix is the path the OCI distribution API owns (R-HA-041,
@@ -62,7 +66,49 @@ func CheckRouteTable(patterns, ociPatterns []string) []string {
 		first, _, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
 		if strings.HasPrefix(first, "{") {
 			out = append(out, fmt.Sprintf("%q starts with a wildcard segment, which also matches below %s/ (R-HA-041)", p, ReservedOCIPrefix))
+			continue
+		}
+		if probe := matchesOtherFamily(p); probe != "" {
+			out = append(out, fmt.Sprintf("%q belongs to %s but also matches %s, a path of the %s family: a surface that serves one family would serve the other (R-EP-005)",
+				p, FamilyOf(p), probe, familyOfPath(probe)))
 		}
 	}
 	return out
+}
+
+// familyProbes are concrete paths of the management API and of the token
+// exchange. The surface filter works on registered patterns, not on request
+// paths, so a pattern of another family that can match one of them would serve
+// it on an endpoint whose surface leaves the API out.
+func familyProbes() []string {
+	return []string{
+		"/api/v1/", "/api/v1/system/ping", "/api/v1/a/b/c", "/api/v1/auth/oidc/token",
+		"/-/npm/v1/oidc/token/exchange/package/x", "/x/-/npm/v1/oidc/token/exchange/package/y",
+	}
+}
+
+// matchesOtherFamily returns a probe path of the API or exchange family that a
+// pattern of any other family can match, or "". A pattern is tried in a ServeMux
+// of its own, with GET and POST.
+func matchesOtherFamily(pattern string) (probe string) {
+	switch FamilyOf(pattern) {
+	case config.SurfaceAPI, config.SurfaceCIExchange, config.SurfaceUI:
+		return ""
+	}
+	defer func() {
+		if recover() != nil {
+			probe = "" // a pattern ServeMux refuses is reported when it is registered
+		}
+	}()
+	mux := http.NewServeMux()
+	mux.Handle(pattern, http.NotFoundHandler())
+	for _, path := range familyProbes() {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			req := &http.Request{Method: method, URL: &url.URL{Path: path}, Host: "example.com"}
+			if _, p := mux.Handler(req); p == pattern {
+				return path
+			}
+		}
+	}
+	return ""
 }

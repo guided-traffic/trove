@@ -288,14 +288,16 @@ func originHost(raw string) string {
 
 // WildcardLabel reports whether host lies under the wildcard host "*.<domain>"
 // and returns the matched left-most label. It matches exactly one label, as a
-// wildcard certificate does (RFC 6125 section 6.4.3, R-EP-003).
+// wildcard certificate does (RFC 6125 section 6.4.3, R-EP-003). The label must be
+// a DNS label (letters, digits, hyphens): a host such as "a_b.example.com" or one
+// that carries other bytes is not matched.
 func WildcardLabel(wildcard, host string) (string, bool) {
 	domain, ok := strings.CutPrefix(wildcard, "*.")
 	if !ok || domain == "" {
 		return "", false
 	}
 	label, ok := strings.CutSuffix(host, "."+domain)
-	if !ok || label == "" || strings.Contains(label, ".") {
+	if !ok || !dnsLabelRe.MatchString(label) {
 		return "", false
 	}
 	return label, true
@@ -445,6 +447,26 @@ func (s *Server) validateEndpoints(r *Report) {
 // validateEndpointHosts checks the hosts, the wildcard host and the host-root
 // bindings of one endpoint (R-EP-003, R-EP-006).
 func (s *Server) validateEndpointHosts(r *Report, base string, ep Endpoint, e ResolvedEndpoint) {
+	// A request's host is compared with the host set as a DNS name (R-EP-003): an
+	// IP literal never matches a name and is answered 421, and a name with a
+	// trailing dot is normalised on the request side only. A base URL whose host
+	// could not match its own endpoint would lock every client out.
+	if e.CheckHost {
+		baseKey := base + ".base_url"
+		if e.Default {
+			baseKey = "base_url"
+		}
+		if h := originHost(e.BaseURL); e.BaseURL != "" && h != "" && !validHostName(h) {
+			r.Add(baseKey, "host %q is not a DNS name (an IP literal, a trailing dot or a port-like suffix cannot match a request's host)", h)
+		}
+		if e.Default {
+			for _, u := range s.AdditionalBaseURLs {
+				if h := originHost(u); h != "" && !validHostName(h) {
+					r.Add("additional_base_urls", "host %q is not a DNS name (an IP literal or a trailing dot cannot match a request's host)", h)
+				}
+			}
+		}
+	}
 	for _, h := range hostNames(ep.Hosts) {
 		if !validHostName(h) {
 			r.Add(base+".hosts", "%q is not a DNS name without a port", h)

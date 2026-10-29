@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"math/rand/v2"
@@ -59,6 +61,11 @@ func classify(err error) retryKind {
 		}
 		return retryNo
 	}
+	if isTLSVerification(err) {
+		// A certificate the configured CA does not verify is a configuration
+		// error, not an outage: it does not pass by waiting (CR2-6).
+		return retryNo
+	}
 	if pgconn.SafeToRetry(err) {
 		return retryFailover
 	}
@@ -80,6 +87,20 @@ func classify(err error) retryKind {
 		return retryFailover
 	}
 	return retryNo
+}
+
+// isTLSVerification reports a failed verification of the server's certificate or
+// of the chain it presented: unknown authority, wrong host name, expired, not
+// yet valid. pgconn wraps it in a ConnectError, which classify would take for an
+// outage.
+func isTLSVerification(err error) bool {
+	var (
+		cv *tls.CertificateVerificationError
+		ua x509.UnknownAuthorityError
+		hn x509.HostnameError
+		ci x509.CertificateInvalidError
+	)
+	return errors.As(err, &cv) || errors.As(err, &ua) || errors.As(err, &hn) || errors.As(err, &ci)
 }
 
 // connClosedError marks an error after which the connection was found closed:

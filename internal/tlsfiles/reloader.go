@@ -100,8 +100,13 @@ type piece struct {
 	good    bool // content has loaded at least once
 	goodSum [sha256.Size]byte
 	badSum  [sha256.Size]byte
-	badSet  bool  // badSum is the content that failed last
-	err     error // problem of the last pass; nil when the current content is served
+	badSet  bool // badSum is the content that failed last
+	// retryErr is set while p.err is an error of the kind a later pass can see
+	// again with the same content: a read error, or a certificate that is not valid
+	// yet. Such an error is counted once per distinct text and does not stand for
+	// the content, so the last bad content stays remembered across it (CR2-7).
+	retryErr bool
+	err      error // problem of the last pass; nil when the current content is served
 
 	cert  *tls.Certificate    // pair
 	certs []*x509.Certificate // bundle
@@ -349,6 +354,11 @@ func (r *Reloader) passPiece(p *piece) bool {
 			}
 		}
 	}
+	if errors.Is(err, errNotYetValid) {
+		// Not remembered by its content: the same bytes load once their time has come.
+		r.fail(p, err, nil)
+		return false
+	}
 	if err != nil {
 		r.fail(p, err, &sum)
 		return false
@@ -405,6 +415,9 @@ func (r *Reloader) parse(p *piece, parts [][]byte) (loaded, error) {
 	return loaded{certs: certs}, nil
 }
 
+// errNotYetValid is the error of a certificate whose NotBefore lies ahead.
+var errNotYetValid = errors.New("the certificate is not valid")
+
 func (r *Reloader) parsePair(certPEM, keyPEM []byte) (*tls.Certificate, error) {
 	if err := complete(certPEM); err != nil {
 		return nil, fmt.Errorf("certificate file: %w", err)
@@ -421,8 +434,14 @@ func (r *Reloader) parsePair(certPEM, keyPEM []byte) (*tls.Certificate, error) {
 			return nil, err
 		}
 	}
-	if now := r.now(); now.After(cert.Leaf.NotAfter) {
+	now := r.now()
+	if now.After(cert.Leaf.NotAfter) {
 		return nil, fmt.Errorf("the certificate expired at %s", cert.Leaf.NotAfter.UTC().Format(time.RFC3339))
+	}
+	if now.Before(cert.Leaf.NotBefore) {
+		// A pair rotated in early would break every handshake until its time comes:
+		// the old one stays, and the same content is looked at again on every pass.
+		return nil, fmt.Errorf("%w until %s", errNotYetValid, cert.Leaf.NotBefore.UTC().Format(time.RFC3339))
 	}
 	return &cert, nil
 }
@@ -484,12 +503,11 @@ func (r *Reloader) attrs(p *piece) []any {
 // fail records a piece that did not load. One distinct content (or one distinct
 // read error) is counted and logged once, however many passes see it.
 func (r *Reloader) fail(p *piece, err error, sum *[sha256.Size]byte) {
-	repeat := sum == nil && !p.badSet && p.err != nil && p.err.Error() == err.Error()
+	repeat := sum == nil && p.retryErr && p.err != nil && p.err.Error() == err.Error()
 	if sum != nil {
 		p.badSum, p.badSet = *sum, true
-	} else {
-		p.badSet = false
 	}
+	p.retryErr = sum == nil
 	p.err = err
 	if repeat {
 		return

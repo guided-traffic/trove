@@ -111,11 +111,15 @@ type check struct {
 	configErr  bool
 	since      time.Time
 	latency    time.Duration
-	// transientSince is when the current run of transient failures began. A pass
-	// ends the run only once the check is passing again (success_threshold), so a
-	// flapping recovery does not restart the clock; a failure for another reason
-	// ends it at once.
-	transientSince time.Time
+	// runSince is when the current run of failures began (its first failing
+	// answer, before the debounce). The run ends only once the check passes again
+	// (success_threshold), so neither a flapping recovery nor a change of the
+	// failure's cause restarts the clock.
+	runSince time.Time
+	// runBroken is set by the first failure in the run that is not transient. It
+	// stays set until the run ends: a check that has been failing for a reason
+	// that does not pass by itself never earns a grace (R-OPS-001).
+	runBroken bool
 }
 
 // CheckOption adjusts one check.
@@ -520,12 +524,13 @@ func (h *Health) record(c *check, err error, latency time.Duration) {
 	c.mu.Lock()
 	wasFailing := c.failing
 	c.latency = latency
-	if err != nil && IsTransient(err) {
-		if c.transientSince.IsZero() {
-			c.transientSince = h.now()
+	if err != nil {
+		if c.runSince.IsZero() {
+			c.runSince = h.now()
 		}
-	} else if err != nil {
-		c.transientSince = time.Time{}
+		if !IsTransient(err) {
+			c.runBroken = true
+		}
 	}
 	if err == nil {
 		c.consecPass++
@@ -535,7 +540,7 @@ func (h *Health) record(c *check, err error, latency time.Duration) {
 			c.since = h.now()
 		}
 		if !c.failing {
-			c.transientSince = time.Time{}
+			c.runSince, c.runBroken = time.Time{}, false
 		}
 	} else {
 		c.consecFail++
@@ -654,7 +659,7 @@ func (h *Health) Snapshot() Snapshot {
 func (h *Health) gates(c *check) bool {
 	switch c.kind {
 	case kindGating:
-		if c.grace > 0 && h.everReady && !c.transientSince.IsZero() && h.now().Sub(c.transientSince) < c.grace {
+		if c.grace > 0 && h.everReady && !c.runBroken && !c.runSince.IsZero() && h.now().Sub(c.runSince) < c.grace {
 			return false
 		}
 		return true

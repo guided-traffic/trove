@@ -172,14 +172,28 @@ func (db *DB) Config() config.Database { return db.cfg }
 // control connection that also proves the server is a primary, so a replica
 // connected to a demoted primary turns unready instead of failing writes.
 func (db *DB) Ready(ctx context.Context) error {
-	var primary bool
-	if err := db.control.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&primary); err != nil {
+	conn, err := db.control.Acquire(ctx)
+	if err != nil {
 		return err
 	}
-	if !primary {
+	var primary bool
+	err = conn.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&primary)
+	switch {
+	case err == nil && primary:
+		conn.Release()
+		return nil
+	case err == nil:
+		// The control pool holds one connection, so a connection that landed on a
+		// standby would stay the control connection until its lifetime ends. Destroying
+		// it makes the next check connect again and find the new primary (CR2 gap c).
+		_ = conn.Hijack().Close(context.Background())
 		return ErrStandby
+	case conn.Conn().IsClosed() || classify(err) == retryFailover:
+		_ = conn.Hijack().Close(context.Background())
+	default:
+		conn.Release()
 	}
-	return nil
+	return err
 }
 
 // ErrStandby is what Ready reports for a connection to a server in recovery: a

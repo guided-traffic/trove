@@ -137,6 +137,15 @@ func (f *Factory) Err() error {
 	return f.setupErr
 }
 
+// TrustPending reports a trust store that has not loaded yet (a CA file of
+// proxy.outbound.tls.ca_files that is missing or unreadable): the part of Err a
+// later reload can clear. Everything else Err reports is fixed for the life of
+// the process.
+func (f *Factory) TrustPending() error {
+	f.trust.Refresh(f.trustEvery)
+	return f.trust.Loaded()
+}
+
 // CheckAddr applies the egress address policy to one address.
 func (f *Factory) CheckAddr(a netip.Addr) error { return f.policy.check(a) }
 

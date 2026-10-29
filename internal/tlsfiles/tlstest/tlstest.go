@@ -75,6 +75,8 @@ type Options struct {
 	Serial *big.Int
 	// NotAfter is the expiry; zero means an hour from now.
 	NotAfter time.Time
+	// NotBefore is the start of validity; zero means an hour ago.
+	NotBefore time.Time
 	// RSA uses a 2048-bit RSA key instead of ECDSA P-256.
 	RSA bool
 }
@@ -97,6 +99,9 @@ func (ca *CA) Issue(tb testing.TB, o Options) *Leaf {
 		o.Serial = serial(tb)
 	}
 	notBefore := time.Now().Add(-time.Hour)
+	if !o.NotBefore.IsZero() {
+		notBefore = o.NotBefore
+	}
 	if o.NotAfter.IsZero() {
 		o.NotAfter = time.Now().Add(time.Hour)
 	}

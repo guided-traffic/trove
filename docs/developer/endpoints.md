@@ -11,8 +11,11 @@ restrictions, the rate-limit class, cache-fill refusal and metadata filtering (R
 - **The endpoint is the listener.** `httpserver.EndpointFrom(ctx)` returns the endpoint whose `net.Listener`
   accepted the connection. It is placed in the context by the recovery stage (step 1) of that listener's
   chain and by nothing else; no request header, `Host`, server name or path selects it (R-EP-002).
-  `internal/archtest` fails when a package other than `internal/httpserver` calls `httpserver.WithEndpoint` or
-  writes an `httpserver.Endpoint{}` literal (R-EP-002 source rule in [source.go](../../internal/archtest/source.go)).
+  `withEndpoint` is unexported. `internal/archtest` ([endpoint.go](../../internal/archtest/endpoint.go), typed over
+  `go/packages`) fails when a package other than `internal/app` and `internal/httpserver` uses `httpserver.NewEndpoint`
+  or `httpserver.Chain`, or makes an `Endpoint` value (literal, `new`, a variable of the value type), however it spells
+  it: import alias, function value or a local type alias (R-EP-002; fixture
+  [testdata/endpoint](../../internal/archtest/testdata/endpoint)).
 - **Request data only picks among the endpoint's own hosts.** A host outside the set answers `421` with the
   problem code `misdirected_request` at step 5, after the in-flight limit and before authentication and routing.
 - **One chain, one router, one TLS block per endpoint.** The default endpoint is not special code: it is the
@@ -123,7 +126,13 @@ format registers them every path below answers the `404` problem on a bound and 
 `NewEndpointRouter` drops patterns of a family outside the surface, and registers the fixed `GET /{$}` redirect
 only with `ui`. `CheckSurface` is the independent proof: the composition root runs it with `CheckRouteTable` over
 every endpoint's patterns, and the unit test fails on a `files` pattern registered on an endpoint without `files`.
-`Document.CheckRoutes` (API routes against the OpenAPI document) runs only for endpoints that serve `api`.
+`Document.CheckRoutes` (API routes against the OpenAPI document) runs only for endpoints that serve `api`, over the
+registered and the dropped patterns (`checkAPIRoutes`): the ci_exchange route of a surface without it is not missing.
+`CheckRouteTable` also fails a pattern of another family that can match a path of the API or of the exchange
+(`/api/{format}/{repoKey}/…` matches `/api/v1/…`; checked by trying the pattern in a ServeMux against probe paths).
+The router's fallback answers a path of a family outside the surface with the plain 404, never a 405 with `Allow`.
+A wildcard host matches one DNS label (`config.WildcardLabel`), `hostOnly` returns "" for a byte outside printable
+ASCII, and a host-checking endpoint's `base_url` host must be a DNS name (no IP literal, no trailing dot).
 
 ## Which process opens which listener
 

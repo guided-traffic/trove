@@ -30,6 +30,13 @@ func (a *App) startTLS() error {
 	if a.opsTLS, err = httpserver.NewListenerTLS("ops", s.OpsListenerTLS(), a.tlsOptions("ops")...); err != nil {
 		return err
 	}
+	if a.opsTLS != nil {
+		// Under HTTPS probes a listener that refuses handshakes until its pair loads
+		// would get the container restarted in a loop; the ops listener answers with a
+		// temporary certificate meanwhile and the tls check keeps /readyz at 503
+		// (R-ARCH-035, H-68).
+		a.opsTLS.UseTemporaryCertificate(a.id.Instance, a.tele.tls, a.log.With("component", "tls", "listener", "ops"))
+	}
 	if a.servesDefault() {
 		if a.clientTLS, err = httpserver.NewListenerTLS("client", s.TLS, a.tlsOptions("client")...); err != nil {
 			return err

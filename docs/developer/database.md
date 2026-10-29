@@ -69,7 +69,10 @@ The connection string carries neither.
 - `Ready(ctx)` is the `database` readiness check: `SELECT NOT pg_is_in_recovery()` on the control connection.
   `CheckSchema(ctx, version)` is the `schema` check (below) and reads on the control connection; `SchemaState`
   (GET /system/info) reads on the main pool through `Read`, so a request never needs the control connection.
-  `Ready` returns `ErrStandby` for a server in recovery; `IsOutage(err)` is `IsUnavailable` or `ErrStandby`, the
+  `Ready` returns `ErrStandby` for a server in recovery and destroys that connection (the control pool holds one, so
+  the next check connects again and finds the new primary); `Read` destroys the connection when `fn` panics;
+  `classify` treats a failed TLS verification of the server (`x509` and `tls.CertificateVerificationError` inside the
+  `ConnectError`) as `retryNo`, not as an outage; `IsOutage(err)` is `IsUnavailable` or `ErrStandby`, the
   errors that get the outage grace of the readiness checks (below). `CheckBinaryVersion(v)` reports whether the
   binary's version is `major.minor.patch` or `dev`; `postgresComponent` logs an ERROR at start for a version that is
   not (`checkBinaryVersion`, [version_check.go](../../internal/app/version_check.go)). `Stats()` feeds the pool metrics.

@@ -379,6 +379,11 @@ func TestEndpoints(t *testing.T) {
 			{"extra pairs without TLS", base("tls.enabled=false", "endpoints.c.tls.extraSecrets={wild}"), []string{"endpoints.c.tls", "tls.enabled"}},
 			{"a client CA without TLS", base("tls.enabled=false", "endpoints.c.tls.clientCaSecret=ca"), []string{"endpoints.c.tls", "tls.enabled"}},
 			{"label roots without a wildcard host", base("endpoints.c.wildcardRoot=label"), []string{"endpoints.c.wildcardRoot"}},
+			{"an endpoint Ingress that verifies with haproxy and names no CA (the default controller)", base("endpoints.c.ingress.enabled=true"), []string{"endpoints.c.ingress.backendTLS.caSecret", "haproxy", "verify"}},
+			{"an endpoint Ingress that verifies with ingress-nginx and names no CA", base("endpoints.c.ingress.enabled=true", "endpoints.c.ingress.backendTLS.controller=ingress-nginx"), []string{"endpoints.c.ingress.backendTLS.caSecret", "ingress-nginx"}},
+			{"an endpoint Ingress that verifies with traefik and names no ServersTransport", base("endpoints.c.ingress.enabled=true", "endpoints.c.ingress.backendTLS.controller=traefik"), []string{"endpoints.c.ingress.backendTLS.serversTransport", "traefik"}},
+			{"an endpoint with a client CA behind haproxy and no client certificate Secret", base("endpoints.c.ingress.enabled=true", "endpoints.c.ingress.backendTLS.caSecret=ca", "endpoints.c.tls.existingSecret=c-tls", "endpoints.c.tls.clientCaSecret=c-ca"), []string{"endpoints.c.ingress.backendTLS.clientCertSecret", "haproxy"}},
+			{"a global CA does not help an endpoint that sets verify itself under another controller", base("ingress.backendTLS.caSecret=ca", "endpoints.c.ingress.enabled=true", "endpoints.c.ingress.backendTLS.controller=traefik"), []string{"endpoints.c.ingress.backendTLS.serversTransport"}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				renderFails(t, required(), tc.sets, tc.want...)

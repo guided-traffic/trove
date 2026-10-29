@@ -2686,13 +2686,19 @@ Listener side:
   the new certificate serves every new handshake at once. Connections already open keep the certificate
   they negotiated until they close (Q-ARCH-31).
 - A changed pair or bundle is compared by content, not by time, once per pass. A new pair that does not load
-  (unreadable, an incomplete PEM block, a key that does not match its certificate, an expired leaf) keeps the
+  (unreadable, an incomplete PEM block, a key that does not match its certificate, an expired leaf or one that is
+  not valid yet) keeps the
   previous content in service, counts once per distinct content in
   `trove_tls_reload_errors_total{kind,listener,name}`, and logs an error with the file names and the reason.
   Readiness does not change, and no other piece of the material is affected.
-- A pair that is missing or broken at start does not stop the process: the listener binds and refuses handshakes,
-  and the `tls` readiness check holds the first readiness until every listener's material has loaded, then clears
-  without a restart. Client-side material that is missing at start (PostgreSQL, Valkey, outbound CA bundles)
+- A pair that is missing or broken at start does not stop the process: the listener binds, the `tls` readiness
+  check holds the first readiness until every listener's material has loaded, then clears without a restart. The
+  client listener and an endpoint listener refuse handshakes until their pair loads. The ops listener answers with a
+  temporary certificate meanwhile (in memory, ECDSA P-256, valid one hour, CN = the instance, never written to disk),
+  so the kubelet's HTTPS probes, which do not verify, reach `/healthz` (200) and `/readyz` (503, check `tls`) instead
+  of failing and restarting the container; `trove_tls_temporary_certificate{listener="ops"}` is 1 while it serves
+  ([Q-ARCH-36](#q-arch-36--the-ops-listener-before-its-certificate-loads)). A listener that asks for client
+  certificates without a `client_ca_file` is refused at construction. Client-side material that is missing at start (PostgreSQL, Valkey, outbound CA bundles)
   fails the construction of that client, and the process ends ([tls.md](../developer/tls.md)).
 - The expiry of every served piece is `trove_tls_certificate_expiry_timestamp_seconds{kind,listener,name}`: the
   notAfter of a pair's leaf, or the earliest notAfter of a CA bundle, so an expiry alert needs no log parsing.
@@ -4681,6 +4687,52 @@ development agent would revisit this when an edge can write only the other famil
 **Applied in the spec:** [R-ARCH-006](#r-arch-006--client-address-and-trusted-proxies) (the family rule and the spoof
 acceptance case), [R-OPS-005](operations-and-observability.md#r-ops-005--external-base-url-and-forwarded-hosts) and
 [endpoints.md](endpoints.md) R-EP-003 ([Q-EP-15](endpoints.md#q-ep-15--which-forwarded-host-counts-on-an-endpoint)).
+
+### Q-ARCH-36 · The ops listener before its certificate loads
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Under HTTPS probes the kubelet does not verify the certificate, but it needs a completed handshake. A listener that
+refuses every handshake until its pair loads fails the startup and liveness probes, and the container is restarted in a
+loop, although R-ARCH-035 says the replica stays unready and serves once the files are valid (H-68).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse handshakes (as before) | Probes fail until the pair loads | Nothing unverified is ever served | A restart loop that hides the cause (a missing secret) behind kubelet back-off |
+| (b) Ops listener serves a temporary self-generated certificate until its pair loads (chosen) | In memory, ECDSA, one hour, CN = instance; `/healthz` 200, `/readyz` 503 with `tls` failing; the client listener still refuses | The replica stays up, unready, with the cause visible in `/readyz?verbose=1`, the log and a metric | An ops client that does not verify talks to an unauthenticated endpoint for that time; probes and metrics only, no secrets |
+| (c) Probes over plain HTTP while the pair is missing | A second plain port | Simple | A plaintext switch the chart cannot express; against INV-20 |
+
+**Choice:** (b). The temporary certificate is never offered by the client or an endpoint listener. A client that verifies
+(a scraper with the CA) still fails, as it should. `trove_tls_temporary_certificate{listener}` and one warning log mark
+the state. A pair whose leaf is not valid yet (SA10) is refused like an expired one, the old pair stays, and the same
+content loads once its time has come.
+
+**Rationale:** A restart does not fix a missing file; unready does. The ops listener carries probes and metrics, no
+credentials. The development agent would revisit this if the ops listener ever carries an operator API.
+
+**Applied in the spec:** [R-ARCH-035](#r-arch-035--tls-on-troves-listeners-and-reloadable-tls-material).
+
+### Q-ARCH-37 · Who may build an endpoint, and what an endpoint answers outside its surface
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The text rule of R-EP-002 (a regular expression over sources) | Names `httpserver.WithEndpoint(` and `Endpoint{` | Cheap | An import alias, a function value, `new(T)` or a type alias get around it |
+| (b) A typed rule over `go/packages` plus an unexported setter (chosen) | `withEndpoint` is unexported; `NewEndpoint`, `Chain` and a value of `Endpoint` appear only in `internal/app` and `internal/httpserver`; the check resolves types, so aliases and function values are found | Cannot be spelled around | Loads the module's types (about 2 s) |
+
+**Choice:** (b), with three rules that close the same hole from the other side: a packages-family pattern that can
+match a path of the API or of the token exchange (`/api/{format}/…`) fails `CheckRouteTable` (SA9); a path of a family
+outside the surface answers the plain `404`, never a `405` (R-EP-005); a wildcard host matches a DNS label only and a host
+with a byte outside printable ASCII is no host (SA4). `base_url` hosts of a host-checking endpoint must be DNS names: an
+IP literal and a trailing dot are refused at load rather than normalised, because a trailing dot is normalised on the
+request side only and a silently rewritten base URL would change the URLs in responses (SA7).
+
+**Rationale:** The endpoint of a request is its security context; the rule must hold against the next author, not only
+the last one. The development agent would revisit the trailing-dot refusal if an operator needs fully qualified names.
+
+**Applied in the spec:** [R-ARCH-005](#r-arch-005--http-listeners-routing-and-middleware-chain) and
+[endpoints.md](endpoints.md) R-EP-002, R-EP-003, R-EP-005 (text edits belong to the owner of that page).
 
 ## What this does not cover
 

@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -176,9 +177,9 @@ func (q *queueProcessor) run() {
 	// export takes at most one batch out of the queue and sends it. Spans wait
 	// in the bounded queue, never in a second buffer, so a stuck exporter makes
 	// OnEnd drop once the queue is full (R-OPS-018).
-	export := func() bool {
+	export := func(limit int) int {
 		batch = batch[:0]
-		for len(batch) < q.batch {
+		for len(batch) < min(q.batch, limit) {
 			select {
 			case s := <-q.ch:
 				batch = append(batch, s)
@@ -188,37 +189,42 @@ func (q *queueProcessor) run() {
 			break
 		}
 		if len(batch) == 0 {
-			return false
+			return 0
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), exportTimeout)
 		if err := q.exp.ExportSpans(ctx, batch); err != nil && q.log != nil {
 			q.log.Warn("span export failed", "component", "tracing", "error", err)
 		}
 		cancel()
-		return true
+		return len(batch)
 	}
-	drain := func() {
-		for {
-			if !export() {
+	// drain exports up to limit spans, the ones queued when the tick or the flush
+	// arrived. Under a steady span rate the queue refills during every export, so
+	// "until empty" would never end, would send ever smaller batches and would not
+	// reach the select below (CR2-5). Stop passes no limit: it has closed the
+	// intake, so the queue can only shrink.
+	drain := func(limit int) {
+		for limit > 0 {
+			n := export(limit)
+			if n == 0 {
 				return
 			}
+			limit -= n
 		}
 	}
 	for {
 		select {
 		case <-q.kick:
-			for len(q.ch) >= q.batch {
-				if !export() {
-					break
-				}
-			}
+			// One batch per kick: OnEnd kicks again while the queue stays full, and the
+			// loop must come back to the select for flush and stop.
+			export(q.batch)
 		case <-tick.C:
-			drain()
+			drain(len(q.ch))
 		case reply := <-q.flush:
-			drain()
+			drain(len(q.ch))
 			close(reply)
 		case <-q.stop:
-			drain()
+			drain(math.MaxInt)
 			return
 		}
 	}

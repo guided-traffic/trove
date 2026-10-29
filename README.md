@@ -119,11 +119,12 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 
 | Name | Value | Built |
 |---|---|---|
-| Listener certificate mount | `/var/run/secrets/trove/tls/` (`tls.crt`, `tls.key`) | yes (`_secrets.tpl`) |
-| Listener client CA mount | `/var/run/secrets/trove/tls-client-ca/ca.crt` | yes |
+| Listener certificate mount | `/var/run/secrets/trove/tls/` (`tls.crt`, `tls.key`; only in pods that load the pair, see `tls.ops`) | yes (`_secrets.tpl`) |
+| Listener client CA mount | `/var/run/secrets/trove/tls-client-ca/ca.crt` (main `web` pods only) | yes |
 | Ops listener certificate mount | `/var/run/secrets/trove/tls-ops/` | yes |
 | Endpoint certificate mount | `/var/run/secrets/trove/endpoints/<name>/<n>/` (`tls.crt`, `tls.key`; `n` is the position in `tls.certificates`), client CA at `…/<name>/client-ca/ca.crt` | yes (`_endpoints.tpl`) |
 | PostgreSQL CA and client pair | `/var/run/secrets/trove/database-ca/ca.crt`, `/var/run/secrets/trove/database-client/tls.{crt,key}` | yes |
+| Object-store CA | `/var/run/secrets/trove/s3-ca/ca.crt` (`secrets.s3CA`; renders `storage.s3.ca_file`) | yes |
 | Valkey CA and client pair | `/var/run/secrets/trove/valkey-ca/ca.crt`, `/var/run/secrets/trove/valkey-client/tls.{crt,key}` | yes |
 | Kubernetes Service port of an endpoint | `<fullname>-ep-<name>`, port from `endpoints.<name>.port` | yes (`endpoint-services.yaml`) |
 | Metric families | `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total`, `trove_tls_reload_errors_total`, labels `kind`, `listener`, `name` | yes (`internal/tlsfiles/metrics.go`) |
@@ -502,7 +503,7 @@ storage:
     prefix: trove                       # default: letters, digits and !_.*'()/- ; no leading or trailing /
     force_path_style: false             # default; true for SeaweedFS, MinIO and Ceph RGW
     allow_insecure_endpoint: false      # default; needed for an http:// endpoint
-    ca_file: ""                         # default: empty = the system trust store; replaces it for the object-store client
+    ca_file: ""                         # default: empty = the outbound trust store (system roots plus proxy.outbound.tls.ca_files); set = the whole trust store of the object-store client. The chart sets it through secrets.s3CA
     storage_class: ""                   # default
     payload_checksum: sha256            # default: sha256 | md5 | none
     startup_check: true                 # default: object-store conformance check before the first readiness
@@ -681,9 +682,10 @@ metrics:
   db_gauge_interval: 30s                # default; at least 1s
 tracing:
   enabled: false                        # default
-  endpoint: ""                          # default; no user information; not required when OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set
+  endpoint: ""                          # default; https:// unless allow_insecure; no user information; not required when OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set
   protocol: http/protobuf               # default: grpc | http/protobuf
-  ca_file: ""                           # default; read once, at start
+  ca_file: ""                           # default; read once, at start; refused with an http:// endpoint
+  allow_insecure: false                 # default: the endpoint must be https://; true accepts http:// and OTEL_EXPORTER_OTLP_INSECURE=true (spans cross the network in plaintext)
   headers_file: ""                      # default; file only; one "Name: value" per line
   sample_ratio: 0.1                     # default: 0 to 1
   incoming_context: trusted_peers       # default: trusted_peers | all | none
@@ -864,7 +866,7 @@ tls:
     secretName: ""                      # default: empty = no client certificates; example: trove-edge-ca
     key: ca.crt                         # default
     auth: require                       # default: require | verify_if_given
-  ops:                                  # a separate pair for :8081; empty = the same material as :8080 (inherit)
+  ops:                                  # a separate pair for :8081; empty = the same material as :8080 (inherit), which puts the :8080 private key into every pod. Set it when you run workers or endpoint pools (H-57)
     secretName: ""                      # default; example: trove-ops-tls
     certKey: tls.crt                    # default
     keyKey: tls.key                     # default
@@ -880,7 +882,7 @@ ingress:
   tls: []                               # default; example: [{secretName: trove-tls, hosts: [trove.example.com]}]
   backendTLS:                           # how the controller reaches trove over TLS
     controller: haproxy                 # default: haproxy | traefik | ingress-nginx | manual
-    verify: true                        # default: the controller verifies the trove certificate; with true, caSecret is required (haproxy, ingress-nginx)
+    verify: true                        # default: the controller verifies the trove certificate; with true, caSecret is required (haproxy, ingress-nginx), also for the Ingress of an endpoint
     caSecret: ""                        # required with verify on haproxy and ingress-nginx; a Secret with ca.crt; example: trove-tls
     clientCertSecret: ""                # haproxy: a Secret with tls.crt and tls.key presented to trove; required with tls.clientCA
     serversTransport: ""                # traefik only: <namespace>-<name>@kubernetescrd; required with verify
@@ -927,6 +929,9 @@ secrets:
     existingSecret: ""                  # default: empty = Sentinels without a password; example: trove-valkey-sentinel
     usernameKey: ""                     # default: empty = no Sentinel user
     passwordKey: password               # default
+  s3CA:
+    existingSecret: ""                  # default: empty = the outbound trust store (system roots, config.proxy.outbound.tls.ca_files); example: trove-s3-tls
+    key: ca.crt                         # default; mounted at /var/run/secrets/trove/s3-ca/ca.crt, renders storage.s3.ca_file (the whole trust store of the object-store client)
   valkeyCA:
     existingSecret: ""                  # default: empty = the system roots; example: trove-valkey-ca
     key: ca.crt                         # default

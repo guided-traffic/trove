@@ -192,6 +192,12 @@ keys win; setting one inside config is refused by trove.validate.
 {{- if eq (dig "storage" "s3" "credentials" "source" "" .Values.config) "static" -}}
 {{- $_ := set (get $managed "storage") "s3" (dict "credentials" (dict "access_key_id_file" "/var/run/secrets/trove/s3/access-key-id" "secret_access_key_file" "/var/run/secrets/trove/s3/secret-access-key")) -}}
 {{- end -}}
+{{- if $s.s3CA.existingSecret -}}
+{{- $st := get $managed "storage" -}}
+{{- $s3 := get $st "s3" | default (dict) -}}
+{{- $_ := set $s3 "ca_file" "/var/run/secrets/trove/s3-ca/ca.crt" -}}
+{{- $_ := set $st "s3" $s3 -}}
+{{- end -}}
 {{- if eq (dig "metrics" "auth" "" .Values.config) "static" -}}
 {{- $_ := set $managed "metrics" (dict "bearer_token_file" "/var/run/secrets/trove/metrics/token") -}}
 {{- end -}}
