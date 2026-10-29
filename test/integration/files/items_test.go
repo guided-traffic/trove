@@ -315,6 +315,11 @@ func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 		waitFor(t, "the job to remove the subtree", 30*time.Second, func() bool {
 			return e.number("SELECT count(*) FROM items WHERE path LIKE 'tree%'") == 0
 		})
+		// The worker settles the job after the transaction of its last batch, so
+		// the items can be gone before the job reads as succeeded.
+		waitFor(t, "the job to settle", 30*time.Second, func() bool {
+			return e.number("SELECT count(*) FROM job WHERE kind = 'items-delete' AND state IN ('succeeded', 'failed', 'cancelled')") > 0
+		})
 		if n := e.number("SELECT count(*) FROM job WHERE kind = 'items-delete' AND state = 'succeeded'"); n != 1 {
 			t.Errorf("%d succeeded jobs", n)
 		}
