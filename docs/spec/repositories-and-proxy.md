@@ -504,7 +504,7 @@ Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
 | Request | `GET /api/v1/repositories/{key}` |
 | Success | 200, `ETag: "<config_version>"`, body: the full document or the consumer view |
 | Errors | 401; 404 per [R-AUTHZ-016](authorization.md) |
-| Permission | `repositories:read-config` (or project administrator of the repository's project): full document; any repository action on the repository: consumer view |
+| Permission | `repositories:read-config` (or project administrator of the repository's project): full document; `read` on the repository: consumer view (Q-REPO-20) |
 
 - The document contains only members that apply to the repository's class and format; the
   catalog's format-filtered read is therefore the only read.
@@ -572,7 +572,7 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
 | Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` |
 | Success | 200, `{"items": [...], "nextCursor": "…"}` (paging per [api-and-ui.md](api-and-ui.md) R-API-010, Q-API-6) |
 | Errors | 400 invalid filter; 401 |
-| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` ([R-AUTHZ-016](authorization.md)); `view=full` requires `repositories:read-config` |
+| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` ([R-AUTHZ-016](authorization.md)), and every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19); `view=full` requires `repositories:read-config` |
 
 - Filters: `class` and `format` take comma-separated lists; `q` matches key and description
   case-insensitively; `project` filters by project key; `state=inactive` returns disabled
@@ -3447,6 +3447,91 @@ R-ARCH-011 step 2 bounds the wait of a lookup "like a wait for the database (R-H
 The development agent would revisit it if R-HA-009 gets a named bound.
 
 **Applied in the spec:** R-ARCH-011 reads unchanged; the key is in [docs/developer/repositories.md](../developer/repositories.md).
+
+### Q-REPO-19 · A holder of repositories:read-config sees every repository in the list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-012 says the list contains only repositories on which the caller holds `read`, and `view=full` is the catalog of all configurations.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only readable repositories, for everyone | The list is filtered by `read` whoever asks | One rule | The repository administrator holds no content rights (R-AUTHZ-012), so the administration screen would list nothing; `view=full` would show a subset of the configurations |
+| (b) Every repository for a holder of `repositories:read-config`, the readable ones for everyone else (chosen) | The capability reads configuration instance-wide (R-AUTHZ-013 "no per-repository configuration type") | The role that administers repositories sees them; repositories being deleted are visible to it, as R-REPO-013 says | A second rule in the list |
+
+**Choice:** (b).
+
+**Rationale:** Seeing that a repository exists and what it is configured as is what the capability grants; it grants no access to content. The development agent would revisit this if a project administrator, who holds the capability for the repositories of one project only (R-AUTHZ-026), needs the list narrowed to them.
+
+**Applied in the spec:** R-REPO-012 (permission row).
+
+### Q-REPO-20 · The consumer view needs `read`, and the ETag names the view
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-010 gives the consumer view to a caller who holds "any repository action", and R-API-012 says the ETag carries the view where the representation depends on it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Any of the six actions | The handler decides each action until one is allowed | As written | Up to six decisions, five of them refusals that are audited as `authz.denied`; an action other than `read` does not let the caller see the repository elsewhere (R-AUTHZ-016 answers 404 without `read`) |
+| (b) `read` (chosen) | One read-type decision, the row of R-AUTHZ-016 | One decision, one audit rule; a caller who may read gets the view and a caller who may not gets the 404 of every other read | A caller with only `deploy` gets 404 on the configuration read, as on `/files/` reads |
+
+**Choice:** (b). The tag of the full document is `"<config_version>"`, the tag of the consumer view `"<config_version>-consumer"`; the answer of a write carries the first.
+
+**Rationale:** The tag of a view that the caller cannot write through never has to be accepted as an `If-Match`. A caller holding only a write action on a repository has no use for the consumer view; the development agent would revisit this if one appears.
+
+**Applied in the spec:** R-REPO-010 (permission row).
+
+### Q-REPO-21 · A misspelt or malformed member of a repository document answers 400 invalid_document with its pointer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-008 says 400 `invalid_document` for malformed JSON and unknown members; R-API-003 says 400 `malformed_request` with the pointer of the member in `errors[0]` for every body.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `malformed_request` for every body | The conventions of the API own the error | One code for every resource | R-REPO-008 and the acceptance criteria of R-GENERIC-001 name `invalid_document` |
+| (b) `invalid_document` with the pointer (chosen) | The repository document keeps its code and gains the pointer of the convention | Both pages are right: the status is 400, the code is the one the repository page documents, and `errors[0].pointer` names the member | The contract tests of the conventions need the code as a parameter (`apitest.Resource.MalformedCode`) |
+
+**Choice:** (b). A change to key, class or format answers 422 `immutable_field` (R-REPO-008), not the generic `validation_failed` (`apitest.Resource.ImmutableCode`).
+
+**Rationale:** The code is what a client of the configuration API matches on. The development agent would revisit this if the conventions page makes the code of a body error uniform.
+
+**Applied in the spec:** R-REPO-008 (the first paragraph reads unchanged; the pointer is the addition).
+
+### Q-REPO-22 · The list filters: repeated or comma-separated values, and a project that selects nothing
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-012 takes `class` and `format` as comma-separated lists, R-API-011 as repeated parameters, and the `project` filter needs projects, which M1 does not have.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One form | Comma-separated only, or repeated only | A single rule | Contradicts one of the two pages |
+| (b) Both forms; `project` selects nothing (chosen) | Values are split at commas and repeats are joined; a project key selects the repositories of the project, and there are none | The documented examples work; the parameter exists from the first release, so a client does not change when projects arrive | A filter that always answers an empty list |
+
+**Choice:** (b).
+
+**Rationale:** Accepting the parameter keeps the contract of the list stable; an unknown project key is not an error in a list (R-API-011). The development agent would revisit this when the projects table exists.
+
+**Applied in the spec:** The operation `listRepositories` in api/openapi.yaml describes it.
+
+### Q-REPO-23 · last_activity_at is flushed once a minute by a constant interval
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-012 asks for a write at most once per minute per repository and replica and a flush at shutdown, and names no configuration key.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A key `repositories.activity_flush_interval` | The interval is tunable | Tests and operators can change it | A second interval whose lower bound is the requirement; one more key to document |
+| (b) A constant of one minute (chosen) | `repository.DefaultActivityInterval`; the tests construct the buffer with a shorter interval | The requirement is the interval; nothing to misconfigure | No operator control |
+
+**Choice:** (b).
+
+**Rationale:** "At most once per minute" is a ceiling the requirement fixes, so a tunable would only offer values that break it. The development agent would revisit this if an installation needs a lower write rate.
+
+**Applied in the spec:** R-REPO-012 reads unchanged; [docs/developer/repositories.md](../developer/repositories.md) names the constant.
 
 ## What this does not cover
 

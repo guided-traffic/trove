@@ -163,6 +163,23 @@ func stale(current int64) error {
 // the change-log row in one transaction. Create is never an upsert: a key that is
 // taken, also by a repository being deleted, answers 409 repository_exists.
 func (s *Service) Create(ctx context.Context, c Caller, body []byte) (Stored, error) {
+	var out Stored
+	err := s.run.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		out, err = s.CreateTx(ctx, tx, c, body)
+		return err
+	})
+	if err != nil {
+		return Stored{}, err
+	}
+	return out, nil
+}
+
+// CreateTx is Create in a transaction the caller owns: the management API runs it
+// inside the transaction of an Idempotency-Key (R-API-014), so the stored outcome
+// and the repository commit together. A validation failure is returned before
+// anything is written.
+func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byte) (Stored, error) {
 	d, err := DecodeDocument(body)
 	if err != nil {
 		return Stored{}, err
@@ -175,29 +192,25 @@ func (s *Service) Create(ctx context.Context, c Caller, body []byte) (Stored, er
 	if err != nil {
 		return Stored{}, err
 	}
-	var out Stored
-	err = s.run.InTx(ctx, func(tx meta.Tx) error {
-		qs, err := queries(tx)
-		if err != nil {
-			return err
-		}
-		rows, err := qs.InsertRepository(ctx, q.InsertRepositoryParams{
-			Key: d.Key, Format: d.Format, Class: string(d.Class), Config: string(cfg), Actor: c.principalID(),
-		})
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeRepositoryExists,
-				"a repository with the key "+strconv.Quote(d.Key)+" exists or is being deleted")
-		}
-		out, err = s.stored(rows[0], v.warnings)
-		if err != nil {
-			return err
-		}
-		return s.afterWrite(ctx, tx, c, EventCreated, out.Repository, []string{"key", "class", "format"})
+	qs, err := queries(tx)
+	if err != nil {
+		return Stored{}, err
+	}
+	rows, err := qs.InsertRepository(ctx, q.InsertRepositoryParams{
+		Key: d.Key, Format: d.Format, Class: string(d.Class), Config: string(cfg), Actor: c.principalID(),
 	})
 	if err != nil {
+		return Stored{}, err
+	}
+	if len(rows) == 0 {
+		return Stored{}, errs.E(errs.Conflict, errs.CodeRepositoryExists,
+			"a repository with the key "+strconv.Quote(d.Key)+" exists or is being deleted")
+	}
+	out, err := s.stored(rows[0], v.warnings)
+	if err != nil {
+		return Stored{}, err
+	}
+	if err := s.afterWrite(ctx, tx, c, EventCreated, out.Repository, []string{"key", "class", "format"}); err != nil {
 		return Stored{}, err
 	}
 	return out, nil

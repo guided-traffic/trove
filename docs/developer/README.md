@@ -57,6 +57,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission |
+| [files.md](files.md) | Raw transfer under `/files/`: deploy, download with Range, folders, the items API, deletes and the `items-delete` job, activity and download statistics |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
@@ -100,6 +101,7 @@ trove/
 ├── api/openapi.yaml          # OpenAPI 3.1 source of truth; go generate copies it into internal/api/v1
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
+│   ├── api/rawfiles/         # the /files/ handler (edge of internal/files)
 │   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
 │   │                         # rate limits); gen/ is generated (oapi-codegen); apitest/ validates responses against the document
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
@@ -124,6 +126,7 @@ trove/
 │   ├── observability/        # logs, metrics, tracing and OTLP export, health checks
 │   ├── outbound/             # the one HTTP client factory and the egress address policy
 │   ├── repository/           # repository model: service, snapshot reader, validation, patterns, deletion job
+│   ├── files/                # raw transfer service: deploy, download, folders, items, deletes, statistics
 │   ├── formats/              # format contract and registry; generic/ (raw files), all/ registers every format
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)

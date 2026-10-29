@@ -36,6 +36,11 @@ type Resource struct {
 	Patch       map[string]any
 	PatchMember string
 	PatchValue  any
+	// AltPatch is a second valid merge patch that changes the same member to
+	// another value. A resource that writes nothing for a patch that changes
+	// nothing (a repository, R-REPO-011) sets it: the blind write with If-Match: *
+	// then sends it, so that the revision still grows. Nil sends Patch again.
+	AltPatch map[string]any
 	// ClearMember is a member that null resets or removes; ClearedValue is what
 	// the representation shows afterwards (nil for a member that becomes null).
 	ClearMember  string
@@ -54,6 +59,29 @@ type Resource struct {
 	// not count as changing the other members when only it and the update time
 	// differ.
 	RevisionMember string
+	// MalformedCode is the problem code of a body with an unknown member; the
+	// default is malformed_request (R-API-003). A resource whose owning page names
+	// another code for it, such as invalid_document for a repository document
+	// (R-REPO-008), sets it; the status stays 400 and the pointer stays in errors[0].
+	MalformedCode string
+	// ImmutableCode is the problem code of a change to an immutable member; the
+	// default is validation_failed (R-API-013). The status stays 422 and the
+	// pointer stays in errors[0].
+	ImmutableCode string
+}
+
+func (r Resource) malformed() string {
+	if r.MalformedCode != "" {
+		return r.MalformedCode
+	}
+	return "malformed_request"
+}
+
+func (r Resource) immutable() string {
+	if r.ImmutableCode != "" {
+		return r.ImmutableCode
+	}
+	return "validation_failed"
 }
 
 type answer struct {
@@ -190,7 +218,7 @@ func (s *suite) testCreate(t *testing.T) {
 func (s *suite) testUnknownMember(t *testing.T) {
 	body := s.res.Create(s.next())
 	body["upsteamUrl"] = "x"
-	m := wantProblem(t, s.res.call(t, "POST", s.res.Collection, body), 400, "malformed_request")
+	m := wantProblem(t, s.res.call(t, "POST", s.res.Collection, body), 400, s.res.malformed())
 	errs, _ := m["errors"].([]any)
 	if len(errs) == 0 || errs[0].(map[string]any)["pointer"] != "/upsteamUrl" {
 		t.Fatalf("errors = %v", m["errors"])
@@ -281,9 +309,10 @@ func (s *suite) testETag(t *testing.T) {
 func (s *suite) testIfMatch(t *testing.T) {
 	res := s.res
 	_, url, _, etag := s.create(t)
-	patch := func(extra ...string) answer {
-		return res.call(t, "PATCH", url, res.Patch, append([]string{"Content-Type", "application/merge-patch+json"}, extra...)...)
+	patchWith := func(body map[string]any, extra ...string) answer {
+		return res.call(t, "PATCH", url, body, append([]string{"Content-Type", "application/merge-patch+json"}, extra...)...)
 	}
+	patch := func(extra ...string) answer { return patchWith(res.Patch, extra...) }
 	wantProblem(t, patch(), 428, "precondition_required")
 	if g := res.call(t, "GET", url, nil); g.header.Get("ETag") != etag {
 		t.Fatal("a refused PATCH changed the resource")
@@ -306,7 +335,11 @@ func (s *suite) testIfMatch(t *testing.T) {
 	// The loser of the race: the same tag again.
 	wantProblem(t, patch("If-Match", etag), 412, "precondition_failed")
 	// A blind overwrite is an explicit choice.
-	if star := patch("If-Match", "*"); star.status != 200 {
+	blind := res.Patch
+	if res.AltPatch != nil {
+		blind = res.AltPatch
+	}
+	if star := patchWith(blind, "If-Match", "*"); star.status != 200 {
 		t.Fatalf("If-Match: * answered %d\n%s", star.status, star.body)
 	}
 	// Every replica serves the new tag at once (R-API-052).
@@ -332,11 +365,11 @@ func (s *suite) testMergePatch(t *testing.T) {
 		etag = a.header.Get("ETag")
 		assertUnchanged(t, before, a.json(t), res.ClearMember, res.RevisionMember)
 	}
-	wantProblem(t, patch(map[string]any{"upsteamUrl": 1}, etag), 400, "malformed_request")
+	wantProblem(t, patch(map[string]any{"upsteamUrl": 1}, etag), 400, res.malformed())
 	if res.ImmutableMember == "" {
 		return
 	}
-	m := wantProblem(t, patch(map[string]any{res.ImmutableMember: res.ImmutableValue}, etag), 422, "validation_failed")
+	m := wantProblem(t, patch(map[string]any{res.ImmutableMember: res.ImmutableValue}, etag), 422, res.immutable())
 	errs, _ := m["errors"].([]any)
 	if len(errs) == 0 || errs[0].(map[string]any)["pointer"] != "/"+res.ImmutableMember {
 		t.Fatalf("errors = %v", m["errors"])

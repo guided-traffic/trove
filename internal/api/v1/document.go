@@ -36,6 +36,11 @@ type Operation struct {
 type Document struct {
 	root yaml.Node
 	ops  map[string]Operation
+	// files are the operations of the raw file path below /files/ (R-API-002):
+	// they are in the document, but the generated interface leaves them out and
+	// the files handler decides them (R-ARCH-011), so the authorization step of
+	// the management API does not know them.
+	files map[string]Operation
 }
 
 // httpMethods are the operation keys of a path item.
@@ -49,7 +54,7 @@ func httpMethods() []string {
 // operation can run without a declared and enforced permission (R-API-002,
 // R-API-008).
 func LoadDocument(raw []byte) (*Document, error) {
-	d := &Document{ops: map[string]Operation{}}
+	d := &Document{ops: map[string]Operation{}, files: map[string]Operation{}}
 	if err := yaml.Unmarshal(raw, &d.root); err != nil {
 		return nil, fmt.Errorf("openapi document: %w", err)
 	}
@@ -84,7 +89,12 @@ func LoadDocument(raw []byte) (*Document, error) {
 			} else {
 				req = r
 			}
-			d.ops[pattern] = Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req}
+			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req}
+			if isFilesPattern(pattern) {
+				d.files[pattern] = o
+			} else {
+				d.ops[pattern] = o
+			}
 		}
 	}
 	if err := errors.Join(problems...); err != nil {
@@ -93,7 +103,18 @@ func LoadDocument(raw []byte) (*Document, error) {
 	return d, nil
 }
 
-// Operations returns the table of operations keyed by route pattern.
+// FileOperations returns the operations of the raw file path (/files/...) keyed
+// by route pattern, with the {path} of the document.
+func (d *Document) FileOperations() map[string]Operation {
+	out := make(map[string]Operation, len(d.files))
+	for k, v := range d.files {
+		out[k] = v
+	}
+	return out
+}
+
+// Operations returns the table of the management API's operations (below
+// /api/v1/) keyed by route pattern.
 func (d *Document) Operations() map[string]Operation {
 	out := make(map[string]Operation, len(d.ops))
 	for k, v := range d.ops {
@@ -110,18 +131,26 @@ func (d *Document) CheckRoutes(registered []string) error {
 	have := map[string]bool{}
 	var problems []error
 	for _, p := range registered {
-		if !isV1Pattern(p) {
-			continue
-		}
-		have[p] = true
-		if _, ok := d.ops[p]; !ok {
-			problems = append(problems, fmt.Errorf("route %q is registered but not in api/openapi.yaml", p))
+		switch {
+		case isV1Pattern(p):
+			have[p] = true
+			if _, ok := d.ops[p]; !ok {
+				problems = append(problems, fmt.Errorf("route %q is registered but not in api/openapi.yaml", p))
+			}
+		case isFilesPattern(p):
+			n := documentedFilesPattern(p)
+			have[n] = true
+			if _, ok := d.files[n]; !ok {
+				problems = append(problems, fmt.Errorf("route %q is registered but not in api/openapi.yaml", p))
+			}
 		}
 	}
 	var missing []string
-	for p := range d.ops {
-		if !have[p] {
-			missing = append(missing, p)
+	for _, ops := range []map[string]Operation{d.ops, d.files} {
+		for p := range ops {
+			if !have[p] {
+				missing = append(missing, p)
+			}
 		}
 	}
 	sort.Strings(missing)
@@ -137,6 +166,20 @@ func isV1Pattern(p string) bool {
 		p = strings.TrimSpace(rest)
 	}
 	return strings.HasPrefix(p, "/api/v1/")
+}
+
+// isFilesPattern reports whether a ServeMux pattern lies below /files/.
+func isFilesPattern(p string) bool {
+	if _, rest, ok := strings.Cut(p, " "); ok {
+		p = strings.TrimSpace(rest)
+	}
+	return strings.HasPrefix(p, "/files/")
+}
+
+// documentedFilesPattern turns the route of the files handler into the template
+// of the document: the multi-segment wildcard {path...} is the parameter {path}.
+func documentedFilesPattern(p string) string {
+	return strings.Replace(p, "{path...}", "{path}", 1)
 }
 
 // withServer returns a copy of the document tree whose servers[0].url is baseURL.

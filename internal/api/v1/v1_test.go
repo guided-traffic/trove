@@ -388,7 +388,12 @@ func TestDocument(t *testing.T) {
 	})
 
 	t.Run("R-API-002 the registered routes and the document agree", func(t *testing.T) {
-		if err := s.doc.CheckRoutes(s.router.Patterns()); err != nil {
+		// The routes of /files/ are registered by internal/api/rawfiles, which imports
+		// this package; its test compares them with the document. The patterns are
+		// added here as that handler registers them.
+		patterns := append(s.router.Patterns(),
+			"GET /files/{repoKey}/{path...}", "HEAD /files/{repoKey}/{path...}", "PUT /files/{repoKey}/{path...}", "DELETE /files/{repoKey}/{path...}")
+		if err := s.doc.CheckRoutes(patterns); err != nil {
 			t.Fatal(err)
 		}
 	})

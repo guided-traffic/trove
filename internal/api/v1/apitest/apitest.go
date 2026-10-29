@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -78,7 +79,7 @@ func New(t testing.TB, spec []byte) *Validator {
 // matter), status, header and body the answer. It returns the operationId of the
 // route and the first violation.
 func (v *Validator) Check(req *http.Request, status int, header http.Header, body []byte) (string, error) {
-	route, params, err := v.router.FindRoute(req)
+	route, params, err := v.router.FindRoute(routeRequest(req))
 	if err != nil {
 		return "", fmt.Errorf("%s %s is not an operation of the document: %w", req.Method, req.URL.Path, err)
 	}
@@ -100,6 +101,19 @@ func (v *Validator) Check(req *http.Request, status int, header http.Header, bod
 		return id, fmt.Errorf("%s %s answered %d: %w", req.Method, req.URL.Path, status, err)
 	}
 	return id, nil
+}
+
+// routeRequest maps a request below /files/ to the template of the document: its
+// path holds slashes that a path parameter of the document cannot match, so the
+// router sees a request for /files/<key>/<one segment>. Only the route is looked up
+// with it; the answer is validated as it is.
+func routeRequest(req *http.Request) *http.Request {
+	if !strings.HasPrefix(req.URL.EscapedPath(), "/files/") {
+		return req
+	}
+	c := req.Clone(req.Context())
+	c.URL.Path, c.URL.RawPath = "/files/k/p", ""
+	return c
 }
 
 // Handler wraps next: every answer is validated, and a violation fails t. The

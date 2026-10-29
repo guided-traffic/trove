@@ -9,10 +9,9 @@
 // dispatcher sends consecutive requests to different replicas, like the scatter
 // profile. Every test creates a database of its own.
 //
-// The raw file routes (/files/) belong to the files area, which is built in
-// parallel; until they are merged a stand-in route below decides every request
-// exactly as the contract says the files area does (v1.SubjectFrom, Decide on the
-// request's context, authz.NotFound for a missing file).
+// The files are seeded through the real PUT /files/{repoKey}/{path} of the files
+// area and read through its real GET, which decides on the request's context, so
+// the endpoint's ceiling applies, and answers authz.NotFound for a missing file.
 package endpoints
 
 import (
@@ -42,9 +41,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/auth/token"
-	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
-	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -300,7 +297,8 @@ type replica struct {
 	def, cust, partner, ops string
 }
 
-// files is the content the stand-in file route serves; any other path is missing.
+// files is the content seeded through the real PUT /files/{repoKey}/{path} of the
+// default endpoint, by the administrator ops; every other path is missing.
 var files = map[string]string{
 	"generic-local/releases/1.0/app.zip": "app 1.0",
 	"generic-local/releases/2.0/app.zip": "app 2.0",
@@ -308,41 +306,15 @@ var files = map[string]string{
 	"generic-other/releases/1.0/app.zip": "other",
 }
 
-// standInFiles registers the stand-in of the files area's raw download and of a
-// repository listing: both decide exactly as the contract says
-// (docs/developer/m1-contracts.md "Request flow"): the subject from the principal
-// of the chain, Decide on the request's context, which carries the endpoint, and
-// authz.NotFound for a missing file, so hidden and missing are the same bytes.
-func standInFiles(a *atomic.Pointer[app.App]) func(*httpserver.Router) {
-	return func(r *httpserver.Router) {
-		r.HandleFunc("GET /files/{repoKey}/{path...}", func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			repo, path := req.PathValue("repoKey"), req.PathValue("path")
-			d := a.Load().Authorizer().Decide(ctx, v1.SubjectFrom(httpserver.PrincipalFrom(ctx)), authz.Coordinate{
-				Repository: repo, Path: path, Kind: authz.KindArtifact, Actions: []authz.Action{authz.Read},
-			})
-			if d.Outcome != authz.Allow {
-				httpserver.Problem(w, req, d.Err())
-				return
-			}
-			body, ok := files[repo+"/"+path]
-			if !ok {
-				httpserver.Problem(w, req, authz.NotFound())
-				return
-			}
-			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = io.WriteString(w, body)
-		})
-		r.HandleFunc("GET /files/{$}", func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			keys, err := a.Load().Authorizer().Readable(ctx, v1.SubjectFrom(httpserver.PrincipalFrom(ctx)), []string{"generic-local", "generic-other"})
-			if err != nil {
-				httpserver.Problem(w, req, err)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(keys)
-		})
+// seedFiles deploys the files of the files map through the first replica's
+// default endpoint once.
+func (e *env) seedFiles(r *replica) {
+	e.t.Helper()
+	for path, content := range files {
+		a := e.send(r.def, "trove.test", "PUT", "/files/"+path, e.opsPAT, []byte(content), "Content-Type", "application/octet-stream")
+		if a.status != 201 {
+			e.t.Fatalf("seed %s: %d %s", path, a.status, a.body)
+		}
 	}
 }
 
@@ -358,12 +330,10 @@ func (e *env) start(name string) *replica {
 		t.Fatalf("config: %v", err)
 	}
 	logs := &syncBuffer{}
-	var ptr atomic.Pointer[app.App]
-	a, err := app.New(app.Options{Loaded: loaded, Role: "web", Environ: environ, LogWriter: logs, Extra: standInFiles(&ptr)})
+	a, err := app.New(app.Options{Loaded: loaded, Role: "web", Environ: environ, LogWriter: logs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ptr.Store(a)
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := a.Start(ctx); err != nil {
 		cancel()
@@ -387,6 +357,9 @@ func (e *env) start(name string) *replica {
 	r := &replica{
 		name: name, app: a, logs: logs,
 		def: a.EndpointAddr("default"), cust: a.EndpointAddr("customers"), partner: a.EndpointAddr("partners"), ops: a.OpsAddr().String(),
+	}
+	if len(e.reps) == 0 {
+		e.seedFiles(r)
 	}
 	e.reps = append(e.reps, r)
 	return r

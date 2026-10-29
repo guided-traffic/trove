@@ -712,7 +712,7 @@ deployment target of a virtual repository ([repositories-and-proxy.md](repositor
 | Request | Body: the content. Optional `Repr-Digest` (sha-256, sha-512); optional `Content-Type` (stored as media type); optional properties (R-STOR-009); `Authorization` per INV-8. |
 | Response | `201 Created` with `Location` (the `/files` URL) and the item description below; `200` for an identical re-upload (R-STOR-005). |
 | Permission | `deploy` on the path; additionally `overwrite` when replacing different content. |
-| Errors | `400` invalid path or length mismatch; `401`; `403`; `404` unknown repository; `405` repository class does not accept deploys (remote, virtual without deployment target); `409` digest mismatch, or an existing item and no `overwrite` permission, or a format rule refuses the path; `413` too large; `503` spool or object store unavailable; `507` quota exceeded. Bodies are problem details per [api-and-ui.md](api-and-ui.md). |
+| Errors | `400` invalid path or length mismatch; `401`; `403`; `404` unknown repository; `405` repository class does not accept deploys (remote, virtual without deployment target); `409` digest mismatch, or a format rule refuses the path, or a path conflict (`path_conflict`); an existing item with other content and no `overwrite` permission answers `403` (Q-STOR-17); `413` too large; `503` spool or object store unavailable; `507` quota exceeded. Bodies are problem details per [api-and-ui.md](api-and-ui.md). |
 
 `PUT /files/{repoKey}/{path}/` (trailing slash, empty body) creates an explicit folder and its
 missing parents and answers `201`; an existing folder answers `200`.
@@ -3956,6 +3956,91 @@ own into the spool directory, which the chart does not do (an `emptyDir` or an e
 
 **Applied in the spec:** [R-STOR-004](#r-stor-004--upload-pipeline-admission-spool-and-single-pass-hashing) (the start rule of
 the spool, the bullet after the restart rule); the implementation is `NewSpool` in [internal/blob/spool.go](../../internal/blob/spool.go).
+
+### Q-STOR-17 · Replacing a file without overwrite answers 403
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The error row of R-STOR-007 lists 409 for "an existing item and no `overwrite` permission"; R-AUTHZ-006, R-AUTHZ-016 and R-GENERIC-004 say 403.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 409 `conflict` | The refusal is a conflict with the existing item | As the R-STOR-007 row says | Contradicts R-AUTHZ-016 ("a write-type request without a required action: 403, naming the missing action") and the acceptance criteria of R-AUTHZ-006 and R-GENERIC-004 |
+| (b) 403 `forbidden` naming `overwrite` (chosen) | A missing action is a missing permission | One rule for every refused write; a client sees which action to ask for | The row of R-STOR-007 changes |
+
+**Choice:** (b). A replacement with different bytes by a caller who holds `deploy` and `overwrite` answers 201; an identical re-upload answers 200 and needs `deploy` only.
+
+**Rationale:** Three pages and two acceptance criteria say 403. The development agent would revisit this if the 409 of the row was meant for a format rule, which the generic format has none of.
+
+**Applied in the spec:** R-STOR-007 (the error row).
+
+### Q-STOR-18 · Implicit folders are rows that go with their last child, serialised by row locks
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-STOR-003 says implicit folders are created as parents of a file and removed when their last child goes; a deploy and a delete of the last child can overlap.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Folders are derived from the paths | No folder rows; a listing groups the paths | Nothing to keep in step | Explicit empty folders, folder properties and the folder count of the usage fold need rows; a listing is a scan |
+| (b) Folder rows, created with the file and removed with the last child (chosen) | A deploy inserts the missing ancestors (ON CONFLICT DO NOTHING) and holds its parent FOR SHARE until it commits; a delete locks the folder FOR UPDATE and looks for children in a statement of its own | A listing is an index range; the usage counters and explicit folders work; the lock order cannot leave a child without its folder | Every deploy takes one more row lock; a deploy can find its parent gone and repeats the step (bounded) |
+
+**Choice:** (b).
+
+**Rationale:** The integration test `TestConcurrentWritersOnOnePath` runs deploys and deletes of the same folders on two replicas and finds no item without its parent folder. The development agent would revisit this if the share lock on a hot folder shows up as contention.
+
+**Applied in the spec:** R-STOR-003 reads unchanged; the protocol is in [docs/developer/files.md](../developer/files.md).
+
+### Q-STOR-19 · A delete is permanent in M1, one event per file, a large subtree by the job items-delete
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-STOR-018 deletes into the trash can where it is enabled (P1, R-STOR-022), writes the format hook in the same transaction, and removes a subtree above `storage.delete.max_sync_items` by a background job after the permission check.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job re-checks the permission per batch | The job decides `delete` again for every item it removes | No item is removed that the caller may not delete at that time | The job has no caller: the authorization state of the request would have to be rebuilt in the worker |
+| (b) The check completes before the job is enqueued, the job removes what it finds (chosen) | The request checks every item of the subtree (403 and nothing changes otherwise); the job lists and removes in batches | R-STOR-018 as written ("the permission check still completes before the first removal") | An item a concurrent deploy adds below the folder between the check and the job is removed unchecked (H-154) |
+
+**Choice:** (b). Without the trash can an item is deleted for good and its blob goes to the collection through the statement trigger. A file produces one `artifact.deleted` event in the transaction that removes it.
+
+**Rationale:** The synchronous path checks and removes the same rows in one transaction, so it has no such window. The development agent would revisit this when the trash can exists (the delete then moves rows and the window is harmless).
+
+**Applied in the spec:** R-STOR-018 reads unchanged; [docs/developer/files.md](../developer/files.md).
+
+### Q-STOR-20 · A listing scans a bounded number of rows and its cursor is the last row scanned
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-STOR-017 omits the entries the caller may not read and pages with a cursor; a caller who may read little of a huge folder would otherwise make one request scan it all.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Filter in SQL | Push the grant into the query | Exact pages | The grant index is memory-only and has no SQL form (R-AUTHZ-015) |
+| (b) Scan up to 100,000 rows per page and return a short page with a cursor (chosen) | The cursor is the path of the last row the page scanned | Bounded work per request; a client continues while `nextCursor` is not null | A page can hold fewer entries than `limit` while more follow |
+
+**Choice:** (b). The default page size is 1,000 and the maximum 10,000, as R-STOR-017 says; they are not the general limits of the other lists.
+
+**Rationale:** The decision per entry reads memory only, so the bound is on rows read from PostgreSQL. The development agent would revisit the figure if a real folder needs more.
+
+**Applied in the spec:** R-STOR-017 reads unchanged; the operation `listChildren` describes it.
+
+### Q-STOR-21 · A folder addressed without its trailing slash is redirected, a download counts after its body was sent
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-STOR-012 says a GET on a folder returns the directory index, whose links are relative to the folder; R-STOR-015 counts a download when trove answers 200, or 206 from byte 0.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Serve the index at both URLs | No redirect | One request | The relative links of the HTML index point one level too high |
+| (b) 301 to the URL with the slash; count after the whole response body was copied (chosen) | The index lives at the URL with a slash; the counter is called when the copy ended without error | Links work; a cut or aborted transfer is no download | A client that stops reading after the first bytes of a range from 0 is not counted |
+
+**Choice:** (b).
+
+**Rationale:** Both are what a file server and a statistics counter of record do. The development agent would revisit the counting rule if the audit of downloads needs the cut ones.
+
+**Applied in the spec:** R-STOR-012 and R-STOR-015 read unchanged.
 
 ## What this does not cover
 

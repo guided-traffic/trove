@@ -50,6 +50,9 @@ func toRepository(r q.Repository, cat FormatCatalog) (Repository, error) {
 		HideExistence: HideInherit, Lifecycle: Lifecycle(r.Lifecycle), Version: r.ConfigVersion,
 		Config: r.Config, CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
+	if r.LastActivityAt.Valid {
+		out.LastActivityAt = r.LastActivityAt.Time
+	}
 	var s Settings
 	if err := json.Unmarshal(r.Config, &s); err != nil {
 		out.Disabled = true

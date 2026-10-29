@@ -37,6 +37,9 @@ type DeleteArgs struct {
 type DeleteResult struct {
 	// JobID names the job to poll; empty when the delete completed at once.
 	JobID string
+	// JobState is the state of that job when the delete answered: queued for a
+	// new one, whatever the running job is for a repeated delete.
+	JobState string
 	// Done is true when the repository is gone (204); false means 202 with JobID.
 	Done bool
 }
@@ -52,57 +55,69 @@ type DeleteResult struct {
 // in batches and the row last. A repeated delete while the job runs answers with
 // the same job. A virtual repository has no content and is removed at once.
 func (s *Service) Delete(ctx context.Context, c Caller, key string, detach bool) (DeleteResult, error) {
-	_ = detach
 	var res DeleteResult
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
-		res = DeleteResult{}
-		qs, err := queries(tx)
-		if err != nil {
-			return err
-		}
-		rows, err := qs.LockRepositoryByKey(ctx, key)
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return notFound(key)
-		}
-		row := rows[0]
-		if Class(row.Class) == Virtual {
-			return s.deleteNow(ctx, tx, qs, c, row, &res)
-		}
-		if Lifecycle(row.Lifecycle) == Active {
-			marked, err := qs.MarkRepositoryDeleting(ctx, q.MarkRepositoryDeletingParams{ID: row.ID, Actor: c.principalID()})
-			if err != nil {
-				return err
-			}
-			if len(marked) == 0 {
-				return errors.New("repository: marking for deletion matched no row although the row was locked")
-			}
-			row = marked[0]
-			r, _ := toRepository(row, s.cat)
-			if err := s.recordAndNotify(ctx, tx, c, EventDeleted, r,
-				eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started"}, "deleting"); err != nil {
-				return err
-			}
-		}
-		if s.jobs == nil {
-			return errors.New("repository: no job queue, so a repository cannot be deleted")
-		}
-		job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
-			Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(row.ID, 10),
-			Args:       DeleteArgs{RepoID: row.ID, Key: row.Key, Actor: c.Actor},
-			TargetKind: "repository", TargetKey: row.Key, CreatedBy: c.principalID(),
-		})
-		if err != nil {
-			return err
-		}
-		res.JobID = job.Job.ID
-		return nil
+		var err error
+		res, err = s.DeleteTx(ctx, tx, c, key, detach, nil)
+		return err
 	})
 	if err != nil {
 		return DeleteResult{}, err
 	}
+	return res, nil
+}
+
+// DeleteTx is Delete in a transaction the caller owns, with the optional If-Match
+// of R-API-012 (a delete honours it when it is sent): a version that differs from
+// the stored one answers 412 and nothing changes.
+func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition) (DeleteResult, error) {
+	_ = detach
+	qs, err := queries(tx)
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	rows, err := qs.LockRepositoryByKey(ctx, key)
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	if len(rows) == 0 {
+		return DeleteResult{}, notFound(key)
+	}
+	row := rows[0]
+	if pre != nil && !pre.Any && pre.Version != row.ConfigVersion {
+		return DeleteResult{}, stale(row.ConfigVersion)
+	}
+	var res DeleteResult
+	if Class(row.Class) == Virtual {
+		return res, s.deleteNow(ctx, tx, qs, c, row, &res)
+	}
+	if Lifecycle(row.Lifecycle) == Active {
+		marked, err := qs.MarkRepositoryDeleting(ctx, q.MarkRepositoryDeletingParams{ID: row.ID, Actor: c.principalID()})
+		if err != nil {
+			return DeleteResult{}, err
+		}
+		if len(marked) == 0 {
+			return DeleteResult{}, errors.New("repository: marking for deletion matched no row although the row was locked")
+		}
+		row = marked[0]
+		r, _ := toRepository(row, s.cat)
+		if err := s.recordAndNotify(ctx, tx, c, EventDeleted, r,
+			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started"}, "deleting"); err != nil {
+			return DeleteResult{}, err
+		}
+	}
+	if s.jobs == nil {
+		return DeleteResult{}, errors.New("repository: no job queue, so a repository cannot be deleted")
+	}
+	job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
+		Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(row.ID, 10),
+		Args:       DeleteArgs{RepoID: row.ID, Key: row.Key, Actor: c.Actor},
+		TargetKind: "repository", TargetKey: row.Key, CreatedBy: c.principalID(),
+	})
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	res.JobID, res.JobState = job.Job.ID, job.Job.State
 	return res, nil
 }
 

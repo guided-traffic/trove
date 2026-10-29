@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -100,6 +101,11 @@ type m1Wiring struct {
 	// <<< M1 repository
 
 	// >>> M1 files
+	// files is the files transfer service (R-STOR-007 and the items operations);
+	// nil on a replica without PostgreSQL or the object store, where /files/
+	// answers 503. It is read under a.mu, because a job can run while the
+	// bootstrap still wires.
+	files *files.Service
 	// <<< M1 files
 
 	// >>> M1 endpoints

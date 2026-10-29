@@ -4739,6 +4739,57 @@ reader must not see as a default.
 
 **Applied in the spec:** none.
 
+### Q-API-32 · A missing If-Match is 428 even where the generated binder reads the header
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The shared parameter `IfMatch` is `required: true` in the document, so the generated server wrapper refuses a request without it before the handler runs, with a generic 400.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Declare the parameter optional | The binder lets the request through | No change to the binder error | The document no longer says the header is required (`x-trove-if-match: required` stays, but a client generated from it sends nothing) |
+| (b) Map the binder error of If-Match to 428 (chosen) | `bindError` answers `precondition_required` for a missing If-Match | The document stays true and R-API-012 holds for every resource that uses the parameter | One special case in the binder error handler |
+
+**Choice:** (b).
+
+**Rationale:** The rule of R-API-012 is a status and a detail that names the header; the binder error is an implementation detail. The development agent would revisit this if the code generator offers a hook for required headers.
+
+**Applied in the spec:** R-API-012 reads unchanged.
+
+### Q-API-33 · The /files/ operations are in the document, outside the generated interface and outside the authorization step
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-002 puts `/files/…` in the document, tagged `files`, excludes the tag from the generation and covers it with the route-parity check.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Generate them like the others | The wrapper binds `{path}` | One mechanism | A path parameter of the generator is one segment; the body would be bound as a request body type; the step of the management API would decide before the handler |
+| (b) Document them, generate nothing, compare the routes (chosen) | `exclude-tags: [files]`; `Document.FileOperations()` holds them; `CheckRoutes` compares the patterns `… /files/{repoKey}/{path...}` with the document's `{path}` in both directions; `apitest` looks the route of a `/files/` answer up with a single-segment path | R-API-002 as written; the answers are validated against the document like every other | The declarations of the files operations are read by the files handler's own decisions, not by the shared step |
+
+**Choice:** (b).
+
+**Rationale:** The handler is the raw path of R-ARCH-011; it decides per coordinate and streams. The development agent would revisit this if a second raw family appears.
+
+**Applied in the spec:** R-API-002 reads unchanged.
+
+### Q-API-34 · The representation of a repository: read-only members and the warnings
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-009 returns "the stored document plus warnings", R-API-003 says a body obtained by GET can be sent back.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Warnings in a header or an envelope | The document stays as stored | The representation is the document | A write answer differs in shape from a read; the "request type is the response type" rule breaks |
+| (b) Read-only members in the same object, ignored on input (chosen) | `lifecycle`, `createdAt`, `updatedAt`, `lastActivityAt` and `warnings` (writes only) are members of the representation; the input drops them before the strict decode | One type for GET, POST, PUT and the base of a PATCH | A client cannot tell a read-only member from an unknown one by the strict decode; it is told by the document (`readOnly: true`) |
+
+**Choice:** (b).
+
+**Rationale:** It is what the conventions of R-API-003 ask. The development agent would revisit this if a read-only member must be refused rather than ignored.
+
+**Applied in the spec:** The schema `Repository` in api/openapi.yaml.
+
 ## What this does not cover
 
 ### H-43 · General API rate limits are per replica

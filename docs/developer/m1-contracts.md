@@ -307,3 +307,23 @@ Changes to the contracts above; the page of the area is [endpoints.md](endpoints
 | `app.App` | `Authorizer()` returns the decision point, for content routes outside `internal/app` and the integration tests |
 | `m1Wiring` | `exposureCeiling`, `exposure`, `endpointLimits` in the endpoints marker; `wireAuthz` passes `Ceiling: a.exposureCeiling()` |
 | error codes | `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached` |
+
+## As built by the repository and files areas (WP1.4 HTTP, WP1.5)
+
+The repository API ([repositories.md](repositories.md#http-operations)) and the raw transfer with the items operations
+([files.md](files.md)) added these to the shared contracts. Nothing above was changed in meaning.
+
+| Where | Addition |
+|---|---|
+| `errs` | the kind `RangeNotSatisfiable` (416) and the codes `path_conflict`, `content_unavailable`, `range_not_satisfiable` (inside the `files` markers) |
+| `authz` | `Engine.PathsAllowed` (one action for many paths of a repository on one index, no audit per refused entry) and `Engine.CatchUp(key)` (the index at least as new as the database, for a repository the index does not hold): [paths.go](../../internal/authz/paths.go), [catchup.go](../../internal/authz/catchup.go) |
+| `httpserver` | `ContentWriter` (the content headers of R-ARCH-007) and `Router.HandleUncleaned` (paths `ServeMux` would redirect reach a handler) |
+| `repository` | `Service.CreateTx` and `Service.DeleteTx` (inside the transaction of an idempotency key), `DeleteResult.JobState`, `Repository.LastActivityAt`, `Activity` |
+| `api/v1` | `Options.Repositories` (`RepositoryServices`) and `Options.Files` inside the `repository` and `files` markers of `Options`; `CallerFrom`, `WriteJSON`, `WriteDeleteResult`, `InvalidCursor` for the `/files/` handler; `Document.FileOperations()` and the `/files/` half of `CheckRoutes`; `bindError` answers 428 for a missing `If-Match`; `apitest.Resource.MalformedCode`, `ImmutableCode`, `AltPatch` and the `/files/` route lookup of `apitest.Validator` |
+| `api/v1/gen` | `exclude-tags: [files]` in `cfg.yaml` |
+| `audit` | [events_files.go](../../internal/audit/events_files.go): `artifact.deployed`, `artifact.deleted` (transactional, webhook), `artifact.downloaded` (asynchronous) |
+| `app` | `m1Wiring.files` (inside the `files` marker), [wire_files.go](../../internal/app/wire_files.go), `registerFilesJobs` (called from `registerRepositoryJobs`, so `jobRegistry` is unchanged); the gauge start of `bootstrap` moved into `startGauges` to keep `bootstrap` at the complexity threshold |
+| `internal/archtest` | the layer `internal/files` (domain); `internal/api/rawfiles` is edge by its prefix |
+
+The routes of `/files/` are registered by `App.registerFiles` at the `files` marker of `startClient`; the surface filter of the
+endpoint drops them on an endpoint without the `files` family, and `Document.CheckRoutes` counts the dropped ones as present.

@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -51,6 +52,24 @@ func (e CheckResultStatus) Valid() bool {
 	case CheckResultStatusFail:
 		return true
 	case CheckResultStatusPass:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChildKind.
+const (
+	ChildKindFile   ChildKind = "file"
+	ChildKindFolder ChildKind = "folder"
+)
+
+// Valid indicates whether the value is a known member of the ChildKind enum.
+func (e ChildKind) Valid() bool {
+	switch e {
+	case ChildKindFile:
+		return true
+	case ChildKindFolder:
 		return true
 	default:
 		return false
@@ -240,6 +259,45 @@ func (e ExposureCheckMode) Valid() bool {
 	}
 }
 
+// Defines values for FormatDescriptorClasses.
+const (
+	FormatDescriptorClassesLocal   FormatDescriptorClasses = "local"
+	FormatDescriptorClassesRemote  FormatDescriptorClasses = "remote"
+	FormatDescriptorClassesVirtual FormatDescriptorClasses = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the FormatDescriptorClasses enum.
+func (e FormatDescriptorClasses) Valid() bool {
+	switch e {
+	case FormatDescriptorClassesLocal:
+		return true
+	case FormatDescriptorClassesRemote:
+		return true
+	case FormatDescriptorClassesVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FormatDescriptorPatternSubject.
+const (
+	FormatDescriptorPatternSubjectName FormatDescriptorPatternSubject = "name"
+	FormatDescriptorPatternSubjectPath FormatDescriptorPatternSubject = "path"
+)
+
+// Valid indicates whether the value is a known member of the FormatDescriptorPatternSubject enum.
+func (e FormatDescriptorPatternSubject) Valid() bool {
+	switch e {
+	case FormatDescriptorPatternSubjectName:
+		return true
+	case FormatDescriptorPatternSubjectPath:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupOrigin.
 const (
 	GroupOriginAdmin GroupOrigin = "admin"
@@ -312,6 +370,45 @@ func (e GroupMembersChangeSource) Valid() bool {
 	case Auto:
 		return true
 	case Manual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ItemContentStatus.
+const (
+	ItemContentStatusCorrupt ItemContentStatus = "corrupt"
+	ItemContentStatusMissing ItemContentStatus = "missing"
+	ItemContentStatusOk      ItemContentStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the ItemContentStatus enum.
+func (e ItemContentStatus) Valid() bool {
+	switch e {
+	case ItemContentStatusCorrupt:
+		return true
+	case ItemContentStatusMissing:
+		return true
+	case ItemContentStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ItemKind.
+const (
+	ItemKindFile   ItemKind = "file"
+	ItemKindFolder ItemKind = "folder"
+)
+
+// Valid indicates whether the value is a known member of the ItemKind enum.
+func (e ItemKind) Valid() bool {
+	switch e {
+	case ItemKindFile:
+		return true
+	case ItemKindFolder:
 		return true
 	default:
 		return false
@@ -447,6 +544,126 @@ func (e ReplicaState) Valid() bool {
 	case Starting:
 		return true
 	case Unready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryClass.
+const (
+	RepositoryClassLocal   RepositoryClass = "local"
+	RepositoryClassRemote  RepositoryClass = "remote"
+	RepositoryClassVirtual RepositoryClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryClass enum.
+func (e RepositoryClass) Valid() bool {
+	switch e {
+	case RepositoryClassLocal:
+		return true
+	case RepositoryClassRemote:
+		return true
+	case RepositoryClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryHideExistence.
+const (
+	RepositoryHideExistenceFalse   RepositoryHideExistence = "false"
+	RepositoryHideExistenceInherit RepositoryHideExistence = "inherit"
+	RepositoryHideExistenceTrue    RepositoryHideExistence = "true"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryHideExistence enum.
+func (e RepositoryHideExistence) Valid() bool {
+	switch e {
+	case RepositoryHideExistenceFalse:
+		return true
+	case RepositoryHideExistenceInherit:
+		return true
+	case RepositoryHideExistenceTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryLifecycle.
+const (
+	RepositoryLifecycleActive   RepositoryLifecycle = "active"
+	RepositoryLifecycleDeleting RepositoryLifecycle = "deleting"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryLifecycle enum.
+func (e RepositoryLifecycle) Valid() bool {
+	switch e {
+	case RepositoryLifecycleActive:
+		return true
+	case RepositoryLifecycleDeleting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryConsumerViewClass.
+const (
+	RepositoryConsumerViewClassLocal   RepositoryConsumerViewClass = "local"
+	RepositoryConsumerViewClassRemote  RepositoryConsumerViewClass = "remote"
+	RepositoryConsumerViewClassVirtual RepositoryConsumerViewClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryConsumerViewClass enum.
+func (e RepositoryConsumerViewClass) Valid() bool {
+	switch e {
+	case RepositoryConsumerViewClassLocal:
+		return true
+	case RepositoryConsumerViewClassRemote:
+		return true
+	case RepositoryConsumerViewClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositorySummaryClass.
+const (
+	RepositorySummaryClassLocal   RepositorySummaryClass = "local"
+	RepositorySummaryClassRemote  RepositorySummaryClass = "remote"
+	RepositorySummaryClassVirtual RepositorySummaryClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the RepositorySummaryClass enum.
+func (e RepositorySummaryClass) Valid() bool {
+	switch e {
+	case RepositorySummaryClassLocal:
+		return true
+	case RepositorySummaryClassRemote:
+		return true
+	case RepositorySummaryClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositorySummaryLifecycle.
+const (
+	RepositorySummaryLifecycleActive   RepositorySummaryLifecycle = "active"
+	RepositorySummaryLifecycleDeleting RepositorySummaryLifecycle = "deleting"
+)
+
+// Valid indicates whether the value is a known member of the RepositorySummaryLifecycle enum.
+func (e RepositorySummaryLifecycle) Valid() bool {
+	switch e {
+	case RepositorySummaryLifecycleActive:
+		return true
+	case RepositorySummaryLifecycleDeleting:
 		return true
 	default:
 		return false
@@ -812,16 +1029,16 @@ func (e ExportAuditEventsParamsFormat) Valid() bool {
 
 // Defines values for ListExposureRulesParamsEnabled.
 const (
-	False ListExposureRulesParamsEnabled = "false"
-	True  ListExposureRulesParamsEnabled = "true"
+	ListExposureRulesParamsEnabledFalse ListExposureRulesParamsEnabled = "false"
+	ListExposureRulesParamsEnabledTrue  ListExposureRulesParamsEnabled = "true"
 )
 
 // Valid indicates whether the value is a known member of the ListExposureRulesParamsEnabled enum.
 func (e ListExposureRulesParamsEnabled) Valid() bool {
 	switch e {
-	case False:
+	case ListExposureRulesParamsEnabledFalse:
 		return true
-	case True:
+	case ListExposureRulesParamsEnabledTrue:
 		return true
 	default:
 		return false
@@ -894,6 +1111,60 @@ func (e ListPermissionPoliciesParamsSort) Valid() bool {
 	case ListPermissionPoliciesParamsSortMinusName:
 		return true
 	case ListPermissionPoliciesParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListRepositoriesParamsClass.
+const (
+	ListRepositoriesParamsClassLocal   ListRepositoriesParamsClass = "local"
+	ListRepositoriesParamsClassRemote  ListRepositoriesParamsClass = "remote"
+	ListRepositoriesParamsClassVirtual ListRepositoriesParamsClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the ListRepositoriesParamsClass enum.
+func (e ListRepositoriesParamsClass) Valid() bool {
+	switch e {
+	case ListRepositoriesParamsClassLocal:
+		return true
+	case ListRepositoriesParamsClassRemote:
+		return true
+	case ListRepositoriesParamsClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListRepositoriesParamsState.
+const (
+	Inactive ListRepositoriesParamsState = "inactive"
+)
+
+// Valid indicates whether the value is a known member of the ListRepositoriesParamsState enum.
+func (e ListRepositoriesParamsState) Valid() bool {
+	switch e {
+	case Inactive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListRepositoriesParamsView.
+const (
+	Full    ListRepositoriesParamsView = "full"
+	Summary ListRepositoriesParamsView = "summary"
+)
+
+// Valid indicates whether the value is a known member of the ListRepositoriesParamsView enum.
+func (e ListRepositoriesParamsView) Valid() bool {
+	switch e {
+	case Full:
+		return true
+	case Summary:
 		return true
 	default:
 		return false
@@ -1194,6 +1465,27 @@ type CheckResult struct {
 // CheckResultStatus defines model for CheckResult.Status.
 type CheckResultStatus string
 
+// Child defines model for Child.
+type Child struct {
+	Kind       ChildKind  `json:"kind"`
+	ModifiedAt *time.Time `json:"modifiedAt,omitempty"`
+
+	// Path Relative to the listed folder.
+	Path   string  `json:"path"`
+	Sha1   *string `json:"sha1,omitempty"`
+	Sha256 *string `json:"sha256,omitempty"`
+	Size   *int    `json:"size,omitempty"`
+}
+
+// ChildKind defines model for Child.Kind.
+type ChildKind string
+
+// ChildrenPage defines model for ChildrenPage.
+type ChildrenPage struct {
+	Items      []Child `json:"items"`
+	NextCursor *string `json:"nextCursor"`
+}
+
 // CreateTokenRequest defines model for CreateTokenRequest.
 type CreateTokenRequest struct {
 	Description string     `json:"description"`
@@ -1220,6 +1512,14 @@ type DatabaseFacts struct {
 	SchemaVersion           int                  `json:"schemaVersion"`
 	ServerVersion           string               `json:"serverVersion"`
 	SupportedSchemaVersions []int                `json:"supportedSchemaVersions"`
+}
+
+// Digests defines model for Digests.
+type Digests struct {
+	Md5    *string `json:"md5,omitempty"`
+	Sha1   *string `json:"sha1,omitempty"`
+	Sha256 *string `json:"sha256,omitempty"`
+	Sha512 *string `json:"sha512,omitempty"`
 }
 
 // DisableRequest defines model for DisableRequest.
@@ -1491,6 +1791,37 @@ type FieldError struct {
 	Pointer string `json:"pointer"`
 }
 
+// FormatDescriptor defines model for FormatDescriptor.
+type FormatDescriptor struct {
+	Caps bool `json:"caps"`
+
+	// Classes The classes the implementation accepts.
+	Classes                   []FormatDescriptorClasses      `json:"classes"`
+	DefaultMetadataTtlSeconds *int                           `json:"defaultMetadataTtlSeconds"`
+	DefaultNotFoundTtlSeconds *int                           `json:"defaultNotFoundTtlSeconds"`
+	DefaultUpstreamUrl        *string                        `json:"defaultUpstreamUrl"`
+	DisplayName               *string                        `json:"displayName,omitempty"`
+	Layout                    string                         `json:"layout"`
+	Name                      string                         `json:"name"`
+	PatternSubject            FormatDescriptorPatternSubject `json:"patternSubject"`
+	PinsAndClaims             bool                           `json:"pinsAndClaims"`
+	PriorityMembers           bool                           `json:"priorityMembers"`
+
+	// ProtocolBasePath The client address template; `{key}` is the repository key.
+	ProtocolBasePath string `json:"protocolBasePath"`
+}
+
+// FormatDescriptorClasses defines model for FormatDescriptor.Classes.
+type FormatDescriptorClasses string
+
+// FormatDescriptorPatternSubject defines model for FormatDescriptor.PatternSubject.
+type FormatDescriptorPatternSubject string
+
+// FormatList defines model for FormatList.
+type FormatList struct {
+	Formats []FormatDescriptor `json:"formats"`
+}
+
 // Group A group (R-AUTH-018). `roles` and `memberCount` are read only.
 type Group struct {
 	AutoJoin    bool               `json:"autoJoin"`
@@ -1562,6 +1893,55 @@ type GroupPatch struct {
 	AutoJoin    *bool   `json:"autoJoin,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Name        *string `json:"name,omitempty"`
+}
+
+// Item The description of a file or folder (R-STOR-016, R-STOR-007).
+type Item struct {
+	ContentStatus    *ItemContentStatus `json:"contentStatus,omitempty"`
+	Created          Stamp              `json:"created"`
+	DeclaredDigests  *Digests           `json:"declaredDigests,omitempty"`
+	DeclaredMismatch *bool              `json:"declaredMismatch,omitempty"`
+	Digests          *Digests           `json:"digests,omitempty"`
+
+	// DownloadUrl Files only.
+	DownloadUrl *string `json:"downloadUrl,omitempty"`
+
+	// Explicit Folders only; false for a folder that exists because a file lies below it.
+	Explicit *bool    `json:"explicit,omitempty"`
+	ItemUrl  string   `json:"itemUrl"`
+	Kind     ItemKind `json:"kind"`
+
+	// ListingUrl Folders only.
+	ListingUrl *string `json:"listingUrl,omitempty"`
+
+	// MediaType Files only; `application/octet-stream` when none was recorded.
+	MediaType *string `json:"mediaType,omitempty"`
+	Modified  Stamp   `json:"modified"`
+
+	// Package Always null for a generic repository.
+	Package    any    `json:"package"`
+	Path       string `json:"path"`
+	Repository string `json:"repository"`
+
+	// Size Files only.
+	Size      *int      `json:"size,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// UpstreamUrl Always null for a local repository.
+	UpstreamUrl any `json:"upstreamUrl"`
+}
+
+// ItemContentStatus defines model for Item.ContentStatus.
+type ItemContentStatus string
+
+// ItemKind defines model for Item.Kind.
+type ItemKind string
+
+// ItemStats defines model for ItemStats.
+type ItemStats struct {
+	Downloads      int        `json:"downloads"`
+	LastDownloadAt *time.Time `json:"lastDownloadAt"`
+	LastDownloader *string    `json:"lastDownloader"`
 }
 
 // Job defines model for Job.
@@ -1966,6 +2346,115 @@ type ReplicaSummary struct {
 	Versions map[string]int `json:"versions"`
 }
 
+// Repository The configuration document of a repository (R-REPO-004): the body of a create, the answer of a
+// read and the base of a patch. A member that does not apply to the class or the format is absent.
+// Secret fields are never returned. `layout`, `lifecycle`, `createdAt`, `updatedAt`,
+// `lastActivityAt` and `warnings` are read-only: a body obtained by `GET` can be sent back, and
+// they are ignored.
+type Repository struct {
+	// AdminNotes Only for holders of `repositories:read-config`.
+	AdminNotes *string `json:"adminNotes,omitempty"`
+
+	// Class Fixed at creation.
+	Class           RepositoryClass `json:"class"`
+	CreatedAt       *time.Time      `json:"createdAt,omitempty"`
+	Description     *string         `json:"description,omitempty"`
+	Disabled        *bool           `json:"disabled,omitempty"`
+	ExcludePatterns *[]string       `json:"excludePatterns,omitempty"`
+
+	// Format Fixed at creation; the names of `GET /api/v1/formats`.
+	Format          string                   `json:"format"`
+	HideExistence   *RepositoryHideExistence `json:"hideExistence,omitempty"`
+	IncludePatterns *[]string                `json:"includePatterns,omitempty"`
+
+	// Key Fixed at creation; reserved names are the sub-paths of `/api/v1/repositories`.
+	Key string `json:"key"`
+
+	// LastActivityAt The latest upload or download as the replicas flushed it (at most a minute late).
+	LastActivityAt        *time.Time              `json:"lastActivityAt,omitempty"`
+	Layout                *string                 `json:"layout,omitempty"`
+	Lifecycle             *RepositoryLifecycle    `json:"lifecycle,omitempty"`
+	Local                 *map[string]interface{} `json:"local,omitempty"`
+	PriorityMember        *bool                   `json:"priorityMember,omitempty"`
+	Remote                *map[string]interface{} `json:"remote,omitempty"`
+	RequireAuthentication *bool                   `json:"requireAuthentication,omitempty"`
+	Storage               *map[string]interface{} `json:"storage,omitempty"`
+	UpdatedAt             *time.Time              `json:"updatedAt,omitempty"`
+	Virtual               *map[string]interface{} `json:"virtual,omitempty"`
+
+	// Warnings Findings of the write that did not block it; present on create, replace and update.
+	Warnings *[]RepositoryWarning `json:"warnings,omitempty"`
+}
+
+// RepositoryClass Fixed at creation.
+type RepositoryClass string
+
+// RepositoryHideExistence defines model for Repository.HideExistence.
+type RepositoryHideExistence string
+
+// RepositoryLifecycle defines model for Repository.Lifecycle.
+type RepositoryLifecycle string
+
+// RepositoryConsumerView What a caller sees who may read a repository but not its configuration (R-REPO-010).
+type RepositoryConsumerView struct {
+	// Addresses The client addresses, paths on the public base URL.
+	Addresses   []string                    `json:"addresses"`
+	Class       RepositoryConsumerViewClass `json:"class"`
+	Description string                      `json:"description"`
+	Format      string                      `json:"format"`
+	Key         string                      `json:"key"`
+	Layout      string                      `json:"layout"`
+}
+
+// RepositoryConsumerViewClass defines model for RepositoryConsumerView.Class.
+type RepositoryConsumerViewClass string
+
+// RepositoryList defines model for RepositoryList.
+type RepositoryList struct {
+	Items      []RepositoryList_Items_Item `json:"items"`
+	NextCursor *string                     `json:"nextCursor"`
+}
+
+// RepositoryList_Items_Item defines model for RepositoryList.items.Item.
+type RepositoryList_Items_Item struct {
+	union json.RawMessage
+}
+
+// RepositoryRead The answer of a read, by the caller's view.
+type RepositoryRead struct {
+	union json.RawMessage
+}
+
+// RepositorySummary defines model for RepositorySummary.
+type RepositorySummary struct {
+	Addresses      []string               `json:"addresses"`
+	Class          RepositorySummaryClass `json:"class"`
+	Description    string                 `json:"description"`
+	Disabled       bool                   `json:"disabled"`
+	Format         string                 `json:"format"`
+	Key            string                 `json:"key"`
+	LastActivityAt *time.Time             `json:"lastActivityAt"`
+
+	// Lifecycle Only a holder of `repositories:read-config` sees a repository being deleted.
+	Lifecycle *RepositorySummaryLifecycle `json:"lifecycle,omitempty"`
+
+	// Project The project key; always null until projects exist.
+	Project *string `json:"project"`
+}
+
+// RepositorySummaryClass defines model for RepositorySummary.Class.
+type RepositorySummaryClass string
+
+// RepositorySummaryLifecycle Only a holder of `repositories:read-config` sees a repository being deleted.
+type RepositorySummaryLifecycle string
+
+// RepositoryWarning defines model for RepositoryWarning.
+type RepositoryWarning struct {
+	Code    string  `json:"code"`
+	Detail  string  `json:"detail"`
+	Pointer *string `json:"pointer,omitempty"`
+}
+
 // RevokeByValueRequest defines model for RevokeByValueRequest.
 type RevokeByValueRequest struct {
 	// Token The token value, `trv_…`.
@@ -2091,6 +2580,14 @@ type SessionList struct {
 
 	// NextCursor Always `null`: a user holds at most `auth.sessions.max_per_user` sessions.
 	NextCursor *string `json:"nextCursor"`
+}
+
+// Stamp defines model for Stamp.
+type Stamp struct {
+	At time.Time `json:"at"`
+
+	// By `<kind>:<name>` of the principal, such as `user:alice` or `ci:acme/web`; null when the principal has no record.
+	By *string `json:"by"`
 }
 
 // SystemInfo defines model for SystemInfo.
@@ -2735,6 +3232,110 @@ type ReplacePermissionPolicyParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// ListRepositoriesParams defines parameters for ListRepositories.
+type ListRepositoriesParams struct {
+	// Class Repeat the parameter, or separate values with commas.
+	Class *[]ListRepositoriesParamsClass `form:"class,omitempty" json:"class,omitempty"`
+
+	// Format Repeat the parameter, or separate values with commas.
+	Format  *[]string                    `form:"format,omitempty" json:"format,omitempty"`
+	Q       *string                      `form:"q,omitempty" json:"q,omitempty"`
+	State   *ListRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
+	Project *string                      `form:"project,omitempty" json:"project,omitempty"`
+	View    *ListRepositoriesParamsView  `form:"view,omitempty" json:"view,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListRepositoriesParamsClass defines parameters for ListRepositories.
+type ListRepositoriesParamsClass string
+
+// ListRepositoriesParamsState defines parameters for ListRepositories.
+type ListRepositoriesParamsState string
+
+// ListRepositoriesParamsView defines parameters for ListRepositories.
+type ListRepositoriesParamsView string
+
+// CreateRepositoryParams defines parameters for CreateRepository.
+type CreateRepositoryParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DeleteRepositoryParams defines parameters for DeleteRepository.
+type DeleteRepositoryParams struct {
+	Detach *bool `form:"detach,omitempty" json:"detach,omitempty"`
+
+	// IfMatch The ETag loaded with the repository, or `*`.
+	IfMatch *string `json:"If-Match,omitempty"`
+
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetRepositoryParams defines parameters for GetRepository.
+type GetRepositoryParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateRepositoryApplicationMergePatchPlusJSONBody defines parameters for UpdateRepository.
+type UpdateRepositoryApplicationMergePatchPlusJSONBody map[string]interface{}
+
+// UpdateRepositoryParams defines parameters for UpdateRepository.
+type UpdateRepositoryParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ReplaceRepositoryParams defines parameters for ReplaceRepository.
+type ReplaceRepositoryParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ListChildrenParams defines parameters for ListChildren.
+type ListChildrenParams struct {
+	// Path The folder; empty or absent is the root of the repository.
+	Path      *string `form:"path,omitempty" json:"path,omitempty"`
+	Recursive *bool   `form:"recursive,omitempty" json:"recursive,omitempty"`
+
+	// MaxDepth With `recursive`, the deepest level below the folder to list; 0 is no bound.
+	MaxDepth *int `form:"maxDepth,omitempty" json:"maxDepth,omitempty"`
+
+	// Folders Include folder entries.
+	Folders *bool `form:"folders,omitempty" json:"folders,omitempty"`
+
+	// Limit Page size, 1 to 10,000 (default 1,000).
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// DeleteItemParams defines parameters for DeleteItem.
+type DeleteItemParams struct {
+	// Path The canonical path of a file or folder, without a leading or trailing slash; empty or
+	// absent is the root of the repository.
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetItemParams defines parameters for GetItem.
+type GetItemParams struct {
+	// Path The canonical path of a file or folder, without a leading or trailing slash; empty or
+	// absent is the root of the repository.
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// GetItemStatsParams defines parameters for GetItemStats.
+type GetItemStatsParams struct {
+	Path string `form:"path" json:"path"`
+}
+
 // ListRoleBindingsParams defines parameters for ListRoleBindings.
 type ListRoleBindingsParams struct {
 	Role *RoleName `form:"role,omitempty" json:"role,omitempty"`
@@ -2953,6 +3554,15 @@ type PatchPermissionPolicyApplicationMergePatchPlusJSONRequestBody = PermissionP
 // ReplacePermissionPolicyJSONRequestBody defines body for ReplacePermissionPolicy for application/json ContentType.
 type ReplacePermissionPolicyJSONRequestBody = PermissionPolicyInput
 
+// CreateRepositoryJSONRequestBody defines body for CreateRepository for application/json ContentType.
+type CreateRepositoryJSONRequestBody = Repository
+
+// UpdateRepositoryApplicationMergePatchPlusJSONRequestBody defines body for UpdateRepository for application/merge-patch+json ContentType.
+type UpdateRepositoryApplicationMergePatchPlusJSONRequestBody UpdateRepositoryApplicationMergePatchPlusJSONBody
+
+// ReplaceRepositoryJSONRequestBody defines body for ReplaceRepository for application/json ContentType.
+type ReplaceRepositoryJSONRequestBody = Repository
+
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = NewServiceAccount
 
@@ -2997,6 +3607,130 @@ type DisableUserJSONRequestBody = DisableRequest
 
 // PatchUserGroupsJSONRequestBody defines body for PatchUserGroups for application/json ContentType.
 type PatchUserGroupsJSONRequestBody = MembershipChange
+
+// AsRepositorySummary returns the union data inside the RepositoryList_Items_Item as a RepositorySummary
+func (t RepositoryList_Items_Item) AsRepositorySummary() (RepositorySummary, error) {
+	var body RepositorySummary
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRepositorySummary overwrites any union data inside the RepositoryList_Items_Item as the provided RepositorySummary
+func (t *RepositoryList_Items_Item) FromRepositorySummary(v RepositorySummary) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRepositorySummary performs a merge with any union data inside the RepositoryList_Items_Item, using the provided RepositorySummary
+func (t *RepositoryList_Items_Item) MergeRepositorySummary(v RepositorySummary) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsRepository returns the union data inside the RepositoryList_Items_Item as a Repository
+func (t RepositoryList_Items_Item) AsRepository() (Repository, error) {
+	var body Repository
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRepository overwrites any union data inside the RepositoryList_Items_Item as the provided Repository
+func (t *RepositoryList_Items_Item) FromRepository(v Repository) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRepository performs a merge with any union data inside the RepositoryList_Items_Item, using the provided Repository
+func (t *RepositoryList_Items_Item) MergeRepository(v Repository) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t RepositoryList_Items_Item) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *RepositoryList_Items_Item) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsRepository returns the union data inside the RepositoryRead as a Repository
+func (t RepositoryRead) AsRepository() (Repository, error) {
+	var body Repository
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRepository overwrites any union data inside the RepositoryRead as the provided Repository
+func (t *RepositoryRead) FromRepository(v Repository) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRepository performs a merge with any union data inside the RepositoryRead, using the provided Repository
+func (t *RepositoryRead) MergeRepository(v Repository) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsRepositoryConsumerView returns the union data inside the RepositoryRead as a RepositoryConsumerView
+func (t RepositoryRead) AsRepositoryConsumerView() (RepositoryConsumerView, error) {
+	var body RepositoryConsumerView
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRepositoryConsumerView overwrites any union data inside the RepositoryRead as the provided RepositoryConsumerView
+func (t *RepositoryRead) FromRepositoryConsumerView(v RepositoryConsumerView) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRepositoryConsumerView performs a merge with any union data inside the RepositoryRead, using the provided RepositoryConsumerView
+func (t *RepositoryRead) MergeRepositoryConsumerView(v RepositoryConsumerView) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t RepositoryRead) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *RepositoryRead) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -3051,6 +3785,9 @@ type ServerInterface interface {
 	// ReplaceExposureRule Replace an exposure rule
 	// (PUT /api/v1/endpoints/{endpoint}/exposure-rules/{name})
 	ReplaceExposureRule(w http.ResponseWriter, r *http.Request, endpoint string, name string, params ReplaceExposureRuleParams)
+	// ListFormats List the package formats
+	// (GET /api/v1/formats)
+	ListFormats(w http.ResponseWriter, r *http.Request)
 	// ListGroups List groups
 	// (GET /api/v1/groups)
 	ListGroups(w http.ResponseWriter, r *http.Request, params ListGroupsParams)
@@ -3099,6 +3836,36 @@ type ServerInterface interface {
 	// GetProblemType Describe a problem code
 	// (GET /api/v1/problems/{code})
 	GetProblemType(w http.ResponseWriter, r *http.Request, code string)
+	// ListRepositories List repositories
+	// (GET /api/v1/repositories)
+	ListRepositories(w http.ResponseWriter, r *http.Request, params ListRepositoriesParams)
+	// CreateRepository Create a repository
+	// (POST /api/v1/repositories)
+	CreateRepository(w http.ResponseWriter, r *http.Request, params CreateRepositoryParams)
+	// DeleteRepository Delete a repository
+	// (DELETE /api/v1/repositories/{key})
+	DeleteRepository(w http.ResponseWriter, r *http.Request, key string, params DeleteRepositoryParams)
+	// GetRepository Read a repository
+	// (GET /api/v1/repositories/{key})
+	GetRepository(w http.ResponseWriter, r *http.Request, key string, params GetRepositoryParams)
+	// UpdateRepository Update a repository configuration
+	// (PATCH /api/v1/repositories/{key})
+	UpdateRepository(w http.ResponseWriter, r *http.Request, key string, params UpdateRepositoryParams)
+	// ReplaceRepository Replace a repository configuration
+	// (PUT /api/v1/repositories/{key})
+	ReplaceRepository(w http.ResponseWriter, r *http.Request, key string, params ReplaceRepositoryParams)
+	// ListChildren List the children of a folder
+	// (GET /api/v1/repositories/{repoKey}/children)
+	ListChildren(w http.ResponseWriter, r *http.Request, repoKey string, params ListChildrenParams)
+	// DeleteItem Delete a file or folder
+	// (DELETE /api/v1/repositories/{repoKey}/items)
+	DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params DeleteItemParams)
+	// GetItem Describe a file or folder
+	// (GET /api/v1/repositories/{repoKey}/items)
+	GetItem(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemParams)
+	// GetItemStats Read the download statistics of a file
+	// (GET /api/v1/repositories/{repoKey}/stats)
+	GetItemStats(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemStatsParams)
 	// ListRoleBindings List role bindings
 	// (GET /api/v1/role-bindings)
 	ListRoleBindings(w http.ResponseWriter, r *http.Request, params ListRoleBindingsParams)
@@ -4195,6 +4962,20 @@ func (siw *ServerInterfaceWrapper) ReplaceExposureRule(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListFormats operation middleware
+func (siw *ServerInterfaceWrapper) ListFormats(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFormats(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListGroups operation middleware
 func (siw *ServerInterfaceWrapper) ListGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -4861,6 +5642,644 @@ func (siw *ServerInterfaceWrapper) GetProblemType(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProblemType(w, r, code)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRepositories operation middleware
+func (siw *ServerInterfaceWrapper) ListRepositories(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRepositoriesParams
+
+	// ------------- Optional query parameter "class" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "class", r.URL.Query(), &params.Class, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "class"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "class", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", r.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "view"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "view", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRepositories(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateRepository operation middleware
+func (siw *ServerInterfaceWrapper) CreateRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateRepository(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteRepository operation middleware
+func (siw *ServerInterfaceWrapper) DeleteRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteRepositoryParams
+
+	// ------------- Optional query parameter "detach" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "detach", r.URL.Query(), &params.Detach, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detach"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detach", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteRepository(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRepository operation middleware
+func (siw *ServerInterfaceWrapper) GetRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepository(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateRepository operation middleware
+func (siw *ServerInterfaceWrapper) UpdateRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateRepository(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceRepository operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceRepository(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListChildren operation middleware
+func (siw *ServerInterfaceWrapper) ListChildren(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListChildrenParams
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "recursive" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "recursive", r.URL.Query(), &params.Recursive, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "recursive"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recursive", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "maxDepth" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "maxDepth", r.URL.Query(), &params.MaxDepth, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "maxDepth"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "maxDepth", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "folders" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "folders", r.URL.Query(), &params.Folders, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "folders"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "folders", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListChildren(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteItemParams
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteItem(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetItem operation middleware
+func (siw *ServerInterfaceWrapper) GetItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetItemParams
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetItem(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetItemStats operation middleware
+func (siw *ServerInterfaceWrapper) GetItemStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetItemStatsParams
+
+	// ------------- Required query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetItemStats(w, r, repoKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6858,6 +8277,17 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/role-bindings/{role}/{principalRef}", wrapper.BindRole)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/authz/me", wrapper.GetAuthzMe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/authz/check", wrapper.CheckPermissions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/formats", wrapper.ListFormats)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories", wrapper.ListRepositories)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories", wrapper.CreateRepository)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.DeleteRepository)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.GetRepository)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.UpdateRepository)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.ReplaceRepository)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.DeleteItem)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.GetItem)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/children", wrapper.ListChildren)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/stats", wrapper.GetItemStats)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints", wrapper.ListEndpoints)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}", wrapper.GetEndpoint)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules", wrapper.ListExposureRules)

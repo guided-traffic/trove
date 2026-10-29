@@ -165,6 +165,14 @@ const (
 // <<< M1 repository
 //
 // >>> M1 files
+// Files transfer and items (R-STOR-007, R-STOR-012, R-GENERIC-002). invalid_path
+// and not_admitted are registered with the repository codes above.
+const (
+	CodePathConflict        = "path_conflict"
+	CodeContentUnavailable  = "content_unavailable"
+	CodeRangeNotSatisfiable = "range_not_satisfiable"
+)
+
 // <<< M1 files
 //
 // >>> M1 endpoints
@@ -311,6 +319,9 @@ var registry = []CodeInfo{
 	// <<< M1 repository
 	//
 	// >>> M1 files
+	{CodePathConflict, Conflict, "Path conflict", "A path names a file or a folder, never both: the deploy would put a file below an existing file, or a file or folder where the other kind exists."},
+	{CodeContentUnavailable, Unavailable, "Content unavailable", "The stored object of the file is missing (503, retry: it can come back through a restore or a replication) or failed verification (500)."},
+	{CodeRangeNotSatisfiable, RangeNotSatisfiable, "Range not satisfiable", "The Range header asks for bytes beyond the end of the file; Content-Range: bytes */<size> says how long it is."},
 	// <<< M1 files
 	//
 	// >>> M1 endpoints

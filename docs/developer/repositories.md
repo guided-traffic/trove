@@ -5,9 +5,10 @@ document, include and exclude patterns, validation, create, read, update, list a
 that every request path reads. Code: [internal/repository](../../internal/repository/) (domain),
 [internal/formats](../../internal/formats/) with [formats/generic](../../internal/formats/generic/) (the format catalog
 and the first format, [formats/generic.md](../spec/formats/generic.md)), the statements in
-[queries/repository.sql](../../internal/meta/postgres/queries/repository.sql). The management API operations are not
-here yet: they come in the next wave and are thin handlers over the functions below (the `x-trove-permission`
-declaration, the ETag/`If-Match` headers and the cursor are the API layer's; everything else is decided in the domain).
+[queries/repository.sql](../../internal/meta/postgres/queries/repository.sql). The management API operations are thin handlers
+over the functions below, in [repositories_api.go](../../internal/api/v1/repositories_api.go) (see "HTTP operations"); the
+`x-trove-permission` declaration, the ETag/`If-Match` headers, the cursor and the idempotency key are the API layer's, everything
+else is decided in the domain.
 Milestone M1 implements the local class of the generic format only; remote and virtual repositories are specified
 (R-REPO-017 to R-REPO-049, R-GENERIC-009, R-GENERIC-010) and not built.
 
@@ -24,6 +25,7 @@ Milestone M1 implements the local class of the generic format only; remote and v
 | [store.go](../../internal/repository/store.go) | rows to `Repository` and `Document`; the sqlc `queries(tx)` seam; fail-closed load of an undecodable row |
 | [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, `StaleVersion`, the `Hooks` seam |
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
+| [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
 | [codes.go](../../internal/repository/codes.go) | codes of other areas that the validation names as strings |
 | [formats/formats.go](../../internal/formats/formats.go) | `Descriptor`, `Format`, `RequestDescriptor`, `Register`, `Lookup`, `Descriptors` |
@@ -64,12 +66,12 @@ grant). A handler calls, after it has authorized:
 
 | Operation | Function | Notes |
 |---|---|---|
-| `POST /repositories` | `Create(ctx, caller, body)` | `409 repository_exists` also for a key being deleted; never an upsert |
+| `POST /repositories` | `Create(ctx, caller, body)`, `CreateTx(ctx, tx, …)` | `409 repository_exists` also for a key being deleted; never an upsert; `CreateTx` runs in the transaction of an idempotency key |
 | `GET /repositories/{key}` | `Get(ctx, key)` | from PostgreSQL (R-API-052); `Document.WithoutAdminNotes`, `Document.ConsumerView` for the narrower views |
 | `PATCH` | `Patch(ctx, caller, key, pre, patch)` | RFC 7396 applied to the stored document; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
 | `PUT` | `Replace(ctx, caller, key, pre, body)` | omitted settings revert to defaults; an omitted `key`, `class` or `format` means "unchanged" |
 | `GET /repositories` | `List(ctx, filter)` | sorted by key, keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 |
-| `DELETE` | `Delete(ctx, caller, key, detach)` | `DeleteResult{JobID, Done}`: 202 with the job, or 204 for a repository without content |
+| `DELETE` | `Delete(ctx, caller, key, detach)`, `DeleteTx(ctx, tx, …, pre)` | `DeleteResult{JobID, JobState, Done}`: 202 with the job, or 204 for a repository without content; `pre` is the optional `If-Match` (412 on a stale version) |
 
 Errors are `*errs.Error`: `invalid_document` (400), the codes of R-REPO-008 (422, with `Fields`), `repository_exists`
 (409), `repository_not_found` (404), `precondition_failed` (412, with `*StaleVersion` as the cause carrying the current
@@ -89,6 +91,22 @@ event (`phase: completed`) in the last transaction, which frees the key. It is i
 registered in `app.jobRegistry` through `registerRepositoryJobs`; its handler finds the service at run time because the
 registry is built and frozen before the repository component is wired. A virtual repository has no content and is
 removed in the first transaction. `detach` has nothing to detach until virtual membership exists (R-REPO-017).
+
+## HTTP operations
+
+| Operation | Handler | Declaration | Notes |
+|---|---|---|---|
+| `GET /api/v1/formats` | `ListFormats` | `public` | the descriptors of `formats.Descriptors()`; 401 for an anonymous caller while anonymous access is off |
+| `GET /api/v1/repositories` | `ListRepositories` | `public` | filters `class`, `format`, `q`, `state`, `project`, `view`; keyset cursor over the key; a holder of `repositories:read-config` sees every repository, the others the readable ones (`Authorizer.Readable`, Q-REPO-19); `view=full` needs the capability |
+| `POST /api/v1/repositories` | `CreateRepository` | `repositories:write-config` | strict body, `Idempotency-Key` through `Idempotency.Do`, `CreateTx` in its transaction; 201 with `Location`, `ETag: "1"`, the document and `warnings` |
+| `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder reads from PostgreSQL; the others pass the decision first (the unknown key is looked up and the index caught up before it, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
+| `PUT`, `PATCH /api/v1/repositories/{key}` | `ReplaceRepository`, `UpdateRepository` | `repositories:write-config`, `x-trove-if-match: required` | 428 before the body is read; the domain applies the merge patch and returns `*StaleVersion`, which becomes 412 with `currentEtag` |
+| `DELETE /api/v1/repositories/{key}` | `DeleteRepository` | `repositories:write-config` | optional `If-Match` and `Idempotency-Key`; 202 with the job reference or 204 |
+
+The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `lifecycle`,
+`createdAt`, `updatedAt`, `lastActivityAt` and, on a write, `warnings`. The input drops those members before the strict decode, so a
+body obtained by GET can be sent back (Q-API-34). A body error is `400 invalid_document` with the pointer of the member (Q-REPO-21).
+The ETag of the full view is `"<config_version>"`, of the consumer view `"<config_version>-consumer"`.
 
 ## Formats
 
@@ -141,10 +159,11 @@ a repository, compiled once when the snapshot is built; `Repository.Admits(path,
 | unit | [internal/repository](../../internal/repository/) | path canonicalisation, keys, patterns and admission, document decoding, merge patch (RFC 7396 examples), validation (R-REPO-002, -005, -006, -008, R-GENERIC-001, -002, -007, -008) |
 | unit | [internal/formats](../../internal/formats/) and below | registry rules; the generic descriptor and classification (R-GENERIC-001, -003) |
 | integration | [test/integration/repository](../../test/integration/repository/) | create, read, update, list, delete against PostgreSQL with audit and change-log rows; the snapshot, the lookup and the poll bound on two replicas without Valkey (R-REPO-009 to -013, R-REPO-049, R-ARCH-011) |
+| integration | [test/integration/files](../../test/integration/files/) (`repository_api_test.go`) | the repository API over HTTP on two replicas: the contract suite of E1.6 (`apitest.RunContract`: cursor walk, ETag with If-Match, merge patch, idempotency keys), validation, permissions, the consumer view, list visibility, the delete job on a worker, an idempotent create replayed through the other replica |
 
 Run the integration area from the checkout root with the environment of the shared stack:
 `go test -count=1 -tags integration ./test/integration/repository/...`.
 
 ## Decisions
 
-[Q-REPO-12 to Q-REPO-18](../spec/repositories-and-proxy.md#decisions) and [Q-GENERIC-1 to Q-GENERIC-5](../spec/formats/generic.md#decisions).
+[Q-REPO-12 to Q-REPO-23](../spec/repositories-and-proxy.md#decisions) and [Q-GENERIC-1 to Q-GENERIC-5](../spec/formats/generic.md#decisions).

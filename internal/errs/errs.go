@@ -37,6 +37,7 @@ const (
 	Misdirected               // 421: the request's host is not one this endpoint answers for (R-EP-003)
 	Unprocessable             // 422 without field errors: a state or name rule refused a well-formed request (R-API-014, R-API-004)
 	PreconditionRequired      // 428: the operation needs If-Match (R-API-012)
+	RangeNotSatisfiable       // 416 + Content-Range: bytes */size, set by the caller (R-STOR-012)
 )
 
 // StatusClientClosed is the status logged for a request whose client went away.
@@ -82,6 +83,8 @@ func (k Kind) String() string {
 		return "unprocessable"
 	case PreconditionRequired:
 		return "precondition_required"
+	case RangeNotSatisfiable:
+		return "range_not_satisfiable"
 	default:
 		return fmt.Sprintf("kind(%d)", uint8(k))
 	}
@@ -229,6 +232,8 @@ func (e *Error) Status() int {
 		return 422
 	case PreconditionRequired:
 		return 428
+	case RangeNotSatisfiable:
+		return 416
 	default:
 		return 500
 	}

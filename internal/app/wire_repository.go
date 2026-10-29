@@ -87,6 +87,7 @@ func (a *App) wireRepository() error {
 // is built (and frozen) before the repository component is wired; a job claimed
 // before that is retried.
 func (a *App) registerRepositoryJobs(r *jobs.Registry) {
+	a.registerFilesJobs(r)
 	r.RegisterKind(repository.DeleteJobKind, repository.DeleteJobSpec(func(ctx context.Context, run *jobs.Run) error {
 		a.mu.Lock()
 		svc := a.m1.repositoryService

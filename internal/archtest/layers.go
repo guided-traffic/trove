@@ -62,6 +62,7 @@ func layerTable() []layerRule {
 		{"internal/secrets", layerInfra},
 
 		{"internal/repository", layerDomain},
+		{"internal/files", layerDomain},
 		{"internal/proxy", layerDomain},
 		{"internal/authz", layerDomain},
 		{"internal/auth", layerDomain},

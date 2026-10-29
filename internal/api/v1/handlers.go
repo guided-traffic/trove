@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -107,6 +108,20 @@ type Options struct {
 	// the endpoint operations (endpoints_api.go).
 	Endpoints EndpointServices
 	// <<< M1 endpoints
+
+	// >>> M1 repository
+	// Repositories are the services of the repository operations
+	// (repositories_api.go): the write side of the repository model and the
+	// decision point for the operations whose answer depends on what the caller
+	// may read.
+	Repositories RepositoryServices
+	// <<< M1 repository
+
+	// >>> M1 files
+	// Files is the files service behind the items operations (items_api.go); nil
+	// disables them with 503.
+	Files *files.Service
+	// <<< M1 files
 }
 
 // Server implements gen.ServerInterface.

@@ -59,6 +59,9 @@ type Repository struct {
 	Config    []byte
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// LastActivityAt is the latest upload or download as the replicas flushed it
+	// (R-REPO-012); zero when there was none.
+	LastActivityAt time.Time
 
 	// adm is the compiled include and exclude lists of Config. The snapshot and
 	// the store fill it; a Repository built by hand admits everything.

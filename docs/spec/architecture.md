@@ -436,9 +436,11 @@ trove/
 │   ├── httpserver/              # listeners, ServeMux, middleware, client address
 │   ├── api/v1/                  # management API handlers
 │   │   └── gen/                 # oapi-codegen output: models, std-http-server interface (generated, committed)
+│   ├── api/rawfiles/            # the /files/ handler (R-API-025)
 │   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
 │   ├── authz/
 │   ├── repository/              # model, snapshot, CleanPath, classification, virtual resolver
+│   ├── files/                   # items: raw deploy, download, delete, listing, statistics (R-STOR-007 to R-STOR-018)
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
 │   │   ├── formattest/          # conformance kit, in-memory Host
@@ -4791,6 +4793,74 @@ the endpoint, the replicas of a pool, while the set's count is the replicas of t
 a limiter needed a share per bucket.
 
 **Applied in the spec:** R-ARCH-034 (the fallback bullet).
+
+### Q-ARCH-40 · The lookup of an unknown key runs before the decision, and the decision waits for the grant index
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-011 looks the repository up (step 2) before it authorizes (step 4); R-AUTHZ-016 asks for authorization before the existence lookup so that the answer and its time do not depend on existence.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Authorize first, look up after | The decision runs on the grant index of the replica | R-AUTHZ-016 to the letter | A repository created through another replica is unknown to the index until its rebuild, so a request right after the creation is refused (R-API-052 broken) |
+| (b) Look an unknown key up first, discard the result, bring the index up to date, then decide (chosen) | `SnapshotReader.ByKey` finds the row in PostgreSQL and runs the change-log poll; `authz.Engine.CatchUp(key)` reads the database epochs (the coalesced read of R-AUTHZ-032) and waits for an index at least that new, only for a key the index does not hold | R-ARCH-011 and R-API-052 hold; the answer is still made by the decision alone, so hidden and missing stay the same bytes; a known key costs a map lookup | A request for an unknown key costs one indexed query per key and entry lifetime (the negative cache of R-ARCH-011) before it is refused, which R-AUTHZ-016 would rather not see |
+
+**Choice:** (b).
+
+**Rationale:** The extra cost exists only for a key that is not in the replica's snapshot, bounded by `cache.unknown_repo_keys`, and its result never reaches the answer. The development agent would revisit this if the response-time argument of R-AUTHZ-016 is to be tested with a timing probe.
+
+**Applied in the spec:** R-ARCH-011 and R-AUTHZ-016 read unchanged; [docs/developer/files.md](../developer/files.md).
+
+### Q-ARCH-41 · The content headers go on responses that carry content, not on problems
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-007 says the wrapper sets the headers before the handler runs, "on every response whose body comes from package content".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wrap before the handler | Every answer of the route carries them | As written | A problem answer (404, 403) would carry `Content-Disposition: attachment` and the sandbox policy for a body that is not content |
+| (b) Wrap when the response carries the file or the index (chosen) | `httpserver.ContentWriter` wraps the writer where the item is resolved (200, 206, 304, HEAD and the index); it applies the headers at wrap time, at `WriteHeader` and at the first `Write` | A handler cannot weaken them; a problem is a problem | The wrapper is not in the chain but in the handler |
+
+**Choice:** (b).
+
+**Rationale:** The criteria of R-ARCH-007 (the four headers on `evil.svg`, a handler that deletes one still sends it) hold. The development agent would revisit this if a format route kind needs the wrapper before it knows the status.
+
+**Applied in the spec:** R-ARCH-007 reads unchanged.
+
+### Q-ARCH-42 · Paths that ServeMux would redirect reach the files handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-GENERIC-002 answers 400 `invalid_path` for an empty or dot segment; `net/http.ServeMux` redirects a path such as `/files/r/a//b` to its cleaned form before any pattern is tried.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Accept the redirect | The client follows to `/files/r/a/b` | Nothing to build | A path the specification refuses is silently rewritten; `a/../x` becomes `x` |
+| (b) `Router.HandleUncleaned("/files/", h)` (chosen) | A request below the prefix whose path the mux would clean goes to the handler, which answers 400 | The criteria of R-GENERIC-002 hold; the prefix is dropped on an endpoint without the files surface | A second dispatch in the router for one family |
+
+**Choice:** (b).
+
+**Rationale:** Encoded dot segments (`%2e%2e`) never reach the mux's cleaning and are decoded once by `CleanPath`. The development agent would revisit this if a format route also needs raw paths.
+
+**Applied in the spec:** R-ARCH-005 and R-GENERIC-002 read unchanged.
+
+### Q-ARCH-43 · The files transfer is two packages: internal/files and internal/api/rawfiles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-003 names no package for the items and the raw transfer.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One package at the edge | Handler and items logic together | One place | The items operations of the management API and the format dispatcher would import an edge package for the logic |
+| (b) `internal/files` (domain) and `internal/api/rawfiles` (edge) (chosen) | The service decides and writes; the handler parses the request and writes the headers | The layers of R-ARCH-002 hold; the management API, the later format dispatcher and the jobs call the service | Two packages |
+
+**Choice:** (b).
+
+**Rationale:** The same split as repository and API. The development agent would revisit it if the format dispatcher takes over the handler.
+
+**Applied in the spec:** R-ARCH-003 (the tree).
 
 ## What this does not cover
 

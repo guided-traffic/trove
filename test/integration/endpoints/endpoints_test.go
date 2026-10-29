@@ -201,12 +201,30 @@ func TestE1_14_CustomerEndpoint(t *testing.T) {
 					if a := e.onCustomers(r, "/files/generic-local/internal/x.bin", e.botAdminSAT); a.status != 404 {
 						t.Fatalf("%s hidden: %d %s", r.name, a.status, a.body)
 					}
-					var keys []string
-					if a := e.onCustomers(r, "/files/", e.botAdminSAT); a.status != 200 || json.Unmarshal(a.body, &keys) != nil || !slices.Equal(keys, []string{"generic-local"}) {
-						t.Fatalf("%s listing: %d %s", r.name, a.status, a.body)
+					// The listing of the files operation holds what the rules expose
+					// and no more: the folder of the exposed files lists them, the
+					// folder outside the rules is the 404 of a missing one.
+					list := e.onCustomers(r, "/files/generic-local/releases/", e.botAdminSAT)
+					var page struct {
+						Items []struct {
+							Path string `json:"path"`
+						} `json:"items"`
+					}
+					if list.status != 200 || json.Unmarshal(list.body, &page) != nil {
+						t.Fatalf("%s listing: %d %s", r.name, list.status, list.body)
+					}
+					var got []string
+					for _, it := range page.Items {
+						got = append(got, it.Path)
+					}
+					if !slices.Equal(got, []string{"1.0", "2.0"}) {
+						t.Fatalf("%s listing: %v, want the two exposed folders: %s", r.name, got, list.body)
+					}
+					if a := e.onCustomers(r, "/files/generic-local/internal/", e.botAdminSAT); a.status != 404 {
+						t.Fatalf("%s hidden listing: %d %s", r.name, a.status, a.body)
 					}
 				}
-				if a := e.send(e.pick().def, "trove.test", "GET", "/files/", e.botAdminSAT, nil); a.status != 401 {
+				if a := e.send(e.pick().def, "trove.test", "GET", "/files/generic-local/releases/", e.botAdminSAT, nil); a.status != 401 {
 					t.Fatalf("the bound administrator token on default: %d", a.status)
 				}
 				if v := metricValue(metrics(t, e.reps[0]), `trove_exposure_hidden_total{endpoint="customers",kind="request"}`); v < 1 {

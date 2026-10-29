@@ -372,6 +372,9 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 authz
 	//
 	// >>> M1 files
+	if err := a.wireFiles(ctx, infra); err != nil {
+		return err
+	}
 	// <<< M1 files
 	//
 	// >>> M1 endpoints
@@ -385,15 +388,7 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 api
 	// Wiring of the M1 areas ends here.
 	a.freezeRegistries()
-	if infra && a.sub.MainPool {
-		a.registerGauges()
-	}
-	a.tele.metrics.DBGauges().SetLogger(a.log)
-	a.bg.Add(1)
-	go func() {
-		defer a.bg.Done()
-		a.tele.metrics.DBGauges().Run(ctx)
-	}()
+	a.startGauges(ctx, infra)
 
 	// Step 9: the client listener.
 	if a.sub.ClientListener {
@@ -408,6 +403,21 @@ func (a *App) bootstrap(ctx context.Context) error {
 	close(a.startedCh)
 	a.log.Info("started", "ready", a.health.Ready())
 	return nil
+}
+
+// startGauges registers the gauges that read PostgreSQL and starts the loop that
+// refreshes the database gauges. It is a function of its own to keep bootstrap,
+// which every M1 area adds a step to, below the complexity threshold.
+func (a *App) startGauges(ctx context.Context, infra bool) {
+	if infra && a.sub.MainPool {
+		a.registerGauges()
+	}
+	a.tele.metrics.DBGauges().SetLogger(a.log)
+	a.bg.Add(1)
+	go func() {
+		defer a.bg.Done()
+		a.tele.metrics.DBGauges().Run(ctx)
+	}()
 }
 
 // freezeRegistries closes every start-up registry before the replica serves:
@@ -466,6 +476,12 @@ func (a *App) startClient() error {
 			// The endpoint and exposure-rule operations (R-EP-016, wire_exposure.go).
 			Endpoints: a.endpointServices(),
 			// <<< M1 endpoints
+			// >>> M1 repository
+			Repositories: a.repositoryAPI(),
+			// <<< M1 repository
+			// >>> M1 files
+			Files: a.filesService(),
+			// <<< M1 files
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)
@@ -479,6 +495,7 @@ func (a *App) startClient() error {
 		// <<< M1 login
 		//
 		// >>> M1 files
+		a.registerFiles(router)
 		// <<< M1 files
 		router.Handle(webui.MountPath, ui)
 		if a.o.Extra != nil {

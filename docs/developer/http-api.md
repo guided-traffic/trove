@@ -50,6 +50,17 @@ A route whose pattern has no operation in the document is denied to everyone wit
 stops start-up for it). The binding of path parameters runs after the check. R-API-008 defines the full
 grammar; every form that `parseRequirement` accepts is enforced by `decide` in `authorize.go`.
 
+## The `/files/` family in the document
+
+The raw file path is part of the document (R-API-002) but not of the generated interface: `exclude-tags: [files]` in
+[gen/cfg.yaml](../../internal/api/v1/gen/cfg.yaml). `LoadDocument` keeps those operations apart: `Document.Operations()` holds the
+management API (`/api/v1/`), `Document.FileOperations()` the `/files/` ones, and `CheckRoutes` compares the registered patterns
+with both (the multi-segment wildcard `{path...}` of the router is the parameter `{path}` of the document). The step of
+[authorize.go](../../internal/api/v1/authorize.go) does not run for them: the files service decides every request itself, because it decides per
+coordinate and after the body is read (Q-API-33). `apitest.Validator` looks the route of a `/files/` answer up with a single
+segment path, so the answers of the files handler are validated like every other. The bridge between the two packages in the
+unit tests: `TestRoutesAgreeWithTheDocument` in [internal/api/rawfiles](../../internal/api/rawfiles/rawfiles_test.go).
+
 ## Endpoints
 
 The API is registered on every endpoint whose surface holds `api` (R-EP-005): the default endpoint always, a further
@@ -75,6 +86,11 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `listTasks` | `GET /api/v1/system/tasks` | `settings:read` |
 | `runTask` | `POST /api/v1/system/tasks/{name}/run` | `settings:write`; optional `Idempotency-Key`; `202` with the job, `409` with the running job |
 | `getEncryptionStatus` | `GET /api/v1/system/encryption` | `settings:read` |
+| `listFormats` | `GET /api/v1/formats` | public; 401 for an anonymous caller while anonymous access is off ([repositories.md](repositories.md#http-operations)) |
+| `listRepositories`, `getRepository` | `GET /api/v1/repositories`, `/{key}` | public; the handler decides what the caller sees (R-AUTHZ-016) |
+| `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository` | `POST`, `PUT`, `PATCH`, `DELETE` on `/api/v1/repositories` and `/{key}` | `repositories:write-config` |
+| `getItem`, `deleteItem`, `listChildren`, `getItemStats` | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats` | `{action: read\|delete, repository: path.repoKey, path: query.path}` ([files.md](files.md)) |
+| `downloadFile`, `headFile`, `deployFile`, `deleteFile` | `GET`, `HEAD`, `PUT`, `DELETE /files/{repoKey}/{path}` | `{action: read\|deploy\|delete, …}`, in the document but decided by the files handler |
 
 `bridgeAccess` ([access.go](../../internal/app/access.go)) puts the dev-profile switch in front of the authorization
 engine ([authorization.md](authorization.md)): `system.bootstrap_anonymous_read` opens `settings:read` to anonymous callers on the **default endpoint only**, and only
@@ -98,6 +114,9 @@ The helpers live in [internal/api/v1](../../internal/api/v1). A handler calls th
 
 Problem extensions: `errs.WithExtension(name, value)` adds a member (`currentEtag`, `job`, `tokenId`); `errs.WithBadRequest()`
 keeps a 400 that lists fields; `errs.Unprocessable` (422 without fields) and `errs.PreconditionRequired` (428) are kinds.
+
+A missing `If-Match` on an operation that uses the shared `IfMatch` parameter is refused by the generated binder before the handler;
+`bindError` turns that into the 428 of R-API-012 (Q-API-32), so a handler of `PUT` and `PATCH` can rely on the answer.
 
 ### Idempotency in detail
 
@@ -205,7 +224,7 @@ create, update (merge patch and PUT) and delete. Follow its shape. The steps:
 | `Validator.Uncovered(ids...)` | The operations no answer reached; a test that owns operations asserts it is empty. |
 | `Resource.RevisionMember` | The member that grows with every write (default `revision`); the suite does not count it as a change when it checks that a PUT or a patch left the other members alone. |
 | `ReservedNameProblems(spec)` | The R-API-004 check on `x-trove-reserved-names`. |
-| `RunContract(t, Resource)` | The convention tests on any collection (E1.6): create/Location, strict members, `limit=1` traversal, cursors, ETag/304, `If-Match` 428/412/200/`*`, merge patch, PUT round trip, idempotency replay. |
+| `RunContract(t, Resource)` | The convention tests on any collection (E1.6): create/Location, strict members, `limit=1` traversal, cursors, ETag/304, `If-Match` 428/412/200/`*`, merge patch, PUT round trip, idempotency replay. A resource whose owning page names other codes sets `MalformedCode` (unknown member) and `ImmutableCode` (immutable member), and `AltPatch` when a patch that changes nothing writes nothing (the repository resource, Q-REPO-21). |
 
 `TestResponsesMatchTheDocument` ([openapi_test.go](../../internal/api/v1/openapi_test.go)) sends every `GET` operation of the
 document, anonymous and authenticated, through the chain and validates the answers. The integration tests of

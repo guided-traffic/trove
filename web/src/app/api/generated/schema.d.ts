@@ -1317,6 +1317,279 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/formats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the package formats
+         * @description The format catalog (R-REPO-003): for each format the classes the implementation accepts, its
+         *     layout, the client address template, the cache periods and the facts that decide which
+         *     members of a repository document apply. The list of classes is the single source of truth
+         *     for the create form: a class that is not listed answers `422 unsupported_class`. Any caller;
+         *     an anonymous caller only where anonymous access is on, else `401`.
+         */
+        get: operations["listFormats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List repositories
+         * @description The repositories the caller may see, sorted by key, with cursor pagination (R-REPO-012,
+         *     R-API-010). A caller without `repositories:read-config` sees the repositories on which it holds
+         *     `read` (R-AUTHZ-016); a holder of `repositories:read-config` sees every repository, those being
+         *     deleted included. `view=summary` (default) returns a short description of each; `view=full`
+         *     returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class`
+         *     and `format` take the values as spelled in documents, repeated or comma-separated; `q` matches
+         *     the key and the description case-insensitively; `state=inactive` keeps the disabled
+         *     repositories. `project` selects the repositories of a project: projects arrive after milestone
+         *     M1, so a project key selects none. An anonymous caller sees what anonymous holds `read` on,
+         *     or gets `401` where anonymous access is off.
+         */
+        get: operations["listRepositories"];
+        put?: never;
+        /**
+         * Create a repository
+         * @description Creates a repository from its configuration document (R-REPO-009). Omitted settings take
+         *     their defaults. The document is validated in one pass and every violation is reported (`422`,
+         *     R-REPO-008); an unknown or duplicate member is `400 invalid_document` with its JSON pointer.
+         *     Create is never an upsert: a key that is taken, also by a repository being deleted, answers
+         *     `409 repository_exists`. The configuration, the audit event and the change-log row are one
+         *     transaction, so the repository is usable on every replica as soon as this answers
+         *     (R-API-052). The body of the answer is the stored document plus `warnings`.
+         */
+        post: operations["createRepository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a repository
+         * @description The configuration document of a repository (R-REPO-010). A holder of
+         *     `repositories:read-config` receives the full document, `ETag: "<config_version>"`; a caller
+         *     who holds a repository action on it receives the consumer view (`key`, `class`, `format`,
+         *     `description`, `layout`, `addresses`), `ETag: "<config_version>-consumer"`; a caller who
+         *     holds nothing on it, and a caller on a repository that does not exist, receive the same `404`
+         *     (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that
+         *     committed on another replica shows at once (R-API-052).
+         */
+        get: operations["getRepository"];
+        /**
+         * Replace a repository configuration
+         * @description Replaces the configuration with a complete document; settings that are omitted revert to their
+         *     defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). A body
+         *     obtained by `GET` can be sent back: the read-only members are ignored. `If-Match` is required
+         *     (`428` without it, `412` with `currentEtag` when stale, `*` for a deliberate blind write). Key,
+         *     class and format cannot change (`422 immutable_field`). `PUT` never creates a repository.
+         */
+        put: operations["replaceRepository"];
+        post?: never;
+        /**
+         * Delete a repository
+         * @description Marks the repository as being deleted and removes its items in the background (R-REPO-013):
+         *     `202` with the job to poll, and the same job when the delete is repeated while it runs; `204`
+         *     for a repository without content. From the first transaction on the repository is not
+         *     resolvable and not addressable, and it is listed only to holders of
+         *     `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
+         *     honoured when sent. With `detach=true` references from virtual repositories are removed in the
+         *     same transaction; virtual repositories arrive after milestone M1, so the flag changes nothing yet.
+         */
+        delete: operations["deleteRepository"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a repository configuration
+         * @description Applies a JSON merge patch (RFC 7396, `application/merge-patch+json`) to the stored document
+         *     (R-REPO-011): arrays are replaced as a whole, `null` removes an optional setting. `If-Match` is
+         *     required. A patch that changes nothing writes nothing: same version, no event. Key, class and
+         *     format cannot change (`422 immutable_field`); a value equal to the stored one is ignored.
+         */
+        patch: operations["updateRepository"];
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/items": {
+        parameters: {
+            query?: {
+                /**
+                 * @description The canonical path of a file or folder, without a leading or trailing slash; empty or
+                 *     absent is the root of the repository.
+                 */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Describe a file or folder
+         * @description The metadata of an item (R-STOR-016): digests, size, media type, who created and last changed
+         *     it, the content status, `package: null` and `upstreamUrl: null` for a generic repository
+         *     (R-GENERIC-006), and the URLs. A folder carries `kind: folder`, `explicit` and the URL of its
+         *     listing, and no children. Needs `read` on the path; a path the caller may not read answers
+         *     `404`, like a missing one. A repository that is disabled is described as well; the items that
+         *     its include and exclude patterns leave out are visible here (R-GENERIC-007).
+         */
+        get: operations["getItem"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a file or folder
+         * @description Removes a file, or a folder with its whole subtree (R-STOR-018). Needs `delete` on the path and
+         *     on every item of the subtree, decided completely before anything is removed (`403` and nothing
+         *     changes otherwise). A subtree of at most `storage.delete.max_sync_items` items is removed at
+         *     once (`204`); a larger one by a background job (`202` with the job to poll). Items are deleted
+         *     permanently; their blobs are collected later. The root of the repository cannot be deleted
+         *     here (`400 invalid_path`): delete the repository.
+         */
+        delete: operations["deleteItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the children of a folder
+         * @description The untrashed children of a folder in byte order of their paths, with a cursor (R-STOR-017,
+         *     R-API-025); `recursive=true` walks the subtree, optionally bounded by `maxDepth`. An entry the
+         *     caller may not read is omitted. `path` of an entry is relative to the listed folder; a folder
+         *     entry carries no size or digests. The default page size is 1,000 and the maximum 10,000 (not
+         *     the general limits of the other lists). The cursor is the path of the last row the page
+         *     scanned, so a page can be shorter than `limit` while more entries follow: continue while
+         *     `nextCursor` is not null.
+         */
+        get: operations["listChildren"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the download statistics of a file
+         * @description The number of downloads, the time of the last one and its downloader (R-STOR-015). The counts
+         *     are those PostgreSQL holds; each replica writes its buffer every `storage.stats.flush_interval`
+         *     and at shutdown, so a download shows within that interval. `HEAD`, `304` and `?stats=false`
+         *     do not count. A folder has no statistics (`404`). Needs `read` on the path.
+         */
+        get: operations["getItemStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{repoKey}/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
+                 *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
+                 *     a backslash or a control character). A trailing slash names a folder. The server route is
+                 *     `/files/{repoKey}/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a file or list a folder
+         * @description Streams the file (R-STOR-012, R-STOR-013): `Content-Length`, `ETag: "<sha256 hex>"` (the
+         *     content address, a strong validator), `Last-Modified`, `Accept-Ranges: bytes`, `Repr-Digest`
+         *     (RFC 9530; the SHA-512 too with `Want-Repr-Digest`). A single `Range` is answered `206`; an
+         *     `If-Range` with the ETag lets the range apply, and every replica answers it alike, so a download
+         *     cut at one replica resumes on another. `If-None-Match` and `If-Modified-Since` answer `304`;
+         *     `HEAD` and the conditional answers never reach the object store. A whole body is verified
+         *     against the SHA-256 before its last bytes are released. Every response carrying stored content
+         *     has `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`,
+         *     `Cross-Origin-Resource-Policy: same-site` and `Content-Disposition: attachment`. A path with a
+         *     trailing slash, and the repository root, answer the directory index (R-STOR-017): HTML for
+         *     `Accept: text/html`, JSON otherwise. A path outside the repository's include and exclude
+         *     patterns answers `404`. Needs `read`; a hidden file is the same `404` as a missing one.
+         */
+        get: operations["downloadFile"];
+        /**
+         * Deploy a file or create a folder
+         * @description The raw deploy (R-STOR-007, R-GENERIC-004). The body is the content, streamed to the spool and
+         *     hashed once; the declared length is checked (`400`), `Repr-Digest` with `sha-256` and
+         *     `sha-512` is verified after the body (`409`, nothing stored), and `Content-Type` is stored as
+         *     the media type. Needs `deploy` on the path, decided before the body is read; replacing a
+         *     file with different bytes needs `overwrite` as well (`403` without it, and the first content
+         *     is still served); an identical re-upload needs `deploy` only and answers `200`. A path
+         *     outside the repository's include and exclude patterns is `403 not_admitted` for every caller.
+         *     `If-None-Match: *` makes the deploy create-only (`412` when the path exists). A trailing
+         *     slash with an empty body creates an explicit folder and its missing parents (`201`, `200` for
+         *     an existing folder). A path names a file or a folder, never both (`409 path_conflict`). The
+         *     answer is the item description, sent only after the object is durable in the object store and
+         *     the item committed.
+         */
+        put: operations["deployFile"];
+        post?: never;
+        /**
+         * Delete a file or folder
+         * @description The same operation as `DELETE /api/v1/repositories/{repoKey}/items` on the path (R-STOR-018):
+         *     `204`, or `202` with the job of a large subtree. A path outside the repository's include and
+         *     exclude patterns answers `404`.
+         */
+        delete: operations["deleteFile"];
+        options?: never;
+        /**
+         * Read the headers of a file
+         * @description Answers the headers of `GET`, from PostgreSQL alone, without a body.
+         */
+        head: operations["headFile"];
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/endpoints": {
         parameters: {
             query?: never;
@@ -2688,6 +2961,184 @@ export interface components {
              * @description The epoch of the index that decided every check.
              */
             epoch: number;
+        };
+        FormatDescriptor: {
+            name: string;
+            displayName?: string;
+            /** @description The classes the implementation accepts. */
+            classes: ("local" | "remote" | "virtual")[];
+            layout: string;
+            /** @description The client address template; `{key}` is the repository key. */
+            protocolBasePath: string;
+            defaultUpstreamUrl: string | null;
+            defaultMetadataTtlSeconds: number | null;
+            defaultNotFoundTtlSeconds: number | null;
+            /** @enum {string} */
+            patternSubject: "name" | "path";
+            priorityMembers: boolean;
+            pinsAndClaims: boolean;
+            caps: boolean;
+        };
+        FormatList: {
+            formats: components["schemas"]["FormatDescriptor"][];
+        };
+        RepositoryWarning: {
+            code: string;
+            pointer?: string;
+            detail: string;
+        };
+        /**
+         * @description The configuration document of a repository (R-REPO-004): the body of a create, the answer of a
+         *     read and the base of a patch. A member that does not apply to the class or the format is absent.
+         *     Secret fields are never returned. `layout`, `lifecycle`, `createdAt`, `updatedAt`,
+         *     `lastActivityAt` and `warnings` are read-only: a body obtained by `GET` can be sent back, and
+         *     they are ignored.
+         */
+        Repository: {
+            /** @description Fixed at creation; reserved names are the sub-paths of `/api/v1/repositories`. */
+            key: string;
+            /**
+             * @description Fixed at creation.
+             * @enum {string}
+             */
+            class: "local" | "remote" | "virtual";
+            /** @description Fixed at creation; the names of `GET /api/v1/formats`. */
+            format: string;
+            readonly layout?: string;
+            description?: string;
+            /** @description Only for holders of `repositories:read-config`. */
+            adminNotes?: string;
+            includePatterns?: string[];
+            excludePatterns?: string[];
+            disabled?: boolean;
+            requireAuthentication?: boolean;
+            priorityMember?: boolean;
+            /** @enum {string} */
+            hideExistence?: "inherit" | "true" | "false";
+            local?: {
+                [key: string]: unknown;
+            };
+            remote?: {
+                [key: string]: unknown;
+            };
+            virtual?: {
+                [key: string]: unknown;
+            };
+            storage?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            readonly lifecycle?: "active" | "deleting";
+            /** Format: date-time */
+            readonly createdAt?: string;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+            /**
+             * Format: date-time
+             * @description The latest upload or download as the replicas flushed it (at most a minute late).
+             */
+            readonly lastActivityAt?: string | null;
+            /** @description Findings of the write that did not block it; present on create, replace and update. */
+            readonly warnings?: components["schemas"]["RepositoryWarning"][];
+        };
+        /** @description What a caller sees who may read a repository but not its configuration (R-REPO-010). */
+        RepositoryConsumerView: {
+            key: string;
+            /** @enum {string} */
+            class: "local" | "remote" | "virtual";
+            format: string;
+            description: string;
+            layout: string;
+            /** @description The client addresses, paths on the public base URL. */
+            addresses: string[];
+        };
+        /** @description The answer of a read, by the caller's view. */
+        RepositoryRead: components["schemas"]["Repository"] | components["schemas"]["RepositoryConsumerView"];
+        RepositorySummary: {
+            key: string;
+            /** @enum {string} */
+            class: "local" | "remote" | "virtual";
+            format: string;
+            description: string;
+            addresses: string[];
+            disabled: boolean;
+            /**
+             * @description Only a holder of `repositories:read-config` sees a repository being deleted.
+             * @enum {string}
+             */
+            lifecycle?: "active" | "deleting";
+            /** Format: date-time */
+            lastActivityAt: string | null;
+            /** @description The project key; always null until projects exist. */
+            project: string | null;
+        };
+        RepositoryList: {
+            items: (components["schemas"]["RepositorySummary"] | components["schemas"]["Repository"])[];
+            nextCursor: string | null;
+        };
+        Stamp: {
+            /** Format: date-time */
+            at: string;
+            /** @description `<kind>:<name>` of the principal, such as `user:alice` or `ci:acme/web`; null when the principal has no record. */
+            by: string | null;
+        };
+        Digests: {
+            sha256?: string;
+            sha512?: string;
+            sha1?: string;
+            md5?: string;
+        };
+        /** @description The description of a file or folder (R-STOR-016, R-STOR-007). */
+        Item: {
+            repository: string;
+            path: string;
+            /** @enum {string} */
+            kind: "file" | "folder";
+            /** @description Files only. */
+            size?: number;
+            /** @description Files only; `application/octet-stream` when none was recorded. */
+            mediaType?: string;
+            /** @description Folders only; false for a folder that exists because a file lies below it. */
+            explicit?: boolean;
+            created: components["schemas"]["Stamp"];
+            modified: components["schemas"]["Stamp"];
+            /** Format: date-time */
+            updatedAt: string;
+            digests?: components["schemas"]["Digests"];
+            declaredDigests?: components["schemas"]["Digests"];
+            declaredMismatch?: boolean;
+            /** @enum {string} */
+            contentStatus?: "ok" | "missing" | "corrupt";
+            /** @description Always null for a generic repository. */
+            package: null;
+            /** @description Always null for a local repository. */
+            upstreamUrl: null;
+            /** @description Files only. */
+            downloadUrl?: string;
+            /** @description Folders only. */
+            listingUrl?: string;
+            itemUrl: string;
+        };
+        Child: {
+            /** @description Relative to the listed folder. */
+            path: string;
+            /** @enum {string} */
+            kind: "file" | "folder";
+            size?: number;
+            /** Format: date-time */
+            modifiedAt?: string;
+            sha256?: string;
+            sha1?: string;
+        };
+        ChildrenPage: {
+            items: components["schemas"]["Child"][];
+            nextCursor: string | null;
+        };
+        ItemStats: {
+            downloads: number;
+            /** Format: date-time */
+            lastDownloadAt: string | null;
+            lastDownloader: string | null;
         };
         EndpointList: {
             items: components["schemas"]["Endpoint"][];
@@ -5816,6 +6267,810 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listFormats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The formats, sorted by name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "formats": [
+                     *         {
+                     *           "name": "generic",
+                     *           "displayName": "Generic",
+                     *           "classes": [
+                     *             "local"
+                     *           ],
+                     *           "layout": "generic",
+                     *           "protocolBasePath": "/files/{key}/",
+                     *           "defaultUpstreamUrl": null,
+                     *           "defaultMetadataTtlSeconds": null,
+                     *           "defaultNotFoundTtlSeconds": 1800,
+                     *           "patternSubject": "path",
+                     *           "priorityMembers": false,
+                     *           "pinsAndClaims": false,
+                     *           "caps": false
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["FormatList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listRepositories: {
+        parameters: {
+            query?: {
+                /** @description Repeat the parameter, or separate values with commas. */
+                class?: ("local" | "remote" | "virtual")[];
+                /** @description Repeat the parameter, or separate values with commas. */
+                format?: string[];
+                q?: string;
+                state?: "inactive";
+                project?: string;
+                view?: "summary" | "full";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of repositories. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "key": "generic-local",
+                     *           "class": "local",
+                     *           "format": "generic",
+                     *           "description": "Installers and build outputs",
+                     *           "addresses": [
+                     *             "/files/generic-local/"
+                     *           ],
+                     *           "disabled": false,
+                     *           "lastActivityAt": "2026-10-28T09:14:03.117Z",
+                     *           "project": null
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RepositoryList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createRepository: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "key": "generic-local",
+                 *       "class": "local",
+                 *       "format": "generic",
+                 *       "description": "Installers and build outputs",
+                 *       "includePatterns": [
+                 *         "releases/**"
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["Repository"];
+            };
+        };
+        responses: {
+            /** @description The repository was created. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Repository"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getRepository: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The repository. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "key": "generic-local",
+                     *       "class": "local",
+                     *       "format": "generic",
+                     *       "layout": "generic",
+                     *       "description": "Installers and build outputs",
+                     *       "adminNotes": "",
+                     *       "includePatterns": [
+                     *         "releases/**"
+                     *       ],
+                     *       "excludePatterns": [],
+                     *       "disabled": false,
+                     *       "requireAuthentication": false,
+                     *       "hideExistence": "inherit",
+                     *       "lifecycle": "active",
+                     *       "createdAt": "2026-10-28T09:00:00.000Z",
+                     *       "updatedAt": "2026-10-28T09:00:00.000Z",
+                     *       "lastActivityAt": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RepositoryRead"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replaceRepository: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Repository"];
+            };
+        };
+        responses: {
+            /** @description The stored document, with the warnings of the write. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Repository"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteRepository: {
+        parameters: {
+            query?: {
+                detach?: boolean;
+            };
+            header?: {
+                /** @description The ETag loaded with the repository, or `*`. */
+                "If-Match"?: string;
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deletion job. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            /** @description The repository had no content and is gone. */
+            204: {
+                headers: {
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateRepository: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "description": "Installers"
+                 *     }
+                 */
+                "application/merge-patch+json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The stored document, with the warnings of the write. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Repository"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getItem: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The canonical path of a file or folder, without a leading or trailing slash; empty or
+                 *     absent is the root of the repository.
+                 */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "repository": "generic-local",
+                     *       "path": "tools/widget/2.3/widget-2.3.bin",
+                     *       "kind": "file",
+                     *       "size": 48213,
+                     *       "mediaType": "application/octet-stream",
+                     *       "created": {
+                     *         "at": "2026-10-28T09:14:03.117Z",
+                     *         "by": "user:alice"
+                     *       },
+                     *       "modified": {
+                     *         "at": "2026-10-28T09:14:03.117Z",
+                     *         "by": "user:alice"
+                     *       },
+                     *       "updatedAt": "2026-10-28T09:14:03.117Z",
+                     *       "digests": {
+                     *         "sha256": "5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567",
+                     *         "sha512": "2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c",
+                     *         "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+                     *         "md5": "d41d8cd98f00b204e9800998ecf8427e"
+                     *       },
+                     *       "declaredMismatch": false,
+                     *       "contentStatus": "ok",
+                     *       "package": null,
+                     *       "upstreamUrl": null,
+                     *       "downloadUrl": "https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin",
+                     *       "itemUrl": "https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteItem: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The canonical path of a file or folder, without a leading or trailing slash; empty or
+                 *     absent is the root of the repository.
+                 */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deletion job. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            /** @description The items are gone. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listChildren: {
+        parameters: {
+            query?: {
+                /** @description The folder; empty or absent is the root of the repository. */
+                path?: string;
+                recursive?: boolean;
+                /** @description With `recursive`, the deepest level below the folder to list; 0 is no bound. */
+                maxDepth?: number;
+                /** @description Include folder entries. */
+                folders?: boolean;
+                /** @description Page size, 1 to 10,000 (default 1,000). */
+                limit?: number;
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of children. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "path": "widget",
+                     *           "kind": "folder",
+                     *           "modifiedAt": "2026-10-28T09:14:03.117Z"
+                     *         },
+                     *         {
+                     *           "path": "readme.txt",
+                     *           "kind": "file",
+                     *           "size": 120,
+                     *           "modifiedAt": "2026-10-28T09:14:03.117Z",
+                     *           "sha256": "5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567",
+                     *           "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ChildrenPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getItemStats: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statistics. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "downloads": 1832,
+                     *       "lastDownloadAt": "2026-10-27T22:01:55Z",
+                     *       "lastDownloader": "ci:acme/web"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ItemStats"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    downloadFile: {
+        parameters: {
+            query?: {
+                /** @description `false` does not count the download. */
+                stats?: boolean;
+            };
+            header?: {
+                /** @description One byte range, `bytes=0-99`; several ranges are ignored. */
+                Range?: string;
+                "If-Range"?: string;
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
+                 *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
+                 *     a backslash or a control character). A trailing slash names a folder. The server route is
+                 *     `/files/{repoKey}/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The content of the file, or the directory index of a folder. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Content-Disposition"?: string;
+                    "Accept-Ranges"?: string;
+                    "Repr-Digest"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description One byte range of the file. */
+            206: {
+                headers: {
+                    "Content-Range"?: string;
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description A folder was addressed without its trailing slash. */
+            301: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            /** @description The range starts beyond the end of the file; `Content-Range` is `bytes *\/<size>`. */
+            416: {
+                headers: {
+                    "Content-Range"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deployFile: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description `sha-256=:<base64>:` and optionally `sha-512=:<base64>:` (RFC 9530). */
+                "Repr-Digest"?: string;
+                /** @description `*` makes the deploy create-only. */
+                "If-None-Match"?: string;
+            };
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
+                 *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
+                 *     a backslash or a control character). A trailing slash names a folder. The server route is
+                 *     `/files/{repoKey}/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "*/*": string;
+            };
+        };
+        responses: {
+            /** @description An identical re-upload, or an existing folder; nothing changed. */
+            200: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            /** @description The file or folder was created, or the file was replaced. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The repository's class does not accept deploys. */
+            405: {
+                headers: {
+                    Allow?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
+                 *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
+                 *     a backslash or a control character). A trailing slash names a folder. The server route is
+                 *     `/files/{repoKey}/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deletion job. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            /** @description The items are gone. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    headFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
+                 *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
+                 *     a backslash or a control character). A trailing slash names a folder. The server route is
+                 *     `/files/{repoKey}/{path...}`.
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The headers of the file. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Accept-Ranges"?: string;
+                    "Repr-Digest"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A folder was addressed without its trailing slash. */
+            301: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

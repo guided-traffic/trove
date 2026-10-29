@@ -8,3 +8,8 @@ generate:
   std-http-server: true
 output-options:
   skip-prune: true
+  # The operations tagged files (/files/..., R-API-002) are served by the raw file
+  # path of R-ARCH-011, not by the generated interface; the route-parity check
+  # covers them.
+  exclude-tags:
+    - files

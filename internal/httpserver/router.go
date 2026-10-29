@@ -11,8 +11,11 @@ package httpserver
 import (
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -45,6 +48,16 @@ type Router struct {
 	mu       sync.Mutex
 	patterns []string
 	dropped  []string
+
+	// uncleaned holds the prefixes whose handler also takes the paths ServeMux
+	// would redirect (HandleUncleaned). It is replaced as a whole, so the request
+	// path reads it without a lock.
+	uncleaned atomic.Pointer[[]uncleanedRoute]
+}
+
+type uncleanedRoute struct {
+	prefix string
+	h      http.Handler
 }
 
 // NewClientRouter returns the router of the client listener with its two fixed
@@ -116,14 +129,77 @@ func (r *Router) Dropped() []string {
 	return slices.Clone(r.dropped)
 }
 
+// HandleUncleaned makes h the handler of every request below prefix whose path
+// ServeMux would redirect to a cleaned path: an empty segment ("a//b") or a "."
+// or ".." segment. ServeMux answers those with a 301 before any pattern is
+// tried; a handler whose specification answers them itself (/files/ answers 400
+// invalid_path, R-GENERIC-002) registers here as well as with Handle. The prefix
+// belongs to a route family and is dropped on an endpoint that does not serve
+// it, like a pattern. It is not a pattern of the route table.
+func (r *Router) HandleUncleaned(prefix string, h http.Handler) {
+	if r.allow != nil && !r.allow(prefix) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var cur []uncleanedRoute
+	if p := r.uncleaned.Load(); p != nil {
+		cur = *p
+	}
+	next := append(slices.Clone(cur), uncleanedRoute{prefix: prefix, h: h})
+	r.uncleaned.Store(&next)
+}
+
+// uncleanedHandler returns the handler registered with HandleUncleaned for the
+// request, nil when the path is clean or no prefix matches.
+func (r *Router) uncleanedHandler(req *http.Request) (string, http.Handler) {
+	routes := r.uncleaned.Load()
+	if routes == nil {
+		return "", nil
+	}
+	p := req.URL.EscapedPath()
+	for _, rt := range *routes {
+		if strings.HasPrefix(p, rt.prefix) && muxWouldRedirect(p) {
+			return rt.prefix, rt.h
+		}
+	}
+	return "", nil
+}
+
+// muxWouldRedirect reports whether ServeMux cleans the path into another one:
+// the rule of its cleanPath, which keeps one trailing slash.
+func muxWouldRedirect(p string) bool {
+	if p == "" || p[0] != '/' {
+		return true
+	}
+	np := path.Clean(p)
+	if p[len(p)-1] == '/' && np != "/" {
+		if len(p) == len(np)+1 && strings.HasPrefix(p, np) {
+			np = p
+		} else {
+			np += "/"
+		}
+	}
+	return np != p
+}
+
 // ServeHTTP routes a request.
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.mux.ServeHTTP(w, req) }
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if _, h := r.uncleanedHandler(req); h != nil {
+		h.ServeHTTP(w, req)
+		return
+	}
+	r.mux.ServeHTTP(w, req)
+}
 
 // Pattern returns the pattern that serves req without serving it. It is how the
 // chain labels a request for the log and the metrics before the mux ran, since
 // middleware that copies the request would hide the mux's own r.Pattern from
 // the outer stages (R-ARCH-005 step 3: the label is the pattern, never the path).
 func (r *Router) Pattern(req *http.Request) string {
+	if prefix, h := r.uncleanedHandler(req); h != nil {
+		return prefix
+	}
 	_, p := r.mux.Handler(req)
 	return p
 }

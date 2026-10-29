@@ -497,6 +497,23 @@ hard to explain in the UI.
 
 **Applied in the spec:** R-GENERIC-010.
 
+### Q-GENERIC-6 · A replacement answers 201, and a folder without its slash is redirected
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-GENERIC-004 says 201 for a new file and 200 for a repeat; it names the status of a replacement with different bytes only through "needs overwrite".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 200 for every existing path | A replacement is "not created" | One rule for "the path existed" | The client cannot tell a no-op from a replacement without comparing digests |
+| (b) 201 when the bytes are new for the path, 200 when nothing changed (chosen) | R-STOR-007 reserves 200 for an identical re-upload | The status tells whether the path now holds new content | A replacement and a first upload look alike; the item description has `modified` and the event `overwritten` |
+
+**Choice:** (b). `GET` of a folder without the trailing slash is `301` to the URL with it (Q-STOR-21).
+
+**Rationale:** R-STOR-007: "`200` for an identical re-upload". The development agent would revisit this if a client needs to tell a replacement from a creation by status.
+
+**Applied in the spec:** R-GENERIC-004 reads unchanged.
+
 ## What this does not cover
 
 ### H-131 · Generic content is served as stored, to whoever can read it

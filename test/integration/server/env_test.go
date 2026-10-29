@@ -232,7 +232,11 @@ func (r *replica) term(t *testing.T) error {
 	}
 }
 
-// valkeyAdmin connects to the primary data node directly as the admin user.
+// valkeyAdmin connects to the current primary data node directly as the admin
+// user. The primary is looked up by role, not taken from the first address of
+// the list: a Sentinel failover (the tests of test/integration/valkey and the
+// smoke tier run them) leaves the primary on the other node, and a client list
+// read from a replica holds none of the replicas' connections.
 func valkeyAdmin(t *testing.T) valkey.Client {
 	t.Helper()
 	vk := testenv.ValkeyConfig(t)
@@ -242,15 +246,31 @@ func valkeyAdmin(t *testing.T) valkey.Client {
 	}
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(pem)
-	c, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{vk.Nodes[0]}, Username: vk.AdminUsername, Password: vk.AdminPassword,
-		TLSConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, DisableCache: true, ForceSingleClient: true,
-	})
-	if err != nil {
-		t.Fatalf("connect to Valkey: %v", err)
+	connect := func(addr string) (valkey.Client, error) {
+		return valkey.NewClient(valkey.ClientOption{
+			InitAddress: []string{addr}, Username: vk.AdminUsername, Password: vk.AdminPassword,
+			TLSConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, DisableCache: true, ForceSingleClient: true,
+		})
 	}
-	t.Cleanup(c.Close)
-	return c
+	var last error
+	for end := time.Now().Add(20 * time.Second); time.Now().Before(end); time.Sleep(200 * time.Millisecond) {
+		for _, addr := range vk.Nodes {
+			c, err := connect(addr)
+			if err != nil {
+				last = err
+				continue
+			}
+			info, err := c.Do(context.Background(), c.B().Info().Section("replication").Build()).ToString()
+			if err == nil && strings.Contains(info, "role:master") {
+				t.Cleanup(c.Close)
+				return c
+			}
+			last = err
+			c.Close()
+		}
+	}
+	t.Fatalf("no Valkey data node of %v is a primary: %v", vk.Nodes, last)
+	return nil
 }
 
 // startRaw launches a replica without waiting for readiness.

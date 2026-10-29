@@ -61,9 +61,15 @@ tags:
   # <<< M1 authz
   #
   # >>> M1 repository
+  - name: repositories
+    description: Repository configuration (create, read, update, list, delete) and the format catalog.
   # <<< M1 repository
   #
   # >>> M1 files
+  - name: items
+    description: Files and folders of a repository, their listing, statistics and deletion.
+  - name: files
+    description: Raw file transfer below `/files/` (PUT, GET, HEAD, DELETE), without a format protocol.
   # <<< M1 files
   #
   # >>> M1 endpoints
@@ -3533,9 +3539,995 @@ paths:
   # <<< M1 authz
   #
   # >>> M1 repository
+  /api/v1/formats:
+    get:
+      operationId: listFormats
+      tags: [repositories]
+      summary: List the package formats
+      description: |
+        The format catalog (R-REPO-003): for each format the classes the implementation accepts, its
+        layout, the client address template, the cache periods and the facts that decide which
+        members of a repository document apply. The list of classes is the single source of truth
+        for the create form: a class that is not listed answers `422 unsupported_class`. Any caller;
+        an anonymous caller only where anonymous access is on, else `401`.
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The formats, sorted by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormatList"
+              example:
+                formats:
+                  - name: generic
+                    displayName: Generic
+                    classes: [local]
+                    layout: generic
+                    protocolBasePath: /files/{key}/
+                    defaultUpstreamUrl: null
+                    defaultMetadataTtlSeconds: null
+                    defaultNotFoundTtlSeconds: 1800
+                    patternSubject: path
+                    priorityMembers: false
+                    pinsAndClaims: false
+                    caps: false
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories:
+    get:
+      operationId: listRepositories
+      tags: [repositories]
+      summary: List repositories
+      description: |
+        The repositories the caller may see, sorted by key, with cursor pagination (R-REPO-012,
+        R-API-010). A caller without `repositories:read-config` sees the repositories on which it holds
+        `read` (R-AUTHZ-016); a holder of `repositories:read-config` sees every repository, those being
+        deleted included. `view=summary` (default) returns a short description of each; `view=full`
+        returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class`
+        and `format` take the values as spelled in documents, repeated or comma-separated; `q` matches
+        the key and the description case-insensitively; `state=inactive` keeps the disabled
+        repositories. `project` selects the repositories of a project: projects arrive after milestone
+        M1, so a project key selects none. An anonymous caller sees what anonymous holds `read` on,
+        or gets `401` where anonymous access is off.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: class
+          in: query
+          description: Repeat the parameter, or separate values with commas.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [local, remote, virtual]
+          style: form
+          explode: true
+        - name: format
+          in: query
+          description: Repeat the parameter, or separate values with commas.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [inactive]
+        - name: project
+          in: query
+          schema:
+            type: string
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of repositories.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryList"
+              example:
+                items:
+                  - key: generic-local
+                    class: local
+                    format: generic
+                    description: Installers and build outputs
+                    addresses: [/files/generic-local/]
+                    disabled: false
+                    lastActivityAt: "2026-10-28T09:14:03.117Z"
+                    project: null
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createRepository
+      tags: [repositories]
+      summary: Create a repository
+      description: |
+        Creates a repository from its configuration document (R-REPO-009). Omitted settings take
+        their defaults. The document is validated in one pass and every violation is reported (`422`,
+        R-REPO-008); an unknown or duplicate member is `400 invalid_document` with its JSON pointer.
+        Create is never an upsert: a key that is taken, also by a repository being deleted, answers
+        `409 repository_exists`. The configuration, the audit event and the change-log row are one
+        transaction, so the repository is usable on every replica as soon as this answers
+        (R-API-052). The body of the answer is the stored document plus `warnings`.
+      x-trove-permission:
+        permission: repositories:write-config
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Repository"
+            example:
+              key: generic-local
+              class: local
+              format: generic
+              description: Installers and build outputs
+              includePatterns: ["releases/**"]
+      responses:
+        "201":
+          description: The repository was created.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The repository key (R-REPO-002).
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+          x-trove-reserved-names: [batch-create, batch-update, batch-get, batch-delete, quick-setup]
+    get:
+      operationId: getRepository
+      tags: [repositories]
+      summary: Read a repository
+      description: |
+        The configuration document of a repository (R-REPO-010). A holder of
+        `repositories:read-config` receives the full document, `ETag: "<config_version>"`; a caller
+        who holds a repository action on it receives the consumer view (`key`, `class`, `format`,
+        `description`, `layout`, `addresses`), `ETag: "<config_version>-consumer"`; a caller who
+        holds nothing on it, and a caller on a repository that does not exist, receive the same `404`
+        (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that
+        committed on another replica shows at once (R-API-052).
+      x-trove-permission:
+        public: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The repository.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryRead"
+              example:
+                key: generic-local
+                class: local
+                format: generic
+                layout: generic
+                description: Installers and build outputs
+                adminNotes: ""
+                includePatterns: ["releases/**"]
+                excludePatterns: []
+                disabled: false
+                requireAuthentication: false
+                hideExistence: inherit
+                lifecycle: active
+                createdAt: "2026-10-28T09:00:00.000Z"
+                updatedAt: "2026-10-28T09:00:00.000Z"
+                lastActivityAt: null
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: replaceRepository
+      tags: [repositories]
+      summary: Replace a repository configuration
+      description: |
+        Replaces the configuration with a complete document; settings that are omitted revert to their
+        defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). A body
+        obtained by `GET` can be sent back: the read-only members are ignored. `If-Match` is required
+        (`428` without it, `412` with `currentEtag` when stale, `*` for a deliberate blind write). Key,
+        class and format cannot change (`422 immutable_field`). `PUT` never creates a repository.
+      x-trove-permission:
+        permission: repositories:write-config
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Repository"
+      responses:
+        "200":
+          description: The stored document, with the warnings of the write.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateRepository
+      tags: [repositories]
+      summary: Update a repository configuration
+      description: |
+        Applies a JSON merge patch (RFC 7396, `application/merge-patch+json`) to the stored document
+        (R-REPO-011): arrays are replaced as a whole, `null` removes an optional setting. `If-Match` is
+        required. A patch that changes nothing writes nothing: same version, no event. Key, class and
+        format cannot change (`422 immutable_field`); a value equal to the stored one is ignored.
+      x-trove-permission:
+        permission: repositories:write-config
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              type: object
+              additionalProperties: true
+            example:
+              description: Installers
+      responses:
+        "200":
+          description: The stored document, with the warnings of the write.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteRepository
+      tags: [repositories]
+      summary: Delete a repository
+      description: |
+        Marks the repository as being deleted and removes its items in the background (R-REPO-013):
+        `202` with the job to poll, and the same job when the delete is repeated while it runs; `204`
+        for a repository without content. From the first transaction on the repository is not
+        resolvable and not addressable, and it is listed only to holders of
+        `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
+        honoured when sent. With `detach=true` references from virtual repositories are removed in the
+        same transaction; virtual repositories arrive after milestone M1, so the flag changes nothing yet.
+      x-trove-permission:
+        permission: repositories:write-config
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: detach
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: If-Match
+          in: header
+          required: false
+          description: The ETag loaded with the repository, or `*`.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: The deletion job.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobReferenceEnvelope"
+        "204":
+          description: The repository had no content and is gone.
+          headers:
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 repository
   #
   # >>> M1 files
+  /api/v1/repositories/{repoKey}/items:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: path
+        in: query
+        required: false
+        description: |
+          The canonical path of a file or folder, without a leading or trailing slash; empty or
+          absent is the root of the repository.
+        schema:
+          type: string
+    get:
+      operationId: getItem
+      tags: [items]
+      summary: Describe a file or folder
+      description: |
+        The metadata of an item (R-STOR-016): digests, size, media type, who created and last changed
+        it, the content status, `package: null` and `upstreamUrl: null` for a generic repository
+        (R-GENERIC-006), and the URLs. A folder carries `kind: folder`, `explicit` and the URL of its
+        listing, and no children. Needs `read` on the path; a path the caller may not read answers
+        `404`, like a missing one. A repository that is disabled is described as well; the items that
+        its include and exclude patterns leave out are visible here (R-GENERIC-007).
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: query.path
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+              example:
+                repository: generic-local
+                path: tools/widget/2.3/widget-2.3.bin
+                kind: file
+                size: 48213
+                mediaType: application/octet-stream
+                created: {at: "2026-10-28T09:14:03.117Z", by: "user:alice"}
+                modified: {at: "2026-10-28T09:14:03.117Z", by: "user:alice"}
+                updatedAt: "2026-10-28T09:14:03.117Z"
+                digests:
+                  sha256: 5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567
+                  sha512: 2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c2fb8e1c4a07d9b3c
+                  sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709
+                  md5: d41d8cd98f00b204e9800998ecf8427e
+                declaredMismatch: false
+                contentStatus: ok
+                package: null
+                upstreamUrl: null
+                downloadUrl: https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin
+                itemUrl: https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteItem
+      tags: [items]
+      summary: Delete a file or folder
+      description: |
+        Removes a file, or a folder with its whole subtree (R-STOR-018). Needs `delete` on the path and
+        on every item of the subtree, decided completely before anything is removed (`403` and nothing
+        changes otherwise). A subtree of at most `storage.delete.max_sync_items` items is removed at
+        once (`204`); a larger one by a background job (`202` with the job to poll). Items are deleted
+        permanently; their blobs are collected later. The root of the repository cannot be deleted
+        here (`400 invalid_path`): delete the repository.
+      x-trove-permission:
+        action: delete
+        repository: path.repoKey
+        path: query.path
+      responses:
+        "202":
+          description: The deletion job.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobReferenceEnvelope"
+        "204":
+          description: The items are gone.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/children:
+    get:
+      operationId: listChildren
+      tags: [items]
+      summary: List the children of a folder
+      description: |
+        The untrashed children of a folder in byte order of their paths, with a cursor (R-STOR-017,
+        R-API-025); `recursive=true` walks the subtree, optionally bounded by `maxDepth`. An entry the
+        caller may not read is omitted. `path` of an entry is relative to the listed folder; a folder
+        entry carries no size or digests. The default page size is 1,000 and the maximum 10,000 (not
+        the general limits of the other lists). The cursor is the path of the last row the page
+        scanned, so a page can be shorter than `limit` while more entries follow: continue while
+        `nextCursor` is not null.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: query.path
+      parameters:
+        - name: repoKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: The folder; empty or absent is the root of the repository.
+          schema:
+            type: string
+        - name: recursive
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: maxDepth
+          in: query
+          description: With `recursive`, the deepest level below the folder to list; 0 is no bound.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: folders
+          in: query
+          description: Include folder entries.
+          schema:
+            type: boolean
+            default: true
+        - name: limit
+          in: query
+          description: Page size, 1 to 10,000 (default 1,000).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of children.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChildrenPage"
+              example:
+                items:
+                  - {path: widget, kind: folder, modifiedAt: "2026-10-28T09:14:03.117Z"}
+                  - path: readme.txt
+                    kind: file
+                    size: 120
+                    modifiedAt: "2026-10-28T09:14:03.117Z"
+                    sha256: 5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567
+                    sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/stats:
+    get:
+      operationId: getItemStats
+      tags: [items]
+      summary: Read the download statistics of a file
+      description: |
+        The number of downloads, the time of the last one and its downloader (R-STOR-015). The counts
+        are those PostgreSQL holds; each replica writes its buffer every `storage.stats.flush_interval`
+        and at shutdown, so a download shows within that interval. `HEAD`, `304` and `?stats=false`
+        do not count. A folder has no statistics (`404`). Needs `read` on the path.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: query.path
+      parameters:
+        - name: repoKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The statistics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemStats"
+              example:
+                downloads: 1832
+                lastDownloadAt: "2026-10-27T22:01:55Z"
+                lastDownloader: "ci:acme/web"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /files/{repoKey}/{path}:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: path
+        in: path
+        required: true
+        description: |
+          The path in the repository. It contains slashes: every segment is percent-encoded, and the
+          path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
+          a backslash or a control character). A trailing slash names a folder. The server route is
+          `/files/{repoKey}/{path...}`.
+        schema:
+          type: string
+    get:
+      operationId: downloadFile
+      tags: [files]
+      summary: Download a file or list a folder
+      description: |
+        Streams the file (R-STOR-012, R-STOR-013): `Content-Length`, `ETag: "<sha256 hex>"` (the
+        content address, a strong validator), `Last-Modified`, `Accept-Ranges: bytes`, `Repr-Digest`
+        (RFC 9530; the SHA-512 too with `Want-Repr-Digest`). A single `Range` is answered `206`; an
+        `If-Range` with the ETag lets the range apply, and every replica answers it alike, so a download
+        cut at one replica resumes on another. `If-None-Match` and `If-Modified-Since` answer `304`;
+        `HEAD` and the conditional answers never reach the object store. A whole body is verified
+        against the SHA-256 before its last bytes are released. Every response carrying stored content
+        has `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`,
+        `Cross-Origin-Resource-Policy: same-site` and `Content-Disposition: attachment`. A path with a
+        trailing slash, and the repository root, answer the directory index (R-STOR-017): HTML for
+        `Accept: text/html`, JSON otherwise. A path outside the repository's include and exclude
+        patterns answers `404`. Needs `read`; a hidden file is the same `404` as a missing one.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: path.path
+      parameters:
+        - name: Range
+          in: header
+          description: One byte range, `bytes=0-99`; several ranges are ignored.
+          schema:
+            type: string
+        - name: If-Range
+          in: header
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: stats
+          in: query
+          description: "`false` does not count the download."
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: The content of the file, or the directory index of a folder.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Content-Disposition:
+              schema:
+                type: string
+            Accept-Ranges:
+              schema:
+                type: string
+            Repr-Digest:
+              schema:
+                type: string
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: One byte range of the file.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "301":
+          description: A folder was addressed without its trailing slash.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "416":
+          description: The range starts beyond the end of the file; `Content-Range` is `bytes */<size>`.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    head:
+      operationId: headFile
+      tags: [files]
+      summary: Read the headers of a file
+      description: Answers the headers of `GET`, from PostgreSQL alone, without a body.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+        path: path.path
+      responses:
+        "200":
+          description: The headers of the file.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Accept-Ranges:
+              schema:
+                type: string
+            Repr-Digest:
+              schema:
+                type: string
+        "301":
+          description: A folder was addressed without its trailing slash.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: deployFile
+      tags: [files]
+      summary: Deploy a file or create a folder
+      description: |
+        The raw deploy (R-STOR-007, R-GENERIC-004). The body is the content, streamed to the spool and
+        hashed once; the declared length is checked (`400`), `Repr-Digest` with `sha-256` and
+        `sha-512` is verified after the body (`409`, nothing stored), and `Content-Type` is stored as
+        the media type. Needs `deploy` on the path, decided before the body is read; replacing a
+        file with different bytes needs `overwrite` as well (`403` without it, and the first content
+        is still served); an identical re-upload needs `deploy` only and answers `200`. A path
+        outside the repository's include and exclude patterns is `403 not_admitted` for every caller.
+        `If-None-Match: *` makes the deploy create-only (`412` when the path exists). A trailing
+        slash with an empty body creates an explicit folder and its missing parents (`201`, `200` for
+        an existing folder). A path names a file or a folder, never both (`409 path_conflict`). The
+        answer is the item description, sent only after the object is durable in the object store and
+        the item committed.
+      x-trove-permission:
+        action: deploy
+        repository: path.repoKey
+        path: path.path
+      parameters:
+        - name: Repr-Digest
+          in: header
+          description: "`sha-256=:<base64>:` and optionally `sha-512=:<base64>:` (RFC 9530)."
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: "`*` makes the deploy create-only."
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          "*/*":
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: An identical re-upload, or an existing folder; nothing changed.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "201":
+          description: The file or folder was created, or the file was replaced.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "405":
+          description: The repository's class does not accept deploys.
+          headers:
+            Allow:
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteFile
+      tags: [files]
+      summary: Delete a file or folder
+      description: |
+        The same operation as `DELETE /api/v1/repositories/{repoKey}/items` on the path (R-STOR-018):
+        `204`, or `202` with the job of a large subtree. A path outside the repository's include and
+        exclude patterns answers `404`.
+      x-trove-permission:
+        action: delete
+        repository: path.repoKey
+        path: path.path
+      responses:
+        "202":
+          description: The deletion job.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobReferenceEnvelope"
+        "204":
+          description: The items are gone.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 files
   #
   # >>> M1 endpoints
@@ -6284,9 +7276,335 @@ components:
     # <<< M1 authz
     #
     # >>> M1 repository
+    FormatDescriptor:
+      type: object
+      required: [name, classes, layout, protocolBasePath, defaultUpstreamUrl, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+        displayName:
+          type: string
+        classes:
+          type: array
+          description: The classes the implementation accepts.
+          items:
+            type: string
+            enum: [local, remote, virtual]
+        layout:
+          type: string
+        protocolBasePath:
+          type: string
+          description: The client address template; `{key}` is the repository key.
+        defaultUpstreamUrl:
+          type: [string, "null"]
+        defaultMetadataTtlSeconds:
+          type: [integer, "null"]
+        defaultNotFoundTtlSeconds:
+          type: [integer, "null"]
+        patternSubject:
+          type: string
+          enum: [name, path]
+        priorityMembers:
+          type: boolean
+        pinsAndClaims:
+          type: boolean
+        caps:
+          type: boolean
+    FormatList:
+      type: object
+      required: [formats]
+      properties:
+        formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/FormatDescriptor"
+    RepositoryWarning:
+      type: object
+      required: [code, detail]
+      properties:
+        code:
+          type: string
+        pointer:
+          type: string
+        detail:
+          type: string
+    Repository:
+      type: object
+      description: |
+        The configuration document of a repository (R-REPO-004): the body of a create, the answer of a
+        read and the base of a patch. A member that does not apply to the class or the format is absent.
+        Secret fields are never returned. `layout`, `lifecycle`, `createdAt`, `updatedAt`,
+        `lastActivityAt` and `warnings` are read-only: a body obtained by `GET` can be sent back, and
+        they are ignored.
+      required: [key, class, format]
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+          description: Fixed at creation; reserved names are the sub-paths of `/api/v1/repositories`.
+        class:
+          type: string
+          enum: [local, remote, virtual]
+          description: Fixed at creation.
+        format:
+          type: string
+          description: Fixed at creation; the names of `GET /api/v1/formats`.
+        layout:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          maxLength: 2000
+        adminNotes:
+          type: string
+          maxLength: 8000
+          description: Only for holders of `repositories:read-config`.
+        includePatterns:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 1024
+        excludePatterns:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 1024
+        disabled:
+          type: boolean
+        requireAuthentication:
+          type: boolean
+        priorityMember:
+          type: boolean
+        hideExistence:
+          type: string
+          enum: [inherit, "true", "false"]
+        local:
+          type: object
+          additionalProperties: true
+        remote:
+          type: object
+          additionalProperties: true
+        virtual:
+          type: object
+          additionalProperties: true
+        storage:
+          type: object
+          additionalProperties: true
+        lifecycle:
+          type: string
+          enum: [active, deleting]
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        lastActivityAt:
+          type: [string, "null"]
+          format: date-time
+          readOnly: true
+          description: The latest upload or download as the replicas flushed it (at most a minute late).
+        warnings:
+          type: array
+          readOnly: true
+          description: Findings of the write that did not block it; present on create, replace and update.
+          items:
+            $ref: "#/components/schemas/RepositoryWarning"
+    RepositoryConsumerView:
+      type: object
+      description: What a caller sees who may read a repository but not its configuration (R-REPO-010).
+      required: [key, class, format, description, layout, addresses]
+      properties:
+        key:
+          type: string
+        class:
+          type: string
+          enum: [local, remote, virtual]
+        format:
+          type: string
+        description:
+          type: string
+        layout:
+          type: string
+        addresses:
+          type: array
+          description: The client addresses, paths on the public base URL.
+          items:
+            type: string
+    RepositoryRead:
+      description: The answer of a read, by the caller's view.
+      anyOf:
+        - $ref: "#/components/schemas/Repository"
+        - $ref: "#/components/schemas/RepositoryConsumerView"
+    RepositorySummary:
+      type: object
+      required: [key, class, format, description, addresses, disabled, lastActivityAt, project]
+      properties:
+        key:
+          type: string
+        class:
+          type: string
+          enum: [local, remote, virtual]
+        format:
+          type: string
+        description:
+          type: string
+        addresses:
+          type: array
+          items:
+            type: string
+        disabled:
+          type: boolean
+        lifecycle:
+          type: string
+          enum: [active, deleting]
+          description: Only a holder of `repositories:read-config` sees a repository being deleted.
+        lastActivityAt:
+          type: [string, "null"]
+          format: date-time
+        project:
+          type: [string, "null"]
+          description: The project key; always null until projects exist.
+    RepositoryList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            anyOf:
+              - $ref: "#/components/schemas/RepositorySummary"
+              - $ref: "#/components/schemas/Repository"
+        nextCursor:
+          type: [string, "null"]
     # <<< M1 repository
     #
     # >>> M1 files
+    Stamp:
+      type: object
+      required: [at, by]
+      properties:
+        at:
+          type: string
+          format: date-time
+        by:
+          type: [string, "null"]
+          description: "`<kind>:<name>` of the principal, such as `user:alice` or `ci:acme/web`; null when the principal has no record."
+    Digests:
+      type: object
+      properties:
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        sha512:
+          type: string
+          pattern: "^[0-9a-f]{128}$"
+        sha1:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+        md5:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+    Item:
+      type: object
+      description: The description of a file or folder (R-STOR-016, R-STOR-007).
+      required: [repository, path, kind, created, modified, updatedAt, package, upstreamUrl, itemUrl]
+      properties:
+        repository:
+          type: string
+        path:
+          type: string
+        kind:
+          type: string
+          enum: [file, folder]
+        size:
+          type: integer
+          minimum: 0
+          description: Files only.
+        mediaType:
+          type: string
+          description: Files only; `application/octet-stream` when none was recorded.
+        explicit:
+          type: boolean
+          description: Folders only; false for a folder that exists because a file lies below it.
+        created:
+          $ref: "#/components/schemas/Stamp"
+        modified:
+          $ref: "#/components/schemas/Stamp"
+        updatedAt:
+          type: string
+          format: date-time
+        digests:
+          $ref: "#/components/schemas/Digests"
+        declaredDigests:
+          $ref: "#/components/schemas/Digests"
+        declaredMismatch:
+          type: boolean
+        contentStatus:
+          type: string
+          enum: [ok, missing, corrupt]
+        package:
+          type: "null"
+          description: Always null for a generic repository.
+        upstreamUrl:
+          type: "null"
+          description: Always null for a local repository.
+        downloadUrl:
+          type: string
+          description: Files only.
+        listingUrl:
+          type: string
+          description: Folders only.
+        itemUrl:
+          type: string
+    Child:
+      type: object
+      required: [path, kind]
+      properties:
+        path:
+          type: string
+          description: Relative to the listed folder.
+        kind:
+          type: string
+          enum: [file, folder]
+        size:
+          type: integer
+          minimum: 0
+        modifiedAt:
+          type: string
+          format: date-time
+        sha256:
+          type: string
+        sha1:
+          type: string
+    ChildrenPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Child"
+        nextCursor:
+          type: [string, "null"]
+    ItemStats:
+      type: object
+      required: [downloads, lastDownloadAt, lastDownloader]
+      properties:
+        downloads:
+          type: integer
+          minimum: 0
+        lastDownloadAt:
+          type: [string, "null"]
+          format: date-time
+        lastDownloader:
+          type: [string, "null"]
     # <<< M1 files
     #
     # >>> M1 endpoints

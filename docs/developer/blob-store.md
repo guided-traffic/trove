@@ -5,7 +5,9 @@ depend on an S3 client), [internal/blob/s3](../../internal/blob/s3/) (the AWS SD
 the SDK), [internal/blob/blobtest](../../internal/blob/blobtest/) (an in-memory store with fault injection for tests).
 Requirements: R-STOR-001 to R-STOR-006, R-STOR-013, R-STOR-024, R-STOR-025, R-STOR-030 to R-STOR-035, R-STOR-046.
 The row is the authority on whether a blob exists; the object is the content. Nothing in this tree uses Valkey or a
-session-level advisory lock (R-STOR-046, enforced by [internal/archtest](../../internal/archtest/)).
+session-level advisory lock (R-STOR-046, enforced by [internal/archtest](../../internal/archtest/)). The first caller of `Ingest`,
+`Commit` and `Open` is the files transfer ([files.md](files.md)): its link function is the item insert or replace, and a download opens
+the verifying reader or a range.
 
 ## Files
 
