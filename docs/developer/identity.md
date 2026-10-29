@@ -44,7 +44,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 |---|---|
 | `principal.go` | The contract: `Store`, `Principal`, `Kind`, `Status`, `LoginClaims`, `Provisioner` |
 | `store.go` | `PGStore`: `ByID`, `ByName`, `Groups` over the cache `auth_principals` |
-| `manager.go`, `groups.go`, `serviceaccounts.go` | `Manager`: users, groups and memberships, service accounts (R-AUTH-016, R-AUTH-018, R-AUTH-020) |
+| `manager.go`, `groups.go`, `serviceaccounts.go` | `Manager`: users, groups and memberships, service accounts (R-AUTH-016, R-AUTH-018, R-AUTH-020); `Caller.RoleHolders` is the `roles:write` check the API sets |
+| `guards.go` | `guardRoleHolder` (a principal that holds a system role, or a group that carries one, is changed only with `roles:write`, Q-AUTHZ-69) and `LastAdminGuard` (`last_admin` over active holders, locked on the `admin` binding rows; authz uses it in `UnbindRole`, Q-AUTHZ-70) |
 | `provisioner.go` | `PGProvisioner.SignIn`: just-in-time user, identity link, rename, group sync (R-AUTH-007, R-AUTH-008) |
 | `change.go` | The payload of the change area `auth` and its notify helpers |
 | `gate.go` | `Gate` (freshness), `Flights` (shared lookups while the gate is closed), `Metrics` |
@@ -58,8 +59,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `format.go` | Generate, `Check` (syntax step), `Hash`, `Hint` (R-AUTH-022) |
 | `scope.go` | `ParseScope` (validation, limits), `Marshal`, `Within` (the derivation rule) |
 | `lifetime.go` | `resolveLifetime` (R-AUTH-026) |
-| `service.go` | `Service`: `Create`, `Get`, `List`, the record types |
-| `rotate.go`, `revoke.go` | `Rotate`, `Revoke`, `RevokeByValue`, `RevokeAll` |
+| `service.go` | `Service`: `Create`, `Get`, `List`, the record types; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
+| `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade |
 | `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected` |
 | `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040) |
 | `tasks.go` | `Cleanup` (`token-cleanup`), `NoticeExpiring` (`token-expiry-notice`) |
@@ -149,7 +150,8 @@ unchanged), so a fill that raced a revocation serves one request and is not cach
   alone only on a process without one.
 - Not here: the break-glass lockout (login), and the device-code limiter. The flow-start limit of the unauthenticated
   login routes is `a.m1.flowStarts`, registered next to the failure limiter and used by the login
-  ([login.md](login.md#seams-to-the-other-areas)).
+  ([login.md](login.md#seams-to-the-other-areas)) and the revocation by value; both callers pass the bucket through
+  `auth.AddressBucket`, which maps an IPv6 address to its `/64` (Q-AUTH-90).
 
 ## Tests
 

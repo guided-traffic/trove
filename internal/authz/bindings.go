@@ -13,12 +13,10 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
-// codes of the identity area that the role-binding rules answer with; the
-// identity area registers them.
-const (
-	codeAutoJoinAdminConflict = "auto_join_admin_conflict"
-	codeLastAdmin             = "last_admin"
-)
+// codeAutoJoinAdminConflict is a code of the identity area that the
+// role-binding rules answer with; the identity area registers it. last_admin
+// comes from principal.LastAdminGuard.
+const codeAutoJoinAdminConflict = "auto_join_admin_conflict"
 
 func roleProblem(pointer, code, detail string) error {
 	return problemError([]ProblemField{field(pointer, code, detail)})
@@ -65,6 +63,11 @@ func (s *Service) BindRole(ctx context.Context, actor Subject, role Role, ref st
 			return err
 		}
 		if r.Kind == principal.KindGroup {
+			// The lock that turning on auto-join takes too, so the two checks of
+			// each other cannot both pass (R-AUTH-019).
+			if _, err := qs.IdentityLockGroup(ctx, id); err != nil {
+				return err
+			}
 			auto, err := qs.AuthzGroupAutoJoin(ctx, id)
 			if err != nil {
 				return err
@@ -134,8 +137,10 @@ func (s *Service) BindAdmin(ctx context.Context, tx meta.Tx, principalID, grante
 }
 
 // UnbindRole removes a role binding. It answers 404 for a binding that does not
-// exist and 409 last_admin when it would remove the last admin binding while the
-// break-glass administrator is disabled (R-AUTHZ-022).
+// exist and 409 last_admin when no active user or service account would hold
+// admin any more while the break-glass administrator is disabled (R-AUTHZ-022);
+// the guard is the one the identity operations use, so concurrent unbinds and
+// removals run one after the other.
 func (s *Service) UnbindRole(ctx context.Context, actor Subject, role Role, ref string) (int64, error) {
 	r, id, err := s.bindable(ctx, role, ref)
 	if err != nil {
@@ -147,6 +152,12 @@ func (s *Service) UnbindRole(ctx context.Context, actor Subject, role Role, ref 
 		if err != nil {
 			return err
 		}
+		var last principal.LastAdminGuard
+		if role == RoleAdmin {
+			if err := last.Arm(ctx, qs, id); err != nil {
+				return err
+			}
+		}
 		n, err := qs.AuthzDeleteBinding(ctx, q.AuthzDeleteBindingParams{Role: string(role), PrincipalID: id})
 		if err != nil {
 			return err
@@ -154,15 +165,8 @@ func (s *Service) UnbindRole(ctx context.Context, actor Subject, role Role, ref 
 		if n == 0 {
 			return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The role %s is not bound to %s.", role, ref))
 		}
-		if role == RoleAdmin {
-			left, err := qs.AuthzAdminBindings(ctx)
-			if err != nil {
-				return err
-			}
-			if left.AdminBindings == 0 && !left.BreakGlassActive {
-				return errs.E(errs.Conflict, codeLastAdmin,
-					"This is the last admin binding and the break-glass administrator is disabled.")
-			}
+		if err := last.Check(ctx, qs); err != nil {
+			return err
 		}
 		if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: id}); err != nil {
 			return err

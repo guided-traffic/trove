@@ -40,7 +40,7 @@ quotas are P1.
 | [rawfiles/conditional.go](../../internal/api/rawfiles/conditional.go) | `If-Match`, `If-None-Match`, `If-(Un)Modified-Since`, `Range`, `If-Range` of RFC 9110 |
 | [rawfiles/digest.go](../../internal/api/rawfiles/digest.go) | `Repr-Digest` in, `Repr-Digest` / `Want-Repr-Digest` out (RFC 9530) |
 | [rawfiles/index.go](../../internal/api/rawfiles/index.go) | the directory index, HTML and JSON |
-| [httpserver/content.go](../../internal/httpserver/content.go) | `ContentWriter`: the content headers of R-ARCH-007 |
+| [httpserver/content.go](../../internal/httpserver/content.go) | `ContentWriter`, `ContentWriterFor`: the content headers of R-ARCH-007, `same-origin` for a request the session cookie authenticated (Q-ARCH-86) |
 | [httpserver/router.go](../../internal/httpserver/router.go) | `Router.HandleUncleaned`: paths `ServeMux` would redirect reach the handler |
 | [api/v1/items_api.go](../../internal/api/v1/items_api.go) | `GetItem`, `DeleteItem`, `ListChildren`, `GetItemStats`; `CallerFrom` |
 | [app/wire_files.go](../../internal/app/wire_files.go) | `wireFiles`, `filesComponent` (flush loops, `Flusher`), `registerFiles`, `registerFilesJobs`, `repositoryAPI` |
@@ -62,9 +62,14 @@ quotas are P1.
 ```
 
 An error before the status line is a problem (`httpserver.Problem`) written to the plain writer. A response that carries the
-file or the directory index is written through `ContentWriter`, which sets `X-Content-Type-Options`, the sandbox policy,
-`Cross-Origin-Resource-Policy` and `Content-Disposition` (the index set without `sandbox` and without a disposition) and
-applies them again at `WriteHeader` and at the first `Write`, so a handler cannot weaken them.
+file or the directory index is written through `ContentWriterFor(w, r, …)`, which sets `X-Content-Type-Options`, the sandbox
+policy, `Cross-Origin-Resource-Policy` and `Content-Disposition` (the index set without `sandbox` and without a disposition) and
+applies them again at `WriteHeader` and at the first `Write`, so a handler cannot weaken them. The resource policy is `same-origin`
+when the session cookie authenticated `r` and `same-site` otherwise (Q-ARCH-86); `ContentWriter` without a request is `same-site`.
+
+The path tail is refused with `400 invalid_path` when it starts with a slash (`/files/<key>//x`), before `CleanPath` drops one
+leading slash; the stored media type is the request's `Content-Type` parsed with `mime.ParseMediaType` and written back with
+`mime.FormatMediaType` (a value that does not parse is `400 invalid_header`).
 
 ## Deploy
 
@@ -75,8 +80,10 @@ applies them again at `WriteHeader` and at the first `Write`, so a handler canno
    every caller).
 3. `Ingest` spools the body (declared length, `storage.upload.max_size` and `config.storage.maxUploadSize`, the digests of
    `Repr-Digest`: 400 for a length mismatch, 409 for a digest mismatch, nothing stored).
-4. An existing item with other bytes needs `overwrite` too: decided **before** the object is written. A folder at the path, or a file at
-   an ancestor, is 409 `path_conflict`. `If-None-Match: *` makes the deploy create-only (412).
+4. The commit-time re-check of R-AUTHZ-015: the write is decided again now that the body has arrived, `deploy` with `overwrite` for an
+   existing item with other bytes, `deploy` alone otherwise, **before** the object is written and before the commit transaction opens
+   (a stale index makes a decision wait). That decision is the one `RecordAllowed` records. A folder at the path, or a file at an
+   ancestor, is 409 `path_conflict`. `If-None-Match: *` makes the deploy create-only (412).
 5. `BeginCommit` tells the server that the request is committing (R-ARCH-024 step 5), then `Commit` runs the protocol of
    [blob-store.md](blob-store.md). Its link function, in the transaction that holds the blob row's `FOR SHARE` lock:
    - inserts the missing ancestor folders (`ON CONFLICT DO NOTHING`) and refuses a file among them;
@@ -123,8 +130,11 @@ the job. Items are deleted for good: the trash can is P1 (Q-STOR-19).
 ## Listings and statistics
 
 `Children` reads a keyset batch from PostgreSQL, decides `read` for each entry with one `PathsAllowed` call (one index, no audit
-event per omitted entry), and continues until the page is full or `scanLimit` rows were read; the cursor is the path of the last
-row scanned (Q-STOR-20). `files.Stats` counts a download after its body was copied (200, or 206 from byte 0; not HEAD, 304 or
+event per omitted entry), and continues until the page is full or `scanLimit` rows were read (Q-STOR-20). A batch is `limit + 1`
+rows and doubles after each batch that left the page short, up to `maxChunk` (5,000), so a page costs a few dozen queries at most.
+The cursor is the path of the page's last entry; a page that ended at `scanLimit` beyond its last visible entry carries
+`hiddenPosition` (a NUL) and the item id of the last row read instead, which `cursorPath` turns back into a path with
+`ItemPathByID`, refusing an id outside the repository or below another folder as `400 invalid_cursor` (Q-STOR-62). `files.Stats` counts a download after its body was copied (200, or 206 from byte 0; not HEAD, 304 or
 `?stats=false`) and flushes with one upsert in item id order every `storage.stats.flush_interval`; `repository.Activity` writes
 `last_activity_at` once a minute and at shutdown (R-REPO-012). Both are flushed by `filesComponent.Flush` (R-ARCH-024 step 6).
 

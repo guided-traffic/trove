@@ -663,11 +663,16 @@ Priority: **P1** · Covers: IAM-006, ADMAPI-041, TOK-014
   change them, and it holds no content rights through its role.
 - Escalation guards for `security-admin`:
   - role bindings are `admin`-only (`roles:write`);
-  - changing the membership of a local group that is bound to any system role, or deleting such a
-    group, is `admin`-only (403 otherwise), so a security administrator cannot add itself to an
-    administrator group;
-  - users and service accounts bound directly to `admin` or `security-admin` can be read but not
-    changed or deleted by a `security-admin`.
+  - changing a local group that is bound to any system role (its membership from either side,
+    its name, description or auto-join flag) or deleting it needs `roles:write` (403 otherwise),
+    so a security administrator can neither add itself to an administrator group nor rename one
+    so that the identity provider's group sync fills it (Q-AUTHZ-69);
+  - a user or service account that holds any system role, directly or through a group, can be
+    read but not changed, disabled, enabled or deleted without `roles:write`; for a user that
+    includes its identity links, which the next login would claim. Ending its sessions and
+    revoking its tokens stay with `identities:write` and `tokens:revoke` (Q-AUTHZ-69);
+  - a token exercises `roles:write` only when its scope holds it (R-AUTHZ-013), so a token of an
+    administrator scoped to `identities:write` is refused the same way.
 - `auditor` reads everything that is not secret: configuration, policies, role bindings,
   identities, CI mappings, token metadata (never token values), settings and the audit log. It
   changes nothing and holds no content rights through its role. Secrets are write-only for every
@@ -1417,8 +1422,12 @@ Priority: **MVP** · Covers: IAM-002, IAM-016, ADMAPI-001
 - `principalRef` is percent-encoded (`group:platform-admins`, `sa:ci-bot`).
 - Binding any role to an auto-join group is refused with 409 `auto_join_admin_conflict`; the
   identity page refuses the reverse (R-AUTH-019).
-- Removing the last `admin` binding is refused with 409 `last_admin` while the break-glass
-  administrator is disabled.
+- A change that would leave no active user or service account holding `admin`, directly or
+  through a group, is refused with 409 `last_admin` while the break-glass administrator is
+  disabled: unbinding `admin`, disabling or deleting a holder, deleting its group, removing it
+  from its group. A binding on an empty group or on a disabled user keeps nobody in charge and
+  does not count. These changes take one lock first, so two of them on different replicas run
+  one after the other and the second sees what the first left (Q-AUTHZ-70).
 - `isAdmin` and `adminVia` on user records (R-AUTH-016) are derived from these bindings.
 
 Data model:
@@ -2901,7 +2910,7 @@ M0 ships `system.bootstrap_anonymous_read` (default `false`, refused with an `ht
 
 **Rationale:** The bridge exists to make a development profile work and must not become a path inside the production engine. The condition that matters (the endpoint) is edge knowledge. The development agent would revisit this when the dev profile can sign in, at which point the switch and `bridgeAccess` are removed together.
 
-**Applied in the spec:** none. The gap stays [H-63](../security/roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships).
+**Applied in the spec:** none. The gap stays [H-63](../security/roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships). Narrowed by Q-AUTHZ-71: the bridge opens the system information and the replica list, not every operation of `settings:read`.
 
 ### Q-AUTHZ-17 · How `Trove-Authz-Min-Epoch` reaches the engine
 
@@ -3108,6 +3117,71 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** none.
 
+### Q-AUTHZ-69 · What `identities:write` may change on a principal that holds a system role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Every role binding is `roles:write`, but a membership is a binding in effect: a `security-admin`, or a token scoped to
+`identities:write`, could add a principal to a group bound to `admin`, add a pending identity link to an administrator and
+claim it at the next login, or rename an administrator group so the identity provider's group sync fills it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) R-AUTHZ-011 as written | Groups bound to a role: membership and delete; users and service accounts bound directly to `admin` or `security-admin` | Narrow | Leaves the identity link of a user who is administrator through a group, the rename of a group, and every holder of the other roles open |
+| (b) Every change of a role holder needs `roles:write` (chosen) | A group that carries any role (membership from either side, name, description, auto-join, delete); a user or service account that holds any role directly or through a group (profile, identity links, disable, enable, delete) | One rule a reviewer can check: who holds a role is changed only by who may bind roles | A `security-admin` cannot correct the e-mail address of an administrator |
+
+**Choice:** (b). The check runs in the transaction of the change and asks the decision point for `roles:write` only when the
+principal it changes holds a role, so the refusal (403 naming `roles:write`) and its `authz.denied` event appear only where
+they apply. Ending sessions and revoking tokens stay outside it: `tokens:revoke` covers every principal (R-AUTHZ-010), and
+both only take access away. The admin command runs with full rights.
+
+**Rationale:** taking over the holder of any role reaches a capability the actor lacks (`repository-admin` holds
+`repositories:write-config`, which `security-admin` does not). The development agent would revisit the scope when owners of
+service accounts (P1) or SCIM-managed groups arrive.
+
+**Applied in the spec:** R-AUTHZ-011 (the escalation guards).
+
+### Q-AUTHZ-70 · What `last_admin` counts and which changes it guards
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The guard counted `admin` bindings and ran in the unbind only. Deleting or disabling the last administrator, deleting its
+group or removing it from the group bypassed it; a binding on an empty group counted as an administrator; two unbinds on
+different replicas each saw one binding left and both committed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Bindings, the unbind only | As before | Simple | The bypasses above |
+| (b) Active holders, every change that can end the role (chosen) | Active users and service accounts that hold `admin` directly or through a group; the unbind, disable and delete of a user or service account, the delete of a group and the removal of a member take a lock on the `admin` binding rows first and count afterwards in a statement of their own | The guard means what it says: someone can still act as administrator | A change that touches an administrator waits for another such change |
+| (c) Also refuse the identity provider's group sync | The login that drops the last administrator group membership is refused | Complete | The identity provider is authoritative for its groups; refusing a login does not keep the person in charge |
+
+**Choice:** (b). The sync of R-AUTH-008 stays outside; R-HA-054 reports an installation without an administrator.
+
+**Rationale:** the break-glass administrator is the recovery path, and the guard keeps an installation from losing its
+last administrator while that path is closed. The development agent would revisit (c) if the owner wants the sync to keep a
+last membership.
+
+**Applied in the spec:** R-AUTHZ-022.
+
+### Q-AUTHZ-71 · The bootstrap bridge opens two operations, not a capability
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-AUTHZ-16 kept the dev-profile bridge `system.bootstrap_anonymous_read` as "exactly `settings:read`". Since M1 that
+capability also covers the scheduled tasks, the encryption status and the authentication settings, while the decision on the
+switch in [api-and-ui.md](api-and-ui.md) and H-63 name only the system information and the replica list.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The capability | As Q-AUTHZ-16 | No path knowledge in the bridge | The switch opens whatever `settings:read` comes to cover |
+| (b) The two operations (chosen) | `GET /api/v1/system/info` and `GET /api/v1/system/replicas`; the composition root's endpoint stage hands the request path to the bridge | What the switch was introduced for, and no more | The bridge knows two paths |
+
+**Choice:** (b), in `internal/app/access.go`.
+
+**Rationale:** a development switch must not widen with the API. The development agent would revisit this when the switch is
+removed (Q-AUTHZ-16).
+
+**Applied in the spec:** Q-AUTHZ-16 (a note on its choice).
 
 ## What this does not cover
 

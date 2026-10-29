@@ -918,7 +918,9 @@ Priority: **MVP** · Covers: trove-only
   that R-AUTHZ-016 filters per item is filtered by exposure as well: the repository list shows only
   repositories with an enabled rule, and the packages, items and search operations (R-API-022,
   R-API-025, R-API-028, R-API-029) list only exposed packages, versions and files. Counts and totals
-  are computed after the filter. Capability operations (users, policies, settings) are not content;
+  are computed after the filter. A holder of `repositories:read-config`, who lists and reads every
+  repository without a read grant, is bound the same way (Q-EP-12): the list shows the exposed
+  repositories only, and reading another one answers the `404` of a missing one. Capability operations (users, policies, settings) are not content;
   they need their capability, and the endpoint's credential rules decide who can present one
   (R-EP-010).
 

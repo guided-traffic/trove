@@ -1317,7 +1317,8 @@ Priority: **P1** · Covers: ART-028, ART-042
   (the same entries) otherwise. Under the repository's checksum policy (R-STOR-010) sidecar
   entries appear next to files.
 - The HTML index is rendered by trove, not stored content, so it carries no `Content-Disposition`.
-  It still carries `nosniff` and `Cross-Origin-Resource-Policy: same-site`. The core's writer
+  It still carries `nosniff` and `Cross-Origin-Resource-Policy: same-site` (`same-origin` when the
+  session cookie authenticated the request, [architecture.md](architecture.md) R-ARCH-007). The core's writer
   wrapper of R-STOR-012 selects this header set for a folder `GET` before the handler runs, so the
   handler cannot weaken it either.
 - Virtual repositories list the merged view defined in
@@ -4023,7 +4024,7 @@ R-STOR-017 omits the entries the caller may not read and pages with a cursor; a 
 
 **Rationale:** The decision per entry reads memory only, so the bound is on rows read from PostgreSQL. The development agent would revisit the figure if a real folder needs more.
 
-**Applied in the spec:** R-STOR-017 reads unchanged; the operation `listChildren` describes it.
+**Applied in the spec:** R-STOR-017 reads unchanged; the operation `listChildren` describes it. What the cursor holds when the page ends on a row the caller may not read, and how many rows one query reads, are Q-STOR-62.
 
 ### Q-STOR-21 · A folder addressed without its trailing slash is redirected, a download counts after its body was sent
 
@@ -4041,6 +4042,31 @@ R-STOR-012 says a GET on a folder returns the directory index, whose links are r
 **Rationale:** Both are what a file server and a statistics counter of record do. The development agent would revisit the counting rule if the audit of downloads needs the cut ones.
 
 **Applied in the spec:** R-STOR-012 and R-STOR-015 read unchanged.
+
+### Q-STOR-62 · A listing that ends on a hidden row: its cursor and its cost
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Under Q-STOR-20 a page that reached the scan limit returned the path of the last row it scanned as its cursor. That row may be
+one the caller may not read, and a cursor is base64 JSON, so the client could decode a hidden name (R-AUTHZ-016). A query read
+`limit + 1` rows, so `limit=1` on a folder of 100,000 hidden rows cost 50,000 queries.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The path of the last row scanned | As before | Exact resumption | Names a hidden row |
+| (b) A sealed cursor | Encrypt the path with a key every replica holds | Reveals nothing | No such key exists; it would be one more secret to distribute and rotate |
+| (c) The item's id (chosen) | The cursor holds the numeric id of the last row scanned; the next page reads its path in the repository below the listed folder and continues after it; a purged row is 400 `invalid_cursor` | No name leaves the server; any replica resumes | A forged id tells where that item sorts among the visible entries (H-208) |
+| (d) The last visible entry | Resume there | Reveals nothing | Every page scans the hidden run again, and a run longer than the scan limit never ends |
+
+**Choice:** (c) when a page ends at the scan limit beyond its last visible entry; every other page keeps the path of its last
+entry, which the caller may read. A query reads `limit + 1` rows and doubles that after each query that left the page short, up
+to 5,000, so a page costs a few dozen queries at most (2 + 4 + … + 4096 rows, then the rest of the 100,000 in chunks of 5,000).
+
+**Rationale:** the scan limit exists for callers who see little of a folder; for them the cursor must not carry what they cannot
+see, and the cost of a page must not depend on its size. The development agent would revisit (b) when a cluster-wide key for
+other purposes exists.
+
+**Applied in the spec:** none; R-STOR-017 and Q-STOR-20 read unchanged apart from the pointer to this decision.
 
 ## What this does not cover
 

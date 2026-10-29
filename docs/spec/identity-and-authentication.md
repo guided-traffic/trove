@@ -2091,6 +2091,11 @@ create call must satisfy all of the following:
   subset of its actions, and `inherit`, `admin` and `system` items may only be kept or dropped.
   When the presenting token is bound to endpoints, the new token must be bound to a non-empty
   subset of them ([endpoints.md](endpoints.md) R-EP-011).
+- It may rotate itself (`selfRotatable`) only if the presenting token may (Q-AUTH-89).
+- The presenting token is still live when the new token is written: the creating transaction locks
+  it and every token on its `derived_from` chain and refuses with 401 `invalid_token` when one of
+  them was revoked or expired meanwhile, also when a replica's cache still accepted the presenting
+  token within the revocation bound of R-AUTH-023 (Q-AUTH-89).
 
 This holds for `Bearer` and for Basic with a token as password. A token can never mint a
 credential that outlives or outranks itself. The new token records the presenting token in
@@ -2239,7 +2244,9 @@ already rotated value revoke the live successor; that is deliberate. Its rules:
   `derived_from` chain leads to it, with reason `parent_revoked`. A revocation with reason
   `leaked` (revocation by value) additionally follows `rotated_from` forward and revokes the
   rotation successors and their derived tokens, because a thief may have rotated the stolen token
-  first.
+  first. The revoking transaction locks the token and its tree before the cascade statement runs,
+  so a token derived from the tree at the same moment is either refused or revoked with it
+  (Q-AUTH-89).
 - The forward cascade of a by-value revocation also runs when the presented token is already
   revoked or expired, as long as its row still exists (retention, R-AUTH-023). The presented
   token's own revocation fields stay unchanged. trove cannot tell a holder's rotation from a
@@ -2302,7 +2309,10 @@ The request body is `{"overlapSeconds": 0}`, with a maximum of 86400.
 **The new token:**
 
 - has the original TTL (`expires_at − created_at`), capped by the current maximum
-  (R-AUTH-026);
+  (R-AUTH-026) and by the expiry of every token it is derived from;
+- keeps the `derived_from` of the token it replaces, so revoking the token that one was derived
+  from revokes the successor too; rotated through another token of the owner under the derivation
+  rule, it is derived from that token instead (Q-AUTH-89);
 - records `rotatedFrom` and `createdVia: rotation`;
 - comes back in the R-AUTH-027 response shape.
 
@@ -2312,6 +2322,10 @@ revoked with reason `rotated`.
 **Restrictions:**
 
 - Expired or revoked tokens cannot be rotated (404). There is no grace period after expiry.
+- A token that was already rotated cannot be rotated again, also during its overlap (404): a
+  rotation has one successor, also when two rotations run at the same moment (Q-AUTH-89).
+- A rotation counts against `max_active_per_principal` (R-AUTH-026) as a create does, except for
+  the predecessor it replaces; the rotation of a PAT applies `pat.allowed_groups` (R-AUTH-017).
 - CITs cannot be rotated.
 - Every rotation writes `token.rotated`. A self-rotation also flags the owner's token list, so a
   thief perpetuating a stolen token through self-rotation is visible: the legitimate holder's
@@ -2878,7 +2892,7 @@ the replica's own memory, as `server.max_in_flight` does.
 | Limiter | Bucket | Counts | Rate and burst |
 |---|---|---|---|
 | `auth.credential_failures` | client address | rejected credentials (count-only: checked before validation, counted after a rejection) | `failures_per_address` per minute |
-| `auth.flow_starts` | client address | every request to the endpoints listed below | `starts_per_address` per minute |
+| `auth.flow_starts` | client address; an IPv6 address counts as its `/64` (Q-AUTH-90) | every request to the endpoints listed below | `starts_per_address` per minute |
 | `auth.device_code_failures` | principal ID | wrong user codes (count-only, R-AUTH-036) | `device_code_failures` per `auth.cli_login.ttl` |
 
 Each limiter is registered with the configured value as burst and that value divided by its window
@@ -2930,7 +2944,7 @@ The per-node counting weakness of the catalog's suspension mechanism does not ap
 - Addresses in `exempt_cidrs` are never throttled.
 
 **Unauthenticated endpoints that create rows or run the password hash.** These are limited to
-`starts_per_address` per minute and address, cluster-wide:
+`starts_per_address` per minute and address (an IPv6 address per `/64`), cluster-wide:
 
 - `/auth/oidc/*/start`;
 - npm `-/v1/login`;
@@ -4620,6 +4634,55 @@ R-API-012 gives every mutable configuration resource an integer revision as its 
 **Rationale:** the compare-and-write has to be in the transaction that writes, and the triggers keep the revision true for writers that do not exist yet. The development agent would revisit the triggers if a representation member is added to a table without one (a test lists the members that bump), and would then add it to the trigger's `WHEN`.
 
 **Applied in the spec:** R-AUTH-016, R-AUTH-018, R-AUTH-020 (the `PATCH` rows: `412`, `428`), R-AUTH-040 (`If-Match` with the `ETag` of the `GET`). Closes H-135.
+
+### Q-AUTH-89 · A rotated token keeps its lineage, and lineage changes are serialised
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A derived token that rotated itself had no `derived_from`, so revoking its parent by ID left the successor alive and
+uncapped. A create read its parent before its transaction and locked only the owner, so a revocation running at the same
+moment missed the uncommitted child; two rotations of one token both committed a successor.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Revocation by ID follows `rotated_from` forward, as revocation by value does | Revoking a token ends its rotation successors | One rule for both revocations | The holder who revokes a predecessor to end its overlap kills the successor it just switched to; the link breaks once the retention task deleted an intermediate row |
+| (b) The successor keeps the lineage (chosen) | It keeps the predecessor's `derived_from`, or is derived from the presenting token when another token of the owner authenticates the rotation, and is capped at the expiry of every token on that chain | A parent's revocation reaches every successor of its children through one pointer that retention does not break; ending an overlap stays possible | A rotation authenticated by another token moves the lineage to that token |
+
+**Choice:** (b), together with: the creating transaction locks the tokens the new one hangs on with their `derived_from`
+chains (`FOR UPDATE`, in id order) and refuses when one is revoked or expired by then (401 `invalid_token` for the presenting
+token, 404 for the rotated one); a revocation locks the token's tree in a statement of its own before the cascade, which then
+sees every child that committed while it waited; a token that was already rotated is not rotated again (404); a rotation
+counts against `max_active_per_principal` except for the predecessor it replaces, and a PAT rotation applies
+`pat.allowed_groups`; a derived token may be `selfRotatable` only if its parent is.
+
+**Rationale:** the derivation rule says no token outlives or outranks the token it came from, and rotation must not be a way
+around it. Revocation by value keeps following rotations for the leak case. The development agent would revisit (a) if the
+owner wants revoking a predecessor to end its successors as well.
+
+**Applied in the spec:** R-AUTH-027 (derivation rule: `selfRotatable`, the lock), R-AUTH-029 (the tree lock), R-AUTH-030 (the
+new token, the restrictions).
+
+### Q-AUTH-90 · `auth.flow_starts` counts an IPv6 client per `/64`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`max_pending_flows` is one cluster-wide cap. Counted per address, one IPv6 host with a `/64` starts flows from as many
+addresses as it likes and fills the cap for everyone (503 `too_many_pending_logins` for ten minutes).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Per address | As before | Simple | One `/64` fills the cap |
+| (b) An IPv6 address per `/64` (chosen) | IPv4 per address, IPv6 per network | The cost of filling the cap becomes several hundred networks; a `/64` is what one subscriber or host commonly holds | Clients behind one `/64` share 30 starts per minute |
+| (c) A share of `max_pending_flows` reserved per address | Per-address cap of pending rows | Bounds one address directly | A second counter in PostgreSQL per start; still one address per IPv6 host address |
+
+**Choice:** (b) (`auth.AddressBucket`).
+
+**Rationale:** the limiter exists to bound unauthenticated row creation per client, and an IPv6 client is a network. The cap
+stays fillable by many distinct networks; that residual is H-211 in
+[login-and-sessions.md](../security/login-and-sessions.md#h-211--many-distinct-addresses-can-still-fill-the-pending-flow-cap).
+The development agent would revisit (c) if the cap is filled in practice.
+
+**Applied in the spec:** R-AUTH-038 (the bucket of `auth.flow_starts`, the endpoint list).
 
 ## What this does not cover
 

@@ -431,7 +431,9 @@ func TestR_AUTH_018_GroupsAndMemberships(t *testing.T) {
 		if got := groupNames(t, a, alice.ID); slices.Contains(got, "everyone") {
 			t.Fatal("not retroactive")
 		}
-		e.exec(`INSERT INTO authz_role_binding (role, principal_id) SELECT 'admin', id FROM principal WHERE name = 'team-web'`)
+		// Any role binding makes the group refuse auto-join; auditor, so the group
+		// does not become the installation's only administrator (R-AUTHZ-022).
+		e.exec(`INSERT INTO authz_role_binding (role, principal_id) SELECT 'auditor', id FROM principal WHERE name = 'team-web'`)
 		_, err = a.manager.UpdateGroup(ctx, admin, "team-web", principal.GroupPatch{Expected: errs.AnyRevision, AutoJoin: ptr(true)})
 		wantCode(t, err, 409, errs.CodeAutoJoinAdminConflict)
 	})
@@ -649,7 +651,7 @@ func TestR_AUTH_020_ServiceAccounts(t *testing.T) {
 			_, err := b.bearer(sat.Secret, "/x")
 			return errCode(err) == errs.CodePrincipalDisabled
 		})
-		if err := a.manager.EnableServiceAccount(ctx, "ci-bot"); err != nil {
+		if err := a.manager.EnableServiceAccount(ctx, admin, "ci-bot"); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "replica B", revocationBound, func() bool {

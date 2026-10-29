@@ -108,7 +108,18 @@ the declarations are in `api/openapi.yaml` (Q-AUTH-43).
   caller's own tokens unless it holds `tokens:read`.
 - **Revocation by value is open.** `POST /api/v1/tokens/revoke` takes no credential (Q-AUTH-6). It answers `202` for a live token, a dead one and
   an unknown well-formed value alike; only an administrator learns the owner (`200`). Each call counts in the limiter `auth.flow_starts`
-  of the client address, cluster-wide.
+  of the client address (an IPv6 address as its `/64`, Q-AUTH-90), cluster-wide.
+- **A token never escapes the token it came from.** A derived token carries `derived_from`, and a rotation keeps it in the successor
+  (or derives the successor from the presenting token), capped at the expiry of every token on the chain, so revoking a parent ends every
+  successor of its children ([rotate.go](../../internal/auth/token/rotate.go), Q-AUTH-89). A derived token may rotate itself only if its
+  parent may. A rotation counts against the owner's active-token limit, applies `pat.allowed_groups` to a PAT, and gives a token at most one
+  successor (`TestR_AUTH_030_RotationLimits`, `TestR_AUTH_030_ConcurrentRotationsLeaveOneSuccessor`).
+- **Lineage changes are serialised.** A create or rotation locks the tokens it hangs on with their `derived_from` chains and refuses when one
+  of them is no longer live (401 `invalid_token` for the presenting token, also while a replica's cache still accepts it); a revocation locks
+  the token's tree in one statement and runs the cascade in the next, which sees every child that committed while it waited
+  ([service.go](../../internal/auth/token/service.go) `lineageCheck`, [revoke.go](../../internal/auth/token/revoke.go) `revokeTree`;
+  `TestR_AUTH_029_ARevocationAndADerivationAtTheSameTime`, `TestR_AUTH_027_ARevokedTokenStillCachedMintsNothing`). Revoking all tokens of a
+  principal locks the principal row a create locks.
 
 ## What this does not cover
 
@@ -154,7 +165,7 @@ that maps such names onto a bound group.
 
 Component: the limiter `auth.flow_starts` (R-AUTH-038). Subject: the sign-in of everyone behind one client address. Live in the MVP
 whenever the address is shared (a NAT, a proxy that is not trusted). `POST /api/v1/tokens/revoke` is open to unauthenticated callers and
-counts in the same per-address budget as `/auth/oidc/*/start` and the local login. Someone who sends well-formed values from the
+counts in the same per-address budget (an IPv6 address as its `/64`, Q-AUTH-90) as `/auth/oidc/*/start` and the local login. Someone who sends well-formed values from the
 address of a company's egress fills the budget, and the sign-ins from that address get `429` until the minute ends. The attacker needs
 no token and gains nothing but the denial. A trusted-proxy list with the real client address, and `starts_per_address` sized for the
 largest office, are the mitigations; a separate budget for the revocation would remove the coupling.

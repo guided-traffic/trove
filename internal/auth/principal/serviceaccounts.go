@@ -128,6 +128,9 @@ func (m *Manager) UpdateServiceAccount(ctx context.Context, c Caller, name, desc
 		if err := checkRevision(ctx, qs, id, expected, "The service account"); err != nil {
 			return err
 		}
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
 		if err := qs.IdentityUpdateServiceAccount(ctx, q.IdentityUpdateServiceAccountParams{ID: id, Description: description}); err != nil {
 			return err
 		}
@@ -156,7 +159,17 @@ func (m *Manager) DisableServiceAccount(ctx context.Context, c Caller, name stri
 			return NotFound("The service account")
 		}
 		id := rows[0].ID
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
+		var last LastAdminGuard
+		if err := last.Arm(ctx, qs, id); err != nil {
+			return err
+		}
 		if _, err := qs.IdentitySetPrincipalStatus(ctx, q.IdentitySetPrincipalStatusParams{ID: id, Status: string(StatusDisabled)}); err != nil {
+			return err
+		}
+		if err := last.Check(ctx, qs); err != nil {
 			return err
 		}
 		revoked := 0
@@ -180,7 +193,7 @@ func (m *Manager) DisableServiceAccount(ctx context.Context, c Caller, name stri
 }
 
 // EnableServiceAccount enables an account. Revoked tokens stay revoked.
-func (m *Manager) EnableServiceAccount(ctx context.Context, name string) error {
+func (m *Manager) EnableServiceAccount(ctx context.Context, c Caller, name string) error {
 	return DBErr("principal.EnableServiceAccount", m.db.InTx(ctx, func(tx meta.Tx) error {
 		qs := Queries(tx)
 		rows, err := qs.IdentityGetServiceAccount(ctx, name)
@@ -189,6 +202,9 @@ func (m *Manager) EnableServiceAccount(ctx context.Context, name string) error {
 		}
 		if len(rows) == 0 {
 			return NotFound("The service account")
+		}
+		if err := guardRoleHolder(ctx, qs, c, rows[0].ID); err != nil {
+			return err
 		}
 		if _, err := qs.IdentitySetPrincipalStatus(ctx, q.IdentitySetPrincipalStatusParams{ID: rows[0].ID, Status: string(StatusActive)}); err != nil {
 			return err
@@ -209,6 +225,13 @@ func (m *Manager) DeleteServiceAccount(ctx context.Context, c Caller, name strin
 			return NotFound("The service account")
 		}
 		id := rows[0].ID
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
+		var last LastAdminGuard
+		if err := last.Arm(ctx, qs, id); err != nil {
+			return err
+		}
 		tokens, err := qs.IdentityCountTokensOfPrincipal(ctx, id)
 		if err != nil {
 			return err
@@ -218,6 +241,9 @@ func (m *Manager) DeleteServiceAccount(ctx context.Context, c Caller, name strin
 			return err
 		}
 		if _, err := qs.IdentityDeletePrincipal(ctx, id); err != nil {
+			return err
+		}
+		if err := last.Check(ctx, qs); err != nil {
 			return err
 		}
 		if err := NotifyPrincipals(m.notify, tx, ChangePrincipal, id); err != nil {

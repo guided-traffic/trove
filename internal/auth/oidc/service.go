@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/config"
@@ -330,7 +331,7 @@ func (s *Service) allow(w http.ResponseWriter, r *http.Request) bool {
 	if s.o.Limiter == nil {
 		return true
 	}
-	ok, retry := s.o.Limiter.Allow(r.Context(), s.clientAddr(r))
+	ok, retry := s.o.Limiter.Allow(r.Context(), auth.AddressBucket(s.clientAddr(r)))
 	if ok {
 		return true
 	}

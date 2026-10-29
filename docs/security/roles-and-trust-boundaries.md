@@ -152,7 +152,10 @@ configuration is outside trove, and trove cannot check it.
 ### H-63 · Anonymous read of installation facts and the replica list until identity ships
 
 Stage: `GET /api/v1/system/info` and `GET /api/v1/system/replicas` on the default endpoint's client listener, reached
-through the edge ([access.go](../../internal/app/access.go), `bootstrapAccess.Require`).
+through the edge ([access.go](../../internal/app/access.go), `bridgeAccess.Require`). These two and no other: the bridge
+matches the request path (`bootstrapPath`), so the other operations of `settings:read` (the scheduled tasks, the encryption
+status with its key IDs, the authentication settings) answer `401` to an anonymous caller with the switch on (Q-AUTHZ-71,
+`TestBootstrapAnonymousReadOnlyOnDefaultEndpoint`).
 
 Live in the dev profile today, because [values-dev.yaml](../../deploy/dev/values-dev.yaml) sets
 `system.bootstrap_anonymous_read: true`. Dormant on an installation that leaves the default `false`. The startup guard covers
@@ -161,7 +164,8 @@ the switch on starts with a warning. A further endpoint is not reached by the br
 
 Subject: the bucket name, the object-store endpoint, the Valkey mode and the topology of the replicas (their names, nodes
 and versions, lease names, and the check results of [replica registry](../spec/ha-and-helm.md)). Anyone who reaches the default
-endpoint's listener (`:8080`) reads them. The switch is removed with the identity work of M1 ([config/system.go](../../internal/config/system.go)).
+endpoint's listener (`:8080`) reads them. The switch ([config/system.go](../../internal/config/system.go)) outlived the
+identity work of M1; Q-AUTHZ-16 removes it together with `bridgeAccess` once the dev profile signs in.
 
 What makes it real: the switch set on an installation that is reachable from clients. The dev profile is not, but its edge
 is on `localhost`.

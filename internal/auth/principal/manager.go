@@ -19,6 +19,12 @@ import (
 type Caller struct {
 	Actor  audit.Actor
 	Source audit.Source
+	// RoleHolders authorizes a change of a group that carries a system role, or
+	// of a user or service account that holds one (R-AUTHZ-011, Q-AUTHZ-69): nil
+	// when the caller holds roles:write, the refusal otherwise. The management
+	// API sets it for every request; nil is a caller with full rights (the
+	// admin command).
+	RoleHolders func(context.Context) error
 }
 
 // AdminBinder binds the system role admin to a principal in the transaction that
@@ -435,6 +441,9 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 		if err := checkRevision(ctx, qs, id, p.Expected, "The user"); err != nil {
 			return err
 		}
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
 		var fields []string
 		if p.Email != nil || p.DisplayName != nil {
 			arg := q.IdentityUpdateUserFieldsParams{ID: id}
@@ -510,7 +519,17 @@ func (m *Manager) DisableUser(ctx context.Context, c Caller, name string, o Disa
 			return ErrBreakGlass
 		}
 		id := pr[0].ID
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
+		var last LastAdminGuard
+		if err := last.Arm(ctx, qs, id); err != nil {
+			return err
+		}
 		if _, err := qs.IdentitySetPrincipalStatus(ctx, q.IdentitySetPrincipalStatusParams{ID: id, Status: string(StatusDisabled)}); err != nil {
+			return err
+		}
+		if err := last.Check(ctx, qs); err != nil {
 			return err
 		}
 		if err := qs.IdentitySetUserDisabled(ctx, q.IdentitySetUserDisabledParams{ID: id, Reason: o.Reason}); err != nil {
@@ -555,6 +574,9 @@ func (m *Manager) EnableUser(ctx context.Context, c Caller, name string) error {
 			return NotFound("The user")
 		}
 		id := pr[0].ID
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
 		rows, err := qs.IdentitySetPrincipalStatus(ctx, q.IdentitySetPrincipalStatusParams{ID: id, Status: string(StatusActive)})
 		if err != nil {
 			return err
@@ -595,6 +617,13 @@ func (m *Manager) DeleteUser(ctx context.Context, c Caller, name string) error {
 			return ErrBreakGlass
 		}
 		id := pr[0].ID
+		if err := guardRoleHolder(ctx, qs, c, id); err != nil {
+			return err
+		}
+		var last LastAdminGuard
+		if err := last.Arm(ctx, qs, id); err != nil {
+			return err
+		}
 		tokens, err := qs.IdentityCountTokensOfPrincipal(ctx, id)
 		if err != nil {
 			return err
@@ -612,6 +641,9 @@ func (m *Manager) DeleteUser(ctx context.Context, c Caller, name string) error {
 			return err
 		}
 		if _, err := qs.IdentityDeletePrincipal(ctx, id); err != nil {
+			return err
+		}
+		if err := last.Check(ctx, qs); err != nil {
 			return err
 		}
 		if err := NotifyPrincipals(m.notify, tx, ChangePrincipal, id); err != nil {

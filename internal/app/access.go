@@ -11,11 +11,12 @@ import (
 
 // bridgeAccess is the permission check of the management API: the decision
 // point of the authz area, with the one exception that
-// system.bootstrap_anonymous_read makes (Q-AUTHZ-15). The switch is an explicit
-// dev-profile bridge that opens the capability settings:read to anonymous callers
-// on the default endpoint only, and only while that endpoint admits anonymous
-// requests (R-EP-010); it is refused with an https base URL by the configuration
-// check, and it grants nothing else. It sits in front of the engine instead of
+// system.bootstrap_anonymous_read makes (Q-AUTHZ-16). The switch is an explicit
+// dev-profile bridge that answers settings:read for anonymous callers of the
+// system information and the replica list (bootstrapPath), on the default
+// endpoint only, and only while that endpoint admits anonymous requests
+// (R-EP-010); it is refused with an https base URL by the configuration check,
+// and it grants nothing else. It sits in front of the engine instead of
 // inside it because the endpoint of the request is part of the condition and
 // package authz does not see the edge's context. Without a decision point
 // (inner is nil) nobody holds any permission.
@@ -37,9 +38,28 @@ func newBridgeAccess(a authz.Authorizer, anonymousRead bool) bridgeAccess {
 	return b
 }
 
+// bootstrapPath reports whether path is one of the two operations the bridge
+// opens: the system information and the replica list (api-and-ui.md, the
+// decision on system.bootstrap_anonymous_read; Q-AUTHZ-71, security H-63).
+// settings:read covers more operations since M1, the scheduled tasks, the
+// encryption status and the authentication settings among them; those stay
+// closed to anonymous callers.
+func bootstrapPath(path string) bool {
+	return path == "/api/v1/system/info" || path == "/api/v1/system/replicas"
+}
+
+// requestPathKey carries the path of a request on an endpoint's chain to the
+// bridge; endpointStage sets it.
+type requestPathKey struct{}
+
+func withRequestPath(ctx context.Context, path string) context.Context {
+	return context.WithValue(ctx, requestPathKey{}, path)
+}
+
 func (b bridgeAccess) Require(ctx context.Context, permission string) error {
 	p := httpserver.PrincipalFrom(ctx)
-	if p.Anonymous && b.anonymousRead && permission == v1.PermissionSystemRead {
+	path, _ := ctx.Value(requestPathKey{}).(string)
+	if p.Anonymous && b.anonymousRead && permission == v1.PermissionSystemRead && bootstrapPath(path) {
 		if ep := httpserver.EndpointFrom(ctx); ep != nil && ep.IsDefault() && ep.AnonymousAllowed() {
 			return nil
 		}

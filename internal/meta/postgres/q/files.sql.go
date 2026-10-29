@@ -380,6 +380,38 @@ func (q *Queries) InsertImplicitFolders(ctx context.Context, arg InsertImplicitF
 	return result.RowsAffected(), nil
 }
 
+const itemPathByID = `-- name: ItemPathByID :many
+SELECT path FROM items WHERE id = $1::bigint AND repo_id = $2::bigint
+`
+
+type ItemPathByIDParams struct {
+	ID     int64
+	RepoID int64
+}
+
+// The position behind a listing cursor that ended on an entry the caller may
+// not read: the cursor holds the item's id, never its path (R-AUTHZ-016). A
+// trashed item still marks its place; a purged one ends the traversal.
+func (q *Queries) ItemPathByID(ctx context.Context, arg ItemPathByIDParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, itemPathByID, arg.ID, arg.RepoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChildrenDirect = `-- name: ListChildrenDirect :many
 SELECT i.id, i.path, i.kind, i.size, i.modified_at, i.blob_sha256, b.sha1 AS blob_sha1
   FROM items i

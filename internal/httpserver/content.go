@@ -33,7 +33,21 @@ const (
 // between. fileName is the name for Content-Disposition (ContentFile); it is
 // percent-encoded as RFC 8187 asks.
 func ContentWriter(w http.ResponseWriter, kind ContentKind, fileName string) http.ResponseWriter {
-	cw := &contentWriter{ResponseWriter: w, kind: kind, name: fileName}
+	return ContentWriterFor(w, nil, kind, fileName)
+}
+
+// ContentWriterFor is [ContentWriter] for the response to r. When a session
+// cookie authenticated r, the resource policy is same-origin instead of
+// same-site (Q-ARCH-86): SameSite=Lax sends the cookie with a subresource
+// request from any page of the same site, so a sibling host could otherwise
+// embed a file with its visitor's rights. The policy does not apply to
+// navigations, which the UI's downloads are, nor to the UI's own image loads
+// (api-and-ui.md R-UI-001); a token or anonymous response keeps same-site.
+func ContentWriterFor(w http.ResponseWriter, r *http.Request, kind ContentKind, fileName string) http.ResponseWriter {
+	cw := &contentWriter{ResponseWriter: w, kind: kind, name: fileName, corp: "same-site"}
+	if r != nil && PrincipalFrom(r.Context()).Credential.Method == MethodSession {
+		cw.corp = "same-origin"
+	}
 	cw.enforce()
 	return cw
 }
@@ -42,13 +56,14 @@ type contentWriter struct {
 	http.ResponseWriter
 	kind  ContentKind
 	name  string
+	corp  string
 	wrote bool
 }
 
 func (w *contentWriter) enforce() {
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Cross-Origin-Resource-Policy", "same-site")
+	h.Set("Cross-Origin-Resource-Policy", w.corp)
 	switch w.kind {
 	case ContentFile:
 		h.Set("Content-Security-Policy", contentCSPFile)

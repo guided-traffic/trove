@@ -418,9 +418,21 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		a.get("reader", p+"?stats=false")
 		a.do("reader", "HEAD", p, nil)
 		a.get("reader", p, "If-None-Match", `"`+sum(data)+`"`)
-		a.flush()
-		b.flush()
-		m := a.get("reader", "/api/v1/repositories/generic-local/stats?path=stats/widget.bin").json(t)
+		// A download is counted after its body was copied, so the client can have
+		// the whole answer before the handler counts it: flush until the count has
+		// not changed for a while, then require exactly the four counted downloads.
+		var m map[string]any
+		last, stableSince := float64(-1), time.Now()
+		waitFor(t, "the download count to settle", 10*time.Second, func() bool {
+			a.flush()
+			b.flush()
+			m = a.get("reader", "/api/v1/repositories/generic-local/stats?path=stats/widget.bin").json(t)
+			n, _ := m["downloads"].(float64)
+			if n != last {
+				last, stableSince = n, time.Now()
+			}
+			return time.Since(stableSince) > 300*time.Millisecond
+		})
 		if m["downloads"] != float64(4) || m["lastDownloadAt"] == nil || m["lastDownloader"] != "user:reader" {
 			t.Fatalf("stats = %v", m)
 		}

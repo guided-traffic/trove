@@ -22,7 +22,7 @@ writer of a response that carries a file:
 |---|---|---|
 | `X-Content-Type-Options` | `nosniff` | the declared type is the type; also set on every answer by the chain |
 | `Content-Security-Policy` | `sandbox; default-src 'none'` | a document opened from the URL runs without an origin and without scripts |
-| `Cross-Origin-Resource-Policy` | `same-site` | another site cannot load the content as a subresource |
+| `Cross-Origin-Resource-Policy` | `same-site`; `same-origin` when the session cookie authenticated the request | another site cannot load the content as a subresource, and with the session cookie, which `SameSite=Lax` sends with a sibling host's subresource requests, no other origin can (Q-ARCH-86, `ContentWriterFor`, unit test `TestR_ARCH_007_SessionContentIsSameOrigin`); the UI's downloads are navigations and its images are same-origin, so neither is affected |
 | `Content-Disposition` | `attachment; filename*=UTF-8''<name>` | a browser downloads instead of rendering; the name is percent-encoded per RFC 8187 |
 
 The wrapper sets them when it is created, again at `WriteHeader` and again at the first `Write`, so code between those points that
@@ -30,13 +30,17 @@ deletes or overwrites one of them does not change what is sent (unit test `TestC
 is on `200`, `206`, `304` and `HEAD`. The directory index of a folder is a page trove renders itself: it has `nosniff`,
 `same-site` and the policy without `sandbox`, and no disposition, and every name in it is HTML-escaped and linked as `./` plus the
 percent-encoded name, so `javascript:x` stays a relative path. Problem answers carry none of this: their body is not content.
-The media type is the one the uploader sent; it is never derived from the content or the name.
+The media type is the one the uploader sent, parsed as a media type and stored in its normalised form (a value that does not
+parse is `400 invalid_header`); it is never derived from the content or the name.
 
 ## Paths and patterns
 
 The path is canonicalised by `repository.CleanPath` before any authorization (see
 [repository-model.md](repository-model.md)), and the paths that `net/http.ServeMux` would silently rewrite (`a//b`, `a/../b`)
-reach the handler through `Router.HandleUncleaned` and are refused with `400 invalid_path`, not redirected. The patterns of a
+reach the handler through `Router.HandleUncleaned` and are refused with `400 invalid_path`, not redirected; so is an empty
+segment right after the key (`/files/<key>//x`). The `path` parameter of the items operations follows the same rules once
+decoded, the backslash and the 4096-byte and 255-byte limits included, and an oversized path is refused by its length before
+anything else looks at it (`CheckItemPath`). The patterns of a
 repository are routing rules for every caller: a deploy outside them is `403 not_admitted` for an administrator too, a read or a
 delete of such a path is a `404` through `/files/` while the management items operations still show it.
 
@@ -47,8 +51,10 @@ A `PUT` is checked in this order, and each step refuses before the next one cost
 1. the path (400), then `deploy` on it, before the body is read: a refused request sends no `100 Continue` and reads nothing;
 2. class and patterns; the declared length and `storage.upload.max_size` (413) before the spool takes a byte;
 3. after the body: length (400) and the digests the client announced (409; nothing is stored);
-4. `overwrite`, when an existing item has other bytes, **before** the object is written, so a refused replacement never reaches the
-   object store (integration test: the put counter does not move);
+4. the write decided again on the index the replica holds now, after the body and before anything is stored (R-AUTHZ-015's
+   commit-time re-check): `deploy` with `overwrite` when an existing item has other bytes, `deploy` alone for a new file or an
+   identical re-upload. A grant removed while the body was arriving stops the write, and a refused replacement never reaches the
+   object store (integration tests: the put counter does not move; `TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits`);
 5. in the commit transaction the item is locked and the decision is made again for a path that appeared meanwhile.
 
 An allowed write is recorded with the change (`authz.write.allowed`, `artifact.deployed`) in one transaction: a failing audit
@@ -61,7 +67,10 @@ that does not: the answer is made by the decision before any lookup (R-AUTHZ-016
 built from `authz.NotFound()`. The integration test compares the bodies byte for byte, apart from the request path and the request
 ID that the problem echoes. A refused write is `403` whether or not the target exists. An anonymous caller is `401` with a
 challenge while anonymous access is off. The listing operations drop what the caller may not read, with one `PathsAllowed` call per
-page instead of a refusal per entry, which would write a denial event for every omitted name.
+page instead of a refusal per entry, which would write a denial event for every omitted name. A page reads at most 100,000 rows in
+queries that double in size from `limit + 1` up to 5,000 rows, so a page costs a few dozen queries whatever its size; a page that
+ends at that bound beyond its last visible entry carries the item id of the last row it read as its cursor, never its path
+([children.go](../../internal/files/children.go), Q-STOR-62; `TestR_STOR_017_AListingOfAMostlyHiddenFolder`).
 
 One deliberate exception to "authorization before lookup": the request path looks up a key that the replica's snapshot does not hold
 before it decides, so that a repository created through another replica is usable at once (Q-ARCH-40, H-155).
@@ -109,3 +118,23 @@ milestone M1. The quota of R-STOR-029 and the `507` it answers are not built; an
 once per digest, so repeating one file costs nothing, but a stream of different files fills the bucket. What makes it real: a service
 account with `deploy` on a repository whose token leaks; grant `deploy` only to the accounts that publish and watch the storage usage of the
 repository.
+
+### H-208 · A forged listing cursor tells where a hidden item sorts
+
+Component: the listing of `/files/<key>/<folder>/` and `/api/v1/repositories/{key}/children` (R-STOR-017, Q-STOR-62). Subject: the
+names of entries the caller may not read. Live for every listing. A page that ends at the scan limit carries the id of the last
+row it read, and a cursor is base64 JSON that a client can write itself. A caller who puts the id of another item of the same
+repository below the listed folder into a cursor gets the visible entries that sort after that item, and so learns between which
+two visible names the hidden one sorts. It learns no name, and only of items in the folder it may list; ids of other repositories
+and of purged items are `400 invalid_cursor`. What makes it real: a folder whose visible names are dense enough to narrow a hidden
+name down, and a reason to guess ids. A cursor sealed with a cluster-wide key would close it (Q-STOR-62, option b).
+
+### H-209 · A holder of `deploy` without `read` learns whether a file exists
+
+Component: the deploy of `/files/` (R-STOR-007). Subject: the existence and the content of files the caller may not read. Live in
+the MVP for every principal that holds `deploy` without `read` on a path (a write-only drop box). R-STOR-007 answers an identical
+re-upload `200`, a new file `201`, different content on an existing file `403` without `overwrite`, and a path below an existing
+file `409 path_conflict` naming the ancestor; so such a principal learns that a path holds a file, and, by uploading a guess,
+whether the file holds exactly those bytes. Hiding it would make the deploy answer like a new file and lose the status semantics
+that clients rely on. What makes it real: a drop box whose readers keep files the depositors must not confirm, such as a shared
+inbox for reports. The mitigation is a path pattern of its own for every depositor.

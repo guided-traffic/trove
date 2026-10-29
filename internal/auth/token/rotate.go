@@ -83,12 +83,31 @@ func (s *Service) Rotate(ctx context.Context, r RotateRequest) (Created, error) 
 			return Created{}, forbidden(errs.CodeDerivationExceedsParent, "The new token would outlive the presenting token.")
 		}
 	}
+	// The successor keeps the lineage of the token it replaces, so revoking the
+	// token that one was derived from still revokes it, and it never outlives that
+	// token (Q-AUTH-89). Rotated through another token of the owner, it is derived
+	// from that one, as a create would be (R-AUTH-027).
+	lineage := old.DerivedFrom
+	if r.Parent != nil && r.Parent.ID != old.ID {
+		lineage = r.Parent.ID
+	}
+	if lineage != "" && life.nonExpiring {
+		life = lifetime{ttl: maxTTL}
+	}
+	if old.Type == TypePAT {
+		// Rotation hands out a new personal token, so the group restriction of a
+		// create applies (R-AUTH-017).
+		if err := s.checkPATAllowed(ctx, old.Owner.ID); err != nil {
+			return Created{}, err
+		}
+	}
 	overlap := time.Duration(r.OverlapSeconds) * time.Second
 	return s.insert(ctx, insertSpec{
 		req: CreateRequest{
 			Caller: r.Caller, Type: old.Type, OwnerID: old.Owner.ID, Description: old.Description, SelfRotatable: old.SelfRotatable,
 		},
 		scope: old.Scope, life: life, maxActive: s.maxActive(old.Type), via: "rotation", rotatedFrom: old.ID, capMicros: capMicros(parentExpiry(r.Parent)),
+		derivedFrom: lineage, presented: derivedID(r.Parent),
 		afterInsert: func(ctx context.Context, tx meta.Tx, qs *q.Queries, created Record) error {
 			return s.endPredecessor(ctx, tx, qs, r.Caller, old.ID, overlap, created)
 		},
@@ -124,10 +143,14 @@ func (s *Service) endPredecessor(ctx context.Context, tx meta.Tx, qs *q.Queries,
 			}
 		}
 	}
-	if len(refs) > 0 {
-		if err := principal.NotifyTokens(s.o.Notifier, tx, refs...); err != nil {
-			return err
-		}
+	if len(refs) == 0 {
+		// The predecessor ended while the successor was being created; the lineage
+		// lock makes this unreachable, and a successor of an ended token must not
+		// commit (R-AUTH-030: an expired or revoked token cannot be rotated).
+		return principal.NotFound("The token")
+	}
+	if err := principal.NotifyTokens(s.o.Notifier, tx, refs...); err != nil {
+		return err
 	}
 	var exp any
 	if expires != nil {

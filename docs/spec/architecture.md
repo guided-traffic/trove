@@ -758,7 +758,8 @@ Consequences, normative for every component:
   headers:
   - `X-Content-Type-Options: nosniff`;
   - `Content-Security-Policy: sandbox; default-src 'none'`;
-  - `Cross-Origin-Resource-Policy: same-site`;
+  - `Cross-Origin-Resource-Policy: same-site`, and `same-origin` when the session cookie
+    authenticated the request (Q-ARCH-86);
   - for files, `Content-Disposition: attachment` with the file name ([storage.md](storage.md)).
 
   This covers `/files/` and every format route of kind `Download`, `Metadata` or `Computed`
@@ -4861,6 +4862,29 @@ R-ARCH-003 names no package for the items and the raw transfer.
 **Rationale:** The same split as repository and API. The development agent would revisit it if the format dispatcher takes over the handler.
 
 **Applied in the spec:** R-ARCH-003 (the tree).
+
+### Q-ARCH-86 · The resource policy of content read with the session cookie
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The session cookie is `SameSite=Lax` and `/files/` accepts it for `GET`. A browser sends such a cookie with a subresource
+request from any page of the same site, so a page on a sibling host (`wiki.example.com` next to `trove.example.com`) could
+embed `<img src="https://trove.example.com/files/private/…">` or `<script src=…>` and load a private file with its visitor's
+rights; `Cross-Origin-Resource-Policy: same-site` lets it through.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `same-site` for every response | As before | One header value | The embedding above |
+| (b) `same-origin` when the session cookie authenticated the request (chosen) | `ContentWriterFor` chooses the value from the request's credential; a token or anonymous response keeps `same-site` | The policy binds no-cors subresource loads only: the UI's downloads, which are navigations, and its own image loads (same origin) are untouched (R-UI-001: package content reaches the browser only as a navigation or an `img` load); the content origin of R-ARCH-029 never sees the session cookie | Two values of one header |
+| (c) Refuse the session cookie on `/files/` unless `Sec-Fetch-Dest` is `document` | The request is then anonymous | Also stops reads by `fetch` from the same site | Breaks the UI's `img` loads, and depends on how each browser labels a download |
+| (d) `same-origin` for every response | One value | Simple | Blocks a same-site page from embedding public content that it may embed today, and the UI's image loads from the content origin (R-ARCH-029) |
+
+**Choice:** (b).
+
+**Rationale:** the credential that makes an embedding dangerous is the ambient one, and only the session cookie is ambient.
+The development agent would revisit (c) if trove adds a route that serves package content to `fetch`.
+
+**Applied in the spec:** R-ARCH-007 (the header list). R-STOR-017's directory index takes the same value.
 
 ## What this does not cover
 

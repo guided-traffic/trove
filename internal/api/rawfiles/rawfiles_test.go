@@ -215,6 +215,8 @@ func TestInvalidPathsAreRefusedBeforeAnything_else(t *testing.T) {
 	// redirect reach the handler.
 	for _, path := range []string{
 		"/files/r/a/%2e%2e/x", "/files/r/a//b", "/files/r/a%00b", "/files/r/a%5Cb", "/files/r/a/../x", "/files/r/a/./x",
+		// An empty first segment right after the key (security finding: it was served as /files/r/x).
+		"/files/r//x", "/files/r//",
 	} {
 		t.Run("R-GENERIC-002 "+path, func(t *testing.T) {
 			for _, method := range []string{"GET", "PUT", "DELETE"} {

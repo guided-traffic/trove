@@ -40,12 +40,12 @@ lock or a rotation reaches every replica.
 | Session secret (`__Host-trv_session`, 32 random bytes) | the browser; PostgreSQL holds its SHA-256 (`ui_session.secret_sha256`) | logs, events, Valkey, the change log (a change names the hash of an ended secret, [changes.go](../../internal/auth/session/changes.go)) |
 | CSRF token (`__Host-trv_csrf`, readable by the UI) | the browser; its SHA-256 in `ui_session.csrf_sha256` | as above |
 | Browser binding (`__Host-trv_oidc_binding`, 10 min) | the browser; its SHA-256 in `oidc_login_flow` | as above |
-| `state` and `nonce` | the authorization request and the ID token; their SHA-256 in `oidc_login_flow` | — |
+| `state` and `nonce` | the authorization request and the ID token; their SHA-256 in `oidc_login_flow` | the request log: the query of the callback (code, `state`, `session_state`) is redacted whole, as is `id_token_hint` (Q-OPS-91, [redact.go](../../internal/observability/redact.go)) |
 | PKCE `code_verifier` | `oidc_login_flow.code_verifier` in clear for at most 10 minutes; the row is deleted by the callback that uses it (`DELETE … RETURNING`) or by `session-cleanup` | backups: the table is `transient` |
 | The provider's ID token | `ui_session.id_token`, the `id_token_hint` of RP-initiated logout (R-AUTH-013) | every API answer; backups (`transient`) |
 | The provider's access and refresh token | the callback's memory until userinfo has answered | anywhere afterwards (INV-8) |
 | OIDC client secret | a mounted file, read again when its modification time or size changes ([provider.go](../../internal/auth/oidc/provider.go), `secretSource`), or one environment variable | PostgreSQL, the configuration file |
-| Break-glass password | a mounted file on `web` replicas; the replica keeps the Argon2id salt and key and the SHA-256 of the file, never the plaintext ([argon.go](../../internal/auth/oidc/argon.go)) | PostgreSQL, `worker` pods, logs and events (the presented username is recorded, the password never) |
+| Break-glass password | a mounted file on `web` replicas; the replica keeps the Argon2id salt and key and the SHA-256 of the file, never the plaintext ([argon.go](../../internal/auth/oidc/argon.go)) | PostgreSQL, `worker` pods, logs and events (an event records whether the presented username was the account's, never the value, so a password typed into the username field stays out; `TestR_AUTH_014_TheBreakGlassEventDoesNotKeepThePresentedUsername`) |
 
 ## Checks a login passes
 
@@ -153,3 +153,25 @@ R-AUTH-014 asks the replica to refuse to start without a readable password file;
 every local login with 403 `local_login_disabled` (Q-AUTH-33). A configured file that cannot be read, a weak plaintext and a
 weak hash still stop the replica. What makes it real: an operator who believes the break-glass account works because the
 default says enabled and finds out during the outage that needs it.
+
+### H-210 · Anyone who reaches the local login can keep the break-glass account locked
+
+Stage: `POST /auth/local/login` ([breakglass.go](../../internal/auth/oidc/breakglass.go)). Subject: the recovery path. Live
+whenever the break-glass account is enabled. The lockout counts every failure, from any address, because it guards the one
+password in the system (R-AUTH-038); five wrong passwords lock the account for `lockout.duration`, and during the lock the right
+password gets `429` as well. Someone who sends five guesses every 15 minutes keeps the account locked for as long as they like;
+five requests per lock stay far below the `starts_per_address` budget of one address. Locks expire on their own, and an administrator or
+`trove admin break-glass unlock` clears one, but an operator who needs the break-glass account because no administrator can sign
+in has only the command. Exempting `auth.rate_limit.exempt_cidrs` from the lock would let guesses from those networks through
+unbounded, so the lock stays as specified. What makes it real: a local login reachable from networks other than the operators'.
+Keep the break-glass account disabled outside recovery, or restrict `/auth/local/` at the edge.
+
+### H-211 · Many distinct addresses can still fill the pending-flow cap
+
+Stage: `/auth/oidc/*/start` and the command-line logins ([flow.go](../../internal/auth/oidc/flow.go), `pendingFull`). Subject:
+browser sign-in for everyone. Live in the MVP. `auth.flow_starts` counts per address and an IPv6 address per `/64`
+(Q-AUTH-90), and the cap of `max_pending_flows` (100,000 by default) is one number for the cluster. With the defaults one
+address or network creates at most 300 pending flows in their 10-minute life, so about 340 addresses or `/64` networks fill the
+cap, and every replica answers `503 too_many_pending_logins` until the flows expire. Sessions that exist keep working, and the
+break-glass login does not count. What makes it real: an attacker with a few hundred addresses, such as a botnet or a cloud
+account that hands out many `/64` networks. A per-address share of the cap (Q-AUTH-90, option c) would bound it further.

@@ -118,6 +118,27 @@ type addrThrottle struct {
 func (t addrThrottle) Exceeded(ctx context.Context) bool { return t.l.Exceeded(ctx, t.bucket) }
 func (t addrThrottle) Count(ctx context.Context)         { t.l.Count(ctx, t.bucket) }
 
+// AddressBucket is the bucket of a client address in auth.flow_starts
+// (R-AUTH-038, Q-AUTH-90): an IPv4 address as it is, an IPv6 address as its
+// /64. One host commonly holds a whole /64, so counting each IPv6 address on its
+// own would let a single client start as many flows as it has addresses and
+// fill max_pending_flows for everyone. A value that is no address is its own
+// bucket.
+func AddressBucket(addr string) string {
+	a, err := netip.ParseAddr(addr)
+	if err != nil {
+		return addr
+	}
+	if a = a.Unmap(); a.Is4() {
+		return a.String()
+	}
+	p, err := a.WithZone("").Prefix(64)
+	if err != nil {
+		return addr
+	}
+	return p.String()
+}
+
 func exempt(addr netip.Addr, cidrs []netip.Prefix) bool {
 	for _, p := range cidrs {
 		if p.Contains(addr.Unmap()) {

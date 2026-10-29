@@ -334,7 +334,8 @@ func (b *BreakGlass) login(w http.ResponseWriter, r *http.Request, req loginRequ
 		if err := b.recordFailure(ctx, r); err != nil {
 			return err
 		}
-		b.audit(r, audit.Failure, "invalid_credentials", "", req.Username)
+		matched := subtle.ConstantTimeCompare([]byte(req.Username), []byte(b.cfg.Username)) == 1
+		b.audit(r, audit.Failure, "invalid_credentials", "", matched)
 		b.s.m.Attempt("breakglass", "failure", "invalid_credentials")
 		return errs.E(errs.Unauthenticated, errs.CodeInvalidCredentials, "The username or the password is wrong.")
 	}
@@ -348,7 +349,7 @@ func (b *BreakGlass) login(w http.ResponseWriter, r *http.Request, req loginRequ
 	if err != nil {
 		return postgres.Unavailable(err)
 	}
-	b.audit(r, audit.Success, "", created.ID, b.cfg.Username)
+	b.audit(r, audit.Success, "", created.ID, true)
 	b.s.m.Attempt("breakglass", "success", "")
 	details, _ := json.Marshal(map[string]string{"method": "breakglass", "session_id": created.ID})
 	b.s.o.Audit.Record(ctx, audit.Event{
@@ -438,10 +439,11 @@ func (b *BreakGlass) recordFailure(ctx context.Context, r *http.Request) error {
 }
 
 // audit writes auth.breakglass.login with severity high, for success and
-// failure alike (R-AUTH-014). The presented username is recorded truncated; the
-// password never is.
-func (b *BreakGlass) audit(r *http.Request, outcome audit.Outcome, reason, sessionID, username string) {
-	d := map[string]string{"severity": "high", "username": truncateRunes(username, 128)}
+// failure alike (R-AUTH-014). It records whether the presented username was the
+// account's, never the presented value: a password typed into the username
+// field would otherwise land in the audit trail. The password never is recorded.
+func (b *BreakGlass) audit(r *http.Request, outcome audit.Outcome, reason, sessionID string, usernameMatched bool) {
+	d := map[string]any{"severity": "high", "usernameMatched": usernameMatched}
 	if sessionID != "" {
 		d["session_id"] = sessionID
 	}

@@ -93,7 +93,7 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `downloadFile`, `headFile`, `deployFile`, `deleteFile` | `GET`, `HEAD`, `PUT`, `DELETE /files/{repoKey}/{path}` | `{action: read\|deploy\|delete, …}`, in the document but decided by the files handler |
 
 `bridgeAccess` ([access.go](../../internal/app/access.go)) puts the dev-profile switch in front of the authorization
-engine ([authorization.md](authorization.md)): `system.bootstrap_anonymous_read` opens `settings:read` to anonymous callers on the **default endpoint only**, and only
+engine ([authorization.md](authorization.md)): `system.bootstrap_anonymous_read` opens `settings:read` for `GET /api/v1/system/info` and `GET /api/v1/system/replicas` (Q-AUTHZ-71) to anonymous callers on the **default endpoint only**, and only
 while that endpoint admits anonymous requests; a further endpoint that serves `api` answers 401 (Q-OPS-36). The route
 check at start compares the document with the registered and the dropped patterns of each endpoint that serves `api`.
 
@@ -103,12 +103,12 @@ The helpers live in [internal/api/v1](../../internal/api/v1). A handler calls th
 
 | Rule | Helper | File | Notes |
 |---|---|---|---|
-| Strict JSON body: content type (415), size (413), unknown or duplicate member and wrong type (400 `malformed_request` with `errors[0].pointer`, R-API-003) | `ReadBody`, `DecodeJSON`, `StrictUnmarshal` | [decode.go](../../internal/api/v1/decode.go) | The request type is the response type, so a body obtained by GET can be sent back and read-only members are accepted and ignored. Member names compare exactly. |
+| Strict JSON body: content type (415), size (413), unknown or duplicate member, wrong type and a nesting deeper than 64 levels (400 `malformed_request` with `errors[0].pointer`, R-API-003, R-API-017, Q-API-75) | `ReadBody`, `DecodeJSON`, `StrictUnmarshal` | [decode.go](../../internal/api/v1/decode.go) | The request type is the response type, so a body obtained by GET can be sent back and read-only members are accepted and ignored. Member names compare exactly. |
 | Cursor pagination, filters, sort (R-API-010, R-API-011) | `ParseList`, `ListSpec`, `ListQuery`, `NewPage`, `MapPage`, `WritePage` | [paging.go](../../internal/api/v1/paging.go) | `limit` default `api.page_size_default`, clamped to `api.page_size_max` (Q-API-16). An unknown parameter or sort field is 400; a cursor for other filters or another sort is 400 `invalid_cursor`. |
 | `ETag` from a revision column, `If-Match`, `If-None-Match` (R-API-012) | `ETag`, `SetETag`, `ParseIfMatch`, `expectedRevision`, `Precondition.Revision/Matches`, `Failed`, `NotModified`; `errs.Stale`, `errs.AnyRevision` | [etag.go](../../internal/api/v1/etag.go), [revision.go](../../internal/errs/revision.go) | 428 without `If-Match` on PUT/PATCH (the binder, below); 412 with `currentEtag`, from the one `errs.Stale`. |
 | JSON merge patch (R-API-013) | `ReadMergePatch`, `MergePatch`, `ApplyMergePatch`, `CheckImmutable` | [patch.go](../../internal/api/v1/patch.go) | RFC 7396; an immutable member that differs is 422 `validation_failed` with its pointer. |
 | Idempotency keys, stored in PostgreSQL (R-API-014, R-API-051) | `Idempotency.Do`, `IdempotentOp`, `Outcome` | [idempotency.go](../../internal/api/v1/idempotency.go) | The row is inserted in the transaction of the change. |
-| Item paths and reserved names (R-API-004) | `CheckItemPath`, `CheckReservedName` | [path.go](../../internal/api/v1/path.go) | `invalid_path` is registered by the files area. |
+| Item paths and reserved names (R-API-004) | `CheckItemPath`, `CheckReservedName` | [path.go](../../internal/api/v1/path.go) | The rules of `repository.CleanPath` on the decoded path: no backslash, at most 4096 bytes and 255 per segment, the length checked first. `invalid_path` is registered by the files area. |
 | Rate limits, CORS, response headers (R-API-016, R-API-017, R-API-018) | `NewRateLimit`, `CORS`, `EdgeStage` | [ratelimit.go](../../internal/api/v1/ratelimit.go), [cors.go](../../internal/api/v1/cors.go) | The chain's stage 7; wired by [wire_api.go](../../internal/app/wire_api.go). |
 | A value set in YAML cannot be changed through the API | `errs.CodeManagedByConfig` (409 `managed_by_config`) | [codes.go](../../internal/errs/codes.go) | R-API-037. M1 has no settings resource of its own; the owner of a settings document uses the code (Q-API-19). |
 

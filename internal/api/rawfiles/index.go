@@ -43,7 +43,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Cal
 	if page.Next != "" {
 		next = lq.EncodeCursor([]string{page.Next})
 	}
-	cw := httpserver.ContentWriter(w, httpserver.ContentIndex, "")
+	cw := httpserver.ContentWriterFor(w, r, httpserver.ContentIndex, "")
 	cw.Header().Set("Cache-Control", cacheControl(r))
 	if wantsHTML(r.Header.Get("Accept")) {
 		cw.Header().Set("Content-Type", "text/html; charset=utf-8")

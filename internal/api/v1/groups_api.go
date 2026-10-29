@@ -403,7 +403,7 @@ func (s *Server) EnableServiceAccount(w http.ResponseWriter, r *http.Request, na
 	if !s.identityReady(w, r) {
 		return
 	}
-	if err := s.o.Auth.Manager.EnableServiceAccount(r.Context(), name); err != nil {
+	if err := s.o.Auth.Manager.EnableServiceAccount(r.Context(), s.caller(r), name); err != nil {
 		failIdentity(w, r, err)
 		return
 	}

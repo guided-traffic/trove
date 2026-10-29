@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
@@ -162,6 +163,13 @@ func (s *Server) presenting(ctx context.Context, p httpserver.Principal) (*token
 	rec, err := s.o.Auth.Tokens.Get(ctx, p.Credential.TokenID)
 	if err != nil {
 		return nil, err
+	}
+	if rec.State != "active" {
+		// Revoked or expired since this replica's cache accepted it (the bound of
+		// R-AUTH-023): it mints nothing. The creating transaction checks again
+		// under a lock (R-AUTH-027).
+		return nil, errs.E(errs.Unauthenticated, errs.CodeInvalidToken, "The presenting token is no longer valid.",
+			errs.WithChallenge("Bearer"))
 	}
 	return &token.Info{
 		ID: rec.ID, Type: rec.Type, Scope: rec.Scope, ExpiresAt: rec.ExpiresAt,
@@ -578,7 +586,7 @@ func (s *Server) RevokeTokenByValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if l := s.o.Auth.FlowStarts; l != nil {
-		if ok, retry := l.Allow(r.Context(), httpserver.InfoFrom(r.Context()).Client.String()); !ok {
+		if ok, retry := l.Allow(r.Context(), auth.AddressBucket(httpserver.InfoFrom(r.Context()).Client.String())); !ok {
 			httpserver.Problem(w, r, errs.E(errs.RateLimited, errs.CodeRateLimited,
 				"Too many requests from this address; retry later.", errs.WithRetryAfter(retry)))
 			return

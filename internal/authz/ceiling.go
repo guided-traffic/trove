@@ -71,3 +71,37 @@ func onEndpoint(ctx context.Context, c Coordinate) Coordinate {
 	}
 	return c
 }
+
+// ExposureFilter is implemented by an [Authorizer] that applies the exposure
+// ceiling alone: the repository keys the request's endpoint exposes for read,
+// whatever the subject's grants. A holder of repositories:read-config lists and
+// reads repositories it holds no read grant on, but on an endpoint with
+// exposure rules no more than the endpoint exposes, as the ceiling binds every
+// subject (R-EP-013, R-EP-014, Q-EP-12). [Engine] implements it.
+type ExposureFilter interface {
+	Exposed(ctx context.Context, sub Subject, keys []string) ([]string, error)
+}
+
+// Exposed implements [ExposureFilter] on the index the request decides on. A
+// refusal to decide (503, 412) is returned as an error.
+func (e *Engine) Exposed(ctx context.Context, sub Subject, keys []string) ([]string, error) {
+	endpoint := EndpointOf(ctx)
+	cl := e.o.Ceiling
+	if cl == nil || endpoint == "" {
+		return keys, nil
+	}
+	idx, refused := e.forRequest(ctx, sub)
+	if refused != nil {
+		return nil, refused.Err()
+	}
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		c := Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}, Endpoint: endpoint}
+		if cl.Admits(idx, c, Read) == CeilingAdmits {
+			out = append(out, k)
+			continue
+		}
+		e.m.exposureHidden(endpoint, "item")
+	}
+	return out, nil
+}

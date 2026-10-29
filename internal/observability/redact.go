@@ -66,6 +66,8 @@ type Scrubber struct {
 	basic    *regexp.Regexp
 	userinfo *regexp.Regexp
 	cliPoll  *regexp.Regexp
+	callback *regexp.Regexp
+	idHint   *regexp.Regexp
 	query    *regexp.Regexp
 }
 
@@ -89,6 +91,13 @@ func NewScrubber(queryParams []string) *Scrubber {
 		// a later "@", is redacted too: the rule errs towards hiding.
 		userinfo: regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)([^/?#\s<>]*)@`),
 		cliPoll:  regexp.MustCompile(`(/auth/cli/)[^/?#\s"']+`),
+		// The query of an OIDC callback holds the authorization code and the
+		// flow's state (and session_state, iss): one-time secrets of the login
+		// that the configurable list cannot name without hiding the state filter
+		// of the token listing too (Q-OPS-91).
+		callback: regexp.MustCompile(`(/auth/oidc/[^/?#\s"']+/callback\?)[^#\s"']*`),
+		// An ID token presented as a logout hint is a signed identity statement.
+		idHint: regexp.MustCompile(`(?i)([?&;]id_token_hint)=[^&#\s"']*`),
 	}
 	if len(queryParams) > 0 {
 		quoted := make([]string, len(queryParams))
@@ -123,6 +132,12 @@ func (s *Scrubber) String(in string) string {
 	}
 	if strings.Contains(out, "/auth/cli/") {
 		out = s.cliPoll.ReplaceAllString(out, "${1}"+RedactedValue)
+	}
+	if strings.Contains(out, "/callback?") {
+		out = s.callback.ReplaceAllString(out, "${1}"+RedactedValue)
+	}
+	if strings.Contains(out, "id_token_hint") {
+		out = s.idHint.ReplaceAllString(out, "${1}="+RedactedValue)
 	}
 	if s.query != nil && strings.ContainsAny(out, "?&;") {
 		out = s.query.ReplaceAllString(out, "${1}="+RedactedValue)

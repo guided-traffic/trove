@@ -204,7 +204,7 @@ func (s *Service) Create(ctx context.Context, r CreateRequest) (Created, error) 
 	}
 	return s.insert(ctx, insertSpec{
 		req: r, scope: scope, life: life, maxActive: s.maxActive(r.Type), via: r.Via,
-		derivedFrom: derivedID(r.Parent), capMicros: capMicros(parentExpires),
+		derivedFrom: derivedID(r.Parent), capMicros: capMicros(parentExpires), presented: derivedID(r.Parent),
 	})
 }
 
@@ -256,17 +256,81 @@ func (s *Service) checkPATAllowed(ctx context.Context, ownerID string) error {
 }
 
 type insertSpec struct {
-	req         CreateRequest
-	scope       Scope
-	life        lifetime
-	maxActive   int
-	via         string
+	req       CreateRequest
+	scope     Scope
+	life      lifetime
+	maxActive int
+	via       string
+	// derivedFrom is the token the new one is derived from: the presenting token
+	// of a create, or the lineage a rotation carries over (R-AUTH-027, R-AUTH-030).
 	derivedFrom string
 	// capMicros is the expiry of the presenting token in Unix microseconds, 0 for none.
-	capMicros   int64
+	capMicros int64
+	// presented is the ID of the presenting token, "" for none.
+	presented   string
 	rotatedFrom string
 	// afterInsert runs in the creating transaction (rotation ends the predecessor).
 	afterInsert func(ctx context.Context, tx meta.Tx, qs *q.Queries, created Record) error
+}
+
+// lineageCheck locks the tokens the new one hangs on, derivedFrom and
+// rotatedFrom with their derived_from chains, and decides on what it finds
+// after the lock (R-AUTH-027, R-AUTH-029, R-AUTH-030): every one must still be
+// live, the rotated token must not have a successor yet, a derived token may
+// rotate itself only if its parent may, and the new token expires no later than
+// any token it is derived from. It returns the expiry cap in Unix microseconds,
+// 0 for none.
+func (sp insertSpec) lineageCheck(ctx context.Context, qs *q.Queries) (int64, error) {
+	var ids []string
+	for _, id := range []string{sp.derivedFrom, sp.rotatedFrom} {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return sp.capMicros, nil
+	}
+	locked, err := qs.IdentityLockTokenLineage(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	facts, err := qs.IdentityTokenLineageFacts(ctx, locked)
+	if err != nil {
+		return 0, err
+	}
+	gone := func(id string) error {
+		if id == sp.presented {
+			return errs.E(errs.Unauthenticated, errs.CodeInvalidToken, "The presenting token is no longer valid.")
+		}
+		return principal.NotFound("The token")
+	}
+	found := map[string]bool{}
+	limit := sp.capMicros
+	for _, f := range facts {
+		found[f.ID] = true
+		switch {
+		case !f.Live && (f.ID == sp.rotatedFrom || f.ID == sp.derivedFrom):
+			return 0, gone(f.ID)
+		case !f.Live && sp.rotatedFrom != "":
+			// An ancestor further up the rotated token's lineage.
+			return 0, principal.NotFound("The token")
+		case !f.Live:
+			return 0, gone(sp.derivedFrom)
+		case f.ID == sp.rotatedFrom && f.Rotated:
+			return 0, principal.NotFound("The token")
+		case f.ID == sp.derivedFrom && sp.presented != "" && sp.rotatedFrom == "" && sp.req.SelfRotatable && !f.SelfRotatable:
+			return 0, forbidden(errs.CodeDerivationExceedsParent, "Only a token that may rotate itself creates one that may.")
+		}
+		if f.ID != sp.rotatedFrom && f.ExpiresUs > 0 && (limit == 0 || f.ExpiresUs < limit) {
+			limit = f.ExpiresUs
+		}
+	}
+	for _, id := range ids {
+		if !found[id] {
+			return 0, gone(id)
+		}
+	}
+	return limit, nil
 }
 
 func (s *Service) insert(ctx context.Context, sp insertSpec) (Created, error) {
@@ -288,17 +352,27 @@ func (s *Service) insert(ctx context.Context, sp insertSpec) (Created, error) {
 		if err != nil {
 			return err
 		}
+		capAt, err := sp.lineageCheck(ctx, qs)
+		if err != nil {
+			return err
+		}
 		n, err := qs.IdentityCountActiveTokens(ctx, q.IdentityCountActiveTokensParams{PrincipalID: r.OwnerID, Type: string(r.Type)})
 		if err != nil {
 			return err
 		}
-		if int(n) >= sp.maxActive && sp.rotatedFrom == "" {
+		if sp.rotatedFrom != "" {
+			// The predecessor is live (lineageCheck) and counted; its successor
+			// replaces it, so a rotation goes over the limit by its own overlap
+			// at most, never by a chain of overlapping rotations.
+			n--
+		}
+		if int(n) >= sp.maxActive {
 			return errs.E(errs.Conflict, errs.CodeTokenLimitReached, "The principal holds the maximum number of active tokens.")
 		}
 		row, err := qs.IdentityInsertToken(ctx, q.IdentityInsertTokenParams{
 			ID: id, Type: string(r.Type), SecretSha256: hash[:], Hint: Hint(secret), PrincipalID: r.OwnerID,
 			Description: r.Description, Scope: string(sp.scope.Marshal()), SelfRotatable: r.SelfRotatable,
-			CreatedBy: r.Caller.Actor.ID, CreatedVia: sp.via, TtlSecs: ttl, CapMicros: sp.capMicros, RotatedFrom: sp.rotatedFrom, DerivedFrom: sp.derivedFrom,
+			CreatedBy: r.Caller.Actor.ID, CreatedVia: sp.via, TtlSecs: ttl, CapMicros: capAt, RotatedFrom: sp.rotatedFrom, DerivedFrom: sp.derivedFrom,
 		})
 		if err != nil {
 			return err

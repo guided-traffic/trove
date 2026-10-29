@@ -129,11 +129,42 @@ func pointerEscape(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1")
 }
 
-// checkSyntax validates the JSON syntax, finds duplicate keys and rejects
-// trailing data.
+// maxBodyDepth bounds how deeply a JSON request body may nest objects and
+// arrays (R-API-017). No document of the API comes close to it. Without the
+// bound a body of nothing but '[' makes a scan hold one frame per level, so a
+// single anonymous request of 1 MiB would cost memory in proportion to the
+// square of its length.
+const maxBodyDepth = 64
+
+// jsonPath is the location of a value as RFC 6901 reference tokens, kept as a
+// stack while a document is walked. The pointer string is built only when an
+// error names the place, so a wide document costs no string per element.
+type jsonPath []pathToken
+
+type pathToken struct {
+	key   string
+	index int
+	array bool
+}
+
+func (p jsonPath) pointer() string {
+	var b strings.Builder
+	for _, t := range p {
+		b.WriteByte('/')
+		if t.array {
+			b.WriteString(strconv.Itoa(t.index))
+		} else {
+			b.WriteString(pointerEscape(t.key))
+		}
+	}
+	return b.String()
+}
+
+// checkSyntax validates the JSON syntax, finds duplicate keys, refuses a
+// nesting deeper than maxBodyDepth and rejects trailing data.
 func checkSyntax(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
-	if err := scanValue(dec, ""); err != nil {
+	if err := scanDocument(dec); err != nil {
 		return err
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
@@ -142,44 +173,80 @@ func checkSyntax(data []byte) error {
 	return nil
 }
 
-func scanValue(dec *json.Decoder, ptr string) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return malformed(ptr, "syntax", "the body is not valid JSON", err)
-	}
-	d, ok := tok.(json.Delim)
-	if !ok {
-		return nil
-	}
-	switch d {
-	case '{':
-		seen := map[string]bool{}
-		for dec.More() {
-			kt, err := dec.Token()
-			if err != nil {
-				return malformed(ptr, "syntax", "the body is not valid JSON", err)
-			}
-			key, _ := kt.(string)
-			p := ptr + "/" + pointerEscape(key)
-			if seen[key] {
-				return malformed(p, "duplicate", "the member appears twice", nil)
-			}
-			seen[key] = true
-			if err := scanValue(dec, p); err != nil {
-				return err
-			}
+// scanFrame is an object or an array the scan is inside of.
+type scanFrame struct {
+	seen    map[string]bool // member names of an object; nil for an array
+	inValue bool            // an object member's name was read, its value is next
+}
+
+// scanDocument reads one JSON value token by token without recursion, so
+// neither the stack nor the heap holds more than maxBodyDepth levels
+// (json.Decoder.Token itself has no depth limit).
+func scanDocument(dec *json.Decoder) error {
+	var frames []scanFrame
+	var path jsonPath
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return malformed(path.pointer(), "syntax", "the body is not valid JSON", err)
 		}
-	case '[':
-		for i := 0; dec.More(); i++ {
-			if err := scanValue(dec, ptr+"/"+strconv.Itoa(i)); err != nil {
-				return err
+		if n := len(frames); n > 0 && frames[n-1].seen != nil && !frames[n-1].inValue {
+			// The name of the next member, or the end of the object.
+			if tok == json.Delim('}') {
+				frames = frames[:n-1]
+				if endValue(frames, &path) {
+					return nil
+				}
+				continue
 			}
+			key, _ := tok.(string)
+			path = append(path, pathToken{key: key})
+			if frames[n-1].seen[key] {
+				return malformed(path.pointer(), "duplicate", "the member appears twice", nil)
+			}
+			frames[n-1].seen[key] = true
+			frames[n-1].inValue = true
+			continue
+		}
+		switch tok {
+		case json.Delim('{'), json.Delim('['):
+			if len(frames) == maxBodyDepth {
+				return malformed(path.pointer(), "depth",
+					"objects and arrays nest deeper than "+strconv.Itoa(maxBodyDepth)+" levels", nil)
+			}
+			if tok == json.Delim('{') {
+				frames = append(frames, scanFrame{seen: map[string]bool{}})
+			} else {
+				frames = append(frames, scanFrame{})
+				path = append(path, pathToken{array: true})
+			}
+			continue
+		case json.Delim(']'):
+			frames = frames[:len(frames)-1]
+			path = path[:len(path)-1]
+		}
+		if endValue(frames, &path) {
+			return nil
 		}
 	}
-	if _, err := dec.Token(); err != nil {
-		return malformed(ptr, "syntax", "the body is not valid JSON", err)
+}
+
+// endValue moves the scan past a complete value: to the next member name of
+// the enclosing object, or to the next element of the enclosing array. It
+// reports whether the value was the document itself.
+func endValue(frames []scanFrame, path *jsonPath) bool {
+	n := len(frames)
+	if n == 0 {
+		return true
 	}
-	return nil
+	p := *path
+	if frames[n-1].seen != nil {
+		frames[n-1].inValue = false
+		*path = p[:len(p)-1]
+		return false
+	}
+	p[len(p)-1].index++
+	return false
 }
 
 func unmarshalerType() reflect.Type { return reflect.TypeFor[json.Unmarshaler]() }
@@ -201,57 +268,76 @@ func checkUnknown(data []byte, t reflect.Type) error {
 }
 
 // unknownMember returns the pointer of the first member of v that t does not
-// declare.
+// declare, prefixed with ptr.
 func unknownMember(v any, t reflect.Type, ptr string) (string, bool) {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	if reflect.PointerTo(t).Implements(unmarshalerType()) || t.Kind() == reflect.Interface {
-		return "", false
-	}
-	switch val := v.(type) {
-	case map[string]any:
-		return unknownInObject(val, t, ptr)
-	case []any:
-		if t.Kind() != reflect.Slice && t.Kind() != reflect.Array {
-			return "", false
-		}
-		for i, e := range val {
-			if p, ok := unknownMember(e, t.Elem(), ptr+"/"+strconv.Itoa(i)); ok {
-				return p, true
-			}
-		}
+	var w memberWalk
+	if w.unknown(v, t) {
+		return ptr + w.path.pointer(), true
 	}
 	return "", false
 }
 
-func unknownInObject(val map[string]any, t reflect.Type, ptr string) (string, bool) {
+// memberWalk holds the path of the unknown-member walk; when the walk finds a
+// member, the path is left pointing at it.
+type memberWalk struct{ path jsonPath }
+
+func (w *memberWalk) unknown(v any, t reflect.Type) bool {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if reflect.PointerTo(t).Implements(unmarshalerType()) || t.Kind() == reflect.Interface {
+		return false
+	}
+	switch val := v.(type) {
+	case map[string]any:
+		return w.unknownInObject(val, t)
+	case []any:
+		if t.Kind() != reflect.Slice && t.Kind() != reflect.Array {
+			return false
+		}
+		w.path = append(w.path, pathToken{array: true})
+		for i, e := range val {
+			w.path[len(w.path)-1].index = i
+			if w.unknown(e, t.Elem()) {
+				return true
+			}
+		}
+		w.path = w.path[:len(w.path)-1]
+	}
+	return false
+}
+
+func (w *memberWalk) unknownInObject(val map[string]any, t reflect.Type) bool {
+	var fields map[string]reflect.Type
+	switch t.Kind() {
+	case reflect.Map:
+	case reflect.Struct:
+		fields = jsonFields(t)
+	default:
+		return false
+	}
 	keys := make([]string, 0, len(val))
 	for k := range val {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	switch t.Kind() {
-	case reflect.Map:
-		for _, k := range keys {
-			if p, ok := unknownMember(val[k], t.Elem(), ptr+"/"+pointerEscape(k)); ok {
-				return p, true
+	for _, k := range keys {
+		w.path = append(w.path, pathToken{key: k})
+		var ft reflect.Type
+		if fields == nil {
+			ft = t.Elem()
+		} else {
+			var known bool
+			if ft, known = fields[k]; !known {
+				return true
 			}
 		}
-	case reflect.Struct:
-		fields := jsonFields(t)
-		for _, k := range keys {
-			p := ptr + "/" + pointerEscape(k)
-			ft, known := fields[k]
-			if !known {
-				return p, true
-			}
-			if q, ok := unknownMember(val[k], ft, p); ok {
-				return q, true
-			}
+		if w.unknown(val[k], ft) {
+			return true
 		}
+		w.path = w.path[:len(w.path)-1]
 	}
-	return "", false
+	return false
 }
 
 // jsonFields maps the JSON member names of a struct type to the types of their

@@ -220,7 +220,10 @@ Priority: **MVP** · Covers: API-001, ADMAPI-002
   clients treat as opaque.
 - Item paths inside a repository are passed as the query parameter `path` on `/api/v1/` routes
   (`/api/v1/repositories/{repoKey}/items?path=…`, [storage.md](storage.md)) and as the path tail
-  on `/files/{repoKey}/{path}`.
+  on `/files/{repoKey}/{path}`. Both forms follow the same rules once decoded (no empty, `.` or
+  `..` segment, no NUL, backslash or control character, at most 4096 bytes and 255 bytes per
+  segment, [formats/generic.md](formats/generic.md) R-GENERIC-002); an empty segment right after
+  the key (`/files/{repoKey}//x`) is one too.
 - Methods:
 
 | Method | Use | Success |
@@ -842,6 +845,9 @@ Priority: **MVP** · Covers: trove-only
 - JSON bodies are limited to `api.max_request_body_bytes`; YAML for configuration as code to
   `api.max_configuration_body_bytes`. Larger bodies answer 413. Uploads on `/files` are limited by
   [storage.md](storage.md), not by this rule.
+- A JSON body nests objects and arrays at most 64 levels deep; a deeper one answers 400
+  `malformed_request` with `errors[0].code` `depth` and the pointer of the container that went one
+  level too deep (Q-API-75).
 - A synchronous `/api/v1/` handler MUST finish within 30 seconds; work that can take longer is a
   job (R-API-015). Server-wide timeouts are owned by [architecture.md](architecture.md). The bound
   is far below the `web` shutdown timeout the chart derives from the grace period (110 s with the
@@ -5030,6 +5036,27 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** a client waits for a replica to reach an epoch it was given (R-AUTHZ-032); a replay that lacks it breaks that wait. The development agent would revisit this if a third kind of write returns an epoch in the body instead.
 
 **Applied in the spec:** none.
+
+### Q-API-75 · How deeply a JSON request body may nest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The strict decoding of R-API-003 walks a body token by token to find duplicate members. `encoding/json`'s token reader has no
+depth limit, and a body of nothing but `[` (1 MiB fits on the anonymous `POST /api/v1/tokens/revoke`) made the walk hold one
+frame and one pointer string per level: memory in proportion to the square of the body's length.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No bound, an iterative walk | Pointers built only on error | No new rule | The decoders behind the walk (`encoding/json` into `any`, the merge patch) still recurse per level |
+| (b) 64 levels (chosen) | A deeper body answers 400 `malformed_request` with `errors[0].code` `depth`; the walk is iterative and builds a pointer only for an error | Bounded work for every body, before any decoder runs; no document of the API comes close | A fixed number |
+| (c) A configuration key | `api.max_body_depth` | Adjustable | A knob nobody needs |
+
+**Choice:** (b) (`maxBodyDepth` in `internal/api/v1/decode.go`).
+
+**Rationale:** the deepest document of the API (a repository's configuration) nests fewer than ten levels. The development
+agent would revisit the figure if a document needs more.
+
+**Applied in the spec:** R-API-017 (a bullet).
 
 ## What this does not cover
 

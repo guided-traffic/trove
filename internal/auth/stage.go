@@ -390,12 +390,28 @@ func alwaysOpen(r *http.Request) bool {
 		return !unsafeMethod(r.Method)
 	case p == "/api/v1/auth/login-options", p == "/api/v1/auth/oidc/token",
 		strings.HasPrefix(p, "/api/v1/auth/device/"), strings.HasPrefix(p, "/auth/"),
-		p == "/-/v1/login", strings.HasSuffix(p, "/-/v1/login"):
+		npmLoginStart(p):
 		return true
 	case p == "/api/v1/tokens/revoke":
 		return r.Method == http.MethodPost
 	}
 	return false
+}
+
+// npmLoginStart reports whether p is the npm web login start (R-AUTH-034):
+// /-/v1/login, or /api/npm/<repoKey>/-/v1/login with one key segment. Any other
+// path that merely ends in /-/v1/login, under /files/ or /api/v1/ for example,
+// is not open.
+func npmLoginStart(p string) bool {
+	if p == "/-/v1/login" {
+		return true
+	}
+	rest, ok := strings.CutPrefix(p, "/api/npm/")
+	if !ok {
+		return false
+	}
+	key, tail, ok := strings.Cut(rest, "/")
+	return ok && key != "" && tail == "-/v1/login"
 }
 
 // isExchangeRoute reports whether a request is a POST to a route that takes a

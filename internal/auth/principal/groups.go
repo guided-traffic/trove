@@ -2,6 +2,7 @@ package principal
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -196,6 +197,16 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 		if g.Origin == "scim" && (p.Name != nil || p.Description != nil) {
 			return managedBySCIM()
 		}
+		// The lock that binding a role to the group takes too: the auto-join check
+		// below and the binding's check of the flag cannot both pass (R-AUTH-019).
+		if _, err := qs.IdentityLockGroup(ctx, g.ID); err != nil {
+			return err
+		}
+		// A rename of a group that carries a role lets the identity provider's group
+		// sync fill it (R-AUTH-008), so every change of it needs roles:write.
+		if err := guardRoleHolder(ctx, qs, c, g.ID); err != nil {
+			return err
+		}
 		var fields []string
 		if p.AutoJoin != nil && *p.AutoJoin {
 			admin, err := qs.IdentityGroupHasAdminRole(ctx, g.ID)
@@ -268,7 +279,17 @@ func (m *Manager) DeleteGroup(ctx context.Context, c Caller, name string) error 
 		if g.Origin == "scim" {
 			return managedBySCIM()
 		}
+		if err := guardRoleHolder(ctx, qs, c, g.ID); err != nil {
+			return err
+		}
+		var last LastAdminGuard
+		if err := last.Arm(ctx, qs, g.ID); err != nil {
+			return err
+		}
 		if _, err := qs.IdentityDeletePrincipal(ctx, g.ID); err != nil {
+			return err
+		}
+		if err := last.Check(ctx, qs); err != nil {
 			return err
 		}
 		if err := NotifyPrincipals(m.notify, tx, ChangeGroup, g.ID); err != nil {
@@ -430,6 +451,18 @@ func (m *Manager) changeMembers(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 	if g.origin == "scim" {
 		return managedBySCIM()
 	}
+	// A membership of a group that carries a role is a role binding in effect
+	// (R-AUTHZ-011), and removing one may remove the last administrator
+	// (R-AUTHZ-022).
+	if err := guardRoleHolder(ctx, qs, c, g.id); err != nil {
+		return err
+	}
+	var last LastAdminGuard
+	if slices.ContainsFunc(changes, func(ch memberChange) bool { return !ch.add }) {
+		if err := last.Arm(ctx, qs, g.id); err != nil {
+			return err
+		}
+	}
 	var added, removed []memberRefJSON
 	var ids []string
 	for _, ch := range changes {
@@ -455,6 +488,9 @@ func (m *Manager) changeMembers(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 	}
 	if len(ids) == 0 {
 		return nil
+	}
+	if err := last.Check(ctx, qs); err != nil {
+		return err
 	}
 	if err := NotifyPrincipals(m.notify, tx, ChangeMembership, ids...); err != nil {
 		return err

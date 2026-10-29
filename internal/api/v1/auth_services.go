@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -85,12 +86,22 @@ func (s *Server) identityReady(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// caller is who acts and from where, for the audit events of a domain call.
+// caller is who acts and from where, for the audit events of a domain call. Its
+// RoleHolders asks the decision point for roles:write only when the domain finds
+// that the principal it changes holds a system role (R-AUTHZ-011, Q-AUTHZ-69),
+// so a refusal is decided, and audited, only where it applies; a token's scope
+// is its ceiling as for any other permission.
 func (s *Server) caller(r *http.Request) principal.Caller {
 	p := httpserver.PrincipalFrom(r.Context())
 	return principal.Caller{
 		Actor:  audit.Actor{Kind: string(p.Kind), ID: p.ID, Name: p.Name, TokenID: p.Credential.TokenID, AuthMethod: string(p.Credential.Method)},
 		Source: auditSource(r),
+		RoleHolders: func(ctx context.Context) error {
+			if s.o.Access == nil {
+				return errs.E(errs.Forbidden, errs.CodeForbidden, "The permission roles:write is required.")
+			}
+			return s.o.Access.Require(ctx, string(authz.RolesWrite))
+		},
 	}
 }
 

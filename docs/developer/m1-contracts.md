@@ -329,7 +329,7 @@ The repository API ([repositories.md](repositories.md#http-operations)) and the 
 |---|---|
 | `errs` | the kind `RangeNotSatisfiable` (416) and the codes `path_conflict`, `content_unavailable`, `range_not_satisfiable` (inside the `files` markers) |
 | `authz` | `Engine.PathsAllowed` (one action for many paths of a repository on one index, no audit per refused entry) and `Engine.CatchUp(key)` (the index at least as new as the database, for a repository the index does not hold): [paths.go](../../internal/authz/paths.go), [catchup.go](../../internal/authz/catchup.go) |
-| `httpserver` | `ContentWriter` (the content headers of R-ARCH-007) and `Router.HandleUncleaned` (paths `ServeMux` would redirect reach a handler) |
+| `httpserver` | `ContentWriter` and `ContentWriterFor` (the content headers of R-ARCH-007; `same-origin` CORP when a session authenticated the request, Q-ARCH-86) and `Router.HandleUncleaned` (paths `ServeMux` would redirect reach a handler) |
 | `repository` | `Service.CreateTx` and `Service.DeleteTx` (inside the transaction of an idempotency key), `DeleteResult.JobState`, `Repository.LastActivityAt`, `Activity` |
 | `api/v1` | `Options.Repositories` (`RepositoryServices`) and `Options.Files` inside the `repository` and `files` markers of `Options`; `CallerFrom`, `WriteJSON`, `WriteDeleteResult`, `InvalidCursor` for the `/files/` handler; `Document.FileOperations()` and the `/files/` half of `CheckRoutes`; `bindError` answers 428 for a missing `If-Match`; `apitest.Resource.MalformedCode`, `ImmutableCode`, `AltPatch` and the `/files/` route lookup of `apitest.Validator` |
 | `api/v1/gen` | `exclude-tags: [files]` in `cfg.yaml` |

@@ -419,9 +419,10 @@ func repositoryFilter(lq ListQuery) (repository.ListFilter, string, error) {
 	return f, view, nil
 }
 
-// visibleRepositories reads the page of repositories the caller may see: all of
-// them for a holder of repositories:read-config, else those it may read
-// (R-AUTHZ-016). The filtering runs over the rows after the cursor, in key order,
+// visibleRepositories reads the page of repositories the caller may see: for a
+// holder of repositories:read-config every repository the endpoint exposes,
+// else those it may read, which the exposure narrows as well (R-AUTHZ-016,
+// R-EP-014). The filtering runs over the rows after the cursor, in key order,
 // so the cursor stays the key of the last row of the page.
 func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f repository.ListFilter, cfg, byProject bool) ([]repository.Stored, error) {
 	if byProject { // projects arrive after M1: no repository belongs to one
@@ -433,31 +434,48 @@ func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f
 		return nil, err
 	}
 	rows := res.Items
+	keys := make([]string, len(rows))
+	for i, st := range rows {
+		keys[i] = st.Document.Key
+	}
+	visible, err := s.visibleKeys(ctx, keys, cfg)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool, len(visible))
+	for _, k := range visible {
+		allowed[k] = true
+	}
+	kept := rows[:0:0]
+	for _, st := range rows {
+		if allowed[st.Document.Key] {
+			kept = append(kept, st)
+		}
+	}
+	return kept, nil
+}
+
+// visibleKeys filters repository keys for the caller of ctx. A holder of
+// repositories:read-config needs no read grant, but the exposure ceiling of the
+// request's endpoint binds it like every subject (R-EP-013, Q-EP-12): config
+// selects the view, never what the endpoint shows.
+func (s *Server) visibleKeys(ctx context.Context, keys []string, cfg bool) ([]string, error) {
+	az := s.o.Repositories.Authz
+	sub := SubjectFrom(httpserver.PrincipalFrom(ctx))
 	if !cfg {
-		if s.o.Repositories.Authz == nil {
+		if az == nil {
 			return nil, unavailable("The authorization state")
 		}
-		keys := make([]string, len(rows))
-		for i, st := range rows {
-			keys[i] = st.Document.Key
-		}
-		readable, err := s.o.Repositories.Authz.Readable(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), keys)
-		if err != nil {
-			return nil, err
-		}
-		allowed := make(map[string]bool, len(readable))
-		for _, k := range readable {
-			allowed[k] = true
-		}
-		kept := rows[:0:0]
-		for _, st := range rows {
-			if allowed[st.Document.Key] {
-				kept = append(kept, st)
-			}
-		}
-		rows = kept
+		return az.Readable(ctx, sub, keys)
 	}
-	return rows, nil
+	if xf, ok := az.(authz.ExposureFilter); ok {
+		return xf.Exposed(ctx, sub, keys)
+	}
+	if authz.EndpointOf(ctx) != "" {
+		// A request of an endpoint and no decision point that applies its ceiling.
+		return nil, unavailable("The authorization state")
+	}
+	return keys, nil
 }
 
 // CreateRepository implements POST /api/v1/repositories (R-REPO-009).
@@ -532,6 +550,19 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 		}
 		if d := s.o.Repositories.Authz.Decide(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), c); !d.Allowed() {
 			httpserver.Problem(w, r, d.Err())
+			return
+		}
+	} else {
+		// The ceiling binds a configuration reader too, before the lookup, so a
+		// repository the endpoint does not expose answers like a missing one
+		// (R-EP-013, R-EP-014).
+		exposed, err := s.visibleKeys(ctx, []string{key}, true)
+		if err != nil {
+			httpserver.Problem(w, r, err)
+			return
+		}
+		if len(exposed) == 0 {
+			httpserver.Problem(w, r, authz.NotFound())
 			return
 		}
 	}

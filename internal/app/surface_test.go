@@ -74,5 +74,15 @@ func TestBootstrapAnonymousReadOnlyOnDefaultEndpoint(t *testing.T) {
 		if code, body := hostGet(t, cust, "packages.example.com", "/api/v1/system/replicas"); code != 401 {
 			t.Fatalf("further endpoint: %d %s, want 401", code, body)
 		}
+		// Q-AUTHZ-16, H-63: the bridge opens the two operations, not every
+		// operation that settings:read covers.
+		if code, body := hostGet(t, def, "trove.example.com", "/api/v1/system/info"); code != 200 {
+			t.Fatalf("system info: %d %s", code, body)
+		}
+		for _, p := range []string{"/api/v1/system/tasks", "/api/v1/system/encryption", "/api/v1/settings/auth"} {
+			if code, body := hostGet(t, def, "trove.example.com", p); code != 401 {
+				t.Fatalf("%s: %d %s, want 401", p, code, body)
+			}
+		}
 	})
 }

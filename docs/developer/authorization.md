@@ -167,7 +167,7 @@ and `DecideOn(idx, …)` per coordinate, so that all of them see one index (R-AU
 | `Validate(ctx, input)` | `Report{Errors, Warnings, Covers}` for `POST /authz/validate-policy` |
 | `Create`, `Update(…, expectedVersion, …)`, `Delete(…, expectedVersion)` | the policy and the epoch of the write; `authz.AnyVersion` is `If-Match: *`; the handler answers 428 for a missing `If-Match` |
 | `Get`, `List` | a policy with its warnings; every policy sorted by name (cursor paging is the handler's) |
-| `BindRole`, `UnbindRole`, `ListBindings` | `created` (201 or 200), the epoch; 409 `auto_join_admin_conflict`, 409 `last_admin`, 404 |
+| `BindRole`, `UnbindRole`, `ListBindings` | `created` (201 or 200), the epoch; 409 `auto_join_admin_conflict` (the group row is locked first, as `UpdateGroup` locks it), 409 `last_admin` from `principal.LastAdminGuard` (active holders, not bindings; Q-AUTHZ-70), 404 |
 | `Engine.Check`, `Engine.Effective` | `POST /authz/check` (up to 100 checks, one index) and `GET /authz/me` |
 
 Validation answers 422 with the code of the **first** problem and every problem as a field error with a JSON pointer:
@@ -248,7 +248,12 @@ replica's `cluster.Changes`, the authz and audit configuration and starts it as 
 `a.m1.authzEngine`. `a.m1.anonymousAccess` is the runtime switch of R-AUTH-037 that the identity area sets before this
 step; nil means anonymous access is off. A replica without PostgreSQL wires nothing, and nobody holds a permission.
 `App.access()` returns `bridgeAccess`: the engine behind the dev-profile bridge of `system.bootstrap_anonymous_read`
-(Q-AUTHZ-16).
+(Q-AUTHZ-16), which opens the system information and the replica list only; `endpointStage` puts the request path into the
+context for it (Q-AUTHZ-71).
+
+`Engine.Exposed` (in [ceiling.go](../../internal/authz/ceiling.go), the optional interface `authz.ExposureFilter`) applies the
+endpoint's exposure alone: the repository list and read of a holder of `repositories:read-config` use it, since that caller
+needs no read grant but is bound by the ceiling (R-EP-014).
 
 `wireAuthz` also builds the `authz.Service` when the identity and repository wiring ran (`a.m1.principals`,
 `a.m1.repositories`) and sets `a.m1.authzService`; `startClient` hands it and the engine to the handlers as `v1.AuthzServices`.

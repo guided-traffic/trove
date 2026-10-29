@@ -270,6 +270,42 @@ SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principa
 -- name: IdentityGroupHasAdminRole :one
 SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = sqlc.arg(id)::text::uuid);
 
+-- name: IdentityLockGroup :many
+-- Locks a group's row, so that binding a role to the group and turning on its
+-- auto-join flag, which each check the other, run one after the other
+-- (R-AUTH-019, R-AUTHZ-022). No row for a principal that is not a group.
+SELECT principal_id::text AS id FROM user_group WHERE principal_id = sqlc.arg(id)::text::uuid FOR UPDATE;
+
+-- name: IdentityHoldsRole :one
+-- Whether a principal holds a system role, through a binding of its own or of a
+-- group it is a member of (R-AUTHZ-011, Q-AUTHZ-69). An empty role means any role.
+SELECT EXISTS (
+    SELECT 1 FROM authz_role_binding b
+     WHERE (sqlc.arg(role)::text = '' OR b.role = sqlc.arg(role)::text)
+       AND (b.principal_id = sqlc.arg(id)::text::uuid
+            OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = sqlc.arg(id)::text::uuid)));
+
+-- name: IdentityLockAdminBindings :exec
+-- Locks the admin role bindings. Every change that can take the role admin from
+-- its last holder takes this lock first and counts the holders in a statement
+-- of its own afterwards, so two such changes run one after the other and the
+-- second sees what the first left (R-AUTHZ-022).
+SELECT 1 FROM authz_role_binding WHERE role = 'admin' FOR UPDATE;
+
+-- name: IdentityAdminHolders :one
+-- The active users and service accounts that hold the role admin, directly or
+-- through a group, and whether the break-glass administrator can sign in: the
+-- last_admin guard of R-AUTHZ-022 counts who can still act as an administrator,
+-- not the bindings.
+SELECT (SELECT count(*) FROM principal p
+         WHERE p.status = 'active' AND p.kind IN ('user', 'service_account')
+           AND EXISTS (SELECT 1 FROM authz_role_binding b
+                        WHERE b.role = 'admin'
+                          AND (b.principal_id = p.id
+                               OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = p.id))))::bigint AS holders,
+       EXISTS (SELECT 1 FROM app_user u JOIN principal p ON p.id = u.principal_id
+                WHERE u.is_break_glass AND p.status = 'active') AS break_glass_active;
+
 -- Service accounts -----------------------------------------------------------
 
 -- name: IdentityInsertServiceAccount :exec
@@ -379,6 +415,43 @@ UPDATE api_token a
  WHERE a.id = tree.id AND a.revoked_at IS NULL
 RETURNING a.id::text AS id, encode(a.secret_sha256, 'hex') AS secret_hex, a.principal_id::text AS owner_id,
           a.type, (a.id = sqlc.arg(id)::text::uuid) AS is_root;
+
+-- name: IdentityLockTokenTree :many
+-- The first statement of a revocation (R-AUTH-029): it locks the token and the
+-- tree IdentityRevokeCascade would walk, in id order. A create or rotation that
+-- hangs a token on the tree locks the same rows (IdentityLockTokenLineage), so
+-- it either commits first, and the cascade, a statement of its own with a newer
+-- snapshot, sees the new token; or it waits and then finds its parent revoked.
+WITH RECURSIVE tree(id) AS (
+    SELECT t0.id FROM api_token t0 WHERE t0.id = sqlc.arg(id)::text::uuid
+    UNION
+    SELECT c.id FROM api_token c JOIN tree ON c.derived_from = tree.id
+     OR (sqlc.arg(follow_rotation)::boolean AND c.rotated_from = tree.id)
+)
+SELECT a.id::text AS id FROM api_token a JOIN tree ON tree.id = a.id ORDER BY a.id FOR UPDATE OF a;
+
+-- name: IdentityLockTokenLineage :many
+-- Locks, in id order, the tokens a new token hangs on (the token it is derived
+-- from, the token it rotates) and every token on their derived_from chains
+-- (R-AUTH-027, R-AUTH-030). The facts are read by IdentityTokenLineageFacts in a
+-- statement of its own, so they include what committed while this one waited.
+WITH RECURSIVE up(id) AS (
+    SELECT t.id FROM api_token t WHERE t.id = ANY(sqlc.arg(ids)::text[]::uuid[])
+    UNION
+    SELECT t.derived_from FROM api_token t JOIN up ON t.id = up.id WHERE t.derived_from IS NOT NULL
+)
+SELECT a.id::text AS id FROM api_token a JOIN up ON up.id = a.id ORDER BY a.id FOR UPDATE OF a;
+
+-- name: IdentityTokenLineageFacts :many
+-- What a create or rotation checks on the rows IdentityLockTokenLineage locked:
+-- whether each is still live, its expiry in Unix microseconds (0 for none),
+-- whether it may rotate itself, and whether it was already rotated.
+SELECT a.id::text AS id, a.self_rotatable,
+       (a.revoked_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now()))::boolean AS live,
+       coalesce((extract(epoch FROM a.expires_at) * 1000000)::bigint, 0)::bigint AS expires_us,
+       EXISTS (SELECT 1 FROM api_token s WHERE s.rotated_from = a.id) AS rotated
+  FROM api_token a
+ WHERE a.id = ANY(sqlc.arg(ids)::text[]::uuid[]);
 
 -- name: IdentityTokenBySecretForRevoke :many
 SELECT t.id::text AS id, t.principal_id::text AS owner_id, p.name AS owner_name, p.kind AS owner_kind

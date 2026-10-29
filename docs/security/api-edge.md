@@ -36,6 +36,15 @@ Every `/api/v1/` answer carries `Cache-Control: no-store`, `Content-Security-Pol
 `Referrer-Policy: no-referrer` (stage 7) and `X-Content-Type-Options: nosniff` (the chain, for every answer). A handler that
 returns something cacheable replaces `Cache-Control` (the problem catalog does).
 
+## Request bodies
+
+A JSON body is read up to `api.max_request_body_bytes` (1 MiB by default, `413` beyond) and decoded strictly
+([decode.go](../../internal/api/v1/decode.go)). The syntax walk that finds duplicate members is iterative and refuses a nesting
+deeper than 64 levels (`400 malformed_request`, code `depth`) before any decoder runs; it builds a JSON pointer only for the error
+it reports, and so does the unknown-member walk. Without the bound, one anonymous `POST /api/v1/tokens/revoke` of 1 MiB of `[`
+held a frame and a pointer string per level, memory in proportion to the square of the body's length (Q-API-75;
+`TestR_API_017_BodyNesting` refuses that body with less than 1 MiB allocated).
+
 ## Stored outcomes of idempotent requests
 
 `api_idempotency_keys` holds, for `api.idempotency_retention`, the status, a small set of headers and the JSON body of each

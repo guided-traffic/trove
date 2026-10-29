@@ -160,6 +160,12 @@ SELECT i.id, i.path, i.kind, i.size, i.modified_at, i.blob_sha256, b.sha1 AS blo
  ORDER BY i.path
  LIMIT sqlc.arg(row_limit)::int;
 
+-- name: ItemPathByID :many
+-- The position behind a listing cursor that ended on an entry the caller may
+-- not read: the cursor holds the item's id, never its path (R-AUTHZ-016). A
+-- trashed item still marks its place; a purged one ends the traversal.
+SELECT path FROM items WHERE id = sqlc.arg(id)::bigint AND repo_id = sqlc.arg(repo_id)::bigint;
+
 -- name: GetItemStats :many
 SELECT s.downloads, s.last_download_at,
        COALESCE(CASE p.kind WHEN 'ci_mapping' THEN 'ci' ELSE p.kind END || ':' || p.name, '')::text AS last_downloader_name

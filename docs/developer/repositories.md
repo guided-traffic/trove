@@ -101,9 +101,9 @@ removed in the first transaction. `detach` has nothing to detach until virtual m
 | Operation | Handler | Declaration | Notes |
 |---|---|---|---|
 | `GET /api/v1/formats` | `ListFormats` | `public` | the descriptors of `formats.Descriptors()`; 401 for an anonymous caller while anonymous access is off |
-| `GET /api/v1/repositories` | `ListRepositories` | `public` | filters `class`, `format`, `q`, `state`, `project`, `view`; keyset cursor over the key; a holder of `repositories:read-config` sees every repository, the others the readable ones (`Authorizer.Readable`, Q-REPO-19); `view=full` needs the capability |
+| `GET /api/v1/repositories` | `ListRepositories` | `public` | filters `class`, `format`, `q`, `state`, `project`, `view`; keyset cursor over the key; a holder of `repositories:read-config` sees every repository the endpoint exposes (`authz.ExposureFilter`, R-EP-014), the others the readable ones (`Authorizer.Readable`, Q-REPO-19); both through `visibleKeys`; `view=full` needs the capability |
 | `POST /api/v1/repositories` | `CreateRepository` | `repositories:write-config` | strict body, `Idempotency-Key` through `Idempotency.Do`, `CreateTx` in its transaction; 201 with `Location`, `ETag: "1"`, the document and `warnings` |
-| `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder reads from PostgreSQL; the others pass the decision first (the unknown key is looked up and the index caught up before it, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
+| `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder passes the exposure ceiling of the endpoint (`visibleKeys`) and reads from PostgreSQL; the others pass the decision first (the unknown key is looked up and the index caught up before it, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
 | `PUT`, `PATCH /api/v1/repositories/{key}` | `ReplaceRepository`, `UpdateRepository` | `repositories:write-config`, `x-trove-if-match: required` | 428 before the body is read; the domain applies the merge patch and returns `*StaleVersion`, which becomes 412 with `currentEtag` |
 | `DELETE /api/v1/repositories/{key}` | `DeleteRepository` | `repositories:write-config` | optional `If-Match` and `Idempotency-Key`; 202 with the job reference or 204 |
 

@@ -164,7 +164,7 @@ that is `health.Transient` (a connectivity failure, `postgres.IsOutage`; a check
 The run of failures starts at its first failing answer and ends only when the check passes again; one answer that is
 not transient ends the grace for the rest of the run (CR2-1), and the first readiness never gets a grace. `invalidation`
 carries the same grace: `Changes.Check` reports a stale poll whose last error is an outage as transient, so it cannot gate
-before `database` does (Q-OPS-34). With `system.bootstrap_anonymous_read`, `bridgeAccess` ([access.go](../../internal/app/access.go)) opens the capability `settings:read` to anonymous callers on the default endpoint only; every other decision is the authz engine's.
+before `database` does (Q-OPS-34). With `system.bootstrap_anonymous_read`, `bridgeAccess` ([access.go](../../internal/app/access.go)) opens `settings:read` for the system info and the replica list only (Q-AUTHZ-71) to anonymous callers on the default endpoint only; every other decision is the authz engine's.
 `Health.Serving()` is what `GET /api/v1/system/ping` answers from: no gating check other than `draining` fails, and a
 draining replica had been ready (Q-OPS-30), so the drain delay answers every request; `Ready()` stays the readiness. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
 `Stop()` when it ends on purpose.

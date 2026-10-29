@@ -1551,7 +1551,8 @@ export interface paths {
          *     `HEAD` and the conditional answers never reach the object store. A whole body is verified
          *     against the SHA-256 before its last bytes are released. Every response carrying stored content
          *     has `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`,
-         *     `Cross-Origin-Resource-Policy: same-site` and `Content-Disposition: attachment`. A path with a
+         *     `Cross-Origin-Resource-Policy: same-site` (`same-origin` when the session cookie authenticated
+         *     the request, Q-ARCH-86) and `Content-Disposition: attachment`. A path with a
          *     trailing slash, and the repository root, answer the directory index (R-STOR-017): HTML for
          *     `Accept: text/html`, JSON otherwise. A path outside the repository's include and exclude
          *     patterns answers `404`. Needs `read`; a hidden file is the same `404` as a missing one.

@@ -125,10 +125,19 @@ func (s *Service) deployFile(ctx context.Context, c Caller, repo repository.Repo
 		case req.CreateOnly:
 			return DeployResult{}, createOnlyFailed()
 		case existing.Digest != sp.SHA256:
-			if _, err := s.decide(ctx, c, req.Repo, path, authz.KindWrite, authz.Deploy, authz.Overwrite); err != nil {
+			if dec, err = s.decide(ctx, c, req.Repo, path, authz.KindWrite, authz.Deploy, authz.Overwrite); err != nil {
 				return DeployResult{}, err
 			}
 			overwriteChecked = true
+		}
+	}
+	if !overwriteChecked {
+		// The commit-time re-check of R-AUTHZ-015: the body may have taken minutes,
+		// and a grant removed meanwhile stops the write, new file or identical
+		// re-upload alike. It runs before the commit transaction opens, because a
+		// stale index makes a decision wait (R-ARCH-019).
+		if dec, err = s.decide(ctx, c, req.Repo, path, authz.KindWrite, authz.Deploy); err != nil {
+			return DeployResult{}, err
 		}
 	}
 

@@ -12,6 +12,7 @@ package rawfiles
 
 import (
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -69,6 +70,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key, rest, ok := splitPath(r.URL.EscapedPath())
 	if !ok {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
+		return
+	}
+	if strings.HasPrefix(rest, "/") {
+		// "/files/<key>//x": CleanPath ignores one leading slash, which here is an
+		// empty first segment (R-GENERIC-002).
+		httpserver.Problem(w, r, errs.E(errs.Invalid, errs.CodeInvalidPath, "the path has an empty segment"))
 		return
 	}
 	p, err := repository.CleanPath(rest)
@@ -165,7 +172,7 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, caller files
 	hd.Set("Repr-Digest", reprDigest(r.Header, it.Digest[:], it.SHA512))
 	hd.Set("Content-Type", it.MediaTypeOrDefault())
 	content := func() http.ResponseWriter {
-		cw := httpserver.ContentWriter(w, httpserver.ContentFile, fileName(it.Path))
+		cw := httpserver.ContentWriterFor(w, r, httpserver.ContentFile, fileName(it.Path))
 		for k, v := range hd {
 			cw.Header()[k] = v
 		}
@@ -276,10 +283,22 @@ func mediaType(r *http.Request) (string, error) {
 	if v == "" {
 		return "", nil
 	}
+	bad := errs.E(errs.Invalid, errs.CodeInvalidHeader, "Content-Type is not a media type.")
 	if len(v) > 255 || strings.ContainsAny(v, "\r\n\x00") {
-		return "", errs.E(errs.Invalid, errs.CodeInvalidHeader, "Content-Type is not a media type.")
+		return "", bad
 	}
-	return v, nil
+	// The value is served back as the file's Content-Type, so only a media type
+	// that parses is stored, and in its normalised form (lower-case type and
+	// parameter names, quoted where RFC 2045 needs it).
+	mt, params, err := mime.ParseMediaType(v)
+	if err != nil {
+		return "", bad
+	}
+	out := mime.FormatMediaType(mt, params)
+	if out == "" || len(out) > 255 {
+		return "", bad
+	}
+	return out, nil
 }
 
 // delete removes a file, or a folder with its subtree (R-STOR-018).

@@ -1388,7 +1388,10 @@ delivery-log entry or an error message. These rules are mandatory, and code revi
    - query parameters on the redaction list are redacted;
    - the path segment after `/auth/cli/` (the poll secret of the npm web login,
      [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-034) becomes
-     `[REDACTED]`.
+     `[REDACTED]`;
+   - the query of an OIDC callback, `/auth/oidc/<provider>/callback?…` (the authorization code,
+     `state`, `session_state`), becomes `[REDACTED]`, and so does the value of `id_token_hint`
+     wherever it appears (Q-OPS-91).
 4. **Bodies and headers.** Request and response bodies are never logged. Of the headers, only
    `User-Agent`, `Content-Type`, `Content-Length` and `Accept` may be logged.
 5. **Spans.** Span attributes follow rules 1 to 3. Database spans carry statement text with
@@ -5271,6 +5274,25 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-OPS-017: the capability is written `audit:read`.
 
+### Q-OPS-91 · Login secrets in request URLs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The request log writes the request URI with the parameters of `log.request.redact_query_params` redacted. The OIDC callback
+carries the authorization code and the flow's `state` in its query, and neither is on the list, so every login left them in
+the log.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add `code`, `state`, `session_state`, `id_token_hint` to the default list | Configurable as the others | One mechanism | `state` is also the filter of the token listing and the job lists, which the log would no longer show; an operator who sets the list replaces the default and loses them again |
+| (b) Fixed patterns (chosen) | The whole query of `/auth/oidc/<provider>/callback` and the value of `id_token_hint` anywhere, like the `/auth/cli/` rule | Always on, whatever the configuration; nothing else hidden | Two more patterns in the scrubber |
+
+**Choice:** (b) (`internal/observability/redact.go`).
+
+**Rationale:** the callback's query has no value worth logging, and a login secret must not depend on an operator keeping a
+default. The development agent would revisit (a) if another route takes a secret in a generic parameter name.
+
+**Applied in the spec:** R-OPS-013 (rule 3).
 
 ## What this does not cover
 

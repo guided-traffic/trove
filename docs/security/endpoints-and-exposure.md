@@ -41,7 +41,12 @@ decision point reads it from there, so neither a client nor a content route can 
   `deny.exposure` and the endpoint's name.
 - A write on an endpoint with exposure rules answers `403 endpoint_read_only` whether or not its target exists, so the
   refusal reveals nothing either.
-- A listing on such an endpoint holds only the repositories with an enabled rule (`Readable`).
+- A listing on such an endpoint holds only the repositories with an enabled rule (`Readable`). A holder of
+  `repositories:read-config`, who needs no read grant to list or read a repository's configuration, is bound by the
+  exposure alone (`Engine.Exposed` in [ceiling.go](../../internal/authz/ceiling.go), used by
+  [repositories_api.go](../../internal/api/v1/repositories_api.go) `visibleKeys`): on such an endpoint it lists the exposed
+  repositories only, and `GET /api/v1/repositories/{key}` of another one answers the `404` of a missing one, decided before the
+  lookup (R-EP-014; `TestR_EP_014_ExposedBindsConfigurationReaders`, `TestR_EP_014_ConfigurationReadersAreBoundByTheCeiling`).
 
 ## How long a change takes
 

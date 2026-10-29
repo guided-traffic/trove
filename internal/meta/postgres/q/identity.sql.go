@@ -44,6 +44,33 @@ func (q *Queries) IdentityAddMembership(ctx context.Context, arg IdentityAddMemb
 	return items, nil
 }
 
+const identityAdminHolders = `-- name: IdentityAdminHolders :one
+SELECT (SELECT count(*) FROM principal p
+         WHERE p.status = 'active' AND p.kind IN ('user', 'service_account')
+           AND EXISTS (SELECT 1 FROM authz_role_binding b
+                        WHERE b.role = 'admin'
+                          AND (b.principal_id = p.id
+                               OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = p.id))))::bigint AS holders,
+       EXISTS (SELECT 1 FROM app_user u JOIN principal p ON p.id = u.principal_id
+                WHERE u.is_break_glass AND p.status = 'active') AS break_glass_active
+`
+
+type IdentityAdminHoldersRow struct {
+	Holders          int64
+	BreakGlassActive bool
+}
+
+// The active users and service accounts that hold the role admin, directly or
+// through a group, and whether the break-glass administrator can sign in: the
+// last_admin guard of R-AUTHZ-022 counts who can still act as an administrator,
+// not the bindings.
+func (q *Queries) IdentityAdminHolders(ctx context.Context) (IdentityAdminHoldersRow, error) {
+	row := q.db.QueryRow(ctx, identityAdminHolders)
+	var i IdentityAdminHoldersRow
+	err := row.Scan(&i.Holders, &i.BreakGlassActive)
+	return i, err
+}
+
 const identityAdminVia = `-- name: IdentityAdminVia :many
 SELECT b.principal_id::text AS user_id, 'direct'::text AS via
   FROM authz_role_binding b
@@ -743,6 +770,28 @@ func (q *Queries) IdentityGroupsOfMember(ctx context.Context, memberID string) (
 	return items, nil
 }
 
+const identityHoldsRole = `-- name: IdentityHoldsRole :one
+SELECT EXISTS (
+    SELECT 1 FROM authz_role_binding b
+     WHERE ($1::text = '' OR b.role = $1::text)
+       AND (b.principal_id = $2::text::uuid
+            OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = $2::text::uuid)))
+`
+
+type IdentityHoldsRoleParams struct {
+	Role string
+	ID   string
+}
+
+// Whether a principal holds a system role, through a binding of its own or of a
+// group it is a member of (R-AUTHZ-011, Q-AUTHZ-69). An empty role means any role.
+func (q *Queries) IdentityHoldsRole(ctx context.Context, arg IdentityHoldsRoleParams) (bool, error) {
+	row := q.db.QueryRow(ctx, identityHoldsRole, arg.Role, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const identityInsertGroup = `-- name: IdentityInsertGroup :exec
 
 INSERT INTO user_group (principal_id, description, auto_join, origin)
@@ -1279,6 +1328,46 @@ func (q *Queries) IdentityListUsers(ctx context.Context, arg IdentityListUsersPa
 	return items, nil
 }
 
+const identityLockAdminBindings = `-- name: IdentityLockAdminBindings :exec
+SELECT 1 FROM authz_role_binding WHERE role = 'admin' FOR UPDATE
+`
+
+// Locks the admin role bindings. Every change that can take the role admin from
+// its last holder takes this lock first and counts the holders in a statement
+// of its own afterwards, so two such changes run one after the other and the
+// second sees what the first left (R-AUTHZ-022).
+func (q *Queries) IdentityLockAdminBindings(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, identityLockAdminBindings)
+	return err
+}
+
+const identityLockGroup = `-- name: IdentityLockGroup :many
+SELECT principal_id::text AS id FROM user_group WHERE principal_id = $1::text::uuid FOR UPDATE
+`
+
+// Locks a group's row, so that binding a role to the group and turning on its
+// auto-join flag, which each check the other, run one after the other
+// (R-AUTH-019, R-AUTHZ-022). No row for a principal that is not a group.
+func (q *Queries) IdentityLockGroup(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityLockGroup, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityLockPrincipal = `-- name: IdentityLockPrincipal :many
 SELECT id::text AS id, kind, status FROM principal WHERE id = $1::text::uuid FOR UPDATE
 `
@@ -1328,6 +1417,79 @@ func (q *Queries) IdentityLockRevision(ctx context.Context, id string) ([]int64,
 			return nil, err
 		}
 		items = append(items, revision)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityLockTokenLineage = `-- name: IdentityLockTokenLineage :many
+WITH RECURSIVE up(id) AS (
+    SELECT t.id FROM api_token t WHERE t.id = ANY($1::text[]::uuid[])
+    UNION
+    SELECT t.derived_from FROM api_token t JOIN up ON t.id = up.id WHERE t.derived_from IS NOT NULL
+)
+SELECT a.id::text AS id FROM api_token a JOIN up ON up.id = a.id ORDER BY a.id FOR UPDATE OF a
+`
+
+// Locks, in id order, the tokens a new token hangs on (the token it is derived
+// from, the token it rotates) and every token on their derived_from chains
+// (R-AUTH-027, R-AUTH-030). The facts are read by IdentityTokenLineageFacts in a
+// statement of its own, so they include what committed while this one waited.
+func (q *Queries) IdentityLockTokenLineage(ctx context.Context, ids []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityLockTokenLineage, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityLockTokenTree = `-- name: IdentityLockTokenTree :many
+WITH RECURSIVE tree(id) AS (
+    SELECT t0.id FROM api_token t0 WHERE t0.id = $1::text::uuid
+    UNION
+    SELECT c.id FROM api_token c JOIN tree ON c.derived_from = tree.id
+     OR ($2::boolean AND c.rotated_from = tree.id)
+)
+SELECT a.id::text AS id FROM api_token a JOIN tree ON tree.id = a.id ORDER BY a.id FOR UPDATE OF a
+`
+
+type IdentityLockTokenTreeParams struct {
+	ID             string
+	FollowRotation bool
+}
+
+// The first statement of a revocation (R-AUTH-029): it locks the token and the
+// tree IdentityRevokeCascade would walk, in id order. A create or rotation that
+// hangs a token on the tree locks the same rows (IdentityLockTokenLineage), so
+// it either commits first, and the cascade, a statement of its own with a newer
+// snapshot, sees the new token; or it waits and then finds its parent revoked.
+func (q *Queries) IdentityLockTokenTree(ctx context.Context, arg IdentityLockTokenTreeParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityLockTokenTree, arg.ID, arg.FollowRotation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1943,6 +2105,52 @@ func (q *Queries) IdentityTokenBySecretForRevoke(ctx context.Context, secretSha2
 			&i.OwnerID,
 			&i.OwnerName,
 			&i.OwnerKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityTokenLineageFacts = `-- name: IdentityTokenLineageFacts :many
+SELECT a.id::text AS id, a.self_rotatable,
+       (a.revoked_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now()))::boolean AS live,
+       coalesce((extract(epoch FROM a.expires_at) * 1000000)::bigint, 0)::bigint AS expires_us,
+       EXISTS (SELECT 1 FROM api_token s WHERE s.rotated_from = a.id) AS rotated
+  FROM api_token a
+ WHERE a.id = ANY($1::text[]::uuid[])
+`
+
+type IdentityTokenLineageFactsRow struct {
+	ID            string
+	SelfRotatable bool
+	Live          bool
+	ExpiresUs     int64
+	Rotated       bool
+}
+
+// What a create or rotation checks on the rows IdentityLockTokenLineage locked:
+// whether each is still live, its expiry in Unix microseconds (0 for none),
+// whether it may rotate itself, and whether it was already rotated.
+func (q *Queries) IdentityTokenLineageFacts(ctx context.Context, ids []string) ([]IdentityTokenLineageFactsRow, error) {
+	rows, err := q.db.Query(ctx, identityTokenLineageFacts, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityTokenLineageFactsRow{}
+	for rows.Next() {
+		var i IdentityTokenLineageFactsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SelfRotatable,
+			&i.Live,
+			&i.ExpiresUs,
+			&i.Rotated,
 		); err != nil {
 			return nil, err
 		}

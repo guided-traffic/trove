@@ -176,7 +176,7 @@ func (a *App) endpointStage(rt *endpointRuntime) func(http.Handler) http.Handler
 			h = limit(h)
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(w, r.WithContext(authz.WithEndpoint(r.Context(), name)))
+			h.ServeHTTP(w, r.WithContext(withRequestPath(authz.WithEndpoint(r.Context(), name), r.URL.Path)))
 		})
 	}
 }

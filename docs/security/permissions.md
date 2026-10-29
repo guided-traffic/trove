@@ -82,10 +82,13 @@ bound above.
 
 ## The dev-profile bridge
 
-`system.bootstrap_anonymous_read: true` lets an anonymous caller hold `settings:read` on the default endpoint, while that
-endpoint admits anonymous requests ([access.go](../../internal/app/access.go), `bridgeAccess`). It opens no repository
-action, it is refused with an `https` base URL other than localhost, and every other permission goes to the engine. The
-exposure it causes is the one recorded as
+`system.bootstrap_anonymous_read: true` lets an anonymous caller hold `settings:read` for two operations, the system
+information and the replica list, on the default endpoint, while that endpoint admits anonymous requests
+([access.go](../../internal/app/access.go), `bridgeAccess`, `bootstrapPath`; the endpoint stage hands it the request path).
+The other operations of `settings:read` (the scheduled tasks, the encryption status, the authentication settings) stay
+closed (Q-AUTHZ-71; `TestBootstrapAnonymousReadOnlyOnDefaultEndpoint`). It opens no repository action, it is refused with an
+`https` base URL other than localhost, and every other permission goes to the engine. The exposure it causes is the one
+recorded as
 [H-63](roles-and-trust-boundaries.md#h-63--anonymous-read-of-installation-facts-and-the-replica-list-until-identity-ships).
 
 ## Audit
@@ -105,8 +108,27 @@ auditor holds the reads, the administrator all four). Every write answers `Trove
 that epoch in `Trove-Authz-Min-Epoch` on its next request to see the change on whichever replica answers (R-AUTHZ-032;
 `TestR_AUTHZ_032_MinEpochOverHTTP` shows it with Valkey stopped and a 30 s poll). `POST /api/v1/authz/check` and `GET
 /api/v1/authz/me` tell a caller about its own credential only; a repository the caller cannot see answers `allowed: false`, the
-same as one that does not exist. A role is bound to users, groups and service accounts only, a group that takes members
-automatically takes no role, and the last administrator binding stays while the break-glass administrator is disabled.
+same as one that does not exist. A role is bound to users, groups and service accounts only, and a group that takes members
+automatically takes no role: binding a role and turning on auto-join both lock the group's row before each checks the other,
+so the two cannot pass at the same moment (`TestR_AUTH_019_ABindingWaitsForAutoJoinOfTheGroup`,
+`TestR_AUTH_019_AutoJoinWaitsForARoleBindingOfTheGroup`).
+
+Who holds a role is changed only by a caller that may bind roles (R-AUTHZ-011, Q-AUTHZ-69). A change of a group that carries
+any role (its members from either side, its name, description or auto-join flag, its deletion) and of a user or service
+account that holds one directly or through a group (profile, identity links, disable, enable, delete) asks the decision point
+for `roles:write` in the transaction of the change ([guards.go](../../internal/auth/principal/guards.go), `guardRoleHolder`;
+`Caller.RoleHolders` set by the API in [auth_services.go](../../internal/api/v1/auth_services.go)). Without it,
+`identities:write` would reach every capability: a security administrator joining an administrator group, a token scoped to
+`identities:write` adding its owner, a pending identity link on an administrator claimed at the next login, a rename that lets
+the identity provider's sync fill the group (`TestR_AUTHZ_011_IdentitiesWriteDoesNotReachTheRoles`). Ending sessions and
+revoking tokens stay with `identities:write` and `tokens:revoke`; they only take access away.
+
+`last_admin` (R-AUTHZ-022, Q-AUTHZ-70) counts the active users and service accounts that hold `admin`, not the bindings, and
+it guards every change that can end the role: unbinding it, disabling or deleting a holder, deleting its group, removing it
+from the group ([guards.go](../../internal/auth/principal/guards.go), `LastAdminGuard`). Each such change locks the `admin`
+binding rows first and counts in a statement of its own afterwards, so two of them on different replicas run one after the
+other (`TestR_AUTHZ_022_ConcurrentUnbindsLeaveAnAdministrator`, `TestR_AUTHZ_022_LastAdministratorAcrossTheIdentityOperations`).
+The guard steps aside while the break-glass administrator is enabled.
 
 ## Database footprint
 
@@ -132,15 +154,32 @@ created. Dormant; it becomes live with the first package format (M2): from then 
 publish any name inside its patterns, including a name another team publishes, and would let a virtual repository's deploy
 target shadow a remote package.
 
-### H-104 · The commit-time re-check of writes has no caller yet
+### H-104 · The commit-time re-check decides on the grants, not on the credential
 
-R-AUTHZ-015 requires a write to be decided again when it commits, against the index of the committing replica. `Decide` can
-be called at that point and `RecordAllowed` records the allowed write in the transaction, but the writers (`/files/`, formats)
-do not exist in this tree. Dormant until the files area ships: an upload that started before a grant was removed would commit
-unless the writer re-checks.
+R-AUTHZ-015's re-check runs for every deploy of `/files/`: after the body has arrived and before the commit transaction
+opens, the write is decided again on the committing replica's index, for a new file and an identical re-upload as for an
+overwrite, and the recorded decision is that one ([deploy.go](../../internal/files/deploy.go);
+`TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits` removes the grant while the body is arriving). Two things remain.
+
+The credential is not authenticated again: a token revoked, or a session ended, while its upload runs still commits that
+upload, because the subject the re-check decides for is the one the request started with. Live for every upload; what makes
+it real is a stolen token whose holder starts a large upload before the revocation. The revocation stops every later request
+within the bound of R-AUTH-023.
+
+The re-check and the commit are two steps: a grant removed in the milliseconds between them does not stop the write. The
+format writers (M2) have no re-check yet; each needs its own call when it ships.
 
 ### H-105 · The revocation journal is written and not replayed
 
 The events that remove access carry the journal entry of R-AUTHZ-031, and the comparator `narrows` is not implemented
 because no restore exists. Dormant until the backup and restore work (M5): a restore to an earlier time would bring back a
 removed grant or role binding.
+
+### H-212 · The identity provider's group sync can remove the last administrator
+
+The `last_admin` guard runs in the management operations only. The group sync of a login (R-AUTH-008) removes a membership
+that the identity provider no longer reports, also the last membership in the group that carries `admin`, and the sync is
+not refused (Q-AUTHZ-70, option c). Live whenever an administrator group is synchronised from the identity provider and the
+break-glass administrator is disabled; what makes it real is a change of the group at the identity provider, by mistake or by
+someone who administers the provider but not trove. R-HA-054 reports an installation without an administrator; recovery is
+the break-glass administrator or `trove admin`.

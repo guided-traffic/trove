@@ -57,7 +57,14 @@ func (s *Service) Revoke(ctx context.Context, c principal.Caller, id, reason str
 
 // revokeTree revokes the tree of id inside tx: the cascade, the change record
 // and one token.revoked event per ended token, each with its journal entry.
+// The tree is locked first, in a statement of its own: a create that derives
+// from a token of the tree holds the same lock until it commits, and the
+// cascade, which reads with a newer snapshot, then includes its token
+// (R-AUTH-029).
 func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c principal.Caller, id, reason string, followRotation bool) ([]Revoked, error) {
+	if _, err := qs.IdentityLockTokenTree(ctx, q.IdentityLockTokenTreeParams{ID: id, FollowRotation: followRotation}); err != nil {
+		return nil, err
+	}
 	rows, err := qs.IdentityRevokeCascade(ctx, q.IdentityRevokeCascadeParams{
 		ID: id, Reason: reason, RevokedBy: c.Actor.ID, FollowRotation: followRotation,
 	})
@@ -158,7 +165,10 @@ func (s *Service) RevokeAll(ctx context.Context, c principal.Caller, principalID
 	var n int
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs := principal.Queries(tx)
-		if rows, err := qs.IdentityPrincipalByID(ctx, principalID); err != nil {
+		// The lock a create takes on the owner (lockOwner): a token created at the
+		// same time either commits before the revocation reads, and is revoked with
+		// the others, or is created after the revocation.
+		if rows, err := qs.IdentityLockPrincipal(ctx, principalID); err != nil {
 			return err
 		} else if len(rows) == 0 {
 			return principal.NotFound("The principal")
