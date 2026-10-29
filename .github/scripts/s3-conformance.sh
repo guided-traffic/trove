@@ -23,7 +23,7 @@ if [ -z "$(go list -tags integration ./test/integration/blob/... 2>/dev/null)" ]
 fi
 
 status=0
-go test -count=1 -tags integration -run Conformance -json ./test/integration/blob/... > "$report" || status=$?
+TROVE_TEST_SCOPE=s3 go test -count=1 -tags integration -run Conformance -json ./test/integration/blob/... > "$report" || status=$?
 
 passed="$(jq -Rn '[inputs | fromjson? | select(.Action == "pass" and ((.Test // "") | test("Conformance")))] | length' "$report")"
 failed="$(jq -Rn '[inputs | fromjson? | select(.Action == "fail")] | length' "$report")"

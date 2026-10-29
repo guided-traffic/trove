@@ -46,7 +46,7 @@ test of the Linux-only steps (see [Not in place yet](#not-in-place-yet)).
 | `ci` | `integration` (matrix `9.0`, `9.1`) | `make integration-up`, `make test-integration`, then `make integration-down` always; container logs on failure | E0.5 once the S3 conformance tests exist (they are under `test/integration/`), and every other integration test |
 | `ci` | `e2e` | `make image VERSION=dev`, `make dev-up`, `make e2e SET=push`; uploads `.out/test-e2e.json` (`test-e2e`), `.out/e2e/` (`e2e-artifacts`: k6 logs and summaries, pod watch, events, driver output) and, on failure, the cluster state (`e2e-cluster-state`); always `make dev-down`. Needs `chart` and `image` | E0.3, E0.4 (chart part), E0.6, E0.7, E0.11, E0.12, the E0.14 drain, the E0.15 certificate rotation and the E0.16 second endpoint on every change to `main` ([e2e.md](e2e.md)) |
 | `ci` | `workflows` | actionlint at `ACTIONLINT_VERSION` over `.github/workflows/` | The workflow files themselves |
-| `nightly` | `minio` | Builds MinIO from source at `MINIO_COMMIT`, starts it, seeds the buckets, runs the conformance tests | E0.5 nightly, MinIO leg |
+| `nightly` | `minio` | Builds MinIO from source at `MINIO_COMMIT`, starts it over TLS, seeds the buckets, runs the conformance tests with `TROVE_TEST_SCOPE=s3` (only the `TROVE_TEST_S3_*` variables and an optional CA are required; without a scope `testenv` requires the whole stack) | E0.5 nightly, MinIO leg |
 | `nightly` | `e2e-failover` | the same preparation, then `make e2e SET=failover` | E0.13: PostgreSQL switchover, kill and 30 s stop, Valkey failover, kill and 60 s outage under k6 load, with E0.4 and E0.6. Nightly because it needs a runner's CPU for about 20 minutes and k6 at 100 requests/s must not share a small runner with a kind cluster in a pull request |
 | `nightly` | `aws-gate` and `aws-s3` | See [Nightly](#nightly-workflow) | E0.5 nightly, AWS leg, reported as skipped |
 
@@ -83,7 +83,7 @@ sets a 75-minute limit (90 for the nightly one) and dumps the cluster state on f
 | kind, kubectl, Helm | [tools/versions.env](../../tools/versions.env) `KIND_VERSION`, `KUBECTL_VERSION`, `HELM_VERSION` | `v0.32.0`, `v1.36.2`, `v3.21.3` |
 | Integration images | [tools/versions.env](../../tools/versions.env) `INTEGRATION_*`, `VALKEY_90_IMAGE`, `VALKEY_91_IMAGE`, `SEAWEEDFS_IMAGE` | by digest |
 | Release base image | [tools/versions.env](../../tools/versions.env) `RUNTIME_BASE_IMAGE` | by digest |
-| MinIO source | [tools/versions.env](../../tools/versions.env) `MINIO_COMMIT` | **not yet present**: the nightly MinIO job fails until it is added (see [Not in place yet](#not-in-place-yet)) |
+| MinIO source | [tools/versions.env](../../tools/versions.env) `MINIO_COMMIT` | the commit the nightly MinIO leg builds |
 
 kind is installed in CI with `go install sigs.k8s.io/kind@$KIND_VERSION`, helm and kubectl with the
 Azure setup actions. golangci-lint and actionlint are built with `go install` at their pins.

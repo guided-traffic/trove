@@ -75,6 +75,7 @@ func TestCheckTLSRefusesPlaintextEndpoints(t *testing.T) {
 		"no DSN":                   {"TROVE_TEST_PG_DSN", "", "is not set"},
 		"no CA":                    {"TROVE_TEST_CA_FILE", "", "is not set"},
 		"CA file missing":          {"TROVE_TEST_CA_FILE", "/nonexistent/ca.crt", "not a readable file"},
+		"unknown scope":            {"TROVE_TEST_SCOPE", "everything", "is not stack or s3"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := checkTLS(with(tc.key, tc.val))
@@ -83,4 +84,26 @@ func TestCheckTLSRefusesPlaintextEndpoints(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckTLSScopeS3(t *testing.T) {
+	only := func(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
+	t.Run("R-STOR-035 the conformance scope needs only an https S3 endpoint", func(t *testing.T) {
+		if err := checkTLS(only(map[string]string{"TROVE_TEST_SCOPE": "s3", "TROVE_TEST_S3_ENDPOINT": "https://s3.example.test"})); err != nil {
+			t.Fatalf("an S3-only environment is refused: %v", err)
+		}
+	})
+	t.Run("R-STOR-035 the conformance scope refuses a plaintext S3 endpoint and an unreadable CA file", func(t *testing.T) {
+		if err := checkTLS(only(map[string]string{"TROVE_TEST_SCOPE": "s3", "TROVE_TEST_S3_ENDPOINT": "http://127.0.0.1:9000"})); err == nil || !strings.Contains(err.Error(), "plaintext") {
+			t.Fatalf("err = %v, want plaintext", err)
+		}
+		if err := checkTLS(only(map[string]string{"TROVE_TEST_SCOPE": "s3", "TROVE_TEST_S3_ENDPOINT": "https://s3.example.test", "TROVE_TEST_CA_FILE": "/nonexistent/ca.crt"})); err == nil || !strings.Contains(err.Error(), "not a readable file") {
+			t.Fatalf("err = %v, want not a readable file", err)
+		}
+	})
+	t.Run("R-HA-051 without a scope the full stack is still required", func(t *testing.T) {
+		if err := checkTLS(only(map[string]string{"TROVE_TEST_S3_ENDPOINT": "https://s3.example.test"})); err == nil || !strings.Contains(err.Error(), "is not set") {
+			t.Fatalf("err = %v, want is not set", err)
+		}
+	})
 }

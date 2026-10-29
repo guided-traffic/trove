@@ -93,7 +93,11 @@ func SecureDatabase(tb testing.TB, cfg config.Database) config.Database {
 func SecureS3(tb testing.TB, cfg config.StorageS3) config.StorageS3 {
 	tb.Helper()
 	cfg.Endpoint = S3Config(tb).Endpoint
-	cfg.CAFile = CAFile(tb)
+	// Under TROVE_TEST_SCOPE=s3 the store may be one with a publicly trusted certificate (AWS S3):
+	// without a stack CA the system roots verify it. Every other run has the stack's CA.
+	if os.Getenv("TROVE_TEST_SCOPE") != "s3" || os.Getenv("TROVE_TEST_CA_FILE") != "" {
+		cfg.CAFile = CAFile(tb)
+	}
 	cfg.AllowInsecureEndpoint = false
 	return cfg
 }
@@ -124,8 +128,26 @@ func Main(m *testing.M) int {
 func CheckTLS() error { return checkTLS(os.Getenv) }
 
 // checkTLS validates the TLS side of the environment through get (os.Getenv in production).
+//
+// TROVE_TEST_SCOPE selects what the environment must provide. Unset (or "stack") is the
+// integration stack of make integration-up: every endpoint must be set and TLS-verified. "s3" is
+// the nightly conformance leg against another store (MinIO, AWS S3), which runs only the
+// Conformance tests and provides only the TROVE_TEST_S3_* variables: the S3 endpoint must be https,
+// and a CA file, when set, must be readable; without one the system roots verify the store.
 func checkTLS(get func(string) string) error {
 	hint := "; run `make integration-up`, then `make test-integration`"
+	switch scope := get("TROVE_TEST_SCOPE"); scope {
+	case "", "stack":
+	case "s3":
+		if ca := get("TROVE_TEST_CA_FILE"); ca != "" {
+			if st, err := os.Stat(ca); err != nil || st.IsDir() {
+				return fmt.Errorf("TROVE_TEST_CA_FILE %s is not a readable file", ca)
+			}
+		}
+		return checkS3Endpoint(get, "")
+	default:
+		return fmt.Errorf("TROVE_TEST_SCOPE %q is not stack or s3", scope)
+	}
 	ca := get("TROVE_TEST_CA_FILE")
 	if ca == "" {
 		return fmt.Errorf("TROVE_TEST_CA_FILE is not set: the integration stack is not configured for TLS%s", hint)
@@ -147,12 +169,8 @@ func checkTLS(get func(string) string) error {
 			return fmt.Errorf("%s is plaintext or unverified (need sslmode=verify-full and sslrootcert); the stack is TLS-only (INV-20)", name)
 		}
 	}
-	ep := get("TROVE_TEST_S3_ENDPOINT")
-	if ep == "" {
-		return fmt.Errorf("TROVE_TEST_S3_ENDPOINT is not set%s", hint)
-	}
-	if !strings.HasPrefix(strings.ToLower(ep), "https://") {
-		return fmt.Errorf("TROVE_TEST_S3_ENDPOINT %q is plaintext; the stack is TLS-only (INV-20)", ep)
+	if err := checkS3Endpoint(get, hint); err != nil {
+		return err
 	}
 	if get("TROVE_TEST_VALKEY_CA_FILE") == "" {
 		return fmt.Errorf("TROVE_TEST_VALKEY_CA_FILE is not set%s", hint)
@@ -168,4 +186,16 @@ func HTTPClient(tb testing.TB) *http.Client {
 		Timeout:   30 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: TLSConfig(tb)},
 	}
+}
+
+// checkS3Endpoint requires TROVE_TEST_S3_ENDPOINT to be set and https.
+func checkS3Endpoint(get func(string) string, hint string) error {
+	ep := get("TROVE_TEST_S3_ENDPOINT")
+	if ep == "" {
+		return fmt.Errorf("TROVE_TEST_S3_ENDPOINT is not set%s", hint)
+	}
+	if !strings.HasPrefix(strings.ToLower(ep), "https://") {
+		return fmt.Errorf("TROVE_TEST_S3_ENDPOINT %q is plaintext; the stack is TLS-only (INV-20)", ep)
+	}
+	return nil
 }
