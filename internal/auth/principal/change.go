@@ -29,8 +29,8 @@ const (
 	ChangeGroup = "group"
 	// ChangeSettings: the row of auth_settings changed.
 	ChangeSettings = "settings"
-	// ChangeSession: a session ended. Written by the login area; the identity
-	// caches ignore it.
+	// ChangeSession: sessions ended. Written by the login area (Sessions lists
+	// them, empty means a set too large to list); the identity caches ignore it.
 	ChangeSession = "session"
 	// ChangeAll: everything the area keeps fresh.
 	ChangeAll = "all"
@@ -49,11 +49,20 @@ type TokenRef struct {
 	Hash string `json:"h"`
 }
 
+// SessionRef names an ended UI session: its ID and the hex SHA-256 of its
+// secret, which is the key of the replica session cache. The payload never
+// carries the secret itself.
+type SessionRef struct {
+	ID   string `json:"i"`
+	Hash string `json:"h"`
+}
+
 // Change is the payload of a change of the area auth.
 type Change struct {
-	Kind   string     `json:"t"`
-	IDs    []string   `json:"ids,omitempty"`
-	Tokens []TokenRef `json:"k,omitempty"`
+	Kind     string       `json:"t"`
+	IDs      []string     `json:"ids,omitempty"`
+	Tokens   []TokenRef   `json:"k,omitempty"`
+	Sessions []SessionRef `json:"s,omitempty"`
 }
 
 // Decode parses a payload; ok is false for a payload that is not a Change.

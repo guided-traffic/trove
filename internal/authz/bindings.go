@@ -93,6 +93,46 @@ func (s *Service) BindRole(ctx context.Context, actor Subject, role Role, ref st
 	return created, epoch, err
 }
 
+// BindAdmin binds the system role admin to a principal inside the transaction
+// that creates it (R-AUTH-015 `service-account create --admin`). It writes the
+// binding, notifies the area authz and records role.bound in tx, exactly as
+// [Service.BindRole] does (R-AUTHZ-028); a binding that exists is left as it is.
+// grantedBy is the creating principal's ID, empty for the admin command.
+// *Service implements principal.AdminBinder.
+func (s *Service) BindAdmin(ctx context.Context, tx meta.Tx, principalID, grantedBy string) error {
+	qs, err := queriesOf(tx)
+	if err != nil {
+		return err
+	}
+	rows, err := qs.IdentityPrincipalByID(ctx, principalID)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return roleProblem("/principal", errs.CodeUnknownPrincipal, "The principal does not exist.")
+	}
+	ref, err := ParseRef(refOfRow(rows[0].Kind, rows[0].Name))
+	if err != nil {
+		return err
+	}
+	n, err := qs.AuthzInsertBinding(ctx, q.AuthzInsertBindingParams{Role: string(RoleAdmin), PrincipalID: principalID, Actor: grantedBy})
+	if err != nil || n == 0 {
+		return err
+	}
+	if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: principalID}); err != nil {
+		return err
+	}
+	var epoch int64
+	afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
+		ev := bindingEvent(EventRoleBound, Subject{ID: grantedBy}, RoleAdmin, ref, principalID, epoch, false)
+		if grantedBy == "" {
+			ev.Actor = audit.Actor{Kind: "admin-cli"}
+		}
+		return s.o.Recorder.RecordTx(ctx, tx, ev)
+	})
+	return nil
+}
+
 // UnbindRole removes a role binding. It answers 404 for a binding that does not
 // exist and 409 last_admin when it would remove the last admin binding while the
 // break-glass administrator is disabled (R-AUTHZ-022).

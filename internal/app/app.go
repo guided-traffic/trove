@@ -335,6 +335,17 @@ func (a *App) bootstrap(ctx context.Context) error {
 	}
 	// <<< M1 repository
 	//
+	// >>> M1 login
+	// The session store comes before identity, whose stage validates the session
+	// cookie with it; the OIDC and break-glass login comes after identity, whose
+	// provisioner it calls.
+	if infra && a.sub.MainPool {
+		if err := a.wireSessions(); err != nil {
+			return err
+		}
+	}
+	// <<< M1 login
+	//
 	// >>> M1 identity
 	if err := a.wireFailureLimiter(ctx); err != nil {
 		return err
@@ -345,6 +356,11 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 identity
 	//
 	// >>> M1 login
+	if infra && a.sub.MainPool {
+		if err := a.wireLogin(ctx); err != nil {
+			return err
+		}
+	}
 	// <<< M1 login
 	//
 	// >>> M1 authz
@@ -443,6 +459,9 @@ func (a *App) startClient() error {
 		// Register them on router within the endpoint surfaces (CheckSurface); the route table
 		// check below stops start-up for a route that breaks a rule.
 		// >>> M1 login
+		if a.m1.login != nil {
+			a.registerLogin(router)
+		}
 		// <<< M1 login
 		//
 		// >>> M1 files

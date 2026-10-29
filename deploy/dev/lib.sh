@@ -95,6 +95,7 @@ render() {
     -e "s|\${DEV_SEAWEEDFS_IMAGE}|${DEV_SEAWEEDFS_IMAGE}|g" \
     -e "s|\${DEV_AWSCLI_IMAGE}|${DEV_AWSCLI_IMAGE}|g" \
     -e "s|\${DEV_CNPG_POSTGRES_IMAGE}|${DEV_CNPG_POSTGRES_IMAGE}|g" \
+    -e "s|\${DEV_KEYCLOAK_IMAGE}|${DEV_KEYCLOAK_IMAGE}|g" \
     -e "s|\${NS}|${NS}|g" \
     "$1"
 }

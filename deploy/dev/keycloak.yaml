@@ -1,0 +1,204 @@
+# The test IdP of the local profile (E1.1, Q-AUTH-35): Keycloak with a realm import, behind Service trove-keycloak on
+# port 8443, HTTPS only. The issuer is https://trove-keycloak.${NS}.svc:8443/realms/trove; how a browser on the host
+# reaches it is in docs/developer/local-profile.md.
+#
+#   realm trove   users alice (groups trove-team-web, trove-platform-admins) and bob (trove-team-web); the client trove
+#                 (confidential, PKCE S256, the redirect URI and the post-logout URI of the dev base URL) with a groups
+#                 mapper (claim "groups", plain group names) on the ID token and userinfo (R-AUTH-008, R-AUTH-013)
+#
+# Secret trove-keycloak (internal-secrets-operator): admin-password (Keycloak's bootstrap administrator), client-secret
+# (the trove client; trove reads it as auth.oidc.providers.keycloak.client_secret_file), alice-password, bob-password.
+# Keycloak resolves the ${KC_...} placeholders of the realm file from its environment at import, so no credential is in
+# this file. Certificate trove-keycloak-tls comes from the dev CA (pki.yaml); clients trust its ca.crt.
+#
+# The image is substituted by lib.sh (render) from DEV_KEYCLOAK_IMAGE. start-dev keeps the realm in an emptyDir: a
+# restart imports it again, and every IdP session ends with the pod.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trove-keycloak
+  annotations:
+    iso.gtrfc.com/autogenerate: admin-password,client-secret,alice-password,bob-password
+    iso.gtrfc.com/length: "32"
+type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-keycloak-tls
+spec:
+  secretName: trove-keycloak-tls
+  commonName: trove-keycloak
+  duration: 2160h           # 90 days
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - trove-keycloak
+    - trove-keycloak.${NS}
+    - trove-keycloak.${NS}.svc
+    - trove-keycloak.${NS}.svc.cluster.local
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trove-keycloak-realm
+  labels:
+    app.kubernetes.io/name: trove-keycloak
+    app.kubernetes.io/part-of: trove-dev
+data:
+  trove-realm.json: |
+    {
+      "realm": "trove",
+      "enabled": true,
+      "sslRequired": "all",
+      "registrationAllowed": false,
+      "groups": [
+        {"name": "trove-team-web"},
+        {"name": "trove-platform-admins"}
+      ],
+      "users": [
+        {
+          "username": "alice", "enabled": true, "email": "alice@trove.test", "emailVerified": true,
+          "firstName": "Alice", "lastName": "Example",
+          "credentials": [{"type": "password", "value": "${KC_ALICE_PASSWORD}", "temporary": false}],
+          "groups": ["/trove-team-web", "/trove-platform-admins"]
+        },
+        {
+          "username": "bob", "enabled": true, "email": "bob@trove.test", "emailVerified": true,
+          "firstName": "Bob", "lastName": "Example",
+          "credentials": [{"type": "password", "value": "${KC_BOB_PASSWORD}", "temporary": false}],
+          "groups": ["/trove-team-web"]
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "trove", "name": "trove", "enabled": true, "protocol": "openid-connect",
+          "publicClient": false, "clientAuthenticatorType": "client-secret", "secret": "${KC_TROVE_CLIENT_SECRET}",
+          "standardFlowEnabled": true, "implicitFlowEnabled": false, "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false, "frontchannelLogout": false,
+          "redirectUris": ["${KC_TROVE_BASE_URL:https://localhost:8080}/auth/oidc/keycloak/callback"],
+          "webOrigins": [],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "${KC_TROVE_BASE_URL:https://localhost:8080}/ui/logged-out"
+          },
+          "protocolMappers": [
+            {
+              "name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
+              "config": {
+                "claim.name": "groups", "full.path": "false",
+                "id.token.claim": "true", "access.token.claim": "false", "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trove-keycloak
+  labels:
+    app.kubernetes.io/name: trove-keycloak
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  selector:
+    app.kubernetes.io/name: trove-keycloak
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trove-keycloak
+  labels:
+    app.kubernetes.io/name: trove-keycloak
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trove-keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-keycloak
+        app.kubernetes.io/part-of: trove-dev
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: ${DEV_KEYCLOAK_IMAGE}
+          args:
+            - start-dev
+            - --import-realm
+            - --http-enabled=false
+            - --https-port=8443
+            - --https-certificate-file=/tls/tls.crt
+            - --https-certificate-key-file=/tls/tls.key
+            - --hostname=https://trove-keycloak.${NS}.svc:8443
+            - --health-enabled=true
+          env:
+            - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: trove-keycloak, key: admin-password}}
+            - name: KC_TROVE_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: trove-keycloak, key: client-secret}}
+            - name: KC_ALICE_PASSWORD
+              valueFrom: {secretKeyRef: {name: trove-keycloak, key: alice-password}}
+            - name: KC_BOB_PASSWORD
+              valueFrom: {secretKeyRef: {name: trove-keycloak, key: bob-password}}
+          ports:
+            - {name: https, containerPort: 8443}
+            - {name: management, containerPort: 9000}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /health/started, port: management, scheme: HTTPS}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health/ready, port: management, scheme: HTTPS}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health/live, port: management, scheme: HTTPS}
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {memory: 1536Mi}
+          volumeMounts:
+            - {name: realm, mountPath: /opt/keycloak/data/import, readOnly: true}
+            - {name: data, mountPath: /opt/keycloak/data/h2}
+            - {name: tmp, mountPath: /tmp}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: realm
+          configMap: {name: trove-keycloak-realm}
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: tls
+          secret: {secretName: trove-keycloak-tls}

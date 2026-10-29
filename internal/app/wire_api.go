@@ -85,9 +85,12 @@ func (a *App) limiterSet(ctx context.Context) (*cluster.LimiterSet, error) {
 	return ls, nil
 }
 
-// wireFailureLimiter gives the authentication stage the cluster-wide counter
-// auth.credential_failures in the count-only form (R-AUTH-038): burst =
-// auth.rate_limit.failures_per_address in a one-minute window.
+// wireFailureLimiter registers the cluster-wide limiters of R-AUTH-038: the
+// counter auth.credential_failures in the count-only form (burst =
+// auth.rate_limit.failures_per_address in a one-minute window), which the
+// authentication stage takes, and auth.flow_starts in the take form (burst =
+// auth.rate_limit.starts_per_address per minute), which the login's start route
+// and local login take.
 func (a *App) wireFailureLimiter(ctx context.Context) error {
 	if !a.sub.ClientListener {
 		return nil
@@ -98,6 +101,8 @@ func (a *App) wireFailureLimiter(ctx context.Context) error {
 	}
 	n := a.cfg.Auth.RateLimit.FailuresPerAddress
 	a.m1.failureLimiter = ls.NewLimiter("auth.credential_failures", cluster.ScopeCluster, float64(n)/60, n)
+	s := a.cfg.Auth.RateLimit.StartsPerAddress
+	a.m1.flowStarts = ls.NewLimiter("auth.flow_starts", cluster.ScopeCluster, float64(s)/60, s)
 	return nil
 }
 

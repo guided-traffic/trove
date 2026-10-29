@@ -93,7 +93,7 @@ const (
 // mapping, the gates that need the raw claims (require_verified_email,
 // login_requires_groups) and the group mapping rules; the provisioner applies the
 // result to the principal tables. The fields after Groups carry the provider
-// policy the provisioner needs; they are additions to the first contract.
+// policy the provisioner needs (Q-AUTH-21, Q-AUTH-36).
 type LoginClaims struct {
 	// Provider is the provider ID; Issuer is its issuer and Subject the stable
 	// "sub": the pair is the identity key (R-AUTH-007).
@@ -132,10 +132,13 @@ type LoginClaims struct {
 	Source audit.Source
 }
 
-// Provisioner is the seam between the login flow (WP1.1) and the identity
-// packages (WP1.2): it creates or updates the user just in time, synchronizes
-// groups, refuses a disabled user and records the user.* and
-// user.groups.synced events in its own transaction.
+// Provisioner is the seam between the OIDC login flow (package oidc) and the
+// principal tables: it creates or updates the user just in time, synchronizes
+// groups and records the user.* and user.groups.synced events in its own
+// transaction. A refused sign-in is [ErrUsernameTaken], [ErrNotProvisioned],
+// [ErrUserDisabled] or [ErrUsernameInvalid]; the login maps each to the reason
+// of its failure event and error page. Any other error is a failure of the
+// system.
 type Provisioner interface {
 	SignIn(ctx context.Context, c LoginClaims) (Principal, error)
 }

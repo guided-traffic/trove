@@ -54,6 +54,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
+| [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
@@ -94,7 +95,8 @@ trove/
 ├── package.json              # release tooling only (semantic-release); its lockfile is package-lock.json, web/ has its own
 ├── .releaserc.json           # semantic-release: conventional commits, releases from main
 ├── renovate.json             # Renovate: the Go, npm, GitHub Actions, Docker and tools/versions.env managers
-├── cmd/trove/                # main.go (dispatch), serve.go, migrate.go, admin.go
+├── cmd/trove/                # main.go (dispatch), serve.go, migrate.go, admin.go (dispatch), admin_login.go and admin_identity.go
+│                             # (the recovery and bootstrap commands of R-AUTH-015)
 ├── api/openapi.yaml          # OpenAPI 3.1 source of truth; go generate copies it into internal/api/v1
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
@@ -103,7 +105,8 @@ trove/
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
 │   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
 │   ├── auth/                 # the authentication stage and the failed-credential throttle; principal/ (users, groups,
-│   │                         # service accounts, provisioner), token/ (format, store, scopes, lifetime, revocation), session/, oidc/
+│   │                         # service accounts, provisioner), token/ (format, store, scopes, lifetime, revocation), session/ (UI sessions, CSRF, the
+│   │                         # session cache), oidc/ (providers, login flow, callback, break-glass)
 │   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures

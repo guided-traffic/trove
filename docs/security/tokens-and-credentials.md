@@ -61,12 +61,14 @@ already is a full 256-bit value, which nobody can make, and cannot authenticate 
 ## Throttle, markers and rate limits
 
 The failed-credential throttle counts every rejected credential per client address (`auth.rate_limit.failures_per_address`
-per minute, the address after the trusted-proxy rule). It is consulted only for a credential that is not in the replica's
+per minute, the address after the trusted-proxy rule), cluster-wide: the counter is the limiter `auth.credential_failures` of
+the cluster limiter set, registered by `wireFailureLimiter` ([wire_api.go](../../internal/app/wire_api.go)) and counted in
+Valkey. It is consulted only for a credential that is not in the replica's
 cache. In throttled mode a credential validated from PostgreSQL on any replica within `auth.rate_limit.recent_token_window`
 carries a Valkey marker (`tokseen:v1:<hash of the secret hash>`, constant value, mandatory expiry) and is still validated;
 anything else gets 429 with `Retry-After`. A marker only lets the lookup run: validation still reads PostgreSQL or the
 replica's cache, so a forged or stale marker authenticates nobody. Without Valkey only the replica's own cache exempts a
-credential, and the limiter is expected to fall back to per-replica shares. Addresses in `auth.rate_limit.exempt_cidrs` are
+credential, and the limiter falls back to per-replica shares (the burst divided by the live replicas of the role). Addresses in `auth.rate_limit.exempt_cidrs` are
 never throttled.
 
 ## Principals, groups and the login seam
@@ -80,15 +82,6 @@ refused; deleting a user ends sessions and deletes tokens and memberships, and a
 principal. Group membership is resolved when a request is authenticated, not when a token was issued.
 
 ## What this does not cover
-
-### H-81 · The failed-credential throttle counts per replica until the cluster limiter is connected
-
-Component: [wire_identity.go](../../internal/app/wire_identity.go), `auth.LocalLimiter`. Subject: the budget of
-`auth.rate_limit.failures_per_address`. Live in a build that has not connected `a.m1.failureLimiter` to the cluster-wide
-limiter of R-ARCH-034: each replica counts alone, so the cluster-wide budget is the configured value times the number of
-`web` replicas, and an address spread over replicas gets a fresh budget on each. What makes it real: a guesser that can
-send well-formed fake tokens at a rate the database can absorb. The unit tests show that a shared counter and per-replica
-shares both keep the bound of 300; the wiring is what is missing.
 
 ### H-82 · Rejected credentials of one address are counted together
 

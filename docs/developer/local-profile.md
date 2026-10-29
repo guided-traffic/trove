@@ -34,6 +34,7 @@ flowchart LR
 | PostgreSQL 16 | namespace `trove` | CloudNativePG `Cluster` `trove-db`: 2 instances (primary and standby), synchronous replication with `dataDurability: preferred`, database and owner `trove`, TLS | `DEV_CNPG_POSTGRES_IMAGE` |
 | Valkey 9.1 | namespace `trove` | `Valkey` resource `trove-valkey` ([valkey.yaml](../../deploy/dev/valkey.yaml)): StatefulSet `trove-valkey` (2 pods) and `trove-valkey-sentinel` (3 pods), TLS only, `emptyDir`, PodDisruptionBudgets, one pod of each tier per zone. The Alpine image has every tool the operator's scripts need (checked against `RequiredImageTools` of the operator, 1.14.12) | `DEV_VALKEY_IMAGE` |
 | SeaweedFS | namespace `trove` | Deployment `trove-s3` (one `weed server`), HTTPS on `trove-s3:9000` with `trove-s3-tls`, buckets `trove-blobs` (versioning on), `trove-pg-archive`, `trove-backups` | `DEV_SEAWEEDFS_IMAGE`, `DEV_AWSCLI_IMAGE` |
+| Keycloak (test IdP) | namespace `trove` | Deployment `trove-keycloak` ([keycloak.yaml](../../deploy/dev/keycloak.yaml)), `start-dev` with a realm import, HTTPS only on `trove-keycloak:8443` with `trove-keycloak-tls`; realm `trove` with the users `alice` and `bob`, the groups `trove-team-web` and `trove-platform-admins`, the client `trove` (Q-AUTH-35, [test IdP](#the-test-idp)) | `DEV_KEYCLOAK_IMAGE` |
 | trove | namespace `trove` | Helm release `trove` with [values-dev.yaml](../../deploy/dev/values-dev.yaml): 2 `web`, 2 `worker` (grace period 60 s, so a drain test does not wait 300 s), migration Job, the chart's NetworkPolicies, `tls.enabled` with `trove-tls` and `reloadInterval: 2s`, the endpoint `customers` on `:8443`; `up.sh` adds the Docker `kind` network ranges as `networkPolicy.probeCIDRs` | image `guidedtraffic/trove:dev` (the default of `up.sh`, loaded into kind from the local Docker; `make image` builds it) |
 
 The namespace `trove` enforces the restricted Pod Security Standard (`enforce`, `audit` and `warn`),
@@ -239,6 +240,53 @@ kubectl --context kind-trove -n trove patch certificate trove-tls --subresource=
   '[{"op":"add","path":"/status/conditions/-","value":{"type":"Issuing","status":"True","reason":"ManuallyTriggered","message":"Certificate re-issuance manually triggered","lastTransitionTime":"'"$(date -u +%FT%TZ)"'"}}]'
 ```
 
+### The test IdP
+
+Keycloak in [keycloak.yaml](../../deploy/dev/keycloak.yaml) is the OpenID Provider of E1.1 and of the login criteria of
+R-AUTH-013 (RP-initiated logout ends the IdP session) and R-AUTH-008 (a groups claim). Dex through dex-operator renders
+neither the logout configuration nor users with groups, which is why the profile runs Keycloak (Q-AUTH-35).
+
+| What | Value |
+|---|---|
+| Issuer | `https://trove-keycloak.trove.svc:8443/realms/trove` |
+| Users (passwords in Secret `trove-keycloak`, fields `alice-password`, `bob-password`) | `alice`: groups `trove-team-web`, `trove-platform-admins`; `bob`: `trove-team-web` |
+| Client | `trove`, confidential (`client-secret` of the same Secret), PKCE S256, redirect URI `https://localhost:8080/auth/oidc/keycloak/callback`, post-logout URI `https://localhost:8080/ui/logged-out` |
+| Claims | `preferred_username`, `email` (verified), `name`, `groups` (plain group names) on the ID token and userinfo, `sid` |
+| Administrator console | user `admin`, field `admin-password` |
+
+The issuer is the Service name, so trove's pods reach it directly and the issuer in the discovery document is the one
+trove is configured with. A browser on the host needs the name and a port-forward; the hosts entry needs administrator
+rights and is yours to add:
+
+```shell
+kubectl --context kind-trove -n trove port-forward svc/trove-keycloak 8443:8443
+# once, as an explicit choice of yours:
+#   echo '127.0.0.1 trove-keycloak.trove.svc' | sudo tee -a /etc/hosts
+kubectl --context kind-trove -n trove get secret trove-keycloak -o jsonpath='{.data.alice-password}' | base64 -d
+```
+
+The provider entry trove needs, once the chart renders the `auth` keys and mounts the client secret (the chart has
+neither yet), with the dev CA in `proxy.outbound.tls.ca_files` so the outbound client trusts the IdP's certificate:
+
+```yaml
+auth:
+  oidc:
+    providers:
+      keycloak:                                     # example: the ID in the redirect URI above
+        display_name: Keycloak (dev)                # example
+        issuer: https://trove-keycloak.trove.svc:8443/realms/trove   # example
+        client_id: trove                            # example
+        client_secret_file: /var/run/secrets/trove/oidc-keycloak/client-secret  # example: field client-secret
+        scopes: [openid, profile, email]            # default
+        group_sync:
+          rules:
+            - match_regex: "trove-(.+)"             # example
+              group: "$1"                           # example
+```
+
+With another `TROVE_DEV_HTTP_PORT`, set `KC_TROVE_BASE_URL` on the Deployment to the base URL; the realm file takes
+its redirect and post-logout URIs from it at import.
+
 ## Tools
 
 | Tool | Pin | Check |
@@ -287,10 +335,16 @@ Not verified here, or not configured:
 
 - The ACL user, the separate Sentinel credential and `maxmemory` of Valkey (deviations above); R-ARCH-031's ACL
   criterion is proven by the integration stack only.
-- The break-glass password has no consumer in the chart yet; the Secret exists.
+- The break-glass password has no consumer in the chart yet; the Secret exists. With the default
+  `auth.break_glass.enabled: true` and no `password_file`, a `web` replica starts and refuses the local login
+  (Q-AUTH-33).
 - Valkey and the S3 gateway read their certificates at start: a cert-manager renewal reaches the Valkey pods through
   the operator's own rolling restart (ADR 0030 of the operator, not exercised here) and SeaweedFS at its next restart.
   trove re-reads the Valkey CA per handshake and the S3 CA per request.
 - The operators' amd64 images run under qemu on an arm64 host; their timing there says nothing about production.
 - WAL archiving to `trove-pg-archive` (point-in-time recovery is M5), the backup CronJob (the chart skeleton has
-  none), an OIDC provider.
+  none), trove's login against the test IdP: the chart does not render the `auth` keys yet. The IdP itself was
+  verified against the running profile with an authorization-code flow (2026-10-29): the login form for `alice`, the
+  code redeemed with PKCE and `client_secret_basic`, the `groups` claim with both groups, RP-initiated logout to the
+  post-logout URI, and the login form again afterwards. How the e2e driver on the kind network reaches the issuer's
+  Service name is not set up.

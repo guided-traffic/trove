@@ -61,8 +61,8 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		}),
 		groupClaimMissing: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "trove_auth_group_claim_missing_total",
-			Help: "Logins whose group claim was missing, by provider and reason (absent, wrong_type, overage).",
-		}, []string{"provider", "reason"}),
+			Help: "Logins whose group claim was missing, by provider (name) and reason (absent, wrong_type, overage) (R-AUTH-008, Q-AUTH-39).",
+		}, []string{"name", "reason"}),
 		attempts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "trove_auth_attempts_total",
 			Help: "Authentication attempts of the stage, by credential method, outcome and reason.",
@@ -92,6 +92,12 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 }
 
 func (m *Metrics) bypassed(reason string) {
+	m.Bypassed(reason)
+}
+
+// Bypassed counts one lookup that bypassed an auth cache, by reason; the session
+// cache of the login area counts its own bypasses here.
+func (m *Metrics) Bypassed(reason string) {
 	if m != nil {
 		m.cacheBypassed.WithLabelValues(reason).Inc()
 	}

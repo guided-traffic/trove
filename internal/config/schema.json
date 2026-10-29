@@ -197,6 +197,98 @@
           },
           "type": "object"
         },
+        "break_glass": {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_timeout": {
+              "default": "1h",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_ABSOLUTE_TIMEOUT",
+              "x-trove-type": "duration"
+            },
+            "check_interval": {
+              "default": "10s",
+              "description": "How often a web replica looks at the password file for a rotation.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_CHECK_INTERVAL",
+              "x-trove-type": "duration"
+            },
+            "enabled": {
+              "default": true,
+              "description": "The one local account; disable it once an OIDC administrator exists.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_ENABLED"
+            },
+            "idle_timeout": {
+              "default": "15m",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_IDLE_TIMEOUT",
+              "x-trove-type": "duration"
+            },
+            "lockout": {
+              "additionalProperties": false,
+              "properties": {
+                "duration": {
+                  "default": "15m",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_BREAK_GLASS_LOCKOUT_DURATION",
+                  "x-trove-type": "duration"
+                },
+                "threshold": {
+                  "default": 5,
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_AUTH_BREAK_GLASS_LOCKOUT_THRESHOLD"
+                },
+                "window": {
+                  "default": "15m",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_BREAK_GLASS_LOCKOUT_WINDOW",
+                  "x-trove-type": "duration"
+                }
+              },
+              "type": "object"
+            },
+            "max_concurrent_verifications": {
+              "default": 2,
+              "maximum": 64,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_MAX_CONCURRENT_VERIFICATIONS"
+            },
+            "password_file": {
+              "description": "Argon2id PHC hash or plaintext password; web replicas only (R-AUTH-042).",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_PASSWORD_FILE",
+              "x-trove-secret": "file-only"
+            },
+            "rotation_hold": {
+              "default": "2m",
+              "description": "Local login is refused this long after a password rotation was noticed (Q-AUTH-14).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_ROTATION_HOLD",
+              "x-trove-type": "duration"
+            },
+            "show_on_login_page": {
+              "default": false,
+              "type": "boolean",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_SHOW_ON_LOGIN_PAGE"
+            },
+            "username": {
+              "default": "admin",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_BREAK_GLASS_USERNAME"
+            }
+          },
+          "type": "object"
+        },
         "clients": {
           "additionalProperties": false,
           "properties": {
@@ -217,6 +309,30 @@
               "description": "Examine X-NuGet-ApiKey on the NuGet API-key endpoints (M2).",
               "type": "boolean",
               "x-trove-env": "TROVE_AUTH_CLIENTS_NUGET_API_KEY_HEADER"
+            }
+          },
+          "type": "object"
+        },
+        "login_page": {
+          "additionalProperties": false,
+          "properties": {
+            "auto_redirect": {
+              "default": true,
+              "description": "Redirect the login page to the provider when exactly one is configured.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_AUTH_LOGIN_PAGE_AUTO_REDIRECT"
+            }
+          },
+          "type": "object"
+        },
+        "oidc": {
+          "additionalProperties": false,
+          "properties": {
+            "providers": {
+              "default": {},
+              "description": "Login providers by ID; see R-AUTH-004. Keys of an entry that are left out take the defaults of R-AUTH-004, R-AUTH-007 and R-AUTH-008.",
+              "type": "object",
+              "x-trove-env": "TROVE_AUTH_OIDC_PROVIDERS"
             }
           },
           "type": "object"
@@ -278,6 +394,44 @@
           "type": "string",
           "x-trove-env": "TROVE_AUTH_REVOCATION_BOUND",
           "x-trove-type": "duration"
+        },
+        "sessions": {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_timeout": {
+              "default": "12h",
+              "description": "Ends a session this long after its creation.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_SESSIONS_ABSOLUTE_TIMEOUT",
+              "x-trove-type": "duration"
+            },
+            "idle_timeout": {
+              "default": "1h",
+              "description": "Ends a session this long after its last request (R-AUTH-010).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_SESSIONS_IDLE_TIMEOUT",
+              "x-trove-type": "duration"
+            },
+            "max_per_user": {
+              "default": 20,
+              "description": "Concurrent sessions of one user; one more ends the oldest.",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_AUTH_SESSIONS_MAX_PER_USER"
+            },
+            "recent_auth_window": {
+              "default": "1h",
+              "description": "Credential-minting actions need an interactive authentication this recent (R-AUTH-011).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_SESSIONS_RECENT_AUTH_WINDOW",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
         },
         "tokens": {
           "additionalProperties": false,

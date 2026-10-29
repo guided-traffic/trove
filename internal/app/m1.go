@@ -7,6 +7,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
+	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
@@ -41,6 +42,8 @@ type m1Wiring struct {
 	// <<< M1 api
 
 	// >>> M1 identity
+	// authMetrics are the identity metrics, shared with the login (authMetrics).
+	authMetrics      *principal.Metrics
 	principals       principal.Store
 	principalManager *principal.Manager
 	// provisioner is the seam the login area calls after an OIDC callback.
@@ -48,19 +51,27 @@ type m1Wiring struct {
 	tokens        *token.Service
 	authSettings  *token.SettingsStore
 	authenticator auth.Authenticator
-	// sessions resolves the session cookie; nil means no sessions.
-	// WIRING POINT: the login area sets it before wireIdentity runs (its
-	// marker precedes none of identity's; the development agent orders them).
-	sessions session.Validator
 	// failureLimiter is the count-only limiter auth.credential_failures; nil
-	// means the per-replica one (WIRING POINT: the api area's cluster limiter).
+	// means the per-replica one.
 	failureLimiter auth.FailureLimiter
+	// flowStarts is the limiter auth.flow_starts of the unauthenticated
+	// row-creating endpoints (R-AUTH-038); nil on a replica without a client
+	// listener.
+	flowStarts *cluster.Limiter
 	// publicOps are the patterns of the management API operations whose
 	// declaration is public, or public by a switch.
 	publicOps map[string]bool
 	// <<< M1 identity
 
 	// >>> M1 login
+	// sessions is the session store of web and all replicas: the
+	// session.Validator the authentication stage of the identity area takes
+	// (wireSessions runs before wireIdentity), and EndForPrincipal for disabling
+	// a user (R-AUTH-016). Nil on a worker.
+	sessions *session.Store
+	// login is the OIDC and break-glass login whose routes startClient registers
+	// (wire_login.go). Nil on a worker.
+	login *oidc.Service
 	// <<< M1 login
 
 	// >>> M1 authz

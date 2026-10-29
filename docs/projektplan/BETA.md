@@ -25,7 +25,7 @@ completes. The beta release is the release that closes phase 7.
 |---|---|---|---|
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
-| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | — | ⚪ |
+| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | — | 🟡 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | ⚪ |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
@@ -101,16 +101,16 @@ Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 
 **Identity and tokens**
-- ⚪ OIDC login with a test identity provider, sessions, CSRF protection, logout
-- ⚪ Break-glass administrator and bootstrap commands
-- ⚪ Users, groups (from the login provider's claims) and service accounts
-- ⚪ Personal and service-account tokens (`trv_pat_`, `trv_sat_`): scopes, lifetime, revocation
-- ⚪ Brute-force protection with cluster-wide counters
+- 🟡 OIDC login with a test identity provider, sessions, CSRF protection, logout
+- 🟡 Break-glass administrator and bootstrap commands
+- 🟡 Users, groups (from the login provider's claims) and service accounts
+- 🟡 Personal and service-account tokens (`trv_pat_`, `trv_sat_`): scopes, lifetime, revocation
+- 🟡 Brute-force protection with cluster-wide counters
 
 **Permissions**
-- ⚪ Permission policies: principals, repositories, name patterns, actions
-- ⚪ Evaluation engine with caches that stay correct across replicas
-- ⚪ Audit of logins, token changes, policy changes and denied requests
+- 🟡 Permission policies: principals, repositories, name patterns, actions
+- 🟡 Evaluation engine with caches that stay correct across replicas
+- 🟡 Audit of logins, token changes, policy changes and denied requests
 
 **Endpoints and exposure**
 - ⚪ Accepted credentials per endpoint; tokens bound to endpoints
@@ -119,12 +119,12 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - ⚪ Raw files on an endpoint filtered by exposure; rate limit per endpoint
 
 **Repositories and files**
-- ⚪ Repository model and management API (local, remote, virtual)
+- 🟡 Repository model and management API (local, remote, virtual)
 - ⚪ Generic local repositories and raw file transfer under `/files/`
-- ⚪ API conventions: errors, cursor pagination, ETags, idempotency keys, rate limits
+- 🟡 API conventions: errors, cursor pagination, ETags, idempotency keys, rate limits
 
 **Admin UI**
-- ⚪ Sign-in, repository list and creation wizard, file browser
+- 🟡 Sign-in, repository list and creation wizard, file browser
 - ⚪ Users, groups, service accounts, personal tokens
 - ⚪ Permission policy editor with "why can X do Y" explainer
 - ⚪ Endpoint screen with the exposure rule editor and its preview

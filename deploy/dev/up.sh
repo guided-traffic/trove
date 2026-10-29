@@ -181,7 +181,16 @@ task_s3() {
   kn logs job/trove-s3-buckets
 }
 
-log "installing HAProxy Ingress, cert-manager + PKI, the secret generator, CloudNativePG + PostgreSQL, the Valkey operator + Valkey and SeaweedFS in parallel"
+# The test IdP (E1.1, Q-AUTH-35): Keycloak with the realm of deploy/dev/keycloak.yaml, HTTPS with a certificate of the dev CA.
+task_keycloak() {
+  await pki secrets
+  render "$DEV_DIR/keycloak.yaml" | kn apply -f -
+  kn wait --for=condition=Ready certificate/trove-keycloak-tls --timeout=3m
+  wait_secret_fields 120 trove-keycloak:admin-password trove-keycloak:client-secret trove-keycloak:alice-password trove-keycloak:bob-password
+  kn rollout status deployment/trove-keycloak --timeout=10m
+}
+
+log "installing HAProxy Ingress, cert-manager + PKI, the secret generator, CloudNativePG + PostgreSQL, the Valkey operator + Valkey, SeaweedFS and the Keycloak test IdP in parallel"
 spawn haproxy task_haproxy
 spawn pki task_pki
 spawn secrets task_secrets
@@ -189,6 +198,7 @@ spawn vko task_vko
 spawn postgres task_postgres
 spawn valkey task_valkey
 spawn s3 task_s3
+spawn keycloak task_keycloak
 
 failed=0
 for i in "${!PIDS[@]}"; do
@@ -253,5 +263,6 @@ cat >&2 <<MSG
   trove (edge):   https://localhost:$EDGE_PORT   (HAProxy Ingress, class haproxy; trust $STATE_DIR/pki/ca.crt)
   PostgreSQL:     kubectl --context $CTX -n $NS get cluster trove-db
   Valkey:         deploy/dev/valkey-failover.sh | valkey-kill.sh | valkey-outage.sh 60s
+  test IdP:       https://trove-keycloak.$NS.svc:8443/realms/trove (users alice, bob; docs/developer/local-profile.md)
   tear down:      deploy/dev/down.sh
 MSG

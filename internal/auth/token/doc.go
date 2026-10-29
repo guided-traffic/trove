@@ -4,7 +4,7 @@
 // validator the authentication stage calls.
 //
 // The scope types live here, below package authz, so that authz imports them
-// without importing the authentication stage. The format, storage (SHA-256 of
-// the 57-character string, never the value), the cache auth_tokens, rotation,
-// revocation and expiry notices belong to work package WP1.2.
+// without importing the authentication stage. The package also holds the
+// format, storage (SHA-256 of the 57-character string, never the value), the
+// cache auth_tokens, rotation, revocation and expiry notices.
 package token

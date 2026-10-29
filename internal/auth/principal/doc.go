@@ -5,7 +5,7 @@
 //
 // It sits at the bottom of the auth tree: token, session, oidc, the
 // authentication stage in package auth and package authz all import it, and it
-// imports none of them. The implementation (queries, caches auth_principals,
-// the change area auth, the management API handlers' backing code) belongs to
-// work package WP1.2.
+// imports none of them. It also holds the implementation: queries, the cache
+// auth_principals, the change area auth, the provisioner of the login and the
+// manager behind the management API.
 package principal

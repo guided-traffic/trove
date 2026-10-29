@@ -144,11 +144,12 @@ unchanged), so a fill that raced a revocation serves one request and is not cach
   storage failure are not. The throttle trips at the budget, not above it (Q-AUTH-20): 300 failures per minute mean 300
   validations.
 - `auth.LocalLimiter` is the per-replica implementation with the sliding-window arithmetic and the share
-  `burst ÷ live replicas` that the cluster limiter falls back to while Valkey is unavailable. Until the API area's limiter
-  is connected at `a.m1.failureLimiter` the composition root uses it alone, so the budget is per replica (security note
-  H-81).
-- Not here: the break-glass lockout (login), the flow-start limits for the unauthenticated endpoints and the device-code
-  limiter (the login area uses the same `auth.rate_limit` keys).
+  `burst ÷ live replicas` that the cluster limiter falls back to while Valkey is unavailable. A replica with a client
+  listener gets the cluster limiter at `a.m1.failureLimiter` (`wireFailureLimiter`); `wireIdentity` uses `LocalLimiter`
+  alone only on a process without one.
+- Not here: the break-glass lockout (login), and the device-code limiter. The flow-start limit of the unauthenticated
+  login routes is `a.m1.flowStarts`, registered next to the failure limiter and used by the login
+  ([login.md](login.md#seams-to-the-other-areas)).
 
 ## Tests
 
@@ -165,16 +166,28 @@ Run the integration area from the checkout root with the stack up (see [build-an
 ## Wiring and what other areas connect
 
 `wireIdentity` runs at the identity marker of step 8 and fills `a.m1.principals`, `principalManager`, `provisioner`,
-`tokens`, `authSettings` and `authenticator`. The remaining hand-overs are named in the code with `WIRING POINT`:
+`tokens`, `authSettings` and `authenticator`. What it takes from, and gives to, the other areas:
 
-| Point | File | Who connects |
+| Point | File | Connected to |
 |---|---|---|
-| Audit recorder (`identityRecorder`) | `wire_identity.go` | audit: replace the body with `a.m1.recorder`; until then the events are discarded |
-| `a.m1.sessions` (`session.Validator`) | `m1.go` | login: set before `wireIdentity` runs |
-| `a.m1.failureLimiter` | `m1.go` | api: `cluster.NewLimiter("auth.credential_failures", …)` |
-| `principal.AdminBinder` | `wire_identity.go` | authz: binds the role `admin` and notifies the area `authz`; needed for `service-account create --admin` |
-| `BreakGlassName` | `wire_identity.go` | login: `auth.break_glass.username` once the key exists |
-| `Provisioner` | `a.m1.provisioner` | login: call `SignIn` from the OIDC callback |
+| Audit recorder | `wire_api.go` `auditRecorder` | `a.m1.recorder` of step 4, a discarding recorder on a process without PostgreSQL |
+| `a.m1.sessions` (`session.Validator`) | `m1.go` | login: `wireSessions` runs before `wireIdentity`; a nil store stays a nil interface (a worker has none) |
+| `a.m1.failureLimiter`, `a.m1.flowStarts` | `m1.go` | `wireFailureLimiter`: `cluster.LimiterSet.NewLimiter("auth.credential_failures", …)` and `"auth.flow_starts"` |
+| `BreakGlassName` | `wire_identity.go` | `auth.break_glass.username`, the reserved username of the provisioner and the manager |
+| `Provisioner` | `a.m1.provisioner` | login: `wireLogin` hands it to the OIDC service, whose callback calls `SignIn` |
+| `principal.Metrics` | `wire_identity.go` `authMetrics` | one instance per replica; the session store and the login count into the same families |
+| `principal.AdminBinder` | `authz.Service.BindAdmin` | only `trove admin service-account create --admin` ([admin_identity.go](../../cmd/trove/admin_identity.go)); the running manager has none, no API operation binds a role on creation |
+
+## Bootstrap commands
+
+`trove admin service-account create`, `token create|revoke` and `user disable` (R-AUTH-015) are
+[cmd/trove/admin_identity.go](../../cmd/trove/admin_identity.go). They build the manager and the token service over the
+command's own connection, with empty caches and an `audit.Writer` of their own, and call the same domain functions as the API
+with the actor `admin-cli`. `service-account create --admin` binds the role in the creating transaction through
+`authz.Service.BindAdmin`, which notifies the area `authz` and records `role.bound`. `token create` prints only the secret on
+standard output (default lifetime 15 minutes, the SAT maximum applies; `--scope-file` is validated by
+`app.TokenScopeOptions`); `token revoke --value-stdin` reads the value from standard input and revokes with reason `leaked`.
+The integration test is [admin_test.go](../../test/integration/login/admin_test.go).
 
 ## Extension checklists
 

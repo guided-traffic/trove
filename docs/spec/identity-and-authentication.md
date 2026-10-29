@@ -241,8 +241,9 @@ Priority: **MVP** · Covers: AUTHN-007, AUTHN-008
   claim mapping and gates (R-AUTH-007) and group rules (R-AUTH-008). No API or
   configuration-as-code document creates or changes a provider; a change takes effect with a
   rollout of the replicas.
-  Any number of providers is allowed. Each needs:
-  - `id`: matches `^[a-z0-9][a-z0-9-]{0,31}$` and is part of the redirect URI;
+  Any number of providers is allowed. `auth.oidc.providers` is a map keyed by the provider ID
+  (Q-AUTH-30). Each needs:
+  - `id`, the map key: matches `^[a-z0-9][a-z0-9-]{0,31}$` and is part of the redirect URI;
   - `display_name`;
   - `issuer`: `https`, or loopback in tests;
   - `client_id`;
@@ -288,7 +289,8 @@ Configuration:
 auth:
   oidc:
     providers:
-      - id: corp                                   # example
+      corp:                                        # example: the provider ID (Q-AUTH-30)
+        order: 0                                   # default (proposed); sorts the login buttons, then the ID
         display_name: Corporate SSO                # example
         issuer: https://login.example.com/realms/acme  # example
         client_id: trove                         # example
@@ -296,7 +298,7 @@ auth:
         client_auth_method: client_secret_basic    # default (proposed)
         scopes: [openid, profile, email]           # default (proposed); add the scope that releases groups, e.g. "groups"
         extra_auth_params: {}                      # default (proposed)
-        allowed_signing_algs: [RS256, PS256, ES256]  # default (proposed)
+        allowed_signing_algs: [RS256, PS256, ES256]  # default (proposed); supported: RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 (Q-AUTH-31)
         trusted_audiences: []                      # default (proposed)
         clock_skew: 60s                            # default (proposed)
         max_id_token_age: 10m                      # default (proposed)
@@ -460,12 +462,12 @@ login with an error page (HTTP 400, or 502 for IdP errors) and the audit event
    - For each mapped claim, the ID-token value wins and userinfo fills the gaps.
 9. The IdP's access token and refresh token MUST be discarded after step 8. They are never
    stored and never accepted as credentials (INV-8).
-10. Continue with R-AUTH-007 (user resolution), R-AUTH-008 (group sync) and R-AUTH-010 (session),
-    in one transaction that starts after step 8. For a returning identity, that transaction first
-    locks the user's `principal` row (`SELECT … FOR UPDATE`), so concurrent logins of one user whose
-    callbacks reach different replicas apply their claims, memberships and session limit one after
-    the other. A first login has no row to lock yet; R-AUTH-007 resolves its race. Then redirect
-    with 302 to the flow's `return_to`.
+10. Continue with R-AUTH-007 (user resolution) and R-AUTH-008 (group sync) in the provisioner's
+    transaction, then with R-AUTH-010 (session) in a second one (Q-AUTH-32). Both start after
+    step 8, and each first locks the user's `principal` row (`SELECT … FOR UPDATE`), so concurrent
+    logins of one user whose callbacks reach different replicas apply their claims and memberships,
+    and their session limit, one after the other. A first login has no row to lock yet; R-AUTH-007
+    resolves its race. Then redirect with 302 to the flow's `return_to`.
 
 At most three outbound calls (the token endpoint in step 6, a JWKS refetch for an unknown `kid` in
 step 7, userinfo in step 8), each bounded by the 10 s timeout of R-AUTH-004, bound the callback to
@@ -570,8 +572,9 @@ public issuer, startup MUST refuse:
 - `jit: true` together with an empty `login_requires_groups`. Every account of the issuer would
   otherwise become a trove user with the auto-join groups (R-AUTH-019).
 - a `login_requires_groups` value or a group rule (R-AUTH-008) that is neither an exact `match` nor
-  a `match_regex` whose literal prefix ends in `/` (a namespace the organization owns, such as
-  `acme/`). On such issuers users create and name groups themselves, so a rule such as
+  a `match_regex` whose literal prefix starts with a namespace ending in `/` (a namespace the
+  organization owns, such as `acme/` in `acme/trove-(.+)`, Q-AUTH-38). `login_requires_groups`
+  values are compared exactly, so they always pass. On such issuers users create and name groups themselves, so a rule such as
   `trove-team-(.+)` is satisfied by a group anyone can register.
 
 Transient users do not exist. Every OIDC login persists the user, so every human principal can
@@ -671,7 +674,7 @@ Q-AUTH-4). It applies to all three cases above alike, including the overage mark
 With `clear` and `keep`, every login with a missing claim writes the warning event
 `user.groups.claim_missing` (R-AUTH-041) with the provider and `details.reason`: `absent`,
 `wrong_type` or `overage`. It also increments
-`trove_auth_group_claim_missing_total{provider,reason}`. trove also records the reason with the
+`trove_auth_group_claim_missing_total{name,reason}` (`name` is the provider ID, Q-AUTH-39). trove also records the reason with the
 identity's `last_claims` (R-AUTH-007). The user's profile (R-AUTH-017) and
 `GET /api/v1/users/me` show it as `groupClaimMissing: {"provider", "reason"}` until a later
 login delivers the claim. This makes a broken group mapper or an overage visible to administrators and
@@ -733,7 +736,7 @@ Priority: **MVP** · Covers: AUTHN-007, AUTHN-037
 }
 ```
 
-- Providers are listed in configuration order. The response never contains issuers, client IDs
+- Providers are listed in configuration order: by their `order` key, then by ID (Q-AUTH-30). The response never contains issuers, client IDs
   or error details. Those are for administrators (R-AUTH-040).
 - `auto_redirect` names the single provider to which the login page redirects immediately. It is
   set only when exactly one provider is configured and `auth.login_page.auto_redirect` is true.
@@ -1059,9 +1062,10 @@ is counted in `trove_auth_ratelimited_total{limit="break_glass_verifications"}`.
 bound, concurrent attempts from many addresses, each within its per-address limit (R-AUTH-038),
 could exhaust a `web` replica's memory, and random distribution would carry them to every replica.
 
-**Password strength.** A plaintext password MUST have at least 20 characters and MUST NOT appear
-in an embedded list of the 10,000 most common passwords. Otherwise the replica refuses to start
-(IAM-069). The strength of a supplied hash cannot be checked; the replica logs a warning.
+**Password strength.** A plaintext password MUST have at least 20 characters. Otherwise the replica
+refuses to start (IAM-069). The length rule subsumes a list of the 10,000 most common passwords,
+whose longest entry has 18 characters, so no such list is embedded (Q-AUTH-34). The strength of a
+supplied hash cannot be checked; the replica logs a warning.
 
 **Password rotation (Q-AUTH-14).** The file is re-read when its modification time changes. The
 kubelet of each node delivers a rotated Secret to its pods on its own schedule, within its sync
@@ -1094,7 +1098,9 @@ depend on the replica that noticed it staying alive:
 `session_expired` and ends it. The rule is checked on every request, so a session that a replica
 still running with `enabled: true` opened during the rollout of the change is ended on its next
 request to an updated replica. Startup also ends any remaining break-glass sessions. With
-`enabled` true and no readable password file, the replica refuses to start.
+`enabled` true and a `password_file` that cannot be read, the replica refuses to start; with
+`enabled` true and no `password_file` configured, it starts, logs a warning and refuses every local
+login with 403 `local_login_disabled` (Q-AUTH-33).
 
 **Login.** The local login is `POST /auth/local/login` with `{"username": "...", "password":
 "..."}`:
@@ -3147,7 +3153,7 @@ or authorization codes.
 | Event | Emitted by | Persisted |
 |---|---|---|
 | `auth.login.succeeded`, `auth.login.failed` | R-AUTH-006, R-AUTH-007; reasons from those pages | yes |
-| `auth.breakglass.login`, `auth.breakglass.locked` | R-AUTH-014, R-AUTH-038; severity `high` | yes |
+| `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked` | R-AUTH-014, R-AUTH-038, R-AUTH-015 (`unlocked`, Q-AUTH-37); severity `high` | yes |
 | `auth.logout`, `auth.session.ended` (admin, evicted, principal disabled) | R-AUTH-010, R-AUTH-013 | yes; idle and absolute expiry are not recorded |
 | `auth.csrf_failed` | R-AUTH-012 | yes, at most one per session and minute on each replica; a log-volume bound, not a count |
 | `auth.credential.rejected` | R-AUTH-001 for malformed or unknown credentials | log stream and metric only, because of volume |
@@ -3213,7 +3219,7 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
 - `trove_auth_throttle_exempt_total{via}` (`cache`, `marker`; R-AUTH-038)
 - `trove_auth_session_touch_failures_total` (R-AUTH-010)
 - `trove_auth_lastused_flush_failures_total`
-- `trove_auth_group_claim_missing_total{provider,reason}`
+- `trove_auth_group_claim_missing_total{name,reason}` (`name` is the provider ID, Q-AUTH-39)
 - `trove_auth_cli_poll_refused_total`
 
 Acceptance criteria:
@@ -4163,9 +4169,21 @@ decide what it writes (R-AUTH-007, R-AUTH-008).
 | (a) The provisioner reads the provider configuration | It imports the login area's types | Login passes less | The principal package would import the OIDC configuration, against the layer order of `m1-contracts.md` |
 | (b) The login flow passes the policy with the claims (chosen) | `LoginClaims` gains `Issuer`, `EmailVerified`, `GroupSync`, `ClaimState`, `KeepOnMissing`, `CreateGroups`, `JIT`, `SyncUsername` and `Source`; `Groups` are the trove group names the mapping rules produced | The package stays below the login area; the unit of work is one call | The login flow applies the gates that need raw claims (`require_verified_email`, `login_requires_groups`, `on_missing_claim: deny`) before it calls |
 
-**Choice:** (b). The refusals are the errors `ErrUserDisabled`, `ErrUsernameTaken`,
-`ErrNotProvisioned` and `ErrUsernameInvalid`, which the login flow maps to its reasons. The
-provisioner links the identity in `user_identity` (the table of `00008_login`) and completes a pending
+**Choice:** (b). This block states the one contract of the seam; Q-AUTH-36 only says where the mapping runs.
+
+- `LoginClaims`: `Provider`, `Issuer`, `Subject` (the identity key is `(Issuer, Subject)`), `Username` (mapped:
+  NFC, lower case, prefix applied), `Email`, `EmailVerified`, `DisplayName`, `Groups` (trove group names, valid under
+  R-AUTH-018), `GroupSync` (bool: `group_sync.enabled`), `ClaimState` (`""` usable, or `absent`, `wrong_type`,
+  `overage`), `KeepOnMissing` (`on_missing_claim: keep`), `CreateGroups`, `JIT`, `SyncUsername` and `Source`
+  (`audit.Source`). The deny policy and the gates are the login's: it never calls the provisioner for them.
+- The refusals are the errors `ErrUsernameTaken`, `ErrNotProvisioned`, `ErrUserDisabled` and `ErrUsernameInvalid`
+  (`errors.Is`); the login maps them to the failure reasons `username_taken`, `not_provisioned`, `user_disabled` and
+  `username_invalid` of `auth.login.failed` and of its error page (`refusalReason` in `internal/auth/oidc/flow.go`). Any
+  other error is a failure of the system (`provisioning_failed`, or 503 when PostgreSQL does not answer).
+- The provisioner records `user.*` and `user.groups.*` events and the metric
+  `trove_auth_group_claim_missing_total{name,reason}` (Q-AUTH-39: `name` is the provider ID); the login records `auth.login.*` and does not count the claim.
+
+The provisioner links the identity in `user_identity` (the table of `00008_login`) and completes a pending
 link with a conditional update; two first logins of one identity on different replicas end with one
 user, the loser retries once.
 
@@ -4191,13 +4209,261 @@ sessions (login), and a change message is limited to 1 KiB.
 **Choice:** (b). `token` evicts the named hashes from `auth_tokens`; `principal` flushes `auth_tokens`
 (the cached owner status) and evicts the named principals; `membership` evicts the named principals
 only; `group` and `all` flush; `settings` flushes `auth_settings`; `session` is the login area's and
-the identity caches ignore it; any other kind flushes every cache of the area (the coarse reaction is
+the identity caches ignore it; the session cache (`auth_sessions`, which holds the principal's status) evicts the
+named secret hashes on `session`, flushes on `principal`, `all`, an unlisted `session` and a payload it does not know,
+and ignores `token`, `membership`, `group` and `settings`. The payload of `session` is
+`{"t":"session","s":[{"i":"<session id>","h":"<hex SHA-256 of the cookie secret>"}]}`, one message per ended
+session up to eight, then one message without the list ([change.go](../../internal/auth/principal/change.go)). Any other kind flushes every cache of the area (the coarse reaction is
 always safe). The hash in a payload is the SHA-256 of a 256-bit secret: it is the database's lookup
 key and cannot be inverted or used to authenticate.
 
 **Rationale:** the revocation bound does not depend on the precision, only the load does.
 
 **Applied in the spec:** none; `docs/developer/identity.md` has the table.
+
+### Q-AUTH-30 · Provider entries as a list or a map
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The configuration framework (R-ARCH-020) decodes a list of structs only when its elements are flat; a provider entry nests
+`claims`, `group_sync.rules`, `scopes` and `extra_auth_params`. A map of structs may nest, as `server.endpoints` does.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A list, as sketched | `providers: [{id: corp, …}]`; the framework learns nested list elements | The order of the file is the order of the buttons | A change of the framework's element rule and its JSON Schema, shared by every section, for one key; a duplicate ID is a validation rule instead of impossible |
+| (b) A map keyed by the ID, with `order` | `providers: {corp: {…}}`; buttons sort by `order`, then by ID | The framework supports it today, like `server.endpoints`; an ID cannot appear twice; `TROVE_AUTH_OIDC_PROVIDERS` is a JSON object | The order is an explicit key instead of the position in the file |
+| (c) Flatten the nested keys | `claims_username`, a comma-separated `scopes` | A flat list element | Unreadable keys; regular expressions inside comma lists |
+
+**Choice:** (b) — `auth.oidc.providers` is a map keyed by the provider ID; the key `order` (default 0) sorts the login page,
+ties by ID.
+
+**Rationale:** The ID is already the unique key of a provider (it is part of the redirect URI), so a map states that in the
+shape of the file and removes a duplicate-ID rule. The order of a handful of buttons is cheap to state explicitly, and an
+explicit key survives a Helm values merge, which can replace a whole list but merges a map by key. (a) would change the
+framework for every section to save one key. The development agent would revisit this if the configuration framework learns
+nested list elements for another reason.
+
+**Applied in the spec:** R-AUTH-004 (the map, the `id` as its key, the `order` key in the YAML block); R-AUTH-009 (the order of
+the providers).
+
+### Q-AUTH-31 · Verifying ID tokens: a JOSE library or a minimal verifier
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`go.mod` holds no JOSE library; the standard library verifies RSA PKCS#1 v1.5, RSA-PSS and ECDSA signatures.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A JOSE library | The ID token is parsed and verified by a third-party module | Wide algorithm and format coverage | A new dependency for one call site; JWE, `HS*` and embedded-key options that the login must refuse anyway, so the safe configuration is a set of switches to keep off |
+| (b) A minimal verifier on the standard library | Compact JWS only; `RS256/384/512`, `PS256/384/512`, `ES256`, `ES384`; keys from the JWK Set by `kid`, of the algorithm's type and curve | About 250 lines that refuse everything else by construction: no `none`, no HMAC, no JWE, no `crit`, no key whose type or curve does not fit, no RSA key below 2048 bits | trove maintains the parser; a provider that signs only with `EdDSA` or `ES512` cannot be used |
+
+**Choice:** (b) — [internal/auth/oidc/jws.go](../../internal/auth/oidc/jws.go) verifies ID tokens with the standard library
+only.
+
+**Rationale:** The ID token path needs one serialization and three key families, and the most common verifier bugs (algorithm
+confusion between a public key and an HMAC secret, `none`, unchecked curves) are refusals a minimal verifier makes by not having
+the code path. Unit tests pin each refusal, including an HS256 token keyed with the RSA modulus. The algorithm list covers the
+defaults of common IdPs, Keycloak and Dex among them. The development agent would revisit this if a supported IdP signs ID
+tokens only with an algorithm outside the list, or if trove needs JWE.
+
+**Applied in the spec:** R-AUTH-004 (the supported values of `allowed_signing_algs`).
+
+### Q-AUTH-32 · Provisioning and the session in one transaction or two
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-006 step 10 put user resolution, group sync and the session into one transaction. The seam between the login (WP1.1) and
+the identity packages (WP1.2) is `principal.Provisioner.SignIn(ctx, claims)`, which owns its tables and its `user.*` events and
+runs its own transaction.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One transaction across the seam | The provisioner takes the login's transaction | Exactly the sketch | The provisioner's interface carries a transaction type of the store layer, and its retry on a unique violation (R-AUTH-007) must restart the session part too |
+| (b) Two transactions, each with the principal row lock | `SignIn` commits the user and the memberships, then the session store locks the row again and creates the session | The seam stays a plain call; each part serializes concurrent logins of one user on its own; no user is half-created | A failure between the commits leaves the memberships of that login in force without a session (H-91) |
+
+**Choice:** (b) — the provisioner and the session commit separately; both lock the user's `principal` row first.
+
+**Rationale:** What step 10 protects is that concurrent logins of one user apply claims, memberships and the session limit one
+after the other, and that no user is half-created. Both hold in (b): the provisioner's transaction is atomic, and the session
+transaction counts under the lock. What (b) adds is a login whose session insert fails after the memberships committed. Those
+memberships are what the IdP vouched for at that moment, the same state an abandoned login leaves; H-91 records it. (a) would
+put a transaction type into a domain contract that two work packages implement in parallel. The development agent would revisit
+this if the identity area offers a variant of `SignIn` on a caller's transaction; the login then joins both parts.
+
+**Applied in the spec:** R-AUTH-006 step 10. Security: H-91 in
+[security/login-and-sessions.md](../security/login-and-sessions.md#h-91--provisioning-and-the-session-commit-in-two-transactions).
+
+### Q-AUTH-33 · An enabled break-glass account without a password file
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`auth.break_glass.enabled` defaults to true, and R-AUTH-014 refused to start a `web` replica without a readable password file.
+The chart mounts no break-glass Secret yet, and every replica started from the defaults (the server and smoke tests, the dev
+profile) would stop.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse to start, as sketched | No password file, no `web` replica | The misconfiguration is loud | Every deployment that does not configure the account crash-loops, the chart included, until it mounts the Secret |
+| (b) Default `enabled: false` | The account exists only when configured | Secure by default; the refusal stays for a configured account | A fresh installation has no UI sign-in before an OIDC administrator exists; a change of the specified default |
+| (c) Enabled without a file means unusable | The replica starts, warns, and refuses every local login with 403 `local_login_disabled`; a configured file that cannot be read, a weak plaintext or a weak hash still stops it | Keeps the default and the refusal for every configured file; fails closed | The misconfiguration of "enabled but never mounted" is a warning, not a stop (H-93) |
+
+**Choice:** (c).
+
+**Rationale:** (a) would break every deployment that does not use the account, because the default is on; (b) changes a
+product default the owner chose for the first sign-in. (c) keeps both decisions and makes the only failure "no break-glass
+login", which is the safe direction. Every configured path is still checked at start. The development agent would revisit this
+when the chart mounts the generated Secret by default: the empty path is then a misconfiguration, and (a) applies again.
+
+**Applied in the spec:** R-AUTH-014, disabled account. Security: H-93 in
+[security/login-and-sessions.md](../security/login-and-sessions.md#h-93--an-enabled-break-glass-account-without-a-password-file-starts-silently).
+
+### Q-AUTH-34 · The common-password list under a 20-character minimum
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-014 asked for at least 20 characters and no entry of an embedded list of the 10,000 most common passwords. The widely
+used list of that size (SecLists `10k-most-common.txt`, 10,000 entries, SHA-256
+`68782d6a4a19a4768d5f15dd66bd534e7a33055cc755411e33f16d18c50fdcce`) has no entry of 20 or more characters; its longest has 18.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Embed the list | 75 KB and its licence notice in the binary | The letter of the requirement | A check that can never refuse a password the length rule accepted |
+| (b) No list while the minimum is 20 | The length rule alone | No dead code, no third-party file | A shorter minimum later must bring the list back |
+
+**Choice:** (b).
+
+**Rationale:** The two rules are applied in sequence; every password the list refuses is shorter than 20 characters and already
+refused. An embedded list would carry a licence obligation for a branch that cannot execute. The development agent would revisit
+this if the minimum length is lowered below 19 characters or a longer list is adopted.
+
+**Applied in the spec:** R-AUTH-014, password strength.
+
+### Q-AUTH-35 · The test IdP of the dev profile
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+E1.1 asks for a test IdP in the dev profile. The owner's toolstack provides OIDC client credentials through guided-traffic's
+dex-operator (v2.4.7), which renders a Dex configuration from custom resources. Two exit criteria constrain the choice: R-AUTH-013
+(RP-initiated logout against the test IdP ends the IdP session) and R-AUTH-008 (the test IdP sends a groups claim for its users).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Dex through dex-operator | The owner's standard | One operator less to learn | Dex v2.46 serves `end_session_endpoint` only behind the experimental `DEX_SESSIONS_ENABLED` flag with a `sessions` block, and checks `post_logout_redirect_uri` against the client's `postLogoutRedirectURIs`. dex-operator renders neither a `sessions` block nor `postLogoutRedirectURIs` on `DexStaticClient`, and no `staticPasswords` (users with groups would be hand-written `passwords.dex.coreos.com` objects). R-AUTH-013's criterion cannot be met through the operator. |
+| (b) Keycloak with a realm import | One Deployment, a realm file with two users, two groups and the client | RP-initiated logout, the groups claim through a mapper and the users are standard Keycloak; the realm file is reviewable and versioned | A second IdP besides the owner's standard, for the dev profile only |
+
+**Choice:** (b) — Keycloak in [deploy/dev/keycloak.yaml](../../deploy/dev/keycloak.yaml), as E1.1 says.
+
+**Rationale:** The gap of (a) is in the operator, not in Dex itself: the operator cannot render the logout configuration
+R-AUTH-013's criterion needs. trove's login is generic OIDC, so the choice binds nothing outside the dev profile. The
+development agent would revisit this when dex-operator renders the sessions block, post-logout redirect URIs and users with
+groups; the realm file then becomes custom resources.
+
+**Applied in the spec:** none; E1.1 of the roadmap already names Keycloak. Applied in the repository: the dev profile and
+[local-profile.md](../developer/local-profile.md).
+
+### Q-AUTH-36 · Where the claim mapping, the gates and the group rules run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The provider entry (R-AUTH-004, R-AUTH-007, R-AUTH-008) is the login's configuration; the user and membership tables are the
+identity area's.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The login maps, the provisioner writes | The login applies the username rule, the gates and the group rules and hands the provisioner the identity key, the mapped values, trove group names and the sync policy | The provisioner never reads the provider configuration; a gated identity creates no user, because the gates run before provisioning | The provisioner contract grows by the mapped fields |
+| (b) The provisioner maps | The login hands over the raw claims and the provider entry | One place for everything about users | The identity area depends on the login's configuration; a gate failure can come after a user was created |
+
+**Choice:** (a) — the login maps and gates, the provisioner writes. The fields and the refusals of the seam are those of
+Q-AUTH-21; `Groups` holds the mapped trove group names ([principal.go](../../internal/auth/principal/principal.go)).
+
+**Rationale:** Gates that run before provisioning are stricter than the sketch requires ("gates run before the session is
+created"): no just-in-time user exists for an identity the provider entry refuses. The provisioner keeps what it owns (the
+link, the race of a first login, the memberships of source `oidc:<provider>`, the `user.*` events). The development agent would
+revisit this if SCIM (R-AUTH-039) needs the same mapping; it would then move into a package both import.
+
+**Applied in the spec:** none; applied in the contract `principal.LoginClaims` (Q-AUTH-21) and
+[m1-contracts.md](../developer/m1-contracts.md).
+
+### Q-AUTH-37 · The event of a break-glass unlock
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-015 says every `trove admin` command writes an audit event; R-AUTH-041 had no event for clearing a lockout.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `auth.breakglass.unlocked` | A transactional event with severity `high` and whether a lock was in force | Pairs with `auth.breakglass.locked`; one name for the command and the API of wave 2 | One more name in the permanent registry |
+| (b) Reuse `auth.breakglass.locked` with an outcome | No new name | — | The name says the opposite of what happened |
+
+**Choice:** (a).
+
+**Rationale:** A lock and its early removal are both security-relevant, and a SIEM rule needs to tell them apart by name. The
+development agent would revisit this only if the audit catalog of R-OPS-016 adopts a generic form for such pairs.
+
+**Applied in the spec:** R-AUTH-041, event table.
+
+### Q-AUTH-38 · A namespaced group rule on a public issuer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-007 refused, on a public issuer, a `match_regex` "whose literal prefix ends in `/`", while its acceptance criterion
+accepts `acme/trove-(.+)`, whose literal prefix is `acme/trove-`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The literal prefix starts with a namespace | The prefix contains `/` after at least one character | Matches the criterion and the intent (a namespace the organization owns) | — |
+| (b) The literal prefix ends in `/` | As worded | — | Refuses the criterion's own example |
+
+**Choice:** (a), checked with Go's `regexp.LiteralPrefix` on the anchored pattern.
+
+**Rationale:** The criterion states the intent; the wording was a slip. The development agent would revisit this if an issuer's
+namespaces were not path-shaped.
+
+**Applied in the spec:** R-AUTH-007, providers with open registration.
+
+### Q-AUTH-39 · The provider label of the group-claim metric
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-008 named `trove_auth_group_claim_missing_total{provider,reason}`; the label list of R-OPS-007 has no `provider`, and a
+family with another label stops start-up.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `name` holds the provider ID | An allowed label with a bounded value set (the configured IDs) | No change to R-OPS-007 | The label says less than `provider` |
+| (b) Add `provider` to R-OPS-007 | A new allowed label | The specified name | A change of the label rules of every family for one metric |
+
+**Choice:** (a).
+
+**Rationale:** The value set is bounded by configuration either way; `name` is the label R-OPS-007 already allows for a
+configured object's name. The development agent would revisit this if more authentication metrics need a provider label.
+
+**Applied in the spec:** R-AUTH-008 and R-AUTH-041 (the metric's labels).
+
+### Q-AUTH-40 · Who owns the shared authentication metrics, and in which order the login is wired
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Both areas count into `trove_auth_attempts_total`, `trove_auth_ratelimited_total` and `trove_auth_cache_bypassed_total`
+(R-AUTH-041), and each had registered the family with its own help text, which the registry refuses. The session store is the
+identity stage's `session.Validator`, and the OIDC login calls the identity area's provisioner: the two need each other's
+components.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every package registers, the second reuses | The help texts must be identical | No shared object | A help text edited in one place breaks start-up in the other |
+| (b) The identity area owns the families (chosen) | `principal.Metrics` is built once per replica (`App.authMetrics`); the session store and the login take it as an option and count with its methods | One registration, one help text; a nil value counts nothing | The login packages import `principal` for the metrics, which they import anyway |
+
+**Choice:** (b). The wiring is split in two steps around the identity area: `wireSessions` (the session store) runs before
+`wireIdentity`, which passes it to the stage; `wireLogin` (the OIDC and break-glass login) runs after it and takes
+`a.m1.provisioner` and the limiter `auth.flow_starts`. The change payload of a session end is `principal.Change` (Q-AUTH-22).
+
+**Rationale:** the identity area registers the families first on every replica, and an option that is a pointer to its type
+keeps the unit tests of both packages free of a registry. The development agent would revisit the split if a third area needs
+a component of the login before the identity area is wired.
+
+**Applied in the spec:** none; [login.md](../developer/login.md#seams-to-the-other-areas) and
+[m1-contracts.md](../developer/m1-contracts.md#wiring-order).
 
 ## What this does not cover
 

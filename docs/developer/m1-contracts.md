@@ -73,9 +73,9 @@ Rules that follow:
 | `httpserver.Principal`, `Credential`, `Scope`, `ScopeGrant`, `GroupRef`, `PrincipalKind`, `AuthMethod`, `TokenType`, `AnonymousPrincipal()` | [principal.go](../../internal/httpserver/principal.go) | the value the chain stores; `Anonymous` stays, `Name` stays | WP1.2 fills it |
 | `auth.Authenticator`, `Result`, `Credential`, `EndpointRules`, `Method` | [auth.go](../../internal/auth/auth.go) | the authentication stage: credential sources and precedence of R-AUTH-001 to a `Result` or a 401 | WP1.2 (stage), WP1.9 (`EndpointRules` content, R-EP-010) |
 | `principal.Store`, `Principal`, `Kind`, `Status`, `GroupRef`, `ErrNotFound` | [principal.go](../../internal/auth/principal/principal.go) | read side of the principal table, cache-backed | WP1.2 |
-| `principal.Provisioner`, `LoginClaims` | same | the seam login -> identity: just-in-time user, group sync, `user.*` events in its own transaction | WP1.2 implements, WP1.1 calls |
+| `principal.Provisioner`, `LoginClaims`, `GroupClaimState`, `ErrUsernameTaken`, `ErrNotProvisioned`, `ErrUserDisabled`, `ErrUsernameInvalid` | same, [errors.go](../../internal/auth/principal/errors.go) | the seam login -> identity: just-in-time user, group sync, `user.*` events in its own transaction. `LoginClaims` carries the identity key (`Issuer`, `Subject`), the mapped values, `Groups` (trove group names the provider's rules mapped) and the provider policy (`GroupSync`, `ClaimState`, `KeepOnMissing`, `CreateGroups`, `JIT`, `SyncUsername`, `Source`); a refused sign-in is one of the four errors, which the login maps to its failure reasons (Q-AUTH-21, Q-AUTH-36) | WP1.2 implements, WP1.1 calls |
 | `token.Validator`, `Info`, `Scope`, `ScopeGrant`, `Type`, `Err*` | [token.go](../../internal/auth/token/token.go) | validation of a presented token (R-AUTH-023), scope as a ceiling | WP1.2 |
-| `session.Validator`, `Info`, `ErrInvalid`, `ErrCSRF` | [session.go](../../internal/auth/session/session.go) | resolves the session cookie, applies CSRF (R-AUTH-012) | WP1.1 |
+| `session.Validator`, `Info`, `ErrInvalid`, `ErrCSRF` | [session.go](../../internal/auth/session/session.go) | resolves the session cookie, applies CSRF (R-AUTH-012); `session.Problem` maps both errors to 401 `session_expired` and 403 `csrf_failed`. WP1.1 added `AuthMethod`, `ProviderID`, `AuthenticatedAt` and `AuthenticatedWithin` (R-AUTH-011) to `Info`. `app.m1.sessions` is the `*session.Store` (set by `wireSessions` before `wireIdentity`), whose `EndForPrincipal` ends a user's sessions on a caller's transaction | WP1.1 |
 | `authz.Authorizer` (`Decide`, `Readable`, `Require`), `Subject`, `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`, `RequestKind` | [authz.go](../../internal/authz/authz.go) | the decision point; action constants of R-AUTHZ-006, capability names of R-AUTHZ-010 | WP1.3 |
 | `repository.Repository`, `Class`, `Reader`, `KeyPattern`, `ReservedKeys()` | [repository.go](../../internal/repository/repository.go) | the read model and the lookup by key | WP1.4 |
 | `audit.EventType`, `Register`, `Freeze`, `Lookup`, `Types`; `Event`, `Actor`, `Subject`, `Source`; `Recorder`, `Nop`; `Writer`, `Store` | [registry.go](../../internal/audit/registry.go), [event.go](../../internal/audit/event.go), [recorder.go](../../internal/audit/recorder.go), [store.go](../../internal/audit/store.go) | registry with the journal flag; the recorder interface and its implementation (`a.m1.recorder`); the query and maintenance (`a.m1.auditStore`). `Event` also carries `Repository`, `Path`, `Endpoint`, `Actor.TokenID`, `Actor.AuthMethod` and the outcome `Denied` (Q-OPS-40) | WP1.7; page [audit.md](audit.md) |
@@ -142,7 +142,7 @@ nothing outside your markers.
 | | `Authz`, `API`, `Repositories` | authz, api, repository |
 | [internal/app/m1.go](../../internal/app/m1.go) | fields of `m1Wiring` | audit, api, identity, login, authz, repository, files, endpoints |
 | [internal/app/app.go](../../internal/app/app.go) `bootstrap` | step 4 (after the PostgreSQL component) | audit |
-| | step 8 (domain snapshots and caches), in this order | repository, identity, login, authz, files, endpoints, api |
+| | step 8 (domain snapshots and caches), in this order | repository, login (sessions), identity, login (OIDC), authz, files, endpoints, api |
 | [internal/app/app.go](../../internal/app/app.go) `startClient` | routes outside `/api/v1/` | login (`/auth/`), files (`/files/`) |
 
 After editing a marker in `api/openapi.yaml` run `make generate`; after a config field, `make generate` too
@@ -154,8 +154,10 @@ The audit event files (`internal/audit/events_<area>.go`) are not shared files: 
 ### Wiring order
 
 `bootstrap` builds in this order and each step reads earlier components from `a.m1`: audit recorder (step 4),
-then at step 8 the repository snapshot, the principal store and authenticator, sessions and login, the grant
-index (authz needs the repository snapshot and the principal store), the files and endpoint components, and
+then at step 8 the repository snapshot, the session store (`wireSessions`), the principal store, provisioner and
+authenticator (`wireIdentity`, which takes the session store as its `session.Validator` and `auth.break_glass.username`
+from the configuration), the OIDC and break-glass login (`wireLogin`, which calls the provisioner and takes the limiter
+`auth.flow_starts`), the grant index (authz needs the repository snapshot and the principal store), the files and endpoint components, and
 last the API limiter. Fields are set once before the client listener starts. `app.authenticate` and `app.access`
 fall back to the M0 stand-ins while `a.m1.authenticator` or `a.m1.authorizer` is nil; the area that wires the
 component deletes the stand-in it replaced. `audit.Freeze()` runs in `freezeRegistries`.
@@ -185,7 +187,7 @@ constant. The list is the starting set from the spec pages; an owner adds more i
 |---|---|---|---|
 | Key family | `rl` v1 (`rl:v1:<limiter>:<b>:<window>`), expiry 2 x window | `api` (the limiter `cluster.LimiterSet.NewLimiter`, see [valkey.md](valkey.md#rate-limit-counters); also used by identity for `auth.credential_failures`, `auth.flow_starts`, `auth.device_code_failures`) | R-ARCH-034, R-AUTH-038 |
 | Key family | `tokseen` v1 (`tokseen:v1:<t>`), expiry `auth.rate_limit.recent_token_window` | `identity` | R-ARCH-030, R-AUTH-038 |
-| Change area | `auth` (token, session, principal, group and settings changes; the caches `auth_tokens`, `auth_sessions`, `auth_principals`, `auth_settings`) | `identity`, with `login` notifying it when a session ends | R-AUTH-023, R-ARCH-018 |
+| Change area | `auth` (token, session, principal, group and settings changes; the caches `auth_tokens`, `auth_sessions`, `auth_principals`, `auth_settings`) | `identity` registers it, with `login` notifying it when a session ends: payload version 1, `principal.Change` (Q-AUTH-22), for a session `{"t":"session","s":[{"i":<id>,"h":<hex SHA-256 of the secret>}]}`. `auth_sessions` (login) evicts the named hashes, ignores `token`, `membership`, `group` and `settings` and flushes on any other payload; the identity caches ignore `session` ([login.md](login.md#seams-to-the-other-areas)) | R-AUTH-023, R-ARCH-018 |
 | Change area | `authz` (policies, role bindings, exposure rules, authorization settings) | `authz`; `endpoints` notifies it for exposure rules | R-AUTHZ-028 |
 | Change area | `repo_config` (repository rows, virtual membership) | `repository` | R-REPO-008, R-AUTHZ-028 |
 
@@ -259,4 +261,4 @@ form of the `x-trove-permission` of each operation (R-API-008).
 - **Stage 7.** `a.m1.rateLimit` is `v1.EdgeStage(CORS, limiter)`; the endpoints area, which owns the per-endpoint class
   (R-EP-015), plugs into the same stage.
 - **Audit.** `system.task_triggered` and `system.job.cancelled` are registered in `internal/audit/events_api.go`;
-  `wire_api.go` passes `audit.Nop` until the recorder of the audit area is wired (`auditRecorder`).
+  `wire_api.go` passes the recorder of step 4 (`auditRecorder`), a discarding one in a shell without PostgreSQL.

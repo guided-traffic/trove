@@ -9,24 +9,16 @@ import (
 	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/jobs"
 )
-
-// identityRecorder is the audit recorder of the identity events: the one built
-// at step 4, or a discarding one in a shell without infrastructure.
-func (a *App) identityRecorder() audit.Recorder {
-	if a.m1.recorder != nil {
-		return a.m1.recorder
-	}
-	return audit.Nop{}
-}
 
 // systemScopeItems are the system capabilities a token scope may name
 // (R-AUTH-025: the capability names of R-AUTHZ-010).
@@ -43,6 +35,21 @@ func systemScopeItems() map[string]bool {
 		out[string(c)] = true
 	}
 	return out
+}
+
+// TokenScopeOptions are the cross-area checks of token scope validation
+// (R-AUTH-024): the system capabilities and the configured endpoint names. The
+// administration commands that mint tokens use them too.
+func TokenScopeOptions(cfg *config.Config) token.ScopeOptions {
+	items := systemScopeItems()
+	endpoints := map[string]bool{}
+	for _, n := range endpointNames(cfg) {
+		endpoints[n] = true
+	}
+	return token.ScopeOptions{
+		SystemItem: func(s string) bool { return items[s] },
+		Endpoint:   func(n string) bool { return endpoints[n] },
+	}
 }
 
 // wireIdentity builds the identity components at the WIRING POINT of step 8
@@ -69,22 +76,17 @@ func (a *App) wireIdentity() error {
 		})
 		return nil
 	}
-	metrics, err := principal.NewMetrics(a.tele.metrics.Registry())
+	metrics, err := a.authMetrics()
 	if err != nil {
 		return err
 	}
 	gate := principal.Gate{Fresh: changes, Bound: cfg.RevocationBound, Metrics: metrics}
-	rec := a.identityRecorder()
+	rec := a.auditRecorder()
 
 	principals := principal.NewStore(principal.StoreOptions{DB: db, Cache: caches, Gate: gate, SafetyTTL: cfg.Tokens.CacheTTL})
 	settings := token.NewSettingsStore(token.SettingsOptions{
 		DB: db, Notifier: changes, Recorder: rec, Cache: caches, Gate: gate, Tokens: cfg.Tokens, Anonymous: cfg.Anonymous,
 	})
-	items := systemScopeItems()
-	endpoints := map[string]bool{}
-	for _, n := range endpointNames(a.cfg) {
-		endpoints[n] = true
-	}
 	recent, err := cluster.NewTokenSeen(a.valkey(), cfg.RateLimit.RecentTokenWindow)
 	if err != nil {
 		return err
@@ -92,12 +94,9 @@ func (a *App) wireIdentity() error {
 	tokens := token.NewService(token.ServiceOptions{
 		DB: db, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
 		Tokens: cfg.Tokens, Recent: recent, Metrics: metrics, Log: a.log.With("component", "tokens"),
-		Scope: token.ScopeOptions{
-			SystemItem: func(s string) bool { return items[s] },
-			Endpoint:   func(n string) bool { return endpoints[n] },
-		},
+		Scope: TokenScopeOptions(a.cfg),
 	})
-	breakGlass := "" // WIRING POINT: auth.break_glass.username once the login area adds the key
+	breakGlass := cfg.BreakGlass.Username // reserved: no OIDC login and no user can take the name (R-AUTH-007)
 	manager := principal.NewManager(principal.ManagerOptions{DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass})
 	provisioner := principal.NewProvisioner(principal.ProvisionerOptions{
 		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Metrics: metrics,
@@ -109,8 +108,14 @@ func (a *App) wireIdentity() error {
 		// per-replica counter keeps the stage complete.
 		limiter = auth.NewLocalLimiter(cfg.RateLimit.FailuresPerAddress, time.Minute, nil, nil)
 	}
+	// A nil *session.Store must not become a non-nil interface: a replica without
+	// sessions (a worker) has none, and the stage skips the cookie then.
+	var sessions session.Validator
+	if a.m1.sessions != nil {
+		sessions = a.m1.sessions
+	}
 	stage := auth.New(auth.Options{
-		Tokens: tokens, Sessions: a.m1.sessions, Principals: principals, Settings: settings, Limiter: limiter,
+		Tokens: tokens, Sessions: sessions, Principals: principals, Settings: settings, Limiter: limiter,
 		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
 		Metrics: metrics, Log: a.log.With("component", "auth"),
 	})
@@ -126,6 +131,21 @@ func (a *App) wireIdentity() error {
 	}
 	a.mu.Unlock()
 	return nil
+}
+
+// authMetrics returns the identity metrics of R-AUTH-041, built once: the
+// session store, the login and the identity components count into the same
+// families (attempts, rate-limited requests, cache bypasses).
+func (a *App) authMetrics() (*principal.Metrics, error) {
+	if a.m1.authMetrics != nil {
+		return a.m1.authMetrics, nil
+	}
+	m, err := principal.NewMetrics(a.tele.metrics.Registry())
+	if err != nil {
+		return nil, err
+	}
+	a.m1.authMetrics = m
+	return m, nil
 }
 
 func (a *App) changesOrNil() *cluster.Changes { a.mu.Lock(); defer a.mu.Unlock(); return a.changes }

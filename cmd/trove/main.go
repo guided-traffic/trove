@@ -17,6 +17,7 @@ import (
 // streams are the process's standard streams and environment, injected so the
 // tests can run the commands in-process.
 type streams struct {
+	stdin          io.Reader
 	stdout, stderr io.Writer
 	environ        []string
 }
@@ -34,7 +35,7 @@ const usageText = `usage: trove <command> [flags]
 commands:
   serve --role web|worker|all   run one replica of a role
   migrate [up|status]           apply or list the embedded migrations
-  admin config validate         validate the configuration and print it, redacted
+  admin <command>               bootstrap and recovery commands (trove admin lists them)
   version, --version            print version, commit and build date
 
 flags common to serve, migrate and admin:
@@ -43,7 +44,7 @@ flags common to serve, migrate and admin:
 `
 
 func main() {
-	os.Exit(run(os.Args[1:], streams{stdout: os.Stdout, stderr: os.Stderr, environ: os.Environ()}))
+	os.Exit(run(os.Args[1:], streams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, environ: os.Environ()}))
 }
 
 func run(args []string, s streams) int {

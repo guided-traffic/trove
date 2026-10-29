@@ -5,6 +5,5 @@
 //
 // It depends on package principal (the [principal.Provisioner] it hands claims
 // to) and on package session (it creates the session after a successful
-// callback). It owns no shared interface beyond those two; the routes under
-// /auth/ and the bootstrap commands belong to work package WP1.1.
+// callback). It owns no shared interface beyond those two.
 package oidc

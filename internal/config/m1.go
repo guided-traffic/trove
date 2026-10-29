@@ -12,8 +12,8 @@ import (
 // tags like the sections around them, and run `make generate` for schema.json.
 
 // Auth is the auth section (R-AUTH-004 to R-AUTH-040): providers, sessions,
-// tokens, break-glass, rate limits. WP1.2 (identity) and WP1.1 (login) both add
-// fields; each only inside its markers.
+// tokens, break-glass, rate limits. The identity and the login keys sit inside
+// their own markers.
 type Auth struct {
 	// >>> M1 identity
 
@@ -28,7 +28,12 @@ type Auth struct {
 	// <<< M1 identity
 
 	// >>> M1 login
-
+	// OIDC, LoginPage, Sessions and BreakGlass are the login keys; their types are
+	// in login.go (R-AUTH-004 to R-AUTH-014).
+	OIDC       AuthOIDC       `yaml:"oidc"`
+	LoginPage  AuthLoginPage  `yaml:"login_page"`
+	Sessions   AuthSessions   `yaml:"sessions"`
+	BreakGlass AuthBreakGlass `yaml:"break_glass"`
 	// <<< M1 login
 }
 

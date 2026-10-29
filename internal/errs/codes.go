@@ -96,6 +96,24 @@ const (
 // <<< M1 identity
 //
 // >>> M1 login
+
+// Codes of the login, the UI session and the break-glass account (R-AUTH-002,
+// R-AUTH-005, R-AUTH-006, R-AUTH-011, R-AUTH-012, R-AUTH-014, R-AUTH-038).
+const (
+	CodeSessionExpired           = "session_expired"
+	CodeReauthenticationRequired = "reauthentication_required"
+	CodeCSRFFailed               = "csrf_failed"
+	CodeBrowserMismatch          = "browser_mismatch"
+	CodeFlowExpired              = "flow_expired"
+	CodeProviderUnavailable      = "provider_unavailable"
+	CodeBreakGlassRestricted     = "break_glass_restricted"
+	CodeBreakGlassImmutable      = "break_glass_immutable"
+	CodeBreakGlassRotating       = "break_glass_rotating"
+	CodeLocalLoginDisabled       = "local_login_disabled"
+	CodeBreakGlassLocked         = "break_glass_locked"
+	CodeTooManyPendingLogins     = "too_many_pending_logins"
+)
+
 // <<< M1 login
 //
 // >>> M1 authz
@@ -230,6 +248,18 @@ var registry = []CodeInfo{
 	// <<< M1 identity
 	//
 	// >>> M1 login
+	{CodeSessionExpired, Unauthenticated, "Session expired", "The session cookie names a session that has ended (logout, timeout, revocation). Sign in again."},
+	{CodeReauthenticationRequired, Unauthenticated, "Re-authentication required", "The action mints a long-lived credential and needs a recent sign-in at the identity provider; start the re-authentication round trip and retry."},
+	{CodeCSRFFailed, Forbidden, "CSRF check failed", "A cookie-authenticated request that changes state needs the X-CSRF-Token header of the session and a same-origin Origin or Sec-Fetch-Site."},
+	{CodeBrowserMismatch, Invalid, "Browser mismatch", "The login callback arrived in a browser other than the one that started the login. Start the login again in one browser."},
+	{CodeFlowExpired, Invalid, "Login expired", "The login flow is unknown, used or older than ten minutes. Start the login again."},
+	{CodeProviderUnavailable, Unavailable, "Login provider unavailable", "The identity provider's discovery document could not be loaded yet; retry after the Retry-After period."},
+	{CodeBreakGlassRestricted, Forbidden, "Not allowed for the break-glass account", "The break-glass account can neither own nor create tokens nor approve command-line logins."},
+	{CodeBreakGlassImmutable, Conflict, "Break-glass account is immutable", "The break-glass account cannot be deleted or renamed through the API; it is configured in the configuration file."},
+	{CodeBreakGlassRotating, Unavailable, "Break-glass password rotation in progress", "The break-glass password was rotated a moment ago; local login resumes after the Retry-After period."},
+	{CodeLocalLoginDisabled, Forbidden, "Local login disabled", "The break-glass account is disabled or has no password configured."},
+	{CodeBreakGlassLocked, RateLimited, "Break-glass account locked", "Too many failed local logins; the account is locked until the Retry-After period has passed or an administrator unlocks it."},
+	{CodeTooManyPendingLogins, Unavailable, "Too many pending logins", "More login flows are pending than auth.rate_limit.max_pending_flows allows; retry after the Retry-After period."},
 	// <<< M1 login
 	//
 	// >>> M1 authz
