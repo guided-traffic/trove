@@ -274,3 +274,35 @@ func TestTracingConfigErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestSpanQueueBound(t *testing.T) {
+	t.Run("R-OPS-018 the queue size bounds the spans the processor holds: the queue plus one batch in flight", func(t *testing.T) {
+		const size = 4
+		m := NewMetrics("web")
+		exp := &blockingExporter{release: make(chan struct{})}
+		tr, err := Tracing(config.Tracing{Enabled: true, SampleRatio: 1, QueueSize: size, IncomingContext: "none"},
+			WithSpanExporter(exp), WithTraceMetrics(m))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 200 {
+			_, sp := tr.Start(context.Background(), "x", trace.SpanKindInternal)
+			sp.End()
+		}
+		close(exp.release)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tr.Shutdown(ctx); err != nil {
+			t.Fatal(err)
+		}
+		exp.mu.Lock()
+		exported := exp.n
+		exp.mu.Unlock()
+		if exported > 2*size {
+			t.Errorf("exported %d spans with a stuck exporter and queue size %d; the processor held more than the queue plus one batch", exported, size)
+		}
+		if exported == 0 {
+			t.Error("nothing exported after the exporter was released")
+		}
+	})
+}

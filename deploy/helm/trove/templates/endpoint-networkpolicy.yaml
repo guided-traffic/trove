@@ -1,0 +1,49 @@
+{{- /*
+One NetworkPolicy per further endpoint (R-EP-008): it admits the endpoint's port on the pods that
+serve it, from networkPolicy.from only (empty = from anywhere, so any ingress controller works).
+The main web pods already carry the policy <fullname>-web, which admits the operations port; the
+pods of an endpoint pool are selected by no other policy, so their policy admits the operations
+port from the same peers as the web policy does, or probes and scrapes would be cut.
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $ops := list }}
+{{- range $np.ingress.ops.from }}{{ $ops = append $ops . }}{{- end }}
+{{- range $np.probeCIDRs }}{{ $ops = append $ops (dict "ipBlock" (dict "cidr" .)) }}{{- end }}
+{{- range $name := include "trove.endpointNames" . | fromYamlArray }}
+{{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "trove.fullname" $ }}-ep-{{ $name }}
+  labels:
+    {{- include "trove.labels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+    trove/endpoint: {{ $name | quote }}
+  {{- with (include "trove.commonAnnotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "trove.selectorLabels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ $e.port }}
+      {{- with $e.networkPolicyFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if and $e.pool $ops }}
+    - ports:
+        - protocol: TCP
+          port: 8081
+      from:
+        {{- toYaml $ops | nindent 8 }}
+    {{- end }}
+{{- end }}
+{{- end }}

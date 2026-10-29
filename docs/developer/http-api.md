@@ -49,11 +49,20 @@ stops start-up for it). The binding of path parameters runs after the check. R-A
 grammar; the M1 forms (repository actions, roles, system scope items) get their parser case and their
 check in `authorize.go` together.
 
+## Endpoints
+
+The API is registered on every endpoint whose surface holds `api` (R-EP-005): the default endpoint always, a further
+endpoint only by configuration (`surface: [packages, api]`). On any other endpoint `/api/v1/…` falls through to the
+catch-all `404` problem, so `GET /api/v1/system/ping` on a package-only endpoint answers `404`, not `403`. A request on
+an endpoint whose host check fails answers `421` `misdirected_request` before routing, whatever the path
+([endpoints.md](endpoints.md)). The problem catalog lists the code (`GET /api/v1/problems/misdirected_request`).
+`Document.CheckRoutes` runs for each endpoint that serves `api`.
+
 ## Operations in M0
 
 | Operation | Path | Access |
 |---|---|---|
-| `getPing` | `GET /api/v1/system/ping` | anonymous; `200 OK` while ready, `503 UNAVAILABLE` otherwise |
+| `getPing` | `GET /api/v1/system/ping` | anonymous; `200 OK` while the replica serves (ready, or draining after it was ready, Q-OPS-30), `503 UNAVAILABLE` otherwise |
 | `getVersion` | `GET /api/v1/system/version` | authenticated, or anonymous with `system.public_version` |
 | `getSystemInfo` | `GET /api/v1/system/info` | `system.read` |
 | `listReplicas` | `GET /api/v1/system/replicas` | `system.read` |

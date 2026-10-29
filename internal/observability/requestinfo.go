@@ -30,6 +30,7 @@ type requestFacts struct {
 	limiter       string
 	limitMode     string
 	remoteAddr    string
+	host          string
 }
 
 type infoKey struct{}
@@ -104,3 +105,7 @@ func (ri *RequestInfo) SetLimit(limiter, mode string) {
 
 // SetRemoteAddr records the client address after the trusted-proxy rule.
 func (ri *RequestInfo) SetRemoteAddr(a string) { ri.set(func(v *requestFacts) { v.remoteAddr = a }) }
+
+// SetHost records the effective host of the request (R-EP-003), after the
+// endpoint's host rule; the record clips it to MaxHost bytes.
+func (ri *RequestInfo) SetHost(h string) { ri.set(func(v *requestFacts) { v.host = h }) }

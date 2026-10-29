@@ -14,6 +14,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 | [process.go](../../internal/config/process.go), [server.go](../../internal/config/server.go) with [tls.go](../../internal/config/tls.go) (`server.tls`, `server.ops_tls`), [database.go](../../internal/config/database.go), [migrate.go](../../internal/config/migrate.go), [runtime.go](../../internal/config/runtime.go), [valkey.go](../../internal/config/valkey.go), [storage.go](../../internal/config/storage.go), [jobs.go](../../internal/config/jobs.go), [cluster.go](../../internal/config/cluster.go), [cache.go](../../internal/config/cache.go), [secrets.go](../../internal/config/secrets.go), [system.go](../../internal/config/system.go), [health.go](../../internal/config/health.go), [log.go](../../internal/config/log.go), [metrics.go](../../internal/config/metrics.go), [trace.go](../../internal/config/trace.go), [audit.go](../../internal/config/audit.go), [maintenance.go](../../internal/config/maintenance.go), [outbound.go](../../internal/config/outbound.go) | one section each (`Process`, `Server`, `Database`, `Migrate`, `Runtime`, `Valkey`, `Storage`, `Jobs`, `Cluster`, `Cache`, `Secrets`, `System`, `Health`, `Log`, `Metrics`, `Tracing`, `Audit`, `Maintenance`, `Proxy` with `Outbound`); the owner of a subsystem edits only its file |
 | [schema.go](../../internal/config/schema.go) | `Describe`: flattens the tree into `Key`s, checks tags, derives environment names |
 | [load.go](../../internal/config/load.go) | `Load`: defaults, file, environment, flags; strict matching; secret resolution; validation |
+| [endpoints.go](../../internal/config/endpoints.go) | `server.endpoints` and `server.endpoint_rate_limits`: the endpoint entries, their defaults (`ResolveEndpoints`) and validation, see [endpoints.md](endpoints.md) |
 | [rules.go](../../internal/config/rules.go), [value.go](../../internal/config/value.go), [units.go](../../internal/config/units.go) | `validate` tag rules, text and YAML value parsing, `ByteSize` |
 | [secret.go](../../internal/config/secret.go), [report.go](../../internal/config/report.go) | the `Secret` type; `Report`, `Validator`, `CommandValidator`, `Command`, `Error` |
 | [effective.go](../../internal/config/effective.go), [jsonschema.go](../../internal/config/jsonschema.go), [schemagen](../../internal/config/schemagen/main.go), [schema.json](../../internal/config/schema.json) | redacted view, JSON Schema generator and its committed output |
@@ -109,6 +110,17 @@ A new section is a new file next to the others and a field on `Config`.
 `x-trove-secret` (`env-only`, `file` or `file-only`) and `x-trove-type` (`duration`, `bytes`). Durations
 are strings, sizes are strings or integers. The chart may reference or copy the file to validate
 `config:` values; the loader does not read it.
+
+## Endpoint keys
+
+`server.endpoints` (a map of endpoint name to entry) and `server.endpoint_rate_limits` are one key each, so their environment
+value is JSON (`TROVE_SERVER_ENDPOINTS='{"customers":{"listen":":8443","base_url":"https://packages.example.com"}}'`
+# example). A map of structs is decoded strictly like a list of structs, but its elements may be nested (`tls`, `auth`);
+`Describe` accepts any `map[string]T`, and the JSON Schema shows the key as an object. The keys, their defaults and
+the validation rules are on [endpoints.md](endpoints.md#configuration). Defaults that differ between the default and a
+further endpoint are not `default` tags: `Endpoint` uses pointers and nil lists for "unset", `Server.ResolveEndpoints`
+applies the defaults of the kind, and the root's `Finalize` writes them into the entries so that `trove admin config validate`
+prints every key with its value.
 
 ## TLS keys of the listeners
 

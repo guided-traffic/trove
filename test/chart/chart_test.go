@@ -237,6 +237,12 @@ func envByName(pod any) map[string]any {
 	return out
 }
 
+// s3SettingEnv are the variables that read the non-secret S3 settings from the provisioner's
+// Secret (secrets.s3.bucketKey, regionKey, endpointKey).
+var s3SettingEnv = map[string]bool{
+	"TROVE_STORAGE_S3_BUCKET": true, "TROVE_STORAGE_S3_REGION": true, "TROVE_STORAGE_S3_ENDPOINT": true,
+}
+
 func base(file string) string { return filepath.Base(file) }
 
 // eachSet runs fn once per value set as a subtest.
@@ -350,8 +356,19 @@ func TestChart(t *testing.T) {
 	t.Run("R-HA-002 web and worker Deployments run --role web and --role worker, never all", func(t *testing.T) {
 		eachSet(t, func(t *testing.T, _ string, out string, docs []doc) {
 			deploys := ofKind(docs, "Deployment")
-			if len(deploys) != 2 {
-				t.Fatalf("%d Deployments rendered, want exactly <fullname>-web and <fullname>-worker", len(deploys))
+			// The two role Deployments, plus one pool Deployment per endpoint with pool.enabled
+			// (R-EP-008), which also runs --role web.
+			pools := 0
+			for _, d := range deploys {
+				if name := str(d, "metadata", "name"); strings.HasPrefix(name, "trove-web-ep-") {
+					pools++
+					if got := strings.Join(containerArgs(at(d, "spec", "template", "spec")), " "); got != "serve --role web" {
+						t.Errorf("%s args = %q, want serve --role web", name, got)
+					}
+				}
+			}
+			if len(deploys) != 2+pools {
+				t.Fatalf("%d Deployments rendered, want <fullname>-web, <fullname>-worker and one <fullname>-web-ep-<name> per endpoint pool (%d)", len(deploys), pools)
 			}
 			for _, role := range []string{"web", "worker"} {
 				d := find(docs, "Deployment", "trove-"+role)
@@ -678,7 +695,9 @@ func TestChart(t *testing.T) {
 					}
 				}
 				for _, e := range list(pod, "containers", "0", "env") {
-					if at(e, "valueFrom", "secretKeyRef") != nil {
+					// The one exception: the non-secret settings of an S3 provisioner's Secret
+					// (bucket, region, endpoint) are read from it by secretKeyRef.
+					if at(e, "valueFrom", "secretKeyRef") != nil && !s3SettingEnv[str(e, "name")] {
 						t.Errorf("%s: env %s reads a Secret", name, str(e, "name"))
 					}
 					n := strings.ToLower(str(e, "name"))
@@ -772,7 +791,7 @@ func TestChart(t *testing.T) {
 						t.Errorf("%s: %s fieldPath = %q, want %q", name, v, got, field)
 					}
 				}
-				if strings.HasSuffix(name, "-web") || strings.HasSuffix(name, "-worker") {
+				if strings.HasSuffix(name, "-web") || strings.HasSuffix(name, "-worker") || strings.Contains(name, "-web-ep-") {
 					for _, v := range []string{"TROVE_RUNTIME_MEMORY_LIMIT_BYTES", "TROVE_RUNTIME_TERMINATION_GRACE_PERIOD", "TROVE_STORAGE_SPOOL_MAX_BYTES"} {
 						if env[v] == nil {
 							t.Errorf("%s lacks %s", name, v)
@@ -785,6 +804,11 @@ func TestChart(t *testing.T) {
 						case "TROVE_POD_NAME", "TROVE_POD_NAMESPACE", "TROVE_NODE_NAME", "TROVE_RUNTIME_MEMORY_LIMIT_BYTES",
 							"TROVE_RUNTIME_TERMINATION_GRACE_PERIOD", "TROVE_STORAGE_SPOOL_MAX_BYTES",
 							"TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS", "TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS", "TROVE_LOG_LEVEL":
+						case "TROVE_POOL_NAME": // the pods of an endpoint pool (R-EP-002, R-EP-008)
+							if !strings.Contains(name, "-web-ep-") {
+								t.Errorf("%s sets TROVE_POOL_NAME, which only an endpoint pool does", name)
+							}
+						case "TROVE_STORAGE_S3_BUCKET", "TROVE_STORAGE_S3_REGION", "TROVE_STORAGE_S3_ENDPOINT": // from the S3 Secret
 						default:
 							t.Errorf("%s sets %s, which the spec does not list (R-HA-030)", name, v)
 						}
@@ -905,6 +929,9 @@ func TestChart(t *testing.T) {
 			web := at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec", "containers", "0")
 			var ports []string
 			for _, p := range list(web, "ports") {
+				if str(p, "name") == "" {
+					continue // an endpoint's port (R-EP-008), asserted in TestEndpoints
+				}
 				ports = append(ports, str(p, "name")+"="+strconv.Itoa(at(p, "containerPort").(int)))
 			}
 			if strings.Join(ports, ",") != "http=8080,ops=8081" {
@@ -1079,8 +1106,14 @@ func TestChart(t *testing.T) {
 	t.Run("R-HA-037 no Service has session affinity and the Ingress routes the whole host", func(t *testing.T) {
 		eachSet(t, func(t *testing.T, _ string, out string, docs []doc) {
 			svcs := ofKind(docs, "Service")
-			if len(svcs) != 2 {
-				t.Errorf("%d Services rendered, want the client and the ops Service", len(svcs))
+			own := 0
+			for _, s := range svcs {
+				if str(s, "metadata", "labels", "trove/endpoint") == "" {
+					own++
+				}
+			}
+			if own != 2 {
+				t.Errorf("%d Services rendered besides the endpoints', want the client and the ops Service", own)
 			}
 			for _, s := range svcs {
 				if got := str(s, "spec", "sessionAffinity"); got != "None" {
@@ -1093,10 +1126,14 @@ func TestChart(t *testing.T) {
 				}
 			}
 			for _, ing := range ofKind(docs, "Ingress") {
+				endpoint := str(ing, "metadata", "labels", "trove/endpoint") != ""
 				for _, r := range list(ing, "spec", "rules") {
 					for _, p := range list(r, "http", "paths") {
 						if str(p, "path") != "/" || str(p, "pathType") != "Prefix" {
 							t.Errorf("ingress rule %v is not path / with pathType Prefix", p)
+						}
+						if endpoint {
+							continue // an endpoint's Ingress routes to its own Service (TestEndpoints)
 						}
 						if str(p, "backend", "service", "name") != "trove" || str(p, "backend", "service", "port", "name") != "http" {
 							t.Errorf("ingress backend = %v, want Service trove port http", at(p, "backend"))
@@ -1272,6 +1309,11 @@ func TestRenderedConfigurationPassesTheBinary(t *testing.T) {
 					"web":    at(find(docs, "Deployment", "trove-web"), "spec", "template", "spec"),
 					"worker": at(find(docs, "Deployment", "trove-worker"), "spec", "template", "spec"),
 				}
+				for _, d := range ofKind(docs, "Deployment") {
+					if n := str(d, "metadata", "name"); strings.HasPrefix(n, "trove-web-ep-") {
+						pods[strings.TrimPrefix(n, "trove-")] = at(d, "spec", "template", "spec")
+					}
+				}
 				if job := find(docs, "Job", "trove-migrate"); job != nil {
 					pods["migrate"] = at(job, "spec", "template", "spec")
 				}
@@ -1288,6 +1330,15 @@ func TestRenderedConfigurationPassesTheBinary(t *testing.T) {
 								cmd.Env = append(cmd.Env, n+"=1073741824")
 							default: // downward API
 								cmd.Env = append(cmd.Env, n+"=test")
+							}
+						}
+						if name == "migrate" {
+							// validate checks the rules of a serving replica, which want the bucket; the
+							// Job itself needs no object store, so take the web pod's S3 settings.
+							for n := range s3SettingEnv {
+								if e := envByName(pods["web"])[n]; e != nil {
+									cmd.Env = append(cmd.Env, n+"=test")
+								}
 							}
 						}
 						if out, err := cmd.CombinedOutput(); err != nil {

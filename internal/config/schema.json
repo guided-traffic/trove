@@ -517,6 +517,14 @@
           "x-trove-env": "TROVE_HEALTH_CHECK_TIMEOUT",
           "x-trove-type": "duration"
         },
+        "database_outage_grace": {
+          "default": "20s",
+          "description": "A replica that was ready stays ready while PostgreSQL has been unreachable for less than this; 0 disables it. Must be below database.retry.max_elapsed.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_HEALTH_DATABASE_OUTAGE_GRACE",
+          "x-trove-type": "duration"
+        },
         "failure_threshold": {
           "default": 2,
           "minimum": 1,
@@ -1073,6 +1081,24 @@
           "x-trove-env": "TROVE_SERVER_CONTENT_URL_TTL",
           "x-trove-type": "duration"
         },
+        "endpoint_rate_limits": {
+          "default": {
+            "external": {
+              "requests_per_second": 50,
+              "burst": 200,
+              "key": "principal"
+            }
+          },
+          "description": "Rate-limit classes by name (R-EP-015).",
+          "type": "object",
+          "x-trove-env": "TROVE_SERVER_ENDPOINT_RATE_LIMITS"
+        },
+        "endpoints": {
+          "default": {},
+          "description": "Further endpoints by name (R-EP-001): each needs listen and base_url. The entry default may set only hosts, wildcard_host, host_roots, wildcard_root, surface, auth, exposure, cache_fill, rate_limit_class and replica_header.",
+          "type": "object",
+          "x-trove-env": "TROVE_SERVER_ENDPOINTS"
+        },
         "forwarded_header": {
           "default": "x-forwarded-for",
           "description": "The one header family the edge rewrites: X-Forwarded-* or Forwarded (RFC 7239). The other is never read.",
@@ -1568,7 +1594,7 @@
             },
             "endpoint": {
               "default": "",
-              "description": "Empty means AWS endpoint resolution for the region.",
+              "description": "Empty means AWS endpoint resolution for the region. A host without a scheme means https://; plain HTTP needs http:// and allow_insecure_endpoint.",
               "type": "string",
               "x-trove-env": "TROVE_STORAGE_S3_ENDPOINT"
             },

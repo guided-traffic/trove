@@ -26,6 +26,12 @@ type Server struct {
 	ForwardedHeader      string        `yaml:"forwarded_header" default:"x-forwarded-for" validate:"oneof=x-forwarded-for|forwarded" doc:"The one header family the edge rewrites: X-Forwarded-* or Forwarded (RFC 7239). The other is never read."`
 	AdditionalBaseURLs   []string      `yaml:"additional_base_urls" default:"[]"`
 	ReplicaHeader        string        `yaml:"replica_header" default:"authenticated" validate:"oneof=authenticated|always|never"`
+	// Endpoints names the further client listeners and optionally tunes the
+	// default endpoint (R-EP-001). The map is one key; in the environment it is
+	// JSON (TROVE_SERVER_ENDPOINTS).
+	Endpoints map[string]Endpoint `yaml:"endpoints" default:"{}" doc:"Further endpoints by name (R-EP-001): each needs listen and base_url. The entry default may set only hosts, wildcard_host, host_roots, wildcard_root, surface, auth, exposure, cache_fill, rate_limit_class and replica_header."`
+	// EndpointRateLimits are the classes an endpoint's rate_limit_class names (R-EP-015).
+	EndpointRateLimits map[string]EndpointRateLimit `yaml:"endpoint_rate_limits" default:"{\"external\":{\"requests_per_second\":50,\"burst\":200,\"key\":\"principal\"}}" doc:"Rate-limit classes by name (R-EP-015)."`
 }
 
 // Validate checks the cross-field rules of the section.
@@ -59,6 +65,7 @@ func (s *Server) Validate(r *Report) {
 			}
 		}
 	}
+	s.validateEndpoints(r)
 }
 
 // checkOrigin enforces R-OPS-005: scheme, host and optional port, nothing else.

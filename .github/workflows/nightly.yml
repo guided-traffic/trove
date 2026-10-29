@@ -206,8 +206,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      # make image takes the version from git describe, which has no tag to find here; the
-      # binary refuses a version that is not major.minor.patch or "dev" (see docs/developer/e2e.md).
+      # The image is built with an explicit VERSION=dev: the binary refuses a version that is not
+      # major.minor.patch or "dev" (see docs/developer/e2e.md).
       TROVE_IMAGE: ghcr.io/guided-traffic/trove:dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

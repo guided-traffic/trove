@@ -31,7 +31,15 @@ const maxHandlerLabels = 1000
 type MetricsOption func(*metricsOptions)
 
 type metricsOptions struct {
-	cfg config.Metrics
+	cfg       config.Metrics
+	endpoints []string
+}
+
+// WithEndpointNames sets the endpoint names the endpoint label may take, from
+// the configuration (R-EP-009): the default endpoint and the configured further
+// endpoints, at most 17 values. A name outside the set folds into _other.
+func WithEndpointNames(names ...string) MetricsOption {
+	return func(o *metricsOptions) { o.endpoints = names }
 }
 
 // WithMetricsConfig applies the metrics section. Without it, metrics are
@@ -63,6 +71,11 @@ type Metrics struct {
 	dbg      *DBGauges
 	repos    *CappedLabels
 	subs     *CappedLabels
+
+	endpoints     map[string]struct{}
+	epListenerUp  *prometheus.GaugeVec
+	epMisdirected *prometheus.CounterVec
+	epFwdIgnored  *prometheus.CounterVec
 }
 
 // NewMetrics builds the registry with the Go runtime and process collectors and
@@ -86,10 +99,17 @@ func NewMetrics(role string, opts ...MetricsOption) *Metrics {
 	info.WithLabelValues(bi.Version, bi.Commit, bi.GoVersion, role).Set(1)
 	m.reg.MustRegister(info)
 
-	m.requests = m.NewCounterVec("trove_http_requests_total", "Completed HTTP requests.", "listener", "handler", "method", "code")
+	m.endpoints = map[string]struct{}{config.DefaultEndpoint: {}}
+	for _, n := range o.endpoints {
+		m.endpoints[n] = struct{}{}
+	}
+	m.requests = m.NewCounterVec("trove_http_requests_total", "Completed HTTP requests.", "listener", "endpoint", "handler", "method", "code")
 	m.duration = m.NewHistogramVec("trove_http_request_duration_seconds",
-		"Time from first byte received to last byte sent.", HTTPBuckets(), "listener", "handler", "method", "code_class")
-	m.inFlight = m.NewGaugeVec("trove_http_requests_in_flight", "HTTP requests in progress.", "listener")
+		"Time from first byte received to last byte sent.", HTTPBuckets(), "listener", "endpoint", "handler", "method", "code_class")
+	m.inFlight = m.NewGaugeVec("trove_http_requests_in_flight", "HTTP requests in progress.", "listener", "endpoint")
+	m.epListenerUp = m.NewGaugeVec("trove_endpoint_listener_up", "1 while this replica's listener of the endpoint accepts connections.", "endpoint")
+	m.epMisdirected = m.NewCounterVec("trove_endpoint_misdirected_total", "421 Misdirected Request answers of the host check.", "endpoint")
+	m.epFwdIgnored = m.NewCounterVec("trove_endpoint_forwarded_host_ignored_total", "Forwarded hosts outside the endpoint's host set.", "endpoint")
 	m.recvBytes = m.NewCounterVec("trove_http_received_bytes_total", "Request body bytes.", "handler")
 	m.sentBytes = m.NewCounterVec("trove_http_sent_bytes_total", "Response body bytes.", "handler")
 	m.cut = m.NewCounterVec("trove_http_transfers_cut_total", "Transfers cut at the shutdown deadline.", "direction")
@@ -255,15 +275,60 @@ func codeClass(status int) string {
 	return strconv.Itoa(status/100) + "xx"
 }
 
+// endpointLabel bounds the endpoint label to the configured names. The ops
+// listener has none, so its series carry the empty value.
+func (m *Metrics) endpointLabel(name string) string {
+	if name == "" {
+		return ""
+	}
+	if _, ok := m.endpoints[name]; ok {
+		return name
+	}
+	m.overflow.WithLabelValues("trove_http_requests_total", "endpoint").Inc()
+	return "_other"
+}
+
+// EndpointListenerUp sets trove_endpoint_listener_up{endpoint}: 1 while this
+// replica's listener of the endpoint accepts connections (R-EP-009).
+func (m *Metrics) EndpointListenerUp(endpoint string, up bool) {
+	v := 0.0
+	if up {
+		v = 1
+	}
+	m.epListenerUp.WithLabelValues(m.endpointLabel(endpoint)).Set(v)
+}
+
+// EndpointMisdirected counts a 421 of the host check (R-EP-003).
+func (m *Metrics) EndpointMisdirected(endpoint string) {
+	m.epMisdirected.WithLabelValues(m.endpointLabel(endpoint)).Inc()
+}
+
+// EndpointForwardedHostIgnored counts a forwarded host outside the endpoint's
+// host set (R-EP-003).
+func (m *Metrics) EndpointForwardedHostIgnored(endpoint string) {
+	m.epFwdIgnored.WithLabelValues(m.endpointLabel(endpoint)).Inc()
+}
+
+// ExportEndpoints creates the per-endpoint series at 0, so a scrape sees them
+// before the first event.
+func (m *Metrics) ExportEndpoints() {
+	for n := range m.endpoints {
+		m.epListenerUp.WithLabelValues(n)
+		m.epMisdirected.WithLabelValues(n)
+		m.epFwdIgnored.WithLabelValues(n)
+	}
+}
+
 // observeRequest records one completed request.
-func (m *Metrics) observeRequest(listener, handler, method string, status int, d time.Duration, recv, sent int64, traceID string, sampled bool) {
+func (m *Metrics) observeRequest(listener, endpoint, handler, method string, status int, d time.Duration, recv, sent int64, traceID string, sampled bool) {
 	if status < 100 || status > 599 {
 		status = 500
 	}
 	h := m.handlerLabel(handler)
 	me := methodLabel(method)
-	m.requests.WithLabelValues(listener, h, me, strconv.Itoa(status)).Inc()
-	obs := m.duration.WithLabelValues(listener, h, me, codeClass(status))
+	ep := m.endpointLabel(endpoint)
+	m.requests.WithLabelValues(listener, ep, h, me, strconv.Itoa(status)).Inc()
+	obs := m.duration.WithLabelValues(listener, ep, h, me, codeClass(status))
 	if eo, ok := obs.(prometheus.ExemplarObserver); ok && sampled && traceID != "" {
 		eo.ObserveWithExemplar(d.Seconds(), prometheus.Labels{"trace_id": traceID})
 	} else {

@@ -32,7 +32,9 @@ func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, err
 	t := &telemetry{}
 	t.logging = observability.NewLogging(cfg.Log, w, observability.WithIdentity(id.Instance, id.Role))
 	t.log = t.logging.Logger()
-	t.metrics = observability.NewMetrics(id.Role, observability.WithMetricsConfig(cfg.Metrics))
+	t.metrics = observability.NewMetrics(id.Role, observability.WithMetricsConfig(cfg.Metrics),
+		observability.WithEndpointNames(endpointNames(cfg)...))
+	t.metrics.ExportEndpoints()
 	t.passing = t.metrics.NewGaugeVec("trove_health_check_passing", "1 while the readiness check passes, 0 while it fails.", "name")
 	var err error
 	if t.tls, err = tlsfiles.NewMetrics(t.metrics.Registry()); err != nil {
@@ -60,10 +62,10 @@ func (t *telemetry) checkObserver(name string, passing bool) {
 
 // clientStages returns the injected stages of the client chain: trace context,
 // request log and metrics (R-ARCH-005 steps 2 and 3).
-func (t *telemetry) clientStages(cfg *config.Config) (trace, reqLog func(http.Handler) http.Handler) {
+func (t *telemetry) clientStages(cfg *config.Config, endpoint string) (trace, reqLog func(http.Handler) http.Handler) {
 	reqLog = observability.RequestLog(t.log, t.metrics,
-		observability.WithListener("client"), observability.WithRequestRecords(cfg.Log.Request.Enabled))
-	return t.tracer.Middleware(), reqLog
+		observability.WithListener("client"), observability.WithEndpoint(endpoint), observability.WithRequestRecords(cfg.Log.Request.Enabled))
+	return t.tracer.MiddlewareFor(endpoint), reqLog
 }
 
 // opsStages returns the stages of the ops listener. It logs requests only with
@@ -83,11 +85,14 @@ func label(r *http.Request) {
 	observability.RequestInfoFrom(r.Context()).SetHandler(name)
 }
 
-// annotate records the resolved client address for the request log.
+// annotate records the resolved client address and the effective host for the
+// request log.
 func annotate(r *http.Request, info httpserver.RequestInfo) {
+	ri := observability.RequestInfoFrom(r.Context())
 	if info.Client.IsValid() {
-		observability.RequestInfoFrom(r.Context()).SetRemoteAddr(info.Client.String())
+		ri.SetRemoteAddr(info.Client.String())
 	}
+	ri.SetHost(info.Host)
 }
 
 func (t *telemetry) shutdown(ctx context.Context) {

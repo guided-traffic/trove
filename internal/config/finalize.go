@@ -38,6 +38,10 @@ func (l *loader) finalize() {
 func (c *Config) Validate(r *Report) {
 	c.validateWatchedLoops(r)
 	c.validateStorageCoupling(r)
+	if g := c.Health.DatabaseOutageGrace; g >= c.Database.Retry.MaxElapsed {
+		r.Add("health.database_outage_grace", "%s must be below database.retry.max_elapsed (%s): a replica must turn unready before its queries give up (R-OPS-001)",
+			g, c.Database.Retry.MaxElapsed)
+	}
 	if grace := c.Runtime.TerminationGracePeriod; grace > 0 {
 		fixed := c.Health.ShutdownDrainDelay + ShutdownMargin
 		switch t := c.Server.ShutdownTimeout; {
@@ -67,10 +71,13 @@ func localOrigin(raw string) bool {
 	return false
 }
 
-// Finalize derives server.shutdown_timeout when it is unset: the pod's grace
+// Finalize adds https:// to an object-store endpoint without a scheme (Q-STOR-15) and
+// derives server.shutdown_timeout when it is unset: the pod's grace
 // period minus health.shutdown_drain_delay minus the 5 s margin (R-HA-011), or
 // DefaultShutdownTimeout when the grace period is unknown.
 func (c *Config) Finalize(sources map[string]Source) {
+	c.Storage.finalizeEndpoints(sources)
+	c.Server.fillEndpointDefaults()
 	if c.Server.ShutdownTimeout != 0 {
 		return
 	}

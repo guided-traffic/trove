@@ -76,6 +76,8 @@ type sourceBan struct {
 	re      *regexp.Regexp
 	why     string
 	withSQL bool
+	// except lists trees below dirs that the rule does not cover.
+	except []string
 }
 
 func sourceBans() []sourceBan {
@@ -97,15 +99,30 @@ func sourceBans() []sourceBan {
 			why:     "the remote fetch engine uses the Valkey flight lock, never a PostgreSQL advisory lock",
 			withSQL: true,
 		},
+		{
+			rule: "R-EP-002",
+			dirs: []string{"internal"},
+			// The endpoint of a request is the one whose listener accepted it: only the
+			// chain in internal/httpserver places a snapshot in a request context, and
+			// no other package makes one up as a literal.
+			re:     regexp.MustCompile(`\bhttpserver\.(WithEndpoint\(|Endpoint\{)`),
+			why:    "only internal/httpserver sets the endpoint of a request; read it with httpserver.EndpointFrom",
+			except: []string{"internal/httpserver"},
+		},
 	}
 }
 
-// CheckSourceBans implements the source rules of R-STOR-046 and R-ARCH-033.
+// CheckSourceBans implements the source rules of R-STOR-046, R-ARCH-033 and R-EP-002.
 func CheckSourceBans(root string) ([]Violation, error) {
 	var out []Violation
 	for _, ban := range sourceBans() {
 		for _, dir := range ban.dirs {
 			err := walkSources(root, dir, ban.withSQL, func(rel string, content []byte) {
+				for _, ex := range ban.except {
+					if under(rel, ex) {
+						return
+					}
+				}
 				if m := ban.re.Find(content); m != nil {
 					out = append(out, Violation{Rule: ban.rule, From: rel, To: string(m), Detail: ban.why})
 				}

@@ -51,7 +51,7 @@ topologySpreadConstraints:
       - pod-template-hash
     labelSelector:
       matchLabels:
-        {{- include "trove.selectorLabels" (dict "root" $.root "component" $.role) | nindent 8 }}
+        {{- include "trove.selectorLabels" (dict "root" $.root "component" $.role "pool" ($.pool | default "")) | nindent 8 }}
 {{- end }}
 {{- end }}
 {{- end -}}

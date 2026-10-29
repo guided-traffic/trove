@@ -87,6 +87,8 @@ func New(ctx context.Context, cfg config.StorageS3, hc *http.Client) (*Client, e
 	if cfg.Bucket == "" {
 		return nil, errors.New("storage.s3.bucket is required")
 	}
+	// An endpoint without a scheme is a host and means https:// (R-STOR-030).
+	cfg.Endpoint, cfg.Presign.Endpoint = config.NormalizeEndpoint(cfg.Endpoint), config.NormalizeEndpoint(cfg.Presign.Endpoint)
 	if err := checkEndpoint(cfg); err != nil {
 		return nil, err
 	}

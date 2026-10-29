@@ -38,7 +38,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `integration-up`, `integration-down` | start and stop the integration stack, see below |
 | `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json` |
 | `web` | `cd web && npm ci && npm run build:embed` (the web workspace provides the script) |
-| `image` | builds the binary for `linux/<arch>` (host build, with the Angular build embedded) and wraps it in the distroless base of [Dockerfile](../../Dockerfile) |
+| `image` | builds the binary for `linux/<arch>` (host build, with the Angular build embedded) and wraps it in the distroless base of [Dockerfile](../../Dockerfile). The binary's version is `VERSION`: the number of a `v0.*` tag on `HEAD` (the `v` stripped), else `dev`, else what the caller passes (CI passes `VERSION=dev`). A commit hash is never a version: the binary would not become ready |
 | `coverage` | `go run ./internal/tools/coverage`, see [coverage.md](coverage.md) |
 | `chart-lint`, `chart-test` | call `test/chart/lint.sh` and `test/chart/test.sh`; provided by the chart work package |
 | `dev-up`, `dev-down`, `dev-failover`, `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` (`DURATION=60s`), `dev-drain`, `e2e` | call `deploy/dev/<name>.sh` (`up`, `down`, `failover`, `valkey-failover`, `valkey-kill`, `valkey-outage`, `drain`, `e2e`); provided by the chart and dev-profile work packages, not implemented in this repository state unless the script exists |

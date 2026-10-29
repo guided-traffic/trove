@@ -63,6 +63,8 @@ Secrets never become environment variables.
 {{- $out = append $out (dict "name" "tls-ops" "secret" $t.ops.secretName "path" "/var/run/secrets/trove/tls-ops" "items" (list (dict "key" $t.ops.certKey "path" "tls.crt") (dict "key" $t.ops.keyKey "path" "tls.key"))) -}}
 {{- end -}}
 {{- end -}}
+{{- /* The Secrets of the endpoints this pod serves (R-EP-004, R-EP-008); worker pods and the Job serve none. */ -}}
+{{- $out = concat $out (include "trove.endpointSecretMounts" (dict "root" .root "role" (.role | default "") "pool" (.pool | default "")) | fromYamlArray) -}}
 {{- end -}}
 {{- toYaml $out -}}
 {{- end -}}

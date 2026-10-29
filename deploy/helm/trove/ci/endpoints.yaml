@@ -1,0 +1,81 @@
+# Two further endpoints beside the default one (R-EP-008): customers, served by the main web
+# pods through its own Ingress class, hosts, wildcard host and certificates chosen by SNI; and
+# partners, a minimal one. Neither has a pool of its own (ci/endpoints-pool.yaml has).
+config:
+  server:
+    base_url: https://trove.example.com            # example
+    additional_base_urls: ["https://trove.internal.example.com"]   # example
+    trusted_proxies: ["10.244.0.0/16"]             # example
+  database:
+    host: trove-db-rw.trove.svc                    # example
+  storage:
+    s3:
+      bucket: trove-blobs                          # example
+  valkey:
+    sentinel:
+      addresses:                                   # example
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove                          # example
+tls:
+  secretName: trove-tls                            # example
+secrets:
+  database:
+    existingSecret: trove-db-app                   # example
+  valkey:
+    existingSecret: trove-valkey                   # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [2026-10.key]                            # example
+ingress:
+  enabled: true
+  className: haproxy                               # example: the internal edge
+  backendTLS:
+    controller: haproxy
+    caSecret: trove-tls                            # example
+  tls:
+    - secretName: trove-tls                        # example
+      hosts: [trove.example.com]
+endpoints:
+  default:
+    hosts: [trove.example.com, trove.trove.svc]    # example: the public name and the in-cluster Service name
+  customers:
+    port: 8443                                     # example
+    baseUrl: https://packages.example.com          # example
+    hosts: [pkgs.example.org]                      # example
+    wildcardHost: "*.registry.example.com"         # example
+    wildcardRoot: label                            # example
+    hostRoots:
+      pkgs.example.org: docker-hub                 # example: reserved, no format uses it yet
+    surface: [packages, files]                     # example
+    trustedProxies: ["10.244.0.0/16"]              # example
+    tls:
+      existingSecret: trove-packages-tls           # example: keys tls.crt, tls.key
+      extraSecrets: [trove-packages-wildcard-tls]  # example: the wildcard pair, chosen by SNI
+      clientCaSecret: trove-customer-ca            # example: mutual TLS from the customers' edge
+    ingress:
+      enabled: true
+      className: traefik-external                  # example: another controller than the default endpoint
+      backendTLS:
+        controller: traefik                        # example
+        verify: false
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt   # example
+      tls:
+        - secretName: packages-tls                 # example
+          hosts: [packages.example.com, "*.registry.example.com"]
+    networkPolicy:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-external   # example
+  partners:
+    port: 8444                                     # example
+    baseUrl: https://partners.example.com          # example
+    exposure: all                                  # example
+    ingress:
+      enabled: true
+      tls:
+        - secretName: partners-tls                 # example
+          hosts: [partners.example.com]

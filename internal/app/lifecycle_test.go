@@ -32,7 +32,7 @@ func openStream(t *testing.T, addr, path string) (io.Reader, net.Conn) {
 }
 
 func TestGracefulShutdown(t *testing.T) {
-	t.Run("R-ARCH-024 readiness turns 503 first, the drain delay keeps serving, then the listener refuses, and an in-flight request finishes", func(t *testing.T) {
+	t.Run("R-ARCH-024 R-OPS-002 readiness turns 503 first, ping keeps answering 200 through the drain delay, then the listener refuses, and an in-flight request finishes", func(t *testing.T) {
 		h := start(t, "web", map[string]string{
 			"TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": "600ms", "TROVE_SERVER_SHUTDOWN_TIMEOUT": "10s",
 		})
@@ -80,8 +80,8 @@ func TestGracefulShutdown(t *testing.T) {
 			t.Fatalf("the drain delay must keep serving: %v", err)
 		}
 		resp.Body.Close()
-		if resp.StatusCode != 503 {
-			t.Fatalf("ping during the drain delay = %d, want 503 UNAVAILABLE (not ready)", resp.StatusCode)
+		if resp.StatusCode != 200 {
+			t.Fatalf("ping during the drain delay = %d, want 200: the replica still serves (R-OPS-002)", resp.StatusCode)
 		}
 		if !resp.Close {
 			t.Fatal("a response completed during the drain delay must carry Connection: close")

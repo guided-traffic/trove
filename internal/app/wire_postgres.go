@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/observability/health"
 )
 
 // postgresComponent connects the pools and runs the schema compatibility check
@@ -23,6 +24,7 @@ func (c *postgresComponent) Name() string { return "postgres" }
 
 func (c *postgresComponent) Start(ctx context.Context) (err error) {
 	a := c.a
+	checkBinaryVersion(a.log, buildinfo.Get().Version)
 	// startComponent records a component only after Start succeeded, so Stop
 	// never runs for one that failed: close the pools here on every return that
 	// follows a successful Open (a floor error, a cancelled context).
@@ -76,8 +78,13 @@ func (c *postgresComponent) Start(ctx context.Context) (err error) {
 			return ctx.Err()
 		}
 	}
-	a.health.AddReadiness("database", c.db.Ready, false)
-	a.health.AddReadiness("schema", func(ctx context.Context) error { return c.db.CheckSchema(ctx, buildinfo.Get().Version) }, false)
+	// Both checks read PostgreSQL, so both tolerate an outage shorter than
+	// health.database_outage_grace once the replica was ready (R-OPS-001, Q-OPS-31).
+	grace := health.WithGrace(a.cfg.Health.DatabaseOutageGrace)
+	a.health.AddReadiness("database", func(ctx context.Context) error { return markOutage(c.db.Ready(ctx)) }, false, grace)
+	a.health.AddReadiness("schema", func(ctx context.Context) error {
+		return markOutage(c.db.CheckSchema(ctx, buildinfo.Get().Version))
+	}, false, grace)
 	a.setDB(c.db)
 	return nil
 }
@@ -100,4 +107,14 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	case <-t.C:
 		return true
 	}
+}
+
+// markOutage tells the health registry that err is the database being away, not
+// wrong: a schema that is behind or a rejected credential stays a plain failure
+// and gates at once.
+func markOutage(err error) error {
+	if err != nil && postgres.IsOutage(err) {
+		return health.Transient(err)
+	}
+	return err
 }

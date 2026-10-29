@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/guided-traffic/trove/internal/config"
 )
 
 // Field limits of the request record (R-OPS-010). The values come from the
@@ -15,7 +17,9 @@ import (
 const (
 	MaxUserAgent = 512
 	MaxPath      = 2 << 10
-	maxMethod    = 32
+	// MaxHost bounds the host field (R-EP-009).
+	MaxHost   = 255
+	maxMethod = 32
 	// TruncatedMarker ends a field that was cut.
 	TruncatedMarker = "…[truncated]"
 )
@@ -54,6 +58,7 @@ type RequestOption func(*requestOptions)
 
 type requestOptions struct {
 	listener   string
+	endpoint   string
 	records    bool
 	scrub      *Scrubber
 	remoteAddr func(*http.Request) string
@@ -61,6 +66,13 @@ type requestOptions struct {
 
 // WithListener sets the listener label and field: "client" (default) or "ops".
 func WithListener(name string) RequestOption { return func(o *requestOptions) { o.listener = name } }
+
+// WithEndpoint names the endpoint the listener belongs to: the endpoint label of
+// the metrics and the endpoint field of the record (R-EP-009). The name is the
+// listener's, fixed when the chain is built; nothing in a request changes it.
+// Without it a client listener is the default endpoint and the ops listener has
+// none.
+func WithEndpoint(name string) RequestOption { return func(o *requestOptions) { o.endpoint = name } }
 
 // WithRequestRecords switches the log records off (log.request.enabled false,
 // or the ops listener without log.request.ops_listener). Metrics are still
@@ -88,6 +100,9 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 		f(&o)
 	}
 	rlog := log.With("log", StreamRequest, "component", "http")
+	if o.listener == "client" && o.endpoint == "" {
+		o.endpoint = config.DefaultEndpoint
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -103,7 +118,7 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 				r.Body = body
 			}
 			rec := recorderFor(w)
-			g := m.inFlight.WithLabelValues(o.listener)
+			g := m.inFlight.WithLabelValues(o.listener, m.endpointLabel(o.endpoint))
 			g.Inc()
 			defer g.Dec()
 
@@ -113,7 +128,7 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 			status := rec.statusOrOK()
 			facts := ri.get()
 			recv := requestBytes(r, body)
-			m.observeRequest(o.listener, facts.handler, r.Method, status, dur, recv, rec.bytes, RequestID(ctx), Sampled(ctx))
+			m.observeRequest(o.listener, o.endpoint, facts.handler, r.Method, status, dur, recv, rec.bytes, RequestID(ctx), Sampled(ctx))
 			if !o.records {
 				return
 			}
@@ -143,6 +158,8 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 				slog.String("trace_id", RequestID(ctx)),
 				nullable("span_id", SpanID(ctx)),
 				slog.String("listener", o.listener),
+				endpointAttr(o),
+				nullable("host", clipField(facts.host, MaxHost, nil)),
 				slog.String("remote_addr", remote),
 				slog.String("peer_addr", peer),
 				slog.String("method", clipField(r.Method, maxMethod, nil)),
@@ -168,6 +185,10 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 		})
 	}
 }
+
+// endpointAttr is the endpoint field: the name on a client listener, null on the
+// ops listener.
+func endpointAttr(o requestOptions) slog.Attr { return nullable("endpoint", o.endpoint) }
 
 // requestBytes reports the body bytes received: the count of bytes the handler
 // read, or -1 when the length is unknown (a chunked body nobody read).

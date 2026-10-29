@@ -56,9 +56,14 @@ func Gate(st SchemaState, required int, version string) error {
 // path such as GET /system/info: a request must never queue behind the loops
 // that hold the control connection, and the control connection must not be
 // spent on a client's rate. A database without the table or the row counts as
-// applied 0.
+// applied 0. It reads through Read, so it rides out a failover.
 func (db *DB) SchemaState(ctx context.Context) (SchemaState, error) {
-	return readSchemaState(ctx, db.main)
+	var st SchemaState
+	err := db.Read(ctx, func(c q.DBTX) (err error) {
+		st, err = readSchemaState(ctx, c)
+		return err
+	})
+	return st, err
 }
 
 // readSchemaState reads schema_state through any pool or connection.

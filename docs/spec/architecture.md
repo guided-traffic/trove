@@ -2225,6 +2225,15 @@ Priority: **MVP** · Covers: HA-062
     deadline and `SET LOCAL statement_timeout` equal to `authz.cache.max_staleness`. A read-only
     transaction never meets a serialization failure.
   - `meta.InTx` retries SQLSTATE `40001` and `40P01` up to three times.
+  - **Every read of the main pool on a request path retries like a transaction.** A handler that reads
+    without a transaction uses `DB.Read`, never the raw pool. It repeats the read on a failover error
+    (SQLSTATE `57P01`, `57P02`, `57P03`, `25006`, `53300`, class `08`, a refused or timed-out connection)
+    with the jittered backoff of `meta.InTx` until `database.retry.max_elapsed` or the request deadline,
+    destroys the connection that failed so the retry finds the new primary, and ends as `503`
+    `database_unavailable` (R-ARCH-023) when the bound is used up. Any other error is returned unchanged.
+    A read through `DB.Read` is not one snapshot: a handler that needs several statements to agree uses
+    `meta.InTx`. A read that is best effort by nature (the installation facts of `GET /api/v1/system/info`)
+    bounds the whole call with its own short context, so it never waits out the retry bound.
   - No outbound HTTP, no object-store call and no Valkey call runs inside a transaction.
   - Request-path transactions set `SET LOCAL statement_timeout` (5 s, proposed). Jobs set their own
     timeout.
@@ -2726,8 +2735,10 @@ before they are written. Examples are remote upstream credentials and webhook se
   - Ciphertext format: `v1:<key id>:<base64(nonce ‖ ciphertext ‖ tag)>`.
   - The additional authenticated data is the table, the row's primary key and the column. A database
     writer cannot move a ciphertext to another row and have it decrypt there.
-- Key ring: `secrets.encryption_key_files` lists files. Each file holds 32 random bytes, base64,
-  and the file name without `.key` is the key ID. `secrets.active_key_id` names the key used for
+- Key ring: `secrets.encryption_key_files` lists files. Each file holds 32 random bytes, either as
+  base64 text (43 or 44 characters, surrounding white space ignored) or raw (a file of exactly 32
+  bytes, as a random-byte generator writes it; Q-ARCH-34), and the file name without `.key` is the
+  key ID. `secrets.active_key_id` names the key used for
   encryption; every listed key decrypts. The Helm chart mounts them from a Kubernetes Secret
   ([ha-and-helm.md](ha-and-helm.md)). There is no default key and no generated key: a missing key
   ring stops start-up.
@@ -2985,7 +2996,9 @@ learns of the removal with a delay. The steps cover that delay first:
      ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026, Q-REPO-7; R-ARCH-033).
    - A support-bundle part this replica is still collecting is abandoned (R-OPS-027, P1).
 2. A `web` replica keeps serving normally for `health.shutdown_drain_delay`, so that requests a
-   proxy still routes to it succeed. Every response it completes from now on carries
+   proxy still routes to it succeed. That includes `GET /api/v1/system/ping`, which answers `200`
+   until the listener closes ([operations-and-observability.md](operations-and-observability.md)
+   R-OPS-002, Q-OPS-30). Every response it completes from now on carries
    `Connection: close` on HTTP/1.1, so clients and proxies reconnect through the Service to another
    replica. The drain delay must cover the endpoint-propagation time of the edge in use; the drain
    test below measures it.
@@ -4591,6 +4604,25 @@ rotation simple. The override covers the case where the monitoring side requires
 would revisit this when an installation has a monitoring CA that must not sign client traffic.
 
 **Applied in the spec:** R-ARCH-035 states the default pair and the override.
+
+### Q-ARCH-34 · Key files: base64 text only, or raw bytes too
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Base64 text only | A key file is 43 or 44 base64 characters; a generator that writes random bytes needs a conversion step | One format | The owner's secret generator (internal-secrets-operator, `type: bytes`) writes the 32 bytes themselves, so its Secret cannot be mounted as it is |
+| (b) A file of exactly 32 bytes is the key; anything else is base64 text (chosen) | The length decides, before anything is trimmed. Base64 text of 32 bytes is 43 or 44 characters (45 with a newline), never 32 | A generated Secret is usable as written; the existing base64 files keep working; no flag, no second key list | A 32-character text file is read as a raw key, and a raw key plus a stray newline (33 bytes) is refused with its size |
+| (c) A second key list for raw files (`encryption_key_raw_files`) | The operator says which format a file has | No guessing | Two lists and a rule for their order for a distinction the length already makes |
+
+**Choice:** (b).
+
+**Rationale:** The two formats cannot be confused at the length of a key, so the file needs no marker. The check runs
+before `TrimSpace` because a random key may begin or end with a white-space byte. The error for any other size says
+"32 random bytes, either raw or base64-encoded". The development agent would revisit this if a key length other than
+256 bits is ever allowed, since the length then no longer tells the formats apart.
+
+**Applied in the spec:** R-ARCH-021 states both formats in the key-ring bullet.
 
 ## What this does not cover
 

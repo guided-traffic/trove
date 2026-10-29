@@ -11,7 +11,7 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 |---|---|
 | [cmd/trove/serve.go](../../cmd/trove/serve.go) | Loads the configuration, turns `SIGTERM`/`SIGINT` into a context, calls `app.RunWith`. A second signal ends the process at once |
 | [internal/app](../../internal/app) | Composition root: role subsystems, start order, shutdown sequence, wiring of every infrastructure client |
-| [internal/httpserver](../../internal/httpserver) | Listeners and their TLS (`ListenerTLS`), `Router` (ServeMux wrapper), the middleware `Chain`, client address, in-flight limit, route-table rules, graceful shutdown |
+| [internal/httpserver](../../internal/httpserver) | Listeners and their TLS (`ListenerTLS`), `Router` (ServeMux wrapper), the middleware `Chain`, client address, in-flight limit, route-table rules, graceful shutdown, and the endpoint model (`Endpoint`, host check, surface), see [endpoints.md](endpoints.md) |
 | [internal/tlsfiles](../../internal/tlsfiles) | Reloadable TLS material of every listener and client (leaf package), see [tls.md](tls.md) |
 | [internal/observability/health](../../internal/observability/health) | Readiness checks with debounce, the liveness watchdog, the probe handlers |
 | [internal/api/v1](../../internal/api/v1) | Management API handlers and the OpenAPI document, see [http-api.md](http-api.md) |
@@ -25,7 +25,8 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | [roles.go](../../internal/app/roles.go) | `SubsystemsFor(role)`: the table of R-ARCH-001 as data |
 | [identity.go](../../internal/app/identity.go) | Instance name (`TROVE_POD_NAME`, `POD_NAME`, `HOSTNAME` in Kubernetes, else `hostname-pid`), random instance UID, node name |
 | [wire_observability.go](../../internal/app/wire_observability.go), [wire_postgres.go](../../internal/app/wire_postgres.go), [wire_valkey.go](../../internal/app/wire_valkey.go) | One file per infrastructure client; `WIRING POINT` comments in `bootstrap` mark what later work packages add |
-| [wire_tls.go](../../internal/app/wire_tls.go) | `startTLS`: one `ListenerTLS` per listener of the role, the `tls` first-readiness check |
+| [wire_tls.go](../../internal/app/wire_tls.go) | `startTLS`: one `ListenerTLS` per listener of the role (every endpoint listener included), the `tls` first-readiness check |
+| [wire_endpoints.go](../../internal/app/wire_endpoints.go) | The endpoints this process serves, their TLS, chain and listener; see [endpoints.md](endpoints.md) |
 | [access.go](../../internal/app/access.go) | M0 stand-ins for authentication and authorization (see below) |
 | [facts.go](../../internal/app/facts.go) | System information from the configuration; the replica list (this replica only until the registry exists) |
 | [fixture_on.go](../../internal/app/fixture_on.go) / [fixture_off.go](../../internal/app/fixture_off.go) | The `drainfixture` test build |
@@ -37,6 +38,12 @@ change poll, registry. `worker`: no client listener, plus the lease pool and the
 and logs a warning. A `worker` has no socket on `:8080`; a test proves it
 (`R-ARCH-001 a worker replica opens no client socket`).
 
+A client listener exists per **endpoint** (R-EP-002): the default endpoint on `server.listen` and every entry of
+`server.endpoints` that belongs to the process's pool (`TROVE_POOL_NAME`). `web` opens the endpoints of its pool, a
+process in a pool no endpoint names opens those without a pool, `all` opens every one, a `worker` none. Each
+endpoint has its own `http.Server`, router (built from its surface), chain instance and TLS block; the sections
+below describe the chain once, [endpoints.md](endpoints.md) says what differs per endpoint.
+
 ## Request path (client listener)
 
 ```text
@@ -46,7 +53,7 @@ net/http server ── track (stall deadlines, active-request registry for the s
         └─ 2 request ID  X-Request-Id = trace ID (minted if no trace stage); X-Trove-Replica for replica_header=always; OnRequest hook names the handler
            └─ 3 request log + metrics   observability.RequestLog               [injected]
               └─ 4 in-flight limit      503 server_busy + Retry-After: 1
-                 └─ 5 client address    Resolver: peer, trusted proxies, base URL; Annotate hook
+                 └─ 5 client address    Resolver: peer, trusted proxies, base URL; Annotate hook; per endpoint: effective host, host check (421), binding
                     └─ 6 authentication principal or anonymous; invalid credential -> 401; X-Trove-Replica for authenticated callers
                        └─ 7 rate limits [injected, none in M0]
                           └─ 8 Router (ServeMux): API operations, /ui/, ... ; unmatched -> 404 problem, wrong method -> 405 + Allow
@@ -65,7 +72,9 @@ Every route of a listener is registered through `httpserver.Router`. The generat
 UI and later the format dispatcher all use `Router.Handle`, so `Router.Patterns()` is the whole route
 table. At start-up the composition root runs two checks over it: `Document.CheckRoutes` (API routes and
 `api/openapi.yaml` agree in both directions) and `httpserver.CheckRouteTable` (nothing but the OCI format
-below `/v2/`, no wildcard first segment, R-HA-041). A violation stops start-up and names the pattern.
+below `/v2/`, no wildcard first segment, R-HA-041). A violation stops start-up and names the pattern. Every endpoint has its own router and the checks run over each: `CheckSurface`
+(no route of a family outside the endpoint's surface) and `CheckRouteTable`, which now also reserves `/.well-known/`
+(R-EP-006). The `Document.CheckRoutes` comparison runs for the endpoints that serve `api`.
 
 ### Client address and base URL
 
@@ -106,8 +115,9 @@ Serve
 `httpserver.NewListenerTLS` never fails on a file: a pair that does not load at start lets the listener bind and refuse
 handshakes, and the `tls` check holds the first readiness until it loads (no restart). A rotation that does not load
 keeps the previous pair, counts `trove_tls_reload_errors_total` and logs an error; readiness does not change. TLS 1.2
-offers ECDHE AEAD suites only, ALPN offers `h2` and `http/1.1`. Each further endpoint listener will take its own block
-the same way. Details, rotation and tests: [tls.md](tls.md).
+offers ECDHE AEAD suites only, ALPN offers `h2` and `http/1.1`. Each further endpoint listener takes its own block
+the same way, with the reloader label `client:<endpoint>` (R-EP-004, [endpoints.md](endpoints.md#tls)). Details, rotation and
+tests: [tls.md](tls.md).
 
 ## Start-up
 
@@ -124,7 +134,7 @@ reach PostgreSQL stays alive and unready.
 | 6 object store: wait while `outbound.Err()` reports a problem (a CA file of `proxy.outbound.tls.ca_files` that loads later clears it without a restart), `s3.NewFromFactory` (a `storage.s3.ca_file` that does not load is a configuration error), `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
 | 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `valkeyComponent`, `startCoordination` ([wire_coordination.go](../../internal/app/wire_coordination.go)) |
 | 8 snapshots and caches of the domain packages | `WIRING POINT` (register on `App.Caches()`) |
-| 9 client listener (`web`, `all`) | `startClient` |
+| 9 client listeners (`web`, `all`): one per endpoint of the process, all bound before the replica can be ready | `startClient`, [wire_endpoints.go](../../internal/app/wire_endpoints.go) |
 | 10 `startup` check passes | `bootstrap` sets the flag and refreshes the checks |
 
 At start, and again every hour while the replica runs, `standingWarnings` logs at WARN level: `server.base_url`
@@ -146,7 +156,13 @@ error (Q-HA-13). `/readyz?verbose=1` shows Valkey only through the fixed reason 
 `no_sentinel`, `timeout`, `auth_failed`, `circuit_open`, `probe_failed`, `unsupported`, `config_error`
 ([wire_valkey.go](../../internal/app/wire_valkey.go), `valkeyReasonCode`); the free text with addresses
 stays in the log and in the authenticated replica list. Checks are cached and debounced (`health.failure_threshold`, `health.success_threshold`); probes never
-run a check. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
+run a check. `database` and `schema` carry `health.WithGrace(health.database_outage_grace)` and wrap their error with
+`markOutage` ([wire_postgres.go](../../internal/app/wire_postgres.go)): once the replica has been ready, a failure
+that is `health.Transient` (a connectivity failure, `postgres.IsOutage`; a check that timed out counts) shows as
+`degraded` and does not gate until it has lasted the grace (Q-OPS-31); a schema that is behind gates after the debounce.
+The run of failures ends only when the check passes again, and the first readiness never gets a grace.
+`Health.Serving()` is what `GET /api/v1/system/ping` answers from: no gating check other than `draining` fails, and a
+draining replica had been ready (Q-OPS-30), so the drain delay answers every request; `Ready()` stays the readiness. A loop registers with the watchdog through `health.Loop(name, bound)`, calls `Beat()` per iteration and
 `Stop()` when it ends on purpose.
 
 Metrics beyond the observability package: [wire_gauges.go](../../internal/app/wire_gauges.go) exports

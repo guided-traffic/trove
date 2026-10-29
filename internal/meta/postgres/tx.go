@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // txn is the meta.Tx of one attempt. It carries the hooks and the value slot
@@ -78,6 +79,45 @@ func (db *DB) RequestTx(ctx context.Context, timeout time.Duration, fn func(meta
 		}
 		return fn(tx)
 	})
+}
+
+// Read runs a read on the request pool with the retry and the error mapping of
+// InTx: an error that a failover or a restart of the server or pooler produces
+// (SQLSTATE 57P01, a refused or timed-out connection, a standby) is retried
+// until retry.max_elapsed, and the failure that outlasts it is the database
+// being unavailable (errs.Unavailable, `database_unavailable`, 503). Any other
+// error is returned as it is.
+//
+// fn runs on one pooled connection, outside a transaction: it may issue several
+// statements, but they do not see one snapshot, and it must consume every row it
+// reads before it returns. It must be safe to run again, because a retry starts
+// over on a new connection. Handlers use Read instead of the raw pool, which
+// has no retry (R-ARCH-019, R-ARCH-023).
+func (db *DB) Read(ctx context.Context, fn func(q.DBTX) error) error {
+	err := db.retry.do(ctx, func() error { return readOnce(ctx, db.main, fn) })
+	if err != nil && IsStatementTimeout(err) {
+		return Unavailable(err)
+	}
+	return err
+}
+
+// readOnce is one attempt of Read. A connection that proves wrong is destroyed
+// instead of returned to the pool, so the retry finds the new primary.
+func readOnce(ctx context.Context, pool *pgxpool.Pool, fn func(q.DBTX) error) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	err = fn(conn)
+	if conn.Conn().IsClosed() || classify(err) == retryFailover {
+		_ = conn.Hijack().Close(context.Background())
+		if err != nil && classify(err) == retryNo {
+			err = &connClosedError{err: err}
+		}
+		return err
+	}
+	conn.Release()
+	return err
 }
 
 // transact is the core of InTx and InPgxTx: retry around one attempt. The After

@@ -223,7 +223,12 @@ func randomHex(n int) string {
 // Middleware starts the server span of each request, keeps or replaces the
 // incoming trace context according to tracing.incoming_context, and sends the
 // trace ID as X-Request-Id. A malformed traceparent is ignored.
-func (t *Tracer) Middleware() func(http.Handler) http.Handler {
+func (t *Tracer) Middleware() func(http.Handler) http.Handler { return t.MiddlewareFor("") }
+
+// MiddlewareFor is Middleware for the listener of one endpoint: every server
+// span carries trove.endpoint with the endpoint's name (R-EP-009). The name is
+// the listener's and is fixed when the chain is built.
+func (t *Tracer) MiddlewareFor(endpoint string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -246,6 +251,9 @@ func (t *Tracer) Middleware() func(http.Handler) http.Handler {
 				attribute.String("user_agent.original", clipField(r.UserAgent(), MaxUserAgent, t.scrub)),
 				attribute.String("network.peer.address", peerHost(r.RemoteAddr)),
 			))
+			if endpoint != "" {
+				startOpts = append(startOpts, trace.WithAttributes(attribute.String("trove.endpoint", endpoint)))
+			}
 			ctx, span := t.tracer.Start(ctx, r.Method, startOpts...)
 			defer span.End()
 			w.Header().Set("X-Request-Id", span.SpanContext().TraceID().String())

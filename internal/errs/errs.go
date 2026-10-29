@@ -34,6 +34,7 @@ const (
 	Unavailable              // 503 + Retry-After
 	UpstreamFailed           // 502
 	UpstreamTimeout          // 504
+	Misdirected              // 421: the request's host is not one this endpoint answers for (R-EP-003)
 )
 
 // StatusClientClosed is the status logged for a request whose client went away.
@@ -73,6 +74,8 @@ func (k Kind) String() string {
 		return "upstream_failed"
 	case UpstreamTimeout:
 		return "upstream_timeout"
+	case Misdirected:
+		return "misdirected"
 	default:
 		return fmt.Sprintf("kind(%d)", uint8(k))
 	}
@@ -185,6 +188,8 @@ func (e *Error) Status() int {
 		return 502
 	case UpstreamTimeout:
 		return 504
+	case Misdirected:
+		return 421
 	default:
 		return 500
 	}

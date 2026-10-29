@@ -18,12 +18,16 @@ of this package.
 
 `secrets.encryption_key_files` lists files; `secrets.active_key_id` names the sealing key.
 
-- A key file holds 32 random bytes, base64-encoded (surrounding whitespace ignored). The file name without
+- A key file holds 32 random bytes in one of two forms. Base64 text (43 or 44 characters, surrounding whitespace
+  ignored), or the 32 bytes themselves, as a random-byte generator writes them (the `type: bytes` fields of
+  internal-secrets-operator). A file of exactly 32 bytes is the raw form, checked before anything is trimmed, so a
+  key may start or end with a white-space byte; base64 text of 32 bytes is never 32 characters long (Q-ARCH-34). A
+  file of any other size that is not base64 is refused. The file name without
   `.key` is the key ID, which must match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` (no `:`; it sits in the envelope).
 - Create one by hand: `head -c 32 /dev/urandom | base64 > 2026-10.key`, or as a Secret:
   `kubectl -n trove create secret generic trove-encryption-keys --from-file=2026-10.key=<(head -c 32 /dev/urandom | base64)`.
 - There is no default key and no generated key. `Load` fails, and `trove serve` stops, when the list is empty,
-  a file is missing, unreadable, not base64 or not 32 bytes, a key ID is listed twice, or the active key is
+  a file is missing, unreadable, neither 32 raw bytes nor base64 of 32 bytes, a key ID is listed twice, or the active key is
   not in the ring. The messages name the file or ID and never print key material.
 - The ring is immutable after `Load`; a key change is a roll-out (the chart's pod checksum rolls the pods).
 

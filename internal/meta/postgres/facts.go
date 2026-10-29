@@ -17,31 +17,40 @@ type SystemFacts struct {
 }
 
 // SystemFacts reads installation_id, keyspace_id and incarnation on the request
-// pool. A missing key is an error: the first migration creates all three.
+// pool, through Read. A missing key is an error: the first migration creates all three.
 func (db *DB) SystemFacts(ctx context.Context) (SystemFacts, error) {
-	qs := q.New(db.main)
 	var f SystemFacts
-	for key, dst := range map[string]*string{
-		"installation_id": &f.InstallationID, "keyspace_id": &f.KeyspaceID, "incarnation": &f.Incarnation,
-	} {
-		row, err := qs.GetSystemState(ctx, key)
-		if err != nil {
-			return SystemFacts{}, fmt.Errorf("system_state %s: %w", key, err)
+	err := db.Read(ctx, func(c q.DBTX) error {
+		f = SystemFacts{}
+		qs := q.New(c)
+		for key, dst := range map[string]*string{
+			"installation_id": &f.InstallationID, "keyspace_id": &f.KeyspaceID, "incarnation": &f.Incarnation,
+		} {
+			row, err := qs.GetSystemState(ctx, key)
+			if err != nil {
+				return fmt.Errorf("system_state %s: %w", key, err)
+			}
+			if err := json.Unmarshal(row.Value, dst); err != nil {
+				return fmt.Errorf("system_state %s is not a JSON string: %w", key, err)
+			}
 		}
-		if err := json.Unmarshal(row.Value, dst); err != nil {
-			return SystemFacts{}, fmt.Errorf("system_state %s is not a JSON string: %w", key, err)
-		}
+		return nil
+	})
+	if err != nil {
+		return SystemFacts{}, err
 	}
 	return f, nil
 }
 
 // ServerVersion returns the PostgreSQL server version string (for example "16.15").
 func (db *DB) ServerVersion(ctx context.Context) (string, error) {
-	info, err := q.New(db.main).ServerInfo(ctx)
-	if err != nil {
-		return "", err
-	}
-	return info.Version, nil
+	var version string
+	err := db.Read(ctx, func(c q.DBTX) error {
+		info, err := q.New(c).ServerInfo(ctx)
+		version = info.Version
+		return err
+	})
+	return version, err
 }
 
 // PoolerMode returns database.pooler.mode.

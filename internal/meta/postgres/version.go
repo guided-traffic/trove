@@ -72,3 +72,12 @@ func (a version) compare(b version) int {
 
 // zeroVersion is the compat floor of a database without a contract step.
 const zeroVersion = "0.0.0"
+
+// CheckBinaryVersion reports whether version can be compared with the schema's
+// compatibility floor: major.minor.patch, with an optional pre-release, or "dev".
+// A binary with any other version (a commit hash from a checkout without a tag)
+// fails the schema check for ever, so it can never become ready.
+func CheckBinaryVersion(version string) error {
+	_, err := parseVersion(version)
+	return err
+}

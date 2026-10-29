@@ -70,11 +70,15 @@ Rules for code:
 
 ## Metrics
 
-`observability.NewMetrics(role, WithMetricsConfig(cfg.Metrics))` owns the registry. It exposes the Go runtime
+`observability.NewMetrics(role, WithMetricsConfig(cfg.Metrics), WithEndpointNames(names...))` owns the registry. It exposes the Go runtime
 and process collectors (`go_*`, `process_*`, the only families without the `trove_` prefix),
 `trove_build_info{version,revision,goversion,role}`, the HTTP families, `trove_ready`,
 `trove_metrics_label_overflow_total`, `trove_tracing_spans_dropped_total` and
-`trove_metrics_db_gauges_last_success_timestamp_seconds`.
+`trove_metrics_db_gauges_last_success_timestamp_seconds`. The three HTTP request families carry the label `endpoint`
+(R-EP-009): the configured endpoint names, bounded by `WithEndpointNames` (a name outside the set folds into `_other`
+and counts in the overflow counter); the ops listener's series carry the empty value. The families
+`trove_endpoint_listener_up`, `trove_endpoint_misdirected_total` and `trove_endpoint_forwarded_host_ignored_total` are
+exported at 0 per endpoint (`Metrics.ExportEndpoints`); see [endpoints.md](endpoints.md#observability).
 
 `m.Handler()` serves `GET /metrics` for the operations listener: Prometheus text 0.0.4, OpenMetrics when the
 `Accept` header asks (histograms carry the trace ID of a sampled request as an exemplar), `404` with
@@ -127,7 +131,7 @@ aggregate with `max`, not `sum`.
 ## Request log and request facts
 
 `RequestLog(logger, m, opts...)` counts every request in `trove_http_*` and writes the R-OPS-010 record. Options:
-`WithListener("client"|"ops")`, `WithRequestRecords(false)` (metrics only, for the ops listener without
+`WithListener("client"|"ops")`, `WithEndpoint(name)` (the listener's endpoint: label and the `endpoint` field; a client listener without it is `default`; `host` is the effective host set by the chain), `WithRequestRecords(false)` (metrics only, for the ops listener without
 `log.request.ops_listener`), `WithRemoteAddr(func)`, `WithRequestScrubber`. Absent values are JSON `null`,
 an unknown request length is `-1`.
 
@@ -155,7 +159,8 @@ folds into `unmatched`.
 
 `observability.Tracing(cfg.Tracing, opts...)` always creates W3C trace IDs, whether or not export is enabled; the
 trace ID is the request ID. Middleware order on a listener: `tracer.Middleware()` outermost, then `RequestLog`,
-then the application.
+then the application. `tracer.MiddlewareFor(endpoint)` is the same middleware for one endpoint's listener and adds the span
+attribute `trove.endpoint`.
 
 | Question | Answer |
 |---|---|
@@ -164,7 +169,7 @@ then the application.
 | Get the ID in code | `observability.RequestID(ctx)`, `SpanID(ctx)`, `Sampled(ctx)` |
 | Start a span for a job or call | `tracer.Start(ctx, name, kind, attrs...)`; outbound calls get theirs from the outbound client |
 | Export | `tracing.enabled: true`: OTLP over `http/protobuf` or `grpc`; unset trove keys fall back to `OTEL_EXPORTER_OTLP_*`; resource attributes from `WithTraceResource` plus `OTEL_RESOURCE_ATTRIBUTES` |
-| Queue | bounded by `tracing.queue_size`; a full queue drops the span and counts `trove_tracing_spans_dropped_total`; handling never waits |
+| Queue | bounded by `tracing.queue_size`: spans wait in the queue until they are exported, and the exporter takes at most one batch (up to `min(512, queue_size)` spans) out at a time, so the processor never holds more than twice the queue size; a full queue drops the span and counts `trove_tracing_spans_dropped_total`; handling never waits |
 | Sampling | parent-based with `tracing.sample_ratio`; disabled tracing never samples |
 
 Spans carry attributes under the `trove.` namespace and never user names, e-mail addresses or tokens. Database

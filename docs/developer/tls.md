@@ -71,7 +71,7 @@ session (session ticket) sees no certificate in the resumed handshake; a full ha
 ### Metrics
 
 Registered once per process (`tlsfiles.NewMetrics`, in `internal/app` telemetry) and passed to every reloader. Labels:
-`kind` (`listener`, `database`, `valkey`, `objectstore`, `outbound`), `listener` (`client`, `ops`, empty for clients),
+`kind` (`listener`, `database`, `valkey`, `objectstore`, `outbound`), `listener` (`client`, `client:<endpoint>` for a further endpoint, `ops`, empty for clients),
 `name` (the configured certificate or bundle path). All bounded by the configuration.
 
 | Family | Meaning |
@@ -87,8 +87,11 @@ An expiry alert is `trove_tls_certificate_expiry_timestamp_seconds - time() < 14
 
 `httpserver.NewListenerTLS(listener, block, opts...)` builds a `ListenerTLS` from a `config.ServerTLS` block (nil
 without certificates: plain HTTP). `ServerConfig.TLS` takes it; `Serve` runs its reloader while it accepts.
-Every listener has its own block and its own reloader, so a further endpoint listener (owner input of 2026-10-29) takes
-its own certificates the same way. The handshake goes through `GetConfigForClient`, which returns one `*tls.Config`
+Every listener has its own block and its own reloader, so a further endpoint listener (R-EP-004) takes
+its own certificates the same way: `startEndpointTLS` ([wire_endpoints.go](../../internal/app/wire_endpoints.go)) builds one
+`ListenerTLS` per endpoint from its effective block (the endpoint's pairs, else `server.tls`'s; `client_ca_file` of the
+endpoint only; `min_version` and `reload_interval` of `server.tls`), labelled `client:<name>`. SNI picks among the
+endpoint's own pairs only ([endpoints.md](endpoints.md#tls)). The handshake goes through `GetConfigForClient`, which returns one `*tls.Config`
 per material generation:
 
 | Setting | Value |

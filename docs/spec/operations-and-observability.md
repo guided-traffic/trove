@@ -156,13 +156,27 @@ their `degraded` state.
 | Check | Passes when | Kind | Why |
 |---|---|---|---|
 | `startup` | The start-up steps of [architecture.md](architecture.md) R-ARCH-024 have completed: the ops listener is bound; on `web` the client listener is bound, on `worker` the claim loop, the reaper and the scheduler loop run; in-process caches are initialised; audit partitions for the current and the next month exist (R-OPS-015) | gating | No half-started replica receives traffic or claims a job |
-| `schema` | The applied schema version is inside the window this binary supports (expand/contract, INV-3), and `system_state` holds no `restore_in_progress` marker ([backup-and-restore.md](backup-and-restore.md) R-BAK-021) | gating | A replica never serves against a schema it does not understand, or against a half-restored database |
-| `database` | `SELECT 1` on the replica's control connection ([architecture.md](architecture.md) R-ARCH-019) succeeds within the timeout | gating | Nothing works without PostgreSQL (INV-3). The control connection keeps an exhausted request pool from failing the check, so load never takes replicas out of the Service one after another ([ha-and-helm.md](ha-and-helm.md) R-HA-008, Q-HA-20) |
+| `schema` | The applied schema version is inside the window this binary supports (expand/contract, INV-3), and `system_state` holds no `restore_in_progress` marker ([backup-and-restore.md](backup-and-restore.md) R-BAK-021) | gating; a connectivity failure gets the outage grace below | A replica never serves against a schema it does not understand, or against a half-restored database |
+| `database` | `SELECT 1` on the replica's control connection ([architecture.md](architecture.md) R-ARCH-019) succeeds within the timeout, and the server is a primary | gating, with the outage grace below | Nothing works without PostgreSQL (INV-3). The control connection keeps an exhausted request pool from failing the check, so load never takes replicas out of the Service one after another ([ha-and-helm.md](ha-and-helm.md) R-HA-008, Q-HA-20) |
 | `invalidation` | The last successful change-log poll is younger than `cluster.epoch_max_staleness` ([architecture.md](architecture.md) R-ARCH-018) | gating | A replica that cannot poll the change log cannot bound how stale its revocations and policies are (INV-8, INV-9). The check depends on PostgreSQL only, never on Valkey. The poll runs on the replica's reserved control connection ([architecture.md](architecture.md) R-ARCH-019), so a saturated request pool does not fail it. Its evaluations start failing only once the poll has been stale for `cluster.epoch_max_staleness`, and it is debounced like `database`, so for the same outage it never turns a replica unready sooner than `database` does ([ha-and-helm.md](ha-and-helm.md) R-HA-008) |
 | `objectStore` | A `HEAD` request on the bucket (or on a sentinel object under the configured prefix) succeeds within the timeout | gating until the replica is first ready, then reported; gating throughout with `health.require_object_store: true` (Q-OPS-2) | The first readiness also requires the object-store startup check of [storage.md](storage.md) R-STOR-035, so a release with a wrong bucket never replaces working pods |
 | `valkey` | The Valkey health probe ([architecture.md](architecture.md) R-ARCH-030: a `SET` of the replica's probe key with its expiry) succeeds within `valkey.command_timeout`, and the replica's Valkey circuit is closed ([ha-and-helm.md](ha-and-helm.md) R-HA-057) | reported; before the replica is first ready it gates on a *configuration error* only (Q-HA-13) | Valkey holds shared ephemeral state only (INV-3). While it is unavailable every mechanism runs its fallback, so the replica still answers correctly and stays in the Service (INV-12) |
 | `configBootstrap` | Startup configuration documents were applied (R-OPS-031); passes trivially when none are configured | gating | An invalid document stalls a rollout instead of breaking the service |
 | `draining` | No termination signal was received | gating | Removes a `web` replica from the Service and stops a `worker` from claiming before either stops |
+
+**Database outage grace** (Q-OPS-31). The `database` and `schema` checks read PostgreSQL, and a switchover takes
+10 to 15 s while queries retry for `database.retry.max_elapsed` (R-ARCH-019). Once the replica has been ready, a failure
+of one of them that is a connectivity failure (a refused, reset or timed-out connection, SQLSTATE `57P01`, `57P02`,
+`57P03`, `53300` or class `08`, a server in recovery, a check that exceeded `health.check_timeout`) does not make the
+replica unready until it has lasted `health.database_outage_grace`. Until then the check shows as `degraded` in
+`/readyz?verbose=1` and in the registry, `/readyz` answers `200`, and the replica stays in the Service while its
+requests wait within their retry. The grace is measured from the first failed evaluation of an unbroken run, and a
+single passing evaluation does not restart it: only the check being `pass` again (`health.success_threshold`)
+does. After the grace the check fails as any gating check does. Three things the grace does not do: a failure that is
+not an outage (a schema that is behind, a rejected credential, a half-restored database) gates after the usual
+debounce; the first readiness of a replica gets no grace; `0` switches it off. The value MUST be below
+`database.retry.max_elapsed`, and start-up refuses a configuration that is not, naming the key: a replica has to turn
+unready before its queries give up.
 
 A Valkey *configuration error* is what [ha-and-helm.md](ha-and-helm.md) R-HA-008 lists: Valkey or a
 Sentinel rejects the credentials (`WRONGPASS`, `NOAUTH`, an ACL denial), TLS verification fails, or
@@ -280,6 +294,7 @@ health:
   require_object_store: false     # default (proposed); true = object storage gates readiness continuously (Q-OPS-2)
   watchdog_timeout: 2m            # default (proposed); bound for the watched loops of liveness (Q-OPS-1)
   shutdown_drain_delay: 5s        # default (proposed)
+  database_outage_grace: 20s      # default (proposed); a ready replica tolerates a PostgreSQL outage this short (Q-OPS-31); 0 = off; below database.retry.max_elapsed
 ```
 
 **Acceptance criteria:**
@@ -288,9 +303,12 @@ health:
   `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/readyz` prints `200`. The same
   path on port 8080 returns `404`. On a `worker` pod, `/readyz` on 8081 prints `200` and nothing
   listens on 8080.
-- Apply a NetworkPolicy that denies egress from the trove pods to PostgreSQL. Within 12 s
-  (interval × threshold + timeout), `/readyz` answers `503` on `web` and `worker` pods with
-  `"failing"` containing `database`, while `/healthz` keeps answering `200`. While the policy is in
+- Switch PostgreSQL over (`kubectl cnpg promote`, a 10 to 15 s outage). `/readyz` answers `200` on every
+  replica throughout, with `"degraded"` containing `database` while the outage lasts, and no replica
+  leaves the Service.
+- Apply a NetworkPolicy that denies egress from the trove pods to PostgreSQL. Once the outage has lasted
+  `health.database_outage_grace` (20 s) plus one check interval, `/readyz` answers `503` on `web` and
+  `worker` pods with `"failing"` containing `database`, while `/healthz` keeps answering `200`. While the policy is in
   place, no `worker` replica's instance ID appears in `job.locked_by` of a newly claimed job.
   Remove the policy, and `/readyz` returns to `200` within 5 s.
 - Run `npm ci --registry https://trove.example.com/api/npm/npm-all/` in a loop while
@@ -333,8 +351,12 @@ health:
 Priority: **MVP** · Covers: OPS-001, OPS-005, OPS-006, ADMAPI-070
 
 `GET /api/v1/system/ping` on the client listener (`web` replicas) answers `200 text/plain` with
-`OK` while the replica is ready, a degraded replica included (R-OPS-001), and `503` with
-`UNAVAILABLE` otherwise. A Valkey outage therefore never fails a ping. Anonymous callers MUST be
+`OK` while the replica serves, and `503` with `UNAVAILABLE` otherwise (Q-OPS-30). A replica serves while
+it is ready, a degraded replica included (R-OPS-001), and while it drains after it had been ready: the drain
+delay (R-ARCH-024 step 2) exists so that requests the edge still routes to the pod succeed, a ping among them.
+It does not serve, and ping answers `503`, while a gating check other than `draining` fails (the database,
+the schema, the invalidation check) and while the replica has never been ready. A Valkey outage therefore
+never fails a ping. Anonymous callers MUST be
 accepted even when anonymous repository access is off (AUTHN-036). Credentials that are presented MUST be
 validated, so tooling can check base URL and token in one call. An invalid, expired or revoked token
 yields `401`.
@@ -372,6 +394,9 @@ server:
 - `curl -s https://trove.example.com/api/v1/system/ping` prints `OK`.
 - `curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer trv_pat_<revoked>' …/ping`
   prints `401`.
+- Send `SIGTERM` to a `web` replica and call `/api/v1/system/ping` on it every 20 ms during
+  `health.shutdown_drain_delay`: every answer is `200 OK` while `/readyz` on the ops listener answers
+  `503` with `"failing":["draining"]`.
 - An anonymous call to `/api/v1/system/version` gets `401`. The same call with a valid token gets
   `200`, and the response has an `X-Trove-Replica` header that the anonymous response lacks.
 
@@ -2671,6 +2696,7 @@ health:
   require_object_store: false                      # default (proposed)
   watchdog_timeout: 2m                             # default (proposed)
   shutdown_drain_delay: 5s                         # default (proposed)
+  database_outage_grace: 20s                       # default (proposed)
 log:
   format: json                                     # default (proposed)
   level: info                                      # default (proposed)
@@ -4783,6 +4809,50 @@ check succeeds.
 
 **Applied in the spec:** this block records the start-up behaviour of `internal/app` (`wire_postgres.go`);
 R-OPS-001 is unchanged.
+
+### Q-OPS-30 · Ping while the replica drains
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Ping follows readiness | `503` as soon as `draining` is set | One rule: ping equals `/readyz` | The drain delay exists so that requests an edge still routes to the pod succeed (R-ARCH-024 step 2); the one request that is a ping gets `503` in that window. Measured: 1 of 16938 and 3 of 16502 pings during a node drain |
+| (b) Ping answers `200` while the replica serves, the drain phase included; `503` when it is unready for any other reason or never became ready (chosen) | Ping reads "no gating check other than `draining` fails, and a draining replica had been ready before" | The replica keeps its promise to serve everything during the delay; a pod whose database check fails still answers `503` | Ping and `/readyz` differ during a drain, by design: readiness leaves the Service, ping tells a client whether the replica it reached works |
+| (c) Ping always `200` | Ping proves the HTTP server only | Simplest | Ping stops being a check of base URL, token and a working replica (R-OPS-002) |
+
+**Choice:** (b).
+
+**Rationale:** Readiness decides who receives new traffic; ping answers a request that already arrived. A request that
+arrives during the drain delay is one the replica has promised to serve, so it must not be answered `503`. A replica that
+drains before it was ever ready never served and keeps answering `503`. The development agent would revisit this if an
+edge health-checks through the ping path instead of using the pod's readiness.
+
+**Applied in the spec:** R-OPS-002 states the rule and gains an acceptance criterion; R-ARCH-024 step 2 names ping.
+
+### Q-OPS-31 · Database readiness during a short outage
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) As before: `check_interval` × `failure_threshold` | The check fails after about 10 s | One rule | A CloudNativePG switchover takes 10 to 15 s. Replicas leave the Service for it, although their queries retry for `database.retry.max_elapsed` and would have succeeded |
+| (b) Raise `failure_threshold` | 4 failures at 5 s | No new key | Every check is slower, the object store and the invalidation check too; a 15 s switchover still sits at the edge |
+| (c) A grace on the checks that read PostgreSQL: `health.database_outage_grace`, default 20 s (chosen) | Once the replica has been ready, a failure of `database` or `schema` that is a connectivity failure keeps the check `degraded` and the replica ready until it has lasted the grace; then it fails like today | A switchover of up to 15 s never flips readiness, a 30 s outage does (about 20 to 25 s after it began); a schema that is behind or a rejected credential still fails at once | One more key, validated to stay below `database.retry.max_elapsed` |
+
+**Choice:** (c), default `20s`. `0` switches the grace off.
+
+**Rationale:** The grace must exceed the longest switchover that is routine (15 s) and stay below the point where
+queries give up (`database.retry.max_elapsed`, 30 s), so a replica turns unready before it answers `503` to every request.
+A failure counts as an outage when it is a connectivity failure (a refused or timed-out connection, SQLSTATE `57P01`,
+`57P02`, `57P03`, `53300`, class `08`, a standby, a check that timed out); anything else gates at once. The grace runs from
+the first failed evaluation of an unbroken run and restarts only after the check has passed again
+(`health.success_threshold`). The first readiness gets no grace, so a replica never becomes ready on an unreachable
+database. The `invalidation` check keeps its own window (`cluster.epoch_max_staleness`, at least 15 s, plus its debounce),
+which for one outage never ends before the `database` grace does. The development agent would revisit the default when a
+platform's switchover is measured above 15 s.
+
+**Applied in the spec:** R-OPS-001 (`database` and `schema` rows, the paragraph on the outage grace, the configuration
+blocks and the first acceptance criterion); ha-and-helm.md R-HA-008 and its failure table.
 
 ## What this does not cover
 

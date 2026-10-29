@@ -13,7 +13,9 @@ export $(shell sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' tools/versions.env)
 MODULE      := github.com/guided-traffic/trove
 GOVERSION   := $(shell go env GOVERSION)
 GO_MOD_GO   := $(shell awk '$$1=="go"{print $$2}' go.mod)
-VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# The binary accepts only major.minor.patch or "dev" as its version: a commit hash would
+# never become ready. A v0.* tag on HEAD gives its number; every other checkout is "dev".
+VERSION     ?= $(or $(shell git describe --tags --exact-match 2>/dev/null | sed -n 's/^v\(0\..*\)$$/\1/p'),dev)
 COMMIT      ?= $(shell git rev-parse --verify -q HEAD 2>/dev/null || echo unknown)
 DATE        ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS     := -s -w \
@@ -202,4 +204,4 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 
 .PHONY: e2e
 e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|full|drain|<go test -run regexp>, default: all but the profile switch
-	deploy/dev/e2e.sh $(SET)
+	deploy/dev/e2e.sh '$(SET)'

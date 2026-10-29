@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // configFacts derives the installation facts from the configuration. The blocks
@@ -47,6 +48,10 @@ func (f configFacts) Facts(ctx context.Context) (v1.Facts, error) {
 		}
 	}
 	if db := f.a.database(); db != nil {
+		// The reads retry through a failover (postgres.Read); the facts are best
+		// effort, so the whole block is bounded and never holds the request longer.
+		ctx, cancel := context.WithTimeout(ctx, factsDatabaseBudget)
+		defer cancel()
 		// The incarnation changes with a restore; read it fresh when the database answers.
 		if sf, err := db.SystemFacts(ctx); err == nil {
 			out.InstallationID, out.Incarnation = &sf.InstallationID, &sf.Incarnation
@@ -55,6 +60,10 @@ func (f configFacts) Facts(ctx context.Context) (v1.Facts, error) {
 	}
 	return out, nil
 }
+
+// factsDatabaseBudget bounds the database part of GET /system/info, which is
+// best effort and must not wait out retry.max_elapsed.
+const factsDatabaseBudget = 3 * time.Second
 
 // databaseFacts describes the database as this replica sees it (R-OPS-004). A
 // part that cannot be read right now stays at its zero value; the call never fails.
@@ -92,7 +101,13 @@ func (l replicaSource) Replicas(ctx context.Context) ([]gen.Replica, error) {
 	if db == nil {
 		return localReplicas(l).Replicas(ctx)
 	}
-	infos, err := cluster.ListReplicas(ctx, db.Main(), l.a.cfg.System)
+	// Read, not the raw pool: the registry list rides out a failover like a
+	// transaction does and ends as database_unavailable (R-ARCH-019).
+	var infos []cluster.ReplicaInfo
+	err := db.Read(ctx, func(c q.DBTX) (err error) {
+		infos, err = cluster.ListReplicas(ctx, c, l.a.cfg.System)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

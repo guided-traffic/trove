@@ -29,6 +29,16 @@ const (
 	ReplicaNever         = "never"
 )
 
+// EndpointEvents receives what the host check of an endpoint chain observes, for
+// the endpoint metrics (R-EP-009).
+type EndpointEvents interface {
+	// Misdirected is called for every 421 answered by the host check.
+	Misdirected(endpoint string)
+	// ForwardedHostIgnored is called when a trusted peer sent a forwarded host
+	// outside the endpoint's host set.
+	ForwardedHostIgnored(endpoint string)
+}
+
 // Chain is the middleware chain of the client listener. Handler wraps the
 // router in the order R-ARCH-005 fixes, outermost first:
 //
@@ -46,6 +56,13 @@ const (
 type Chain struct {
 	Router *Router
 	Log    *slog.Logger
+
+	// Endpoint binds the chain to one client endpoint (R-EP-002): step 1 places it
+	// in the request context, and the host check of step 5 answers for it. Nil
+	// for the ops listener and for tests of the bare chain.
+	Endpoint *Endpoint
+	// Events receives the endpoint events of step 5; nil discards them.
+	Events EndpointEvents
 
 	// Trace is stage 2: it continues or starts the trace context. TraceID returns
 	// the trace ID that Trace stored in the context; the chain sends it as
@@ -117,6 +134,9 @@ func (c Chain) recoverStage(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), keyLogger, log)
+		if c.Endpoint != nil {
+			ctx = WithEndpoint(ctx, c.Endpoint)
+		}
 		r = r.WithContext(ctx)
 		// Label the request before any stage copies it: stages 2 and 3 read r.Pattern
 		// (the route label), and the mux only sets it on the copy it receives.
@@ -215,6 +235,18 @@ func (c Chain) addrStage(next http.Handler) http.Handler {
 		r = r.WithContext(ctx)
 		if c.Annotate != nil {
 			c.Annotate(r, info)
+		}
+		if info.ForwardedHostIgnored && c.Events != nil {
+			c.Events.ForwardedHostIgnored(c.Endpoint.Name())
+		}
+		if info.Misdirected {
+			// The answer does not depend on the path, so it tells nothing about content.
+			if c.Events != nil {
+				c.Events.Misdirected(c.Endpoint.Name())
+			}
+			Problem(w, r, errs.E(errs.Misdirected, errs.CodeMisdirectedRequest,
+				"This endpoint does not answer for the host of the request."))
+			return
 		}
 		next.ServeHTTP(w, r)
 	})

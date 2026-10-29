@@ -66,6 +66,8 @@ type App struct {
 	ops    *httpserver.Server
 	client *httpserver.Server
 	router *httpserver.Router
+	// eps are the client endpoints this process serves, default first (R-EP-002).
+	eps []*endpointRuntime
 	// opsTLS and clientTLS are the listeners' TLS (nil: plain HTTP).
 	opsTLS    *httpserver.ListenerTLS
 	clientTLS *httpserver.ListenerTLS
@@ -212,6 +214,9 @@ func (a *App) Start(ctx context.Context) error {
 		}
 		return nil
 	}, false)
+	if err := a.planEndpoints(); err != nil {
+		return err
+	}
 	if err := a.startTLS(); err != nil {
 		return err
 	}
@@ -359,73 +364,55 @@ func (a *App) startComponent(ctx context.Context, c Component) error {
 	return nil
 }
 
-// startClient builds the client router and chain, checks the route table and
-// opens the listener (steps 9).
+// startClient builds, for every endpoint this process serves, the router of its
+// surface and its chain, checks the route table and opens the listener (step 9,
+// R-EP-002). Every listener is bound before the replica can become ready.
 func (a *App) startClient() error {
 	cfg := a.cfg
-	router := httpserver.NewClientRouter()
-
 	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
 	if err != nil {
 		return err
 	}
-	api := v1.New(v1.Options{
-		Document: doc, Identity: v1.Identity{Replica: a.id.Instance, Role: a.id.Role},
-		Ready: a.health.Ready, PublicVersion: cfg.System.PublicVersion,
-		Access:   bootstrapAccess{anonymousRead: cfg.System.BootstrapAnonymousRead},
-		Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
-	})
-	api.Register(router)
-
 	ui, err := webui.New(webui.Options{Locales: uiLocales(), DefaultLocale: uiDefaultLocale})
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)
 	}
-	router.Handle(webui.MountPath, ui)
-
-	if a.o.Extra != nil {
-		a.o.Extra(router)
-	}
-	registerFixture(router)
-	// A route registered around the wrapper is a defect; one registered through it
-	// that breaks a rule stops start-up (R-API-002, R-HA-041).
-	if err := doc.CheckRoutes(router.Patterns()); err != nil {
-		return fmt.Errorf("route table: %w", err)
-	}
-	if v := httpserver.CheckRouteTable(router.Patterns(), nil); len(v) > 0 {
-		return fmt.Errorf("route table: %s", v[0])
-	}
-	a.router = router
-
-	resolver, err := httpserver.NewResolver(cfg.Server.TrustedProxies, cfg.Server.BaseURL, cfg.Server.AdditionalBaseURLs,
-		httpserver.WithForwardedHeader(httpserver.ForwardedHeader(cfg.Server.ForwardedHeader)))
-	if err != nil {
-		return err
-	}
-	trace, reqLog := a.tele.clientStages(cfg)
-	handler := httpserver.Chain{
-		Router: router, Log: a.log, Trace: trace, TraceID: observabilityRequestID, AccessLog: reqLog,
-		OnRequest: label, MaxInFlight: cfg.Server.MaxInFlight, Resolver: resolver, Annotate: annotate,
-		Authenticate: bootstrapAuthenticate, Replica: a.id.Instance, ReplicaHeader: cfg.Server.ReplicaHeader,
-		Draining: a.health.Draining,
-	}.Handler()
-
-	srv, err := a.newServer("client", cfg.Server.Listen, handler, a.clientTLS)
-	if err != nil {
-		return err
-	}
-	if err := srv.Bind(); err != nil {
-		return err
-	}
-	a.client = srv
-	a.bg.Add(1)
-	go func() {
-		defer a.bg.Done()
-		if err := srv.Serve(); err != nil {
-			a.fail(err)
+	for _, rt := range a.eps {
+		router := httpserver.NewEndpointRouter(rt.ep)
+		api := v1.New(v1.Options{
+			Document: doc, Identity: v1.Identity{Replica: a.id.Instance, Role: a.id.Role},
+			Ready: a.health.Serving, PublicVersion: cfg.System.PublicVersion,
+			Access:   bootstrapAccess{anonymousRead: cfg.System.BootstrapAnonymousRead},
+			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
+		})
+		// The router drops the routes of a family the endpoint's surface does not hold.
+		api.Register(router)
+		router.Handle(webui.MountPath, ui)
+		if a.o.Extra != nil {
+			a.o.Extra(router)
 		}
-	}()
-	a.log.Info("client listener bound", "addr", srv.Addr().String())
+		registerFixture(router)
+		// A route registered around the wrapper is a defect; one registered through it
+		// that breaks a rule stops start-up (R-API-002, R-HA-041). The management API
+		// is checked against its document where it is served in full.
+		if rt.ep.Serves(config.SurfaceAPI) {
+			if err := doc.CheckRoutes(router.Patterns()); err != nil {
+				return fmt.Errorf("route table of endpoint %s: %w", rt.cfg.Name, err)
+			}
+		}
+		if v := httpserver.CheckRouteTable(router.Patterns(), nil); len(v) > 0 {
+			return fmt.Errorf("route table of endpoint %s: %s", rt.cfg.Name, v[0])
+		}
+		if v := httpserver.CheckSurface(router.Patterns(), rt.ep); len(v) > 0 {
+			return fmt.Errorf("route table: %s", v[0])
+		}
+		if err := a.startEndpoint(rt, router); err != nil {
+			return err
+		}
+		if a.client == nil || rt.cfg.Default {
+			a.client, a.router = rt.srv, router
+		}
+	}
 	return nil
 }
 
@@ -504,14 +491,17 @@ func (a *App) Shutdown(ctx context.Context) error {
 	})
 	defer quiesce.Stop()
 	var wg sync.WaitGroup
-	if a.client != nil {
+	for _, srv := range a.clientServers() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := a.client.ShutdownBy(sctx, plan.CommitBy); err != nil {
+			if err := srv.ShutdownBy(sctx, plan.CommitBy); err != nil {
 				a.log.Warn("client listener", "error", err)
 			}
 		}()
+	}
+	for _, rt := range a.eps {
+		a.tele.metrics.EndpointListenerUp(rt.cfg.Name, false)
 	}
 	for _, c := range comps {
 		if s, ok := c.(Settler); ok {

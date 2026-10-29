@@ -312,7 +312,7 @@ func TestFixtureModules(t *testing.T) {
 			t.Fatalf("got %v", Strings(vs))
 		}
 	})
-	t.Run("R-STOR-046 a session-level advisory lock below internal/blob is named, the transaction-level one is not", func(t *testing.T) {
+	t.Run("R-EP-002 R-STOR-046 a session-level advisory lock below internal/blob is named, the transaction-level one is not, and only internal/httpserver may set the endpoint", func(t *testing.T) {
 		vs, err := CheckSourceBans(fixtureDir(t, "outbound"))
 		if err != nil {
 			t.Fatal(err)
@@ -326,6 +326,9 @@ func TestFixtureModules(t *testing.T) {
 			if !strings.Contains(joined, want) {
 				t.Errorf("missing %q in\n%s", want, joined)
 			}
+		}
+		if !strings.Contains(joined, "R-EP-002 internal/webish/ep.go") || strings.Contains(joined, "R-EP-002 internal/httpserver") {
+			t.Errorf("R-EP-002 must name internal/webish and exempt internal/httpserver:\n%s", joined)
 		}
 		if strings.Contains(joined, "fine.go") {
 			t.Errorf("pg_advisory_xact_lock must not be flagged:\n%s", joined)

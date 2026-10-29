@@ -460,3 +460,188 @@ func TestRunWaitsForChecks(t *testing.T) {
 		}
 	})
 }
+
+func TestServing(t *testing.T) {
+	t.Run("R-OPS-002 a draining replica that was ready still serves, so the drain delay serves requests", func(t *testing.T) {
+		h := New(cfg())
+		var db toggle
+		h.AddReadiness("database", db.check, false)
+		h.Refresh(t.Context())
+		if !h.Serving() || !h.Ready() {
+			t.Fatal("a replica with passing checks must be ready and serving")
+		}
+		h.SetDraining()
+		if h.Ready() {
+			t.Fatal("readiness must fail at once when draining")
+		}
+		if !h.Serving() {
+			t.Fatal("a draining replica must keep serving")
+		}
+	})
+
+	t.Run("R-OPS-002 a draining replica whose gating check fails does not serve", func(t *testing.T) {
+		c := cfg()
+		c.FailureThreshold = 1
+		h := New(c)
+		var db toggle
+		h.AddReadiness("database", db.check, false)
+		h.Refresh(t.Context())
+		h.SetDraining()
+		db.set(errors.New("down"))
+		h.Refresh(t.Context())
+		if h.Serving() {
+			t.Fatal("a failing database must make ping fail even while draining")
+		}
+	})
+
+	t.Run("R-OPS-002 a replica that never became ready does not serve, draining or not", func(t *testing.T) {
+		h := New(cfg())
+		var st toggle
+		st.set(errors.New("not yet"))
+		h.AddReadiness("startup", st.check, false)
+		h.Refresh(t.Context())
+		if h.Serving() {
+			t.Fatal("a starting replica must not serve")
+		}
+		st.set(nil)
+		h.SetDraining() // drain before the first readiness: it was never ready
+		if h.Serving() {
+			t.Fatal("a replica that drains before it was ever ready must not serve")
+		}
+	})
+}
+
+func TestOutageGrace(t *testing.T) {
+	type clock struct {
+		mu sync.Mutex
+		t  time.Time
+	}
+	newHealth := func(grace time.Duration) (*Health, *toggle, func(time.Duration)) {
+		clk := &clock{t: time.Unix(1_700_000_000, 0)}
+		h := New(cfg(), WithClock(func() time.Time { clk.mu.Lock(); defer clk.mu.Unlock(); return clk.t }))
+		var db toggle
+		h.AddReadiness("database", db.check, false, WithGrace(grace))
+		advance := func(d time.Duration) { clk.mu.Lock(); clk.t = clk.t.Add(d); clk.mu.Unlock() }
+		h.Refresh(t.Context())
+		return h, &db, advance
+	}
+	outage := Transient(errors.New("connection refused"))
+
+	t.Run("R-OPS-001 a transient failure shorter than the grace keeps the replica ready and shows degraded", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		db.set(outage)
+		for range 3 { // 3 checks, 5 s apart: 10 s of failure, past failure_threshold 2
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		code, body := get(t, h.ReadyHandler(), "/readyz?verbose=1")
+		if code != 200 || body["status"] != "ready" {
+			t.Fatalf("got %d %v", code, body)
+		}
+		if d, _ := body["degraded"].([]any); len(d) != 1 || d[0] != "database" {
+			t.Fatalf("degraded = %v", body["degraded"])
+		}
+		if st := h.Snapshot().Checks[0].Status; st != Degraded {
+			t.Fatalf("status = %s", st)
+		}
+	})
+
+	t.Run("R-OPS-001 the failure fails readiness once it has lasted the grace, and recovery follows the success threshold", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		db.set(outage)
+		for range 5 {
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() {
+			t.Fatal("25 s of outage with a 20 s grace must fail readiness")
+		}
+		db.set(nil)
+		h.Refresh(t.Context())
+		if h.Ready() {
+			t.Fatal("one success must not pass a check with success_threshold 2")
+		}
+		h.Refresh(t.Context())
+		if !h.Ready() {
+			t.Fatal("two successes must restore readiness")
+		}
+	})
+
+	t.Run("R-OPS-001 a failure that is not transient gates at once, grace or not", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		db.set(errors.New("schema is behind"))
+		for range 2 {
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() {
+			t.Fatal("a failure that is not marked transient must gate after the debounce")
+		}
+	})
+
+	t.Run("R-OPS-001 passes that restore the check between two outages restart the grace", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		for range 2 {
+			db.set(outage)
+			for range 3 {
+				advance(5 * time.Second)
+				h.Refresh(t.Context())
+			}
+			if !h.Ready() {
+				t.Fatal("a 15 s outage is inside the 20 s grace, however many outages came before")
+			}
+			db.set(nil)
+			for range 2 { // success_threshold 2
+				advance(5 * time.Second)
+				h.Refresh(t.Context())
+			}
+		}
+		if !h.Ready() {
+			t.Fatal("two 15 s outages with a recovery between them stay inside the grace")
+		}
+	})
+
+	t.Run("R-OPS-001 a single pass during the outage does not restart the grace", func(t *testing.T) {
+		h, db, advance := newHealth(20 * time.Second)
+		db.set(outage)
+		for range 3 {
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		db.set(nil)
+		advance(5 * time.Second)
+		h.Refresh(t.Context()) // one pass: the check is still failing (success_threshold 2)
+		db.set(outage)
+		for range 2 {
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() {
+			t.Fatal("25 s since the first failure must be past the 20 s grace")
+		}
+	})
+
+	t.Run("R-OPS-001 the first readiness gets no grace", func(t *testing.T) {
+		clk := time.Unix(1_700_000_000, 0)
+		h := New(cfg(), WithClock(func() time.Time { return clk }))
+		var db toggle
+		db.set(outage)
+		h.AddReadiness("database", db.check, false, WithGrace(20*time.Second))
+		h.Refresh(t.Context())
+		if h.Ready() {
+			t.Fatal("a replica that never was ready must not become ready on a failing database")
+		}
+	})
+
+	t.Run("R-OPS-001 a check without a grace gates as before", func(t *testing.T) {
+		h, db, advance := newHealth(0)
+		db.set(outage)
+		for range 2 {
+			advance(5 * time.Second)
+			h.Refresh(t.Context())
+		}
+		if h.Ready() {
+			t.Fatal("grace 0 means a transient failure gates after the debounce")
+		}
+	})
+}

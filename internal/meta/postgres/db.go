@@ -177,10 +177,21 @@ func (db *DB) Ready(ctx context.Context) error {
 		return err
 	}
 	if !primary {
-		return errors.New("the connected server is a standby")
+		return ErrStandby
 	}
 	return nil
 }
+
+// ErrStandby is what Ready reports for a connection to a server in recovery: a
+// demoted primary during a switchover.
+var ErrStandby = errors.New("the connected server is a standby")
+
+// IsOutage reports whether err is the database being away rather than wrong: a
+// connectivity failure, a statement that timed out, or a connection to a
+// standby. A schema that is behind, or a rejected credential, is not an outage.
+// The readiness checks of the database give such a failure the outage grace
+// (health.database_outage_grace).
+func IsOutage(err error) bool { return IsUnavailable(err) || errors.Is(err, ErrStandby) }
 
 // PoolStats are the connection counts of one pool.
 type PoolStats struct {

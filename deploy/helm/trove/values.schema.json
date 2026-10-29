@@ -749,6 +749,15 @@
             },
             "secretAccessKeyKey": {
               "type": "string"
+            },
+            "bucketKey": {
+              "type": "string"
+            },
+            "regionKey": {
+              "type": "string"
+            },
+            "endpointKey": {
+              "type": "string"
             }
           },
           "additionalProperties": false
@@ -1350,6 +1359,321 @@
             },
             "hostname": {
               "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "wildcardHost": {
+              "type": "string"
+            },
+            "hostRoots": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wildcardRoot": {
+              "type": "string",
+              "enum": [
+                "none",
+                "label"
+              ]
+            },
+            "surface": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ui",
+                  "api",
+                  "ci_exchange",
+                  "packages",
+                  "files"
+                ]
+              },
+              "minItems": 1
+            },
+            "auth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tokenTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "pat",
+                      "sat",
+                      "cit"
+                    ]
+                  }
+                },
+                "boundTokensOnly": {
+                  "type": "boolean"
+                },
+                "anonymous": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "exposure": {
+              "type": "string",
+              "enum": [
+                "all",
+                "rules"
+              ]
+            },
+            "cacheFill": {
+              "type": "boolean"
+            },
+            "rateLimitClass": {
+              "type": "string"
+            },
+            "replicaHeader": {
+              "type": "string",
+              "enum": [
+                "authenticated",
+                "always",
+                "never"
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "wildcardHost": {
+            "type": "string"
+          },
+          "hostRoots": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "wildcardRoot": {
+            "type": "string",
+            "enum": [
+              "none",
+              "label"
+            ]
+          },
+          "surface": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ui",
+                "api",
+                "ci_exchange",
+                "packages",
+                "files"
+              ]
+            },
+            "minItems": 1
+          },
+          "auth": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tokenTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "pat",
+                    "sat",
+                    "cit"
+                  ]
+                }
+              },
+              "boundTokensOnly": {
+                "type": "boolean"
+              },
+              "anonymous": {
+                "type": "boolean"
+              }
+            }
+          },
+          "exposure": {
+            "type": "string",
+            "enum": [
+              "all",
+              "rules"
+            ]
+          },
+          "cacheFill": {
+            "type": "boolean"
+          },
+          "rateLimitClass": {
+            "type": "string"
+          },
+          "replicaHeader": {
+            "type": "string",
+            "enum": [
+              "authenticated",
+              "always",
+              "never"
+            ]
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "maxInFlight": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "trustedProxies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tls": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "existingSecret": {
+                "type": "string"
+              },
+              "extraSecrets": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "clientCaSecret": {
+                "type": "string"
+              }
+            }
+          },
+          "pool": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "replicaCount": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "service": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ClusterIP",
+                  "LoadBalancer",
+                  "NodePort"
+                ]
+              },
+              "annotations": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "loadBalancerSourceRanges": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "ingress": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "className": {
+                "type": "string"
+              },
+              "annotations": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "tls": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "backendTLS": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "controller": {
+                    "type": "string",
+                    "enum": [
+                      "haproxy",
+                      "traefik",
+                      "ingress-nginx",
+                      "manual"
+                    ]
+                  },
+                  "caSecret": {
+                    "type": "string"
+                  },
+                  "serversTransport": {
+                    "type": "string"
+                  },
+                  "clientCertSecret": {
+                    "type": "string"
+                  },
+                  "verify": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "networkPolicy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
             }
           }
         }

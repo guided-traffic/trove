@@ -1,11 +1,13 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -280,6 +282,55 @@ func TestLoadErrors(t *testing.T) {
 		_, err := Load(config.Secrets{EncryptionKeyFiles: []string{"/nonexistent/2026-10.key"}, ActiveKeyID: "2026-10"})
 		if err == nil || !strings.Contains(err.Error(), "/nonexistent/2026-10.key does not exist") {
 			t.Errorf("err = %v", err)
+		}
+	})
+
+	t.Run("R-ARCH-021 R-HA-027 a file of 32 raw bytes is a key, whatever the bytes are, and opens what the base64 form of it sealed", func(t *testing.T) {
+		dir := t.TempDir()
+		// White-space bytes at both ends: a trim before the length check would damage the key.
+		raw := make([]byte, 32)
+		for i := range raw {
+			raw[i] = byte(0xa0 + i)
+		}
+		raw[0], raw[31] = '\n', ' '
+		rawFile := filepath.Join(dir, "raw.key")
+		_ = os.WriteFile(rawFile, raw, 0o600)
+
+		resetRegistry(t)
+		col := Register("remote_repositories", "id", "upstream_password")
+		// Same key ID in two rings: the ID is part of the envelope.
+		sealer, err := Load(config.Secrets{EncryptionKeyFiles: []string{rawFile}, ActiveKeyID: "raw"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sealed, err := sealer.Seal(col, Row("1"), []byte("hunter2"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir2 := t.TempDir()
+		_ = os.WriteFile(filepath.Join(dir2, "raw.key"), []byte(base64.StdEncoding.EncodeToString(raw)), 0o600)
+		opener, err := Load(config.Secrets{EncryptionKeyFiles: []string{filepath.Join(dir2, "raw.key")}, ActiveKeyID: "raw"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := opener.Open(col, Row("1"), sealed)
+		if err != nil || string(got) != "hunter2" {
+			t.Fatalf("the base64 form of the same key must open the raw form's value: %q, %v", got, err)
+		}
+		if !bytes.Equal(opener.Fingerprint([]byte("v")), sealer.Fingerprint([]byte("v"))) {
+			t.Error("the same key bytes must give the same fingerprint")
+		}
+	})
+
+	t.Run("R-ARCH-021 a raw file of 31 or 33 bytes is refused with its size", func(t *testing.T) {
+		dir := t.TempDir()
+		for _, n := range []int{31, 33} {
+			p := filepath.Join(dir, "k"+strconv.Itoa(n)+".key")
+			_ = os.WriteFile(p, bytes.Repeat([]byte{0x80}, n), 0o600)
+			_, err := Load(config.Secrets{EncryptionKeyFiles: []string{p}, ActiveKeyID: "k" + strconv.Itoa(n)})
+			if err == nil || (!strings.Contains(err.Error(), "is not base64") && !strings.Contains(err.Error(), "holds")) {
+				t.Errorf("%d bytes: %v", n, err)
+			}
 		}
 	})
 

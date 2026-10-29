@@ -55,9 +55,24 @@ The connection string carries neither.
   `retry.max_elapsed` and then become `errs.Unavailable` (`database_unavailable`, 503). A connection that proved
   wrong is destroyed, not returned to the pool. A COMMIT that loses its connection has an unknown outcome and is
   never repeated. `fn` must therefore be safe to run again.
+- `DB.Read(ctx, func(q.DBTX) error)` is the form for a read outside a transaction on a request path (a handler, the
+  facts of `GET /system/info`). It has the retry, the bound and the error mapping of `InTx`: a failover error repeats
+  on a new connection until `retry.max_elapsed`, the connection that failed is destroyed, and the failure that
+  outlasts the bound is `database_unavailable` (503). Other errors come back unchanged. `fn` runs on one pooled
+  connection without a transaction (several statements do not share a snapshot; use `InTx` for that) and must read
+  every row before it returns. Do not call `db.Main()` for a handler read: the raw pool has no retry, and a
+  failover turned into a `500` that way (found by the drain and failover harness, [e2e.md](e2e.md)). `SystemFacts`,
+  `ServerVersion` and `SchemaState` go through it; `Main()` stays for the job queue, the registry and the gauge
+  scrape, which have their own loops. Tests: `TestRead` in
+  [test/integration/postgres/read_test.go](../../test/integration/postgres/read_test.go) (terminated backends, the
+  bound, the facts reads).
 - `Ready(ctx)` is the `database` readiness check: `SELECT NOT pg_is_in_recovery()` on the control connection.
   `CheckSchema(ctx, version)` is the `schema` check (below) and reads on the control connection; `SchemaState`
-  (GET /system/info) reads on the main pool, so a request never needs the control connection. `Stats()` feeds the pool metrics.
+  (GET /system/info) reads on the main pool through `Read`, so a request never needs the control connection.
+  `Ready` returns `ErrStandby` for a server in recovery; `IsOutage(err)` is `IsUnavailable` or `ErrStandby`, the
+  errors that get the outage grace of the readiness checks (below). `CheckBinaryVersion(v)` reports whether the
+  binary's version is `major.minor.patch` or `dev`; `postgresComponent` logs an ERROR at start for a version that is
+  not (`checkBinaryVersion`, [version_check.go](../../internal/app/version_check.go)). `Stats()` feeds the pool metrics.
 
 ## Connection budget
 

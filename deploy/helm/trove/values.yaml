@@ -162,7 +162,7 @@ config:
 # tls.key and, for the edge and for Prometheus, ca.crt). Mounted as a directory volume without
 # subPath, so a rotated Secret reaches the pod through the kubelet's atomic swap and the process
 # reloads the files (tls.reloadInterval). tls.* configures the default client listener :8080 and
-# the operations listener :8081; a later endpoints list carries its own tls block per listener.
+# the operations listener :8081; each entry of endpoints carries its own tls block (R-EP-004).
 tls:
   enabled: true                         # default (proposed) (Q-HA-32); false = plain HTTP inside the cluster (H-38)
   secretName: ""                        # required with tls.enabled; example: trove-tls (cert-manager Certificate secretName)
@@ -201,9 +201,12 @@ secrets:
     certKey: tls.crt                    # default (proposed)
     keyKey: tls.key                     # default (proposed)
   s3:
-    existingSecret: ""                  # default (proposed); required with credentials.source static
-    accessKeyIdKey: access-key-id       # default (proposed)
-    secretAccessKeyKey: secret-access-key  # default (proposed)
+    existingSecret: ""                  # default (proposed); required with credentials.source static; also the Secret of an S3 provisioner when a *Key below is set
+    accessKeyIdKey: access-key-id       # default (proposed); example (provisioner Secret): AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: secret-access-key  # default (proposed); example (provisioner Secret): AWS_SECRET_ACCESS_KEY
+    bucketKey: ""                       # default (proposed): the bucket comes from config.storage.s3.bucket; example (provisioner Secret): S3_BUCKET; set = TROVE_STORAGE_S3_BUCKET reads this key of the Secret
+    regionKey: ""                       # default (proposed): config.storage.s3.region; example (provisioner Secret): S3_REGION; set = TROVE_STORAGE_S3_REGION reads this key
+    endpointKey: ""                     # default (proposed): config.storage.s3.endpoint; example (provisioner Secret): S3_ENDPOINT (a host without scheme, which trove reaches over https); set = TROVE_STORAGE_S3_ENDPOINT reads this key
   valkey:
     existingSecret: ""                  # required (R-HA-029); example: trove-valkey
     usernameKey: username               # default (proposed); empty = the "default" user, the file is not mounted
@@ -327,6 +330,51 @@ ingress:
     caSecret: ""                        # required with verify on haproxy and ingress-nginx; Secret in the release namespace with ca.crt; example: trove-tls (a cert-manager Secret carries ca.crt)
     clientCertSecret: ""                # haproxy: Secret with tls.crt and tls.key that HAProxy Ingress presents to trove (required with tls.clientCA); example: trove-edge-client
     serversTransport: ""                # traefik: ServersTransport reference <namespace>-<name>@kubernetescrd that verifies trove; example: trove-trove-tls@kubernetescrd
+
+# ── Endpoints (R-EP-008, docs/spec/endpoints.md) ──────────────────────────
+# Further client entry points, each with its own listener port, Service, Ingress, NetworkPolicy,
+# certificates and optionally its own pool of web pods. The default endpoint (:8080, config.server.base_url,
+# tls.*, ingress.*) always exists; an entry named default tunes it, with these keys only: hosts,
+# wildcardHost, hostRoots, wildcardRoot, surface, auth, exposure, cacheFill, rateLimitClass, replicaHeader.
+# The chart renders the entries into server.endpoints of trove.yaml; config.server.endpoints is refused.
+# Values of a further endpoint are listed once here and carry their defaults (R-EP-001, Q-EP-5, Q-EP-10).
+endpoints: {}                           # default (proposed): only the default endpoint; example:
+#  default:                             # optional
+#    hosts: []                          # default (proposed): with a further endpoint, the hosts of config.server.base_url and additional_base_urls; add the in-cluster Service name here when clients use it
+#  customers:                           # example: the endpoint name, ^[a-z][a-z0-9-]{0,19}$, <fullname>-ep-<name> at most 63 characters
+#    port: 8443                         # example; required; container port and Service port; not 8080, 8081 or another endpoint's port
+#    baseUrl: https://packages.example.com   # example; required; an origin (scheme, host, optional port)
+#    hosts: []                          # default (proposed); example [pkgs.example.org]
+#    wildcardHost: ""                   # default (proposed); example "*.packages.example.com" (one label, at least two labels in the domain)
+#    hostRoots: {}                      # default (proposed): host -> repository key, reserved for later formats (R-EP-006)
+#    wildcardRoot: none                 # default (proposed): none | label
+#    surface: [packages]                # default (proposed): ui is not allowed on a further endpoint; api, ci_exchange, files are off by default
+#    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # default (proposed); enforced from the identity milestone
+#    exposure: rules                    # default (proposed): rules | all; enforced from the exposure milestone
+#    cacheFill: false                   # default (proposed)
+#    rateLimitClass: external           # default (proposed)
+#    replicaHeader: never               # default (proposed): authenticated | always | never
+#    maxInFlight: 1024                  # default (proposed), per replica and endpoint
+#    trustedProxies: []                 # default (proposed): config.server.trusted_proxies
+#    tls:
+#      existingSecret: ""               # default (proposed): "" = the pair of tls.secretName; example trove-packages-tls (keys tls.crt, tls.key)
+#      extraSecrets: []                 # default (proposed); example [trove-packages-wildcard-tls]: further pairs, chosen by SNI
+#      clientCaSecret: ""               # default (proposed): no client certificates; example trove-customer-ca (key ca.crt)
+#    pool:
+#      enabled: false                   # default (proposed): served by <fullname>-web; true renders <fullname>-web-ep-<name>
+#      replicaCount: 2                  # default (proposed) when enabled; every key of web may be overridden here
+#    service:
+#      type: ClusterIP                  # default (proposed): ClusterIP | LoadBalancer | NodePort
+#      annotations: {}                  # default (proposed)
+#      loadBalancerSourceRanges: []     # default (proposed)
+#    ingress:
+#      enabled: false                   # default (proposed)
+#      className: ""                    # default (proposed): cluster default IngressClass; example traefik-external
+#      annotations: {}                  # default (proposed)
+#      tls: []                          # default (proposed); example [{secretName: packages-tls, hosts: [packages.example.com, "*.packages.example.com"]}]
+#      backendTLS: {}                   # default (proposed): ingress.backendTLS; any key given here wins for this endpoint (controller, verify, caSecret, ...)
+#    networkPolicy:
+#      from: []                         # default (proposed): empty = from anywhere
 
 # ── Migrations (R-HA-019) ──────────────────────────────────────────────────
 migrations:

@@ -17,8 +17,11 @@ pools) are added with those features.
 {{- if not $v.secrets.database.existingSecret -}}
 {{- fail "trove: secrets.database.existingSecret is required; the chart never creates a Secret (example: trove-db-app)" -}}
 {{- end -}}
-{{- if not (dig "storage" "s3" "bucket" "" $cfg) -}}
-{{- fail "trove: config.storage.s3.bucket is required (example: trove-blobs)" -}}
+{{- if and (not (dig "storage" "s3" "bucket" "" $cfg)) (not (and $v.secrets.s3.existingSecret $v.secrets.s3.bucketKey)) -}}
+{{- fail "trove: config.storage.s3.bucket is required (example: trove-blobs), or name the key of the bucket in the S3 Secret with secrets.s3.existingSecret and secrets.s3.bucketKey (example: S3_BUCKET)" -}}
+{{- end -}}
+{{- if and (or $v.secrets.s3.bucketKey $v.secrets.s3.regionKey $v.secrets.s3.endpointKey) (not $v.secrets.s3.existingSecret) -}}
+{{- fail "trove: secrets.s3.bucketKey, secrets.s3.regionKey and secrets.s3.endpointKey read keys of the S3 Secret and need secrets.s3.existingSecret" -}}
 {{- end -}}
 {{- if and (eq (dig "storage" "s3" "credentials" "source" "" $cfg) "static") (not $v.secrets.s3.existingSecret) -}}
 {{- fail "trove: config.storage.s3.credentials.source: static needs secrets.s3.existingSecret" -}}
@@ -88,7 +91,7 @@ pools) are added with those features.
 {{- end -}}
 
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}
-{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" -}}
+{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" -}}
 {{- if $t.enabled -}}
 {{- $managedPaths = concat $managedPaths (list "server.tls" "server.ops_tls") -}}
 {{- end -}}
@@ -103,7 +106,7 @@ pools) are added with those features.
 {{- end -}}
 {{- end -}}
 {{- if $found -}}
-{{- fail (printf "trove: config.%s is managed by the chart and must not be set (secret file paths come from the secrets values, TLS comes from the tls values, the spool directory is fixed)" $path) -}}
+{{- fail (printf "trove: config.%s is managed by the chart and must not be set (secret file paths come from the secrets values, TLS comes from the tls values, the spool directory is fixed, endpoints come from the endpoints values)" $path) -}}
 {{- end -}}
 {{- end -}}
 
@@ -152,5 +155,105 @@ applies that rule to the roles web and all only.
 {{- $budget := include "trove.spoolBudget" (dict "root" $ "role" "web") | int64 -}}
 {{- if gt $upload $budget -}}
 {{- fail (printf "trove: config.storage.upload.max_size (%v) is larger than the web spool budget of %d bytes (spool size minus spool.headroom); raise spool.sizeLimit or web.spool.sizeLimit, or lower config.storage.upload.max_size" (dig "storage" "upload" "max_size" "10GiB" $cfg) $budget) -}}
+{{- end -}}
+
+{{- include "trove.validateEndpoints" . -}}
+{{- end -}}
+
+{{/*
+Endpoints (R-EP-008, R-HA-029): every failure names the value. Argument: the root context.
+*/}}
+{{- define "trove.validateEndpoints" -}}
+{{- $v := .Values -}}
+{{- $fullname := include "trove.fullname" . -}}
+{{- $ports := dict -}}
+{{- $hostOwner := dict -}}
+{{- $wild := dict -}}
+{{- $baseHost := include "trove.baseHost" . -}}
+{{- if $baseHost -}}
+{{- $_ := set $hostOwner $baseHost "config.server.base_url" -}}
+{{- end -}}
+{{- range (dig "server" "additional_base_urls" (list) $v.config) -}}
+{{- $_ := set $hostOwner ((urlParse .).hostname | lower) "config.server.additional_base_urls" -}}
+{{- end -}}
+{{- range $h := (dig "default" "hosts" (list) $v.endpoints) -}}
+{{- $_ := set $hostOwner (lower $h) "endpoints.default.hosts" -}}
+{{- end -}}
+{{- $names := include "trove.endpointNames" . | fromYamlArray -}}
+{{- range $name := $names -}}
+{{- $raw := index $v.endpoints $name -}}
+{{- $key := printf "endpoints.%s" $name -}}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{0,19}$" $name) -}}
+{{- fail (printf "trove: %s: the endpoint name must match ^[a-z][a-z0-9-]{0,19}$" $key) -}}
+{{- end -}}
+{{- if gt (add (len $fullname) 4 (len $name)) 63 -}}
+{{- fail (printf "trove: %s: the Service name %s-ep-%s has %d characters, at most 63 are allowed; shorten the endpoint name or set fullnameOverride" $key $fullname $name (add (len $fullname) 4 (len $name))) -}}
+{{- end -}}
+{{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml -}}
+{{- if not (hasKey $raw "port") -}}
+{{- fail (printf "trove: %s.port is required (example: 8443)" $key) -}}
+{{- end -}}
+{{- if or (eq (int $e.port) 8080) (eq (int $e.port) 8081) -}}
+{{- fail (printf "trove: %s.port %d is taken by the default client listener (8080) or the operations listener (8081)" $key (int $e.port)) -}}
+{{- end -}}
+{{- if hasKey $ports (toString (int $e.port)) -}}
+{{- fail (printf "trove: %s.port %d is already the port of endpoint %s" $key (int $e.port) (get $ports (toString (int $e.port)))) -}}
+{{- end -}}
+{{- $_ := set $ports (toString (int $e.port)) $name -}}
+{{- if not $e.baseUrl -}}
+{{- fail (printf "trove: %s.baseUrl is required (example: https://packages.example.com)" $key) -}}
+{{- end -}}
+{{- $u := urlParse $e.baseUrl -}}
+{{- if or (not (has $u.scheme (list "http" "https"))) (not $u.host) (and $u.path (ne $u.path "/")) $u.query $u.fragment $u.userinfo -}}
+{{- fail (printf "trove: %s.baseUrl %q must be an origin: a scheme (http or https), a host and an optional port, nothing else" $key $e.baseUrl) -}}
+{{- end -}}
+{{- /* Surface: ui belongs to the default endpoint (Q-EP-13). */ -}}
+{{- if has "ui" $e.surface -}}
+{{- fail (printf "trove: %s.surface lists ui; sign-in and the UI belong to the default endpoint (surface_not_supported)" $key) -}}
+{{- end -}}
+{{- /* Hosts: no host in two endpoints (R-EP-001). */ -}}
+{{- range $h := include "trove.endpointHosts" $e | fromYamlArray -}}
+{{- if hasKey $hostOwner $h -}}
+{{- fail (printf "trove: %s: the host %s is also a host of %s" $key $h (get $hostOwner $h)) -}}
+{{- end -}}
+{{- $_ := set $hostOwner $h (printf "endpoints.%s" $name) -}}
+{{- end -}}
+{{- if $e.wildcardHost -}}
+{{- if not (regexMatch "^\\*\\.[a-z0-9-]+(\\.[a-z0-9-]+)+$" $e.wildcardHost) -}}
+{{- fail (printf "trove: %s.wildcardHost %q must be *.<domain> with at least two labels in the domain (example: *.packages.example.com)" $key $e.wildcardHost) -}}
+{{- end -}}
+{{- if hasKey $wild (lower $e.wildcardHost) -}}
+{{- fail (printf "trove: %s.wildcardHost %q is also the wildcard host of endpoint %s" $key $e.wildcardHost (get $wild (lower $e.wildcardHost))) -}}
+{{- end -}}
+{{- $_ := set $wild (lower $e.wildcardHost) $name -}}
+{{- end -}}
+{{- if and (eq $e.wildcardRoot "label") (not $e.wildcardHost) -}}
+{{- fail (printf "trove: %s.wildcardRoot is label, which needs %s.wildcardHost" $key $key) -}}
+{{- end -}}
+{{- /* TLS inputs need TLS on trove's listeners (R-HA-063). */ -}}
+{{- if and (not $v.tls.enabled) (or $e.tlsSecret $e.tlsExtraSecrets $e.tlsClientCaSecret) -}}
+{{- fail (printf "trove: %s.tls.existingSecret, extraSecrets and clientCaSecret need tls.enabled: true" $key) -}}
+{{- end -}}
+{{- if and $e.tlsClientCaSecret (not (or $e.tlsSecret $v.tls.secretName)) -}}
+{{- fail (printf "trove: %s.tls.clientCaSecret needs a certificate: set %s.tls.existingSecret or tls.secretName" $key $key) -}}
+{{- end -}}
+{{- /* A pool follows the rules of a web pool (R-HA-062). */ -}}
+{{- if $e.poolEnabled -}}
+{{- $r := include "trove.endpointPoolValues" (dict "root" $ "name" $name) | fromYaml -}}
+{{- if and $v.highAvailability.enforce (lt (int $r.replicaCount) 2) -}}
+{{- fail (printf "trove: highAvailability.enforce needs %s.pool.replicaCount of at least 2 (Deployment %s-web-ep-%s)" $key $fullname $name) -}}
+{{- end -}}
+{{- if and $v.highAvailability.enforce (not $r.podDisruptionBudget.enabled) -}}
+{{- fail (printf "trove: highAvailability.enforce needs a disruption budget for the pool of %s (%s.pool.podDisruptionBudget.enabled)" $key $key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /* An exact host of one endpoint that another endpoint's wildcard host covers. */ -}}
+{{- range $wh, $owner := $wild -}}
+{{- range $h, $hOwner := $hostOwner -}}
+{{- if and (ne $hOwner (printf "endpoints.%s" $owner)) (regexMatch (printf "^[a-z0-9-]+%s$" (trimPrefix "*" $wh | replace "." "\\.")) $h) -}}
+{{- fail (printf "trove: endpoints.%s.wildcardHost %q covers the host %s of %s" $owner $wh $h $hOwner) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

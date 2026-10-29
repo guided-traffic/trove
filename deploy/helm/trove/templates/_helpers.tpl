@@ -123,10 +123,11 @@ Seconds of a duration made of whole hours, minutes and seconds (1h30m, 90s, 5s).
 {{- add (mul $h 3600) (mul $m 60) $sec -}}
 {{- end -}}
 
-{{/* The size of the spool volume of a role. Argument: dict "root" . "role" "web". */}}
+{{/* The size of the spool volume of a role. Argument: dict "root" . "role" "web", optionally "r" with
+the role's effective values (an endpoint pool passes its own). */}}
 {{- define "trove.spoolSize" -}}
 {{- $v := .root.Values -}}
-{{- $r := index $v .role -}}
+{{- $r := .r | default (index $v .role) -}}
 {{- if eq $v.spool.type "ephemeral" -}}
 {{- $v.spool.ephemeral.size -}}
 {{- else if $r.spool.sizeLimit -}}
@@ -231,6 +232,13 @@ which is why a client CA on :8080 never extends to :8081.
 {{- $_ := set $server "ops_tls" $ops -}}
 {{- end -}}
 {{- $_ := set $managed "server" $server -}}
+{{- end -}}
+{{- /* Endpoints (R-EP-008): server.endpoints is chart-managed; the default endpoint's entry exists once there is a further endpoint or endpoints.default. */ -}}
+{{- $eps := include "trove.endpointsConfig" . | fromYaml -}}
+{{- if $eps -}}
+{{- $srv := get $managed "server" | default (dict) -}}
+{{- $_ := set $srv "endpoints" $eps -}}
+{{- $_ := set $managed "server" $srv -}}
 {{- end -}}
 {{- $managed | mergeOverwrite (deepCopy .Values.config) | toYaml -}}
 {{- end -}}

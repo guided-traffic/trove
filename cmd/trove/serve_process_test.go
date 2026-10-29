@@ -104,7 +104,7 @@ func status(addr, path string) int {
 func TestServeProcess(t *testing.T) {
 	bin := buildFixture(t)
 
-	t.Run("R-ARCH-024 SIGTERM with a request in flight: readiness flips first, the request finishes, the process exits 0", func(t *testing.T) {
+	t.Run("R-ARCH-024 R-OPS-002 SIGTERM with a request in flight: readiness flips first, ping keeps answering 200 in the drain delay, the request finishes, the process exits 0", func(t *testing.T) {
 		p := startProc(t, bin, "web")
 		if status(p.client, "/api/v1/system/ping") != 200 {
 			t.Fatal("ping is not 200 on a ready replica")
@@ -144,8 +144,13 @@ func TestServeProcess(t *testing.T) {
 		if status(p.ops, "/healthz") != 200 {
 			t.Fatal("healthz must stay 200 while draining")
 		}
-		if status(p.client, "/api/v1/system/ping") == -1 {
-			t.Fatal("the client listener must keep serving during the drain delay")
+		// ping follows "serves", not readiness: a request that the edge still routes
+		// here during the drain delay must be answered (R-OPS-002).
+		for range 5 {
+			if got := status(p.client, "/api/v1/system/ping"); got != 200 {
+				t.Fatalf("ping during the drain delay = %d, want 200", got)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 		// After the drain delay the listener is closed.
 		refused := false

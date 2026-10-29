@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
@@ -33,9 +34,13 @@ const (
 // It satisfies the ServeMux interface of the generated std-http-server code.
 type Router struct {
 	mux *http.ServeMux
+	// allow, when set, decides which patterns the router registers: a pattern of
+	// a route family the endpoint does not serve is dropped (R-EP-005).
+	allow func(pattern string) bool
 
 	mu       sync.Mutex
 	patterns []string
+	dropped  []string
 }
 
 // NewClientRouter returns the router of the client listener with its two fixed
@@ -44,6 +49,20 @@ type Router struct {
 func NewClientRouter() *Router {
 	r := newRouter()
 	r.Handle(RootPattern, http.RedirectHandler("/ui/", http.StatusFound))
+	return r
+}
+
+// NewEndpointRouter returns the router of one endpoint's listener: it registers
+// only the routes of the endpoint's surface (R-EP-005), the fixed GET /{$} row
+// only when the surface holds ui. A pattern of another family is dropped, so a
+// path of it falls through to the catch-all 404 and is indistinguishable from an
+// unknown path; Dropped lists what was left out.
+func NewEndpointRouter(e *Endpoint) *Router {
+	r := newRouter()
+	r.allow = func(pattern string) bool { return e.servesPattern(pattern) }
+	if e.Serves(config.SurfaceUI) {
+		r.Handle(RootPattern, http.RedirectHandler("/ui/", http.StatusFound))
+	}
 	return r
 }
 
@@ -59,6 +78,12 @@ func newRouter() *Router {
 // Handle registers a route. A conflicting pattern panics, as ServeMux does, so a
 // collision cannot ship.
 func (r *Router) Handle(pattern string, h http.Handler) {
+	if r.allow != nil && !r.allow(pattern) {
+		r.mu.Lock()
+		r.dropped = append(r.dropped, pattern)
+		r.mu.Unlock()
+		return
+	}
 	r.mux.Handle(pattern, h)
 	r.mu.Lock()
 	r.patterns = append(r.patterns, pattern)
@@ -76,6 +101,14 @@ func (r *Router) Patterns() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.patterns)
+}
+
+// Dropped returns the patterns an endpoint router left out because their route
+// family is not in the endpoint's surface.
+func (r *Router) Dropped() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.dropped)
 }
 
 // ServeHTTP routes a request.

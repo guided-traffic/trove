@@ -17,6 +17,12 @@
 //
 // A failing reported check shows under "degraded" and the replica stays ready.
 //
+// A gating check may carry an outage grace (WithGrace). Once the replica has been
+// ready, a failure that the check marks as Transient (a database that is
+// unreachable, not one that refuses the schema) shows as "degraded" and does not
+// gate until it has lasted the grace; after that it gates like any other. The
+// first readiness never gets a grace.
+//
 // Liveness is a watchdog over trove's own loops (Q-OPS-1): each loop records
 // progress at the end of every iteration, and /healthz fails only when one has
 // not finished an iteration within its bound. Liveness never reads a readiness
@@ -91,6 +97,7 @@ type check struct {
 	kind  kind
 	fn    CheckFunc
 	every time.Duration // 0 means health.check_interval
+	grace time.Duration // 0 means a failure gates as soon as it is debounced
 
 	mu         sync.Mutex
 	running    bool
@@ -104,6 +111,11 @@ type check struct {
 	configErr  bool
 	since      time.Time
 	latency    time.Duration
+	// transientSince is when the current run of transient failures began. A pass
+	// ends the run only once the check is passing again (success_threshold), so a
+	// flapping recovery does not restart the clock; a failure for another reason
+	// ends it at once.
+	transientSince time.Time
 }
 
 // CheckOption adjusts one check.
@@ -112,6 +124,12 @@ type CheckOption func(*check)
 // WithInterval runs the check at its own interval instead of
 // health.check_interval (the valkey check runs every valkey.health_check_interval).
 func WithInterval(d time.Duration) CheckOption { return func(c *check) { c.every = d } }
+
+// WithGrace makes a gating check tolerate an outage: once the replica has been
+// ready, a failure marked Transient does not make it unready until the failure
+// has lasted d (health.database_outage_grace for the database checks). Until
+// then the check shows as degraded. d <= 0 means no grace.
+func WithGrace(d time.Duration) CheckOption { return func(c *check) { c.grace = d } }
 
 type loop struct {
 	progress func() time.Time
@@ -398,6 +416,32 @@ func ConfigError(err error, reason string) error {
 	return configError{reasoned{err, reason}}
 }
 
+// Transient marks err as an outage that may pass by itself, such as an
+// unreachable database: a check with a grace (WithGrace) keeps the replica ready
+// while the failures stay transient and younger than the grace. The text of err
+// is not changed.
+func Transient(err error) error {
+	if err == nil {
+		return nil
+	}
+	return transientError{err}
+}
+
+type transientError struct{ error }
+
+func (e transientError) Unwrap() error       { return e.error }
+func (transientError) HealthTransient() bool { return true }
+
+// IsTransient reports whether err (or an error it wraps) is marked Transient. A
+// check that exceeded health.check_timeout counts: a hang is not a verdict.
+func IsTransient(err error) bool {
+	if errors.Is(err, errCheckTimeout) {
+		return true
+	}
+	var t interface{ HealthTransient() bool }
+	return errors.As(err, &t) && t.HealthTransient()
+}
+
 // IsConfigError reports whether err (or an error it wraps) is a ConfigError.
 func IsConfigError(err error) bool {
 	var c interface{ HealthConfigError() bool }
@@ -476,12 +520,22 @@ func (h *Health) record(c *check, err error, latency time.Duration) {
 	c.mu.Lock()
 	wasFailing := c.failing
 	c.latency = latency
+	if err != nil && IsTransient(err) {
+		if c.transientSince.IsZero() {
+			c.transientSince = h.now()
+		}
+	} else if err != nil {
+		c.transientSince = time.Time{}
+	}
 	if err == nil {
 		c.consecPass++
 		c.consecFail = 0
 		if c.failing && (c.pending || c.consecPass >= h.cfg.SuccessThreshold) {
 			c.failing, c.lastErr, c.reason, c.configErr = false, nil, "", false
 			c.since = h.now()
+		}
+		if !c.failing {
+			c.transientSince = time.Time{}
 		}
 	} else {
 		c.consecFail++
@@ -523,9 +577,14 @@ type CheckResult struct {
 
 // Snapshot is the cached view the probes and the replica registry read.
 type Snapshot struct {
-	State     State
-	Checks    []CheckResult
-	Failing   []string // gating checks that fail, including "draining"
+	State   State
+	Checks  []CheckResult
+	Failing []string // gating checks that fail, including "draining"
+	// Serving is true while the replica answers requests: no gating check other
+	// than "draining" fails, and a draining replica had been ready before. It is
+	// what GET /api/v1/system/ping reports (R-OPS-002), so the drain delay
+	// serves every request that still arrives.
+	Serving   bool
 	Degraded  []string // reported checks that fail
 	CheckedAt time.Time
 }
@@ -568,6 +627,15 @@ func (h *Health) Snapshot() Snapshot {
 	if ready {
 		h.everReady = true
 	}
+	s.Serving = true
+	for _, name := range s.Failing {
+		if name != CheckDraining {
+			s.Serving = false
+		}
+	}
+	if h.draining.Load() && !h.everReady {
+		s.Serving = false
+	}
 	switch {
 	case h.draining.Load():
 		s.State = StateDraining
@@ -586,6 +654,9 @@ func (h *Health) Snapshot() Snapshot {
 func (h *Health) gates(c *check) bool {
 	switch c.kind {
 	case kindGating:
+		if c.grace > 0 && h.everReady && !c.transientSince.IsZero() && h.now().Sub(c.transientSince) < c.grace {
+			return false
+		}
 		return true
 	case kindFirst:
 		return !h.everReady
@@ -598,6 +669,9 @@ func (h *Health) gates(c *check) bool {
 // is not draining (Q-OPS-12). A ready worker claims jobs, a ready web replica
 // answers /api/v1/system/ping with 200.
 func (h *Health) Ready() bool { return len(h.Snapshot().Failing) == 0 }
+
+// Serving reports whether the replica answers requests (Snapshot.Serving).
+func (h *Health) Serving() bool { return h.Snapshot().Serving }
 
 // Degraded returns the reported checks that currently fail.
 func (h *Health) Degraded() []string { return h.Snapshot().Degraded }

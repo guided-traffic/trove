@@ -95,7 +95,7 @@ func databaseEnv(t *testing.T, dir, name, caFile string) []string {
 		"TROVE_DATABASE_USERNAME_FILE=" + write(t, dir, "db-user", testenv.Get(t, "TROVE_TEST_PG_USER")+"\n"),
 		"TROVE_DATABASE_PASSWORD_FILE=" + write(t, dir, "db-pass", testenv.Get(t, "TROVE_TEST_PG_PASSWORD")+"\n"),
 		"TROVE_DATABASE_SSL_MODE=verify-full", "TROVE_DATABASE_SSL_ROOT_CERT_FILE=" + caFile,
-		"TROVE_DATABASE_PREFLIGHT_ALLOW_SUPERUSER=true", "TROVE_DATABASE_RETRY_MAX_ELAPSED=3s",
+		"TROVE_DATABASE_PREFLIGHT_ALLOW_SUPERUSER=true", "TROVE_DATABASE_RETRY_MAX_ELAPSED=3s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=2s",
 	}
 }
 

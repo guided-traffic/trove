@@ -114,6 +114,14 @@ func readKeyFile(file string) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("secrets: read key file %s: %w", file, err)
 	}
+	// A file of exactly 32 bytes is the key itself, as a generator of random
+	// bytes writes it (a `type: bytes` field of internal-secrets-operator). It is
+	// checked before anything is trimmed, because a random key may start or end
+	// with a white-space byte. Base64 text of 32 bytes is 43 or 44 characters
+	// long, so the length cannot be mistaken for it.
+	if len(b) == keyBytes {
+		return b, nil
+	}
 	enc := strings.TrimSpace(string(b))
 	key, err := base64.StdEncoding.DecodeString(enc)
 	if err != nil {
@@ -122,7 +130,7 @@ func readKeyFile(file string) ([]byte, error) {
 		}
 	}
 	if len(key) != keyBytes {
-		return nil, fmt.Errorf("secrets: key file %s holds %d bytes, want %d (32 random bytes, base64-encoded)", file, len(key), keyBytes)
+		return nil, fmt.Errorf("secrets: key file %s holds %d bytes, want %d (32 random bytes, either raw or base64-encoded)", file, len(key), keyBytes)
 	}
 	return key, nil
 }

@@ -36,6 +36,7 @@ const (
 	CodeShuttingDown        = "shutting_down"
 	CodeServerBusy          = "server_busy"
 	CodeDatabaseTimeout     = "database_timeout"
+	CodeMisdirectedRequest  = "misdirected_request"
 )
 
 // CodeInfo documents one code for the problem catalog.
@@ -72,6 +73,7 @@ var registry = []CodeInfo{
 	{CodeShuttingDown, Unavailable, "Shutting down", "The replica is draining; retry on another replica."},
 	{CodeServerBusy, Unavailable, "Server busy", "The replica is at server.max_in_flight or another concurrency bound; retry after the Retry-After period, the request can succeed on another replica."},
 	{CodeDatabaseTimeout, Unavailable, "Database timeout", "A statement exceeded its time limit (statement_timeout or lock_timeout); retry after the Retry-After period."},
+	{CodeMisdirectedRequest, Misdirected, "Misdirected request", "The host of the request is not one this endpoint answers for. Send the request to the endpoint that serves the host, on a new connection."},
 }
 
 // Codes returns a copy of the registry in declaration order.

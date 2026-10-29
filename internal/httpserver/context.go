@@ -33,6 +33,20 @@ type RequestInfo struct {
 	// additional base URL, "request" when it was derived from the request
 	// (development only).
 	BaseURLSource string
+	// Host is the effective host: the request's own host, or a forwarded host
+	// within the endpoint's host set (R-EP-003). Empty outside an endpoint chain.
+	Host string
+	// HostLabel is the label a wildcard host matched (R-EP-003), "" otherwise.
+	HostLabel string
+	// RootRepository is the repository the effective host's root is bound to
+	// (R-EP-006), "" when unbound. No route reads it in the MVP.
+	RootRepository string
+	// ForwardedHostIgnored is true when a trusted peer sent a forwarded host
+	// outside the endpoint's host set.
+	ForwardedHostIgnored bool
+	// Misdirected is true when the endpoint checks hosts and the effective host
+	// is not in its set; the chain answers 421.
+	Misdirected bool
 }
 
 // InfoFrom returns the resolved request information; the zero value outside the

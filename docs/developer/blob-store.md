@@ -118,6 +118,11 @@ are answers, not failures; a cancelled caller is no evidence. Metrics: `trove_st
 `trove_storage_s3_bytes_total{direction}`, `trove_storage_s3_circuit_open`. The composition root builds
 `blob.NewMetrics(m)` once and passes it to the spool, the guard and the collector.
 
+Endpoint: a `storage.s3.endpoint` (and `presign.endpoint`) without a scheme is a host and means `https://`
+(Q-STOR-15). `config.NormalizeEndpoint` does it once at load (`Config.Finalize`, source `derived`) and again in
+`s3.New`, so a client built from a hand-made config agrees. Plaintext is always spelled `http://` with
+`allow_insecure_endpoint`; the flag never changes a scheme-less host.
+
 TLS: an `https://` endpoint verifies against the factory's trust store (system roots plus
 `proxy.outbound.tls.ca_files`), or, with `storage.s3.ca_file` set, against that bundle only: `NewFromFactory` builds a
 trust store of its own (`outbound.Factory.TrustStore` + `outbound.WithRootCAs`), read again like the factory's, so a

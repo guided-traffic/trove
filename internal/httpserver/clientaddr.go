@@ -16,6 +16,9 @@ type Resolver struct {
 	baseURL    string
 	additional map[string]string // normalised origin -> origin
 	header     ForwardedHeader
+	// endpoint, when set, makes the resolver host-aware: it computes the effective
+	// host, the host check and the response base URL of that endpoint (R-EP-003).
+	endpoint *Endpoint
 }
 
 // ForwardedHeader names the one header family the edge rewrites
@@ -45,6 +48,16 @@ func WithForwardedHeader(h ForwardedHeader) ResolverOption {
 			return nil
 		}
 		return fmt.Errorf("forwarded header %q is neither %q nor %q", h, HeaderXForwardedFor, HeaderForwarded)
+	}
+}
+
+// ForEndpoint binds the resolver to an endpoint: the effective host, the host
+// check, the response base URL and the host-root binding come from its host set
+// (R-EP-003, R-EP-006).
+func ForEndpoint(e *Endpoint) ResolverOption {
+	return func(r *Resolver) error {
+		r.endpoint = e
+		return nil
 	}
 }
 
@@ -163,6 +176,13 @@ func (r *Resolver) Resolve(req *http.Request) RequestInfo {
 		}
 	}
 
+	if r.endpoint != nil {
+		r.resolveHost(req, trusted, &info)
+		if r.endpoint.check {
+			return info
+		}
+	}
+
 	switch {
 	case r.baseURL != "":
 		info.BaseURL, info.BaseURLSource = r.baseURL, "config"
@@ -191,6 +211,58 @@ func (r *Resolver) Resolve(req *http.Request) RequestInfo {
 		}
 	}
 	return info
+}
+
+// resolveHost computes the effective host of a request on r's endpoint
+// (R-EP-003). The request's own host counts; a forwarded host counts only when
+// the peer is a trusted proxy and the host lies in the endpoint's set, otherwise
+// it is ignored and flagged (only on an endpoint that checks hosts; the default
+// endpoint without configured hosts keeps R-OPS-005). On an endpoint that checks hosts it also sets the
+// response base URL, or flags the request as misdirected; the default endpoint
+// without configured hosts keeps the base URL rule of R-OPS-005. The host-root
+// binding of the effective host is set in both cases (R-EP-006).
+func (r *Resolver) resolveHost(req *http.Request, trusted bool, info *RequestInfo) {
+	e := r.endpoint
+	host := hostOnly(req.Host)
+	if trusted && e.check {
+		if fh, present := r.forwardedHost(req.Header); present {
+			if h := hostOnly(fh); h != "" && e.inSet(h) {
+				host = h
+			} else {
+				info.ForwardedHostIgnored = true
+			}
+		}
+	}
+	info.Host = host
+	label, ok := e.matchHost(host)
+	if ok {
+		info.HostLabel = label
+		info.RootRepository = e.rootFor(host, label)
+	}
+	if !e.check {
+		return
+	}
+	if !ok {
+		info.Misdirected = true
+		info.BaseURL, info.BaseURLSource = e.baseURL, "config"
+		return
+	}
+	info.BaseURL, info.BaseURLSource = e.baseURLFor(host), "config"
+}
+
+// forwardedHost returns the host the right-most trusted hop reports, from
+// Forwarded host= or X-Forwarded-Host, whichever family server.forwarded_header
+// selects; the other family is never read (R-ARCH-006).
+func (r *Resolver) forwardedHost(h http.Header) (string, bool) {
+	if r.header == HeaderForwarded {
+		if els := forwardedElements(h); len(els) > 0 {
+			v, ok := els[len(els)-1]["host"]
+			return v, ok && v != ""
+		}
+		return "", false
+	}
+	v := lastValue(h, "X-Forwarded-Host")
+	return v, v != ""
 }
 
 // walk applies the right-most-untrusted rule to a forwarding chain.

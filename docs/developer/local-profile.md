@@ -53,7 +53,7 @@ is measured by [the end-to-end suite](e2e.md), which runs them under load.
 | Variable | Default | Effect |
 |---|---|---|
 | `TROVE_SKIP_RELEASE=1` | unset | `up.sh` installs the dependency stack only, not the trove release. Use it while the image does not serve yet, or to work on the dependencies |
-| `TROVE_IMAGE` | `ghcr.io/guided-traffic/trove:dev` | the image `up.sh` loads into the cluster with `kind load docker-image`; build it with `make image IMAGE=ghcr.io/guided-traffic/trove:dev VERSION=dev` first. Without `VERSION=dev` the Makefile takes the version from `git describe`; in a checkout without tags that is a commit hash, which the binary refuses (it waits for the schema forever, see [e2e.md](e2e.md#open-findings)) |
+| `TROVE_IMAGE` | `ghcr.io/guided-traffic/trove:dev` | the image `up.sh` loads into the cluster with `kind load docker-image`; build it with `make image IMAGE=ghcr.io/guided-traffic/trove:dev` first. `VERSION` defaults to `dev` (or the number of a `v0.*` tag on `HEAD`), the one non-release version the binary accepts ([e2e.md](e2e.md#findings-of-the-suite)) |
 | `TROVE_DEV_HTTP_PORT` | `8080` | host port of the edge. Set it when 8080 is taken (`up.sh` checks and says so); `config.server.base_url` follows. Fixed when the cluster is created |
 | `TROVE_PROFILE=scatter` | `default` | the `scatter` e2e profile, see below |
 | `TROVE_POOLER=1` | unset | also installs the two transaction-mode poolers ([pooler.yaml](../../deploy/dev/pooler.yaml)) and layers [values-pooler.yaml](../../deploy/dev/values-pooler.yaml). The manifests are applied and the poolers start; the pooler profile itself is verified in M5 |

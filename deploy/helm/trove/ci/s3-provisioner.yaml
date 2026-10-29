@@ -1,0 +1,38 @@
+# The object store comes from the Secret an S3 provisioner writes (AWS_ACCESS_KEY_ID,
+# AWS_SECRET_ACCESS_KEY, S3_BUCKET, S3_REGION, S3_ENDPOINT as a host without scheme): the
+# credentials are mounted as files, bucket, region and endpoint are read into environment
+# variables from the same Secret, and config.storage.s3 needs none of them.
+config:
+  server:
+    base_url: https://trove.example.com            # example
+  database:
+    host: trove-db-rw.trove.svc                    # example
+  storage:
+    s3:
+      force_path_style: true                       # example
+      credentials:
+        source: static
+  valkey:
+    sentinel:
+      addresses:                                   # example
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove                          # example
+tls:
+  secretName: trove-tls                            # example
+secrets:
+  database:
+    existingSecret: trove-db-app                   # example
+  s3:
+    existingSecret: trove-s3                       # example: written by the provisioner
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    bucketKey: S3_BUCKET
+    regionKey: S3_REGION
+    endpointKey: S3_ENDPOINT
+  valkey:
+    existingSecret: trove-valkey                   # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [2026-10.key]                            # example

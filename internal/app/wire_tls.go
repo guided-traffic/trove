@@ -4,11 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/observability/health"
 	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
+
+// tlsListener names a listener's TLS for the readiness check.
+type tlsListener struct {
+	name string
+	l    *httpserver.ListenerTLS
+}
 
 // startTLS builds the TLS of the listeners this role opens (R-ARCH-035): one
 // reloader per listener, the ops listener from server.ops_tls (inherit: the
@@ -23,18 +30,23 @@ func (a *App) startTLS() error {
 	if a.opsTLS, err = httpserver.NewListenerTLS("ops", s.OpsListenerTLS(), a.tlsOptions("ops")...); err != nil {
 		return err
 	}
-	if a.sub.ClientListener {
+	if a.servesDefault() {
 		if a.clientTLS, err = httpserver.NewListenerTLS("client", s.TLS, a.tlsOptions("client")...); err != nil {
 			return err
 		}
 	}
-	if a.opsTLS == nil && a.clientTLS == nil {
+	if err := a.startEndpointTLS(); err != nil {
+		return err
+	}
+	listeners := []tlsListener{{"ops", a.opsTLS}, {"client", a.clientTLS}}
+	for _, rt := range a.eps {
+		if !rt.cfg.Default {
+			listeners = append(listeners, tlsListener{"endpoint " + rt.cfg.Name, rt.tls})
+		}
+	}
+	if !slices.ContainsFunc(listeners, func(x tlsListener) bool { return x.l != nil }) {
 		return nil
 	}
-	listeners := []struct {
-		name string
-		l    *httpserver.ListenerTLS
-	}{{"ops", a.opsTLS}, {"client", a.clientTLS}}
 	// The reloader has logged and counted a file that did not load.
 	a.health.AddReadiness("tls", func(context.Context) error {
 		var errs []error

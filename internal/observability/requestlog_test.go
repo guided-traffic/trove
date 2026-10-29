@@ -128,7 +128,7 @@ func TestRequestLog(t *testing.T) {
 		if buf.Len() != 0 {
 			t.Errorf("record written: %s", buf.String())
 		}
-		if !strings.Contains(scrapeBody(t, m, ""), `trove_http_requests_total{code="200",handler="unmatched",listener="ops",method="GET"} 1`) {
+		if !strings.Contains(scrapeBody(t, m, ""), `trove_http_requests_total{code="200",endpoint="",handler="unmatched",listener="ops",method="GET"} 1`) {
 			t.Error("request not counted")
 		}
 	})

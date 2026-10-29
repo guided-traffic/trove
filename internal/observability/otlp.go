@@ -112,12 +112,17 @@ func readHeadersFile(path string) (map[string]string, error) {
 type queueProcessor struct {
 	exp     sdktrace.SpanExporter
 	ch      chan sdktrace.ReadOnlySpan
+	kick    chan struct{}
 	flush   chan chan struct{}
 	stop    chan struct{}
 	done    chan struct{}
 	once    sync.Once
 	dropped func()
 	log     *slog.Logger
+	// batch is the queue length that starts an export before the next tick:
+	// spans stay in ch until they are exported, so the queue size bounds every
+	// span the processor holds.
+	batch int
 }
 
 const (
@@ -131,8 +136,9 @@ func newQueueProcessor(exp sdktrace.SpanExporter, size int, dropped func(), log 
 		dropped = func() {}
 	}
 	q := &queueProcessor{
-		exp: exp, ch: make(chan sdktrace.ReadOnlySpan, size), flush: make(chan chan struct{}),
-		stop: make(chan struct{}), done: make(chan struct{}), dropped: dropped, log: log,
+		exp: exp, ch: make(chan sdktrace.ReadOnlySpan, size), kick: make(chan struct{}, 1),
+		flush: make(chan chan struct{}), stop: make(chan struct{}), done: make(chan struct{}),
+		dropped: dropped, log: log, batch: min(exportBatch, size),
 	}
 	go q.run()
 	return q
@@ -151,6 +157,12 @@ func (q *queueProcessor) OnEnd(s sdktrace.ReadOnlySpan) {
 	}
 	select {
 	case q.ch <- s:
+		if len(q.ch) >= q.batch {
+			select {
+			case q.kick <- struct{}{}:
+			default:
+			}
+		}
 	default:
 		q.dropped()
 	}
@@ -158,43 +170,44 @@ func (q *queueProcessor) OnEnd(s sdktrace.ReadOnlySpan) {
 
 func (q *queueProcessor) run() {
 	defer close(q.done)
-	var batch []sdktrace.ReadOnlySpan
+	batch := make([]sdktrace.ReadOnlySpan, 0, q.batch)
 	tick := time.NewTicker(exportDelay)
 	defer tick.Stop()
-	send := func() {
+	// export takes at most one batch out of the queue and sends it. Spans wait
+	// in the bounded queue, never in a second buffer, so a stuck exporter makes
+	// OnEnd drop once the queue is full (R-OPS-018).
+	export := func() bool {
+		batch = batch[:0]
+		for len(batch) < q.batch {
+			select {
+			case s := <-q.ch:
+				batch = append(batch, s)
+				continue
+			default:
+			}
+			break
+		}
 		if len(batch) == 0 {
-			return
+			return false
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), exportTimeout)
 		if err := q.exp.ExportSpans(ctx, batch); err != nil && q.log != nil {
 			q.log.Warn("span export failed", "component", "tracing", "error", err)
 		}
 		cancel()
-		batch = batch[:0]
+		return true
 	}
 	drain := func() {
-		for {
-			select {
-			case s := <-q.ch:
-				batch = append(batch, s)
-				if len(batch) >= exportBatch {
-					send()
-				}
-			default:
-				send()
-				return
-			}
+		for export() {
 		}
 	}
 	for {
 		select {
-		case s := <-q.ch:
-			batch = append(batch, s)
-			if len(batch) >= exportBatch {
-				send()
+		case <-q.kick:
+			for len(q.ch) >= q.batch && export() {
 			}
 		case <-tick.C:
-			send()
+			drain()
 		case reply := <-q.flush:
 			drain()
 			close(reply)

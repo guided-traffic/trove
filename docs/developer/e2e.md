@@ -15,7 +15,7 @@ the real release image on the [dev profile](local-profile.md) and injects the fa
 - **A failed request is counted by the client.** k6 runs at 100 requests/s through the Ingress, and every
   response becomes a line the Go test parses. Nothing is inferred from server metrics.
 - **A failing test here is a finding.** When a criterion fails because of the product, the test stays red
-  and [Open findings](#open-findings) says what was measured. No threshold is moved to make it pass.
+  and [Findings of the suite](#findings-of-the-suite) says what was measured. No threshold is moved to make it pass.
 
 ## Layout
 
@@ -56,9 +56,9 @@ in [tools/versions.env](../../tools/versions.env), pinned by digest, run on the 
 no host install and no host port is involved. `e2e.sh` refuses a `K6_IMAGE` whose tag differs from
 `K6_VERSION`.
 
-`VERSION=dev` matters. `make image` takes the version from `git describe`, which in a checkout without
-tags is a commit hash, and the binary refuses a version that is neither `major.minor.patch` nor `dev`:
-the replicas wait for the schema forever and never become ready ([Open findings](#open-findings)).
+`VERSION` defaults to `dev`, or to the number of a `v0.*` tag on `HEAD`. The binary refuses a version that is
+neither `major.minor.patch` nor `dev`: with a commit hash the replicas would wait for the schema forever and never
+become ready, and it now logs an ERROR at start saying so ([Findings of the suite](#findings-of-the-suite)).
 
 Output: the machine-readable report is `.out/test-e2e.json` (`go test -json`, test names carry the
 requirement IDs), the artifacts are in `.out/e2e/`: per k6 run the console log (one line per request:
@@ -190,42 +190,58 @@ built from the working tree of 2026-10-29 plus the `system.probe` kind.
 The measured numbers of each criterion are in the files under `.out/e2e/` after a run and in the test
 log. The tests print them with `t.Logf`.
 
-## Open findings
+## Findings of the suite
 
-What the suite found in the product. Each is reproducible with the command given; none is hidden by the
-tests.
+What the suite found in the product, and what fixed each. Every one has a regression test that fails without the
+fix. The numbers stay, because commits and test output refer to them. The suite has not been re-run on the kind
+profile since the fixes; the first `make e2e SET=failover` and `SET=drain` after them is what confirms the
+measurements below no longer occur.
 
-1. **`GET /api/v1/system/replicas` is not retried and answers 500 during a PostgreSQL failover**
+1. **Fixed: `GET /api/v1/system/replicas` was not retried and answered 500 during a PostgreSQL failover**
    (`TestE13Failover`, switchover, primary kill and stop). `replicaSource.Replicas`
-   ([internal/app/facts.go](../../internal/app/facts.go)) calls `cluster.ListReplicas` with the raw pool
-   `db.Main()`: it bypasses the retry and the mapping to `database_unavailable`/503 that `postgres.Tx` has.
+   ([internal/app/facts.go](../../internal/app/facts.go)) called `cluster.ListReplicas` with the raw pool
+   `db.Main()`: it bypassed the retry and the mapping to `database_unavailable`/503 that `postgres.InTx` has.
    Measured: switchover, 40 of 4555 requests `500` (`FATAL: terminating connection due to administrator
-   command (SQLSTATE 57P01)`, which `classify` treats as retryable elsewhere), and `failed to connect …
-   dial error: timeout` after 5 s; primary kill, 2 `500`; 30 s stop, 575 `500` next to 2667 `503`. The ping
-   path never touches PostgreSQL and answers only 200/503.
-   Fix: a `DB.Read(ctx, func(q.DBTX) error)` on the retrier of `internal/meta/postgres` that every handler
-   read of the main pool uses, with the same error mapping as `Tx`.
-2. **`GET /api/v1/system/ping` answers 503 as soon as a `web` replica drains**, intermittently
-   (`TestE14Drain`): with the edge off the drained node, 1 of 16938 requests in one run, 3 of 16502 in the
-   next, 0 of 16401 in the last, always from the drained replica, 100 to 240 ms after the drain started. `ping` answers from
-   readiness ([R-OPS-002](../spec/operations-and-observability.md)), readiness flips at SIGTERM (R-ARCH-024),
-   and the edge keeps routing to the pod until its endpoint is removed. `shutdown_drain_delay` exists to
-   cover exactly this window, but it only helps if the replica keeps *serving* in it. Everything else
-   survived the drain: no connection error, all jobs resumed. Fix: `ping` answers 200 while the replica
-   is only draining (readiness false for no other reason). This changes R-OPS-002's "503 when not ready"
-   for the draining case, so it is a spec decision.
-3. **Readiness can flip during a short PostgreSQL outage** (first switchover run: 75 `503`, about 4 s on both
-   replicas; the second run: none). `health.check_interval` 5 s times `failure_threshold` 2 is shorter
-   than a switchover (10 to 15 s), while queries retry for `database.retry.max_elapsed` (30 s). A
-   readiness that tolerates an outage shorter than the retry budget would keep the replicas in the
-   Service while their queries wait; for the 30 s stop of E0.13 `/readyz` is meant to turn 503, which
-   holds either way.
-4. **`make image` produces a binary that never becomes ready in a checkout without tags.** `VERSION` falls
-   back to `git describe --tags --always --dirty`, a commit hash; `parseVersion`
-   ([internal/meta/postgres/version.go](../../internal/meta/postgres/version.go)) accepts only
-   `major.minor.patch` or `dev`, and the replicas log `waiting for the schema … is not major.minor.patch`
-   at every retry, for ever. Fix: the Makefile default `VERSION` is `dev` when `git describe` is not a version.
-   CI and this page pass `VERSION=dev` until then.
+   command (SQLSTATE 57P01)`), and `failed to connect … dial error: timeout` after 5 s; primary kill, 2 `500`;
+   30 s stop, 575 `500` next to 2667 `503`. Fix: `DB.Read(ctx, func(q.DBTX) error)` in
+   [internal/meta/postgres/tx.go](../../internal/meta/postgres/tx.go), with the retry, the bound and the error
+   mapping of `InTx`; `replicaSource.Replicas`, `SystemFacts`, `ServerVersion` and `SchemaState` use it
+   ([database.md](database.md)). Regression: `TestRead` in
+   [test/integration/postgres/read_test.go](../../test/integration/postgres/read_test.go), subtests
+   "Read repeats a read that a failover ended", "reads that run while every backend is terminated all succeed"
+   (150 reads, backends terminated every 120 ms, none fails), "a read that keeps failing ends as
+   database_unavailable within retry.max_elapsed" and "the system facts reads go through Read".
+2. **Fixed: `GET /api/v1/system/ping` answered 503 as soon as a `web` replica drained**, intermittently
+   (`TestE14Drain`): 1 of 16938 requests in one run, 3 of 16502 in the next, always from the drained replica,
+   100 to 240 ms after the drain started. Ping followed readiness, readiness flips at SIGTERM (R-ARCH-024), and the
+   edge keeps routing to the pod until its endpoint is removed; the drain delay exists to cover that window and
+   only helps if the replica serves in it. Decision Q-OPS-30: ping answers from `Health.Serving()` (`200` while the
+   replica is ready or draining after it was ready; `503` when a gating check other than `draining` fails, or it
+   never was ready). Regression: `TestGracefulShutdown` in
+   [internal/app/lifecycle_test.go](../../internal/app/lifecycle_test.go) (ping during the drain delay is 200),
+   `TestServeProcess` in [cmd/trove/serve_process_test.go](../../cmd/trove/serve_process_test.go) (the process,
+   SIGTERM, ping five times in the drain delay), `TestServing` in
+   [internal/observability/health](../../internal/observability/health/health_test.go).
+3. **Fixed: readiness could flip during a short PostgreSQL outage** (first switchover run: 75 `503`, about 4 s on
+   both replicas; the second run: none). `health.check_interval` 5 s times `failure_threshold` 2 is shorter than a
+   switchover (10 to 15 s), while queries retry for `database.retry.max_elapsed` (30 s). Decision Q-OPS-31: the
+   `database` and `schema` checks have an outage grace, `health.database_outage_grace` (20 s, validated below
+   `database.retry.max_elapsed`). Once a replica has been ready, a connectivity failure keeps the check `degraded` and
+   `/readyz` at 200 for that long; then it fails. Regression: `TestOutageGrace` (fake clock) in
+   [internal/observability/health](../../internal/observability/health/health_test.go), `TestMarkOutage` and
+   `TestDatabaseOutageGrace` in
+   [test/integration/server/outage_test.go](../../test/integration/server/outage_test.go) (a TCP proxy in front of
+   PostgreSQL: down for 1.2 s, `/readyz` stays 200 and lists `database` as degraded; down past the 2.5 s grace of
+   that test, 503 not earlier than 2 s, and 200 again when the proxy is back). The 30 s stop of E0.13 still turns
+   `/readyz` 503, now 20 to 25 s into the outage instead of 10.
+4. **Fixed: `make image` produced a binary that never became ready in a checkout without tags.** `VERSION` fell back
+   to `git describe --tags --always --dirty`, a commit hash, which `parseVersion`
+   ([internal/meta/postgres/version.go](../../internal/meta/postgres/version.go)) refuses, so the replicas logged
+   `waiting for the schema … is not major.minor.patch` for ever. Now the Makefile's `VERSION` is the number of a
+   `v0.*` tag on `HEAD` (the `v` stripped) and `dev` otherwise; an explicit `VERSION=` (CI) still wins. The binary
+   also logs one ERROR at start when its own version cannot be compared with the schema (`TestCheckBinaryVersion`
+   in [internal/app/version_check_test.go](../../internal/app/version_check_test.go)): the message names the version
+   and the way out. CI and this page still pass `VERSION=dev`, which is now the default and no longer needed.
 
 ## What a TLS switch changes
 

@@ -1,0 +1,80 @@
+{{- /*
+One Ingress per further endpoint with ingress.enabled (R-EP-008): the class, one rule per host of the
+endpoint (the host of its base URL, every exact host, the wildcard host), path / with pathType
+Prefix, the backend <fullname>-ep-<name> over TLS as R-HA-063 wires it for the default Ingress, and
+the endpoint's own tls entries (one Secret per certificate set, chosen by SNI at the edge).
+*/ -}}
+{{- range $name := include "trove.endpointNames" . | fromYamlArray }}
+{{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
+{{- if $e.ingressEnabled }}
+{{- $svc := printf "%s-ep-%s" (include "trove.fullname" $) $name }}
+{{- $bt := include "trove.endpointBackendTLS" (dict "root" $ "name" $name) | fromYaml }}
+{{- $hosts := include "trove.endpointHosts" $e | fromYamlArray }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}
+  labels:
+    {{- include "trove.labels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+    trove/endpoint: {{ $name | quote }}
+  {{- $ann := merge (dict) $e.ingressAnnotations $.Values.commonAnnotations }}
+  {{- if and $.Values.tls.enabled (eq $bt.controller "haproxy") }}
+  {{- $hp := "haproxy-ingress.github.io/" }}
+  {{- $_ := set $ann (print $hp "secure-backends") "true" }}
+  {{- with (ternary $bt.caSecret "" $bt.verify) }}
+  {{- $_ := set $ann (print $hp "secure-verify-ca-secret") . }}
+  {{- $_ := set $ann (print $hp "secure-sni") (printf "%s.%s.svc" $svc $.Release.Namespace) }}
+  {{- end }}
+  {{- with $bt.clientCertSecret }}
+  {{- $_ := set $ann (print $hp "secure-crt-secret") . }}
+  {{- end }}
+  {{- end }}
+  {{- if and $.Values.tls.enabled (eq $bt.controller "ingress-nginx") }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/backend-protocol" "HTTPS" }}
+  {{- with (ternary $bt.caSecret "" $bt.verify) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-verify" "on" }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-secret" (printf "%s/%s" $.Release.Namespace .) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-name" (printf "%s.%s.svc" $svc $.Release.Namespace) }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/proxy-ssl-server-name" "on" }}
+  {{- end }}
+  {{- end }}
+  {{- if $ann }}
+  annotations:
+    {{- toYaml $ann | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $e.ingressClassName }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with $e.ingressTLS }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ $e.port }}
+    {{- end }}
+    {{- with $e.wildcardHost }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ $e.port }}
+    {{- end }}
+{{- end }}
+{{- end }}

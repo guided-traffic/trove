@@ -28,7 +28,7 @@ type Storage struct {
 
 // StorageS3 is the S3-compatible object store (R-STOR-030 to R-STOR-036).
 type StorageS3 struct {
-	Endpoint              string               `yaml:"endpoint" default:"" doc:"Empty means AWS endpoint resolution for the region."`
+	Endpoint              string               `yaml:"endpoint" default:"" doc:"Empty means AWS endpoint resolution for the region. A host without a scheme means https://; plain HTTP needs http:// and allow_insecure_endpoint."`
 	Region                string               `yaml:"region" default:""`
 	Bucket                string               `yaml:"bucket" default:"" doc:"Blob bucket; required to serve."`
 	Prefix                string               `yaml:"prefix" default:"trove"`
@@ -263,6 +263,30 @@ func (s *Storage) ValidateFor(cmd Command, r *Report) {
 	}
 }
 
+// NormalizeEndpoint returns an object-store endpoint as an absolute URL. A value
+// without a scheme is a host, optionally with a port, as the provisioner of a
+// bucket writes it: it means https:// (Q-STOR-15). Plain HTTP stays an explicit
+// http:// together with allow_insecure_endpoint. The empty string stays empty.
+func NormalizeEndpoint(raw string) string {
+	if raw == "" || strings.Contains(raw, "://") {
+		return raw
+	}
+	return "https://" + raw
+}
+
+// finalizeEndpoints writes the endpoints that had no scheme back with https://,
+// so every consumer and the effective-configuration view see an absolute URL.
+func (s *Storage) finalizeEndpoints(sources map[string]Source) {
+	for key, field := range map[string]*string{
+		"storage.s3.endpoint": &s.S3.Endpoint, "storage.s3.presign.endpoint": &s.S3.Presign.Endpoint,
+	} {
+		if n := NormalizeEndpoint(*field); n != *field {
+			*field = n
+			sources[key] = Source{Kind: "derived", Detail: "no scheme given, https:// assumed"}
+		}
+	}
+}
+
 // validateS3Connection applies the startup validation of R-STOR-030: the prefix
 // and the endpoint.
 func (s *Storage) validateS3Connection(r *Report) {
@@ -282,11 +306,12 @@ func (s *Storage) validateS3Connection(r *Report) {
 			}
 		}
 	}
-	rejectUserinfo(r, "s3.endpoint", s.S3.Endpoint, "storage.s3.credentials.access_key_id_file")
+	endpoint, presign := NormalizeEndpoint(s.S3.Endpoint), NormalizeEndpoint(s.S3.Presign.Endpoint)
+	rejectUserinfo(r, "s3.endpoint", endpoint, "storage.s3.credentials.access_key_id_file")
 	rejectUserinfo(r, "s3.credentials.sts_endpoint", s.S3.Credentials.STSEndpoint, "")
-	rejectUserinfo(r, "s3.presign.endpoint", s.S3.Presign.Endpoint, "")
+	rejectUserinfo(r, "s3.presign.endpoint", presign, "")
 	rejectUserinfo(r, "s3.http.proxy_url", s.S3.HTTP.ProxyURL, "storage.s3.http.proxy_credentials_file")
-	if e := s.S3.Endpoint; e != "" {
+	if e := endpoint; e != "" {
 		u, err := url.Parse(e)
 		switch {
 		case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http"):

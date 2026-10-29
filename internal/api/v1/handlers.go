@@ -64,7 +64,8 @@ type FactSource interface {
 type Options struct {
 	Document *Document
 	Identity Identity
-	// Ready reports whether the replica may take work (R-OPS-001); ping answers from it.
+	// Ready reports whether the replica serves requests: ready, or draining after it
+	// was ready (R-OPS-002, Q-OPS-30); ping answers from it.
 	Ready func() bool
 	// PublicVersion is system.public_version.
 	PublicVersion bool

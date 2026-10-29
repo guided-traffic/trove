@@ -11,6 +11,12 @@ import (
 // answers 404 through the catch-all.
 const ReservedOCIPrefix = "/v2"
 
+// ReservedWellKnownPrefix is the host-root path for discovery documents that
+// clients fetch there (RFC 8615): Terraform's first, on a bound host (R-EP-006).
+// No other route may use it, and until a format registers one every path below
+// it answers 404 through the catch-all.
+const ReservedWellKnownPrefix = "/.well-known"
+
 // patternPath returns the path part of a ServeMux pattern: it drops the optional
 // method and the optional host.
 func patternPath(pattern string) string {
@@ -32,6 +38,10 @@ func patternPath(pattern string) string {
 //   - no pattern other than the catch-all and GET /{$} has a wildcard as its
 //     first path segment, because /{seg}/… matches below /v2/ too.
 //
+// R-EP-006 adds the same rule for /.well-known/: only a format's own host-root
+// patterns (also passed as ociPatterns, the format-registered exemptions) may
+// lie below it.
+//
 // ServeMux's own conflict check does not replace this: a more specific pattern
 // such as /v2/x does not conflict with /v2/ and would register without a panic.
 func CheckRouteTable(patterns, ociPatterns []string) []string {
@@ -43,6 +53,10 @@ func CheckRouteTable(patterns, ociPatterns []string) []string {
 		path := patternPath(p)
 		if path == ReservedOCIPrefix || strings.HasPrefix(path, ReservedOCIPrefix+"/") {
 			out = append(out, fmt.Sprintf("%q lies below %s/, which is reserved for the OCI format (R-HA-041)", p, ReservedOCIPrefix))
+			continue
+		}
+		if path == ReservedWellKnownPrefix || strings.HasPrefix(path, ReservedWellKnownPrefix+"/") {
+			out = append(out, fmt.Sprintf("%q lies below %s/, which is reserved for discovery documents of formats (R-EP-006)", p, ReservedWellKnownPrefix))
 			continue
 		}
 		first, _, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")

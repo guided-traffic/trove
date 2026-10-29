@@ -2234,7 +2234,12 @@ a permitted form, this paragraph governs.
   installation (changing it makes all content unreachable).
 - Validation at startup: bucket required; prefix without leading or trailing `/` and without
   `//`, at most 256 characters of `[A-Za-z0-9!_.*'()/-]`; `endpoint`, when set, an absolute
-  `https://` URL (`http://` only with `allow_insecure_endpoint: true`).
+  `https://` URL (`http://` only with `allow_insecure_endpoint: true`). An endpoint without a scheme
+  is a host, with an optional port, and means `https://` (Q-STOR-15): `s3.eu01.example.cloud` is read
+  as `https://s3.eu01.example.cloud`, as a bucket provisioner writes it. The effective configuration
+  shows the URL with the scheme added, and its source is `derived`. The same holds for
+  `presign.endpoint`. A scheme-less host never becomes `http://`, not even with
+  `allow_insecure_endpoint`; plaintext is always written out.
 - S3-compatible stores: `force_path_style: true` for stores without virtual-hosted addressing;
   explicit `region` (any value the store accepts); `checksums.request_calculation: when_required`
   and `checksums.response_validation: when_required` for stores that reject the SDK's default
@@ -2248,7 +2253,7 @@ Configuration:
 ```yaml
 storage:
   s3:
-    endpoint: ""                 # default (proposed): empty = AWS endpoint resolution for region
+    endpoint: ""                 # default (proposed): empty = AWS endpoint resolution for region; a host without a scheme means https://
     region: eu-central-1         # example
     bucket: trove-blobs        # example; required
     prefix: trove              # default (proposed)
@@ -3894,6 +3899,25 @@ are applied rather than defaulted.
 
 **Applied in the spec:** R-STOR-033 names the metric label `operation` (replacing `op`, Q-OPS-26) in its metrics line,
 and the acceptance criterion of R-STOR-005 that reads the same counter uses `operation` too; no other requirement text changed.
+
+### Q-STOR-15 · Object-store endpoint without a scheme
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse it | `storage.s3.endpoint` must carry `https://` or `http://` | One form | The bucket provisioner writes the endpoint as a host without a scheme, so the chart would have to compose a URL from the Secret value |
+| (b) A host without a scheme means `https://`; plaintext needs `http://` and `allow_insecure_endpoint` (chosen) | The value is normalised before validation and written back at load | The provisioner's value works unchanged; the secure form is the default one; a plaintext store is still spelled out | A typo such as `htp://host` is not a scheme-less host: it contains `://` and is refused as an unsupported scheme |
+| (c) A scheme-less host means `http://` when `allow_insecure_endpoint` is set | The flag decides the scheme | Short for development | The flag would change what the value means, and a host that is meant as `https` silently goes plaintext |
+
+**Choice:** (b).
+
+**Rationale:** TLS is the rule for every connection (INV-20), so the shorter spelling must be the secure one. The
+rewrite happens once, at load, so the client, the validation and the effective-configuration view agree on the same
+URL. `storage.s3.credentials.sts_endpoint` is not rewritten: it is not a store address a provisioner writes. The
+development agent would revisit this if a provisioner appears whose host values already include a scheme or a path.
+
+**Applied in the spec:** R-STOR-030 (validation bullet and the configuration block).
 
 ## What this does not cover
 

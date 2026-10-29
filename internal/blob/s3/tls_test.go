@@ -53,6 +53,18 @@ func TestCAFile(t *testing.T) {
 		}
 	})
 
+	t.Run("R-STOR-030 an endpoint without a scheme is reached over https", func(t *testing.T) {
+		bare := cfg
+		bare.Endpoint = strings.TrimPrefix(srv.URL, "https://")
+		bc, err := s3.NewFromFactory(context.Background(), bare, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := put(bc, "bare", []byte("x"), blob.Checksum{}); err != nil {
+			t.Fatalf("a host without a scheme must mean https://: %v", err)
+		}
+	})
+
 	t.Run("R-STOR-030 a presigned URL fetched with the client's HTTP client verifies against the same ca_file", func(t *testing.T) {
 		u, err := c.Presign(context.Background(), "k", time.Minute)
 		if err != nil {

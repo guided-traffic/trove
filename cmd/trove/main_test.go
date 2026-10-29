@@ -73,7 +73,7 @@ func TestMigrate(t *testing.T) {
 			t.Fatal(err)
 		}
 		// A refused connection: the runner reports it after the retry bound.
-		env := baseEnv("TROVE_DATABASE_USERNAME_FILE="+user, "TROVE_DATABASE_PASSWORD_FILE=", "TROVE_DATABASE_HOST=127.0.0.1", "TROVE_DATABASE_PORT=1", "TROVE_DATABASE_RETRY_MAX_ELAPSED=1s",
+		env := baseEnv("TROVE_DATABASE_USERNAME_FILE="+user, "TROVE_DATABASE_PASSWORD_FILE=", "TROVE_DATABASE_HOST=127.0.0.1", "TROVE_DATABASE_PORT=1", "TROVE_DATABASE_RETRY_MAX_ELAPSED=1s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=0s",
 			"TROVE_DATABASE_SSL_MODE=disable", "TROVE_DATABASE_ALLOW_INSECURE=true")
 		for _, args := range [][]string{{"migrate"}, {"migrate", "up"}, {"migrate", "status"}} {
 			code, _, stderr := runCmd(t, env, append(args, "--config", cfg)...)

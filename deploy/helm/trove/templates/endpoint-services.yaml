@@ -1,0 +1,46 @@
+{{- /*
+One Service per further endpoint (R-EP-008): <fullname>-ep-<name> with the endpoint's port, selecting
+the pods that serve it (the main web pods, or the endpoint's pool). sessionAffinity is fixed to None
+like the default Service (R-HA-037).
+*/ -}}
+{{- range $name := include "trove.endpointNames" . | fromYamlArray }}
+{{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "trove.fullname" $ }}-ep-{{ $name }}
+  labels:
+    {{- include "trove.labels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+    trove/endpoint: {{ $name | quote }}
+  {{- $bt := include "trove.endpointBackendTLS" (dict "root" $ "name" $name) | fromYaml }}
+  {{- $svcAnn := merge (dict) $e.serviceAnnotations $.Values.commonAnnotations }}
+  {{- /* Traefik reads the backend scheme and transport from the Service (R-HA-063). */}}
+  {{- if and $e.ingressEnabled $.Values.tls.enabled (eq $bt.controller "traefik") }}
+  {{- $_ := set $svcAnn "traefik.ingress.kubernetes.io/service.serversscheme" "https" }}
+  {{- with $bt.serversTransport }}
+  {{- $_ := set $svcAnn "traefik.ingress.kubernetes.io/service.serverstransport" . }}
+  {{- end }}
+  {{- end }}
+  {{- if $svcAnn }}
+  annotations:
+    {{- toYaml $svcAnn | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $e.serviceType }}
+  sessionAffinity: None
+  {{- with $e.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: ep-{{ $name }}
+      port: {{ $e.port }}
+      targetPort: {{ $e.port }}
+      protocol: TCP
+      {{- if $.Values.tls.enabled }}
+      appProtocol: https
+      {{- end }}
+  selector:
+    {{- include "trove.selectorLabels" (dict "root" $ "component" "web" "pool" $e.pool) | nindent 4 }}
+{{- end }}
