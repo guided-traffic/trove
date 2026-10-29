@@ -1,0 +1,10 @@
+# oapi-codegen configuration (R-API-002, Q-API-1): models and the std-http-server
+# interface only. The strict-server variant is not used: handlers set ETag,
+# Location, Link and Retry-After themselves.
+package: gen
+output: api.gen.go
+generate:
+  models: true
+  std-http-server: true
+output-options:
+  skip-prune: true

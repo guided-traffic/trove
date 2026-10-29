@@ -1,0 +1,668 @@
+openapi: 3.1.0
+info:
+  title: trove management API
+  version: 1.0.0
+  summary: Management API of the trove artifact repository manager.
+  description: |
+    Every endpoint lives under `/api/v1/`; the major version in the path is the only version
+    selector. Errors are `application/problem+json` (RFC 9457). Package-manager protocol endpoints
+    follow their ecosystem's specification and are not part of this document.
+
+    This document is the contract: the server code (`internal/api/v1/gen`) and the UI client types
+    are generated from it. It is served at `/api/v1/openapi.json` and `/api/v1/openapi.yaml`
+    without authentication and holds no instance data except `servers[0].url`, which the server
+    replaces with its public base URL.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://trove.example.com
+    description: The public base URL (`server.base_url`); the server replaces this entry.
+tags:
+  - name: system
+    description: Liveness of the API, build facts, installation facts and the replica registry.
+  - name: meta
+    description: This document and the problem catalog.
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/system/ping:
+    get:
+      operationId: getPing
+      tags: [system]
+      summary: Check that this replica is ready to take work
+      description: |
+        Answers `200 text/plain` with `OK` while the replica is ready, a degraded replica included,
+        and `503` with `UNAVAILABLE` otherwise. A Valkey outage never fails a ping. Anonymous
+        callers are accepted. A presented credential is validated, so tooling can check the base URL
+        and a token in one call: an invalid, expired or revoked token yields `401`.
+      security:
+        - {}
+        - bearerAuth: []
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The replica is ready.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum: [OK]
+              example: OK
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "503":
+          description: The replica is not ready (starting, unready or draining).
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum: [UNAVAILABLE]
+              example: UNAVAILABLE
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/system/version:
+    get:
+      operationId: getVersion
+      tags: [system]
+      summary: Build facts of this replica
+      description: |
+        By default this requires an authenticated caller of any kind. With
+        `system.public_version: true` anonymous callers are accepted as well. Invalid credentials
+        yield `401` in either mode.
+      security:
+        - {}
+        - bearerAuth: []
+      x-trove-permission:
+        authenticated: true
+        publicSwitch: system.public_version
+      responses:
+        "200":
+          description: The build facts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+              example:
+                version: 0.1.0
+                revision: 4f1c2a9e0d7b8a6c5e3f1d2b4a6c8e0f1a3b5c7d
+                buildTime: "2026-10-20T09:12:00Z"
+                goVersion: go1.27.3
+                formats: []
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/system/info:
+    get:
+      operationId: getSystemInfo
+      tags: [system]
+      summary: Installation facts
+      description: |
+        The facts an operator needs to describe the deployment, with every secret omitted.
+        Cluster-wide facts come from PostgreSQL; `answeredBy` and the pools describe the replica
+        that answered, because requests reach replicas at random and replicas never ask each other.
+        A block whose source is not available on this replica is `null`.
+      x-trove-permission:
+        permission: system.read
+      responses:
+        "200":
+          description: The installation facts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemInfo"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/replicas:
+    get:
+      operationId: listReplicas
+      tags: [system]
+      summary: The replica registry
+      description: |
+        Every replica with its roles, node, state, heartbeat, readiness checks and its own view of
+        Valkey. A replica whose heartbeat is older than `system.heartbeat_stale_after` is `lost`.
+      x-trove-permission:
+        permission: system.read
+      responses:
+        "200":
+          description: The replicas.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplicaList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/openapi.json:
+    get:
+      operationId: getOpenApiJson
+      tags: [meta]
+      summary: This document as JSON
+      security:
+        - {}
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The document, with `servers[0].url` set to the public base URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/openapi.yaml:
+    get:
+      operationId: getOpenApiYaml
+      tags: [meta]
+      summary: This document as YAML
+      security:
+        - {}
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The embedded document, with `servers[0].url` set to the public base URL.
+          content:
+            application/yaml:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/problems/{code}:
+    get:
+      operationId: getProblemType
+      tags: [meta]
+      summary: Describe a problem code
+      description: |
+        The `type` member of every problem is `/api/v1/problems/<code>`; this endpoint resolves it
+        to a description. The registry is embedded, so the URI resolves on every installation.
+      security:
+        - {}
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9_]{1,63}$"
+      responses:
+        "200":
+          description: The description of the code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemType"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: A trove token (`trv_` prefix). Credentials that are present but invalid always give `401`.
+  headers:
+    RequestId:
+      description: The trace ID of the request (W3C Trace Context); quote it when reporting a problem.
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{32}$"
+  responses:
+    Unauthenticated:
+      description: The request carries no valid credential.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: The credential is valid but the operation is not permitted.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The target does not exist or is not visible to the caller.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Internal:
+      description: Unexpected failure. The `detail` is generic; the cause is in the log under the same request ID.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unavailable:
+      description: A dependency is unreachable. `Retry-After` is set.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Problem:
+      type: object
+      description: |
+        RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          description: The relative URI `/api/v1/problems/<code>`.
+          example: /api/v1/problems/not_found
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          description: The request path.
+        code:
+          type: string
+          description: Stable snake_case identifier; clients match on it.
+          example: not_found
+        requestId:
+          type: string
+          description: Equals the `X-Request-Id` response header.
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+    FieldError:
+      type: object
+      required: [pointer, code, detail]
+      properties:
+        pointer:
+          type: string
+          description: RFC 6901 JSON pointer into the request body.
+        code:
+          type: string
+        detail:
+          type: string
+    ProblemType:
+      type: object
+      required: [code, title, status, description]
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        description:
+          type: string
+    Version:
+      type: object
+      required: [version, revision, buildTime, goVersion, formats]
+      properties:
+        version:
+          type: string
+          description: The trove version, or `dev` for a build without a release version.
+        revision:
+          type: string
+          description: The source revision, or `unknown`.
+        buildTime:
+          type: string
+          description: RFC 3339 UTC time of the build, or `unknown`.
+        goVersion:
+          type: string
+        formats:
+          type: array
+          description: The package formats this build serves.
+          items:
+            type: string
+    SystemInfo:
+      type: object
+      required:
+        - installationId
+        - incarnation
+        - answeredBy
+        - version
+        - baseUrl
+        - baseUrlSource
+        - maintenanceMode
+        - replicas
+        - database
+        - valkey
+        - objectStore
+        - backup
+        - features
+        - formats
+        - runtime
+      properties:
+        installationId:
+          type: [string, "null"]
+          description: UUID generated by the first migration; `null` until this replica has read `system_state`.
+        incarnation:
+          type: [string, "null"]
+          description: UUID written by a restore; `null` until this replica has read `system_state`.
+        answeredBy:
+          type: object
+          required: [replica, role]
+          properties:
+            replica:
+              type: string
+            role:
+              type: string
+              enum: [web, worker, all]
+        version:
+          type: object
+          required: [version, revision, goVersion]
+          properties:
+            version:
+              type: string
+            revision:
+              type: string
+            goVersion:
+              type: string
+        baseUrl:
+          type: string
+          description: The origin generated URLs are built from.
+        baseUrlSource:
+          type: string
+          enum: [config, request]
+          description: "`request` means `server.base_url` is unset and the origin was derived from the request (development only)."
+        maintenanceMode:
+          type: string
+          description: Open enum; `normal` until the maintenance modes exist.
+          example: normal
+        replicas:
+          $ref: "#/components/schemas/ReplicaSummary"
+        database:
+          oneOf:
+            - $ref: "#/components/schemas/DatabaseFacts"
+            - type: "null"
+        valkey:
+          $ref: "#/components/schemas/ValkeyFacts"
+        objectStore:
+          $ref: "#/components/schemas/ObjectStoreFacts"
+        backup:
+          type: "null"
+          description: Always `null` until the backup runs exist.
+        features:
+          type: object
+          required: [tracing, webhooks, configAsCode]
+          properties:
+            tracing:
+              type: boolean
+            webhooks:
+              type: boolean
+            configAsCode:
+              type: boolean
+        formats:
+          type: array
+          items:
+            type: string
+        runtime:
+          type: object
+          required: [goos, goarch, gomaxprocs, memoryLimitBytes]
+          properties:
+            goos:
+              type: string
+            goarch:
+              type: string
+            gomaxprocs:
+              type: integer
+            memoryLimitBytes:
+              type: integer
+              format: int64
+              description: The container memory limit; 0 when none is known.
+    ReplicaSummary:
+      type: object
+      required: [live, ready, versions, roles]
+      properties:
+        live:
+          type: integer
+        ready:
+          type: integer
+        versions:
+          type: object
+          description: Live replicas per version.
+          additionalProperties:
+            type: integer
+        roles:
+          type: object
+          description: Per role (`web`, `worker`, `all`).
+          additionalProperties:
+            $ref: "#/components/schemas/RoleSummary"
+    RoleSummary:
+      type: object
+      required: [live, ready, degraded, nodes]
+      properties:
+        live:
+          type: integer
+        ready:
+          type: integer
+        degraded:
+          type: integer
+        nodes:
+          type: integer
+          description: Distinct nodes the live replicas of the role run on.
+    DatabaseFacts:
+      type: object
+      required: [serverVersion, schemaVersion, supportedSchemaVersions, poolerMode, pools]
+      properties:
+        serverVersion:
+          type: string
+        schemaVersion:
+          type: integer
+        supportedSchemaVersions:
+          type: array
+          items:
+            type: integer
+        poolerMode:
+          type: string
+          description: Open enum; `none` or `transaction`.
+        pools:
+          type: object
+          description: The answering replica's pools.
+          additionalProperties:
+            $ref: "#/components/schemas/PoolFacts"
+    PoolFacts:
+      type: object
+      required: [max, inUse, idle]
+      properties:
+        max:
+          type: integer
+        inUse:
+          type: integer
+        idle:
+          type: integer
+    ValkeyFacts:
+      type: object
+      description: Installation facts only; each replica's view is in the replica registry. No Sentinel address appears.
+      required: [mode, primaryName, sentinels, tls, keyPrefix, keyspace, degradedReplicas]
+      properties:
+        mode:
+          type: string
+          enum: [sentinel, standalone]
+        primaryName:
+          type: string
+        sentinels:
+          type: integer
+          description: The number of configured Sentinels.
+        tls:
+          type: string
+          description: The TLS verification mode.
+        keyPrefix:
+          type: string
+        keyspace:
+          type: [string, "null"]
+          description: The keyspace segment of every key; `null` until this replica has read it.
+        degradedReplicas:
+          type: [integer, "null"]
+          description: Live replicas whose Valkey check is degraded; `null` until the replica registry exists.
+    ObjectStoreFacts:
+      type: object
+      required: [endpoint, bucket, prefix, credentialSource]
+      properties:
+        endpoint:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+        credentialSource:
+          type: string
+          description: Open enum, for example `static` or `workload-identity`.
+    ReplicaList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Replica"
+    Replica:
+      type: object
+      required:
+        - name
+        - instanceUid
+        - version
+        - revision
+        - roles
+        - state
+        - lost
+        - startedAt
+        - heartbeatAt
+        - leases
+        - node
+        - checks
+        - degraded
+        - valkey
+      properties:
+        name:
+          type: string
+          description: The pod name, else the host name.
+        instanceUid:
+          type: string
+          description: Random per process start.
+        version:
+          type: string
+        revision:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [web, worker, all]
+        state:
+          type: string
+          enum: [starting, ready, unready, draining]
+        lost:
+          type: boolean
+          description: The heartbeat is older than `system.heartbeat_stale_after`.
+        startedAt:
+          type: string
+          format: date-time
+        heartbeatAt:
+          type: string
+          format: date-time
+        leases:
+          type: array
+          items:
+            type: object
+            required: [name, since]
+            properties:
+              name:
+                type: string
+              since:
+                type: string
+                format: date-time
+        node:
+          type: [string, "null"]
+          description: The Kubernetes node name (`TROVE_NODE_NAME`); `null` outside Kubernetes.
+        checks:
+          type: object
+          description: The last result of every readiness check, gating and reported.
+          additionalProperties:
+            $ref: "#/components/schemas/CheckResult"
+        degraded:
+          type: array
+          description: The reported checks that fail.
+          items:
+            type: string
+        valkey:
+          oneOf:
+            - $ref: "#/components/schemas/ValkeyView"
+            - type: "null"
+    CheckResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pass, fail, degraded]
+        reason:
+          type: string
+          description: A short sanitised reason; never a host, address or error text.
+        configError:
+          type: boolean
+    ValkeyView:
+      type: object
+      description: The replica's view of Valkey. No credential, user name or key appears.
+      required: [state, reason, circuit, primary, sentinelsReachable, sentinelsConfigured, serverVersion, lastPrimaryChangeAt]
+      properties:
+        state:
+          type: string
+          enum: [available, degraded]
+        reason:
+          type: [string, "null"]
+          description: "`null`, or an error kind (`timeout`, `connection`, `readonly`, `auth`, `tls`, `oom`), `no_primary` or `unsupported_version`."
+        circuit:
+          type: string
+          description: Open enum, for example `closed` or `open`.
+        primary:
+          type: [string, "null"]
+          description: The primary address (host and port) the client currently uses.
+        sentinelsReachable:
+          type: integer
+        sentinelsConfigured:
+          type: integer
+        serverVersion:
+          type: [string, "null"]
+        lastPrimaryChangeAt:
+          type: [string, "null"]
+          format: date-time
