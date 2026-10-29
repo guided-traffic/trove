@@ -16,7 +16,7 @@ repository keys.
 ## Repositories
 
 ### PKG-ANSIBLE-001 · Ansible repositories in all three repository classes
-Priority: **P2**
+Priority: **P1**
 
 Ansible is a repository format for local, remote and virtual repositories (REPO-006 in
 [../repositories.md](../repositories.md)):
@@ -40,7 +40,7 @@ location: administration, repositories, create repository, choose the class and 
 (UI-031 in [../ui-inventory.md](../ui-inventory.md)).
 
 ### PKG-ANSIBLE-002 · Galaxy v3 API per repository
-Priority: **P2**
+Priority: **P1**
 
 Every Ansible repository answers a subset of the Galaxy v3 API relative to its Ansible endpoint URL
 (`<format-url>/`). Optional query parameters such as pagination and namespace filters behave as in
@@ -66,7 +66,7 @@ Galaxy v3.
 ## Collections
 
 ### PKG-ANSIBLE-003 · Publish collections with ansible-galaxy
-Priority: **P2**
+Priority: **P1**
 
 ```sh
 ansible-galaxy collection publish geerlingguy-k8s-1.0.0.tar.gz
@@ -80,7 +80,7 @@ ansible-galaxy collection publish geerlingguy-k8s-1.0.0.tar.gz -s <format-url> -
 - Required permission: deploy on the target repository (IAM-022).
 
 ### PKG-ANSIBLE-004 · Deploy collection archives through the UI or plain HTTP
-Priority: **P2**
+Priority: **P1**
 
 - UI: the deploy dialog uploads a collection archive (UI-013 in
   [../ui-inventory.md](../ui-inventory.md)).
@@ -88,7 +88,7 @@ Priority: **P2**
   archive deploy also work (ART-004, ART-005 in [../artifacts.md](../artifacts.md)).
 
 ### PKG-ANSIBLE-005 · Install collections
-Priority: **P2**
+Priority: **P1**
 
 ```sh
 ansible-galaxy collection install <namespace>.<name>
@@ -101,7 +101,7 @@ repositories. Some examples pass an archive file name to the install command; th
 names the collection.
 
 ### PKG-ANSIBLE-006 · Collection metadata calculation and recalculation
-Priority: **P2**
+Priority: **P1**
 
 The system calculates metadata for collections to support artifact management and search (SRCH-050
 in [../search-and-query.md](../search-and-query.md)). Which fields are extracted, when the
@@ -114,7 +114,7 @@ Required privilege: administrator. No API operation is specified.
 ## Roles
 
 ### PKG-ANSIBLE-007 · Install legacy roles through remote repositories
-Priority: **P2**
+Priority: **P1**
 
 Roles are the older Ansible packaging, still installable:
 
@@ -132,13 +132,13 @@ ansible-galaxy role install <namespace>.<role> -s <format-url> --token=<token>
 ## Remote and virtual repositories
 
 ### PKG-ANSIBLE-008 · No browsing of uncached remote content
-Priority: **P2**
+Priority: **P1**
 
 The artifact browser of an Ansible remote repository shows only what has been pulled into the
 cache, not the content of the upstream registry (ART-044 in [../artifacts.md](../artifacts.md)).
 
 ### PKG-ANSIBLE-009 · Remote repositories for Ansible Galaxy
-Priority: **P2**
+Priority: **P1**
 
 A remote repository proxies public collections from Ansible Galaxy and caches them (RMT-001 in
 [../remote-repositories.md](../remote-repositories.md)). The pre-filled upstream URL and the caching
@@ -148,7 +148,7 @@ without a cache does not apply to Ansible remote repositories (RMT-017); whether
 content is unspecified.
 
 ### PKG-ANSIBLE-010 · Proxy Red Hat Ansible Automation Hub
-Priority: **P2**
+Priority: **P1**
 
 A remote repository can proxy Red Hat Ansible Automation Hub, which serves certified and validated
 collections behind Red Hat single sign-on. The upstream credential is a long-lived *offline token*
@@ -170,7 +170,7 @@ short-lived access tokens and renews them automatically when talking to the upst
 - UI: remote repository settings, basic tab.
 
 ### PKG-ANSIBLE-011 · Virtual Ansible repositories
-Priority: **P2**
+Priority: **P1**
 
 A virtual repository serves local and remote Ansible repositories through one Galaxy server URL; it
 is the recommended client target and accepts publishes through its default deployment repository
@@ -180,7 +180,7 @@ is the recommended client target and accepts publishes through its default deplo
 ## Client setup
 
 ### PKG-ANSIBLE-012 · ansible.cfg configuration for collections
-Priority: **P2**
+Priority: **P1**
 
 The client setup instructions (UI-021, UI-026 in [../ui-inventory.md](../ui-inventory.md)) render:
 
@@ -202,7 +202,7 @@ token=<token>
   [../authentication-providers.md](../authentication-providers.md)).
 
 ### PKG-ANSIBLE-013 · Credentials for role installation
-Priority: **P2**
+Priority: **P1**
 
 Role installation reads credentials from `~/.netrc` (file mode 600):
 

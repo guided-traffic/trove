@@ -54,8 +54,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 |
 | [Go modules format](#go-modules-format-pkg-go) | `PKG-GO` | 16 | – | 0 | 16 |
 | [Generic format](#generic-format-pkg-generic) | `PKG-GENERIC` | 11 | – | 0 | 11 |
-| [Alpine Linux package format](#alpine-linux-package-format-pkg-apk) | `PKG-APK` | 14 | – | 0 | 14 |
 | [Ansible collection format](#ansible-collection-format-pkg-ansible) | `PKG-ANSIBLE` | 13 | – | 0 | 13 |
+| [Alpine Linux package format](#alpine-linux-package-format-pkg-apk) | `PKG-APK` | 14 | – | 0 | 14 |
 | [Bazel modules package format](#bazel-modules-package-format-pkg-bazel) | `PKG-BAZEL` | 12 | – | 0 | 12 |
 | [Bower package format](#bower-package-format-pkg-bower) | `PKG-BOWER` | 14 | – | 0 | 14 |
 | [Cargo (Rust crates) format](#cargo-rust-crates-format-pkg-cargo) | `PKG-CARGO` | 14 | – | 0 | 14 |
@@ -2170,6 +2170,26 @@ Catalog page: [formats/generic.md](../features/formats/generic.md) · specified 
 | PKG-GENERIC-010 | Bulk file operations on generic content | P2 | open | – |
 | PKG-GENERIC-011 | Generic repository as cross-format copy and move target | P1 | open | – |
 
+## Ansible collection format (PKG-ANSIBLE)
+
+Catalog page: [formats/ansible.md](../features/formats/ansible.md) · specified by priority: P1 0 of 13
+
+| ID | Feature | Priority | Status | Covered by |
+|---|---|---|---|---|
+| PKG-ANSIBLE-001 | Ansible repositories in all three repository classes | P1 | open | – |
+| PKG-ANSIBLE-002 | Galaxy v3 API per repository | P1 | open | – |
+| PKG-ANSIBLE-003 | Publish collections with ansible-galaxy | P1 | open | – |
+| PKG-ANSIBLE-004 | Deploy collection archives through the UI or plain HTTP | P1 | open | – |
+| PKG-ANSIBLE-005 | Install collections | P1 | open | – |
+| PKG-ANSIBLE-006 | Collection metadata calculation and recalculation | P1 | open | – |
+| PKG-ANSIBLE-007 | Install legacy roles through remote repositories | P1 | open | – |
+| PKG-ANSIBLE-008 | No browsing of uncached remote content | P1 | open | – |
+| PKG-ANSIBLE-009 | Remote repositories for Ansible Galaxy | P1 | open | – |
+| PKG-ANSIBLE-010 | Proxy Red Hat Ansible Automation Hub | P1 | open | – |
+| PKG-ANSIBLE-011 | Virtual Ansible repositories | P1 | open | – |
+| PKG-ANSIBLE-012 | ansible.cfg configuration for collections | P1 | open | – |
+| PKG-ANSIBLE-013 | Credentials for role installation | P1 | open | – |
+
 ## Alpine Linux package format (PKG-APK)
 
 Catalog page: [formats/alpine.md](../features/formats/alpine.md) · specified by priority: P2 0 of 14
@@ -2190,26 +2210,6 @@ Catalog page: [formats/alpine.md](../features/formats/alpine.md) · specified by
 | PKG-APK-012 | Deploy Alpine packages | P2 | open | – |
 | PKG-APK-013 | apk client configuration | P2 | open | – |
 | PKG-APK-014 | Companion CLI integration for apk | P2 | open | – |
-
-## Ansible collection format (PKG-ANSIBLE)
-
-Catalog page: [formats/ansible.md](../features/formats/ansible.md) · specified by priority: P2 0 of 13
-
-| ID | Feature | Priority | Status | Covered by |
-|---|---|---|---|---|
-| PKG-ANSIBLE-001 | Ansible repositories in all three repository classes | P2 | open | – |
-| PKG-ANSIBLE-002 | Galaxy v3 API per repository | P2 | open | – |
-| PKG-ANSIBLE-003 | Publish collections with ansible-galaxy | P2 | open | – |
-| PKG-ANSIBLE-004 | Deploy collection archives through the UI or plain HTTP | P2 | open | – |
-| PKG-ANSIBLE-005 | Install collections | P2 | open | – |
-| PKG-ANSIBLE-006 | Collection metadata calculation and recalculation | P2 | open | – |
-| PKG-ANSIBLE-007 | Install legacy roles through remote repositories | P2 | open | – |
-| PKG-ANSIBLE-008 | No browsing of uncached remote content | P2 | open | – |
-| PKG-ANSIBLE-009 | Remote repositories for Ansible Galaxy | P2 | open | – |
-| PKG-ANSIBLE-010 | Proxy Red Hat Ansible Automation Hub | P2 | open | – |
-| PKG-ANSIBLE-011 | Virtual Ansible repositories | P2 | open | – |
-| PKG-ANSIBLE-012 | ansible.cfg configuration for collections | P2 | open | – |
-| PKG-ANSIBLE-013 | Credentials for role installation | P2 | open | – |
 
 ## Bazel modules package format (PKG-BAZEL)
 

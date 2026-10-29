@@ -60,8 +60,8 @@ repositories.
 | PyPI | yes | yes | yes | yes | pip, Twine, Poetry, uv; Pipenv appears only in the companion CLI's compatibility list | **P1** | [pypi.md](pypi.md) |
 | Go modules | yes | yes | yes | yes | `go` | **P1** | [go.md](go.md) |
 | Generic | yes | yes | yes | yes | any HTTP client | **P1** | [generic.md](generic.md) |
+| Ansible | yes | yes | yes | yes | `ansible-galaxy` (collections and roles) | **P1** | [ansible.md](ansible.md) |
 | Alpine Linux | yes | yes | yes | yes | `apk` (apk-tools) | P2 | [alpine.md](alpine.md) |
-| Ansible | yes | yes | yes | yes | `ansible-galaxy` (collections and roles) | P2 | [ansible.md](ansible.md) |
 | Bazel modules | yes (format page) | yes | yes (format page) | rule | Bazel (Bzlmod); own modules are uploaded as files | P2 | [bazel.md](bazel.md) |
 | Bower | yes | yes | yes | yes | `bower` | P2 | [bower.md](bower.md) |
 | Cargo | yes | yes | no | yes | `cargo` | P2 | [cargo.md](cargo.md) |

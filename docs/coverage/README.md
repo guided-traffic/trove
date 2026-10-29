@@ -19,7 +19,7 @@ regenerated.
 |---|---|---|
 | **Implemented** | **0%** (0 of 2,239 catalog features) | fact, not computed: the repository holds no code yet |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
-| P1 features covered by spec requirements | 56.3% (286 of 508) | measured from `Covers:` lines |
+| P1 features covered by spec requirements | 54.9% (286 of 521) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 30.5% (662 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
 | Spec requirements | 553 on 12 pages (408 MVP, 143 P1, 2 P2) | measured from spec headings |
@@ -52,8 +52,8 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 359 | 359 | 0 | 100% | 359 | 0 |
-| **P1** | 508 | 286 | 222 | 56.3% | 55 | 0 |
-| **P2** | 909 | 17 | 892 | 1.9% | 10 | 0 |
+| **P1** | 521 | 286 | 235 | 54.9% | 55 | 0 |
+| **P2** | 896 | 17 | 879 | 1.9% | 10 | 0 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
 | **Total** | 2,239 | 662 | 1,577 | 29.6% | 424 | 0 |
@@ -113,8 +113,8 @@ Per-format pages (38 pages, 782 features, 94 specified):
 | [PyPI package format](checklist.md#pypi-package-format-pkg-pypi) | 29 | 0 | 23 | 6 | 0 | 0 | 0 | 29 |
 | [Go modules format](checklist.md#go-modules-format-pkg-go) | 16 | 0 | 13 | 3 | 0 | 0 | 0 | 16 |
 | [Generic format](checklist.md#generic-format-pkg-generic) | 11 | 0 | 8 | 3 | 0 | 0 | 0 | 11 |
+| [Ansible collection format](checklist.md#ansible-collection-format-pkg-ansible) | 13 | 0 | 13 | 0 | 0 | 0 | 0 | 13 |
 | [Alpine Linux package format](checklist.md#alpine-linux-package-format-pkg-apk) | 14 | 0 | 0 | 14 | 0 | 0 | 0 | 14 |
-| [Ansible collection format](checklist.md#ansible-collection-format-pkg-ansible) | 13 | 0 | 0 | 13 | 0 | 0 | 0 | 13 |
 | [Bazel modules package format](checklist.md#bazel-modules-package-format-pkg-bazel) | 12 | 0 | 1 | 11 | 0 | 0 | 0 | 12 |
 | [Bower package format](checklist.md#bower-package-format-pkg-bower) | 14 | 0 | 0 | 13 | 1 | 0 | 0 | 14 |
 | [Cargo (Rust crates) format](checklist.md#cargo-rust-crates-format-pkg-cargo) | 14 | 0 | 0 | 13 | 1 | 0 | 0 | 14 |
@@ -199,7 +199,7 @@ Pages counted per audience:
 | **.NET team** | publishes and restores NuGet packages from workstations and GitLab CI | [formats/nuget.md](../features/formats/nuget.md), [formats/README.md](../features/formats/README.md), [repositories.md](../features/repositories.md), [remote-repositories.md](../features/remote-repositories.md), [artifacts.md](../features/artifacts.md), [search-and-query.md](../features/search-and-query.md), [builds-and-ci.md](../features/builds-and-ci.md), [identity-and-access.md](../features/identity-and-access.md), [authentication-providers.md](../features/authentication-providers.md), [access-tokens.md](../features/access-tokens.md), [oidc-ci-integration.md](../features/oidc-ci-integration.md), [ui-inventory.md](../features/ui-inventory.md) |
 | **platform/ops team** | runs trove on Kubernetes and administers it | [ha-and-deployment.md](../features/ha-and-deployment.md), [operations-and-monitoring.md](../features/operations-and-monitoring.md), [storage-and-blobs.md](../features/storage-and-blobs.md), [retention-and-cleanup.md](../features/retention-and-cleanup.md), [repositories.md](../features/repositories.md), [remote-repositories.md](../features/remote-repositories.md), [identity-and-access.md](../features/identity-and-access.md), [authentication-providers.md](../features/authentication-providers.md), [access-tokens.md](../features/access-tokens.md), [oidc-ci-integration.md](../features/oidc-ci-integration.md), [api-admin-operations.md](../features/api-admin-operations.md), [events-and-extensibility.md](../features/events-and-extensibility.md), [ui-inventory.md](../features/ui-inventory.md) |
 
-Pages counted for no audience (41, 233 MVP and P1 entries): [Security scanning and curation](checklist.md#security-scanning-and-curation-sec), [Content API operation catalog](checklist.md#content-api-operation-catalog-api), [Docker image format](checklist.md#docker-image-format-pkg-docker), [OCI images and artifacts](checklist.md#oci-images-and-artifacts-pkg-oci), [Helm chart format](checklist.md#helm-chart-format-pkg-helm), [Maven package format](checklist.md#maven-package-format-pkg-maven), [PyPI package format](checklist.md#pypi-package-format-pkg-pypi), [Go modules format](checklist.md#go-modules-format-pkg-go), [Generic format](checklist.md#generic-format-pkg-generic), [Bazel modules package format](checklist.md#bazel-modules-package-format-pkg-bazel), [Gradle, Ivy, sbt and Eclipse P2 formats](checklist.md#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm), [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond); plus 29 pages without MVP or P1 entries.
+Pages counted for no audience (41, 246 MVP and P1 entries): [Security scanning and curation](checklist.md#security-scanning-and-curation-sec), [Content API operation catalog](checklist.md#content-api-operation-catalog-api), [Docker image format](checklist.md#docker-image-format-pkg-docker), [OCI images and artifacts](checklist.md#oci-images-and-artifacts-pkg-oci), [Helm chart format](checklist.md#helm-chart-format-pkg-helm), [Maven package format](checklist.md#maven-package-format-pkg-maven), [PyPI package format](checklist.md#pypi-package-format-pkg-pypi), [Go modules format](checklist.md#go-modules-format-pkg-go), [Generic format](checklist.md#generic-format-pkg-generic), [Ansible collection format](checklist.md#ansible-collection-format-pkg-ansible), [Bazel modules package format](checklist.md#bazel-modules-package-format-pkg-bazel), [Gradle, Ivy, sbt and Eclipse P2 formats](checklist.md#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm), [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond); plus 28 pages without MVP or P1 entries.
 <!-- coverage-gen:end audiences -->
 
 What the open entries are, on 2026-10-29:

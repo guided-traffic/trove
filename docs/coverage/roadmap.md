@@ -130,9 +130,10 @@ Six findings shaped this plan:
 | [M3](#m3--nuget) | NuGet v3; freeze of the format contract | 27 MVP | M2's WP2.1 to WP2.3 | pre-release 0.2 |
 | [M4](#m4--gitlab-ci-oidc) | GitLab CI OIDC token exchange | 28 MVP | M1 for the work, M3 for the exit | pre-release 0.3 |
 | [M5](#m5--ha-hardening-and-helm-ga) | HA hardening under drains and failovers, backup and restore with the revocation journal, Helm GA | 63 MVP | M3 and M4; the backup lane from M1 (Q-ROAD-2) | **1.0 candidate** |
-| [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | **1.0** |
-| [M6 to M12](#p1-platform-milestones) | P1 platform | 141 P1, plus 3 spec pages to write (builds, search, curation) | 1.0 | 1.x minors |
-| [F1 to F7](#p1-format-expansion-order) | P1 formats | 2 P1, plus 6 format spec pages to write and `formats/generic.md` to extend | 1.0 | 1.x minors |
+| [Walkthrough](#owner-walkthrough) | The owner reviews the prototype; objections are worked off | — | M5 | **Beta** `1.0.0-beta.1` |
+| Beta phase | Beta feedback worked off, upgrade path from the beta, import tooling, user documentation ([FULL.md](../projektplan/FULL.md) block A) | — | Beta | **1.0 GA** |
+| [M6 to M12](#p1-platform-milestones) | P1 platform | 141 P1, plus 3 spec pages to write (builds, search, curation) | Beta | 1.x minors |
+| [F0 to F7](#p1-format-expansion-order) | P1 formats | 2 P1 plus the 13 Ansible entries, 7 format spec pages to write and `formats/generic.md` to extend | Beta | 1.x minors |
 
 ```mermaid
 flowchart LR
@@ -878,7 +879,10 @@ way, and the owner reviews the result here instead of approving steps along the 
   the code together. When the owner overturns a choice, the question's block on its page records
   the owner's choice, and the ADR log adds an entry that supersedes the old one. An objection that
   moves a requirement to another priority also moves it to another milestone on this page. The
-  candidate is tagged 1.0 once the objections are worked off and M5's exit criteria pass again.
+  candidate is published as the beta release `1.0.0-beta.1` once the objections are worked off and
+  M5's exit criteria pass again. GA `1.0.0` follows when the beta feedback is worked off. The
+  owner's checklists for both steps are [BETA.md](../projektplan/BETA.md) and
+  [FULL.md](../projektplan/FULL.md).
 - **Before the walkthrough.** If M5 exits before the walkthrough takes place, the development agent
   may write the P1 spec pages listed under
   [Spec work before P1 implementation](#spec-work-before-p1-implementation). It builds no P1
@@ -887,8 +891,8 @@ way, and the owner reviews the result here instead of approving steps along the 
 
 ## After 1.0: P1
 
-P1 has two lanes, both starting at 1.0. The platform lane (M6 to M12) extends subsystems that 1.0
-already has. The format lane (F1 to F7) adds formats through the frozen contract. Each lane ships 1.x
+P1 has two lanes, both starting at the beta release; fixes from beta feedback take precedence. The
+platform lane (M6 to M12) extends subsystems that 1.0 already has. The format lane (F0 to F7) adds formats through the frozen contract. Each lane ships 1.x
 minor releases. M7 to M11 touch separate subsystems and can run in parallel. The order below is the
 sequence to follow if only one team is available. The revocation journal, which this page used to
 put first after 1.0, ships in 1.0 since Q-HA-9 made it MVP
@@ -931,6 +935,7 @@ can reorder it at the walkthrough, before any format-lane work starts.
 
 | Order | Format | P1 catalog entries | Closeness to what exists | Prerequisites beyond 1.0 | Format-specific exit criterion |
 |---|---|---|---|---|---|
+| F0 | Ansible Galaxy (collections and roles) | 13, raised from P2 on 2026-10-29: the owner runs an Ansible Galaxy that trove replaces after the beta | Medium: a per-collection index and artifact files resemble npm's document and tarball split; publishing goes through an HTTP API with token authentication, which needs the Galaxy client's token header | none | `ansible-galaxy collection install` and `collection publish`, and `role install`, work through a virtual repository that merges an internal local repository with a remote of the public Galaxy; the content of the owner's existing Galaxy is imported into trove |
 | F1 | Generic: remote and virtual | 8 (local part in M1) | Closest: `/files/` exists, and a remote is the proxy engine without a metadata document. | none | A remote serves a 1 GiB upstream file to 10 concurrent clients with one upstream request. A `PUT` through a virtual repository lands in its deployment target. |
 | F2 | PyPI | 23 | Same shape as npm: one index page per project plus files on a separate host, URL rewriting, a merge per project in virtual repositories. Upload uses Basic, which NuGet already accepts. Name normalization resembles NuGet's. | none | `pip`, `uv` and Poetry install through a virtual repository. `twine upload` with a token as password succeeds. Names that differ only in `.`, `_` and `-` resolve to one project (PKG-PYPI-003). |
 | F3 | Helm, index-based | part of 18 | One repository-wide `index.yaml` merged across members is npm's document merge applied to a whole repository. Chart parsing is like reading `package.json` from a tarball. | none | `helm repo add` and `helm install` work from a virtual repository whose index merges a local and a remote member. trove's own chart is published there. |
@@ -941,6 +946,8 @@ can reorder it at the walkthrough, before any format-lane work starts.
 
 Lanes:
 
+- **Lane 0** (confirmed owner demand): F0 Ansible Galaxy, first after the beta, in parallel with
+  Lane A's F1.
 - **Lane A** (small formats that follow known patterns and test how far the contract stretches):
   F1, then F2 and F3 in parallel.
 - **Lane B** (largest format, highest demand): F4, then F5. Its platform prerequisites begin at
@@ -962,6 +969,7 @@ cover them first:
 | Spec page to write or extend | Catalog entries | Blocks |
 |---|---|---|
 | `formats/generic.md` | PKG-GENERIC-001…006, PKG-GENERIC-008, PKG-GENERIC-011, REPO-003 | M1 writes the page for the local class (PKG-GENERIC-001 local part, PKG-GENERIC-004, PKG-GENERIC-005; Q-ROAD-1), F1 extends it |
+| `formats/ansible.md` | 13 PKG-ANSIBLE entries | F0 |
 | `formats/pypi.md` | 23 PKG-PYPI entries | F2 |
 | `formats/helm.md` | 18 PKG-HELM entries | F3, F5 |
 | `formats/oci.md`, `formats/docker.md` | 15 PKG-OCI and 34 PKG-DOCKER entries, REPO-043, OPS-062, OPS-063 | F4 |
@@ -993,7 +1001,7 @@ closeness to the engines that will exist by then.
 | Order | Family | Formats | Shared prerequisite | Why at this position |
 |---|---|---|---|---|
 | 1 | Variants of P1 engines | Gradle (rest), Ivy, sbt, Eclipse P2 (remote only); NuGet v2 (OData); model-serving containers (OCI remote) | the P1 engine they extend | The smallest step each. NuGet v2 unlocks proxying of the Chocolatey community repository and the PowerShell Gallery, which per [beyond-baseline.md](../features/beyond-baseline.md) are v2 endpoints. |
-| 2 | Language registries with a per-package index | Cargo (sparse index), RubyGems, Terraform and OpenTofu registry with the provider network mirror, Composer, Conan, Conda, pub, Hex, Swift, CRAN, LuaRocks, Ansible Galaxy, Puppet, Chef, CocoaPods, Bower | the npm and PyPI patterns of document merge and file rewrite | Shaped like npm and PyPI. Ordered by expected demand. Bower comes last because its ecosystem is deprecated. |
+| 2 | Language registries with a per-package index | Cargo (sparse index), RubyGems, Terraform and OpenTofu registry with the provider network mirror, Composer, Conan, Conda, pub, Hex, Swift, CRAN, LuaRocks, Puppet, Chef, CocoaPods, Bower | the npm and PyPI patterns of document merge and file rewrite | Shaped like npm and PyPI. Ordered by expected demand. Bower comes last because its ecosystem is deprecated. |
 | 3 | Signed operating-system repositories | Debian, RPM, Alpine, Opkg | key custody for repository signing keys (sealed with R-ARCH-021's mechanism) and an index-regeneration job per repository | Debian and RPM come together because they share key custody. Debian has the most P2 entries of any format page (27). |
 | 4 | Large artifacts | Hugging Face models and datasets, Git LFS | upload sessions (R-STOR-011), streaming target P-9 | Both move multi-gigabyte objects. They reuse what F4 forced into existence. |
 | 5 | Proxy-only and IDE sources | version-control archives, editor extension marketplace proxy, JetBrains IDE plugins | the proxy engine with a host allowlist | Remote only. The JetBrains clients cannot authenticate (FMT-013), so R-AUTH-033 serves them only as the anonymous principal: both anonymous switches on, plus an anonymous `read` grant on exactly the repositories they use. trove has no per-repository switch that bypasses authentication. |
@@ -1167,6 +1175,10 @@ named. The ADR log's index row for this question follows the choice above.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Revisited on 2026-10-29 after the owner named Ansible Galaxy as a system in use that trove replaces
+after the beta: that is measured demand, so Ansible Galaxy becomes F0 (P1) ahead of F1, and its 13
+catalog entries move from P2 to P1. The rest of the order stands under (a).
+
 The P1 format order (F1 to F7) rests on judged demand. Measured demand from the teams that will use
 trove could reorder it, for example by moving Maven ahead of OCI preparation.
 
@@ -1186,7 +1198,11 @@ development agent would revisit this if the owner provides an inventory before o
 The order then follows (b). For Maven, the move is already written down below the format table.
 
 **Applied in the roadmap:**
-- [P1 format expansion order](#p1-format-expansion-order): the demand paragraph and the Maven rule.
+- [P1 format expansion order](#p1-format-expansion-order): the demand paragraph and the Maven rule;
+  since 2026-10-29 the F0 row for Ansible Galaxy, Lane 0, and the `formats/ansible.md` row of the
+  spec work; Ansible Galaxy removed from the P2 families.
+- [docs/features/formats/ansible.md](../features/formats/ansible.md): the 13 entries at P1; the
+  format matrix row at P1.
 - [Owner walkthrough](#owner-walkthrough): no P1 code before the walkthrough.
 
 ### Q-ROAD-4 · How the coverage generator learns implementation status
