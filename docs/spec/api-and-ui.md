@@ -4454,6 +4454,89 @@ exists: users are the `principal` and `app_user` rows of R-AUTH-016, keyed by `p
 
 **Applied in the spec:** R-API-021 data model.
 
+### Q-UI-10 · Start page and the shell's first routes at M1
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `/` shows the packages list (R-UI-006) | The start page of the spec | Matches R-UI-003 | The packages area is not an M1 screen; the route would be a placeholder behind the most visited address |
+| (b) `/` redirects to `/browse`, the file tree (chosen) | The first content screen of M1 is the start page until the packages area exists | A working landing page; one line to change | `/packages` is not routed yet |
+| (c) `/` shows the system status | What M0 did | Already built | The status screen needs `settings:read`; most users would land on a no-access state |
+
+**Choice:** (b). The route map of R-UI-003 is routed for the M1 screens only: sign-in, signed out, file tree, profile and its tokens and sessions,
+repositories, users, groups, service accounts, permission policies, system roles, token administration, endpoints and exposure rules, audit log, system
+status with jobs and backups, authentication and general settings. Everything else (packages, search, trash, builds, setup, webhooks, CI identity,
+projects, explainer, CLI login) falls to the not-found page until its work package adds the route. `/admin` redirects to the repositories list and
+`/admin/settings` to the authentication settings.
+
+**Rationale:** A route that exists without a screen invites bookmarks that break. The development agent would revisit (b) when the packages list lands, which
+becomes the start page again.
+
+**Applied in the spec:** R-UI-003 is unchanged; this block states the M1 subset and the start page.
+
+### Q-UI-11 · Accessibility tooling and its scope at M1
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Playwright with `@axe-core/playwright` only | The tier of R-UI-044 and R-UI-047 | Real layout, contrast, both themes | Needs browser binaries and a running server in CI; the e2e work package owns that harness, so the shell would wait for it |
+| (b) axe-core inside the Vitest component tier on jsdom (chosen for M1), Playwright later | `axe.run` on the rendered component, serious and critical impacts fail the spec; one spec renders every routed screen | Runs in `make web-test` and in every pull request now; pinned in `web/package-lock.json` | jsdom has no layout: `color-contrast`, the document-level rules and keyboard journeys are not evaluated |
+| (c) Both from now | (a) and (b) | Complete | The cost of (a) without its harness |
+
+**Choice:** (b). `axe-core` 4.14.0 is a dev dependency, `web/src/app/testing/axe.ts` runs it with `color-contrast` off, and
+`app.routes.spec.ts` renders every M1 route and fails on a serious or critical violation. The same spec proves the tooling is live by asserting
+that a page with an unnamed button and an image without text is reported. `<html lang>` is checked in the built output, where Angular sets it per locale.
+
+**Rationale:** The shell and the placeholders have structure but no content worth a browser run, and a check that runs on every pull request beats one that
+waits for a harness. What jsdom cannot see stays on the Playwright tier of R-UI-047: contrast in both themes (the status colours are
+`light-dark()` pairs chosen for 4.5:1 and are not machine-verified yet), focus order across a real navigation, reflow at 320 CSS px, both locales.
+The development agent would revisit this when the e2e work package has its Playwright harness; the jsdom run then stays as the fast tier.
+
+**Applied in the spec:** R-UI-044 and R-UI-047 are unchanged; this block states the M1 subset. Q-UI-9 said axe starts with the first M1 screen: it does, in the form chosen here.
+
+### Q-UI-12 · HTTP layer, service interfaces and endpoints that are not in the OpenAPI document yet
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wait for the wave-2 operations before writing any client | No code against missing endpoints | No guessed shapes | The cross-cutting mechanisms (session, errors, retries) cannot be tested, and the screens wait |
+| (b) One `ApiClient` on `HttpClient` plus an abstract service class per endpoint family with an HTTP implementation and an in-memory fake (chosen) | `api/*-api.ts` declares the interface, the hand-typed DTO where the document lacks the operation, and the HTTP implementation; `provideApiServices()` binds them in `appConfig`; specs bind the fakes of `api/testing/fakes.ts` | Screens code against a stable interface; swapping a hand-typed DTO for the generated type changes one file | Hand-typed shapes can drift until the generator covers them |
+| (c) A generated service layer | Generated clients | No hand-written shape | Excluded by R-ARCH-004 / R-UI-046 |
+
+**Choice:** (b). Interceptors, outermost first: problem mapping and session consequences, the one automatic retry, then the request conventions.
+CSRF is Angular's XSRF support configured with the cookie `__Host-trv_csrf` and the header `X-CSRF-Token` (R-AUTH-012). The retry layer follows R-UI-042
+literally and retries at most once per request: a GET after a network error, `429`, or `503 authz_stale`; a request with an idempotency key after a network
+error or `409 idempotency_in_progress`; a PUT or PATCH with its `If-Match` and a DELETE after a network error; a GET without `Trove-Authz-Min-Epoch` after
+`412 authz_epoch_unknown`. A DELETE that answers `404` after a retry counts as done; an `ApiError` carries `afterRetry` so that an editor can compare the stored resource with its
+draft before it opens the conflict dialog. The client has no wildcard overload for `If-Match` (R-API-012). Endpoints typed by hand for now:
+`auth/whoami`, `auth/login-options`, `auth/local/login`, `auth/logout`, `authz/me`, `authz/check`, `users/me/preferences` and `system/encryption`, with the shapes
+that R-AUTH-009, R-API-021, R-AUTHZ-023 and R-API-049 print.
+
+**Rationale:** The screens of waves 2 and 3 become content. Where an owning requirement leaves a shape open (`authz/me`, the logout answer, the job returned by the task
+trigger) the DTO states the minimum the UI reads and is marked in its file. The development agent would revisit this as each operation reaches `api/openapi.yaml`:
+the hand-typed DTO is replaced by the generated schema and the contract tier of R-UI-047 starts to compile against it.
+
+**Applied in the spec:** R-UI-042, R-UI-046 and R-API-010 to R-API-014 are unchanged; this block records how the UI implements them.
+
+### Q-UI-13 · Choices on the system status screen and the navigation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| Which cards exist before their endpoints do | Build only what the API serves; build all with fakes; build none | Installation, database, replicas by role, readiness checks and the Valkey card render from `system/info` and `system/replicas`. The stored-secret keys card renders from the typed `EncryptionApi` and shows its own error while the endpoint is absent. Scheduled tasks, jobs and backups have no card yet; the jobs and backups routes are placeholders linked from the screen |
+| "Replicas disagree about the primary" needs the bound `valkey.sentinel.refresh_interval` plus one heartbeat | Read the bound from configuration; use a fixed bound | A fixed 30 seconds (`PRIMARY_DISAGREEMENT_GRACE_MS`), measured over the screen's own refreshes; the UI cannot read the configuration |
+| Who sees "Re-encrypt now" | `admin` role; any holder of `settings:write` | The action needs `admin` (R-API-049) and `authz/me` lists capabilities, not roles; the UI offers it to holders of `content:bypass`, which only `admin` bundles (R-AUTHZ-010). The API refuses anyone else |
+| When the Administration area appears | Any capability; a named list | Any capability in `authz/me` (R-UI-002). Each entry additionally needs its own: repositories `repositories:read-config`, users, groups and service accounts `identities:read`, permission policies `policies:read`, system roles `roles:read`, tokens `tokens:read`, endpoints `endpoints:read`, audit log `audit:read`, system status and settings `settings:read` |
+
+**Rationale:** Each choice follows the nearest requirement and stays removable: the grace constant and the capability map are one line each. The development agent would revisit the
+re-encryption gate when `authz/me` also reports roles.
+
+**Applied in the spec:** R-UI-038 and R-UI-002 are unchanged; this block records the interpretation.
+
 ## What this does not cover
 
 ### H-43 · General API rate limits are per replica

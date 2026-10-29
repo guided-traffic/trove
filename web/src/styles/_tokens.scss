@@ -13,6 +13,11 @@
 
   --trove-surface: var(--mat-sys-surface);
   --trove-on-surface: var(--mat-sys-on-surface);
+  // Status colours reinforce an icon and a text, never replace them (R-UI-044); the pairs keep
+  // a contrast ratio of at least 4.5:1 on the surface of their scheme.
+  --trove-status-ok: light-dark(#1b6e2e, #7bd88f);
+  --trove-status-warn: light-dark(#8a5a00, #ffc857);
+  --trove-status-bad: light-dark(#b3261e, #ffb4ab);
   --trove-banner-bg: var(--mat-sys-tertiary-container);
   --trove-banner-fg: var(--mat-sys-on-tertiary-container);
 }

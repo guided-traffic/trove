@@ -1,0 +1,384 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@system.heading">System status</h1>
+  <button
+    mat-stroked-button
+    type="button"
+    [attr.aria-pressed]="paused()"
+    (click)="togglePause()"
+  >
+    @if (paused()) {
+      <ng-container i18n="@@system.resume">Resume automatic refresh</ng-container>
+    } @else {
+      <ng-container i18n="@@system.pause">Pause automatic refresh</ng-container>
+    }
+  </button>
+  <button mat-button type="button" (click)="reload()" i18n="@@system.refresh">Refresh now</button>
+</header>
+
+@if (failure(); as f) {
+  <trove-error-notice [error]="f" (retry)="reload()" />
+}
+
+@if (state(); as s) {
+  <p class="summary" role="status">
+    @switch (s) {
+      @case ('ready') {
+        <span class="material-icons ok" aria-hidden="true">check_circle</span>
+        <span i18n="@@system.summary.ready">All ready</span>
+      }
+      @case ('degraded') {
+        <span class="material-icons warn" aria-hidden="true">warning</span>
+        <span i18n="@@system.summary.degraded">Degraded</span>
+      }
+      @case ('unready') {
+        <span class="material-icons bad" aria-hidden="true">error</span>
+        <span i18n="@@system.summary.unready">Replicas unready</span>
+      }
+    }
+    @if (notDrainSafe()) {
+      <span class="material-icons warn" aria-hidden="true">warning</span>
+      <span i18n="@@system.summary.not-drain-safe">Not drain-safe</span>
+    }
+  </p>
+}
+
+@if (info.value(); as i) {
+  <div class="cards">
+    <section class="card" aria-labelledby="card-install">
+      <h2 id="card-install" i18n="@@system.install.heading">Installation</h2>
+      <dl>
+        <dt i18n="@@system.install.version">Version</dt>
+        <dd translate="no">{{ i.version.version }} ({{ i.version.revision }})</dd>
+        <dt i18n="@@system.install.base-url">Base URL</dt>
+        <dd translate="no">{{ i.baseUrl }}</dd>
+        <dt i18n="@@system.install.base-url-source">Base URL source</dt>
+        <dd>
+          @if (i.baseUrlSource === 'config') {
+            <ng-container i18n="@@system.install.source.config">Configuration</ng-container>
+          } @else {
+            <ng-container i18n="@@system.install.source.request"
+              >Derived from the request (development only)</ng-container
+            >
+          }
+        </dd>
+        <dt i18n="@@system.install.maintenance">Maintenance mode</dt>
+        <dd>
+          @if (i.maintenanceMode === 'normal') {
+            <ng-container i18n="@@system.install.maintenance.off">Off</ng-container>
+          } @else {
+            <span class="material-icons warn" aria-hidden="true">warning</span>
+            <span translate="no">{{ i.maintenanceMode }}</span>
+          }
+        </dd>
+        <dt i18n="@@system.install.answered-by">Answered by</dt>
+        <dd translate="no">{{ i.answeredBy.replica }}</dd>
+      </dl>
+    </section>
+
+    <section class="card" aria-labelledby="card-db">
+      <h2 id="card-db" i18n="@@system.db.heading">Database</h2>
+      @if (i.database; as db) {
+        <dl>
+          <dt i18n="@@system.db.server">Server version</dt>
+          <dd translate="no">{{ db.serverVersion }}</dd>
+          <dt i18n="@@system.db.schema">Schema version</dt>
+          <dd>
+            <span translate="no">{{ db.schemaVersion }}</span>
+            @if (schemaSupported()) {
+              <span class="material-icons ok" aria-hidden="true">check_circle</span>
+              <span i18n="@@system.db.schema.supported">supported</span>
+            } @else {
+              <span class="material-icons bad" aria-hidden="true">error</span>
+              <span i18n="@@system.db.schema.unsupported">not supported by this build</span>
+            }
+          </dd>
+        </dl>
+      } @else {
+        <p i18n="@@system.db.unknown">Not read yet by this replica.</p>
+      }
+    </section>
+  </div>
+
+  @if (versions().length > 0) {
+    <p class="info-notice" role="note">
+      <span class="material-icons" aria-hidden="true">info</span>
+      <span i18n="@@system.versions.mixed"
+        >Replicas of two versions run side by side:
+        <span translate="no">{{ versions().join(', ') }}</span>. This is normal during a rolling
+        upgrade.</span
+      >
+    </p>
+  }
+}
+
+@if (replicas.value()) {
+  <section aria-labelledby="replicas-heading">
+    <h2 id="replicas-heading" i18n="@@system.replicas.heading">Replicas by role</h2>
+    @for (g of groups(); track g.role) {
+      @if (g.replicas.length > 0 || g.role !== 'all') {
+        <section class="role" [attr.aria-labelledby]="'role-' + g.role">
+          <h3 id="role-{{ g.role }}">
+            <span translate="no">{{ g.role }}</span>
+            <span class="counts" i18n="@@system.role.counts"
+              >live {{ g.live }}, ready {{ g.ready }}, degraded {{ g.degraded }}</span
+            >
+          </h3>
+          @for (w of g.warnings; track w) {
+            <p class="warning" role="note">
+              <span class="material-icons warn" aria-hidden="true">warning</span>
+              @switch (w) {
+                @case ('fewer-than-two-ready') {
+                  <span i18n="@@system.role.fewer"
+                    >Fewer than two ready replicas: a node drain or the loss of one pod interrupts
+                    this role.</span
+                  >
+                }
+                @case ('one-node') {
+                  <span i18n="@@system.role.one-node"
+                    >All ready replicas on one node: a drain of that node interrupts this
+                    role.</span
+                  >
+                }
+                @case ('no-live-worker') {
+                  <span i18n="@@system.role.no-worker"
+                    >No live worker replica: jobs and scheduled tasks are queued but nothing runs
+                    them.</span
+                  >
+                }
+              }
+            </p>
+          }
+          @if (g.replicas.length > 0) {
+            <div class="scroll" tabindex="0" role="region" [attr.aria-labelledby]="'role-' + g.role">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col" i18n="@@system.col.name">Name</th>
+                    <th scope="col" i18n="@@system.col.node">Node</th>
+                    <th scope="col" i18n="@@system.col.version">Version</th>
+                    <th scope="col" i18n="@@system.col.state">State</th>
+                    <th scope="col" i18n="@@system.col.heartbeat">Heartbeat</th>
+                    <th scope="col" i18n="@@system.col.valkey">Valkey</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (r of g.replicas; track r.instanceUid) {
+                    <tr>
+                      <th scope="row" translate="no">{{ r.name }}</th>
+                      <td translate="no">{{ r.node ?? '–' }}</td>
+                      <td translate="no">{{ r.version }}</td>
+                      <td>
+                        @if (r.lost) {
+                          <span class="material-icons bad" aria-hidden="true">error</span>
+                          <span i18n="@@system.state.lost">lost</span>
+                        } @else {
+                          @switch (r.state) {
+                            @case ('ready') {
+                              <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                              <span i18n="@@system.state.ready">ready</span>
+                            }
+                            @case ('starting') {
+                              <span class="material-icons" aria-hidden="true">hourglass_empty</span>
+                              <span i18n="@@system.state.starting">starting</span>
+                            }
+                            @case ('draining') {
+                              <span class="material-icons" aria-hidden="true">hourglass_empty</span>
+                              <span i18n="@@system.state.draining">draining</span>
+                            }
+                            @case ('unready') {
+                              <span class="material-icons bad" aria-hidden="true">error</span>
+                              <span i18n="@@system.state.unready">unready</span>
+                            }
+                          }
+                        }
+                        @if (failing(r).length > 0) {
+                          <div class="check-list">
+                            <span i18n="@@system.checks.failing">Failing checks:</span>
+                            <span translate="no">{{ failing(r).join(', ') }}</span>
+                          </div>
+                        }
+                        @for (c of degraded(r); track c) {
+                          <div class="check-list">
+                            <span class="material-icons warn" aria-hidden="true">warning</span>
+                            <span>{{ checkText(c) }}</span>
+                          </div>
+                        }
+                      </td>
+                      <td><time [attr.datetime]="r.heartbeatAt">{{ r.heartbeatAt | date: 'mediumTime' }}</time></td>
+                      <td>
+                        @if (r.valkey; as v) {
+                          @if (v.state === 'available') {
+                            <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                            <span i18n="@@system.valkey.available">available</span>
+                          } @else {
+                            <span class="material-icons warn" aria-hidden="true">warning</span>
+                            <span i18n="@@system.valkey.degraded">degraded</span>
+                            @if (v.reason) {
+                              <span translate="no"> ({{ v.reason }})</span>
+                            }
+                          }
+                          @if (v.circuit === 'open') {
+                            <span i18n="@@system.valkey.circuit-open">, circuit open</span>
+                          }
+                        } @else {
+                          –
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </section>
+      }
+    }
+    <p class="limits" i18n="@@system.replicas.limits">
+      This screen cannot see disruption budgets, free capacity on other nodes, or whether the
+      remaining replicas carry the peak load, because trove holds no Kubernetes permissions.
+    </p>
+  </section>
+}
+
+@if (valkey(); as v) {
+  <section class="card" aria-labelledby="card-valkey">
+    <h2 id="card-valkey" i18n="@@system.valkey.heading">Valkey</h2>
+    @if (v.degradedReplicas === 0) {
+      <p>
+        <span class="material-icons ok" aria-hidden="true">check_circle</span>
+        <span i18n="@@system.valkey.summary.ok">Available on every replica</span>
+      </p>
+    } @else {
+      <p>
+        <span class="material-icons warn" aria-hidden="true">warning</span>
+        <span i18n="@@system.valkey.summary.degraded"
+          >Degraded on {{ v.degradedReplicas }} of {{ v.liveReplicas }} replicas</span
+        >
+        @if (v.reasons.length > 0) {
+          <span translate="no"> ({{ v.reasons.join(', ') }})</span>
+        }
+      </p>
+    }
+    @if (primariesDisagree()) {
+      <p class="warning">
+        <span class="material-icons warn" aria-hidden="true">warning</span>
+        <span i18n="@@system.valkey.disagree">Replicas disagree about the primary</span>
+      </p>
+    }
+    @if (v.sentinelsUnreachable) {
+      <p class="warning">
+        <span class="material-icons warn" aria-hidden="true">warning</span>
+        <span i18n="@@system.valkey.sentinels"
+          >Sentinels unreachable: no failover can happen while this lasts.</span
+        >
+      </p>
+    }
+    @if (info.value(); as i) {
+      <dl>
+        <dt i18n="@@system.valkey.mode">Mode</dt>
+        <dd translate="no">{{ i.valkey.mode }}</dd>
+        <dt i18n="@@system.valkey.primary-name">Primary name</dt>
+        <dd translate="no">{{ i.valkey.primaryName }}</dd>
+        <dt i18n="@@system.valkey.sentinels-configured">Configured Sentinels</dt>
+        <dd translate="no">{{ i.valkey.sentinels }}</dd>
+        <dt i18n="@@system.valkey.tls">TLS verification</dt>
+        <dd translate="no">{{ i.valkey.tls }}</dd>
+        @if (v.lastPrimaryChangeAt; as t) {
+          <dt i18n="@@system.valkey.last-change">Last primary change</dt>
+          <dd><time [attr.datetime]="t">{{ t | date: 'medium' }}</time></dd>
+        }
+        @if (v.serverVersions.length > 0) {
+          <dt i18n="@@system.valkey.server-version">Server version</dt>
+          <dd translate="no">{{ v.serverVersions.join(', ') }}</dd>
+        }
+      </dl>
+    }
+  </section>
+}
+
+<section class="card" aria-labelledby="card-keys">
+  <h2 id="card-keys" i18n="@@system.keys.heading">Stored-secret keys</h2>
+  @if (encryptionFailure(); as f) {
+    <trove-error-notice [error]="f" (retry)="encryption.reload()" />
+  } @else if (encryption.value(); as e) {
+    <p>
+      <ng-container i18n="@@system.keys.active">Active key ID</ng-container>:
+      <code translate="no">{{ e.activeKeyId }}</code>
+      <span class="answered" i18n="@@system.keys.answered-by">(answered by {{ e.answeredBy }})</span>
+    </p>
+    <p>
+      @if (e.ringsCompatible) {
+        <span class="material-icons ok" aria-hidden="true">check_circle</span>
+        <span i18n="@@system.keys.compatible">Key rings are compatible.</span>
+      } @else {
+        <span class="material-icons bad" aria-hidden="true">error</span>
+        <span i18n="@@system.keys.incompatible"
+          >Key rings are not compatible: a value sealed by one replica cannot be opened by
+          another.</span
+        >
+      }
+    </p>
+    <table>
+      <caption class="visually-hidden" i18n="@@system.keys.caption">Key IDs and sealed values</caption>
+      <thead>
+        <tr>
+          <th scope="col" i18n="@@system.keys.col.id">Key ID</th>
+          <th scope="col" i18n="@@system.keys.col.sealed">Sealed values</th>
+          <th scope="col" i18n="@@system.keys.col.canary">Canary</th>
+          <th scope="col" i18n="@@system.keys.col.status">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (k of e.keys; track k.id) {
+          <tr>
+            <th scope="row" translate="no">{{ k.id }}</th>
+            <td translate="no">{{ k.sealedValues }}</td>
+            <td translate="no">{{ k.canary }}</td>
+            <td>
+              @switch (keyStatus(k)) {
+                @case ('active') {
+                  <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                  <span i18n="@@system.keys.status.active">active</span>
+                }
+                @case ('re-encryption-pending') {
+                  <span class="material-icons warn" aria-hidden="true">warning</span>
+                  <span i18n="@@system.keys.status.pending">re-encryption pending</span>
+                }
+                @case ('unused') {
+                  <span i18n="@@system.keys.status.unused"
+                    >No values left under this key: its key file can be removed.</span
+                  >
+                }
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    @if (canReencrypt()) {
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="reencrypting() || !e.ringsCompatible"
+        [attr.aria-describedby]="e.ringsCompatible ? null : 'reencrypt-reason'"
+        (click)="reencrypt()"
+        i18n="@@system.keys.reencrypt"
+      >
+        Re-encrypt now
+      </button>
+      @if (!e.ringsCompatible) {
+        <p id="reencrypt-reason" i18n="@@system.keys.reencrypt-reason">
+          Disabled while the key rings are not compatible.
+        </p>
+      }
+    }
+  } @else if (encryption.isLoading()) {
+    <p role="status" i18n="@@system.loading">Loading.</p>
+  }
+</section>
+
+<p class="more">
+  <a routerLink="/admin/system/jobs" i18n="@@system.link.jobs">Jobs</a>
+  &middot;
+  <a routerLink="/admin/system/backups" i18n="@@system.link.backups">Backups</a>
+</p>

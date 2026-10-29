@@ -6,9 +6,13 @@ Requirements: [R-ARCH-004](../spec/architecture.md), [R-UI-001](../spec/api-and-
 [R-UI-045](../spec/api-and-ui.md), [R-UI-046](../spec/api-and-ui.md),
 [R-UI-047](../spec/api-and-ui.md).
 
-M0 ships the shell only: skip link, header, side bar (pinned from 1024 CSS px, drawer below), banner
-area, router outlet, an empty status page, a not-found page, light and dark tokens, and the
-locales `en` and `de`. There is no login and no API client yet.
+The shell (skip link, header with user menu, side bar pinned from 1024 CSS px and a drawer below,
+banner area, notice regions, router outlet), the HTTP layer, the session handling and every
+cross-cutting UI mechanism are in place, so the screens of the later work packages are content. The
+routed M1 screens are placeholders with their final path and title, except sign-in, signed out and
+the system status screen, which are built. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
+[R-UI-038](../spec/api-and-ui.md), [R-UI-042 to R-UI-047](../spec/api-and-ui.md); decisions Q-UI-10 to
+Q-UI-13 on the same page.
 
 ## Workspace layout
 
@@ -22,14 +26,15 @@ locales `en` and `de`. There is no login and no API client yet.
 | [web/src/main.ts](../../web/src/main.ts) | `bootstrapApplication(App, appConfig)` |
 | [web/src/locale/](../../web/src/locale/) | `messages.xlf` (extracted source), `messages.de.xlf`, [GLOSSARY.md](../../web/src/locale/GLOSSARY.md) |
 | [web/src/styles/](../../web/src/styles/) | `_tokens.scss` (trove custom properties, spacing, light/dark), `_icons.scss` (self-hosted icon font), `main.scss` (Material theme, density -2) |
-| [web/src/app/app.ts](../../web/src/app/app.ts) | Root standalone component: shell, navigation, banner, outlet |
-| [web/src/app/app.config.ts](../../web/src/app/app.config.ts) | Router (component input binding), `HttpClient` on fetch, interceptor list (empty in M0), global error listeners |
-| [web/src/app/app.routes.ts](../../web/src/app/app.routes.ts) | One lazy route per area |
-| `web/src/app/api/` | Thin hand-written clients per resource family |
+| [web/src/app/app.ts](../../web/src/app/app.ts), `app.html` | Root standalone component: skip link, header and user menu (language, theme, sign out), side bar from `core/navigation.ts`, banner, notices, outlet; opens the session dialogs |
+| [web/src/app/app.config.ts](../../web/src/app/app.config.ts) | Router (component input binding, `TroveTitleStrategy`), `HttpClient` on fetch with the XSRF configuration of R-AUTH-012 and the three interceptors, `provideApiServices()`, global error listeners |
+| [web/src/app/app.routes.ts](../../web/src/app/app.routes.ts) | `/login` and `/logged-out` without a guard; everything else under `authGuard`; one lazy `loadChildren` per area |
+| [web/src/app/api/](../../web/src/app/api/) | `client.ts` (`ApiClient`), `problem.ts` (`Problem`, `ApiError`), `pagination.ts` (`collectAll`, `PagedList`), `types.ts` (helpers over the generated types), one `*-api.ts` per endpoint family (abstract service class, hand-typed DTO where the OpenAPI document lacks the operation, HTTP implementation), `providers.ts`, `testing/fakes.ts` |
 | `web/src/app/api/generated/` | `schema.d.ts` from openapi-typescript, committed, never edited |
-| [web/src/app/core/](../../web/src/app/core/) | Shell services: `Layout` (pinned side bar signal), `BannerStore`. Later: `SessionStore`, interceptors, `storage.ts` |
-| [web/src/app/shared/](../../web/src/app/shared/) | Presentational components (`Banner`) |
-| [web/src/app/features/](../../web/src/app/features/) | One folder per area (`home`, `not-found` in M0) |
+| [web/src/app/core/](../../web/src/app/core/) | `session-store.ts`, `authz-epoch.ts`, `auth-guard.ts`, `navigation.ts`, `preferences-store.ts`, `notifier.ts`, `title-strategy.ts`, `focus-on-navigation.ts`, `storage.ts` (the only user of browser storage), `browser-navigation.ts` (`safeReturnTo`), `layout.ts`, `banner-store.ts`; `http/interceptors.ts` and `http/problem-messages.ts` |
+| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute` |
+| [web/src/app/features/](../../web/src/app/features/) | One folder per area with an `<area>.routes.ts` (`auth` and `system` carry built screens, the others placeholders), `not-found` |
+| [web/src/app/testing/](../../web/src/app/testing/) | `axe.ts`, the accessibility helper of the component specs |
 | [web/scripts/](../../web/scripts/) | `build-embed.mjs`, `check-budget.mjs`, `check-rules.mjs` |
 | [web/eslint.config.js](../../web/eslint.config.js) | angular-eslint plus the R-UI-046 rules |
 
@@ -45,7 +50,7 @@ Run in `web/` after `nvm use` (or any Node matching `.nvmrc`).
 | `npm test` | Vitest through `@angular/build:unit-test`, jsdom, single run, headless |
 | `npm run test:coverage` | The same with a V8 coverage report (`src/app/**`, generated code excluded) |
 | `npm run extract-i18n` | Rewrites `src/locale/messages.xlf`; then add the `<target>` units to `messages.de.xlf` |
-| `npm run generate:api` | `openapi-typescript ../api/openapi.yaml` into `src/app/api/generated/schema.d.ts`. Needs `api/openapi.yaml`, which the API work package writes |
+| `npm run generate:api` | `openapi-typescript ../api/openapi.yaml` into `src/app/api/generated/schema.d.ts`, committed. Rerun it whenever `api/openapi.yaml` changes |
 | `npm run build` | Localized production build into `web/dist/web/browser/<locale>/` |
 | `npm run build:embed` | `build`, the compressed-size budget check, then copy each locale to `internal/webui/dist/<locale>/` |
 
@@ -132,44 +137,81 @@ mux.Handle("/ui/", h) // do not strip the prefix
 
 ## Test tiers (R-UI-047)
 
-| Tier | State in M0 |
+| Tier | State |
 |---|---|
-| Unit | In place: Vitest through the Angular builder, specs next to code (`*.spec.ts`), requirement IDs in test names |
-| Component | In place with `TestBed` on jsdom (`app.spec.ts`). Vitest browser mode (real Chromium) is **not** set up: it needs a browser provider package and browser binaries in CI |
-| Contract | Not yet: needs `api/openapi.yaml`. `generate:api` is ready; the tier is the compile of mocks against `schema.d.ts` |
-| End-to-end, accessibility, security | Not set up (Playwright, axe-core). They belong to the e2e work with the chart-installed build |
+| Unit | In place: Vitest through the Angular builder, specs next to code (`*.spec.ts`), requirement IDs in test names. Covers the interceptors (`HttpTestingController`), the session store, pagination, problem messages, the status model |
+| Component | In place with `TestBed` on jsdom; screens run against the fakes of `api/testing/fakes.ts`. Vitest browser mode (real Chromium) is **not** set up: it needs a browser provider package and browser binaries in CI |
+| Contract | Partly: the clients are typed against `schema.d.ts` and compile with it. Mock answers validated against the document are not written yet |
+| Accessibility | In place on jsdom: `axe-core` (pinned in the lockfile) through `src/app/testing/axe.ts`; `app.routes.spec.ts` renders every routed screen and fails on a serious or critical violation (Q-UI-11). jsdom has no layout, so `color-contrast`, the document-level rules, focus across a real navigation and reflow wait for Playwright |
+| End-to-end, security | Not set up (Playwright). They belong to the e2e work with the chart-installed build |
 | Internationalization | In place as the production build itself; verified by removing one German unit, which fails the build |
 
 Go side: [webui_test.go](../../internal/webui/webui_test.go) covers nonces, headers, deep links,
 caching, 404s, locale redirects, placeholder mode and start-up validation. Subtest names carry the
 requirement ID (`R-ARCH-004`, `R-UI-001`, ...) for the coverage generator.
 
+## Cross-cutting mechanisms
+
+**HTTP layer** ([core/http/interceptors.ts](../../web/src/app/core/http/interceptors.ts)). Interceptors apply to
+`/api/v1/` and `/auth/` only. Outermost first:
+
+| Interceptor | Does |
+|---|---|
+| `problemInterceptor` | Maps a failed answer to `ApiError` (`status`, `problem`, `requestId`, `retryAfterSeconds`, `afterRetry`). 401 `unauthenticated` during use ends the session (`SessionStore.ended`, dialog "Your session has ended"); the probes `whoami` and `login-options` are exempt. 401 `reauthentication_required` sets `reauthRequired`. 403 drops the cached permission decisions |
+| `resilienceInterceptor` | The one automatic retry of R-UI-042 (rules in Q-UI-12) |
+| `conventionsInterceptor` | `Accept`, `Trove-Authz-Min-Epoch` from `AuthzEpoch`, `Idempotency-Key` from the request context; stores `Trove-Authz-Epoch` of an answer |
+
+CSRF is not an interceptor of ours: `withXsrfConfiguration` makes Angular send `X-CSRF-Token` from the cookie
+`__Host-trv_csrf` on unsafe same-origin requests (R-AUTH-012).
+
+**ApiClient** ([api/client.ts](../../web/src/app/api/client.ts)). `get(path)` is typed from the generated document, `getJson<T>(url)`
+for endpoints it lacks. `page<T>(url, filters)` returns a `PageFetcher` for `collectAll` (walk to the last page) and `PagedList`
+("Load more"). `post(url, body, { idempotencyKey })` with `newIdempotencyKey()` generated when the form opens. `put` and `patch` take the
+loaded `ETag` as a required argument; there is no wildcard. Answers carry `body`, `etag`, `location`. Reads for lists may also use `httpResource`
+on the same URLs; the interceptors apply to it as well.
+
+**Errors in screens.** `<trove-error-notice [error]="apiError" (retry)="...">` renders the translated message of the `code`
+(`describeProblem`), or the English `detail` plus the request ID and a copy button for an unknown code. `ApiError.fieldErrors` maps
+`errors[].pointer` to form controls. A 412 goes to `ConflictResolver.resolve({ mine, theirs })` (reload, overwrite, copy). `Notifier`
+feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is immediate, an action keeps a notice until dismissed.
+
+**Session.** `SessionStore` holds `whoami`, `authz/me`, the 60-second check cache (`check()` batches 100 per call), the `ended` and
+`reauthRequired` flags. `signOut()` posts `/auth/logout`, goes to the returned `redirectTo` or `/logged-out`, and tells other tabs over a
+`BroadcastChannel`. `authGuard` loads the session and sends an unauthenticated caller to `/login?returnTo=<route>` unless
+`login-options` allows anonymous access. `safeReturnTo` keeps only server-relative paths. The sign-in screen builds
+`return_to=/ui/<locale><route>` (R-AUTH-009) and appends `purpose=reauth` for a re-authentication.
+
+**Secrets** never enter these services (R-UI-043): token values live in component signals only. `core/storage.ts` is for non-secret
+convenience data and answers as if empty when the browser blocks storage.
+
 ## How to add a feature area
 
 1. Create `web/src/app/features/<area>/` with a standalone component per screen (`Component` with
    `selector: 'trove-…'`, no NgModule).
-2. Add a lazy route in [app.routes.ts](../../web/src/app/app.routes.ts) with `loadComponent` (or
-   `loadChildren` for several screens) and a `$localize` title with an `@@route.<area>.title` id.
-3. Read server data with `httpResource()` through a thin client in `web/src/app/api/<family>.ts`
-   that uses the types of `src/app/api/generated/schema.d.ts`; shared state goes in an injectable
-   store in `core/` (or the area folder) that exposes read-only signals.
-4. Put presentational parts in `shared/` only when a second area needs them.
-5. Add navigation entries in [app.html](../../web/src/app/app.html) (side bar) behind the
-   capability check once `authz/me` exists.
-6. Mark every text with `i18n`, run `npm run extract-i18n`, add the German `<target>`s to
-   `messages.de.xlf`, and extend the glossary for new terms.
-7. Write specs next to the code with the requirement ID in the test name; run `npm run lint` and
-   `npm test`.
+2. Replace the placeholder in `<area>.routes.ts` with a `loadComponent` and keep the `$localize` title with its `@@route.<area>….title` id. A new area gets a
+   `<area>.routes.ts` and one `loadChildren` entry in [app.routes.ts](../../web/src/app/app.routes.ts), behind `authGuard` unless it must work without a session.
+3. Read server data through the service of `api/` (add `api/<family>-api.ts`: abstract class, DTO, HTTP implementation; bind it in `providers.ts`;
+   add a fake to `api/testing/fakes.ts`). Use the generated type when `schema.d.ts` has the operation. Shared state goes in an injectable store
+   exposing read-only signals.
+4. Create forms with an idempotency key from `newIdempotencyKey()` for creates and the loaded `ETag` for edits; show failures with `<trove-error-notice>`
+   and field errors from `ApiError.fieldErrors`.
+5. Add the navigation entry to `NAV_GROUPS` in [core/navigation.ts](../../web/src/app/core/navigation.ts) with the capability that shows it.
+6. Mark every text with `i18n`/`$localize`, run `npm run extract-i18n`, add the German `<target>`s to `messages.de.xlf`, extend the glossary.
+7. Write specs next to the code with the requirement ID in the test name, add the route to `SCREENS` in `app.routes.spec.ts` (heading, title and the axe check come with it),
+   run `npm run lint` and `npm test`.
 8. If the area changes the route table of R-UI-003, update the spec in the same change.
 
 ## What is not done yet
 
-- No `SessionStore`, interceptors (CSRF, problem mapping, 401) or `storage.ts`.
-- The banner area reads `BannerStore`, which nothing fills; `GET /api/v1/system/banner` is wired with
-  the system status work.
-- No user theme preference: `data-theme="light|dark"` on `<html>` is honored by the tokens, but
-  nothing sets it.
-- Browser-mode component tests, contract tier, Playwright and axe-core.
+- The OpenAPI document has no operation for `whoami`, `login-options`, `authz/me`, `authz/check`, `users/me/preferences`, `system/encryption`; their DTOs are
+  typed by hand in `api/*-api.ts` until wave 2 adds them (Q-UI-12). `GET /api/v1/system/banner` is not wired to `BannerStore` either.
+- System status: scheduled tasks, jobs and backups have no card yet (R-UI-038, R-UI-048); the jobs and backups routes are placeholders.
+- The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read. The `reauthentication_required`
+  dialog leads to `/login?...&reauth=1`; keeping and restoring the draft of non-secret forms is the editors' part.
+- No project filter, global search, help link or keyboard-shortcut switch in the header (P1 entries of R-UI-002).
+- Forms: the sign-in form uses plain signals. Signal Forms with validators derived from the OpenAPI constraints start with the first real form.
+- Browser-mode component tests, contract mocks, Playwright (contrast in both themes, reflow, focus order, both locales) and the security tier.
+- Local runs on a Node.js other than `web/.nvmrc` work only while the version satisfies `engines`; `make versions-check` names a mismatch.
 - npm 11 prints `allow-scripts` warnings for the install scripts of `esbuild`, `lmdb`,
   `msgpackr-extract` and `@parcel/watcher`. Build, test and lint pass without running them; if a
   later npm turns the warning into an error, approve the scripts in the workspace configuration.

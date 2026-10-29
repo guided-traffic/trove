@@ -3,48 +3,114 @@
 >
 
 <mat-toolbar class="header">
-  @if (!layout.pinned()) {
+  @if (showNav() && !layout.pinned()) {
     <button
       mat-icon-button
       type="button"
-      (click)="drawer.toggle()"
+      (click)="sidenav()?.toggle()"
       i18n-aria-label="@@shell.menu"
       aria-label="Open navigation"
-      [attr.aria-expanded]="drawer.opened"
+      [attr.aria-expanded]="sidenav()?.opened ?? false"
     >
       <span class="material-icons" aria-hidden="true">menu</span>
     </button>
   }
   <span class="product">trove</span>
+  <span class="spacer"></span>
+
+  @switch (session.state()) {
+    @case ('authenticated') {
+      <button
+        mat-button
+        type="button"
+        [matMenuTriggerFor]="userMenu"
+        i18n-aria-label="@@shell.user-menu"
+        aria-label="User menu"
+      >
+        <span class="material-icons" aria-hidden="true">account_circle</span>
+        <span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span>
+      </button>
+    }
+    @case ('anonymous') {
+      <a mat-button routerLink="/login" i18n="@@shell.sign-in">Sign in</a>
+    }
+  }
 </mat-toolbar>
 
-<mat-sidenav-container class="frame">
-  <mat-sidenav
-    #drawer
-    [mode]="layout.pinned() ? 'side' : 'over'"
-    [opened]="layout.pinned()"
-    [fixedInViewport]="false"
+<mat-menu #userMenu="matMenu">
+  <a mat-menu-item routerLink="/profile/tokens" i18n="@@shell.menu.profile">Profile and tokens</a>
+  <button
+    mat-menu-item
+    type="button"
+    [matMenuTriggerFor]="languageMenu"
+    i18n="@@shell.menu.language"
   >
-    <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
-      <mat-nav-list>
-        <a
-          mat-list-item
-          routerLink="/"
-          routerLinkActive="active"
-          ariaCurrentWhenActive="page"
-          [routerLinkActiveOptions]="{ exact: true }"
-          (click)="closeDrawer(drawer)"
-          i18n="@@shell.nav.status"
-          >Status</a
-        >
-      </mat-nav-list>
-    </nav>
-  </mat-sidenav>
+    Language
+  </button>
+  <button mat-menu-item type="button" [matMenuTriggerFor]="themeMenu" i18n="@@shell.menu.theme">
+    Theme
+  </button>
+  <button mat-menu-item type="button" (click)="signOut()" i18n="@@shell.menu.sign-out">
+    Sign out
+  </button>
+</mat-menu>
+
+<mat-menu #languageMenu="matMenu">
+  <button mat-menu-item type="button" lang="en" (click)="setLocale('en')">English</button>
+  <button mat-menu-item type="button" lang="de" (click)="setLocale('de')">Deutsch</button>
+</mat-menu>
+
+<mat-menu #themeMenu="matMenu">
+  <button mat-menu-item type="button" (click)="setTheme(null)" i18n="@@shell.theme.system">
+    Follow the system
+  </button>
+  <button mat-menu-item type="button" (click)="setTheme('light')" i18n="@@shell.theme.light">
+    Light
+  </button>
+  <button mat-menu-item type="button" (click)="setTheme('dark')" i18n="@@shell.theme.dark">
+    Dark
+  </button>
+</mat-menu>
+
+<mat-sidenav-container class="frame">
+  @if (showNav()) {
+    <mat-sidenav
+      #drawer
+      [mode]="layout.pinned() ? 'side' : 'over'"
+      [opened]="layout.pinned()"
+      [fixedInViewport]="false"
+    >
+      <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
+        @for (group of navigation.groups(); track group.id) {
+          <p class="group-title" [id]="'nav-' + group.id">{{ group.label }}</p>
+          <ul [attr.aria-labelledby]="'nav-' + group.id">
+            @for (item of group.items; track item.route) {
+              <li>
+                <a
+                  class="nav-link"
+                  [routerLink]="item.route"
+                  routerLinkActive="active"
+                  ariaCurrentWhenActive="page"
+                  (click)="closeDrawer(drawer)"
+                  >{{ item.label }}</a
+                >
+              </li>
+            }
+          </ul>
+        }
+      </nav>
+    </mat-sidenav>
+  }
 
   <mat-sidenav-content>
     <trove-banner />
     <main #main id="main" tabindex="-1" class="content">
+      @if (loadFailure(); as failure) {
+        <trove-error-notice [error]="failure" (retry)="retrySession()" />
+      }
       <router-outlet />
     </main>
   </mat-sidenav-content>
 </mat-sidenav-container>
+
+<trove-notices />

@@ -1,0 +1,126 @@
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+
+  h1 {
+    margin: 0;
+    margin-inline-end: auto;
+  }
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+  font-weight: 600;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--trove-space-4);
+}
+
+.card {
+  margin-block: var(--trove-space-4);
+  padding: var(--trove-space-4);
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-medium);
+
+  h2 {
+    margin-block-start: 0;
+  }
+}
+
+.cards .card {
+  margin-block: 0;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--trove-space-1) var(--trove-space-4);
+  margin: 0;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.role {
+  margin-block: var(--trove-space-4);
+
+  .counts {
+    margin-inline-start: var(--trove-space-3);
+    font-weight: 400;
+    font-size: 0.875rem;
+  }
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+th,
+td {
+  padding: var(--trove-space-1) var(--trove-space-3);
+  text-align: start;
+  vertical-align: top;
+  border-block-end: 1px solid var(--mat-sys-outline-variant);
+}
+
+.material-icons {
+  font-size: 1.125rem;
+  vertical-align: middle;
+  margin-inline-end: var(--trove-space-1);
+}
+
+// Status colours always come with an icon and a text (R-UI-044); they only reinforce.
+.ok {
+  color: var(--trove-status-ok);
+}
+
+.warn {
+  color: var(--trove-status-warn);
+}
+
+.bad {
+  color: var(--trove-status-bad);
+}
+
+.warning,
+.info-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+}
+
+.check-list {
+  margin-block-start: var(--trove-space-1);
+  max-inline-size: 36rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.limits,
+.more {
+  margin-block: var(--trove-space-4);
+}

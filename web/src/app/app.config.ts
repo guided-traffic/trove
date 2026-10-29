@@ -1,17 +1,40 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
+import {
+  provideHttpClient,
+  withFetch,
+  withInterceptors,
+  withXsrfConfiguration,
+} from '@angular/common/http';
+import { provideRouter, TitleStrategy, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
+import { provideApiServices } from './api/providers';
+import {
+  conventionsInterceptor,
+  problemInterceptor,
+  resilienceInterceptor,
+} from './core/http/interceptors';
+import { TroveTitleStrategy } from './core/title-strategy';
+
+/** Cookie and header of the CSRF protection for cookie-authenticated requests (R-AUTH-012). */
+export const CSRF_COOKIE = '__Host-trv_csrf';
+export const CSRF_HEADER = 'X-CSRF-Token';
 
 /**
  * Root providers. Zoneless change detection is the Angular 22 default, so no provider names it.
- * The interceptor list is empty in M0; CSRF, problem mapping and the 401 handler register here
- * from core/ when the first API client exists.
+ * Interceptor order, outermost first: problem mapping and session consequences, the one
+ * automatic retry, then the request conventions (epoch, idempotency key). CSRF comes from
+ * Angular's XSRF support, which adds the header to unsafe same-origin requests.
  */
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
+    ...provideApiServices(),
     provideRouter(routes, withComponentInputBinding()),
-    provideHttpClient(withFetch(), withInterceptors([])),
+    { provide: TitleStrategy, useExisting: TroveTitleStrategy },
+    provideHttpClient(
+      withFetch(),
+      withXsrfConfiguration({ cookieName: CSRF_COOKIE, headerName: CSRF_HEADER }),
+      withInterceptors([problemInterceptor, resilienceInterceptor, conventionsInterceptor]),
+    ),
   ],
 };

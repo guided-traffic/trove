@@ -41,6 +41,60 @@
   outline: none;
 }
 
-.active {
+.spacer {
+  flex: 1 1 auto;
+}
+
+.user-name {
+  max-inline-size: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+mat-sidenav {
+  inline-size: 16rem;
+}
+
+nav {
+  padding: var(--trove-space-2) 0;
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+.group-title {
+  margin: var(--trove-space-3) var(--trove-space-4) var(--trove-space-1);
+  font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  min-block-size: 2rem;
+  padding: var(--trove-space-1) var(--trove-space-4);
+  color: var(--trove-on-surface);
+  text-decoration: none;
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
+  }
+
+  &.active {
+    background: var(--mat-sys-secondary-container);
+    color: var(--mat-sys-on-secondary-container);
+    font-weight: 600;
+  }
 }
