@@ -5,7 +5,7 @@
 //
 //   R <unix ms> <status> <replica> <duration ms> <path>
 //
-// A request that never got a response has status 0 and the k6 error code in the replica column.
+// A request that never got a response has status 0 and k6's error code and text (<code>:<text>, spaces as _) in the replica column.
 // k6's own summary (handleSummary) goes to /out/summary.json as a cross-check.
 //
 // Environment: TARGET (base URL, default http://trove-control-plane:30080, the edge's NodePort on the
@@ -40,7 +40,8 @@ export default function () {
   const path = PATHS[exec.scenario.iterationInTest % PATHS.length];
   const t0 = Date.now();
   const res = http.get(TARGET + path, { headers: { Host: HOST }, timeout: __ENV.TIMEOUT || '15s', tags: { name: path } });
-  const replica = res.status === 0 ? (res.error_code || res.error || 'error') : (res.headers['X-Trove-Replica'] || '-');
+  // A request without a response carries k6's error code and text in the replica column: <code>:<text>.
+  const replica = res.status === 0 ? `${res.error_code || 0}:${res.error || 'error'}` : (res.headers['X-Trove-Replica'] || '-');
   console.log(`R ${t0} ${res.status} ${String(replica).replace(/\s+/g, '_')} ${Date.now() - t0} ${path}`);
 }
 

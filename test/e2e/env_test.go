@@ -426,10 +426,14 @@ type k6result struct {
 	Status   map[int]int
 	Replicas map[string]int
 	Failures []failure
-	First    time.Time
-	Last     time.Time
-	MaxMS    int
-	Summary  map[string]any
+	// Interrupted are requests that were in flight when the harness stopped k6 with SIGINT (the text
+	// "context canceled", started within the last two seconds of the run). They are the harness's own doing,
+	// not an answer of the system, and are reported but not counted as failures.
+	Interrupted []failure
+	First       time.Time
+	Last        time.Time
+	MaxMS       int
+	Summary     map[string]any
 }
 
 // startK6 runs the load of test/e2e/k6/load.js in a container on the kind Docker network, at
@@ -490,6 +494,7 @@ var linePattern = regexp.MustCompile(`^R (\d+) (\d+) (\S+) (\d+) (\S+)$`)
 func parseK6(t testing.TB, k *k6run) k6result {
 	t.Helper()
 	r := k6result{Status: map[int]int{}, Replicas: map[string]int{}}
+	var all []failure
 	f, err := os.Open(filepath.Join(k.dir, "console.log"))
 	if err != nil {
 		t.Fatal(err)
@@ -505,13 +510,13 @@ func parseK6(t testing.TB, k *k6run) k6result {
 		status, _ := strconv.Atoi(m[2])
 		dur, _ := strconv.Atoi(m[4])
 		at := time.UnixMilli(ms)
-		r.Total++
-		r.Status[status]++
 		if status == 200 {
 			r.Replicas[m[3]]++
 		} else {
-			r.Failures = append(r.Failures, failure{At: at, Status: status, Replica: m[3], Path: m[5]})
+			all = append(all, failure{At: at, Status: status, Replica: m[3], Path: m[5]})
 		}
+		r.Total++
+		r.Status[status]++
 		if r.First.IsZero() || at.Before(r.First) {
 			r.First = at
 		}
@@ -520,13 +525,29 @@ func parseK6(t testing.TB, k *k6run) k6result {
 		}
 		r.MaxMS = max(r.MaxMS, dur)
 	}
+	// stop() ends k6 with SIGINT, which cancels the requests in flight at that moment (about one run in four
+	// at 100 requests/s). k6 logs them as status 0 with the error text "context canceled". Only those, and only
+	// from the last two seconds of the run, are set aside; every other failure, a connection error included,
+	// stays a failure.
+	for _, f := range all {
+		if f.Status == 0 && strings.HasSuffix(f.Replica, ":context_canceled") && f.At.After(r.Last.Add(-2*time.Second)) {
+			r.Interrupted = append(r.Interrupted, f)
+			r.Status[0]--
+			r.Total--
+			continue
+		}
+		r.Failures = append(r.Failures, f)
+	}
+	if r.Status[0] == 0 {
+		delete(r.Status, 0)
+	}
 	if b, err := os.ReadFile(filepath.Join(k.dir, "summary.json")); err == nil {
 		_ = json.Unmarshal(b, &r.Summary)
 	} else {
 		t.Errorf("k6 %s wrote no summary.json: %v", k.name, err)
 	}
-	t.Logf("k6 %s: %d requests over %s, status %v, replicas %v, max %d ms, k6 summary %v",
-		k.name, r.Total, r.Last.Sub(r.First).Round(time.Second), r.Status, r.Replicas, r.MaxMS, r.Summary)
+	t.Logf("k6 %s: %d requests over %s, status %v, replicas %v, max %d ms, %d in flight at the stop set aside, k6 summary %v",
+		k.name, r.Total, r.Last.Sub(r.First).Round(time.Second), r.Status, r.Replicas, r.MaxMS, len(r.Interrupted), r.Summary)
 	return r
 }
 

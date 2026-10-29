@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -109,8 +110,11 @@ func TestE13Failover(t *testing.T) {
 				last = f.At
 			}
 		}
-		t.Logf("%d failures of %d requests, status %v; first %s after the kill, last %s after; retry.max_elapsed %s",
-			len(r.k6.Failures), r.k6.Total, r.k6.Status, first.Sub(r.faultAt).Round(100*time.Millisecond), last.Sub(r.faultAt).Round(100*time.Millisecond), maxElapsed)
+		window := "no failure"
+		if len(r.k6.Failures) > 0 {
+			window = fmt.Sprintf("first %s after the kill, last %s after", first.Sub(r.faultAt).Round(100*time.Millisecond), last.Sub(r.faultAt).Round(100*time.Millisecond))
+		}
+		t.Logf("%d failures of %d requests, status %v; %s; retry.max_elapsed %s", len(r.k6.Failures), r.k6.Total, r.k6.Status, window, maxElapsed)
 		if other != 0 {
 			t.Errorf("%d failures were not 503: %v", other, r.k6.Status)
 		}

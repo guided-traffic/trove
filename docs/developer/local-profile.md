@@ -132,7 +132,7 @@ Generated or created in namespace `trove`; nothing in `up.sh` makes a random val
 | `trove-dev-ca` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager (self-signed root, ten years) | the Issuer `trove-dev-ca` |
 | `trove-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | trove's listeners (`tls.secretName`) and HAProxy Ingress, which verifies it (`ingress.backendTLS.caSecret`) |
 | `trove-edge-tls` | `tls.crt`, `tls.key` | cert-manager | the edge's certificate for `localhost` |
-| `trove-s3-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | SeaweedFS; trove reads its `ca.crt` as `storage.s3.ca_file` |
+| `trove-s3-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | SeaweedFS; trove mounts its `ca.crt` through `secrets.s3CA`, which renders `storage.s3.ca_file` |
 | `trove-customers-tls`, `trove-customers-wildcard-tls`, `trove-customers-edge-tls` | `tls.crt`, `tls.key`, `ca.crt` | cert-manager | the endpoint `customers` (below) |
 
 Never set `iso.gtrfc.com/rotate` on `trove-encryption-keys` (a rotation would destroy the encrypted data) or on

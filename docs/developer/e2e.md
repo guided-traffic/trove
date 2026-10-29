@@ -14,6 +14,12 @@ the real release image on the [dev profile](local-profile.md), over TLS on every
   and enqueues a job through `internal/jobs`. The workers of the release run the jobs.
 - **A failed request is counted by the client.** k6 runs at 100 requests/s through the Ingress, and every
   response becomes a line the Go test parses. Nothing is inferred from server metrics.
+- **The harness's own stop is not a failure.** The tests end k6 with SIGINT, which cancels the requests in flight at
+  that moment (measured: one run in four at 100 requests/s, k6 error text `context canceled`; it caused the single
+  `status 0` of a CI run of E0.11). `parseK6` sets aside exactly those: status 0, text `context canceled`, started in
+  the last two seconds of the run, and reports their number in the log line. A connection error, a reset or any other
+  status 0 stays a failure, wherever it happens. A request without a response is logged as `<code>:<text>` in the
+  replica column.
 - **A failing test here is a finding.** When a criterion fails because of the product, the test stays red
   and [Findings of the suite](#findings-of-the-suite) says what was measured. No threshold is moved to make it pass.
 
