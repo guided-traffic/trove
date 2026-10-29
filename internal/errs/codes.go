@@ -168,6 +168,18 @@ const (
 // <<< M1 files
 //
 // >>> M1 endpoints
+
+// Codes of endpoints and exposure rules (R-EP-012 to R-EP-016). The authz package
+// names them as strings (internal/authz/exposure_service.go, errors.go).
+const (
+	CodeEndpointReadOnly      = "endpoint_read_only"
+	CodeInvalidVersionRange   = "invalid_version_range"
+	CodeDimensionNotSupported = "dimension_not_supported"
+	CodeFormatNotExposable    = "format_not_exposable"
+	CodeEndpointNotConfigured = "endpoint_not_configured"
+	CodeExposureRuleLimit     = "exposure_rule_limit_reached"
+)
+
 // <<< M1 endpoints
 
 // CodeInfo documents one code for the problem catalog.
@@ -302,6 +314,12 @@ var registry = []CodeInfo{
 	// <<< M1 files
 	//
 	// >>> M1 endpoints
+	{CodeEndpointReadOnly, Forbidden, "Endpoint is read-only", "This endpoint serves content under exposure rules and takes no writes; deploy through the default endpoint."},
+	{CodeInvalidVersionRange, Invalid, "Invalid version range", "The format refuses the version range of an exposure rule, or the range is longer than 256 characters."},
+	{CodeDimensionNotSupported, Invalid, "Dimension not supported", "The repository's format has no package names, versions or tags for this exposure rule dimension; generic repositories are exposed through paths."},
+	{CodeFormatNotExposable, Invalid, "Format not exposable", "The repository's format cannot be served on an endpoint with exposure rules yet."},
+	{CodeEndpointNotConfigured, Conflict, "Endpoint not configured", "The endpoint is not in the configuration; its exposure rules can be read and deleted, not created or replaced."},
+	{CodeExposureRuleLimit, Conflict, "Exposure rule limit reached", "The endpoint holds 1,000 exposure rules, the most it may hold; delete a rule first."},
 	// <<< M1 endpoints
 }
 

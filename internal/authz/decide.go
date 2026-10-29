@@ -72,6 +72,7 @@ func targetOf(c Coordinate) string {
 // [Engine.Begin] once and [Engine.DecideOn] for each coordinate, so that all of
 // them are decided on one index (R-AUTHZ-015 `index.ForRequest`).
 func (e *Engine) Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
+	c = onEndpoint(ctx, c)
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
 		e.count(*refused, c)
@@ -96,6 +97,7 @@ func (e *Engine) Begin(ctx context.Context, sub Subject) (*Index, error) {
 // finish on the index they started with, so a swap of the installed index never
 // changes the decisions of one request (R-AUTHZ-028).
 func (e *Engine) DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
+	c = onEndpoint(ctx, c)
 	start := time.Now()
 	d := e.evaluate(idx, sub, c)
 	e.m.eval.Observe(time.Since(start).Seconds())
@@ -114,6 +116,9 @@ func (e *Engine) count(d Decision, c Coordinate) {
 		action = string(c.Actions[0])
 	}
 	e.m.decisions.WithLabelValues(outcome, d.Reason, action).Inc()
+	if d.Reason == ReasonExposure || d.Reason == ReasonEndpointReadOnly {
+		e.m.exposureHidden(c.Endpoint, "request")
+	}
 }
 
 func (e *Engine) anonymousOn() bool { return e.o.AnonymousAccess != nil && e.o.AnonymousAccess() }
@@ -231,18 +236,11 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 	return out
 }
 
-// allowedAction is `Allowed` of R-AUTHZ-015: the endpoint ceiling, then
-// content:bypass, then the grants intersected with the token scope. The reason
-// is the one of R-AUTHZ-029.
+// allowedAction is `Allowed` of R-AUTHZ-015 after the endpoint ceiling, which
+// evaluate has applied to every action of the coordinate before it looked the
+// repository up: content:bypass, then the grants intersected with the token
+// scope. The reason is the one of R-AUTHZ-029.
 func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinate) (ok bool, reason string, sources []string) {
-	if cl := e.o.Ceiling; cl != nil {
-		switch cl.Admits(c, a) {
-		case CeilingHidesRead:
-			return false, ReasonExposure, nil
-		case CeilingReadOnly:
-			return false, ReasonEndpointReadOnly, nil
-		}
-	}
 	if st.bypass {
 		return true, ReasonAllowRole, []string{"role:admin"}
 	}
@@ -299,6 +297,9 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 		actions = []Action{Read}
 	}
 	first := actions[0]
+	if d, refused := e.ceilingRefuses(idx, sub, c, actions, epoch); refused {
+		return d
+	}
 	r := idx.repo(c.Repository)
 	if r == nil {
 		// A repository the index does not know has no grants; refusing before any
@@ -313,7 +314,7 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 	target := r
 	var sources []string
 	if r.Class == repository.Virtual {
-		ok, reason, by := e.allowedAction(st, Read, r, Coordinate{Repository: c.Repository, Endpoint: c.Endpoint})
+		ok, reason, by := e.allowedAction(st, Read, r, Coordinate{Repository: c.Repository, Endpoint: c.Endpoint, Addressed: c.Addressed})
 		if !ok {
 			if reason == ReasonNoGrant || reason == ReasonScope {
 				reason = ReasonVirtualGate
@@ -353,6 +354,37 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 		sources = append(sources, by...)
 	}
 	return Decision{Outcome: Allow, Reason: reason, Epoch: epoch, Target: targetOf(c), Sources: dedupStrings(sources)}
+}
+
+// ceilingRefuses applies the endpoint's exposure (R-EP-013) to every action of
+// the coordinate, first and before the repository lookup: the refusal is the same
+// for every subject, administrators and content:bypass included (Q-EP-12), and
+// the same for a repository that does not exist, so neither the answer nor the
+// work done depends on existence (Q-EP-4). A write-type action is refused as
+// read-only before a read is refused as hidden, so a write answers 403
+// endpoint_read_only whether or not its target exists. The anonymous gate of
+// R-AUTH-037 has run before, so a request without a credential the endpoint
+// requires is 401 first.
+func (e *Engine) ceilingRefuses(idx *Index, sub Subject, c Coordinate, actions []Action, epoch int64) (Decision, bool) {
+	cl := e.o.Ceiling
+	if cl == nil {
+		return Decision{}, false
+	}
+	for _, a := range actions {
+		if a != Read && cl.Admits(idx, c, a) == CeilingReadOnly {
+			return e.refusal(sub, c, nil, ReasonEndpointReadOnly, a, epoch), true
+		}
+	}
+	for _, a := range actions {
+		switch cl.Admits(idx, c, a) {
+		case CeilingAdmits:
+		case CeilingReadOnly:
+			return e.refusal(sub, c, nil, ReasonEndpointReadOnly, a, epoch), true
+		default:
+			return e.refusal(sub, c, nil, ReasonExposure, a, epoch), true
+		}
+	}
+	return Decision{}, false
 }
 
 // writesContent reports whether the actions change content: anything besides
@@ -421,7 +453,9 @@ func dedupStrings(in []string) []string {
 // Readable implements [Authorizer]: the keys the subject may read, in the order
 // given (R-AUTHZ-016: a listing contains only what the subject may read). It
 // decides at repository level, so patterns of a grant do not narrow it
-// (R-AUTHZ-005). A refusal to decide (503, 412) is returned as an error.
+// (R-AUTHZ-005). On an endpoint with exposure rules (the endpoint of ctx, see
+// [WithEndpoint]) a repository without an enabled rule is left out as well
+// (R-EP-014). A refusal to decide (503, 412) is returned as an error.
 func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]string, error) {
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
@@ -430,11 +464,16 @@ func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]st
 	if sub.Anonymous && !e.anonymousOn() {
 		return nil, nil
 	}
+	endpoint := EndpointOf(ctx)
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
-		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
-		if d.Outcome == Allow {
+		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}, Endpoint: endpoint})
+		switch {
+		case d.Outcome == Allow:
 			out = append(out, k)
+		case d.Reason == ReasonExposure:
+			// An item removed from a listing by exposure (R-EP-014, R-EP-009).
+			e.m.exposureHidden(endpoint, "item")
 		}
 	}
 	return out, nil
@@ -533,7 +572,7 @@ func (e *Engine) Check(ctx context.Context, sub Subject, items []CheckItem) ([]b
 		if it.Action != Read {
 			kind = KindWrite
 		}
-		d := e.evaluate(idx, sub, Coordinate{Repository: it.Repository, Package: it.Package, Path: it.Path, Kind: kind, Actions: []Action{it.Action}})
+		d := e.evaluate(idx, sub, onEndpoint(ctx, Coordinate{Repository: it.Repository, Package: it.Package, Path: it.Path, Kind: kind, Actions: []Action{it.Action}}))
 		out[i] = d.Outcome == Allow
 	}
 	return out, idx.label.AuthzEpoch, nil

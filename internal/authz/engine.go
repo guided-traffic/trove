@@ -52,7 +52,10 @@ type Options struct {
 	// AnonymousAccess reports whether anonymous access is on (R-AUTH-037); nil
 	// means off. It is read for every anonymous decision.
 	AnonymousAccess func() bool
-	// Ceiling is the endpoint exposure (R-EP-013); nil means none.
+	// Ceiling is the endpoint exposure (R-EP-013), evaluated on the index of the
+	// request; nil means none. The composition root passes an [ExposureCeiling]
+	// built from the configured endpoints; its endpoint names bound the label of
+	// the exposure metrics.
 	Ceiling Ceiling
 	// Recorder records the audit events; nil discards them.
 	Recorder audit.Recorder
@@ -140,7 +143,11 @@ func New(o Options) (*Engine, error) {
 		compile: newPatternCache(),
 	}
 	e.epochs = newEpochReader(o.Source, epochReadGap, o.RetryBudget)
-	m, err := newMetrics(o.Metrics, e.stalenessSeconds)
+	var endpoints []string
+	if ec, ok := o.Ceiling.(interface{ Endpoints() []string }); ok {
+		endpoints = ec.Endpoints()
+	}
+	m, err := newMetrics(o.Metrics, e.stalenessSeconds, endpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +308,7 @@ func (e *Engine) install(idx *Index, force bool, trigger string, took time.Durat
 	}
 	e.cur.Store(idx)
 	e.m.epoch.Set(float64(idx.label.AuthzEpoch))
+	e.m.setExposureRules(idx)
 	e.m.rebuild.Observe(took.Seconds())
 	e.m.rebuilds.WithLabelValues(trigger).Inc()
 	e.instMu.Lock()

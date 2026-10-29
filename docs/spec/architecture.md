@@ -2636,7 +2636,9 @@ The owning pages define the limit classes, their bucket keys and their values
   codes; the first and the last use the count-only form.
 - **Fallback.** While Valkey is unavailable, a cluster-scoped limiter answers from an in-memory token
   bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`. `n` is the number of live replicas of
-  the replica's role in the replica registry, at least 1, refreshed with the heartbeat. The
+  the replica's role in the replica registry, at least 1, refreshed with the heartbeat; a limiter
+  that guards what only some replicas serve counts those instead
+  (`LimiterSet.NewLimiterShared`, [Q-ARCH-45](#q-arch-45--a-limiter-may-divide-its-fallback-share-by-its-own-count)). The
   cluster-wide budget thus stays close to the configured one. This is the per-replica degradation
   INV-12 names; `trove_ratelimit_fallback{limiter}` is 1 while it lasts.
 - A limiter never fails a request because Valkey failed, and its check waits at most
@@ -4770,6 +4772,25 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The check costs one query at start. The development agent would revisit this if start-up must work without PostgreSQL write access.
 
 **Applied in the spec:** R-ARCH-021's start-up canary is implemented as described; no text changes.
+
+### Q-ARCH-45 · A limiter may divide its fallback share by its own count
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the endpoint rate-limit classes of [endpoints.md](endpoints.md) R-EP-015 divide the budget by the replicas that serve
+the endpoint, the replicas of a pool, while the set's count is the replicas of the role.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `LimiterSet.NewLimiterShared(name, scope, rate, burst, share)`: a limiter with a count function of its own; `NewLimiter` passes none | One set, one registry of metrics, a per-limiter `n` | The fallback gauge and the decisions counter stay one family per replica; the API classes are unchanged | Two constructors |
+| (b) A second limiter set per pool | A set with another count | No new constructor | Registers the metric families twice on one registry; more state per replica |
+
+**Choice:** (a).
+
+**Rationale:** The share is a property of what a limiter guards, not of the replica. The development agent would revisit this if
+a limiter needed a share per bucket.
+
+**Applied in the spec:** R-ARCH-034 (the fallback bullet).
 
 ## What this does not cover
 

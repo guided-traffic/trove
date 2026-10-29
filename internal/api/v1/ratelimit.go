@@ -134,8 +134,10 @@ func setRateLimitFields(w http.ResponseWriter, c classLimiter, name string, v cl
 		policy = `"` + class + `";q=` + strconv.Itoa(v.Limit) + ";w=" + strconv.FormatInt(int64(v.Window/1e9), 10)
 	}
 	t := int64((v.Reset + 999_999_999) / 1e9)
-	w.Header().Set("RateLimit-Policy", policy)
-	w.Header().Set("RateLimit", `"`+class+`";r=`+strconv.Itoa(v.Remaining)+";t="+strconv.FormatInt(t, 10))
+	// Added, not set: the endpoint's class (R-EP-015) runs before this stage and
+	// its policy is a member of the same structured list.
+	w.Header().Add("RateLimit-Policy", policy)
+	w.Header().Add("RateLimit", `"`+class+`";r=`+strconv.Itoa(v.Remaining)+";t="+strconv.FormatInt(t, 10))
 }
 
 // EdgeStage composes the stages of the management API that sit at the chain's

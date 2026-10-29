@@ -3,7 +3,7 @@
 Status: implemented in M1 (WP1.3): the decision engine, the compiled grant index with its invalidation, the policy and
 role-binding store, the token-scope ceiling, the epochs of `Trove-Authz-Min-Epoch` and the decision audit, and the
 management operations over them (policies, role bindings, the checks of the caller; [below](#management-operations)). Not
-built yet: the endpoint exposure ceiling (WP1.9; the hook is there), CI inline grants, package ownership and the shadowing
+built yet: CI inline grants, package ownership and the shadowing
 check, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024, which are P1
 (Q-AUTHZ-27).
 
@@ -37,7 +37,7 @@ security view is [permissions.md](../security/permissions.md).
 | [action.go](../../internal/authz/action.go), [ref.go](../../internal/authz/ref.go) | Action sets and presets; principal references and the IDs of the built-in principals |
 | [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the NuGet case folding and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); repository selectors (R-AUTHZ-004) |
 | [errors.go](../../internal/authz/errors.go) | `Decision.Err` (the table of R-AUTHZ-016), `NotFound`, `ParseMinEpoch`, the reason codes |
-| [ceiling.go](../../internal/authz/ceiling.go) | `Ceiling`, the hook for the endpoint exposure of R-EP-013 |
+| [ceiling.go](../../internal/authz/ceiling.go), [exposure.go](../../internal/authz/exposure.go), [exposure_service.go](../../internal/authz/exposure_service.go) | `Ceiling` (evaluated on the request's index) and the request's endpoint (`WithEndpoint`); the endpoint exposure of R-EP-013 compiled into the index (`ExposureCeiling`) and its rule service; see [endpoints.md](endpoints.md#exposure-r-ep-012-to-r-ep-014) |
 | [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
 | [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
@@ -56,8 +56,8 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
         └────────────── Engine.Decide ─────────────────────┘
                               │ forRequest: confirmed index of at least MinEpoch, else wait / 503 / 412
                               ▼
-   anonymous gate ► repository lookup ► requireAuthentication ► virtual gate ► per action:
-        ceiling ► content:bypass ► grants (principal set × index) ∩ token scope  ──► Decision
+   anonymous gate ► endpoint ceiling (every action, addressed repository) ► repository lookup ►
+        requireAuthentication ► virtual gate ► per action: content:bypass ► grants (principal set × index) ∩ token scope  ──► Decision
 ```
 
 - **Principal set** (`Index.principalIDs`): a user or break-glass subject is its own ID, its groups and the built-in
@@ -300,8 +300,11 @@ missing resource build the answer from `authz.NotFound()`. Pass `Subject.MinEpoc
 type that removes access or updates an access-bearing object with `Journal: audit.JournalRevocation` and pass
 `Event.Journal` from the transaction that makes the change.
 
-**Add the exposure ceiling.** Implement `authz.Ceiling` in the endpoints area and pass it as `Options.Ceiling`; `Decide`
-asks it first for every action of every coordinate.
+**The exposure ceiling.** `Options.Ceiling` is the endpoints area's `ExposureCeiling` (wired in
+[wire_exposure.go](../../internal/app/wire_exposure.go)); `evaluate` asks it for every action of a coordinate right after
+the anonymous gate and before the repository lookup, on the index the request decides on. The endpoint comes from the
+request context (`WithEndpoint`), which replaces a coordinate's `Endpoint`. The rules are rows of the snapshot
+(`Snapshot.Exposure`, query `EndpointsExposureBuild`), so they follow the change area `authz` like a policy.
 
 ## Tests
 

@@ -1,8 +1,11 @@
 # Endpoints
 
 Status: specification; the M0 parts are implemented: listeners and identification by listener, the host set with `421`, the
-surface per listener, TLS per endpoint, the chart rendering, and the metrics, logs and spans that carry the endpoint. The
-credential, exposure, cache-fill and rate-limit rules are M1 and later.
+surface per listener, TLS per endpoint, the chart rendering, and the metrics, logs and spans that carry the endpoint. The M1
+parts are implemented: the credential rules per endpoint, endpoint-bound tokens, exposure rules as the ceiling of the
+decision point, the rate-limit class and the management API of R-EP-016 (the screen of R-EP-017 is the UI wave's).
+Metadata filtering and the cache-fill policy (R-EP-018, R-EP-019) arrive with npm, the journal replay (R-EP-020) with the
+restore.
 
 This page specifies endpoints: the named network entry points through which clients reach trove,
 and what each of them may serve. It covers:
@@ -144,6 +147,8 @@ runtime, live in PostgreSQL (R-EP-012).
   - a `surface` that is empty, names an unknown family, or lists `ui` on a further endpoint
     (R-EP-005);
   - a `rate_limit_class` that names no entry of `server.endpoint_rate_limits` (R-EP-015);
+  - an empty `auth.token_types` list (R-EP-010,
+    [Q-EP-23](#q-ep-23--an-empty-list-of-accepted-token-types));
   - an invalid wildcard host or host-root binding (R-EP-003, R-EP-006);
   - a `pool` that does not match the endpoint name syntax.
 
@@ -862,7 +867,12 @@ func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
 ```
 
   The virtual gate, member selection (`MemberUsable`), the populate check and the commit-time
-  re-check therefore all see the ceiling.
+  re-check therefore all see the ceiling. The decision point applies it to every action of a
+  coordinate right after the anonymous gate and before the repository lookup, a write's read-only
+  refusal before a read's hidden one
+  ([Q-EP-21](#q-ep-21--where-the-ceiling-sits-in-the-evaluation-order)), for the endpoint the
+  request arrived on, which the chain puts into the request context and which replaces a
+  coordinate's `Endpoint` ([Q-EP-20](#q-ep-20--how-the-endpoint-of-a-request-reaches-the-decision-point)).
 - **Reads only** (Q-EP-9). On an endpoint with `exposure: rules`, `Admits` refuses every action
   other than `read`.
 - **Answers** ([authorization.md](authorization.md) R-AUTHZ-016):
@@ -931,10 +941,12 @@ Priority: **MVP** · Covers: BEYOND-030
 - The endpoint limiter runs at middleware step 7 of R-ARCH-005 for every request on the endpoint,
   package protocols included, before the classes of R-API-016 and R-AUTH-038, which still apply.
 - Each class is a limiter of [architecture.md](architecture.md) R-ARCH-034 named
-  `endpoint_<class>`, with scope `cluster`. The bucket key includes the endpoint name, so two
-  endpoints that share a class have separate budgets. While Valkey is unavailable, the per-replica
-  share divides by the live replicas that serve the endpoint (the replica registry's `pool`,
-  R-OPS-003), at least 1.
+  `endpoint_<class>`, with scope `cluster`; a hyphen of the class name is an underscore in the
+  limiter name ([Q-EP-22](#q-ep-22--limiter-name-and-fallback-share-of-an-endpoint-class)). The
+  bucket key includes the endpoint name, so two endpoints that share a class have separate budgets.
+  While Valkey is unavailable, the per-replica share divides by the live replicas that serve the
+  endpoint (the replica registry's `pool`, R-OPS-003): the web replicas of the replica's own pool
+  and the replicas of the role `all`, at least 1.
 - An exhausted bucket answers `429` `rate_limited` with `Retry-After` and the `RateLimit-Policy` and
   `RateLimit` fields of R-API-016 with the class name `endpoint:<class>`; on package protocols the
   body is the format's error shape (R-ARCH-023).
@@ -958,9 +970,10 @@ Priority: **MVP** · Covers: trove-only
 | GET | `/api/v1/endpoints/{endpoint}/exposure-rules` | Rules; filters `repository`, `package` (rules whose patterns admit the name) and `enabled`; cursor paging (R-API-010) | `endpoints:read` |
 | POST | `/api/v1/endpoints/{endpoint}/exposure-rules` | Create a rule | `endpoints:write`; recent authentication (R-API-007) |
 | GET | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Read, with `ETag` | `endpoints:read` |
-| PUT | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Replace; `If-Match` required (`428` without it) | `endpoints:write`; recent authentication |
+| PUT | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Replace; `If-Match` required (`428` without it); `name` and `repository` are immutable | `endpoints:write`; recent authentication |
+| PATCH | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | JSON merge patch on the stored rule, with the rules of PUT ([Q-EP-18](#q-ep-18--writing-an-exposure-rule-put-merge-patch-and-the-immutable-repository)) | `endpoints:write`; recent authentication |
 | DELETE | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Delete | `endpoints:write`; recent authentication |
-| POST | `/api/v1/endpoints/{endpoint}/check-exposure` | Dry run for one repository and package: exposed or not, the admitting rule or the reason, the exposed and hidden versions and the visible tags | `endpoints:read` and `read` on the repository |
+| POST | `/api/v1/endpoints/{endpoint}/check-exposure` | Dry run for one repository and package, or for paths of a generic repository: exposed or not, the admitting rule or the reason, the exposed and hidden versions and paths and the visible tags; an optional draft `rule` is evaluated in place of the stored rule of its name ([Q-EP-19](#q-ep-19--what-check-exposure-checks-paths-and-the-editors-draft)) | `endpoints:read` and `read` on the repository |
 
 - Endpoints themselves are file configuration (INV-15) and have no write operation. `{endpoint}` is
   a configured endpoint or an inert name that still has rules, whose rules can be read and deleted.
@@ -1598,6 +1611,143 @@ endpoint needs a different controller in the same release.
 
 **Applied in the spec:** [R-EP-008](#r-ep-008--chart-rendering-of-endpoints) (the Ingress of a further endpoint),
 [R-HA-063](ha-and-helm.md#r-ha-063--chart-tls-wiring) (the backend settings of the Ingress).
+
+### Q-EP-18 · Writing an exposure rule: PUT, merge patch and the immutable repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-016 lists `PUT` only. The API conventions offer merge patch on every keyed resource (R-API-013), their
+contract suite tests it, and the rule table of R-EP-017 toggles `enabled` per row. The journal comparator of R-EP-020
+treats a rule whose repository changed as one that does not narrow.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PUT` only; the repository may change | As the table says | One write form | A toggle sends the whole rule; a repository change turns a narrowing edit into a suspension at a restore; the convention suite does not apply |
+| (b) `PUT` and `PATCH` (merge patch); `name` and `repository` immutable | Both forms, one validation | The table can toggle `enabled` with a one-member patch and `If-Match`; the rule keeps one format and one range syntax; the convention suite runs on it unchanged | One more operation |
+| (c) `PATCH` only | Partial updates | Small bodies | The editor's save is a whole document; a `PUT` of a `GET` body is the R-API-003 round trip |
+
+**Choice:** (b). A different `repository` answers `422 validation_failed` with the pointer `/repository`; to move a rule,
+create one for the other repository and delete the old one.
+
+**Rationale:** Exposure is a ceiling, so the cost of a mistaken write is content shown to an outside audience; one validation
+for both forms and a fixed repository keep every write reviewable against the rule it replaces, and the journal entry
+compares like with like. The development agent would revisit the immutable repository if operators move rules between
+repositories often, and would then journal a move as a deletion and a creation.
+
+**Applied in the spec:** R-EP-016 (the `PATCH` row; `name` and `repository` immutable on `PUT`); cross-page:
+[api-and-ui.md](api-and-ui.md) R-API-007 lists the exposure-rule writes.
+
+### Q-EP-19 · What check-exposure checks: paths and the editor's draft
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the dry run of R-EP-016 takes a repository, a package and versions. Generic repositories have no packages and no
+versions; they are exposed through `paths` (R-EP-014). The preview of the rule editor (R-EP-017) shows the effect of the
+rule being edited, before it is saved.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stored rules, packages and versions only | As written | Smallest | Nothing to check for the only format of M1; the preview shows the saved state, not the edit |
+| (b) `paths` for the path dimension, and an optional draft `rule` evaluated in place of the stored rule of its name (or in addition) | The check answers for paths too; the draft is validated like a write and stored nowhere | The preview shows what the edit will do, with the same matcher the decision point uses; generic repositories can be checked | A larger request body |
+| (c) A separate preview operation for drafts | Two operations | The stored-rule check stays as written | Two operations with one matcher; the UI calls both |
+
+**Choice:** (b). `paths` items answer `path`, `exposed`, `rule` and `reason`; a draft with another repository than the check's
+answers `422`; the exposure fingerprint is that of the stored rules, unaffected by the draft. Without `versions`, a format
+with versions lists the package's stored versions; no format of M1 has versions.
+
+**Rationale:** The editor exists to change what customers see, and a preview of the saved state does not show the change. One
+operation keeps one matcher behind the answer and behind the ceiling. The development agent would revisit this if drafts made
+the check slow enough to need its own limits.
+
+**Applied in the spec:** R-EP-016 (the `check-exposure` row).
+
+### Q-EP-20 · How the endpoint of a request reaches the decision point
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the coordinate carries the endpoint (R-AUTHZ-015), but `Readable` of a listing takes no coordinate, and every content
+route would have to fill the field. A route that forgets it would decide without the ceiling: exposure would fail open.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each caller sets `Coordinate.Endpoint` | As the pseudo-code reads | Explicit | Fails open where a caller forgets it; `Readable` needs a new parameter |
+| (b) The principal carries the endpoint and the subject copies it | One more field through the conversions | Every caller that builds its subject the contract's way gets it | A subject built by hand has none; the principal is about who, not where |
+| (c) The chain puts the endpoint into the request context at stage 7; the decision point reads it there and ignores the coordinate's | A context value of the decision point | Every decision of a request applies its endpoint's ceiling, listings included; a caller can neither forget it nor pick another endpoint's | A decision on another context than the request's has no ceiling |
+
+**Choice:** (c). `authz.WithEndpoint` is set by the composition root for every request of an endpoint's chain; a coordinate's
+`Endpoint` counts only without a request endpoint (a job, a command, a test).
+
+**Rationale:** The endpoint is a property of the listener, so it travels with the request and not with the caller's code. The
+remaining risk, a decision on a detached context, is narrower and is named in H-166. The development agent would revisit this
+if content routes started deciding in background work for a request, which would need the endpoint passed on explicitly.
+
+**Applied in the spec:** R-EP-013 (the placement); cross-page: none, R-AUTHZ-015's pseudo-code reads `c.Endpoint`, which the
+decision point fills from the request.
+
+### Q-EP-21 · Where the ceiling sits in the evaluation order
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-013 places the ceiling first in `Allowed`. In R-AUTHZ-015, `Decide` looks the repository up and refuses an
+anonymous request for a repository with `requireAuthentication` before `Allowed` runs, so on an endpoint with anonymous access
+and exposure rules a missing repository (`404`) and a repository that requires authentication (`401`) would answer
+differently whatever the rules say.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) First in `Allowed` | As written | The pseudo-code unchanged | The repository's existence and settings show through the answer before exposure is decided |
+| (b) First in `Decide`, after the anonymous gate and before the repository lookup, for every action; read-only before hidden | The ceiling sees the addressed repository by key | A missing, a hidden and a protected repository give the same `404` on every endpoint with rules; a write is `403 endpoint_read_only` whether or not its target exists | The ceiling runs once more per coordinate than in (a)'s virtual gate |
+
+**Choice:** (b). The anonymous gate of R-AUTH-037 stays first, so a request without a credential that the endpoint requires is
+`401` as R-AUTHZ-016 orders it.
+
+**Rationale:** Q-EP-4 says exposure is decided before the existence lookup so that neither the body nor the work depends on
+existence; the repository's own settings are part of what must not show. The development agent sees no case for revisiting
+this; on an endpoint in mode `all` the order makes no difference.
+
+**Applied in the spec:** R-EP-013 (placement before the repository lookup).
+
+### Q-EP-22 · Limiter name and fallback share of an endpoint class
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a class name may hold a hyphen (`^[a-z][a-z0-9-]{0,19}$`), a limiter name may not (R-ARCH-034). The share of
+R-ARCH-034 divides by the live replicas of the role; an endpoint is served by the replicas of its pool.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `endpoint_<class>` with hyphens as underscores; the share counts the web replicas of the replica's own pool and the replicas of role `all` | One limiter per class; a per-limiter share | Class names stay as configured; the share is the set that serves the replica's endpoints, which all replicas of one pool share | A web pool that no endpoint names is counted apart from the main Deployment it serves with (H-167) |
+| (b) Refuse hyphens in class names | Validation | Literal names | Breaks configurations the M0 validation accepts |
+| (c) One limiter per endpoint | `endpoint_<class>_<endpoint>` | Exact share per endpoint | The metric label the spec names no longer exists; the limiter set grows with the endpoints |
+
+**Choice:** (a). The limiter takes its share from a count of its own (`LimiterSet.NewLimiterShared`,
+[architecture.md](architecture.md) Q-ARCH-45).
+
+**Rationale:** Every endpoint a replica serves has the same serving replicas, so one count per replica is exact in the layouts
+the chart renders. The development agent would revisit this if pools that serve the no-pool endpoints were rendered on purpose.
+
+**Applied in the spec:** R-EP-015 (the name and the share).
+
+### Q-EP-23 · An empty list of accepted token types
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `auth.token_types: []` is valid YAML. The authentication stage reads an empty list of accepted types as no
+restriction, which is right for a caller that sets no rules and wrong for an operator who meant "no token".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Empty accepts every type | As the stage reads it | No change | An operator's "accept nothing" silently accepts every token, PATs included |
+| (b) Empty accepts no token | A sentinel in the rules | Literal | A new field in the stage's contract; an anonymous-only endpoint is possible with `anonymous: true` anyway, where tokens do no harm |
+| (c) Startup refuses an empty list | Validation names the key | No silent reading either way; one line of validation | An endpoint cannot be set to accept no token at all |
+
+**Choice:** (c).
+
+**Rationale:** A credential setting that fails open is the case R-OPS-028's validation exists for, and no use case needs an
+endpoint that refuses every token while serving packages. The development agent would revisit this when such an endpoint is
+asked for, and would then add (b).
+
+**Applied in the spec:** R-EP-001 (the startup validation list).
 
 ## What this does not cover
 

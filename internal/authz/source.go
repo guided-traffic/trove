@@ -121,6 +121,9 @@ func (s *pgSource) Snapshot(ctx context.Context) (*Snapshot, error) {
 		if snap.Repositories, err = qs.AuthzBuildRepositories(ctx); err != nil {
 			return err
 		}
+		if snap.Exposure, err = qs.EndpointsExposureBuild(ctx); err != nil {
+			return err
+		}
 		out = snap
 		return nil
 	})

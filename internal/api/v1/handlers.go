@@ -102,6 +102,11 @@ type Options struct {
 	// authentication settings and the user preferences (auth_services.go).
 	Auth AuthServices
 	// <<< M1 identity
+	// >>> M1 endpoints
+	// Endpoints holds the configured endpoints and the exposure-rule service of
+	// the endpoint operations (endpoints_api.go).
+	Endpoints EndpointServices
+	// <<< M1 endpoints
 }
 
 // Server implements gen.ServerInterface.

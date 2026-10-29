@@ -45,9 +45,34 @@ type metrics struct {
 	decisions *prometheus.CounterVec
 	minEpoch  *prometheus.CounterVec
 	discarded prometheus.Counter
+	// hidden and rules are the exposure families of R-EP-009; endpoints bounds
+	// their endpoint label to the configured names (R-OPS-007).
+	hidden    *prometheus.CounterVec
+	rules     *prometheus.GaugeVec
+	endpoints map[string]bool
 }
 
-func newMetrics(reg prometheus.Registerer, staleness func() float64) (*metrics, error) {
+// exposureHidden counts a request refused by exposure or an item removed from a
+// listing by exposure (trove_exposure_hidden_total{endpoint,kind}).
+func (m *metrics) exposureHidden(endpoint, kind string) {
+	if endpoint == "" {
+		return
+	}
+	if !m.endpoints[endpoint] {
+		endpoint = "_other"
+	}
+	m.hidden.WithLabelValues(endpoint, kind).Inc()
+}
+
+// setExposureRules sets trove_exposure_rules from an installed index: the enabled
+// rules per configured endpoint, as the build read them from PostgreSQL.
+func (m *metrics) setExposureRules(x *Index) {
+	for ep := range m.endpoints {
+		m.rules.WithLabelValues(ep).Set(float64(x.exposedRules(ep)))
+	}
+}
+
+func newMetrics(reg prometheus.Registerer, staleness func() float64, endpoints []string) (*metrics, error) {
 	m := &metrics{
 		epoch: prometheus.NewGauge(prometheus.GaugeOpts{Name: "trove_authz_epoch", Help: "The authz epoch of the installed grant index."}),
 		rebuild: prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -76,11 +101,28 @@ func newMetrics(reg prometheus.Registerer, staleness func() float64) (*metrics, 
 		discarded: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "trove_authz_index_builds_discarded_total", Help: "Finished builds that were not installed because their epochs were lower than the installed index's.",
 		}),
+		hidden: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "trove_exposure_hidden_total", Help: "Requests refused by an endpoint's exposure (kind request) and items removed from listings by it (kind item).",
+		}, []string{"endpoint", "kind"}),
+		rules: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "trove_exposure_rules", Help: "Enabled exposure rules per endpoint in the installed grant index; aggregate with max.",
+		}, []string{"endpoint"}),
+		endpoints: map[string]bool{},
+	}
+	for _, ep := range endpoints {
+		m.endpoints[ep] = true
+		m.rules.WithLabelValues(ep)
+		m.hidden.WithLabelValues(ep, "request")
+		m.hidden.WithLabelValues(ep, "item")
 	}
 	if reg == nil {
 		return m, nil
 	}
-	for _, c := range []prometheus.Collector{m.epoch, m.rebuild, m.rebuilds, m.staleness, m.waits, m.eval, m.decisions, m.minEpoch, m.discarded} {
+	cs := []prometheus.Collector{m.epoch, m.rebuild, m.rebuilds, m.staleness, m.waits, m.eval, m.decisions, m.minEpoch, m.discarded}
+	if len(endpoints) > 0 {
+		cs = append(cs, m.hidden, m.rules)
+	}
+	for _, c := range cs {
 		if err := reg.Register(c); err != nil {
 			var are prometheus.AlreadyRegisteredError
 			if errors.As(err, &are) {

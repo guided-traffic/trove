@@ -62,7 +62,8 @@ func init() {
 	token(EventTokenExpiring, Transactional, NoJournal, `{"type":"object","properties":{`+
 		`"owner":{"type":"string"},"hint":{"type":"string"},"description":{"type":"string"},"expiresAt":{"type":"string"}}}`)
 	token(EventTokenRejected, Async, NoJournal, `{"type":"object","properties":{`+
-		`"reason":{"type":"string","enum":["revoked","expired"]},"hint":{"type":"string"},"owner":{"type":"string"}}}`)
+		`"reason":{"type":"string","enum":["revoked","expired","endpoint_not_accepted"]},"hint":{"type":"string"},"owner":{"type":"string"},`+
+		`"refusal":{"type":"string","enum":["token_type","token_binding"]},"tokenType":{"type":"string"}}}`)
 
 	userSource := `"source":{"type":"string","enum":["jit","admin","scim","dormancy","admin-cli"]}`
 	ident(EventUserCreated, NoJournal, `{"type":"object","properties":{`+userSource+`,"provider":{"type":"string"}}}`)

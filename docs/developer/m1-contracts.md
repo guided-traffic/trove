@@ -287,3 +287,23 @@ form of the `x-trove-permission` of each operation (R-API-008).
 - **Test support.** [test/integration/stack](../../test/integration/stack) builds a migrated database and in-process web replicas with
   the real chain, handlers, engine, audit writer and store, for tests that cross the authorization and audit APIs; authentication is a
   header (`X-Test-Person`) and Valkey is not part of it.
+
+## As built by the endpoints area (WP1.9)
+
+Changes to the contracts above; the page of the area is [endpoints.md](endpoints.md).
+
+| Contract | Change |
+|---|---|
+| `authz.Ceiling` | `Admits(x *Index, c Coordinate, a Action)`: the ceiling is evaluated on the index the request decides on, because the exposure rules are compiled into it. `ExposureCeiling` (built from the configured modes) is the implementation; `NoCeiling` stays |
+| `authz.Coordinate` | `Version` (a coordinate that names one version) and `Addressed` (the repository the client named when `Repository` is a consulted member) added; exposure is decided on `Addressed`, else `Repository` |
+| request endpoint | `authz.WithEndpoint(ctx, name)` and `authz.EndpointOf(ctx)`: stage 7 of every endpoint's chain sets it; `Decide`, `DecideOn`, `Readable` and `Check` take the endpoint from the context and ignore `Coordinate.Endpoint` when it is set. A content route needs no endpoint code of its own |
+| `authz.Engine` | the ceiling runs first in `evaluate`, before the repository lookup; the families `trove_exposure_hidden_total` and `trove_exposure_rules` are registered when the ceiling names endpoints; `authz.denied` fills the event's `Endpoint` column |
+| `authz.Snapshot` | `Exposure []q.EndpointsExposureBuildRow`, read in the build's snapshot |
+| `auth.EndpointRules` | `Refused func(*http.Request, Refusal)` and the type `Refusal` (`RefusedTokenType`, `RefusedTokenBinding`, `RefusedAnonymous`); the stage calls it for each endpoint refusal. `endpointRules` in `m1_convert.go` fills every field from the configuration |
+| `token.rejected` | the schema of `events_identity.go` accepts reason `endpoint_not_accepted` and the members `refusal` and `tokenType` |
+| `cluster.LimiterSet` | `NewLimiterShared(name, scope, rate, burst, share)`: a limiter whose fallback share divides by its own count (Q-ARCH-45); `NewLimiter` is it with a nil share |
+| `v1.Options` | `Endpoints EndpointServices` in a marker pair of the endpoints area; `app.startClient` passes `a.endpointServices()` |
+| rate-limit fields | `setRateLimitFields` adds `RateLimit-Policy` and `RateLimit` instead of setting them, so the endpoint class and the API class both appear |
+| `app.App` | `Authorizer()` returns the decision point, for content routes outside `internal/app` and the integration tests |
+| `m1Wiring` | `exposureCeiling`, `exposure`, `endpointLimits` in the endpoints marker; `wireAuthz` passes `Ceiling: a.exposureCeiling()` |
+| error codes | `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached` |

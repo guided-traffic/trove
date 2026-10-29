@@ -467,7 +467,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 // "customers".
 type stubCeiling struct{}
 
-func (stubCeiling) Admits(c Coordinate, a Action) CeilingVerdict {
+func (stubCeiling) Admits(_ *Index, c Coordinate, a Action) CeilingVerdict {
 	if c.Endpoint != "customers" {
 		return CeilingAdmits
 	}

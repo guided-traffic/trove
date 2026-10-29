@@ -47,7 +47,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [observability.md](observability.md) | Logs, metrics, traces, health and the ops listener |
 | [secrets.md](secrets.md) | The stored-secret key ring and the envelope of sealed columns |
 | [tls.md](tls.md) | TLS material on every listener and client: loading, reloading, rotating, testing |
-| [endpoints.md](endpoints.md) | Endpoints: listeners, identity, hosts, surfaces, TLS per endpoint, the chart rendering |
+| [endpoints.md](endpoints.md) | Endpoints: listeners, identity, hosts, surfaces, TLS per endpoint, the chart rendering, accepted credentials, exposure rules and their ceiling, the endpoint rate-limit class, the endpoint API |
 | [http-api.md](http-api.md) | Listeners, the middleware chain, the system API and the problem format |
 | [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |

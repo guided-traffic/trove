@@ -2951,7 +2951,7 @@ R-OPS-015 deduplicates `authz.denied` per replica, principal, action, repository
 
 **Choice:** (b), at most 10,000 open keys per replica (past that a refusal is written without being collapsed). The window is `audit.denial_dedup_window`; zero turns it off. An anonymous refusal is keyed by repository and path, because the client address is not part of the subject.
 
-**Rationale:** Nothing in the audit contract says the recorder deduplicates, and R-AUTHZ-029 puts the obligation on authorization. The development agent would revisit this when the audit area exposes a deduplicating recorder: the producer then passes the key and deletes its own state. The two gaps that follow are [H-101](../security/permissions.md#h-101--anonymous-denials-are-deduplicated-by-repository-and-path-not-by-client-address) and the missing `repeat_of`. **Superseded by [Q-AUTHZ-24](#q-authz-24--the-denial-deduplication-lives-in-the-audit-writer-only):** the audit writer deduplicates alone, and both gaps are closed.
+**Rationale:** Nothing in the audit contract says the recorder deduplicates, and R-AUTHZ-029 puts the obligation on authorization. The development agent would revisit this when the audit area exposes a deduplicating recorder: the producer then passes the key and deletes its own state. The two gaps that followed were H-101 (closed by Q-OPS-49) and the missing `repeat_of`. **Superseded by [Q-AUTHZ-24](#q-authz-24--the-denial-deduplication-lives-in-the-audit-writer-only):** the audit writer deduplicates alone, and both gaps are closed.
 
 **Applied in the spec:** none.
 

@@ -1317,6 +1317,152 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the endpoints
+         * @description The configured endpoints, the default endpoint first and the others by name, each with its
+         *     configuration as the file holds it after the defaults (R-EP-001) and its rule counts, read
+         *     from PostgreSQL. A name that is no longer configured but still has exposure rules follows
+         *     with `inert: true` and `configuration: null` (H-58): its rules can be read and deleted.
+         */
+        get: operations["listEndpoints"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/endpoints/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an endpoint
+         * @description One configured endpoint, or an inert name that still has exposure rules. Any other name
+         *     answers `404`.
+         */
+        get: operations["getEndpoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/endpoints/{endpoint}/exposure-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the exposure rules of an endpoint
+         * @description The rules of the endpoint, read from PostgreSQL, ordered by name (R-EP-016). `repository`
+         *     selects the rules of one repository, `package` the rules whose package patterns admit the
+         *     name (with the format's case rule), `enabled` the enabled or the disabled rules. Cursor
+         *     pagination as everywhere (R-API-010).
+         */
+        get: operations["listExposureRules"];
+        put?: never;
+        /**
+         * Create an exposure rule
+         * @description Stores a rule on a configured endpoint (R-EP-012). The rule takes effect on every replica
+         *     within the bound of R-AUTHZ-028; a request that sends the returned `Trove-Authz-Epoch` in
+         *     `Trove-Authz-Min-Epoch` sees it at once. Validation answers `422` with the code of the first
+         *     problem (`unknown_repository`, `invalid_pattern`, `invalid_version_range`,
+         *     `dimension_not_supported`, `format_not_exposable`) and every problem as a field error. A rule
+         *     on an endpoint in mode `all` is saved with the warning `endpoint_not_in_rules_mode`. At most
+         *     1,000 rules per endpoint (`409 exposure_rule_limit_reached`); an inert endpoint takes no new
+         *     rule (`409 endpoint_not_configured`). Audited as `endpoint.exposure.created`.
+         */
+        post: operations["createExposureRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/endpoints/{endpoint}/exposure-rules/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an exposure rule
+         * @description The rule with its `ETag`, the quoted `revision` (R-API-012); `If-None-Match` answers `304`.
+         */
+        get: operations["getExposureRule"];
+        /**
+         * Replace an exposure rule
+         * @description Replaces the rule as a whole; a body obtained by `GET` can be sent back, its read-only members
+         *     are ignored. `If-Match` is required (`428` without it, `412` with `currentEtag` for a stale
+         *     one). `name` and `repository` are immutable (`422`). Audited as `endpoint.exposure.updated`
+         *     with the states before and after, which the revocation journal carries (R-EP-020).
+         */
+        put: operations["replaceExposureRule"];
+        post?: never;
+        /**
+         * Delete an exposure rule
+         * @description Deletes the rule; `If-Match` is honoured when sent (`412` for a stale one). A rule of an inert
+         *     endpoint can be deleted. Audited as `endpoint.exposure.deleted`, which the revocation journal
+         *     carries (R-EP-020).
+         */
+        delete: operations["deleteExposureRule"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an exposure rule with a merge patch
+         * @description A JSON merge patch (RFC 7396) on the stored rule, with the rules of the replacement:
+         *     `If-Match` required, `name` and `repository` immutable, the whole result validated. The rule
+         *     editor sends `PUT`; the patch serves a toggle of `enabled` from the rule table (Q-EP-18).
+         */
+        patch: operations["patchExposureRule"];
+        trace?: never;
+    };
+    "/api/v1/endpoints/{endpoint}/check-exposure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check what an endpoint exposes
+         * @description A dry run for one repository (R-EP-016, R-EP-017): exposed or not, the admitting rule or the
+         *     reason, for the repository or a package, and for the `versions` and `paths` asked. Reasons:
+         *     `exposed`, `no_rule`, `rule_disabled`, `package_excluded`, `path_excluded`,
+         *     `version_excluded`, `out_of_range`, `prerelease`, `tag_excluded`. It reads the stored rules
+         *     from PostgreSQL, transfers no content and contacts no upstream. `rule` is a draft of the rule
+         *     editor that is evaluated in place of the stored rule of its name, or in addition, and is
+         *     validated like a write (Q-EP-18). Needs `endpoints:read` and `read` on the repository; a
+         *     repository the caller cannot read answers `404` like a missing one. Generic repositories are
+         *     checked through `paths`; formats with versions list a package's stored versions when
+         *     `versions` is absent.
+         */
+        post: operations["checkExposure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2542,6 +2688,192 @@ export interface components {
              * @description The epoch of the index that decided every check.
              */
             epoch: number;
+        };
+        EndpointList: {
+            items: components["schemas"]["Endpoint"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        Endpoint: {
+            name: string;
+            /** @description The name is not configured but still has exposure rules (H-58); they have no effect. */
+            inert: boolean;
+            /** Format: int64 */
+            ruleCount: number;
+            /** Format: int64 */
+            enabledRuleCount: number;
+            /** @description The endpoint as the configuration file sets it, defaults applied (R-EP-001); `null` for an inert name. */
+            configuration: components["schemas"]["EndpointConfiguration"] | null;
+        };
+        EndpointConfiguration: {
+            /** @description The default endpoint of `server.listen`. */
+            default: boolean;
+            /** @description The port of the listener; `null` when it is chosen at start-up (port 0). */
+            port: number | null;
+            baseUrl: string;
+            /** @description The exact hosts of the host set (R-EP-003). */
+            hosts: string[];
+            wildcardHost: string | null;
+            /** @description Host-root bindings, host to repository key (R-EP-006). */
+            hostRoots: {
+                [key: string]: string;
+            };
+            /** @enum {string} */
+            wildcardRoot: "none" | "label";
+            /** @description The web pool that serves the endpoint; `null` for the main web Deployment. */
+            pool: string | null;
+            surface: ("ui" | "api" | "ci_exchange" | "packages" | "files")[];
+            /** @description The credentials the endpoint accepts (R-EP-010). */
+            auth: {
+                tokenTypes: ("pat" | "sat" | "cit")[];
+                boundTokensOnly: boolean;
+                anonymous: boolean;
+            };
+            /** @enum {string} */
+            exposure: "all" | "rules";
+            cacheFill: boolean;
+            /** @description The endpoint's rate-limit class (R-EP-015); `null` for none. */
+            rateLimit: components["schemas"]["EndpointRateLimit"] | null;
+            /** @enum {string} */
+            replicaHeader: "authenticated" | "always" | "never";
+        };
+        EndpointRateLimit: {
+            class: string;
+            requestsPerSecond: number;
+            burst: number;
+            /** @enum {string} */
+            key: "principal" | "address";
+        };
+        /** @description Include and exclude globs of R-AUTHZ-005; an empty include list leaves the dimension unrestricted. */
+        ExposurePatterns: {
+            include?: string[];
+            exclude?: string[];
+        };
+        ExposureVersions: {
+            include?: string[];
+            exclude?: string[];
+            /** @description One range in the format's native syntax, validated by the format. */
+            range?: string | null;
+        };
+        /**
+         * @description An exposure rule (R-EP-012). The request type is the response type: the read-only members
+         *     (`endpoint`, `inert`, `warnings`, `revision`, the times and the actors) are accepted and
+         *     ignored on a write. `name` and `repository` are required on a create and immutable after it;
+         *     every other member has the default shown.
+         * @example {
+         *       "name": "acme-sdk",
+         *       "description": "SDK releases for customers",
+         *       "repository": "npm-customers",
+         *       "enabled": true,
+         *       "packages": {
+         *         "include": [
+         *           "@acme/sdk",
+         *           "@acme/sdk-*"
+         *         ],
+         *         "exclude": [
+         *           "@acme/sdk-internal"
+         *         ]
+         *       },
+         *       "paths": {
+         *         "include": [],
+         *         "exclude": []
+         *       },
+         *       "versions": {
+         *         "include": [],
+         *         "exclude": [
+         *           "2.0.1"
+         *         ],
+         *         "range": ">=2.0.0"
+         *       },
+         *       "prereleases": false,
+         *       "distTags": {
+         *         "include": [
+         *           "latest",
+         *           "lts"
+         *         ],
+         *         "exclude": []
+         *       }
+         *     }
+         */
+        ExposureRule: {
+            name: string;
+            /** @default  */
+            description: string;
+            /** @description The key of the repository the rule exposes; the rule is stored by the repository's ID (Q-EP-8). */
+            repository: string;
+            /** @default true */
+            enabled: boolean;
+            packages?: components["schemas"]["ExposurePatterns"];
+            paths?: components["schemas"]["ExposurePatterns"];
+            versions?: components["schemas"]["ExposureVersions"];
+            /** @default false */
+            prereleases: boolean;
+            distTags?: components["schemas"]["ExposurePatterns"];
+            readonly endpoint?: string;
+            /** @description The endpoint is not configured; the rule has no effect (H-58). */
+            readonly inert?: boolean;
+            /** @description `path_patterns_on_package_format`, `endpoint_not_in_rules_mode`. */
+            readonly warnings?: string[];
+            /** Format: int64 */
+            readonly revision?: number;
+            /** Format: date-time */
+            readonly createdAt?: string;
+            readonly createdBy?: string | null;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+            readonly updatedBy?: string | null;
+        };
+        ExposureRuleList: {
+            items: components["schemas"]["ExposureRule"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        ExposureCheckRequest: {
+            repository: string;
+            /** @description The package to check; absent checks the repository. */
+            package?: string;
+            /** @description Versions of the package; for a format with versions an absent list means the stored versions. */
+            versions?: string[];
+            /** @description Paths to check, the dimension of generic repositories. */
+            paths?: string[];
+            rule?: components["schemas"]["ExposureRule"];
+        };
+        ExposureCheckVersion: {
+            version: string;
+            exposed: boolean;
+            /** @description The rule that exposes the version. */
+            rule: string | null;
+            reason: string;
+        };
+        ExposureCheckPath: {
+            path: string;
+            exposed: boolean;
+            /** @description The rule that exposes the path. */
+            rule: string | null;
+            reason: string;
+        };
+        ExposureCheckTag: {
+            tag: string;
+            version: string;
+            visible: boolean;
+        };
+        ExposureCheck: {
+            endpoint: string;
+            repository: string;
+            /** @enum {string} */
+            mode: "all" | "rules";
+            package: string | null;
+            /** @description The verdict on the package, or on the repository when the check names no package. */
+            packageExposed: boolean;
+            rule: string | null;
+            reason: string;
+            versions: components["schemas"]["ExposureCheckVersion"][];
+            paths: components["schemas"]["ExposureCheckPath"][];
+            /** @description The tags of the package and whether they are visible; formats with tags only. */
+            distTags: components["schemas"]["ExposureCheckTag"][];
+            /** @description SHA-256 over the mode and the ID, revision and state of every stored rule of the endpoint for the repository (R-EP-018). */
+            exposureFingerprint: string;
+            warnings: string[];
         };
     };
     responses: {
@@ -5481,6 +5813,514 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listEndpoints: {
+        parameters: {
+            query?: {
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of endpoints. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "name": "default",
+                     *           "inert": false,
+                     *           "ruleCount": 0,
+                     *           "enabledRuleCount": 0,
+                     *           "configuration": {
+                     *             "default": true,
+                     *             "port": 8080,
+                     *             "baseUrl": "https://trove.example.com",
+                     *             "hosts": [
+                     *               "trove.example.com"
+                     *             ],
+                     *             "wildcardHost": null,
+                     *             "hostRoots": {},
+                     *             "wildcardRoot": "none",
+                     *             "pool": null,
+                     *             "surface": [
+                     *               "ui",
+                     *               "api",
+                     *               "ci_exchange",
+                     *               "packages",
+                     *               "files"
+                     *             ],
+                     *             "auth": {
+                     *               "tokenTypes": [
+                     *                 "pat",
+                     *                 "sat",
+                     *                 "cit"
+                     *               ],
+                     *               "boundTokensOnly": false,
+                     *               "anonymous": true
+                     *             },
+                     *             "exposure": "all",
+                     *             "cacheFill": true,
+                     *             "rateLimit": null,
+                     *             "replicaHeader": "authenticated"
+                     *           }
+                     *         },
+                     *         {
+                     *           "name": "customers",
+                     *           "inert": false,
+                     *           "ruleCount": 2,
+                     *           "enabledRuleCount": 2,
+                     *           "configuration": {
+                     *             "default": false,
+                     *             "port": 8443,
+                     *             "baseUrl": "https://packages.example.com",
+                     *             "hosts": [
+                     *               "packages.example.com"
+                     *             ],
+                     *             "wildcardHost": null,
+                     *             "hostRoots": {},
+                     *             "wildcardRoot": "none",
+                     *             "pool": "ep-customers",
+                     *             "surface": [
+                     *               "packages"
+                     *             ],
+                     *             "auth": {
+                     *               "tokenTypes": [
+                     *                 "sat"
+                     *               ],
+                     *               "boundTokensOnly": true,
+                     *               "anonymous": false
+                     *             },
+                     *             "exposure": "rules",
+                     *             "cacheFill": false,
+                     *             "rateLimit": {
+                     *               "class": "external",
+                     *               "requestsPerSecond": 50,
+                     *               "burst": 200,
+                     *               "key": "principal"
+                     *             },
+                     *             "replicaHeader": "never"
+                     *           }
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EndpointList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getEndpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The endpoint. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Endpoint"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listExposureRules: {
+        parameters: {
+            query?: {
+                /** @description A repository key. */
+                repository?: string;
+                /** @description A package name the rules' package patterns must admit. */
+                package?: string;
+                enabled?: "true" | "false";
+                /** @description `name` (default) or `-name`. */
+                sort?: "name" | "-name";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of rules. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureRuleList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createExposureRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "releases",
+                 *       "description": "Released files for customers",
+                 *       "repository": "generic-local",
+                 *       "enabled": true,
+                 *       "packages": {
+                 *         "include": [],
+                 *         "exclude": []
+                 *       },
+                 *       "paths": {
+                 *         "include": [
+                 *           "releases/**"
+                 *         ],
+                 *         "exclude": []
+                 *       },
+                 *       "versions": {
+                 *         "include": [],
+                 *         "exclude": [],
+                 *         "range": null
+                 *       },
+                 *       "prereleases": false,
+                 *       "distTags": {
+                 *         "include": [],
+                 *         "exclude": []
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ExposureRule"];
+            };
+        };
+        responses: {
+            /** @description The rule is stored. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica. */
+                    "Trove-Authz-Epoch"?: string;
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureRule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getExposureRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+                /** @description The name of the rule on its endpoint. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rule. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureRule"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replaceExposureRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`. */
+                "If-Match"?: string;
+            };
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+                /** @description The name of the rule on its endpoint. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExposureRule"];
+            };
+        };
+        responses: {
+            /** @description The rule as stored. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica. */
+                    "Trove-Authz-Epoch"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureRule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteExposureRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`. */
+                "If-Match"?: string;
+            };
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+                /** @description The name of the rule on its endpoint. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rule is deleted. */
+            204: {
+                headers: {
+                    /** @description The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica. */
+                    "Trove-Authz-Epoch"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    patchExposureRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`. */
+                "If-Match"?: string;
+            };
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+                /** @description The name of the rule on its endpoint. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "enabled": false
+                 *     }
+                 */
+                "application/merge-patch+json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The rule as stored. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica. */
+                    "Trove-Authz-Epoch"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureRule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    checkExposure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An endpoint name, `default` for the default endpoint. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "repository": "generic-local",
+                 *       "paths": [
+                 *         "releases/1.0/app.zip",
+                 *         "internal/x.bin"
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["ExposureCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description The verdicts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "endpoint": "customers",
+                     *       "repository": "generic-local",
+                     *       "mode": "rules",
+                     *       "package": null,
+                     *       "packageExposed": true,
+                     *       "rule": "releases",
+                     *       "reason": "exposed",
+                     *       "versions": [],
+                     *       "paths": [
+                     *         {
+                     *           "path": "releases/1.0/app.zip",
+                     *           "exposed": true,
+                     *           "rule": "releases",
+                     *           "reason": "exposed"
+                     *         },
+                     *         {
+                     *           "path": "internal/x.bin",
+                     *           "exposed": false,
+                     *           "rule": null,
+                     *           "reason": "path_excluded"
+                     *         }
+                     *       ],
+                     *       "distTags": [],
+                     *       "exposureFingerprint": "sha256:5b1e0c39d4c1a7e0b9f2d6a8c3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+                     *       "warnings": []
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ExposureCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];

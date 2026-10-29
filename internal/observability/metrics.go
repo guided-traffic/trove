@@ -76,6 +76,7 @@ type Metrics struct {
 	epListenerUp  *prometheus.GaugeVec
 	epMisdirected *prometheus.CounterVec
 	epFwdIgnored  *prometheus.CounterVec
+	epRefused     *prometheus.CounterVec
 }
 
 // NewMetrics builds the registry with the Go runtime and process collectors and
@@ -110,6 +111,8 @@ func NewMetrics(role string, opts ...MetricsOption) *Metrics {
 	m.epListenerUp = m.NewGaugeVec("trove_endpoint_listener_up", "1 while this replica's listener of the endpoint accepts connections.", "endpoint")
 	m.epMisdirected = m.NewCounterVec("trove_endpoint_misdirected_total", "421 Misdirected Request answers of the host check.", "endpoint")
 	m.epFwdIgnored = m.NewCounterVec("trove_endpoint_forwarded_host_ignored_total", "Forwarded hosts outside the endpoint's host set.", "endpoint")
+	m.epRefused = m.NewCounterVec("trove_endpoint_credentials_refused_total",
+		"Requests the endpoint's credential rules refused, by reason (token_type, token_binding, anonymous).", "endpoint", "reason")
 	m.recvBytes = m.NewCounterVec("trove_http_received_bytes_total", "Request body bytes.", "handler")
 	m.sentBytes = m.NewCounterVec("trove_http_sent_bytes_total", "Response body bytes.", "handler")
 	m.cut = m.NewCounterVec("trove_http_transfers_cut_total", "Transfers cut at the shutdown deadline.", "direction")
@@ -309,6 +312,21 @@ func (m *Metrics) EndpointForwardedHostIgnored(endpoint string) {
 	m.epFwdIgnored.WithLabelValues(m.endpointLabel(endpoint)).Inc()
 }
 
+// credentialRefusals are the values of the reason label of
+// trove_endpoint_credentials_refused_total (R-EP-009).
+func credentialRefusals() []string { return []string{"token_type", "token_binding", "anonymous"} }
+
+// EndpointCredentialsRefused counts a request the endpoint's credential rules
+// refused (R-EP-010); a reason outside the closed list is not counted.
+func (m *Metrics) EndpointCredentialsRefused(endpoint, reason string) {
+	for _, r := range credentialRefusals() {
+		if r == reason {
+			m.epRefused.WithLabelValues(m.endpointLabel(endpoint), reason).Inc()
+			return
+		}
+	}
+}
+
 // ExportEndpoints creates the per-endpoint series at 0, so a scrape sees them
 // before the first event.
 func (m *Metrics) ExportEndpoints() {
@@ -316,6 +334,9 @@ func (m *Metrics) ExportEndpoints() {
 		m.epListenerUp.WithLabelValues(n)
 		m.epMisdirected.WithLabelValues(n)
 		m.epFwdIgnored.WithLabelValues(n)
+		for _, r := range credentialRefusals() {
+			m.epRefused.WithLabelValues(n, r)
+		}
 	}
 }
 

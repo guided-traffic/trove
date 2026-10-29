@@ -42,6 +42,9 @@ type Snapshot struct {
 	Entries      []q.AuthzBuildEntriesRow
 	Bindings     []q.AuthzBuildBindingsRow
 	Repositories []q.AuthzBuildRepositoriesRow
+	// Exposure are the endpoint exposure rules of the active repositories
+	// (endpoints.md R-EP-012), read in the same snapshot.
+	Exposure []q.EndpointsExposureBuildRow
 }
 
 // repoInfo is a repository as the index knows it.
@@ -83,6 +86,8 @@ type Index struct {
 	bindings map[string]roleSet
 	// ci maps the name of a CI identity mapping principal to its ID.
 	ci map[string]string
+	// exposure maps an endpoint name to its compiled exposure rules (R-EP-013).
+	exposure map[string]*endpointExposure
 	// policies and entries count what went in, for metrics and diagnostics.
 	policies int
 }
@@ -154,6 +159,7 @@ func BuildIndex(s *Snapshot, log *slog.Logger) *Index {
 		matchCache: map[string][]*repoInfo{},
 	}
 	b.addRepositories(s.Repositories)
+	b.x.exposure = buildExposure(s.Exposure, b.byID, log)
 	for _, r := range s.Bindings {
 		b.x.bindings[r.PrincipalID] |= Role(r.Role).bit()
 	}

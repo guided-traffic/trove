@@ -177,6 +177,7 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 		return reject("malformed")
 	}
 	if len(ep.TokenTypes) > 0 && !slices.Contains(ep.TokenTypes, typ) {
+		ep.refused(r, Refusal{Reason: RefusedTokenType, TokenType: typ})
 		return reject("type_not_accepted") // refused without a database lookup (R-EP-010)
 	}
 	info, err := s.validate(ctx, r, raw)
@@ -184,9 +185,11 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 		return s.mapTokenErr(r, method, err)
 	}
 	if len(info.Scope.Endpoints) > 0 && !slices.Contains(info.Scope.Endpoints, ep.Name) {
+		ep.refused(r, Refusal{Reason: RefusedTokenBinding, TokenType: typ, TokenID: info.ID})
 		return reject("bound_elsewhere")
 	}
 	if ep.BoundTokensOnly && len(info.Scope.Endpoints) == 0 {
+		ep.refused(r, Refusal{Reason: RefusedTokenBinding, TokenType: typ, TokenID: info.ID})
 		return reject("unbound")
 	}
 	groups, err := s.groups(ctx, info.Owner.ID)
@@ -325,6 +328,7 @@ func (s *Stage) bySession(r *http.Request, cookie string) (Result, error) {
 // from the answer about which routes the endpoint serves (R-EP-005).
 func (s *Stage) noCredential(ctx context.Context, r *http.Request, ep EndpointRules) (Result, error) {
 	if !ep.Anonymous {
+		ep.refused(r, Refusal{Reason: RefusedAnonymous})
 		return s.fail(MethodNone, "no_credential", unauthenticated(r, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
 	}
 	if alwaysOpen(r) || (ep.PublicRoute != nil && ep.PublicRoute(r)) {

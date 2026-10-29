@@ -64,6 +64,39 @@ type EndpointRules struct {
 	// anonymous switches say, because the operation's own declaration decides
 	// (R-AUTH-037 "Always unauthenticated", R-API-008). Nil: none is.
 	PublicRoute func(*http.Request) bool
+	// Refused, when set, is told of every request the endpoint's rules refused
+	// (R-EP-010): a token type the endpoint does not accept, a token bound
+	// elsewhere or an unbound token where only bound ones are accepted, and a
+	// request without a credential on an endpoint without anonymous access. The
+	// composition root counts it in trove_endpoint_credentials_refused_total and
+	// records token.rejected with reason endpoint_not_accepted (R-EP-009). The
+	// answer is the 401 of an unknown token or of a missing credential either way.
+	Refused func(r *http.Request, f Refusal)
+}
+
+// The reasons of an endpoint's refusal, the values of the reason label of
+// trove_endpoint_credentials_refused_total (R-EP-009).
+const (
+	RefusedTokenType    = "token_type"
+	RefusedTokenBinding = "token_binding"
+	RefusedAnonymous    = "anonymous"
+)
+
+// Refusal is a request the endpoint's credential rules refused (R-EP-010).
+type Refusal struct {
+	// Reason is one of the Refused* values.
+	Reason string
+	// TokenType is the type of a refused token; TokenID its ID when the refusal
+	// came after the lookup (a binding refusal). A type refusal makes no lookup,
+	// so it has no ID.
+	TokenType token.Type
+	TokenID   string
+}
+
+func (ep EndpointRules) refused(r *http.Request, f Refusal) {
+	if ep.Refused != nil {
+		ep.Refused(r, f)
+	}
 }
 
 // Authenticator is the authentication stage. An error it returns is an

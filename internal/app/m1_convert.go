@@ -3,23 +3,30 @@ package app
 import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
-// endpointRules turns an endpoint's facts into the rules the authentication
-// stage applies after it selected the credential (R-EP-010).
-//
-// WP1.9 (endpoints) replaces the body with the configured values of
-// auth.token_types, auth.bound_tokens_only, auth.anonymous and the surface;
-// until then it is the default endpoint's defaults (R-EP-010).
+// endpointRules turns an endpoint's configuration into the rules the
+// authentication stage applies after it selected the credential (R-EP-010):
+// sessions only where the surface holds ui, the accepted token types, whether
+// only tokens bound to the endpoint pass, and whether a request without a
+// credential may become anonymous. The defaults are those of R-EP-001: the
+// default endpoint accepts sessions, PATs, SATs and CI tokens, unbound, and
+// defers to R-AUTH-037; a further endpoint accepts only SATs bound to it and no
+// anonymous request (Q-EP-10). Configuration validation refuses an empty list
+// of token types, which the stage would read as no restriction.
 func endpointRules(rt *endpointRuntime) auth.EndpointRules {
+	types := make([]token.Type, 0, len(rt.cfg.TokenTypes))
+	for _, t := range rt.cfg.TokenTypes {
+		types = append(types, token.Type(t))
+	}
 	return auth.EndpointRules{
-		Name:           rt.cfg.Name,
-		AcceptsSession: true,
-		TokenTypes:     []token.Type{token.TypePAT, token.TypeSAT, token.TypeCIT},
-		// A further endpoint admits no anonymous request unless configured
-		// (R-EP-010 item 4, Q-EP-10); the rest of the rules arrive with WP1.9.
-		Anonymous: rt.cfg.Anonymous,
+		Name:            rt.cfg.Name,
+		AcceptsSession:  rt.cfg.Serves(config.SurfaceUI),
+		TokenTypes:      types,
+		BoundTokensOnly: rt.cfg.BoundTokensOnly,
+		Anonymous:       rt.cfg.Anonymous,
 	}
 }
 

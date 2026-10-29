@@ -101,11 +101,21 @@ type Coordinate struct {
 	// package name; both may be empty.
 	Path    string
 	Package string
+	// Version is the normalized version of a coordinate that names one version
+	// of a package (R-EP-012); empty for a package document, a path of a
+	// format without versions and a repository-level coordinate.
+	Version string
 	// Actions are the actions the operation needs, e.g. {Deploy, Overwrite}.
 	Actions []Action
 	// Endpoint is the name of the endpoint the request arrived on; it selects the
-	// exposure ceiling (R-EP-013).
+	// exposure ceiling (R-EP-013). The endpoint of the request context
+	// ([WithEndpoint]) replaces it, so a caller cannot decide a request of one
+	// endpoint under the ceiling of another.
 	Endpoint string
+	// Addressed is the repository the client named when Repository is a member
+	// that resolution consults (R-AUTHZ-015 WithRepo); empty means Repository.
+	// Exposure is decided on the addressed repository (Q-EP-11).
+	Addressed string
 }
 
 // Outcome is the class of a decision, one per row of R-AUTHZ-016's table.

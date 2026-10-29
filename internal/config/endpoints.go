@@ -508,6 +508,12 @@ func (s *Server) validateEndpointPolicy(r *Report, base string, ep Endpoint, e R
 			r.Add(base+".surface", "lists ui on a further endpoint: surface_not_supported; sign-in and the UI belong to the default endpoint (Q-EP-13)")
 		}
 	}
+	// An empty list is refused rather than read: the authentication stage takes an
+	// empty list of accepted types as no restriction, so "accept no token" must
+	// not silently become "accept every token" (R-EP-010).
+	if ep.Auth.TokenTypes != nil && len(ep.Auth.TokenTypes) == 0 {
+		r.Add(base+".auth.token_types", "is empty; list at least one of pat, sat, cit")
+	}
 	for _, t := range e.TokenTypes {
 		if t != "pat" && t != "sat" && t != "cit" {
 			r.Add(base+".auth.token_types", "%q is not a token type (pat, sat, cit)", t)

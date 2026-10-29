@@ -99,6 +99,147 @@ func (e EncryptionReplicaRole) Valid() bool {
 	}
 }
 
+// Defines values for EndpointConfigurationAuthTokenTypes.
+const (
+	EndpointConfigurationAuthTokenTypesCit EndpointConfigurationAuthTokenTypes = "cit"
+	EndpointConfigurationAuthTokenTypesPat EndpointConfigurationAuthTokenTypes = "pat"
+	EndpointConfigurationAuthTokenTypesSat EndpointConfigurationAuthTokenTypes = "sat"
+)
+
+// Valid indicates whether the value is a known member of the EndpointConfigurationAuthTokenTypes enum.
+func (e EndpointConfigurationAuthTokenTypes) Valid() bool {
+	switch e {
+	case EndpointConfigurationAuthTokenTypesCit:
+		return true
+	case EndpointConfigurationAuthTokenTypesPat:
+		return true
+	case EndpointConfigurationAuthTokenTypesSat:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointConfigurationExposure.
+const (
+	EndpointConfigurationExposureAll   EndpointConfigurationExposure = "all"
+	EndpointConfigurationExposureRules EndpointConfigurationExposure = "rules"
+)
+
+// Valid indicates whether the value is a known member of the EndpointConfigurationExposure enum.
+func (e EndpointConfigurationExposure) Valid() bool {
+	switch e {
+	case EndpointConfigurationExposureAll:
+		return true
+	case EndpointConfigurationExposureRules:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointConfigurationReplicaHeader.
+const (
+	Always        EndpointConfigurationReplicaHeader = "always"
+	Authenticated EndpointConfigurationReplicaHeader = "authenticated"
+	Never         EndpointConfigurationReplicaHeader = "never"
+)
+
+// Valid indicates whether the value is a known member of the EndpointConfigurationReplicaHeader enum.
+func (e EndpointConfigurationReplicaHeader) Valid() bool {
+	switch e {
+	case Always:
+		return true
+	case Authenticated:
+		return true
+	case Never:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointConfigurationSurface.
+const (
+	Api        EndpointConfigurationSurface = "api"
+	CiExchange EndpointConfigurationSurface = "ci_exchange"
+	Files      EndpointConfigurationSurface = "files"
+	Packages   EndpointConfigurationSurface = "packages"
+	Ui         EndpointConfigurationSurface = "ui"
+)
+
+// Valid indicates whether the value is a known member of the EndpointConfigurationSurface enum.
+func (e EndpointConfigurationSurface) Valid() bool {
+	switch e {
+	case Api:
+		return true
+	case CiExchange:
+		return true
+	case Files:
+		return true
+	case Packages:
+		return true
+	case Ui:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointConfigurationWildcardRoot.
+const (
+	Label EndpointConfigurationWildcardRoot = "label"
+	None  EndpointConfigurationWildcardRoot = "none"
+)
+
+// Valid indicates whether the value is a known member of the EndpointConfigurationWildcardRoot enum.
+func (e EndpointConfigurationWildcardRoot) Valid() bool {
+	switch e {
+	case Label:
+		return true
+	case None:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointRateLimitKey.
+const (
+	Address   EndpointRateLimitKey = "address"
+	Principal EndpointRateLimitKey = "principal"
+)
+
+// Valid indicates whether the value is a known member of the EndpointRateLimitKey enum.
+func (e EndpointRateLimitKey) Valid() bool {
+	switch e {
+	case Address:
+		return true
+	case Principal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExposureCheckMode.
+const (
+	ExposureCheckModeAll   ExposureCheckMode = "all"
+	ExposureCheckModeRules ExposureCheckMode = "rules"
+)
+
+// Valid indicates whether the value is a known member of the ExposureCheckMode enum.
+func (e ExposureCheckMode) Valid() bool {
+	switch e {
+	case ExposureCheckModeAll:
+		return true
+	case ExposureCheckModeRules:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupOrigin.
 const (
 	GroupOriginAdmin GroupOrigin = "admin"
@@ -669,6 +810,42 @@ func (e ExportAuditEventsParamsFormat) Valid() bool {
 	}
 }
 
+// Defines values for ListExposureRulesParamsEnabled.
+const (
+	False ListExposureRulesParamsEnabled = "false"
+	True  ListExposureRulesParamsEnabled = "true"
+)
+
+// Valid indicates whether the value is a known member of the ListExposureRulesParamsEnabled enum.
+func (e ListExposureRulesParamsEnabled) Valid() bool {
+	switch e {
+	case False:
+		return true
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListExposureRulesParamsSort.
+const (
+	ListExposureRulesParamsSortMinusName ListExposureRulesParamsSort = "-name"
+	ListExposureRulesParamsSortName      ListExposureRulesParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListExposureRulesParamsSort enum.
+func (e ListExposureRulesParamsSort) Valid() bool {
+	switch e {
+	case ListExposureRulesParamsSortMinusName:
+		return true
+	case ListExposureRulesParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListGroupsParamsOrigin.
 const (
 	ListGroupsParamsOriginAdmin ListGroupsParamsOrigin = "admin"
@@ -1093,6 +1270,216 @@ type EncryptionStatus struct {
 
 	// RingsCompatible Every live replica's ring holds every key ID that is active on any live replica or referenced by a sealed value.
 	RingsCompatible bool `json:"ringsCompatible"`
+}
+
+// Endpoint defines model for Endpoint.
+type Endpoint struct {
+	// Configuration The endpoint as the configuration file sets it, defaults applied (R-EP-001); `null` for an inert name.
+	Configuration    *EndpointConfiguration `json:"configuration"`
+	EnabledRuleCount int64                  `json:"enabledRuleCount"`
+
+	// Inert The name is not configured but still has exposure rules (H-58); they have no effect.
+	Inert     bool   `json:"inert"`
+	Name      string `json:"name"`
+	RuleCount int64  `json:"ruleCount"`
+}
+
+// EndpointConfiguration defines model for EndpointConfiguration.
+type EndpointConfiguration struct {
+	// Auth The credentials the endpoint accepts (R-EP-010).
+	Auth struct {
+		Anonymous       bool                                  `json:"anonymous"`
+		BoundTokensOnly bool                                  `json:"boundTokensOnly"`
+		TokenTypes      []EndpointConfigurationAuthTokenTypes `json:"tokenTypes"`
+	} `json:"auth"`
+	BaseUrl   string `json:"baseUrl"`
+	CacheFill bool   `json:"cacheFill"`
+
+	// Default The default endpoint of `server.listen`.
+	Default  bool                          `json:"default"`
+	Exposure EndpointConfigurationExposure `json:"exposure"`
+
+	// HostRoots Host-root bindings, host to repository key (R-EP-006).
+	HostRoots map[string]string `json:"hostRoots"`
+
+	// Hosts The exact hosts of the host set (R-EP-003).
+	Hosts []string `json:"hosts"`
+
+	// Pool The web pool that serves the endpoint; `null` for the main web Deployment.
+	Pool *string `json:"pool"`
+
+	// Port The port of the listener; `null` when it is chosen at start-up (port 0).
+	Port *int `json:"port"`
+
+	// RateLimit The endpoint's rate-limit class (R-EP-015); `null` for none.
+	RateLimit     *EndpointRateLimit                 `json:"rateLimit"`
+	ReplicaHeader EndpointConfigurationReplicaHeader `json:"replicaHeader"`
+	Surface       []EndpointConfigurationSurface     `json:"surface"`
+	WildcardHost  *string                            `json:"wildcardHost"`
+	WildcardRoot  EndpointConfigurationWildcardRoot  `json:"wildcardRoot"`
+}
+
+// EndpointConfigurationAuthTokenTypes defines model for EndpointConfiguration.Auth.TokenTypes.
+type EndpointConfigurationAuthTokenTypes string
+
+// EndpointConfigurationExposure defines model for EndpointConfiguration.Exposure.
+type EndpointConfigurationExposure string
+
+// EndpointConfigurationReplicaHeader defines model for EndpointConfiguration.ReplicaHeader.
+type EndpointConfigurationReplicaHeader string
+
+// EndpointConfigurationSurface defines model for EndpointConfiguration.Surface.
+type EndpointConfigurationSurface string
+
+// EndpointConfigurationWildcardRoot defines model for EndpointConfiguration.WildcardRoot.
+type EndpointConfigurationWildcardRoot string
+
+// EndpointList defines model for EndpointList.
+type EndpointList struct {
+	Items []Endpoint `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// EndpointRateLimit defines model for EndpointRateLimit.
+type EndpointRateLimit struct {
+	Burst             int                  `json:"burst"`
+	Class             string               `json:"class"`
+	Key               EndpointRateLimitKey `json:"key"`
+	RequestsPerSecond float32              `json:"requestsPerSecond"`
+}
+
+// EndpointRateLimitKey defines model for EndpointRateLimit.Key.
+type EndpointRateLimitKey string
+
+// ExposureCheck defines model for ExposureCheck.
+type ExposureCheck struct {
+	// DistTags The tags of the package and whether they are visible; formats with tags only.
+	DistTags []ExposureCheckTag `json:"distTags"`
+	Endpoint string             `json:"endpoint"`
+
+	// ExposureFingerprint SHA-256 over the mode and the ID, revision and state of every stored rule of the endpoint for the repository (R-EP-018).
+	ExposureFingerprint string            `json:"exposureFingerprint"`
+	Mode                ExposureCheckMode `json:"mode"`
+	Package             *string           `json:"package"`
+
+	// PackageExposed The verdict on the package, or on the repository when the check names no package.
+	PackageExposed bool                   `json:"packageExposed"`
+	Paths          []ExposureCheckPath    `json:"paths"`
+	Reason         string                 `json:"reason"`
+	Repository     string                 `json:"repository"`
+	Rule           *string                `json:"rule"`
+	Versions       []ExposureCheckVersion `json:"versions"`
+	Warnings       []string               `json:"warnings"`
+}
+
+// ExposureCheckMode defines model for ExposureCheck.Mode.
+type ExposureCheckMode string
+
+// ExposureCheckPath defines model for ExposureCheckPath.
+type ExposureCheckPath struct {
+	Exposed bool   `json:"exposed"`
+	Path    string `json:"path"`
+	Reason  string `json:"reason"`
+
+	// Rule The rule that exposes the path.
+	Rule *string `json:"rule"`
+}
+
+// ExposureCheckRequest defines model for ExposureCheckRequest.
+type ExposureCheckRequest struct {
+	// Package The package to check; absent checks the repository.
+	Package *string `json:"package,omitempty"`
+
+	// Paths Paths to check, the dimension of generic repositories.
+	Paths      *[]string `json:"paths,omitempty"`
+	Repository string    `json:"repository"`
+
+	// Rule An exposure rule (R-EP-012). The request type is the response type: the read-only members
+	// (`endpoint`, `inert`, `warnings`, `revision`, the times and the actors) are accepted and
+	// ignored on a write. `name` and `repository` are required on a create and immutable after it;
+	// every other member has the default shown.
+	Rule *ExposureRule `json:"rule,omitempty"`
+
+	// Versions Versions of the package; for a format with versions an absent list means the stored versions.
+	Versions *[]string `json:"versions,omitempty"`
+}
+
+// ExposureCheckTag defines model for ExposureCheckTag.
+type ExposureCheckTag struct {
+	Tag     string `json:"tag"`
+	Version string `json:"version"`
+	Visible bool   `json:"visible"`
+}
+
+// ExposureCheckVersion defines model for ExposureCheckVersion.
+type ExposureCheckVersion struct {
+	Exposed bool   `json:"exposed"`
+	Reason  string `json:"reason"`
+
+	// Rule The rule that exposes the version.
+	Rule    *string `json:"rule"`
+	Version string  `json:"version"`
+}
+
+// ExposurePatterns Include and exclude globs of R-AUTHZ-005; an empty include list leaves the dimension unrestricted.
+type ExposurePatterns struct {
+	Exclude *[]string `json:"exclude,omitempty"`
+	Include *[]string `json:"include,omitempty"`
+}
+
+// ExposureRule An exposure rule (R-EP-012). The request type is the response type: the read-only members
+// (`endpoint`, `inert`, `warnings`, `revision`, the times and the actors) are accepted and
+// ignored on a write. `name` and `repository` are required on a create and immutable after it;
+// every other member has the default shown.
+type ExposureRule struct {
+	CreatedAt   *time.Time `json:"createdAt,omitempty"`
+	CreatedBy   *string    `json:"createdBy,omitempty"`
+	Description *string    `json:"description,omitempty"`
+
+	// DistTags Include and exclude globs of R-AUTHZ-005; an empty include list leaves the dimension unrestricted.
+	DistTags *ExposurePatterns `json:"distTags,omitempty"`
+	Enabled  *bool             `json:"enabled,omitempty"`
+	Endpoint *string           `json:"endpoint,omitempty"`
+
+	// Inert The endpoint is not configured; the rule has no effect (H-58).
+	Inert *bool  `json:"inert,omitempty"`
+	Name  string `json:"name"`
+
+	// Packages Include and exclude globs of R-AUTHZ-005; an empty include list leaves the dimension unrestricted.
+	Packages *ExposurePatterns `json:"packages,omitempty"`
+
+	// Paths Include and exclude globs of R-AUTHZ-005; an empty include list leaves the dimension unrestricted.
+	Paths       *ExposurePatterns `json:"paths,omitempty"`
+	Prereleases *bool             `json:"prereleases,omitempty"`
+
+	// Repository The key of the repository the rule exposes; the rule is stored by the repository's ID (Q-EP-8).
+	Repository string            `json:"repository"`
+	Revision   *int64            `json:"revision,omitempty"`
+	UpdatedAt  *time.Time        `json:"updatedAt,omitempty"`
+	UpdatedBy  *string           `json:"updatedBy,omitempty"`
+	Versions   *ExposureVersions `json:"versions,omitempty"`
+
+	// Warnings `path_patterns_on_package_format`, `endpoint_not_in_rules_mode`.
+	Warnings *[]string `json:"warnings,omitempty"`
+}
+
+// ExposureRuleList defines model for ExposureRuleList.
+type ExposureRuleList struct {
+	Items []ExposureRule `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// ExposureVersions defines model for ExposureVersions.
+type ExposureVersions struct {
+	Exclude *[]string `json:"exclude,omitempty"`
+	Include *[]string `json:"include,omitempty"`
+
+	// Range One range in the format's native syntax, validated by the format.
+	Range *string `json:"range,omitempty"`
 }
 
 // FieldError defines model for FieldError.
@@ -2193,6 +2580,73 @@ type ExportAuditEventsParams struct {
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
 type ExportAuditEventsParamsFormat string
 
+// ListEndpointsParams defines parameters for ListEndpoints.
+type ListEndpointsParams struct {
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListExposureRulesParams defines parameters for ListExposureRules.
+type ListExposureRulesParams struct {
+	// Repository A repository key.
+	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Package A package name the rules' package patterns must admit.
+	Package *string                         `form:"package,omitempty" json:"package,omitempty"`
+	Enabled *ListExposureRulesParamsEnabled `form:"enabled,omitempty" json:"enabled,omitempty"`
+
+	// Sort `name` (default) or `-name`.
+	Sort *ListExposureRulesParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListExposureRulesParamsEnabled defines parameters for ListExposureRules.
+type ListExposureRulesParamsEnabled string
+
+// ListExposureRulesParamsSort defines parameters for ListExposureRules.
+type ListExposureRulesParamsSort string
+
+// CreateExposureRuleParams defines parameters for CreateExposureRule.
+type CreateExposureRuleParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DeleteExposureRuleParams defines parameters for DeleteExposureRule.
+type DeleteExposureRuleParams struct {
+	// IfMatch The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
+	IfMatch *string `json:"If-Match,omitempty"`
+}
+
+// GetExposureRuleParams defines parameters for GetExposureRule.
+type GetExposureRuleParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
+// PatchExposureRuleApplicationMergePatchPlusJSONBody defines parameters for PatchExposureRule.
+type PatchExposureRuleApplicationMergePatchPlusJSONBody = map[string]interface{}
+
+// PatchExposureRuleParams defines parameters for PatchExposureRule.
+type PatchExposureRuleParams struct {
+	// IfMatch The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
+	IfMatch *string `json:"If-Match,omitempty"`
+}
+
+// ReplaceExposureRuleParams defines parameters for ReplaceExposureRule.
+type ReplaceExposureRuleParams struct {
+	// IfMatch The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
+	IfMatch *string `json:"If-Match,omitempty"`
+}
+
 // ListGroupsParams defines parameters for ListGroups.
 type ListGroupsParams struct {
 	// Q Case-insensitive substring of the name.
@@ -2469,6 +2923,18 @@ type CheckPermissionsJSONRequestBody = PermissionCheckRequest
 // ValidatePermissionPolicyJSONRequestBody defines body for ValidatePermissionPolicy for application/json ContentType.
 type ValidatePermissionPolicyJSONRequestBody = PermissionPolicyInput
 
+// CheckExposureJSONRequestBody defines body for CheckExposure for application/json ContentType.
+type CheckExposureJSONRequestBody = ExposureCheckRequest
+
+// CreateExposureRuleJSONRequestBody defines body for CreateExposureRule for application/json ContentType.
+type CreateExposureRuleJSONRequestBody = ExposureRule
+
+// PatchExposureRuleApplicationMergePatchPlusJSONRequestBody defines body for PatchExposureRule for application/merge-patch+json ContentType.
+type PatchExposureRuleApplicationMergePatchPlusJSONRequestBody = PatchExposureRuleApplicationMergePatchPlusJSONBody
+
+// ReplaceExposureRuleJSONRequestBody defines body for ReplaceExposureRule for application/json ContentType.
+type ReplaceExposureRuleJSONRequestBody = ExposureRule
+
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = NewGroup
 
@@ -2558,6 +3024,33 @@ type ServerInterface interface {
 	// ValidatePermissionPolicy Validate a permission policy without storing it
 	// (POST /api/v1/authz/validate-policy)
 	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
+	// ListEndpoints List the endpoints
+	// (GET /api/v1/endpoints)
+	ListEndpoints(w http.ResponseWriter, r *http.Request, params ListEndpointsParams)
+	// GetEndpoint Read an endpoint
+	// (GET /api/v1/endpoints/{endpoint})
+	GetEndpoint(w http.ResponseWriter, r *http.Request, endpoint string)
+	// CheckExposure Check what an endpoint exposes
+	// (POST /api/v1/endpoints/{endpoint}/check-exposure)
+	CheckExposure(w http.ResponseWriter, r *http.Request, endpoint string)
+	// ListExposureRules List the exposure rules of an endpoint
+	// (GET /api/v1/endpoints/{endpoint}/exposure-rules)
+	ListExposureRules(w http.ResponseWriter, r *http.Request, endpoint string, params ListExposureRulesParams)
+	// CreateExposureRule Create an exposure rule
+	// (POST /api/v1/endpoints/{endpoint}/exposure-rules)
+	CreateExposureRule(w http.ResponseWriter, r *http.Request, endpoint string, params CreateExposureRuleParams)
+	// DeleteExposureRule Delete an exposure rule
+	// (DELETE /api/v1/endpoints/{endpoint}/exposure-rules/{name})
+	DeleteExposureRule(w http.ResponseWriter, r *http.Request, endpoint string, name string, params DeleteExposureRuleParams)
+	// GetExposureRule Read an exposure rule
+	// (GET /api/v1/endpoints/{endpoint}/exposure-rules/{name})
+	GetExposureRule(w http.ResponseWriter, r *http.Request, endpoint string, name string, params GetExposureRuleParams)
+	// PatchExposureRule Change an exposure rule with a merge patch
+	// (PATCH /api/v1/endpoints/{endpoint}/exposure-rules/{name})
+	PatchExposureRule(w http.ResponseWriter, r *http.Request, endpoint string, name string, params PatchExposureRuleParams)
+	// ReplaceExposureRule Replace an exposure rule
+	// (PUT /api/v1/endpoints/{endpoint}/exposure-rules/{name})
+	ReplaceExposureRule(w http.ResponseWriter, r *http.Request, endpoint string, name string, params ReplaceExposureRuleParams)
 	// ListGroups List groups
 	// (GET /api/v1/groups)
 	ListGroups(w http.ResponseWriter, r *http.Request, params ListGroupsParams)
@@ -3202,6 +3695,497 @@ func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ValidatePermissionPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEndpoints operation middleware
+func (siw *ServerInterfaceWrapper) ListEndpoints(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListEndpointsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEndpoints(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetEndpoint operation middleware
+func (siw *ServerInterfaceWrapper) GetEndpoint(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEndpoint(w, r, endpoint)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CheckExposure operation middleware
+func (siw *ServerInterfaceWrapper) CheckExposure(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckExposure(w, r, endpoint)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListExposureRules operation middleware
+func (siw *ServerInterfaceWrapper) ListExposureRules(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListExposureRulesParams
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "package" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "enabled" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "enabled", r.URL.Query(), &params.Enabled, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "enabled"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "enabled", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListExposureRules(w, r, endpoint, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateExposureRule operation middleware
+func (siw *ServerInterfaceWrapper) CreateExposureRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateExposureRuleParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateExposureRule(w, r, endpoint, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteExposureRule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteExposureRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteExposureRuleParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteExposureRule(w, r, endpoint, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetExposureRule operation middleware
+func (siw *ServerInterfaceWrapper) GetExposureRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetExposureRuleParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetExposureRule(w, r, endpoint, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchExposureRule operation middleware
+func (siw *ServerInterfaceWrapper) PatchExposureRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PatchExposureRuleParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchExposureRule(w, r, endpoint, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceExposureRule operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceExposureRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "endpoint" -------------
+	var endpoint string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "endpoint", r.PathValue("endpoint"), &endpoint, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "endpoint", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceExposureRuleParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceExposureRule(w, r, endpoint, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5874,6 +6858,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/role-bindings/{role}/{principalRef}", wrapper.BindRole)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/authz/me", wrapper.GetAuthzMe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/authz/check", wrapper.CheckPermissions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints", wrapper.ListEndpoints)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}", wrapper.GetEndpoint)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules", wrapper.ListExposureRules)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules", wrapper.CreateExposureRule)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.DeleteExposureRule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.GetExposureRule)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.PatchExposureRule)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.ReplaceExposureRule)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/check-exposure", wrapper.CheckExposure)
 
 	return m
 }

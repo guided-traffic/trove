@@ -375,6 +375,7 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 files
 	//
 	// >>> M1 endpoints
+	a.wireEndpoints(ctx)
 	// <<< M1 endpoints
 	//
 	// >>> M1 api
@@ -461,6 +462,10 @@ func (a *App) startClient() error {
 			// >>> M1 authz
 			Authz: a.authzServices(),
 			// <<< M1 authz
+			// >>> M1 endpoints
+			// The endpoint and exposure-rule operations (R-EP-016, wire_exposure.go).
+			Endpoints: a.endpointServices(),
+			// <<< M1 endpoints
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

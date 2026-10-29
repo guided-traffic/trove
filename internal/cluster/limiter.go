@@ -153,6 +153,14 @@ var limiterNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)
 // duplicate name or a window above 12 hours, because each is a programming
 // error that start-up must surface.
 func (ls *LimiterSet) NewLimiter(name string, scope Scope, rate float64, burst int) *Limiter {
+	return ls.NewLimiterShared(name, scope, rate, burst, nil)
+}
+
+// NewLimiterShared is NewLimiter for a limiter whose fallback share divides by a
+// number of its own instead of the live replicas of the role: share returns the
+// live replicas that serve what the limiter guards, for example the replicas of
+// an endpoint's pool (R-EP-015). Values below 1 count as 1; nil is NewLimiter.
+func (ls *LimiterSet) NewLimiterShared(name string, scope Scope, rate float64, burst int, share func() int) *Limiter {
 	if !limiterNamePattern.MatchString(name) {
 		panic(fmt.Sprintf("cluster: invalid limiter name %q", name))
 	}
@@ -173,7 +181,7 @@ func (ls *LimiterSet) NewLimiter(name string, scope Scope, rate float64, burst i
 	w = w.Truncate(time.Millisecond)
 	l := &Limiter{
 		set: ls, name: name, keyName: strings.ReplaceAll(name, ".", "-"), scope: scope,
-		rate: rate, burst: burst, window: w, buckets: map[string]*bucket{},
+		rate: rate, burst: burst, window: w, buckets: map[string]*bucket{}, shareFn: share,
 	}
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
@@ -203,9 +211,20 @@ type Limiter struct {
 	window  time.Duration
 
 	inFallback atomic.Bool
+	// shareFn is the n of the fallback share when the limiter has its own
+	// (NewLimiterShared); nil means the set's.
+	shareFn func() int
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
+}
+
+// share returns the n the fallback divides the budget by, at least 1.
+func (l *Limiter) share() int {
+	if l.shareFn != nil {
+		return max(1, l.shareFn())
+	}
+	return l.set.share()
 }
 
 // bucket is the local state of one bucket key: a token bucket for Take, and
@@ -273,7 +292,7 @@ func (l *Limiter) Take(ctx context.Context, bucket string) Verdict {
 		l.set.store.degraded()
 	}
 	l.inFallback.Store(true)
-	return l.record(l.takeLocal(bucket, now, l.set.share(), ModeFallback))
+	return l.record(l.takeLocal(bucket, now, l.share(), ModeFallback))
 }
 
 // windowVerdict applies the sliding-window rule to the counters of a check
@@ -397,7 +416,7 @@ func (l *Limiter) Exceeded(ctx context.Context, bucket string) bool {
 	limit := l.burst
 	if l.scope == ScopeCluster {
 		l.inFallback.Store(true)
-		limit = max(1, l.burst/l.set.share())
+		limit = max(1, l.burst/l.share())
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

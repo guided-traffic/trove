@@ -49,6 +49,7 @@ func (a *App) wireAuthz(ctx context.Context) error {
 		EpochPollInterval: cfg.Cluster.EpochPollInterval,
 		RetryBudget:       cfg.Database.Retry.MaxElapsed,
 		AnonymousAccess:   a.m1.anonymousAccess,
+		Ceiling:           a.exposureCeiling(), // the endpoints area (R-EP-013, wire_exposure.go)
 		Recorder:          a.m1.recorder,
 		Replica:           a.id.Instance,
 		Log:               a.log.With("component", "authz"),

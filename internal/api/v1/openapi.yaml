@@ -67,6 +67,12 @@ tags:
   # <<< M1 files
   #
   # >>> M1 endpoints
+  - name: endpoints
+    description: |
+      The configured endpoints and the exposure rules that decide what an endpoint with
+      `exposure: rules` serves (R-EP-012 to R-EP-017). Endpoints are configuration-file data and
+      are read only here; exposure rules change at runtime and take effect on every replica within
+      the bound of the grant index.
   # <<< M1 endpoints
 security:
   - bearerAuth: []
@@ -3533,6 +3539,617 @@ paths:
   # <<< M1 files
   #
   # >>> M1 endpoints
+  /api/v1/endpoints:
+    get:
+      operationId: listEndpoints
+      tags: [endpoints]
+      summary: List the endpoints
+      description: |
+        The configured endpoints, the default endpoint first and the others by name, each with its
+        configuration as the file holds it after the defaults (R-EP-001) and its rule counts, read
+        from PostgreSQL. A name that is no longer configured but still has exposure rules follows
+        with `inert: true` and `configuration: null` (H-58): its rules can be read and deleted.
+      x-trove-permission:
+        permission: endpoints:read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of endpoints.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EndpointList"
+              example:
+                items:
+                  - name: default
+                    inert: false
+                    ruleCount: 0
+                    enabledRuleCount: 0
+                    configuration:
+                      default: true
+                      port: 8080
+                      baseUrl: https://trove.example.com
+                      hosts: [trove.example.com]
+                      wildcardHost: null
+                      hostRoots: {}
+                      wildcardRoot: none
+                      pool: null
+                      surface: [ui, api, ci_exchange, packages, files]
+                      auth: {tokenTypes: [pat, sat, cit], boundTokensOnly: false, anonymous: true}
+                      exposure: all
+                      cacheFill: true
+                      rateLimit: null
+                      replicaHeader: authenticated
+                  - name: customers
+                    inert: false
+                    ruleCount: 2
+                    enabledRuleCount: 2
+                    configuration:
+                      default: false
+                      port: 8443
+                      baseUrl: https://packages.example.com
+                      hosts: [packages.example.com]
+                      wildcardHost: null
+                      hostRoots: {}
+                      wildcardRoot: none
+                      pool: ep-customers
+                      surface: [packages]
+                      auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}
+                      exposure: rules
+                      cacheFill: false
+                      rateLimit: {class: external, requestsPerSecond: 50, burst: 200, key: principal}
+                      replicaHeader: never
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/endpoints/{endpoint}:
+    get:
+      operationId: getEndpoint
+      tags: [endpoints]
+      summary: Read an endpoint
+      description: |
+        One configured endpoint, or an inert name that still has exposure rules. Any other name
+        answers `404`.
+      x-trove-permission:
+        permission: endpoints:read
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+      responses:
+        "200":
+          description: The endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Endpoint"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/endpoints/{endpoint}/exposure-rules:
+    get:
+      operationId: listExposureRules
+      tags: [endpoints]
+      summary: List the exposure rules of an endpoint
+      description: |
+        The rules of the endpoint, read from PostgreSQL, ordered by name (R-EP-016). `repository`
+        selects the rules of one repository, `package` the rules whose package patterns admit the
+        name (with the format's case rule), `enabled` the enabled or the disabled rules. Cursor
+        pagination as everywhere (R-API-010).
+      x-trove-permission:
+        permission: endpoints:read
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - name: repository
+          in: query
+          description: A repository key.
+          schema:
+            type: string
+        - name: package
+          in: query
+          description: A package name the rules' package patterns must admit.
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: sort
+          in: query
+          description: "`name` (default) or `-name`."
+          schema:
+            type: string
+            enum: [name, "-name"]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of rules.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExposureRuleList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createExposureRule
+      tags: [endpoints]
+      summary: Create an exposure rule
+      description: |
+        Stores a rule on a configured endpoint (R-EP-012). The rule takes effect on every replica
+        within the bound of R-AUTHZ-028; a request that sends the returned `Trove-Authz-Epoch` in
+        `Trove-Authz-Min-Epoch` sees it at once. Validation answers `422` with the code of the first
+        problem (`unknown_repository`, `invalid_pattern`, `invalid_version_range`,
+        `dimension_not_supported`, `format_not_exposable`) and every problem as a field error. A rule
+        on an endpoint in mode `all` is saved with the warning `endpoint_not_in_rules_mode`. At most
+        1,000 rules per endpoint (`409 exposure_rule_limit_reached`); an inert endpoint takes no new
+        rule (`409 endpoint_not_configured`). Audited as `endpoint.exposure.created`.
+      x-trove-permission:
+        permission: endpoints:write
+      x-trove-recent-auth: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExposureRule"
+            example:
+              name: releases
+              description: Released files for customers
+              repository: generic-local
+              enabled: true
+              packages: {include: [], exclude: []}
+              paths: {include: ["releases/**"], exclude: []}
+              versions: {include: [], exclude: [], range: null}
+              prereleases: false
+              distTags: {include: [], exclude: []}
+      responses:
+        "201":
+          description: The rule is stored.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica.
+              schema:
+                type: string
+                pattern: "^[0-9]+$"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExposureRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/endpoints/{endpoint}/exposure-rules/{name}:
+    get:
+      operationId: getExposureRule
+      tags: [endpoints]
+      summary: Read an exposure rule
+      description: The rule with its `ETag`, the quoted `revision` (R-API-012); `If-None-Match` answers `304`.
+      x-trove-permission:
+        permission: endpoints:read
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - name: name
+          in: path
+          required: true
+          description: The name of the rule on its endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        - name: If-None-Match
+          in: header
+          description: An ETag the client holds; a match answers `304` (R-API-012).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The rule.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExposureRule"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: replaceExposureRule
+      tags: [endpoints]
+      summary: Replace an exposure rule
+      description: |
+        Replaces the rule as a whole; a body obtained by `GET` can be sent back, its read-only members
+        are ignored. `If-Match` is required (`428` without it, `412` with `currentEtag` for a stale
+        one). `name` and `repository` are immutable (`422`). Audited as `endpoint.exposure.updated`
+        with the states before and after, which the revocation journal carries (R-EP-020).
+      x-trove-permission:
+        permission: endpoints:write
+      x-trove-recent-auth: true
+      x-trove-if-match: required
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - name: name
+          in: path
+          required: true
+          description: The name of the rule on its endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        - name: If-Match
+          in: header
+          description: The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExposureRule"
+      responses:
+        "200":
+          description: The rule as stored.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica.
+              schema:
+                type: string
+                pattern: "^[0-9]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExposureRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: patchExposureRule
+      tags: [endpoints]
+      summary: Change an exposure rule with a merge patch
+      description: |
+        A JSON merge patch (RFC 7396) on the stored rule, with the rules of the replacement:
+        `If-Match` required, `name` and `repository` immutable, the whole result validated. The rule
+        editor sends `PUT`; the patch serves a toggle of `enabled` from the rule table (Q-EP-18).
+      x-trove-permission:
+        permission: endpoints:write
+      x-trove-recent-auth: true
+      x-trove-if-match: required
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - name: name
+          in: path
+          required: true
+          description: The name of the rule on its endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        - name: If-Match
+          in: header
+          description: The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              type: object
+            example:
+              enabled: false
+      responses:
+        "200":
+          description: The rule as stored.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica.
+              schema:
+                type: string
+                pattern: "^[0-9]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExposureRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteExposureRule
+      tags: [endpoints]
+      summary: Delete an exposure rule
+      description: |
+        Deletes the rule; `If-Match` is honoured when sent (`412` for a stale one). A rule of an inert
+        endpoint can be deleted. Audited as `endpoint.exposure.deleted`, which the revocation journal
+        carries (R-EP-020).
+      x-trove-permission:
+        permission: endpoints:write
+      x-trove-recent-auth: true
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - name: name
+          in: path
+          required: true
+          description: The name of the rule on its endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        - name: If-Match
+          in: header
+          description: The ETag loaded with the rule, or `*` to overwrite deliberately (R-API-012). Required on `PUT` and `PATCH` (`428` without it); honoured on `DELETE`.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The rule is deleted.
+          headers:
+            Trove-Authz-Epoch:
+              description: The authorization epoch of the write (R-AUTHZ-032); send it as `Trove-Authz-Min-Epoch` to read the change at once on any replica.
+              schema:
+                type: string
+                pattern: "^[0-9]+$"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/endpoints/{endpoint}/check-exposure:
+    post:
+      operationId: checkExposure
+      tags: [endpoints]
+      summary: Check what an endpoint exposes
+      description: |
+        A dry run for one repository (R-EP-016, R-EP-017): exposed or not, the admitting rule or the
+        reason, for the repository or a package, and for the `versions` and `paths` asked. Reasons:
+        `exposed`, `no_rule`, `rule_disabled`, `package_excluded`, `path_excluded`,
+        `version_excluded`, `out_of_range`, `prerelease`, `tag_excluded`. It reads the stored rules
+        from PostgreSQL, transfers no content and contacts no upstream. `rule` is a draft of the rule
+        editor that is evaluated in place of the stored rule of its name, or in addition, and is
+        validated like a write (Q-EP-18). Needs `endpoints:read` and `read` on the repository; a
+        repository the caller cannot read answers `404` like a missing one. Generic repositories are
+        checked through `paths`; formats with versions list a package's stored versions when
+        `versions` is absent.
+      x-trove-permission:
+        permission: endpoints:read
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: An endpoint name, `default` for the default endpoint.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExposureCheckRequest"
+            example:
+              repository: generic-local
+              paths: [releases/1.0/app.zip, internal/x.bin]
+      responses:
+        "200":
+          description: The verdicts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExposureCheck"
+              example:
+                endpoint: customers
+                repository: generic-local
+                mode: rules
+                package: null
+                packageExposed: true
+                rule: releases
+                reason: exposed
+                versions: []
+                paths:
+                  - {path: releases/1.0/app.zip, exposed: true, rule: releases, reason: exposed}
+                  - {path: internal/x.bin, exposed: false, rule: null, reason: path_excluded}
+                distTags: []
+                exposureFingerprint: "sha256:5b1e0c39d4c1a7e0b9f2d6a8c3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2"
+                warnings: []
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 endpoints
 components:
   securitySchemes:
@@ -5673,4 +6290,329 @@ components:
     # <<< M1 files
     #
     # >>> M1 endpoints
+    EndpointList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Endpoint"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    Endpoint:
+      type: object
+      required: [name, inert, ruleCount, enabledRuleCount, configuration]
+      properties:
+        name:
+          type: string
+        inert:
+          type: boolean
+          description: The name is not configured but still has exposure rules (H-58); they have no effect.
+        ruleCount:
+          type: integer
+          format: int64
+        enabledRuleCount:
+          type: integer
+          format: int64
+        configuration:
+          description: The endpoint as the configuration file sets it, defaults applied (R-EP-001); `null` for an inert name.
+          oneOf:
+            - $ref: "#/components/schemas/EndpointConfiguration"
+            - type: "null"
+    EndpointConfiguration:
+      type: object
+      required: [default, port, baseUrl, hosts, wildcardHost, hostRoots, wildcardRoot, pool, surface, auth, exposure, cacheFill, rateLimit, replicaHeader]
+      properties:
+        default:
+          type: boolean
+          description: The default endpoint of `server.listen`.
+        port:
+          type: [integer, "null"]
+          description: The port of the listener; `null` when it is chosen at start-up (port 0).
+        baseUrl:
+          type: string
+        hosts:
+          type: array
+          description: The exact hosts of the host set (R-EP-003).
+          items:
+            type: string
+        wildcardHost:
+          type: [string, "null"]
+        hostRoots:
+          type: object
+          description: Host-root bindings, host to repository key (R-EP-006).
+          additionalProperties:
+            type: string
+        wildcardRoot:
+          type: string
+          enum: [none, label]
+        pool:
+          type: [string, "null"]
+          description: The web pool that serves the endpoint; `null` for the main web Deployment.
+        surface:
+          type: array
+          items:
+            type: string
+            enum: [ui, api, ci_exchange, packages, files]
+        auth:
+          type: object
+          required: [tokenTypes, boundTokensOnly, anonymous]
+          description: The credentials the endpoint accepts (R-EP-010).
+          properties:
+            tokenTypes:
+              type: array
+              items:
+                type: string
+                enum: [pat, sat, cit]
+            boundTokensOnly:
+              type: boolean
+            anonymous:
+              type: boolean
+        exposure:
+          type: string
+          enum: [all, rules]
+        cacheFill:
+          type: boolean
+        rateLimit:
+          description: The endpoint's rate-limit class (R-EP-015); `null` for none.
+          oneOf:
+            - $ref: "#/components/schemas/EndpointRateLimit"
+            - type: "null"
+        replicaHeader:
+          type: string
+          enum: [authenticated, always, never]
+    EndpointRateLimit:
+      type: object
+      required: [class, requestsPerSecond, burst, key]
+      properties:
+        class:
+          type: string
+        requestsPerSecond:
+          type: number
+        burst:
+          type: integer
+        key:
+          type: string
+          enum: [principal, address]
+    ExposurePatterns:
+      type: object
+      description: Include and exclude globs of R-AUTHZ-005; an empty include list leaves the dimension unrestricted.
+      properties:
+        include:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1024
+        exclude:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1024
+    ExposureVersions:
+      type: object
+      properties:
+        include:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+        exclude:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+        range:
+          type: [string, "null"]
+          maxLength: 256
+          description: One range in the format's native syntax, validated by the format.
+    ExposureRule:
+      type: object
+      description: |
+        An exposure rule (R-EP-012). The request type is the response type: the read-only members
+        (`endpoint`, `inert`, `warnings`, `revision`, the times and the actors) are accepted and
+        ignored on a write. `name` and `repository` are required on a create and immutable after it;
+        every other member has the default shown.
+      required: [name, repository]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        description:
+          type: string
+          maxLength: 2000
+          default: ""
+        repository:
+          type: string
+          description: The key of the repository the rule exposes; the rule is stored by the repository's ID (Q-EP-8).
+        enabled:
+          type: boolean
+          default: true
+        packages:
+          $ref: "#/components/schemas/ExposurePatterns"
+        paths:
+          $ref: "#/components/schemas/ExposurePatterns"
+        versions:
+          $ref: "#/components/schemas/ExposureVersions"
+        prereleases:
+          type: boolean
+          default: false
+        distTags:
+          $ref: "#/components/schemas/ExposurePatterns"
+        endpoint:
+          type: string
+          readOnly: true
+        inert:
+          type: boolean
+          readOnly: true
+          description: The endpoint is not configured; the rule has no effect (H-58).
+        warnings:
+          type: array
+          readOnly: true
+          description: "`path_patterns_on_package_format`, `endpoint_not_in_rules_mode`."
+          items:
+            type: string
+        revision:
+          type: integer
+          format: int64
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        createdBy:
+          type: [string, "null"]
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedBy:
+          type: [string, "null"]
+          readOnly: true
+      example:
+        name: acme-sdk
+        description: SDK releases for customers
+        repository: npm-customers
+        enabled: true
+        packages: {include: ["@acme/sdk", "@acme/sdk-*"], exclude: ["@acme/sdk-internal"]}
+        paths: {include: [], exclude: []}
+        versions: {include: [], exclude: ["2.0.1"], range: ">=2.0.0"}
+        prereleases: false
+        distTags: {include: [latest, lts], exclude: []}
+    ExposureRuleList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExposureRule"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    ExposureCheckRequest:
+      type: object
+      required: [repository]
+      properties:
+        repository:
+          type: string
+        package:
+          type: string
+          description: The package to check; absent checks the repository.
+        versions:
+          type: array
+          maxItems: 1000
+          description: Versions of the package; for a format with versions an absent list means the stored versions.
+          items:
+            type: string
+        paths:
+          type: array
+          maxItems: 1000
+          description: Paths to check, the dimension of generic repositories.
+          items:
+            type: string
+        rule:
+          $ref: "#/components/schemas/ExposureRule"
+    ExposureCheckVersion:
+      type: object
+      required: [version, exposed, rule, reason]
+      properties:
+        version:
+          type: string
+        exposed:
+          type: boolean
+        rule:
+          type: [string, "null"]
+          description: The rule that exposes the version.
+        reason:
+          type: string
+    ExposureCheckPath:
+      type: object
+      required: [path, exposed, rule, reason]
+      properties:
+        path:
+          type: string
+        exposed:
+          type: boolean
+        rule:
+          type: [string, "null"]
+          description: The rule that exposes the path.
+        reason:
+          type: string
+    ExposureCheckTag:
+      type: object
+      required: [tag, version, visible]
+      properties:
+        tag:
+          type: string
+        version:
+          type: string
+        visible:
+          type: boolean
+    ExposureCheck:
+      type: object
+      required: [endpoint, repository, mode, package, packageExposed, rule, reason, versions, paths, distTags, exposureFingerprint, warnings]
+      properties:
+        endpoint:
+          type: string
+        repository:
+          type: string
+        mode:
+          type: string
+          enum: [all, rules]
+        package:
+          type: [string, "null"]
+        packageExposed:
+          type: boolean
+          description: The verdict on the package, or on the repository when the check names no package.
+        rule:
+          type: [string, "null"]
+        reason:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExposureCheckVersion"
+        paths:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExposureCheckPath"
+        distTags:
+          type: array
+          description: The tags of the package and whether they are visible; formats with tags only.
+          items:
+            $ref: "#/components/schemas/ExposureCheckTag"
+        exposureFingerprint:
+          type: string
+          description: SHA-256 over the mode and the ID, revision and state of every stored rule of the endpoint for the repository (R-EP-018).
+        warnings:
+          type: array
+          items:
+            type: string
     # <<< M1 endpoints

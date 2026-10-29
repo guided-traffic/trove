@@ -331,6 +331,7 @@ operations that require it when called with a session; the OpenAPI document mark
 | CI identity | Creating, replacing and deleting CI issuers, identity mappings and delegations (R-API-035) |
 | Settings | Changing authentication settings (R-API-037) |
 | Repositories | Deleting a repository (R-API-022) |
+| Endpoints | Creating, replacing, changing and deleting exposure rules ([endpoints.md](endpoints.md) R-EP-016) |
 | Configuration | Applying configuration as code (R-API-044) |
 
 Token-authenticated callers are not affected; their token scope bounds them.

@@ -103,6 +103,15 @@ type m1Wiring struct {
 	// <<< M1 files
 
 	// >>> M1 endpoints
+	// exposureCeiling is the endpoint exposure of R-EP-013 that the decision point
+	// applies, built once from the configured endpoints (exposureCeiling).
+	exposureCeiling *authz.ExposureCeiling
+	// exposure is the exposure-rule service of the endpoint operations
+	// (R-EP-016); nil on a replica without PostgreSQL.
+	exposure *authz.ExposureService
+	// endpointLimits are the rate-limit stages of the endpoints' classes by
+	// endpoint name (R-EP-015); an endpoint without a class has none.
+	endpointLimits map[string]func(http.Handler) http.Handler
 	// <<< M1 endpoints
 }
 
@@ -113,6 +122,7 @@ type m1Wiring struct {
 func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
 	rules := endpointRules(rt)
 	rules.PublicRoute = a.publicRoute(rt)
+	rules.Refused = a.credentialRefused(rt)
 	return withMinEpoch(func(r *http.Request) (httpserver.Principal, error) {
 		a.mu.Lock()
 		stage := a.m1.authenticator
