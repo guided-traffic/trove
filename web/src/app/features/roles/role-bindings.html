@@ -1,0 +1,93 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@roles.heading">System roles</h1>
+</header>
+<p i18n="@@roles.intro">
+  System roles are fixed. A role is bound to a user, a group or a service account, and grants the capabilities listed with it.
+</p>
+<trove-needs capability="roles:write" />
+
+@if (loadError(); as e) {
+  <trove-error-notice [error]="e" (retry)="load()" />
+}
+@if (writeError(); as e) {
+  <trove-error-notice [error]="e" />
+}
+
+@if (loaded()) {
+  @for (r of roles(); track r.name) {
+    <section class="card" [attr.aria-labelledby]="'role-' + r.name">
+      <h2 [id]="'role-' + r.name" translate="no">{{ r.name }}</h2>
+      <p>
+        <span i18n="@@roles.capabilities">Capabilities:</span>
+        <code translate="no">{{ r.capabilities.join(', ') }}</code>
+      </p>
+
+      @if (holders(r.name).length === 0) {
+        <p i18n="@@roles.no-holders">Nobody holds this role.</p>
+      } @else {
+        <div class="scroll" tabindex="0" role="region" [attr.aria-label]="r.name">
+          <table class="data">
+            <caption class="visually-hidden" i18n="@@roles.holders-caption">Principals that hold the role {{ r.name }}</caption>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@roles.principal">Principal</th>
+                <th scope="col" i18n="@@roles.granted-at">Granted</th>
+                <th scope="col" i18n="@@roles.granted-by">Granted by</th>
+                @if (canWrite()) {
+                  <th scope="col"><span class="visually-hidden" i18n="@@roles.actions">Actions</span></th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (b of holders(r.name); track b.principal) {
+                <tr>
+                  <th scope="row" translate="no">{{ b.principal }}</th>
+                  <td>{{ b.grantedAt | date: 'medium' }}</td>
+                  <td translate="no">{{ b.grantedBy }}</td>
+                  @if (canWrite()) {
+                    <td class="actions">
+                      <button
+                        mat-button
+                        type="button"
+                        [disabled]="busy() || isLastAdmin(b)"
+                        [attr.aria-describedby]="isLastAdmin(b) ? 'last-admin-guard' : null"
+                        (click)="unbind(b)"
+                      >
+                        <ng-container i18n="@@roles.unbind-button">Unbind</ng-container>
+                        <span class="visually-hidden" translate="no"> {{ b.principal }}</span>
+                      </button>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (r.name === 'admin' && holders('admin').length <= 1) {
+          <p id="last-admin-guard" class="muted" i18n="@@roles.last-admin">The last administrator binding cannot be removed.</p>
+        }
+      }
+
+      @if (canWrite()) {
+        <form class="toolbar" (submit)="bind($event, r.name)">
+          <trove-text-field
+            i18n-label="@@roles.bind-principal"
+            label="Bind to"
+            [name]="'principal-' + r.name"
+            [value]="draft(r.name)"
+            (valueChange)="setDraft(r.name, $event)"
+            [error]="fieldError()"
+            i18n-hint="@@roles.bind-hint"
+            hint="user:name, group:name or sa:name"
+          />
+          <button mat-flat-button type="submit" [disabled]="busy() || draft(r.name).trim() === ''">
+            <ng-container i18n="@@roles.bind-button">Bind</ng-container>
+            <span class="visually-hidden" translate="no"> {{ r.name }}</span>
+          </button>
+        </form>
+      }
+    </section>
+  }
+} @else if (!loadError()) {
+  <p role="status" i18n="@@roles.loading">Loading roles.</p>
+}

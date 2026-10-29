@@ -1,9 +1,20 @@
 import { Routes } from '@angular/router';
-import { placeholderRoute } from '../../shared/placeholder-route';
 
 /** R-UI-027 (list and editor). `new` precedes `:name`; the explainer (R-UI-028, P1) is not routed yet. */
 export const PERMISSIONS_ROUTES: Routes = [
-  placeholderRoute('', $localize`:@@route.permissions.title:Permission policies`),
-  placeholderRoute('new', $localize`:@@route.permissions.new.title:New permission policy`),
-  placeholderRoute(':name', $localize`:@@route.permissions.detail.title:Permission policy`),
+  {
+    path: '',
+    title: $localize`:@@route.permissions.title:Permission policies`,
+    loadComponent: () => import('./policy-list').then((m) => m.PolicyList),
+  },
+  {
+    path: 'new',
+    title: $localize`:@@route.permissions.new.title:New permission policy`,
+    loadComponent: () => import('./policy-editor').then((m) => m.PolicyEditor),
+  },
+  {
+    path: ':name',
+    title: $localize`:@@route.permissions.detail.title:Permission policy`,
+    loadComponent: () => import('./policy-editor').then((m) => m.PolicyEditor),
+  },
 ];

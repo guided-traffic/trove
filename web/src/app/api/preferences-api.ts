@@ -1,14 +1,10 @@
 import { Injectable, inject } from '@angular/core';
 import { ApiClient } from './client';
+import { Schema } from './types';
 
-/** `GET /api/v1/users/me/preferences` (R-API-021). */
-export interface Preferences {
-  readonly locale: 'en' | 'de' | null;
-  readonly theme: 'light' | 'dark' | null;
-  readonly keyboardShortcuts: boolean;
-  readonly projectFilter: string | null;
-  readonly revision: number;
-}
+/** `GET`, `PATCH /api/v1/users/me/preferences` (R-API-021); `revision` is the ETag number. */
+export type Preferences = Schema<'Preferences'>;
+export type PreferencesPatch = Schema<'PreferencesPatch'>;
 
 export interface LoadedPreferences {
   readonly preferences: Preferences;
@@ -17,11 +13,8 @@ export interface LoadedPreferences {
 
 export abstract class PreferencesApi {
   abstract load(): Promise<LoadedPreferences>;
-  /** Merge patch with the loaded `ETag` (R-API-013). */
-  abstract patch(
-    patch: Partial<Pick<Preferences, 'locale' | 'theme' | 'keyboardShortcuts'>>,
-    etag: string,
-  ): Promise<LoadedPreferences>;
+  /** Merge patch with the loaded `ETag` (R-API-013); `null` resets a member to its default. */
+  abstract patch(patch: PreferencesPatch, etag: string): Promise<LoadedPreferences>;
 }
 
 @Injectable()
@@ -30,14 +23,11 @@ export class HttpPreferencesApi extends PreferencesApi {
   private readonly url = '/api/v1/users/me/preferences';
 
   async load(): Promise<LoadedPreferences> {
-    const r = await this.client.getJson<Preferences>(this.url);
+    const r = await this.client.get(this.url);
     return { preferences: r.body, etag: r.etag ?? `"${r.body.revision}"` };
   }
 
-  async patch(
-    patch: Partial<Pick<Preferences, 'locale' | 'theme' | 'keyboardShortcuts'>>,
-    etag: string,
-  ): Promise<LoadedPreferences> {
+  async patch(patch: PreferencesPatch, etag: string): Promise<LoadedPreferences> {
     const r = await this.client.patch<Preferences>(this.url, patch, etag);
     return { preferences: r.body, etag: r.etag ?? `"${r.body.revision}"` };
   }

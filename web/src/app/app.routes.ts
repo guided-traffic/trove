@@ -11,13 +11,17 @@ export const routes: Routes = [
   {
     path: 'login',
     title: $localize`:@@route.login.title:Sign in`,
-    loadComponent: () => import('./features/auth/login').then((m) => m.Login),
+    // >>> M1 ui-b
+    loadComponent: () => import('./features/login/login').then((m) => m.Login),
+    // <<< M1 ui-b
   },
   {
     // The post-logout redirect URI registered at the identity provider (R-UI-004): a contract.
     path: 'logged-out',
     title: $localize`:@@route.logged-out.title:Signed out`,
-    loadComponent: () => import('./features/auth/logged-out').then((m) => m.LoggedOut),
+    // >>> M1 ui-b
+    loadComponent: () => import('./features/login/logged-out').then((m) => m.LoggedOut),
+    // <<< M1 ui-b
   },
   {
     path: '',

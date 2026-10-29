@@ -1,51 +1,33 @@
 import { Injectable, inject } from '@angular/core';
 import { ApiClient } from './client';
+import { Schema } from './types';
 
 /*
- * Endpoints the OpenAPI document does not describe yet (the identity and authorization work adds
- * them). The shapes below follow the requirement pages named on each type and are replaced by the
- * generated types when the operations land in api/openapi.yaml; the service interface stays.
+ * The caller's session: who, what they may do, and the way out. Shapes are the generated ones
+ * (R-AUTH-009 and docs/developer/login.md for whoami, R-AUTHZ-023 for check, authorization.md for
+ * authz/me). `/auth/logout` lives outside the management API document.
  */
 
-/** `GET /api/v1/auth/whoami` (R-AUTH-… in identity-and-authentication.md, R-API-021). */
-export interface Whoami {
-  readonly principal: { readonly kind: string; readonly name: string; readonly id: string };
-  readonly credential: {
-    readonly type: string;
-    readonly tokenId?: string | null;
-    readonly scope?: unknown;
-    readonly expiresAt?: string | null;
-  };
-}
+/** `GET /api/v1/auth/whoami`. */
+export type Whoami = Schema<'Whoami'>;
 
-/** `GET /api/v1/authz/me` (R-AUTHZ-… in authorization.md): what drives navigation. */
-export interface AuthzMe {
-  /** Effective system capabilities such as `settings:read` (R-AUTHZ-010). */
-  readonly capabilities: readonly string[];
-  /** Principal references the caller acts as: the user, its groups. Shown on the empty state. */
-  readonly principals?: readonly string[];
-}
+/** `GET /api/v1/authz/me`: what drives navigation (capabilities), plus roles and principals. */
+export type AuthzMe = Schema<'AuthzMe'>;
 
-/** One check of `POST /api/v1/authz/check` (R-AUTHZ-023). */
-export interface PermissionCheck {
-  readonly repository: string;
-  readonly action: string;
-  readonly package?: string;
-  readonly path?: string;
-}
+/**
+ * One check of `POST /api/v1/authz/check` (R-AUTHZ-023). `action` is one of the six actions of
+ * R-AUTHZ-006; the type stays a string so that callers can pass an action they hold in a variable,
+ * and the API answers 400 for an unknown one.
+ */
+export type PermissionCheck = Omit<Schema<'PermissionCheckItem'>, 'action'> & { readonly action: string };
 
-export interface PermissionCheckAnswer {
-  readonly results: readonly { readonly allowed: boolean }[];
-  /** The authorization epoch at the time of the answer. */
-  readonly epoch?: number;
-}
+export type PermissionCheckAnswer = Schema<'PermissionCheckResponse'>;
 
 /** Body of `POST /auth/logout`; `redirectTo` is the provider's end-session URL, when it has one. */
 export interface LogoutAnswer {
   readonly redirectTo?: string | null;
 }
 
-/** The caller's session: who, what they may do, and the way out. */
 export abstract class SessionApi {
   abstract whoami(): Promise<Whoami>;
   abstract authzMe(): Promise<AuthzMe>;
@@ -58,11 +40,11 @@ export class HttpSessionApi extends SessionApi {
   private readonly client = inject(ApiClient);
 
   async whoami(): Promise<Whoami> {
-    return (await this.client.getJson<Whoami>('/api/v1/auth/whoami')).body;
+    return (await this.client.get('/api/v1/auth/whoami')).body;
   }
 
   async authzMe(): Promise<AuthzMe> {
-    return (await this.client.getJson<AuthzMe>('/api/v1/authz/me')).body;
+    return (await this.client.get('/api/v1/authz/me')).body;
   }
 
   async check(checks: readonly PermissionCheck[]): Promise<PermissionCheckAnswer> {

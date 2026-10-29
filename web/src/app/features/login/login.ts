@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, input, resource, signal, untracked
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { LoginApi } from '../../api/login-api';
 import { ApiError } from '../../api/problem';
 import { BrowserNavigation, safeReturnTo } from '../../core/browser-navigation';
@@ -20,9 +20,15 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-login',
-  imports: [MatButtonModule, MatFormFieldModule, MatInputModule, ErrorNotice],
+  imports: [MatButtonModule, MatFormFieldModule, MatInputModule, RouterLink, ErrorNotice],
   template: `
     <h1 tabindex="-1" i18n="@@login.heading">Sign in</h1>
+
+    @if (reauth() === '1') {
+      <p role="status" class="reauth" i18n="@@login.reauth">
+        The action you tried needs a recent sign-in. Sign in again, then repeat it. Your entries are kept.
+      </p>
+    }
 
     @if (options.error(); as failure) {
       <trove-error-notice [error]="asApiError(failure)" (retry)="options.reload()" />
@@ -53,6 +59,12 @@ import { ErrorNotice } from '../../shared/error-notice';
             </li>
           }
         </ul>
+
+        @if (o.anonymousAccess && reauth() !== '1') {
+          <p>
+            <a mat-button [routerLink]="continuePath()" i18n="@@login.anonymous">Continue without signing in</a>
+          </p>
+        }
 
         @if (showLocal()) {
           <form class="local" (submit)="submitLocal($event)">
@@ -143,6 +155,11 @@ export class Login {
       const provider = o.providers.find((p) => p.id === o.autoRedirect && p.available);
       if (provider) untracked(() => this.start(provider.startUrl));
     });
+  }
+
+  /** Where "continue without signing in" leads: the route the caller wanted, or the start page. */
+  protected continuePath(): string {
+    return safeReturnTo(this.returnTo());
   }
 
   protected asApiError(e: unknown): ApiError {

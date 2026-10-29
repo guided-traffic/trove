@@ -1,0 +1,274 @@
+<header class="page-header">
+  @if (isNew()) {
+    <h1 tabindex="-1" i18n="@@policy.heading-new">New permission policy</h1>
+  } @else {
+    <h1 tabindex="-1" i18n="@@policy.heading">Permission policy</h1>
+  }
+  <a mat-button routerLink="/admin/permissions" i18n="@@policy.back">All policies</a>
+</header>
+@if (!isNew()) {
+  <p class="subject" translate="no">{{ name() }}</p>
+}
+<trove-needs capability="policies:write" />
+
+@if (loadError(); as e) {
+  <trove-error-notice [error]="e" (retry)="reload()" />
+}
+@if (saveError(); as e) {
+  <trove-error-notice [error]="e" />
+}
+
+@if (isNew() || loaded()) {
+  <form class="editor" (submit)="save($event)" novalidate>
+    <nav class="toc" i18n-aria-label="@@policy.toc" aria-label="Sections of this policy">
+      <ul>
+        <li><button type="button" class="link" (click)="jump('sec-general')" i18n="@@policy.toc.general">General</button></li>
+        <li><button type="button" class="link" (click)="jump('sec-principals')" i18n="@@policy.toc.principals">Principals and actions</button></li>
+        <li><button type="button" class="link" (click)="jump('sec-resources')" i18n="@@policy.toc.resources">Repositories and patterns</button></li>
+        <li><button type="button" class="link" (click)="jump('sec-preview')" i18n="@@policy.toc.preview">Preview</button></li>
+      </ul>
+    </nav>
+
+    <div class="sections">
+      <section id="sec-general" tabindex="-1" class="card" aria-labelledby="h-general">
+        <h2 id="h-general" i18n="@@policy.general">General</h2>
+        @if (isNew()) {
+          <trove-text-field
+            i18n-label="@@policy.name"
+            label="Name"
+            name="name"
+            [(value)]="policyName"
+            [required]="true"
+            [error]="problems('/name')[0] ?? null"
+            i18n-hint="@@policy.name-hint"
+            hint="Cannot be changed later."
+          />
+        }
+        <trove-text-field
+          i18n-label="@@policy.description"
+          label="Description"
+          name="description"
+          [(value)]="description"
+          [readonly]="!canWrite()"
+          [error]="problems('/description')[0] ?? null"
+        />
+      </section>
+
+      <section id="sec-principals" tabindex="-1" class="card" aria-labelledby="h-principals">
+        <h2 id="h-principals" i18n="@@policy.principals">Principals and actions</h2>
+        <p class="muted" i18n="@@policy.principals-help">
+          Each entry gives one principal a set of actions. Actions are independent: holding one never implies another.
+        </p>
+        <dl class="help">
+          @for (a of actions; track a) {
+            <dt translate="no">{{ a }}</dt>
+            <dd>{{ actionHelp(a) }}</dd>
+          }
+        </dl>
+
+        @if (entries().length === 0) {
+          <p i18n="@@policy.no-entries">No principal yet. Add one to grant something.</p>
+        }
+        @for (e of entries(); track e.id; let i = $index) {
+          <fieldset class="entry">
+            <legend i18n="@@policy.entry">Entry {{ i + 1 }}</legend>
+            <trove-text-field
+              i18n-label="@@policy.entry-principal"
+              label="Principal"
+              [name]="'principal-' + i"
+              [value]="e.principal"
+              (valueChange)="setPrincipal(e.id, $event)"
+              [readonly]="!canWrite()"
+              [error]="problems('/entries/' + i)[0] ?? null"
+              i18n-hint="@@policy.entry-principal-hint"
+              hint="user:name, group:name, sa:name, anonymous or authenticated"
+            />
+            <div class="actions-row">
+              @for (a of actions; track a) {
+                <mat-checkbox
+                  [checked]="e.actions.includes(a)"
+                  [disabled]="!canWrite()"
+                  (change)="toggleAction(e.id, a, $event.checked)"
+                  ><span translate="no">{{ a }}</span></mat-checkbox
+                >
+              }
+            </div>
+            @if (canWrite()) {
+              <div class="entry-tools">
+                <div role="group" [attr.aria-label]="presetGroupLabel">
+                  @for (p of presetNames; track p) {
+                    <button mat-button type="button" [title]="presetTitle(p)" (click)="applyPreset(e.id, p)">
+                      <span class="visually-hidden">{{ presetGroupLabel }} </span><span translate="no">{{ p }}</span>
+                    </button>
+                  }
+                </div>
+                <button mat-button type="button" (click)="removeEntry(e.id)">
+                  <ng-container i18n="@@policy.remove-entry">Remove entry</ng-container>
+                  <span class="visually-hidden"> {{ i + 1 }}</span>
+                </button>
+              </div>
+            }
+          </fieldset>
+        }
+        @if (canWrite()) {
+          <button mat-stroked-button type="button" (click)="addEntry()" i18n="@@policy.add-entry">Add principal</button>
+        }
+      </section>
+
+      <section id="sec-resources" tabindex="-1" class="card" aria-labelledby="h-resources">
+        <h2 id="h-resources" i18n="@@policy.resources">Repositories and patterns</h2>
+        <trove-text-field
+          i18n-label="@@policy.repositories"
+          label="Repository selectors"
+          name="repositories"
+          type="textarea"
+          [(value)]="repositories"
+          [readonly]="!canWrite()"
+          [error]="problems('/resources/repositories')[0] ?? null"
+          i18n-hint="@@policy.repositories-hint"
+          hint="One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm)."
+        />
+        <p class="covers" role="status">
+          @if (validating()) {
+            <ng-container i18n="@@policy.covers-checking">Checking which repositories are covered.</ng-container>
+          } @else if (validation()) {
+            <span class="material-icons" aria-hidden="true">inventory_2</span>
+            <ng-container i18n="@@policy.covers">Repositories covered now: {{ covers().length }}</ng-container>
+          }
+        </p>
+
+        <h3 i18n="@@policy.packages">Package names</h3>
+        <p class="muted" i18n="@@policy.patterns-help">
+          One pattern per line. * is any run of characters except /, ** includes /, ? is one character, \ makes the next character literal. An empty include list is unrestricted; exclude always wins within this policy.
+        </p>
+        <div class="two">
+          <trove-text-field i18n-label="@@policy.packages-include" label="Include" name="packagesInclude" type="textarea" [(value)]="packagesInclude" [readonly]="!canWrite()" [error]="problems('/resources/packages/include')[0] ?? null" />
+          <trove-text-field i18n-label="@@policy.packages-exclude" label="Exclude" name="packagesExclude" type="textarea" [(value)]="packagesExclude" [readonly]="!canWrite()" [error]="problems('/resources/packages/exclude')[0] ?? null" />
+        </div>
+        <h3 i18n="@@policy.paths">Paths</h3>
+        <div class="two">
+          <trove-text-field i18n-label="@@policy.paths-include" label="Include" name="pathsInclude" type="textarea" [(value)]="pathsInclude" [readonly]="!canWrite()" [error]="problems('/resources/paths/include')[0] ?? null" />
+          <trove-text-field i18n-label="@@policy.paths-exclude" label="Exclude" name="pathsExclude" type="textarea" [(value)]="pathsExclude" [readonly]="!canWrite()" [error]="problems('/resources/paths/exclude')[0] ?? null" />
+        </div>
+
+        <h3 i18n="@@policy.tester">Pattern tester</h3>
+        <div class="tester">
+          <trove-select-field i18n-label="@@policy.tester-kind" label="Test against" name="testDimension" [options]="dimensionOptions" [(value)]="testDimension" />
+          <trove-text-field i18n-label="@@policy.tester-value" label="Does this match?" name="testValue" [(value)]="testValue" />
+        </div>
+        @if (testVerdict(); as v) {
+          <p role="status" [class]="verdictOk(v) ? 'ok' : 'bad'">
+            <span class="material-icons" aria-hidden="true">{{ verdictOk(v) ? 'check_circle' : 'cancel' }}</span>
+            {{ verdictText(v) }}
+          </p>
+        }
+      </section>
+    </div>
+
+    <aside id="sec-preview" tabindex="-1" class="preview" aria-labelledby="h-preview">
+      <h2 id="h-preview" i18n="@@policy.preview">Preview</h2>
+      <button type="button" mat-button class="preview-toggle" [attr.aria-expanded]="previewOpen()" aria-controls="preview-body" (click)="previewOpen.set(!previewOpen())">
+        @if (previewOpen()) {
+          <ng-container i18n="@@policy.preview-hide">Hide preview</ng-container>
+        } @else {
+          <ng-container i18n="@@policy.preview-show">Show preview</ng-container>
+        }
+      </button>
+      <div id="preview-body" class="preview-body" [hidden]="!previewOpen()">
+        @if (!canValidate()) {
+          <p class="muted" i18n="@@policy.preview-denied">The preview needs the permission to read policies.</p>
+        } @else if (validation(); as v) {
+          @if (v.valid) {
+            <p class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@policy.valid">No problems found.</ng-container></p>
+          } @else {
+            <p class="bad" role="status"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@policy.invalid">The policy has problems:</ng-container></p>
+            <ul class="problems">
+              @for (p of v.errors; track $index) {
+                <li><code translate="no">{{ p.pointer }}</code> {{ problemText(p) }}</li>
+              }
+            </ul>
+          }
+          @if (v.warnings.length > 0) {
+            <h3 i18n="@@policy.warnings">Warnings</h3>
+            <ul class="problems">
+              @for (w of v.warnings; track w) {
+                <li><span class="material-icons warn" aria-hidden="true">warning</span> {{ warningText(w) }}</li>
+              }
+            </ul>
+          }
+          <h3 i18n="@@policy.covered">Covered repositories</h3>
+          @if (v.covers.length === 0) {
+            <p i18n="@@policy.covers-none">No repository is covered.</p>
+          } @else {
+            <ul class="covered" translate="no">
+              @for (k of v.covers; track k) {
+                <li>{{ k }}</li>
+              }
+            </ul>
+          }
+        } @else if (validating()) {
+          <p role="status" i18n="@@policy.preview-loading">Checking the policy.</p>
+        }
+
+        <h3 i18n="@@policy.try">Try it</h3>
+        <p class="muted" i18n="@@policy.try-help">Ask why a principal can or cannot do something. Only this draft is evaluated.</p>
+        <div class="try">
+          <trove-text-field i18n-label="@@policy.try-principal" label="Principal" name="askPrincipal" [(value)]="askPrincipal" i18n-hint="@@policy.try-principal-hint" hint="for example user:alice" />
+          <trove-text-field i18n-label="@@policy.try-repository" label="Repository" name="askRepository" [(value)]="askRepository" />
+          <trove-select-field i18n-label="@@policy.try-action" label="Action" name="askAction" [options]="actionOptions" [(value)]="askAction" />
+          <button mat-stroked-button type="button" [disabled]="askPrincipal().trim() === '' || askRepository().trim() === ''" (click)="explain($event)" i18n="@@policy.try-ask">Explain</button>
+        </div>
+        @if (explainError(); as e) {
+          <trove-error-notice [error]="e" />
+        }
+        @if (explanation(); as x) {
+          <div role="status">
+            <p [class]="x.decision === 'allowed' ? 'ok' : 'bad'">
+              <span class="material-icons" aria-hidden="true">{{ x.decision === 'allowed' ? 'check_circle' : 'cancel' }}</span>
+              @if (x.decision === 'allowed') {
+                <strong i18n="@@policy.allowed">Allowed by this draft</strong>
+              } @else {
+                <strong i18n="@@policy.denied">Not granted by this draft</strong>
+              }
+            </p>
+            <ol class="steps">
+              @for (s of x.steps; track $index) {
+                <li>
+                  <span class="material-icons" aria-hidden="true">{{ s.outcome === 'pass' ? 'check' : s.outcome === 'fail' ? 'close' : 'info' }}</span>
+                  {{ s.text }}
+                </li>
+              }
+            </ol>
+            @if (mine() !== null) {
+              <p>
+                @if (mine()) {
+                  <ng-container i18n="@@policy.mine-yes">For comparison, you yourself may do this under the stored policies.</ng-container>
+                } @else {
+                  <ng-container i18n="@@policy.mine-no">For comparison, you yourself may not do this under the stored policies.</ng-container>
+                }
+              </p>
+            }
+          </div>
+        }
+      </div>
+    </aside>
+
+    <div class="save-bar">
+      @if (canWrite()) {
+        <button mat-flat-button type="submit" [disabled]="busy() || (!isNew() && !dirty())">
+          @if (isNew()) {
+            <ng-container i18n="@@policy.create">Create policy</ng-container>
+          } @else {
+            <ng-container i18n="@@policy.review">Review and save</ng-container>
+          }
+        </button>
+        @if (!isNew()) {
+          <button mat-button type="button" [disabled]="busy()" (click)="remove()" i18n="@@policy.delete">Delete policy</button>
+        }
+      }
+      @if (attempted() && (validation()?.errors?.length ?? 0) > 0) {
+        <span class="bad" role="alert"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@policy.fix-first">Fix the problems in the preview first.</ng-container></span>
+      }
+    </div>
+  </form>
+}

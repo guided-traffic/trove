@@ -2,6 +2,9 @@ import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { Router } from '@angular/router';
+// >>> M1 ui-b
+import { DraftStore } from './access/drafts';
+// <<< M1 ui-b
 
 export interface SessionDialogData {
   /** `ended`: the session is gone. `reauth`: the action needs a recent sign-in (R-AUTH-011). */
@@ -29,6 +32,13 @@ export interface SessionDialogData {
       </mat-dialog-content>
     }
     <mat-dialog-actions align="end">
+      <!-- >>> M1 ui-b -->
+      @if (data.kind === 'ended' && draft !== null) {
+        <button mat-button type="button" (click)="copyDraft()" i18n="@@session.copy-draft">
+          Copy draft as JSON
+        </button>
+      }
+      <!-- <<< M1 ui-b -->
       <button mat-button type="button" mat-dialog-close i18n="@@session.later">Not now</button>
       <button mat-flat-button type="button" (click)="signIn()" i18n="@@session.sign-in-again">
         Sign in again
@@ -40,6 +50,14 @@ export class SessionDialog {
   protected readonly data = inject<SessionDialogData>(MAT_DIALOG_DATA);
   private readonly ref = inject(MatDialogRef<SessionDialog>);
   private readonly router = inject(Router);
+  // >>> M1 ui-b
+  /** The unsaved draft of an open editor (R-UI-004: "Copy draft as JSON"), or null. */
+  protected readonly draft = inject(DraftStore).snapshot();
+
+  protected async copyDraft(): Promise<void> {
+    if (this.draft !== null) await navigator.clipboard.writeText(this.draft);
+  }
+  // <<< M1 ui-b
 
   protected signIn(): void {
     const returnTo = this.router.url;

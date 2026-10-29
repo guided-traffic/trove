@@ -1,4 +1,7 @@
 import { ApiError } from '../../api/problem';
+// >>> M1 ui-b
+import { describeAccessProblem } from './problem-messages-access';
+// <<< M1 ui-b
 
 export interface ProblemText {
   /** The message to show. */
@@ -62,9 +65,18 @@ export function describeProblem(error: ApiError): ProblemText {
     case 'internal':
       return known($localize`:@@problem.internal:Something went wrong on the server.`);
     default:
-      return fallback(error);
+      // >>> M1 ui-b
+      return accessProblem(error) ?? fallback(error);
+      // <<< M1 ui-b
   }
 }
+
+// >>> M1 ui-b
+function accessProblem(error: ApiError): ProblemText | null {
+  const text = describeAccessProblem(error.code);
+  return text === null ? null : { text, known: true };
+}
+// <<< M1 ui-b
 
 function rateLimited(seconds: number | null): string {
   return seconds === null

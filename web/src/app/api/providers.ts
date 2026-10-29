@@ -3,6 +3,14 @@ import { HttpLoginApi, LoginApi } from './login-api';
 import { HttpPreferencesApi, PreferencesApi } from './preferences-api';
 import { HttpSessionApi, SessionApi } from './session-api';
 import { EncryptionApi, HttpEncryptionApi, HttpSystemApi, SystemApi } from './system-api';
+// >>> M1 ui-b
+import { AuthSettingsApi, HttpAuthSettingsApi } from './auth-settings-api';
+import { HttpPolicyApi, HttpRolesApi, PolicyApi, RolesApi } from './authz-api';
+import { HttpIdentityApi, IdentityApi } from './identity-api';
+import { DraftPolicyExplainer, PolicyExplainer } from './policy-explainer';
+import { HttpSessionsApi, SessionsApi } from './sessions-api';
+import { HttpTokensApi, TokensApi } from './tokens-api';
+// <<< M1 ui-b
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -15,5 +23,14 @@ export function provideApiServices(): Provider[] {
     { provide: PreferencesApi, useClass: HttpPreferencesApi },
     { provide: SystemApi, useClass: HttpSystemApi },
     { provide: EncryptionApi, useClass: HttpEncryptionApi },
+    // >>> M1 ui-b
+    { provide: IdentityApi, useClass: HttpIdentityApi },
+    { provide: TokensApi, useClass: HttpTokensApi },
+    { provide: SessionsApi, useClass: HttpSessionsApi },
+    { provide: AuthSettingsApi, useClass: HttpAuthSettingsApi },
+    { provide: PolicyApi, useClass: HttpPolicyApi },
+    { provide: RolesApi, useClass: HttpRolesApi },
+    { provide: PolicyExplainer, useClass: DraftPolicyExplainer },
+    // <<< M1 ui-b
   ];
 }

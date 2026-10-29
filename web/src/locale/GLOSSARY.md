@@ -23,3 +23,13 @@ before using a new term in a German text.
 | sign in, sign out | anmelden, abmelden |
 | session | Sitzung |
 | browse (file tree) | Durchsuchen |
+| principal | Prinzipal |
+| role binding | Rollenzuweisung |
+| identity provider | Identitätsanbieter |
+| break-glass account | Break-Glass-Konto |
+| ceiling (configuration limit) | Obergrenze |
+| draft (unsaved form content) | Entwurf |
+| preset (of actions) | Vorlage |
+| rotate (a token) | rotieren |
+| revoke (a token) | widerrufen |
+| group claim | Gruppen-Claim |

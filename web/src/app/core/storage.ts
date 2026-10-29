@@ -49,6 +49,27 @@ export class BrowserStorage {
     }
   }
 
+  // >>> M1 ui-b
+  /** Every key and value of the area; for the specs that prove no secret was stored (R-UI-043). */
+  entries(area: StorageArea): [string, string][] {
+    try {
+      const s = this.area(area);
+      return Array.from({ length: s.length }, (_, i) => s.key(i) ?? '').map((k) => [k, s.getItem(k) ?? '']);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Removes everything in the area; for the specs. */
+  clear(area: StorageArea): void {
+    try {
+      this.area(area).clear();
+    } catch {
+      // Blocked storage: nothing to clear.
+    }
+  }
+  // <<< M1 ui-b
+
   private area(area: StorageArea): Storage {
     return area === 'local' ? localStorage : sessionStorage;
   }

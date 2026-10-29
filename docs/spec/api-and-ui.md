@@ -4539,6 +4539,104 @@ re-encryption gate when `authz/me` also reports roles.
 
 **Applied in the spec:** R-UI-038 and R-UI-002 are unchanged; this block records the interpretation.
 
+<!-- >>> M1 ui-b -->
+### Q-UI-20 · Forms of the identity, token, settings and policy screens
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Signal Forms with validators derived from the OpenAPI constraints | The plan of Q-UI-12 | One validation source | The constraints that matter (name grammar, lifetime bounds, pattern syntax, unknown principals) are either not in the document or depend on installation state; the server's `validate-policy` and field errors by JSON pointer already carry them, so derived validators would duplicate the rules and drift |
+| (b) Reactive Forms | `FormGroup` per screen | Familiar | Not signal-based; a second state model next to the signals the rest of the UI uses |
+| (c) Plain signals with two small field components (chosen) | `TextField` and `SelectField` render a Material field, tie the error text to the input with `aria-describedby` and `aria-invalid`, and take the value as a two-way `model` | Same state model everywhere; the error text sits next to the field (R-UI-044, 3.3.1); server problems map by pointer with `fieldErrorAt` | No declarative validators; the client checks only what saves a round trip (an empty description, a missing date) |
+
+**Choice:** (c).
+
+**Rationale:** The server is the validator for everything that is not trivial, and the policy editor shows its answer before the save (R-UI-027). The development agent revisits this when the generator emits validators for the constraints that are static.
+
+**Applied in the spec:** R-UI-027, R-UI-042 and R-UI-044 are unchanged; Q-UI-12's remark on Signal Forms is superseded for these screens.
+
+### Q-UI-21 · "Why can X do Y" in the policy preview while the explain operation is not built
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave the question out until `POST /authz/explain` (R-AUTHZ-024, P1, Q-AUTHZ-27) exists | Preview shows coverage, errors, warnings only | Nothing approximate | The editor cannot answer the question its author asks most |
+| (b) Answer from the draft behind a `PolicyExplainer` service (chosen) | `DraftPolicyExplainer` combines the repositories the draft covers (`validate-policy`), the draft's entries, the groups of a user record, and the caller's own `authz/check`; the answer lists its steps in order and says what it did not evaluate (other policies, token scope, exposure, ownership) | Useful today; the panel codes against the interface, so an implementation that calls the explain operation replaces it in `providers.ts` and the panel stays | An answer about a draft, not about the installation; a user's groups need `identities:read`, a service account's groups cannot be read at all |
+| (c) Port the decision engine to TypeScript | Full local evaluation | Complete answers | A second engine to keep equal to the Go one; contradicts R-UI-005 |
+
+**Choice:** (b). The result carries `scope: 'draft' | 'installation'` and the panel titles its verdicts "by this draft".
+
+**Rationale:** The server must stay the only decision point. The development agent revisits this when R-AUTHZ-024 ships.
+
+**Applied in the spec:** R-UI-027 is unchanged; "Test this policy" (R-UI-028, P1) is not built.
+
+### Q-UI-22 · Users, groups and service accounts are edited without a version tag
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Merge patch of the changed members, last writer wins on those members (chosen) | The documented behaviour of the operations (R-API-013); the screens send only what the user changed | Two administrators editing different fields do not conflict; matches the API | Two edits of the same field overwrite silently |
+| (b) Require `ETag` and `If-Match` and the conflict dialog | Needs the API to return tags for these resources | Uniform with policies and settings | Not in the API; a UI-only tag would be invented |
+| (c) Read-only screens | No edits | No conflicts | Not the requirement |
+
+**Choice:** (a). `ApiClient.patchMerge` sends no `If-Match`, so the retry layer of R-UI-042 does not repeat such a request after a network error: the screen shows the error with "Retry" and the user decides. Membership changes use plain JSON (`patchJson`).
+
+**Rationale:** The resources have no tag in `api/openapi.yaml`. The development agent revisits this if the API adds tags.
+
+**Applied in the spec:** R-UI-042's conflict dialog applies to preferences, authentication settings and policies only.
+
+### Q-UI-23 · Drafts across re-authentication and an ended session
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Session storage per route for non-secret forms, plus a registry of open editors for "Copy draft as JSON" (chosen) | `DraftStore.keep` / `take` around the sign-in; `track` / `snapshot` for the ended-session dialog | Survives the full-page sign-in; dies with the tab; one place | The route is the key, so two editors on one route share a slot (none exists today) |
+| (b) In memory only | Lost on the full-page navigation to the identity provider | No storage | Cannot satisfy R-UI-042 |
+| (c) Local storage | Survives the tab | Longer lived | A draft outlives the session it belongs to |
+
+**Choice:** (a). The token creation form keeps its description, lifetime and scope; the token value and any pasted token are never kept (R-UI-043). Policy, authentication settings and token forms use it.
+
+**Rationale:** R-UI-042 asks for session storage keyed by route and excludes secrets. The development agent revisits this when more editors exist.
+
+**Applied in the spec:** R-UI-004 and R-UI-042 are unchanged.
+
+### Q-UI-24 · Where a new token value is shown, and a lost one
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An inline panel of the creating component (chosen) | `<trove-token-secret>` takes the value as an input from a signal of the parent; focus moves to it; "I have copied it" drops the value | The value never passes through a dialog service or route; dies with the component | The panel is part of the page, not modal |
+| (b) A dialog | The value is the dialog's data | Familiar | `MAT_DIALOG_DATA` holds the value in a service-owned object |
+| (c) A separate route | `/profile/tokens/created` | Linkable | The value would have to travel in a store or the URL (R-UI-043 forbids both) |
+
+**Choice:** (a). A create that answers 409 `token_already_issued` revokes the token named by `tokenId` and creates again with a new key (R-UI-042); the user sees one token.
+
+**Rationale:** R-UI-043 limits secrets to component-local signals. The development agent revisits this if a dialog primitive that does not keep its data appears.
+
+**Applied in the spec:** R-UI-029 and R-UI-043 are unchanged.
+
+### Q-UI-25 · Controls the caller may not use, the filter "unused for", and what the settings answer lacks
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| How R-UI-005's "disabled with the reason" applies to administration screens | Hide everything; disable everything; disable primary actions and note the rest | List pages show their create button disabled with `<trove-needs>` ("Read only: changing this needs the permission X") described by `aria-describedby`; detail pages hide the edit controls and show the same note at the top. The API decides in every case |
+| Token filter "unused since N days" | A date field; a day count | A day count, sent as `lastUsedBefore` = now minus N days. The API records no last use yet (R-AUTH-031 is P1), so the filter lists every token until it does |
+| R-UI-031 warnings about the poll binding and the `authz.hide_existence` display | Invent them from other data; show nothing; wait | Not shown: `GET /api/v1/settings/auth` returns neither the poll-binding mode, the trusted-proxy fact, SCIM state nor `hide_existence`. The status block lists what the answer carries |
+| Audit link on the user detail | Omit; link with a query | A link to `/admin/audit?actor=<username>`; the audit screen's filter parameter is the audit screen's decision |
+| `PermissionCheck.action` type | The generated enum; a string | A string, because callers hold actions in variables; the HTTP body is the generated shape |
+
+**Rationale:** Each choice follows the nearest requirement and stays a one-line change. The development agent revisits the settings gap when the answer carries the facts.
+
+**Applied in the spec:** R-UI-005, R-UI-030 and R-UI-031 are unchanged; the gaps are recorded here.
+<!-- <<< M1 ui-b -->
+
 ### Q-API-16 · A `limit` above the maximum is clamped
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

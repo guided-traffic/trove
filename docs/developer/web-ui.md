@@ -32,8 +32,8 @@ Q-UI-13 on the same page.
 | [web/src/app/api/](../../web/src/app/api/) | `client.ts` (`ApiClient`), `problem.ts` (`Problem`, `ApiError`), `pagination.ts` (`collectAll`, `PagedList`), `types.ts` (helpers over the generated types), one `*-api.ts` per endpoint family (abstract service class, hand-typed DTO where the OpenAPI document lacks the operation, HTTP implementation), `providers.ts`, `testing/fakes.ts` |
 | `web/src/app/api/generated/` | `schema.d.ts` from openapi-typescript, committed, never edited |
 | [web/src/app/core/](../../web/src/app/core/) | `session-store.ts`, `authz-epoch.ts`, `auth-guard.ts`, `navigation.ts`, `preferences-store.ts`, `notifier.ts`, `title-strategy.ts`, `focus-on-navigation.ts`, `storage.ts` (the only user of browser storage), `browser-navigation.ts` (`safeReturnTo`), `layout.ts`, `banner-store.ts`; `http/interceptors.ts` and `http/problem-messages.ts` |
-| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute` |
-| [web/src/app/features/](../../web/src/app/features/) | One folder per area with an `<area>.routes.ts` (`auth` and `system` carry built screens, the others placeholders), `not-found` |
+| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute`; `access/` (building blocks of the identity and permission screens, see below) |
+| [web/src/app/features/](../../web/src/app/features/) | One folder per area with an `<area>.routes.ts` (`login` <!-- M1 ui-b -->, the identity and permission areas of the section below, and `system` carry built screens), `not-found` |
 | [web/src/app/testing/](../../web/src/app/testing/) | `axe.ts`, the accessibility helper of the component specs |
 | [web/scripts/](../../web/scripts/) | `build-embed.mjs`, `check-budget.mjs`, `check-rules.mjs` |
 | [web/eslint.config.js](../../web/eslint.config.js) | angular-eslint plus the R-UI-046 rules |
@@ -184,6 +184,64 @@ feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is 
 **Secrets** never enter these services (R-UI-043): token values live in component signals only. `core/storage.ts` is for non-secret
 convenience data and answers as if empty when the browser blocks storage.
 
+<!-- >>> M1 ui-b -->
+## Identity, token and permission screens
+
+Built against the real management API with the generated types of `schema.d.ts`. Requirements: R-UI-002 to R-UI-005 (sign-in, sessions),
+R-UI-024 to R-UI-027, R-UI-029 to R-UI-031, R-UI-042 to R-UI-045; decisions Q-UI-20 to Q-UI-25 in [api-and-ui.md](../spec/api-and-ui.md).
+
+| Route | Screen (folder under `web/src/app/features/`) | Requirement | Capability that shows the entry |
+|---|---|---|---|
+| `/login`, `/logged-out` | `login/` (`Login`, `LoggedOut`): providers from `login-options`, auto-redirect, `?local=1` break-glass form, `returnTo`, `reauth=1` notice, "continue without signing in" | R-UI-004, R-AUTH-009 | none |
+| `/profile` | `profile/` `Profile`: identity, groups with source, missing-group-claim notice, system roles, preferences with `If-Match` | R-UI-029 | none |
+| `/profile/tokens` | `profile/` `ProfileTokens` over `tokens/` `TokenManager`: list, create, one-time display, revoke, rotate | R-UI-029 | none |
+| `/profile/sessions` | `profile/` `ProfileSessions`: list, end one, end others | R-UI-029 | none |
+| `/admin/users`, `/admin/users/:username` | `users/`: list with filters and paging, "Add user" dialog; detail with attributes, identities, groups, roles, tokens, sessions | R-UI-024 | `identities:read` |
+| `/admin/groups`, `/admin/groups/:name` | `groups/`: list, create dialog; editor with members and their sources, roles, policies naming the group | R-UI-025 | `identities:read` |
+| `/admin/service-accounts`, `/admin/service-accounts/:name` | `service-accounts/`: list, create dialog; detail with status, roles and the token section | R-UI-026 | `identities:read` |
+| `/admin/roles` | `roles/` `RoleBindings`: the five roles, holders, bind and unbind with the last-administrator guard | R-UI-024 | `roles:read` |
+| `/admin/permissions`, `/new`, `/:name` | `permissions/`: `PolicyList`; `PolicyEditor` (one page for create and edit, validation preview, pattern tester, "Try it", diff before save) | R-UI-027 | `policies:read` |
+| `/admin/tokens` | `tokens/` `TokenAdmin`: filters, revoke one or selected, revoke by value | R-UI-030 | `tokens:read` |
+| `/admin/settings/auth` | `settings/` `AuthSettings`: runtime values with ceilings, read-only status, `If-Match` save | R-UI-031 | `settings:read` |
+
+Services of `api/` (abstract class, HTTP implementation, fake in [api/testing/access-fakes.ts](../../web/src/app/api/testing/access-fakes.ts)); every shape is a
+`Schema<'…'>` of the generated document:
+
+| Service | File | Operations |
+|---|---|---|
+| `SessionApi`, `LoginApi`, `PreferencesApi` | `session-api.ts`, `login-api.ts`, `preferences-api.ts` | `whoami`, `authz/me`, `authz/check`, `login-options`, `users/me/preferences` (generated types since wave 3; `PermissionCheck.action` stays a string) |
+| `IdentityApi` | `identity-api.ts` | users, groups and service accounts; merge patches without `ETag` (`ApiClient.patchMerge`), memberships as plain JSON (`patchJson`) |
+| `TokensApi` | `tokens-api.ts` | list with filters, create (own and for a service account), rotate, revoke, revoke by value, revoke all |
+| `SessionsApi` | `sessions-api.ts` | own sessions, `keepCurrent`, sessions of a user |
+| `AuthSettingsApi` | `auth-settings-api.ts` | `GET`, `PATCH /settings/auth` with `If-Match` |
+| `PolicyApi`, `RolesApi` | `authz-api.ts` | policies (`PUT` with `If-Match`, `validate-policy`), roles, role bindings (`ApiClient.putBinding`) |
+| `PolicyExplainer` | `policy-explainer.ts` | the preview's "why can X do Y": `DraftPolicyExplainer` today, an implementation of `POST /authz/explain` once R-AUTHZ-024 is built |
+
+Building blocks under [shared/access/](../../web/src/app/shared/access/): `PagedSignal` (cursor paging as signals), `TextField` and `SelectField` (label, hint,
+error text tied with `aria-describedby`), `Confirmer` (confirmation dialog with an optional checkbox), `Needs` (the reason behind a missing write control, R-UI-005),
+`TokenForm`, `TokenSecret` (one-time display), `TokenTable`, `PrincipalRoles`, `DraftStore`, `formatDuration`. [features/tokens/token-manager.ts](../../web/src/app/features/tokens/token-manager.ts)
+is the one token list-and-create component used by the profile, the user detail and the service account detail.
+
+Conventions these screens follow:
+
+- **Writes.** Creates send the `Idempotency-Key` generated when the form or dialog opened. Resources with an `ETag` (preferences, authentication settings, policies) are written
+  with it; a 412 opens the conflict dialog and "Overwrite" sends the user's version with the tag read at that moment. Users, groups and service accounts have no tag: their
+  `PATCH` is a merge patch of the members that changed.
+- **Own permission changes.** A write of a policy or role binding answers `Trove-Authz-Epoch`; `conventionsInterceptor` keeps the highest one in `AuthzEpoch` and sends it as
+  `Trove-Authz-Min-Epoch` on whatever follows, so the screens re-read without extra code ([access-http.spec.ts](../../web/src/app/api/access-http.spec.ts) proves the hand-off for a
+  policy `PUT` and a role binding). After such a write the screen also calls `SessionStore.refreshCapabilities()`.
+- **Re-authentication and expiry.** An editor that gets 401 `reauthentication_required` stores its non-secret entries with `DraftStore.keep` (session storage, keyed by route);
+  after the sign-in returns to the route, `DraftStore.take` fills the form again. Editors register their unsaved state with `DraftStore.track`, which is what "Copy draft as JSON"
+  in the "Your session has ended" dialog copies. Forms that hold a secret (a token value, a pasted token) use neither.
+- **Secrets.** A created or rotated token value lives in a signal of the owning component and is passed to `<trove-token-secret>` as an input; it is shown in a password input with a
+  reveal toggle and a copy button, and dropped when the panel is dismissed or the component is destroyed. "Revoke by value" clears its field whatever the answer was.
+- **Lost token value.** A retried create that answers 409 `token_already_issued` carries the `tokenId`; `TokenManager` revokes it and creates again with a new key (R-UI-042).
+- **Permission-driven rendering.** Entries show with `identities:read`, `policies:read` and so on; controls that need a write capability are disabled with `<trove-needs>` next to them
+  (list pages) or absent with the same note at the top (detail pages). The API decides in any case.
+- **Tests.** Component specs use `renderScreen` from [shared/access/testing.ts](../../web/src/app/shared/access/testing.ts) against the fakes; each screen's spec runs axe on its states
+  (loaded, error, read-only, open dialog), including the one-time token display and the policy editor with validation errors.
+<!-- <<< M1 ui-b -->
+
 ## How to add a feature area
 
 1. Create `web/src/app/features/<area>/` with a standalone component per screen (`Component` with
@@ -203,13 +261,14 @@ convenience data and answers as if empty when the browser blocks storage.
 
 ## What is not done yet
 
-- The OpenAPI document has no operation for `whoami`, `login-options`, `authz/me`, `authz/check`, `users/me/preferences`, `system/encryption`; their DTOs are
-  typed by hand in `api/*-api.ts` until wave 2 adds them (Q-UI-12). `GET /api/v1/system/banner` is not wired to `BannerStore` either.
+- `system/encryption` has no operation in the OpenAPI document yet; its DTO is typed by hand in `api/system-api.ts` (Q-UI-12). `GET /api/v1/system/banner` is not wired to
+  `BannerStore` either. <!-- >>> M1 ui-b --> `whoami`, `login-options`, `authz/me`, `authz/check` and `users/me/preferences` use the generated types since wave 3. <!-- <<< M1 ui-b -->
 - System status: scheduled tasks, jobs and backups have no card yet (R-UI-038, R-UI-048); the jobs and backups routes are placeholders.
-- The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read. The `reauthentication_required`
-  dialog leads to `/login?...&reauth=1`; keeping and restoring the draft of non-secret forms is the editors' part.
+- The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
+  expiry; the timeouts are in `settings/auth`, which needs `settings:read`). <!-- >>> M1 ui-b --> The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
+  settings and policy editors keep and restore their non-secret drafts (see above); other editors adopt `DraftStore` as they are built. <!-- <<< M1 ui-b -->
 - No project filter, global search, help link or keyboard-shortcut switch in the header (P1 entries of R-UI-002).
-- Forms: the sign-in form uses plain signals. Signal Forms with validators derived from the OpenAPI constraints start with the first real form.
+- Forms: <!-- >>> M1 ui-b --> every form uses plain signals with `TextField` and `SelectField` (Q-UI-20); the server's `validate-policy` and field errors by JSON pointer carry the validation, and the client checks only what saves a round trip. Signal Forms with validators derived from the OpenAPI constraints are not used. <!-- <<< M1 ui-b -->
 - Browser-mode component tests, contract mocks, Playwright (contrast in both themes, reflow, focus order, both locales) and the security tier.
 - Local runs on a Node.js other than `web/.nvmrc` work only while the version satisfies `engines`; `make versions-check` names a mismatch.
 - npm 11 prints `allow-scripts` warnings for the install scripts of `esbuild`, `lmdb`,

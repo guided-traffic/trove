@@ -101,6 +101,30 @@ export class ApiClient {
     });
   }
 
+  // >>> M1 ui-b
+  /**
+   * JSON Merge Patch of a resource that carries no `ETag` (users, groups, service accounts,
+   * R-API-013): the members present in the patch are the only ones that change, so a concurrent
+   * edit of another member survives. Without `If-Match` the request is never retried after a
+   * network error (R-UI-042).
+   */
+  patchMerge<T>(url: string, patch: unknown): Promise<ApiResponse<T>> {
+    return this.send<T>('PATCH', url, patch, {
+      headers: { 'Content-Type': 'application/merge-patch+json' },
+    });
+  }
+
+  /** PATCH with a plain JSON body: the membership changes (`add`, `remove`) are not merge patches. */
+  patchJson<T>(url: string, body: unknown): Promise<ApiResponse<T>> {
+    return this.send<T>('PATCH', url, body, {});
+  }
+
+  /** PUT of a resource that is its own representation and has no body or `ETag` (role bindings). */
+  putBinding<T>(url: string): Promise<ApiResponse<T>> {
+    return this.send<T>('PUT', url, undefined, {});
+  }
+  // <<< M1 ui-b
+
   /** Delete; `etag` is optional because DELETE honours but does not require `If-Match`. */
   delete<T = void>(
     url: string,

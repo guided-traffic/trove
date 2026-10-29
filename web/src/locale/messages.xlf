@@ -1,6 +1,78 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <xliff version="2.0" xmlns="urn:oasis:names:tc:xliff:document:2.0" srcLang="en">
   <file id="ngi18n" original="ng.template">
+    <unit id="explain.invalid">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:61</note>
+      </notes>
+      <segment>
+        <source>The draft has errors, so it covers nothing yet. Fix them first.</source>
+      </segment>
+    </unit>
+    <unit id="explain.not-covered">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:68</note>
+      </notes>
+      <segment>
+        <source>The draft&apos;s repository selectors do not cover <ph id="0" equiv="repository" disp="q.repository"/>.</source>
+      </segment>
+    </unit>
+    <unit id="explain.covered">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:74</note>
+      </notes>
+      <segment>
+        <source>The draft&apos;s repository selectors cover <ph id="0" equiv="repository" disp="q.repository"/>.</source>
+      </segment>
+    </unit>
+    <unit id="explain.no-entry">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:82</note>
+      </notes>
+      <segment>
+        <source>The draft has no entry for <ph id="0" equiv="principal" disp="q.principal"/> or for a group or class it belongs to.</source>
+      </segment>
+    </unit>
+    <unit id="explain.no-action">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:90</note>
+      </notes>
+      <segment>
+        <source>The entries that apply to <ph id="0" equiv="principal" disp="q.principal"/> do not include the action <ph id="1" equiv="action" disp="q.action"/>.</source>
+      </segment>
+    </unit>
+    <unit id="explain.entry">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:98</note>
+      </notes>
+      <segment>
+        <source>The draft has an entry for <ph id="0" equiv="principal" disp="entry.principal"/> that includes the action <ph id="1" equiv="action" disp="q.action"/>.</source>
+      </segment>
+    </unit>
+    <unit id="explain.entry-via">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:99</note>
+      </notes>
+      <segment>
+        <source>The draft has an entry for <ph id="0" equiv="entry" disp="entry.principal"/> that includes the action <ph id="1" equiv="action" disp="q.action"/> and applies to <ph id="2" equiv="principal" disp="q.principal"/> through its group or class.</source>
+      </segment>
+    </unit>
+    <unit id="explain.limits">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:103</note>
+      </notes>
+      <segment>
+        <source>Not evaluated here: other policies, the token scope, the endpoint&apos;s exposure rules and package ownership.</source>
+      </segment>
+    </unit>
+    <unit id="explain.groups-unknown">
+      <notes>
+        <note category="location">src/app/api/policy-explainer.ts:127</note>
+      </notes>
+      <segment>
+        <source>The groups of <ph id="0" equiv="principal" disp="principal"/> could not be read, so entries for groups are not considered.</source>
+      </segment>
+    </unit>
     <unit id="shell.skip">
       <notes>
         <note category="location">src/app/app.html:2,5</note>
@@ -107,7 +179,7 @@
     </unit>
     <unit id="route.logged-out.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:19</note>
+        <note category="location">src/app/app.routes.ts:21</note>
       </notes>
       <segment>
         <source>Signed out</source>
@@ -115,15 +187,359 @@
     </unit>
     <unit id="route.notfound.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:98</note>
+        <note category="location">src/app/app.routes.ts:102</note>
       </notes>
       <segment>
         <source>Page not found</source>
       </segment>
     </unit>
+    <unit id="problem.invalid_credentials">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:9</note>
+      </notes>
+      <segment>
+        <source>The user name or the password is wrong.</source>
+      </segment>
+    </unit>
+    <unit id="problem.break_glass_locked">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:11</note>
+      </notes>
+      <segment>
+        <source>The local account is locked after too many failed attempts. Try again later.</source>
+      </segment>
+    </unit>
+    <unit id="problem.break_glass_rotating">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:13</note>
+      </notes>
+      <segment>
+        <source>The local password was just replaced. Try again in a moment.</source>
+      </segment>
+    </unit>
+    <unit id="problem.break_glass_restricted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:15</note>
+      </notes>
+      <segment>
+        <source>The local account can neither own nor create tokens.</source>
+      </segment>
+    </unit>
+    <unit id="problem.break_glass_immutable">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:17</note>
+      </notes>
+      <segment>
+        <source>The local account cannot be changed here.</source>
+      </segment>
+    </unit>
+    <unit id="problem.local_login_disabled">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:19</note>
+      </notes>
+      <segment>
+        <source>Local sign-in is switched off.</source>
+      </segment>
+    </unit>
+    <unit id="problem.too_many_pending_logins">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:21</note>
+      </notes>
+      <segment>
+        <source>Too many sign-ins are in progress. Try again in a moment.</source>
+      </segment>
+    </unit>
+    <unit id="problem.provider_unavailable">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:23</note>
+      </notes>
+      <segment>
+        <source>The identity provider is not available right now.</source>
+      </segment>
+    </unit>
+    <unit id="problem.principal_disabled">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:25</note>
+      </notes>
+      <segment>
+        <source>This account is disabled.</source>
+      </segment>
+    </unit>
+    <unit id="problem.reserved_name">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:27</note>
+      </notes>
+      <segment>
+        <source>This name is reserved.</source>
+      </segment>
+    </unit>
+    <unit id="problem.username_invalid">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:29</note>
+      </notes>
+      <segment>
+        <source>The user name may contain lower-case letters, digits and . _ @ + - only, and must start with a letter or digit.</source>
+      </segment>
+    </unit>
+    <unit id="problem.managed_by_scim">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:31</note>
+      </notes>
+      <segment>
+        <source>This object is managed by SCIM and cannot be changed here.</source>
+      </segment>
+    </unit>
+    <unit id="problem.managed_by_config">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:33</note>
+      </notes>
+      <segment>
+        <source>This object is managed by the installation&apos;s configuration and cannot be changed here.</source>
+      </segment>
+    </unit>
+    <unit id="problem.last_admin">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:35</note>
+      </notes>
+      <segment>
+        <source>The last administrator binding cannot be removed.</source>
+      </segment>
+    </unit>
+    <unit id="problem.auto_join_admin_conflict">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:37</note>
+      </notes>
+      <segment>
+        <source>An auto-join group cannot hold the administrator role.</source>
+      </segment>
+    </unit>
+    <unit id="problem.role_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:39</note>
+      </notes>
+      <segment>
+        <source>This role cannot be bound to this kind of principal.</source>
+      </segment>
+    </unit>
+    <unit id="problem.unknown_role">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:41</note>
+      </notes>
+      <segment>
+        <source>This role does not exist.</source>
+      </segment>
+    </unit>
+    <unit id="problem.invalid_member">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:43</note>
+      </notes>
+      <segment>
+        <source>A member does not exist or cannot be added.</source>
+      </segment>
+    </unit>
+    <unit id="problem.invalid_ttl">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:45</note>
+      </notes>
+      <segment>
+        <source>The lifetime is not valid.</source>
+      </segment>
+    </unit>
+    <unit id="problem.ttl_exceeds_maximum">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:47</note>
+      </notes>
+      <segment>
+        <source>The lifetime is longer than the maximum for this kind of token.</source>
+      </segment>
+    </unit>
+    <unit id="problem.default_above_maximum">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:49</note>
+      </notes>
+      <segment>
+        <source>The default lifetime cannot be longer than the maximum.</source>
+      </segment>
+    </unit>
+    <unit id="problem.exceeds_ceiling">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:51</note>
+      </notes>
+      <segment>
+        <source>The value is above the ceiling set in the installation&apos;s configuration.</source>
+      </segment>
+    </unit>
+    <unit id="problem.non_expiring_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:53</note>
+      </notes>
+      <segment>
+        <source>A token without an expiry is not allowed here.</source>
+      </segment>
+    </unit>
+    <unit id="problem.non_expiring_restricted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:55</note>
+      </notes>
+      <segment>
+        <source>Only a service-account token can be created without an expiry.</source>
+      </segment>
+    </unit>
+    <unit id="problem.invalid_scope">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:57</note>
+      </notes>
+      <segment>
+        <source>The scope is not valid.</source>
+      </segment>
+    </unit>
+    <unit id="problem.derivation_exceeds_parent">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:59</note>
+      </notes>
+      <segment>
+        <source>A token cannot grant more than the token that creates it.</source>
+      </segment>
+    </unit>
+    <unit id="problem.description_required">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:61</note>
+      </notes>
+      <segment>
+        <source>Enter a description.</source>
+      </segment>
+    </unit>
+    <unit id="problem.token_limit_reached">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:63</note>
+      </notes>
+      <segment>
+        <source>The limit of tokens for this owner is reached. Revoke a token first.</source>
+      </segment>
+    </unit>
+    <unit id="problem.pat_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:65</note>
+      </notes>
+      <segment>
+        <source>A personal token cannot be created with this credential.</source>
+      </segment>
+    </unit>
+    <unit id="problem.ci_token_restricted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:67</note>
+      </notes>
+      <segment>
+        <source>A token issued to a pipeline cannot do this.</source>
+      </segment>
+    </unit>
+    <unit id="problem.not_a_token">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:69</note>
+      </notes>
+      <segment>
+        <source>The current credential is not a token.</source>
+      </segment>
+    </unit>
+    <unit id="problem.anonymous_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:71</note>
+      </notes>
+      <segment>
+        <source>Anonymous access is not allowed by the installation&apos;s configuration.</source>
+      </segment>
+    </unit>
+    <unit id="problem.invalid_action">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:73</note>
+      </notes>
+      <segment>
+        <source>An action is not valid.</source>
+      </segment>
+    </unit>
+    <unit id="problem.invalid_pattern">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:75</note>
+      </notes>
+      <segment>
+        <source>A pattern is not valid.</source>
+      </segment>
+    </unit>
+    <unit id="problem.unknown_principal">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:77</note>
+      </notes>
+      <segment>
+        <source>A principal does not exist.</source>
+      </segment>
+    </unit>
+    <unit id="problem.unknown_repository">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:79</note>
+      </notes>
+      <segment>
+        <source>A repository selector names a repository that does not exist.</source>
+      </segment>
+    </unit>
+    <unit id="problem.unknown_format">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:81</note>
+      </notes>
+      <segment>
+        <source>A selector names a format that does not exist.</source>
+      </segment>
+    </unit>
+    <unit id="problem.duplicate_principal">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:83</note>
+      </notes>
+      <segment>
+        <source>A principal appears twice in the policy.</source>
+      </segment>
+    </unit>
+    <unit id="problem.anonymous_write_action">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:85</note>
+      </notes>
+      <segment>
+        <source>The anonymous principal can only read.</source>
+      </segment>
+    </unit>
+    <unit id="problem.anonymous_dynamic_selector">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:87</note>
+      </notes>
+      <segment>
+        <source>The anonymous principal needs named repositories, not patterns or classes.</source>
+      </segment>
+    </unit>
+    <unit id="problem.authenticated_write_action">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:89</note>
+      </notes>
+      <segment>
+        <source>The group of all signed-in users can only read.</source>
+      </segment>
+    </unit>
+    <unit id="problem.action_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:91</note>
+      </notes>
+      <segment>
+        <source>This principal cannot hold this action.</source>
+      </segment>
+    </unit>
+    <unit id="problem.virtual_action_not_applicable">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:93</note>
+      </notes>
+      <segment>
+        <source>A virtual repository accepts only read and manage.</source>
+      </segment>
+    </unit>
     <unit id="problem.unauthenticated">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:22</note>
+        <note category="location">src/app/core/http/problem-messages.ts:25</note>
       </notes>
       <segment>
         <source>You are not signed in, or your session has ended.</source>
@@ -131,7 +547,7 @@
     </unit>
     <unit id="problem.reauthentication_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:24</note>
+        <note category="location">src/app/core/http/problem-messages.ts:27</note>
       </notes>
       <segment>
         <source>This action needs a recent sign-in.</source>
@@ -139,7 +555,7 @@
     </unit>
     <unit id="problem.forbidden">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:26</note>
+        <note category="location">src/app/core/http/problem-messages.ts:29</note>
       </notes>
       <segment>
         <source>You do not have the permission for this.</source>
@@ -147,7 +563,7 @@
     </unit>
     <unit id="problem.csrf_failed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:28</note>
+        <note category="location">src/app/core/http/problem-messages.ts:31</note>
       </notes>
       <segment>
         <source>The request was refused as a possible forgery. Reload the page and try again.</source>
@@ -155,7 +571,7 @@
     </unit>
     <unit id="problem.not_found">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:30</note>
+        <note category="location">src/app/core/http/problem-messages.ts:33</note>
       </notes>
       <segment>
         <source>This does not exist, or you may not see it.</source>
@@ -163,7 +579,7 @@
     </unit>
     <unit id="problem.already_exists">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:32</note>
+        <note category="location">src/app/core/http/problem-messages.ts:35</note>
       </notes>
       <segment>
         <source>An object with this key or name already exists.</source>
@@ -171,7 +587,7 @@
     </unit>
     <unit id="problem.conflict">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:34</note>
+        <note category="location">src/app/core/http/problem-messages.ts:37</note>
       </notes>
       <segment>
         <source>The request conflicts with the current state.</source>
@@ -179,7 +595,7 @@
     </unit>
     <unit id="problem.idempotency_in_progress">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:36</note>
+        <note category="location">src/app/core/http/problem-messages.ts:39</note>
       </notes>
       <segment>
         <source>The same request is still being processed. Try again in a moment.</source>
@@ -187,7 +603,7 @@
     </unit>
     <unit id="problem.idempotency_key_reused">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:38</note>
+        <note category="location">src/app/core/http/problem-messages.ts:41</note>
       </notes>
       <segment>
         <source>This form was already submitted with different content. Reopen it and try again.</source>
@@ -195,7 +611,7 @@
     </unit>
     <unit id="problem.token_already_issued">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:40</note>
+        <note category="location">src/app/core/http/problem-messages.ts:43</note>
       </notes>
       <segment>
         <source>A token was already issued for this request.</source>
@@ -203,7 +619,7 @@
     </unit>
     <unit id="problem.precondition_failed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:42</note>
+        <note category="location">src/app/core/http/problem-messages.ts:45</note>
       </notes>
       <segment>
         <source>Changed by someone else since you opened it.</source>
@@ -211,7 +627,7 @@
     </unit>
     <unit id="problem.precondition_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:44</note>
+        <note category="location">src/app/core/http/problem-messages.ts:47</note>
       </notes>
       <segment>
         <source>The request did not say which version it changes. Reload the page and try again.</source>
@@ -219,7 +635,7 @@
     </unit>
     <unit id="problem.authz_epoch_unknown">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:46</note>
+        <note category="location">src/app/core/http/problem-messages.ts:49</note>
       </notes>
       <segment>
         <source>Your last change may not have been saved.</source>
@@ -227,7 +643,7 @@
     </unit>
     <unit id="problem.payload_too_large">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:48</note>
+        <note category="location">src/app/core/http/problem-messages.ts:51</note>
       </notes>
       <segment>
         <source>The request is too large.</source>
@@ -235,7 +651,7 @@
     </unit>
     <unit id="problem.validation_failed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:50</note>
+        <note category="location">src/app/core/http/problem-messages.ts:53</note>
       </notes>
       <segment>
         <source>Some entries are not valid.</source>
@@ -243,7 +659,7 @@
     </unit>
     <unit id="problem.malformed_request">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:52</note>
+        <note category="location">src/app/core/http/problem-messages.ts:55</note>
       </notes>
       <segment>
         <source>The request could not be understood.</source>
@@ -251,7 +667,7 @@
     </unit>
     <unit id="problem.invalid_cursor">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:54</note>
+        <note category="location">src/app/core/http/problem-messages.ts:57</note>
       </notes>
       <segment>
         <source>The list changed while you were paging. Start again from the first page.</source>
@@ -259,7 +675,7 @@
     </unit>
     <unit id="problem.upstream_error">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:58</note>
+        <note category="location">src/app/core/http/problem-messages.ts:61</note>
       </notes>
       <segment>
         <source>An upstream service did not answer correctly.</source>
@@ -267,7 +683,7 @@
     </unit>
     <unit id="problem.unavailable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:61</note>
+        <note category="location">src/app/core/http/problem-messages.ts:64</note>
       </notes>
       <segment>
         <source>The service is temporarily unavailable.</source>
@@ -275,7 +691,7 @@
     </unit>
     <unit id="problem.internal">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:63</note>
+        <note category="location">src/app/core/http/problem-messages.ts:66</note>
       </notes>
       <segment>
         <source>Something went wrong on the server.</source>
@@ -283,7 +699,7 @@
     </unit>
     <unit id="problem.rate_limited">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:71</note>
+        <note category="location">src/app/core/http/problem-messages.ts:83</note>
       </notes>
       <segment>
         <source>Too many requests. Wait a moment and try again.</source>
@@ -291,7 +707,7 @@
     </unit>
     <unit id="problem.rate_limited_wait">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:72</note>
+        <note category="location">src/app/core/http/problem-messages.ts:84</note>
       </notes>
       <segment>
         <source>Too many requests. Try again in <ph id="0" equiv="seconds" disp="seconds"/> seconds.</source>
@@ -299,7 +715,7 @@
     </unit>
     <unit id="problem.network">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:78</note>
+        <note category="location">src/app/core/http/problem-messages.ts:90</note>
       </notes>
       <segment>
         <source>The server could not be reached. Check your connection and try again.</source>
@@ -425,110 +841,6 @@
         <source>Audit log</source>
       </segment>
     </unit>
-    <unit id="loggedout.heading">
-      <notes>
-        <note category="location">src/app/features/auth/logged-out.ts:15,16</note>
-      </notes>
-      <segment>
-        <source>Signed out</source>
-      </segment>
-    </unit>
-    <unit id="loggedout.text">
-      <notes>
-        <note category="location">src/app/features/auth/logged-out.ts:16,17</note>
-      </notes>
-      <segment>
-        <source>You have been signed out.</source>
-      </segment>
-    </unit>
-    <unit id="loggedout.again">
-      <notes>
-        <note category="location">src/app/features/auth/logged-out.ts:17,20</note>
-      </notes>
-      <segment>
-        <source>Sign in again</source>
-      </segment>
-    </unit>
-    <unit id="login.heading">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:25,27</note>
-      </notes>
-      <segment>
-        <source>Sign in</source>
-      </segment>
-    </unit>
-    <unit id="login.loading">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:30,31</note>
-      </notes>
-      <segment>
-        <source>Loading the sign-in options.</source>
-      </segment>
-    </unit>
-    <unit id="login.redirecting">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:33,35</note>
-      </notes>
-      <segment>
-        <source>Redirecting to the identity provider.</source>
-      </segment>
-    </unit>
-    <unit id="login.no-providers">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:36,38</note>
-      </notes>
-      <segment>
-        <source>No sign-in method is configured.</source>
-      </segment>
-    </unit>
-    <unit id="login.with">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:47,48</note>
-      </notes>
-      <segment>
-        <source>Sign in with</source>
-      </segment>
-    </unit>
-    <unit id="login.unavailable">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:51,53</note>
-      </notes>
-      <segment>
-        <source>Currently unavailable</source>
-      </segment>
-    </unit>
-    <unit id="login.local.heading">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:59,60</note>
-      </notes>
-      <segment>
-        <source>Local administrator</source>
-      </segment>
-    </unit>
-    <unit id="login.local.username">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:61,63</note>
-      </notes>
-      <segment>
-        <source>Username</source>
-      </segment>
-    </unit>
-    <unit id="login.local.password">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:71,73</note>
-      </notes>
-      <segment>
-        <source>Password</source>
-      </segment>
-    </unit>
-    <unit id="login.local.submit">
-      <notes>
-        <note category="location">src/app/features/auth/login.ts:85,86</note>
-      </notes>
-      <segment>
-        <source> Sign in </source>
-      </segment>
-    </unit>
     <unit id="route.browse.title">
       <notes>
         <note category="location">src/app/features/browse/browse.routes.ts:22</note>
@@ -577,9 +889,561 @@
         <source>Exposure rule</source>
       </segment>
     </unit>
+    <unit id="group-create.title">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:19,20</note>
+      </notes>
+      <segment>
+        <source>New group</source>
+      </segment>
+    </unit>
+    <unit id="group-create.name">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:28,29</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="group-create.name-hint">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:33,35</note>
+      </notes>
+      <segment>
+        <source>Lower-case letters, digits and . _ -</source>
+      </segment>
+    </unit>
+    <unit id="group-create.description">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:35</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="group-create.auto-join">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:37,38</note>
+      </notes>
+      <segment>
+        <source>Every user joins this group automatically</source>
+      </segment>
+    </unit>
+    <unit id="group-create.cancel">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:41,42</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+      </segment>
+    </unit>
+    <unit id="group-create.submit">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Create group</source>
+      </segment>
+    </unit>
+    <unit id="group-create.created">
+      <notes>
+        <note category="location">src/app/features/groups/group-create-dialog.ts:73</note>
+      </notes>
+      <segment>
+        <source>Group created.</source>
+      </segment>
+    </unit>
+    <unit id="group.heading">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="group.back">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:3,5</note>
+      </notes>
+      <segment>
+        <source>All groups</source>
+      </segment>
+    </unit>
+    <unit id="group.general">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:14,15</note>
+      </notes>
+      <segment>
+        <source>General</source>
+      </segment>
+    </unit>
+    <unit id="group.scim-note">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:18,20</note>
+      </notes>
+      <segment>
+        <source>This group is managed by SCIM and cannot be changed here.</source>
+      </segment>
+    </unit>
+    <unit id="group.name">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:25</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="group.description">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:26</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="group.auto-join">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:28,29</note>
+      </notes>
+      <segment>
+        <source>Every user joins this group automatically</source>
+      </segment>
+    </unit>
+    <unit id="group.origin">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:31,32</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="group.created">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:33,34</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="group.save">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:38,39</note>
+      </notes>
+      <segment>
+        <source>Save group</source>
+      </segment>
+    </unit>
+    <unit id="group.delete">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:39,41</note>
+      </notes>
+      <segment>
+        <source>Delete group</source>
+      </segment>
+    </unit>
+    <unit id="group.members">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:46,47</note>
+      </notes>
+      <segment>
+        <source>Members (<ph id="0" equiv="INTERPOLATION" disp="{{ g.memberCount }}"/>)</source>
+      </segment>
+    </unit>
+    <unit id="group.source-filter">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:51</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+      </segment>
+    </unit>
+    <unit id="group.no-members">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:58,60</note>
+      </notes>
+      <segment>
+        <source>No member matches.</source>
+      </segment>
+    </unit>
+    <unit id="group.members-region">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:60,62</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+      </segment>
+    </unit>
+    <unit id="group.members-caption">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:62,64</note>
+      </notes>
+      <segment>
+        <source>Members and where each membership comes from</source>
+      </segment>
+    </unit>
+    <unit id="group.member">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:65,66</note>
+      </notes>
+      <segment>
+        <source>Member</source>
+      </segment>
+    </unit>
+    <unit id="group.sources">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:66,67</note>
+      </notes>
+      <segment>
+        <source>Sources</source>
+      </segment>
+    </unit>
+    <unit id="group.member-actions">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:67,69</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="group.remove">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:82,83</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+      </segment>
+    </unit>
+    <unit id="group.more">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:93,95</note>
+      </notes>
+      <segment>
+        <source>Load more</source>
+      </segment>
+    </unit>
+    <unit id="group.add-member">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:101,103</note>
+      </notes>
+      <segment>
+        <source>Add a member</source>
+      </segment>
+    </unit>
+    <unit id="group.add-member-hint">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:105,107</note>
+      </notes>
+      <segment>
+        <source>A user name, or sa:name for a service account</source>
+      </segment>
+    </unit>
+    <unit id="group.add-member-submit">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:107,110</note>
+      </notes>
+      <segment>
+        <source>Add</source>
+      </segment>
+    </unit>
+    <unit id="group.roles">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:113,114</note>
+      </notes>
+      <segment>
+        <source>System roles</source>
+      </segment>
+    </unit>
+    <unit id="group.no-roles">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:115,117</note>
+      </notes>
+      <segment>
+        <source>No system role is bound to this group.</source>
+      </segment>
+    </unit>
+    <unit id="group.roles-link">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:124,128</note>
+      </notes>
+      <segment>
+        <source>Manage role bindings</source>
+      </segment>
+    </unit>
+    <unit id="group.policies">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:130,131</note>
+      </notes>
+      <segment>
+        <source>Permission policies naming this group</source>
+      </segment>
+    </unit>
+    <unit id="group.no-policies">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:132,134</note>
+      </notes>
+      <segment>
+        <source>No policy names this group.</source>
+      </segment>
+    </unit>
+    <unit id="group.source.all">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:61</note>
+      </notes>
+      <segment>
+        <source>All sources</source>
+      </segment>
+    </unit>
+    <unit id="group.source.manual">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:62</note>
+      </notes>
+      <segment>
+        <source>Manual</source>
+      </segment>
+    </unit>
+    <unit id="group.source.auto">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:63</note>
+      </notes>
+      <segment>
+        <source>Auto-join</source>
+      </segment>
+    </unit>
+    <unit id="group.saved">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:124</note>
+      </notes>
+      <segment>
+        <source>Group saved.</source>
+      </segment>
+    </unit>
+    <unit id="group.delete-title">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:136</note>
+      </notes>
+      <segment>
+        <source>Delete this group?</source>
+      </segment>
+    </unit>
+    <unit id="group.delete-text">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:137</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="group" disp="this.name()"/> and its memberships are removed. Policies and roles that name it stop applying.</source>
+      </segment>
+    </unit>
+    <unit id="group.delete-confirm">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:138</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+      </segment>
+    </unit>
+    <unit id="group.deleted">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:144</note>
+      </notes>
+      <segment>
+        <source>Group deleted.</source>
+      </segment>
+    </unit>
+    <unit id="group.member-added">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:155</note>
+      </notes>
+      <segment>
+        <source>Member added.</source>
+      </segment>
+    </unit>
+    <unit id="group.member-removed">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:161</note>
+      </notes>
+      <segment>
+        <source>Member removed.</source>
+      </segment>
+    </unit>
+    <unit id="group.src.manual">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:190</note>
+      </notes>
+      <segment>
+        <source>Manual</source>
+      </segment>
+    </unit>
+    <unit id="group.src.auto">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:191</note>
+      </notes>
+      <segment>
+        <source>Auto-join</source>
+      </segment>
+    </unit>
+    <unit id="group.src.provider">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.ts:193</note>
+      </notes>
+      <segment>
+        <source>Identity provider</source>
+      </segment>
+    </unit>
+    <unit id="group.origin.admin">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:17</note>
+      </notes>
+      <segment>
+        <source>Created by an administrator</source>
+      </segment>
+    </unit>
+    <unit id="group.origin.oidc">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:19</note>
+      </notes>
+      <segment>
+        <source>Identity provider</source>
+      </segment>
+    </unit>
+    <unit id="group.origin.scim">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:21</note>
+      </notes>
+      <segment>
+        <source>SCIM</source>
+      </segment>
+    </unit>
+    <unit id="groups.heading">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:31,32</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="groups.add">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:32,34</note>
+      </notes>
+      <segment>
+        <source>New group</source>
+      </segment>
+    </unit>
+    <unit id="groups.filters">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:36,37</note>
+      </notes>
+      <segment>
+        <source>Group filters</source>
+      </segment>
+    </unit>
+    <unit id="groups.q">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:37</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="groups.origin">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:38</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="groups.apply">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:39,42</note>
+      </notes>
+      <segment>
+        <source>Apply filters</source>
+      </segment>
+    </unit>
+    <unit id="groups.empty">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:47,49</note>
+      </notes>
+      <segment>
+        <source>No group matches.</source>
+      </segment>
+    </unit>
+    <unit id="groups.region">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:50</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="groups.caption">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:51,52</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="groups.col.name">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:54,55</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="groups.col.description">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:55,56</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="groups.col.origin">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:56,57</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="groups.col.members">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:57,59</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+      </segment>
+    </unit>
+    <unit id="groups.more">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:73,75</note>
+      </notes>
+      <segment>
+        <source>Load more</source>
+      </segment>
+    </unit>
+    <unit id="groups.loading">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:77,80</note>
+      </notes>
+      <segment>
+        <source>Loading groups.</source>
+      </segment>
+    </unit>
+    <unit id="groups.any">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:93</note>
+      </notes>
+      <segment>
+        <source>Any</source>
+      </segment>
+    </unit>
     <unit id="route.groups.title">
       <notes>
-        <note category="location">src/app/features/groups/groups.routes.ts:6</note>
+        <note category="location">src/app/features/groups/groups.routes.ts:7</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -587,10 +1451,130 @@
     </unit>
     <unit id="route.groups.detail.title">
       <notes>
-        <note category="location">src/app/features/groups/groups.routes.ts:7</note>
+        <note category="location">src/app/features/groups/groups.routes.ts:12</note>
       </notes>
       <segment>
         <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="loggedout.heading">
+      <notes>
+        <note category="location">src/app/features/login/logged-out.ts:15,16</note>
+      </notes>
+      <segment>
+        <source>Signed out</source>
+      </segment>
+    </unit>
+    <unit id="loggedout.text">
+      <notes>
+        <note category="location">src/app/features/login/logged-out.ts:16,17</note>
+      </notes>
+      <segment>
+        <source>You have been signed out.</source>
+      </segment>
+    </unit>
+    <unit id="loggedout.again">
+      <notes>
+        <note category="location">src/app/features/login/logged-out.ts:17,20</note>
+      </notes>
+      <segment>
+        <source>Sign in again</source>
+      </segment>
+    </unit>
+    <unit id="login.heading">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:25,27</note>
+      </notes>
+      <segment>
+        <source>Sign in</source>
+      </segment>
+    </unit>
+    <unit id="login.reauth">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:29,33</note>
+      </notes>
+      <segment>
+        <source> The action you tried needs a recent sign-in. Sign in again, then repeat it. Your entries are kept. </source>
+      </segment>
+    </unit>
+    <unit id="login.loading">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:36,37</note>
+      </notes>
+      <segment>
+        <source>Loading the sign-in options.</source>
+      </segment>
+    </unit>
+    <unit id="login.redirecting">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:39,41</note>
+      </notes>
+      <segment>
+        <source>Redirecting to the identity provider.</source>
+      </segment>
+    </unit>
+    <unit id="login.no-providers">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:42,44</note>
+      </notes>
+      <segment>
+        <source>No sign-in method is configured.</source>
+      </segment>
+    </unit>
+    <unit id="login.with">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:53,54</note>
+      </notes>
+      <segment>
+        <source>Sign in with</source>
+      </segment>
+    </unit>
+    <unit id="login.unavailable">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:57,59</note>
+      </notes>
+      <segment>
+        <source>Currently unavailable</source>
+      </segment>
+    </unit>
+    <unit id="login.anonymous">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:65,68</note>
+      </notes>
+      <segment>
+        <source>Continue without signing in</source>
+      </segment>
+    </unit>
+    <unit id="login.local.heading">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:71,72</note>
+      </notes>
+      <segment>
+        <source>Local administrator</source>
+      </segment>
+    </unit>
+    <unit id="login.local.username">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:73,75</note>
+      </notes>
+      <segment>
+        <source>Username</source>
+      </segment>
+    </unit>
+    <unit id="login.local.password">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:83,85</note>
+      </notes>
+      <segment>
+        <source>Password</source>
+      </segment>
+    </unit>
+    <unit id="login.local.submit">
+      <notes>
+        <note category="location">src/app/features/login/login.ts:97,98</note>
+      </notes>
+      <segment>
+        <source> Sign in </source>
       </segment>
     </unit>
     <unit id="notfound.heading">
@@ -619,7 +1603,7 @@
     </unit>
     <unit id="route.permissions.title">
       <notes>
-        <note category="location">src/app/features/permissions/permissions.routes.ts:6</note>
+        <note category="location">src/app/features/permissions/permissions.routes.ts:7</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -627,7 +1611,7 @@
     </unit>
     <unit id="route.permissions.new.title">
       <notes>
-        <note category="location">src/app/features/permissions/permissions.routes.ts:7</note>
+        <note category="location">src/app/features/permissions/permissions.routes.ts:12</note>
       </notes>
       <segment>
         <source>New permission policy</source>
@@ -635,15 +1619,1433 @@
     </unit>
     <unit id="route.permissions.detail.title">
       <notes>
-        <note category="location">src/app/features/permissions/permissions.routes.ts:8</note>
+        <note category="location">src/app/features/permissions/permissions.routes.ts:17</note>
       </notes>
       <segment>
         <source>Permission policy</source>
       </segment>
     </unit>
+    <unit id="policy-diff.title">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:19,21</note>
+      </notes>
+      <segment>
+        <source>Save these changes?</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.none">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:22,24</note>
+      </notes>
+      <segment>
+        <source>Nothing differs from the stored policy.</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.intro">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:24,25</note>
+      </notes>
+      <segment>
+        <source>Changes to the policy <ph id="0" equiv="INTERPOLATION" disp="{{ data.name }}"/> since you opened it:</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.added">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:31,33</note>
+      </notes>
+      <segment>
+        <source>Added:</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.removed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:35,37</note>
+      </notes>
+      <segment>
+        <source>Removed:</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.changed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:39,41</note>
+      </notes>
+      <segment>
+        <source>Changed:</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.cancel">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:49,50</note>
+      </notes>
+      <segment>
+        <source>Keep editing</source>
+      </segment>
+    </unit>
+    <unit id="policy-diff.confirm">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-diff-dialog.ts:50,51</note>
+      </notes>
+      <segment>
+        <source>Save policy</source>
+      </segment>
+    </unit>
+    <unit id="policy.heading-new">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:3,5</note>
+      </notes>
+      <segment>
+        <source>New permission policy</source>
+      </segment>
+    </unit>
+    <unit id="policy.heading">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:5,7</note>
+      </notes>
+      <segment>
+        <source>Permission policy</source>
+      </segment>
+    </unit>
+    <unit id="policy.back">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:7,9</note>
+      </notes>
+      <segment>
+        <source>All policies</source>
+      </segment>
+    </unit>
+    <unit id="policy.toc">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:23,25</note>
+      </notes>
+      <segment>
+        <source>Sections of this policy</source>
+      </segment>
+    </unit>
+    <unit id="policy.toc.general">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:25,26</note>
+      </notes>
+      <segment>
+        <source>General</source>
+      </segment>
+    </unit>
+    <unit id="policy.toc.principals">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:26,27</note>
+      </notes>
+      <segment>
+        <source>Principals and actions</source>
+      </segment>
+    </unit>
+    <unit id="policy.toc.resources">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:27,28</note>
+      </notes>
+      <segment>
+        <source>Repositories and patterns</source>
+      </segment>
+    </unit>
+    <unit id="policy.toc.preview">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:28,30</note>
+      </notes>
+      <segment>
+        <source>Preview</source>
+      </segment>
+    </unit>
+    <unit id="policy.general">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:34,35</note>
+      </notes>
+      <segment>
+        <source>General</source>
+      </segment>
+    </unit>
+    <unit id="policy.name">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:39,40</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="policy.name-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:44,47</note>
+      </notes>
+      <segment>
+        <source>Cannot be changed later.</source>
+      </segment>
+    </unit>
+    <unit id="policy.description">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:49,51</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="policy.principals">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:58,59</note>
+      </notes>
+      <segment>
+        <source>Principals and actions</source>
+      </segment>
+    </unit>
+    <unit id="policy.principals-help">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:60,62</note>
+      </notes>
+      <segment>
+        <source> Each entry gives one principal a set of actions. Actions are independent: holding one never implies another. </source>
+      </segment>
+    </unit>
+    <unit id="policy.no-entries">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:70,72</note>
+      </notes>
+      <segment>
+        <source>No principal yet. Add one to grant something.</source>
+      </segment>
+    </unit>
+    <unit id="policy.entry">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:74,75</note>
+      </notes>
+      <segment>
+        <source>Entry <ph id="0" equiv="INTERPOLATION" disp="{{ i + 1 }}"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.entry-principal">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:77,78</note>
+      </notes>
+      <segment>
+        <source>Principal</source>
+      </segment>
+    </unit>
+    <unit id="policy.entry-principal-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:84,86</note>
+      </notes>
+      <segment>
+        <source>user:name, group:name, sa:name, anonymous or authenticated</source>
+      </segment>
+    </unit>
+    <unit id="policy.remove-entry">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:106,107</note>
+      </notes>
+      <segment>
+        <source>Remove entry</source>
+      </segment>
+    </unit>
+    <unit id="policy.add-entry">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:114,116</note>
+      </notes>
+      <segment>
+        <source>Add principal</source>
+      </segment>
+    </unit>
+    <unit id="policy.resources">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:119,120</note>
+      </notes>
+      <segment>
+        <source>Repositories and patterns</source>
+      </segment>
+    </unit>
+    <unit id="policy.repositories">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:122,124</note>
+      </notes>
+      <segment>
+        <source>Repository selectors</source>
+      </segment>
+    </unit>
+    <unit id="policy.repositories-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:129,131</note>
+      </notes>
+      <segment>
+        <source>One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).</source>
+      </segment>
+    </unit>
+    <unit id="policy.covers-checking">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:133,134</note>
+      </notes>
+      <segment>
+        <source>Checking which repositories are covered.</source>
+      </segment>
+    </unit>
+    <unit id="policy.covers">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:136,137</note>
+      </notes>
+      <segment>
+        <source>Repositories covered now: <ph id="0" equiv="INTERPOLATION" disp="{{ covers().length }}"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.packages">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:140,141</note>
+      </notes>
+      <segment>
+        <source>Package names</source>
+      </segment>
+    </unit>
+    <unit id="policy.patterns-help">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:142,144</note>
+      </notes>
+      <segment>
+        <source> One pattern per line. * is any run of characters except /, ** includes /, ? is one character, \ makes the next character literal. An empty include list is unrestricted; exclude always wins within this policy. </source>
+      </segment>
+    </unit>
+    <unit id="policy.packages-include">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:145</note>
+      </notes>
+      <segment>
+        <source>Include</source>
+      </segment>
+    </unit>
+    <unit id="policy.packages-exclude">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:146</note>
+      </notes>
+      <segment>
+        <source>Exclude</source>
+      </segment>
+    </unit>
+    <unit id="policy.paths">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:148,149</note>
+      </notes>
+      <segment>
+        <source>Paths</source>
+      </segment>
+    </unit>
+    <unit id="policy.paths-include">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:150</note>
+      </notes>
+      <segment>
+        <source>Include</source>
+      </segment>
+    </unit>
+    <unit id="policy.paths-exclude">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:151</note>
+      </notes>
+      <segment>
+        <source>Exclude</source>
+      </segment>
+    </unit>
+    <unit id="policy.tester">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:154,155</note>
+      </notes>
+      <segment>
+        <source>Pattern tester</source>
+      </segment>
+    </unit>
+    <unit id="policy.tester-kind">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:156</note>
+      </notes>
+      <segment>
+        <source>Test against</source>
+      </segment>
+    </unit>
+    <unit id="policy.tester-value">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:157</note>
+      </notes>
+      <segment>
+        <source>Does this match?</source>
+      </segment>
+    </unit>
+    <unit id="policy.preview">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:169,170</note>
+      </notes>
+      <segment>
+        <source>Preview</source>
+      </segment>
+    </unit>
+    <unit id="policy.preview-hide">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:172,174</note>
+      </notes>
+      <segment>
+        <source>Hide preview</source>
+      </segment>
+    </unit>
+    <unit id="policy.preview-show">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:174,176</note>
+      </notes>
+      <segment>
+        <source>Show preview</source>
+      </segment>
+    </unit>
+    <unit id="policy.preview-denied">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:179,180</note>
+      </notes>
+      <segment>
+        <source>The preview needs the permission to read policies.</source>
+      </segment>
+    </unit>
+    <unit id="policy.valid">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:182,183</note>
+      </notes>
+      <segment>
+        <source>No problems found.</source>
+      </segment>
+    </unit>
+    <unit id="policy.invalid">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:184,185</note>
+      </notes>
+      <segment>
+        <source>The policy has problems:</source>
+      </segment>
+    </unit>
+    <unit id="policy.warnings">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:192,193</note>
+      </notes>
+      <segment>
+        <source>Warnings</source>
+      </segment>
+    </unit>
+    <unit id="policy.covered">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:199,200</note>
+      </notes>
+      <segment>
+        <source>Covered repositories</source>
+      </segment>
+    </unit>
+    <unit id="policy.covers-none">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:201,203</note>
+      </notes>
+      <segment>
+        <source>No repository is covered.</source>
+      </segment>
+    </unit>
+    <unit id="policy.preview-loading">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:210,213</note>
+      </notes>
+      <segment>
+        <source>Checking the policy.</source>
+      </segment>
+    </unit>
+    <unit id="policy.try">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:213,214</note>
+      </notes>
+      <segment>
+        <source>Try it</source>
+      </segment>
+    </unit>
+    <unit id="policy.try-help">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:214,215</note>
+      </notes>
+      <segment>
+        <source>Ask why a principal can or cannot do something. Only this draft is evaluated.</source>
+      </segment>
+    </unit>
+    <unit id="policy.try-principal">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:216</note>
+      </notes>
+      <segment>
+        <source>Principal</source>
+      </segment>
+    </unit>
+    <unit id="policy.try-principal-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:216,217</note>
+      </notes>
+      <segment>
+        <source>for example user:alice</source>
+      </segment>
+    </unit>
+    <unit id="policy.try-repository">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:217</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+      </segment>
+    </unit>
+    <unit id="policy.try-action">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:218</note>
+      </notes>
+      <segment>
+        <source>Action</source>
+      </segment>
+    </unit>
+    <unit id="policy.try-ask">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:219,221</note>
+      </notes>
+      <segment>
+        <source>Explain</source>
+      </segment>
+    </unit>
+    <unit id="policy.allowed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:229,230</note>
+      </notes>
+      <segment>
+        <source>Allowed by this draft</source>
+      </segment>
+    </unit>
+    <unit id="policy.denied">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:231,233</note>
+      </notes>
+      <segment>
+        <source>Not granted by this draft</source>
+      </segment>
+    </unit>
+    <unit id="policy.mine-yes">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:245,246</note>
+      </notes>
+      <segment>
+        <source>For comparison, you yourself may do this under the stored policies.</source>
+      </segment>
+    </unit>
+    <unit id="policy.mine-no">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:247,248</note>
+      </notes>
+      <segment>
+        <source>For comparison, you yourself may not do this under the stored policies.</source>
+      </segment>
+    </unit>
+    <unit id="policy.create">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:260,261</note>
+      </notes>
+      <segment>
+        <source>Create policy</source>
+      </segment>
+    </unit>
+    <unit id="policy.review">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:262,264</note>
+      </notes>
+      <segment>
+        <source>Review and save</source>
+      </segment>
+    </unit>
+    <unit id="policy.delete">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:266,269</note>
+      </notes>
+      <segment>
+        <source>Delete policy</source>
+      </segment>
+    </unit>
+    <unit id="policy.fix-first">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:270,272</note>
+      </notes>
+      <segment>
+        <source>Fix the problems in the preview first.</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.packages">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:134</note>
+      </notes>
+      <segment>
+        <source>Package name</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.paths">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:135</note>
+      </notes>
+      <segment>
+        <source>Path</source>
+      </segment>
+    </unit>
+    <unit id="policy.preset">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:157</note>
+      </notes>
+      <segment>
+        <source>Preset</source>
+      </segment>
+    </unit>
+    <unit id="policy.draft-restored">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:194</note>
+      </notes>
+      <segment>
+        <source>Your entries were restored. Save the policy again.</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.unrestricted">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:284</note>
+      </notes>
+      <segment>
+        <source>Matches: this list has no include pattern, so it is not restricted.</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.included">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:286</note>
+      </notes>
+      <segment>
+        <source>Matches: included by <ph id="0" equiv="pattern" disp="v.pattern"/>.</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.excluded">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:288</note>
+      </notes>
+      <segment>
+        <source>Does not match: excluded by <ph id="0" equiv="pattern" disp="v.pattern"/>.</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.not-included">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:290</note>
+      </notes>
+      <segment>
+        <source>Does not match: no include pattern matches.</source>
+      </segment>
+    </unit>
+    <unit id="policy.test.invalid">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:292</note>
+      </notes>
+      <segment>
+        <source>The pattern <ph id="0" equiv="pattern" disp="v.pattern"/> is not valid.</source>
+      </segment>
+    </unit>
+    <unit id="policy.created">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:362</note>
+      </notes>
+      <segment>
+        <source>Policy created.</source>
+      </segment>
+    </unit>
+    <unit id="policy.saved">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:368</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:426</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:431</note>
+      </notes>
+      <segment>
+        <source>Policy saved.</source>
+      </segment>
+    </unit>
+    <unit id="policy.epoch-stored">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:405</note>
+      </notes>
+      <segment>
+        <source>The change is stored.</source>
+      </segment>
+    </unit>
+    <unit id="policy.epoch-maybe">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:409</note>
+      </notes>
+      <segment>
+        <source>Your change may not have been saved. The policy is shown as it is stored now.</source>
+      </segment>
+    </unit>
+    <unit id="policy.delete-title">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:442</note>
+      </notes>
+      <segment>
+        <source>Delete this policy?</source>
+      </segment>
+    </unit>
+    <unit id="policy.delete-text">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:443</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="policy" disp="l.policy.name"/> stops granting access at once on every replica.</source>
+      </segment>
+    </unit>
+    <unit id="policy.delete-confirm">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:444</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+      </segment>
+    </unit>
+    <unit id="policy.deleted">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:449</note>
+      </notes>
+      <segment>
+        <source>Policy deleted.</source>
+      </segment>
+    </unit>
+    <unit id="policies.heading">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Permission policies</source>
+      </segment>
+    </unit>
+    <unit id="policies.new">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:4,6</note>
+      </notes>
+      <segment>
+        <source>New policy</source>
+      </segment>
+    </unit>
+    <unit id="policies.new-disabled">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:6,9</note>
+      </notes>
+      <segment>
+        <source>New policy</source>
+      </segment>
+    </unit>
+    <unit id="policies.filters">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:11,13</note>
+      </notes>
+      <segment>
+        <source>Policy filters</source>
+      </segment>
+    </unit>
+    <unit id="policies.principal">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:14,16</note>
+      </notes>
+      <segment>
+        <source>Principal</source>
+      </segment>
+    </unit>
+    <unit id="policies.principal-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:18,20</note>
+      </notes>
+      <segment>
+        <source>user:name, group:name, sa:name, anonymous or authenticated</source>
+      </segment>
+    </unit>
+    <unit id="policies.repository">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:20</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+      </segment>
+    </unit>
+    <unit id="policies.apply">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:21,24</note>
+      </notes>
+      <segment>
+        <source>Apply filters</source>
+      </segment>
+    </unit>
+    <unit id="policies.empty">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:29,31</note>
+      </notes>
+      <segment>
+        <source>No policy matches.</source>
+      </segment>
+    </unit>
+    <unit id="policies.region">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:31,33</note>
+      </notes>
+      <segment>
+        <source>Permission policies</source>
+      </segment>
+    </unit>
+    <unit id="policies.caption">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:33,35</note>
+      </notes>
+      <segment>
+        <source>Permission policies</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.name">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:36,37</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.description">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:37,38</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.principals">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:38,39</note>
+      </notes>
+      <segment>
+        <source>Principals</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.resources">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:39,40</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.actions">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:40,42</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="policies.inert">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:49,50</note>
+      </notes>
+      <segment>
+        <source>Grants nothing</source>
+      </segment>
+    </unit>
+    <unit id="policies.more">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:62,65</note>
+      </notes>
+      <segment>
+        <source>Load more</source>
+      </segment>
+    </unit>
+    <unit id="policies.loading">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:66,68</note>
+      </notes>
+      <segment>
+        <source>Loading policies.</source>
+      </segment>
+    </unit>
+    <unit id="policies.sum.users">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:22</note>
+      </notes>
+      <segment>
+        <source>Users: <ph id="0" equiv="count" disp="count.user"/></source>
+      </segment>
+    </unit>
+    <unit id="policies.sum.groups">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:23</note>
+      </notes>
+      <segment>
+        <source>Groups: <ph id="0" equiv="count" disp="count.group"/></source>
+      </segment>
+    </unit>
+    <unit id="policies.sum.sas">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:24</note>
+      </notes>
+      <segment>
+        <source>Service accounts: <ph id="0" equiv="count" disp="count.sa"/></source>
+      </segment>
+    </unit>
+    <unit id="policies.sum.special">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:25</note>
+      </notes>
+      <segment>
+        <source>Anonymous or all signed-in: <ph id="0" equiv="count" disp="count.special"/></source>
+      </segment>
+    </unit>
+    <unit id="policies.sum.more">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:85</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="list" disp="shown"/> and <ph id="1" equiv="count" disp="repos.length - 3"/> more</source>
+      </segment>
+    </unit>
+    <unit id="policy.action.read">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:18</note>
+      </notes>
+      <segment>
+        <source>Download and list.</source>
+      </segment>
+    </unit>
+    <unit id="policy.action.annotate">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:20</note>
+      </notes>
+      <segment>
+        <source>Change metadata such as tags and deprecation.</source>
+      </segment>
+    </unit>
+    <unit id="policy.action.deploy">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:22</note>
+      </notes>
+      <segment>
+        <source>Publish new files and versions.</source>
+      </segment>
+    </unit>
+    <unit id="policy.action.overwrite">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:24</note>
+      </notes>
+      <segment>
+        <source>Replace what is already published.</source>
+      </segment>
+    </unit>
+    <unit id="policy.action.delete">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:26</note>
+      </notes>
+      <segment>
+        <source>Delete files and versions.</source>
+      </segment>
+    </unit>
+    <unit id="policy.action.manage">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:28</note>
+      </notes>
+      <segment>
+        <source>Manage the repository&apos;s settings.</source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.description">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:139</note>
+      </notes>
+      <segment>
+        <source>Description changed.</source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.principal-added">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:149</note>
+      </notes>
+      <segment>
+        <source>Principal added: <ph id="0" equiv="principal" disp="p"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.principal-removed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:150</note>
+      </notes>
+      <segment>
+        <source>Principal removed: <ph id="0" equiv="principal" disp="p"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.action-added">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:158</note>
+      </notes>
+      <segment>
+        <source>Action <ph id="0" equiv="action" disp="a"/> added for <ph id="1" equiv="principal" disp="principal"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.action-removed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:159</note>
+      </notes>
+      <segment>
+        <source>Action <ph id="0" equiv="action" disp="a"/> removed for <ph id="1" equiv="principal" disp="principal"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.repo-added">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:166</note>
+      </notes>
+      <segment>
+        <source>Repository selector added: <ph id="0" equiv="selector" disp="r"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.repo-removed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:167</note>
+      </notes>
+      <segment>
+        <source>Repository selector removed: <ph id="0" equiv="selector" disp="r"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.dim.packages">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:176</note>
+      </notes>
+      <segment>
+        <source>package names</source>
+      </segment>
+    </unit>
+    <unit id="policy.dim.paths">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:177</note>
+      </notes>
+      <segment>
+        <source>paths</source>
+      </segment>
+    </unit>
+    <unit id="policy.list.include">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:180</note>
+      </notes>
+      <segment>
+        <source>include list</source>
+      </segment>
+    </unit>
+    <unit id="policy.list.exclude">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:181</note>
+      </notes>
+      <segment>
+        <source>exclude list</source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.pattern-added">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:186</note>
+      </notes>
+      <segment>
+        <source>Pattern <ph id="0" equiv="pattern" disp="p"/> added to the <ph id="1" equiv="list" disp="kind"/> of the <ph id="2" equiv="dimension" disp="dim"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.diff.pattern-removed">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:187</note>
+      </notes>
+      <segment>
+        <source>Pattern <ph id="0" equiv="pattern" disp="p"/> removed from the <ph id="1" equiv="list" disp="kind"/> of the <ph id="2" equiv="dimension" disp="dim"/></source>
+      </segment>
+    </unit>
+    <unit id="policy.warning.path-patterns">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:204</note>
+      </notes>
+      <segment>
+        <source>Path patterns on a package format: a path pattern can admit a file but not its package metadata. Prefer package-name patterns.</source>
+      </segment>
+    </unit>
+    <unit id="policy.warning.matches-nothing">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:206</note>
+      </notes>
+      <segment>
+        <source>A repository selector matches no repository yet.</source>
+      </segment>
+    </unit>
+    <unit id="policy.warning.anonymous-remote">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-model.ts:208</note>
+      </notes>
+      <segment>
+        <source>Anonymous read on a remote repository lets anyone fill its cache from upstream.</source>
+      </segment>
+    </unit>
+    <unit id="profile.nav">
+      <notes>
+        <note category="location">src/app/features/profile/profile-nav.ts:9,10</note>
+      </notes>
+      <segment>
+        <source>Profile pages</source>
+      </segment>
+    </unit>
+    <unit id="profile.nav.profile">
+      <notes>
+        <note category="location">src/app/features/profile/profile-nav.ts:12,15</note>
+      </notes>
+      <segment>
+        <source>Profile</source>
+      </segment>
+    </unit>
+    <unit id="profile.nav.tokens">
+      <notes>
+        <note category="location">src/app/features/profile/profile-nav.ts:15,18</note>
+      </notes>
+      <segment>
+        <source>Personal tokens</source>
+      </segment>
+    </unit>
+    <unit id="profile.nav.sessions">
+      <notes>
+        <note category="location">src/app/features/profile/profile-nav.ts:18,21</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.heading">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:22,24</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.end-others">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:25,28</note>
+      </notes>
+      <segment>
+        <source> End all other sessions </source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.region">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:35,37</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.caption">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:37,39</note>
+      </notes>
+      <segment>
+        <source>Your browser sessions</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.created">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:40,41</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.last-seen">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:41,42</note>
+      </notes>
+      <segment>
+        <source>Last seen</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.address">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Address</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.agent">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:43,44</note>
+      </notes>
+      <segment>
+        <source>Browser</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.method">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:44,45</note>
+      </notes>
+      <segment>
+        <source>Sign-in</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.actions">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:45,47</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.this">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:54,55</note>
+      </notes>
+      <segment>
+        <source>This session</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.end">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:64,65</note>
+      </notes>
+      <segment>
+        <source>End</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.loading">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:75,78</note>
+      </notes>
+      <segment>
+        <source>Loading sessions.</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.ended">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:110</note>
+      </notes>
+      <segment>
+        <source>Session ended.</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.end-others-title">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:116</note>
+      </notes>
+      <segment>
+        <source>End all other sessions?</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.end-others-text">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:117</note>
+      </notes>
+      <segment>
+        <source>Every other browser is signed out at once. This session stays.</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.end-others-confirm">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:118</note>
+      </notes>
+      <segment>
+        <source>End other sessions</source>
+      </segment>
+    </unit>
+    <unit id="profile.sessions.ended-others">
+      <notes>
+        <note category="location">src/app/features/profile/profile-sessions.ts:123</note>
+      </notes>
+      <segment>
+        <source>Other sessions ended.</source>
+      </segment>
+    </unit>
+    <unit id="profile.tokens.heading">
+      <notes>
+        <note category="location">src/app/features/profile/profile-tokens.ts:11,13</note>
+      </notes>
+      <segment>
+        <source>Personal tokens</source>
+      </segment>
+    </unit>
+    <unit id="profile.tokens.intro">
+      <notes>
+        <note category="location">src/app/features/profile/profile-tokens.ts:15,17</note>
+      </notes>
+      <segment>
+        <source> A personal token lets a tool such as npm act as you. Give each tool its own token and revoke it when you no longer need it. </source>
+      </segment>
+    </unit>
+    <unit id="profile.heading">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:2,4</note>
+      </notes>
+      <segment>
+        <source>Profile</source>
+      </segment>
+    </unit>
+    <unit id="profile.identity">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:12,14</note>
+      </notes>
+      <segment>
+        <source>Identity</source>
+      </segment>
+    </unit>
+    <unit id="profile.username">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:14,15</note>
+      </notes>
+      <segment>
+        <source>User name</source>
+      </segment>
+    </unit>
+    <unit id="profile.display-name">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:16,17</note>
+      </notes>
+      <segment>
+        <source>Display name</source>
+      </segment>
+    </unit>
+    <unit id="profile.email">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:18,19</note>
+      </notes>
+      <segment>
+        <source>Email</source>
+      </segment>
+    </unit>
+    <unit id="profile.last-login">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:20,21</note>
+      </notes>
+      <segment>
+        <source>Last sign-in</source>
+      </segment>
+    </unit>
+    <unit id="profile.identity-note">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:24,28</note>
+      </notes>
+      <segment>
+        <source> Your name and email come from the identity provider and are replaced at every sign-in. </source>
+      </segment>
+    </unit>
+    <unit id="profile.groups">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:29,30</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="profile.claim.absent">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:36,37</note>
+      </notes>
+      <segment>
+        <source> Your last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried no group claim, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider. </source>
+      </segment>
+    </unit>
+    <unit id="profile.claim.wrong-type">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:41,42</note>
+      </notes>
+      <segment>
+        <source> Your last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried a group claim of the wrong type, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider. </source>
+      </segment>
+    </unit>
+    <unit id="profile.claim.overage">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:46,47</note>
+      </notes>
+      <segment>
+        <source> Your last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried too many groups to fit in the token, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider. </source>
+      </segment>
+    </unit>
+    <unit id="profile.no-groups">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:53,55</note>
+      </notes>
+      <segment>
+        <source>You are not a member of any group.</source>
+      </segment>
+    </unit>
+    <unit id="profile.groups-caption">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:56,58</note>
+      </notes>
+      <segment>
+        <source>Your groups and where each membership comes from</source>
+      </segment>
+    </unit>
+    <unit id="profile.group">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:59,60</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="profile.source">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:60,62</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+      </segment>
+    </unit>
+    <unit id="profile.roles">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:76,77</note>
+      </notes>
+      <segment>
+        <source>System roles</source>
+      </segment>
+    </unit>
+    <unit id="profile.no-roles">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:78,81</note>
+      </notes>
+      <segment>
+        <source>You hold no system role.</source>
+      </segment>
+    </unit>
+    <unit id="profile.preferences">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:90,92</note>
+      </notes>
+      <segment>
+        <source>Preferences</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.locale">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:96</note>
+      </notes>
+      <segment>
+        <source>Language</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.theme">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:97</note>
+      </notes>
+      <segment>
+        <source>Theme</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.shortcuts">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:99,100</note>
+      </notes>
+      <segment>
+        <source>Keyboard shortcuts with a single key</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.save">
+      <notes>
+        <note category="location">src/app/features/profile/profile.html:102,104</note>
+      </notes>
+      <segment>
+        <source>Save preferences</source>
+      </segment>
+    </unit>
     <unit id="route.profile.title">
       <notes>
-        <note category="location">src/app/features/profile/profile.routes.ts:6</note>
+        <note category="location">src/app/features/profile/profile.routes.ts:7</note>
       </notes>
       <segment>
         <source>Profile</source>
@@ -651,7 +3053,7 @@
     </unit>
     <unit id="route.profile.tokens.title">
       <notes>
-        <note category="location">src/app/features/profile/profile.routes.ts:7</note>
+        <note category="location">src/app/features/profile/profile.routes.ts:12</note>
       </notes>
       <segment>
         <source>Personal tokens</source>
@@ -659,10 +3061,50 @@
     </unit>
     <unit id="route.profile.sessions.title">
       <notes>
-        <note category="location">src/app/features/profile/profile.routes.ts:8</note>
+        <note category="location">src/app/features/profile/profile.routes.ts:17</note>
       </notes>
       <segment>
         <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.locale.browser">
+      <notes>
+        <note category="location">src/app/features/profile/profile.ts:52</note>
+      </notes>
+      <segment>
+        <source>Follow the browser</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.theme.system">
+      <notes>
+        <note category="location">src/app/features/profile/profile.ts:57</note>
+      </notes>
+      <segment>
+        <source>Follow the system</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.theme.light">
+      <notes>
+        <note category="location">src/app/features/profile/profile.ts:58</note>
+      </notes>
+      <segment>
+        <source>Light</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.theme.dark">
+      <notes>
+        <note category="location">src/app/features/profile/profile.ts:59</note>
+      </notes>
+      <segment>
+        <source>Dark</source>
+      </segment>
+    </unit>
+    <unit id="profile.pref.saved">
+      <notes>
+        <note category="location">src/app/features/profile/profile.ts:122</note>
+      </notes>
+      <segment>
+        <source>Preferences saved.</source>
       </segment>
     </unit>
     <unit id="route.repositories.title">
@@ -689,17 +3131,570 @@
         <source>Repository</source>
       </segment>
     </unit>
-    <unit id="route.roles.title">
+    <unit id="roles.heading">
       <notes>
-        <note category="location">src/app/features/roles/roles.routes.ts:5</note>
+        <note category="location">src/app/features/roles/role-bindings.html:2,4</note>
       </notes>
       <segment>
         <source>System roles</source>
       </segment>
     </unit>
+    <unit id="roles.intro">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:5,7</note>
+      </notes>
+      <segment>
+        <source> System roles are fixed. A role is bound to a user, a group or a service account, and grants the capabilities listed with it.
+</source>
+      </segment>
+    </unit>
+    <unit id="roles.capabilities">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:21,22</note>
+      </notes>
+      <segment>
+        <source>Capabilities:</source>
+      </segment>
+    </unit>
+    <unit id="roles.no-holders">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:26,28</note>
+      </notes>
+      <segment>
+        <source>Nobody holds this role.</source>
+      </segment>
+    </unit>
+    <unit id="roles.holders-caption">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:30,31</note>
+      </notes>
+      <segment>
+        <source>Principals that hold the role <ph id="0" equiv="INTERPOLATION" disp="{{ r.name }}"/></source>
+      </segment>
+    </unit>
+    <unit id="roles.principal">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:33,34</note>
+      </notes>
+      <segment>
+        <source>Principal</source>
+      </segment>
+    </unit>
+    <unit id="roles.granted-at">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:34,35</note>
+      </notes>
+      <segment>
+        <source>Granted</source>
+      </segment>
+    </unit>
+    <unit id="roles.granted-by">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:35,36</note>
+      </notes>
+      <segment>
+        <source>Granted by</source>
+      </segment>
+    </unit>
+    <unit id="roles.actions">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:37,38</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="roles.unbind-button">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:56,57</note>
+      </notes>
+      <segment>
+        <source>Unbind</source>
+      </segment>
+    </unit>
+    <unit id="roles.last-admin">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:67,71</note>
+      </notes>
+      <segment>
+        <source>The last administrator binding cannot be removed.</source>
+      </segment>
+    </unit>
+    <unit id="roles.bind-principal">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:76</note>
+      </notes>
+      <segment>
+        <source>Bind to</source>
+      </segment>
+    </unit>
+    <unit id="roles.bind-hint">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:81,83</note>
+      </notes>
+      <segment>
+        <source>user:name, group:name or sa:name</source>
+      </segment>
+    </unit>
+    <unit id="roles.bind-button">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:84,85</note>
+      </notes>
+      <segment>
+        <source>Bind</source>
+      </segment>
+    </unit>
+    <unit id="roles.loading">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:92,94</note>
+      </notes>
+      <segment>
+        <source>Loading roles.</source>
+      </segment>
+    </unit>
+    <unit id="roles.bound">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.ts:90</note>
+      </notes>
+      <segment>
+        <source>Role bound.</source>
+      </segment>
+    </unit>
+    <unit id="roles.unbind-title">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.ts:95</note>
+      </notes>
+      <segment>
+        <source>Unbind this role?</source>
+      </segment>
+    </unit>
+    <unit id="roles.unbind-text">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.ts:96</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="role" disp="b.role"/> will no longer apply to <ph id="1" equiv="principal" disp="b.principal"/>.</source>
+      </segment>
+    </unit>
+    <unit id="roles.unbind">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.ts:97</note>
+      </notes>
+      <segment>
+        <source>Unbind</source>
+      </segment>
+    </unit>
+    <unit id="roles.unbound">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.ts:100</note>
+      </notes>
+      <segment>
+        <source>Role unbound.</source>
+      </segment>
+    </unit>
+    <unit id="route.roles.title">
+      <notes>
+        <note category="location">src/app/features/roles/roles.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>System roles</source>
+      </segment>
+    </unit>
+    <unit id="sa.heading">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:28,29</note>
+      </notes>
+      <segment>
+        <source>Service account</source>
+      </segment>
+    </unit>
+    <unit id="sa.back">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:29,31</note>
+      </notes>
+      <segment>
+        <source>All service accounts</source>
+      </segment>
+    </unit>
+    <unit id="sa.general">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:43,44</note>
+      </notes>
+      <segment>
+        <source>General</source>
+      </segment>
+    </unit>
+    <unit id="sa.id">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:46</note>
+      </notes>
+      <segment>
+        <source>ID</source>
+      </segment>
+    </unit>
+    <unit id="sa.status">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:47,49</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="sa.active">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:50,51</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="sa.disabled">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:52,53</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+      </segment>
+    </unit>
+    <unit id="sa.created">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:55,56</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="sa.description">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:59</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="sa.save">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:62,63</note>
+      </notes>
+      <segment>
+        <source>Save description</source>
+      </segment>
+    </unit>
+    <unit id="sa.disable">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:64,65</note>
+      </notes>
+      <segment>
+        <source>Disable</source>
+      </segment>
+    </unit>
+    <unit id="sa.enable">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:66,67</note>
+      </notes>
+      <segment>
+        <source>Enable</source>
+      </segment>
+    </unit>
+    <unit id="sa.delete">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:68,69</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+      </segment>
+    </unit>
+    <unit id="sa.tokens">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:79,80</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+      </segment>
+    </unit>
+    <unit id="sa.tokens-denied">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:83,85</note>
+      </notes>
+      <segment>
+        <source>You need the permission to read tokens to manage the tokens of this account.</source>
+      </segment>
+    </unit>
+    <unit id="sa.saved">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:138</note>
+      </notes>
+      <segment>
+        <source>Service account saved.</source>
+      </segment>
+    </unit>
+    <unit id="sa.disable-title">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:143</note>
+      </notes>
+      <segment>
+        <source>Disable this service account?</source>
+      </segment>
+    </unit>
+    <unit id="sa.disable-text">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:144</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="account" disp="this.name()"/> can no longer authenticate.</source>
+      </segment>
+    </unit>
+    <unit id="sa.disable-confirm">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:145</note>
+      </notes>
+      <segment>
+        <source>Disable</source>
+      </segment>
+    </unit>
+    <unit id="sa.disable-revoke">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:146</note>
+      </notes>
+      <segment>
+        <source>Also revoke all tokens of this account</source>
+      </segment>
+    </unit>
+    <unit id="sa.disabled-done">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:152</note>
+      </notes>
+      <segment>
+        <source>Service account disabled.</source>
+      </segment>
+    </unit>
+    <unit id="sa.enabled-done">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:159</note>
+      </notes>
+      <segment>
+        <source>Service account enabled.</source>
+      </segment>
+    </unit>
+    <unit id="sa.delete-title">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:164</note>
+      </notes>
+      <segment>
+        <source>Delete this service account?</source>
+      </segment>
+    </unit>
+    <unit id="sa.delete-text">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:165</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="account" disp="this.name()"/> and its tokens are removed. This cannot be undone.</source>
+      </segment>
+    </unit>
+    <unit id="sa.delete-confirm">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:166</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+      </segment>
+    </unit>
+    <unit id="sa.deleted">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:172</note>
+      </notes>
+      <segment>
+        <source>Service account deleted.</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.title">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:22,23</note>
+      </notes>
+      <segment>
+        <source>New service account</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.name">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:31,32</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.name-hint">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:36,38</note>
+      </notes>
+      <segment>
+        <source>Lower-case letters, digits and -, two to 63 characters</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.description">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:38</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.cancel">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:41,42</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.submit">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Create service account</source>
+      </segment>
+    </unit>
+    <unit id="sa-create.created">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:72</note>
+      </notes>
+      <segment>
+        <source>Service account created.</source>
+      </segment>
+    </unit>
+    <unit id="sas.heading">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:91,92</note>
+      </notes>
+      <segment>
+        <source>Service accounts</source>
+      </segment>
+    </unit>
+    <unit id="sas.add">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:92,93</note>
+      </notes>
+      <segment>
+        <source>New service account</source>
+      </segment>
+    </unit>
+    <unit id="sas.hint">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:96,99</note>
+      </notes>
+      <segment>
+        <source> Use a service account for CI systems that cannot sign in through OpenID Connect and for long-running automation. Its tokens act as the account, not as a person. </source>
+      </segment>
+    </unit>
+    <unit id="sas.filters">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:99,100</note>
+      </notes>
+      <segment>
+        <source>Service account filters</source>
+      </segment>
+    </unit>
+    <unit id="sas.q">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:100</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="sas.apply">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:101,104</note>
+      </notes>
+      <segment>
+        <source>Apply filter</source>
+      </segment>
+    </unit>
+    <unit id="sas.empty">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:109,111</note>
+      </notes>
+      <segment>
+        <source>No service account matches.</source>
+      </segment>
+    </unit>
+    <unit id="sas.region">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:111,112</note>
+      </notes>
+      <segment>
+        <source>Service accounts</source>
+      </segment>
+    </unit>
+    <unit id="sas.caption">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:113,114</note>
+      </notes>
+      <segment>
+        <source>Service accounts</source>
+      </segment>
+    </unit>
+    <unit id="sas.col.name">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:116,117</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="sas.col.description">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:117,118</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="sas.col.status">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:118,120</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="sas.active">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:128,129</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="sas.disabled">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:130,131</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+      </segment>
+    </unit>
+    <unit id="sas.more">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:139,140</note>
+      </notes>
+      <segment>
+        <source>Load more</source>
+      </segment>
+    </unit>
+    <unit id="sas.loading">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:143,146</note>
+      </notes>
+      <segment>
+        <source>Loading service accounts.</source>
+      </segment>
+    </unit>
     <unit id="route.service-accounts.title">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:6</note>
+        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:7</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -707,15 +3702,312 @@
     </unit>
     <unit id="route.service-accounts.detail.title">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:7</note>
+        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:12</note>
       </notes>
       <segment>
         <source>Service account</source>
       </segment>
     </unit>
+    <unit id="auth-settings.heading">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:2,4</note>
+      </notes>
+      <segment>
+        <source>Authentication settings</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.anonymous">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:17,19</note>
+      </notes>
+      <segment>
+        <source>Anonymous access</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.anonymous-switch">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:24,26</note>
+      </notes>
+      <segment>
+        <source>Allow requests without a credential to read what the anonymous principal may read</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.anonymous-ceiling">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:29,32</note>
+      </notes>
+      <segment>
+        <source>The installation&apos;s configuration does not allow anonymous access, so it cannot be switched on here.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.anonymous-link">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:34,39</note>
+      </notes>
+      <segment>
+        <source>Policies that name the anonymous principal</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.tokens">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:40,41</note>
+      </notes>
+      <segment>
+        <source>Token lifetimes</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.tokens-note">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:42,44</note>
+      </notes>
+      <segment>
+        <source> Values are in days (fractions allowed, at least 60 seconds). The ceiling comes from the installation&apos;s configuration and cannot be exceeded here. </source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.pat">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:45,47</note>
+      </notes>
+      <segment>
+        <source>Personal tokens</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.pat-default">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:48,50</note>
+      </notes>
+      <segment>
+        <source>Default lifetime (days)</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.pat-max">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:58,60</note>
+      </notes>
+      <segment>
+        <source>Maximum lifetime (days)</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.sat">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:66,68</note>
+      </notes>
+      <segment>
+        <source>Service account tokens</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.sat-default">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:69,71</note>
+      </notes>
+      <segment>
+        <source>Default lifetime (days)</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.sat-max">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:79,81</note>
+      </notes>
+      <segment>
+        <source>Maximum lifetime (days)</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.notice">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:87,89</note>
+      </notes>
+      <segment>
+        <source>Expiry notice</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.notice-lead">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:90,92</note>
+      </notes>
+      <segment>
+        <source>Notify this many days before a token expires</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.save">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:103,106</note>
+      </notes>
+      <segment>
+        <source>Save settings</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.status">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:109,110</note>
+      </notes>
+      <segment>
+        <source>Status (read only)</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.status-note">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:110,112</note>
+      </notes>
+      <segment>
+        <source>These values come from the installation&apos;s configuration.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.providers">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:112,113</note>
+      </notes>
+      <segment>
+        <source>Identity providers</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.no-providers">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:114,117</note>
+      </notes>
+      <segment>
+        <source>No identity provider is configured.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.provider-up">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:121,122</note>
+      </notes>
+      <segment>
+        <source>discovery document loaded</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.provider-down">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:123,125</note>
+      </notes>
+      <segment>
+        <source>not available on this replica</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.break-glass">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:130,132</note>
+      </notes>
+      <segment>
+        <source>Break-glass account</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.break-glass-on">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:133,135</note>
+      </notes>
+      <segment>
+        <source>Enabled.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.break-glass-off">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:135,137</note>
+      </notes>
+      <segment>
+        <source>Disabled.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.break-glass-locked">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:138</note>
+      </notes>
+      <segment>
+        <source>Locked until</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.sessions">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:142,144</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.idle">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:144,145</note>
+      </notes>
+      <segment>
+        <source>Idle timeout</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.absolute">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:146,147</note>
+      </notes>
+      <segment>
+        <source>Absolute timeout</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.max-sessions">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:148,149</note>
+      </notes>
+      <segment>
+        <source>Sessions per user</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.recent">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:150,151</note>
+      </notes>
+      <segment>
+        <source>Recent sign-in window</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.clients">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:154,156</note>
+      </notes>
+      <segment>
+        <source>Clients</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.basic-on">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:157,159</note>
+      </notes>
+      <segment>
+        <source>HTTP Basic with a token as the password is enabled.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.basic-off">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:159,162</note>
+      </notes>
+      <segment>
+        <source>HTTP Basic with a token as the password is disabled.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.draft">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.ts:86</note>
+      </notes>
+      <segment>
+        <source>Your entries were restored. Save them again.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.ceiling">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.ts:170</note>
+      </notes>
+      <segment>
+        <source>Ceiling from the configuration: <ph id="0" equiv="duration" disp="this.duration(seconds)"/></source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.saved">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.ts:187</note>
+        <note category="location">src/app/features/settings/auth-settings.ts:210</note>
+      </notes>
+      <segment>
+        <source>Settings saved.</source>
+      </segment>
+    </unit>
     <unit id="route.settings.auth.title">
       <notes>
-        <note category="location">src/app/features/settings/settings.routes.ts:7</note>
+        <note category="location">src/app/features/settings/settings.routes.ts:9</note>
       </notes>
       <segment>
         <source>Authentication settings</source>
@@ -723,7 +4015,7 @@
     </unit>
     <unit id="route.settings.general.title">
       <notes>
-        <note category="location">src/app/features/settings/settings.routes.ts:8</note>
+        <note category="location">src/app/features/settings/settings.routes.ts:12</note>
       </notes>
       <segment>
         <source>General settings</source>
@@ -1377,17 +4669,1364 @@
         <source>Backups</source>
       </segment>
     </unit>
-    <unit id="route.tokens.title">
+    <unit id="tokens-admin.heading">
       <notes>
-        <note category="location">src/app/features/tokens/tokens.routes.ts:6</note>
+        <note category="location">src/app/features/tokens/token-admin.html:2,5</note>
       </notes>
       <segment>
         <source>Token administration</source>
       </segment>
     </unit>
+    <unit id="tokens-admin.filters">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:7,9</note>
+      </notes>
+      <segment>
+        <source>Token filters</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.owner">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:11,12</note>
+      </notes>
+      <segment>
+        <source>Owner</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.owner-hint">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:14,16</note>
+      </notes>
+      <segment>
+        <source>me, a user name or sa:name</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.type">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:16</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.state">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:17</note>
+      </notes>
+      <segment>
+        <source>State</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.expires-before">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:20,22</note>
+      </notes>
+      <segment>
+        <source>Expires before</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.unused">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:27,29</note>
+      </notes>
+      <segment>
+        <source>Not used for (days)</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.apply">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:32,35</note>
+      </notes>
+      <segment>
+        <source>Apply filters</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-selected">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:46,47</note>
+      </notes>
+      <segment>
+        <source>Revoke selected</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.more">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:60,63</note>
+      </notes>
+      <segment>
+        <source> Load more </source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.loading">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:64,67</note>
+      </notes>
+      <segment>
+        <source>Loading tokens.</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.by-value">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:69,70</note>
+      </notes>
+      <segment>
+        <source>Revoke by value</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.by-value-text">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:71,73</note>
+      </notes>
+      <segment>
+        <source> Paste a leaked token to revoke it. The value is sent once and removed from this form at once. </source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.value">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:79,81</note>
+      </notes>
+      <segment>
+        <source>Token value</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.reveal">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:86,87</note>
+      </notes>
+      <segment>
+        <source>Show the value</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-value">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:90,92</note>
+      </notes>
+      <segment>
+        <source> Revoke token </source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.any">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:49</note>
+      </notes>
+      <segment>
+        <source>Any</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.type.pat">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:50</note>
+      </notes>
+      <segment>
+        <source>Personal (pat)</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.type.sat">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:51</note>
+      </notes>
+      <segment>
+        <source>Service account (sat)</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.type.cit">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:52</note>
+      </notes>
+      <segment>
+        <source>Pipeline (cit)</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.state.active">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:55</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.state.expired">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:56</note>
+      </notes>
+      <segment>
+        <source>Expired</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.state.revoked">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:57</note>
+      </notes>
+      <segment>
+        <source>Revoked</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.state.all">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:58</note>
+      </notes>
+      <segment>
+        <source>All</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-title">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:87</note>
+      </notes>
+      <segment>
+        <source>Revoke this token?</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-text">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:88</note>
+      </notes>
+      <segment>
+        <source>“<ph id="0" equiv="description" disp="token.description"/>” of <ph id="1" equiv="owner" disp="token.owner.name"/> stops working at once on every replica.</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-confirm">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:89</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:100</note>
+      </notes>
+      <segment>
+        <source>Revoke</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-selected-title">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:98</note>
+      </notes>
+      <segment>
+        <source>Revoke the selected tokens?</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoke-selected-text">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:99</note>
+      </notes>
+      <segment>
+        <source>The selected tokens (<ph id="0" equiv="count" disp="ids.length"/>) stop working at once on every replica. This cannot be undone.</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.revoked">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:116</note>
+      </notes>
+      <segment>
+        <source>Tokens revoked.</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.value-revoked">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:128</note>
+      </notes>
+      <segment>
+        <source>The token of <ph id="0" equiv="owner" disp="revoked.owner"/> was revoked.</source>
+      </segment>
+    </unit>
+    <unit id="rotate.title">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:35,36</note>
+      </notes>
+      <segment>
+        <source>Rotate this token?</source>
+      </segment>
+    </unit>
+    <unit id="rotate.text">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:38,40</note>
+      </notes>
+      <segment>
+        <source> A new token with the same scope is created and shown once. Everything that uses the old token must switch to it. </source>
+      </segment>
+    </unit>
+    <unit id="rotate.overlap">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>The old token stays valid for</source>
+      </segment>
+    </unit>
+    <unit id="rotate.cancel">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:48,49</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+      </segment>
+    </unit>
+    <unit id="rotate.confirm">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:49,50</note>
+      </notes>
+      <segment>
+        <source>Rotate</source>
+      </segment>
+    </unit>
+    <unit id="rotate.overlap.none">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:57</note>
+      </notes>
+      <segment>
+        <source>Not at all (revoked now)</source>
+      </segment>
+    </unit>
+    <unit id="rotate.overlap.hour">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:58</note>
+      </notes>
+      <segment>
+        <source>One hour</source>
+      </segment>
+    </unit>
+    <unit id="rotate.overlap.day">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:59</note>
+      </notes>
+      <segment>
+        <source>One day</source>
+      </segment>
+    </unit>
+    <unit id="tokens.create">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:81,83</note>
+      </notes>
+      <segment>
+        <source>Create token</source>
+      </segment>
+    </unit>
+    <unit id="tokens.show-all">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:84,85</note>
+      </notes>
+      <segment>
+        <source>Show revoked and expired tokens</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-all">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:88,90</note>
+      </notes>
+      <segment>
+        <source> Revoke all tokens </source>
+      </segment>
+    </unit>
+    <unit id="tokens.form-heading">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:99,100</note>
+      </notes>
+      <segment>
+        <source>New token</source>
+      </segment>
+    </unit>
+    <unit id="tokens.more">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:132,133</note>
+      </notes>
+      <segment>
+        <source> Load more </source>
+      </segment>
+    </unit>
+    <unit id="tokens.loading">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:136,139</note>
+      </notes>
+      <segment>
+        <source>Loading tokens.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.create-submit">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:160</note>
+      </notes>
+      <segment>
+        <source>Create token</source>
+      </segment>
+    </unit>
+    <unit id="tokens.draft-restored">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:195</note>
+      </notes>
+      <segment>
+        <source>Your entries were restored. Create the token again.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-title">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:259</note>
+      </notes>
+      <segment>
+        <source>Revoke this token?</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-text">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:260</note>
+      </notes>
+      <segment>
+        <source>“<ph id="0" equiv="description" disp="token.description"/>” stops working at once on every replica. This cannot be undone.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-confirm">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:261</note>
+      </notes>
+      <segment>
+        <source>Revoke</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoked">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:266</note>
+      </notes>
+      <segment>
+        <source>Token revoked.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-all-title">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:272</note>
+      </notes>
+      <segment>
+        <source>Revoke all tokens?</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-all-text">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:273</note>
+      </notes>
+      <segment>
+        <source>Every token of this owner stops working at once. This cannot be undone.</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoke-all-confirm">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:274</note>
+      </notes>
+      <segment>
+        <source>Revoke all</source>
+      </segment>
+    </unit>
+    <unit id="tokens.revoked-all">
+      <notes>
+        <note category="location">src/app/features/tokens/token-manager.ts:282</note>
+      </notes>
+      <segment>
+        <source>All tokens revoked.</source>
+      </segment>
+    </unit>
+    <unit id="route.tokens.title">
+      <notes>
+        <note category="location">src/app/features/tokens/tokens.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Token administration</source>
+      </segment>
+    </unit>
+    <unit id="user-create.title">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:23,24</note>
+      </notes>
+      <segment>
+        <source>Add user</source>
+      </segment>
+    </unit>
+    <unit id="user-create.username">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:31,33</note>
+      </notes>
+      <segment>
+        <source>User name</source>
+      </segment>
+    </unit>
+    <unit id="user-create.username-hint">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:37,39</note>
+      </notes>
+      <segment>
+        <source>Lower-case letters, digits and . _ @ + -</source>
+      </segment>
+    </unit>
+    <unit id="user-create.display-name">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:39</note>
+      </notes>
+      <segment>
+        <source>Display name</source>
+      </segment>
+    </unit>
+    <unit id="user-create.email">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:40</note>
+      </notes>
+      <segment>
+        <source>Email</source>
+      </segment>
+    </unit>
+    <unit id="user-create.provider">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:44,46</note>
+      </notes>
+      <segment>
+        <source>Link to the identity provider</source>
+      </segment>
+    </unit>
+    <unit id="user-create.cancel">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:53,54</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+      </segment>
+    </unit>
+    <unit id="user-create.submit">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:54,55</note>
+      </notes>
+      <segment>
+        <source>Add user</source>
+      </segment>
+    </unit>
+    <unit id="user-create.no-provider">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:83</note>
+      </notes>
+      <segment>
+        <source>No link yet</source>
+      </segment>
+    </unit>
+    <unit id="user-create.created">
+      <notes>
+        <note category="location">src/app/features/users/user-create-dialog.ts:107</note>
+      </notes>
+      <segment>
+        <source>User added.</source>
+      </segment>
+    </unit>
+    <unit id="user.heading">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:2,3</note>
+      </notes>
+      <segment>
+        <source>User</source>
+      </segment>
+    </unit>
+    <unit id="user.back">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:3,5</note>
+      </notes>
+      <segment>
+        <source>All users</source>
+      </segment>
+    </unit>
+    <unit id="user.attributes">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:17,19</note>
+      </notes>
+      <segment>
+        <source>Attributes</source>
+      </segment>
+    </unit>
+    <unit id="user.id">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:20</note>
+      </notes>
+      <segment>
+        <source>ID</source>
+      </segment>
+    </unit>
+    <unit id="user.display-name-fact">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:21,22</note>
+      </notes>
+      <segment>
+        <source>Display name</source>
+      </segment>
+    </unit>
+    <unit id="user.email-fact">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:23,24</note>
+      </notes>
+      <segment>
+        <source>Email</source>
+      </segment>
+    </unit>
+    <unit id="user.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:25,26</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="user.status">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:27,29</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="user.status.active">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:30,31</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="user.status.disabled">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:32,33</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+      </segment>
+    </unit>
+    <unit id="user.locked">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:38</note>
+      </notes>
+      <segment>
+        <source>Locked until</source>
+      </segment>
+    </unit>
+    <unit id="user.admin">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:41,43</note>
+      </notes>
+      <segment>
+        <source>Administrator</source>
+      </segment>
+    </unit>
+    <unit id="user.admin.yes">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:44</note>
+      </notes>
+      <segment>
+        <source>Yes</source>
+      </segment>
+    </unit>
+    <unit id="user.admin.no">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:46,48</note>
+      </notes>
+      <segment>
+        <source>No</source>
+      </segment>
+    </unit>
+    <unit id="user.last-login">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:49,50</note>
+      </notes>
+      <segment>
+        <source>Last sign-in</source>
+      </segment>
+    </unit>
+    <unit id="user.created">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:51,52</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="user.attributes-note">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:55,58</note>
+      </notes>
+      <segment>
+        <source> Name and email come from the identity provider and are replaced at the user&apos;s next sign-in. </source>
+      </segment>
+    </unit>
+    <unit id="user.display-name">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:63</note>
+      </notes>
+      <segment>
+        <source>Display name</source>
+      </segment>
+    </unit>
+    <unit id="user.email">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:64</note>
+      </notes>
+      <segment>
+        <source>Email</source>
+      </segment>
+    </unit>
+    <unit id="user.save">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:66,67</note>
+      </notes>
+      <segment>
+        <source>Save correction</source>
+      </segment>
+    </unit>
+    <unit id="user.disable">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:74,75</note>
+      </notes>
+      <segment>
+        <source>Disable</source>
+      </segment>
+    </unit>
+    <unit id="user.enable">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:76,78</note>
+      </notes>
+      <segment>
+        <source>Enable</source>
+      </segment>
+    </unit>
+    <unit id="user.delete">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:78,80</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+      </segment>
+    </unit>
+    <unit id="user.unlock">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:81,83</note>
+      </notes>
+      <segment>
+        <source>Unlock</source>
+      </segment>
+    </unit>
+    <unit id="user.audit">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:84,87</note>
+      </notes>
+      <segment>
+        <source>Audit log of this user</source>
+      </segment>
+    </unit>
+    <unit id="user.self-guard">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:88,92</note>
+      </notes>
+      <segment>
+        <source>You cannot disable or delete your own account.</source>
+      </segment>
+    </unit>
+    <unit id="user.identities">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:93,94</note>
+      </notes>
+      <segment>
+        <source>Identities</source>
+      </segment>
+    </unit>
+    <unit id="user.no-identities">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:95,98</note>
+      </notes>
+      <segment>
+        <source>No identity provider is linked.</source>
+      </segment>
+    </unit>
+    <unit id="user.linked">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:102,103</note>
+      </notes>
+      <segment>
+        <source>Linked</source>
+      </segment>
+    </unit>
+    <unit id="user.pending">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:104,105</note>
+      </notes>
+      <segment>
+        <source>Pending first sign-in</source>
+      </segment>
+    </unit>
+    <unit id="user.groups">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:113,114</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="user.claim-missing">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:118,119</note>
+      </notes>
+      <segment>
+        <source> The last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried no usable group claim (<ph id="1" equiv="INTERPOLATION_1" disp="{{ missing.reason }}"/>), so groups synchronized from it may be missing. </source>
+      </segment>
+    </unit>
+    <unit id="user.no-groups">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:123,125</note>
+      </notes>
+      <segment>
+        <source>This user is in no group.</source>
+      </segment>
+    </unit>
+    <unit id="user.groups-caption">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:126,128</note>
+      </notes>
+      <segment>
+        <source>Group memberships and their sources</source>
+      </segment>
+    </unit>
+    <unit id="user.group">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:129,130</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="user.source">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:130,131</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+      </segment>
+    </unit>
+    <unit id="user.actions">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:131,132</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="user.remove-group">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:142,143</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+      </segment>
+    </unit>
+    <unit id="user.add-group">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:154</note>
+      </notes>
+      <segment>
+        <source>Add to group</source>
+      </segment>
+    </unit>
+    <unit id="user.add-group-submit">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:155,158</note>
+      </notes>
+      <segment>
+        <source>Add</source>
+      </segment>
+    </unit>
+    <unit id="user.tokens">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:166,167</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+      </segment>
+    </unit>
+    <unit id="user.sessions">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:172,173</note>
+      </notes>
+      <segment>
+        <source>Sessions</source>
+      </segment>
+    </unit>
+    <unit id="user.no-sessions">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:178,180</note>
+      </notes>
+      <segment>
+        <source>No open session.</source>
+      </segment>
+    </unit>
+    <unit id="user.sessions-caption">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:181,183</note>
+      </notes>
+      <segment>
+        <source>Open sessions of this user</source>
+      </segment>
+    </unit>
+    <unit id="user.session.created">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:184,185</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="user.session.last-seen">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:185,186</note>
+      </notes>
+      <segment>
+        <source>Last seen</source>
+      </segment>
+    </unit>
+    <unit id="user.session.address">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:186,187</note>
+      </notes>
+      <segment>
+        <source>Address</source>
+      </segment>
+    </unit>
+    <unit id="user.session.agent">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:187,189</note>
+      </notes>
+      <segment>
+        <source>Browser</source>
+      </segment>
+    </unit>
+    <unit id="user.end-sessions">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:203,205</note>
+      </notes>
+      <segment>
+        <source>End all sessions</source>
+      </segment>
+    </unit>
+    <unit id="user.saved">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:117</note>
+      </notes>
+      <segment>
+        <source>User saved.</source>
+      </segment>
+    </unit>
+    <unit id="user.disable-title">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:123</note>
+      </notes>
+      <segment>
+        <source>Disable this user?</source>
+      </segment>
+    </unit>
+    <unit id="user.disable-text">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:124</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="user" disp="this.username()"/> can no longer sign in, and their sessions end.</source>
+      </segment>
+    </unit>
+    <unit id="user.disable-confirm">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:125</note>
+      </notes>
+      <segment>
+        <source>Disable</source>
+      </segment>
+    </unit>
+    <unit id="user.disable-revoke">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:126</note>
+      </notes>
+      <segment>
+        <source>Also revoke all tokens of this user</source>
+      </segment>
+    </unit>
+    <unit id="user.disabled">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:131</note>
+      </notes>
+      <segment>
+        <source>User disabled.</source>
+      </segment>
+    </unit>
+    <unit id="user.enabled">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:136</note>
+      </notes>
+      <segment>
+        <source>User enabled.</source>
+      </segment>
+    </unit>
+    <unit id="user.unlocked">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:140</note>
+      </notes>
+      <segment>
+        <source>Account unlocked.</source>
+      </segment>
+    </unit>
+    <unit id="user.delete-title">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:145</note>
+      </notes>
+      <segment>
+        <source>Delete this user?</source>
+      </segment>
+    </unit>
+    <unit id="user.delete-text">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:146</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="user" disp="this.username()"/> and their tokens and sessions are removed. This cannot be undone.</source>
+      </segment>
+    </unit>
+    <unit id="user.delete-confirm">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:147</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+      </segment>
+    </unit>
+    <unit id="user.deleted">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:153</note>
+      </notes>
+      <segment>
+        <source>User deleted.</source>
+      </segment>
+    </unit>
+    <unit id="user.group-added">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:170</note>
+      </notes>
+      <segment>
+        <source>Group membership added.</source>
+      </segment>
+    </unit>
+    <unit id="user.group-removed">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:178</note>
+      </notes>
+      <segment>
+        <source>Group membership removed.</source>
+      </segment>
+    </unit>
+    <unit id="user.end-sessions-title">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:184</note>
+      </notes>
+      <segment>
+        <source>End all sessions of this user?</source>
+      </segment>
+    </unit>
+    <unit id="user.end-sessions-text">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:185</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="user" disp="this.username()"/> is signed out of every browser at once.</source>
+      </segment>
+    </unit>
+    <unit id="user.end-sessions-confirm">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:186</note>
+      </notes>
+      <segment>
+        <source>End sessions</source>
+      </segment>
+    </unit>
+    <unit id="user.sessions-ended">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:195</note>
+      </notes>
+      <segment>
+        <source>Sessions ended.</source>
+      </segment>
+    </unit>
+    <unit id="user.source.manual">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:205</note>
+      </notes>
+      <segment>
+        <source>Manual</source>
+      </segment>
+    </unit>
+    <unit id="user.source.auto">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:206</note>
+      </notes>
+      <segment>
+        <source>Auto-join</source>
+      </segment>
+    </unit>
+    <unit id="user.source.provider">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:208</note>
+      </notes>
+      <segment>
+        <source>Identity provider</source>
+      </segment>
+    </unit>
+    <unit id="user.origin.jit">
+      <notes>
+        <note category="location">src/app/features/users/user-labels.ts:7</note>
+      </notes>
+      <segment>
+        <source>Identity provider</source>
+      </segment>
+    </unit>
+    <unit id="user.origin.admin">
+      <notes>
+        <note category="location">src/app/features/users/user-labels.ts:9</note>
+      </notes>
+      <segment>
+        <source>Created by an administrator</source>
+      </segment>
+    </unit>
+    <unit id="user.origin.scim">
+      <notes>
+        <note category="location">src/app/features/users/user-labels.ts:11</note>
+      </notes>
+      <segment>
+        <source>SCIM</source>
+      </segment>
+    </unit>
+    <unit id="user.origin.system">
+      <notes>
+        <note category="location">src/app/features/users/user-labels.ts:13</note>
+      </notes>
+      <segment>
+        <source>Break-glass</source>
+      </segment>
+    </unit>
+    <unit id="users.heading">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+      </segment>
+    </unit>
+    <unit id="users.add">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:3,5</note>
+      </notes>
+      <segment>
+        <source>Add user</source>
+      </segment>
+    </unit>
+    <unit id="users.filters">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:7,8</note>
+      </notes>
+      <segment>
+        <source>User filters</source>
+      </segment>
+    </unit>
+    <unit id="users.q">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:8</note>
+      </notes>
+      <segment>
+        <source>Name or email</source>
+      </segment>
+    </unit>
+    <unit id="users.status">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:9</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="users.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:10</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="users.group">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:11</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="users.admin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:12</note>
+      </notes>
+      <segment>
+        <source>Administrator</source>
+      </segment>
+    </unit>
+    <unit id="users.apply">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:13,16</note>
+      </notes>
+      <segment>
+        <source>Apply filters</source>
+      </segment>
+    </unit>
+    <unit id="users.empty">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:22,24</note>
+      </notes>
+      <segment>
+        <source>No user matches.</source>
+      </segment>
+    </unit>
+    <unit id="users.region">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:25</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+      </segment>
+    </unit>
+    <unit id="users.caption">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:26,28</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+      </segment>
+    </unit>
+    <unit id="users.col.username">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:29,30</note>
+      </notes>
+      <segment>
+        <source>User name</source>
+      </segment>
+    </unit>
+    <unit id="users.col.display-name">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:30,31</note>
+      </notes>
+      <segment>
+        <source>Display name</source>
+      </segment>
+    </unit>
+    <unit id="users.col.email">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:31,32</note>
+      </notes>
+      <segment>
+        <source>Email</source>
+      </segment>
+    </unit>
+    <unit id="users.col.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:32,33</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="users.col.status">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:33,34</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="users.col.last-login">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:34,36</note>
+      </notes>
+      <segment>
+        <source>Last sign-in</source>
+      </segment>
+    </unit>
+    <unit id="users.active">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:46,47</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="users.disabled">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:48,49</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+      </segment>
+    </unit>
+    <unit id="users.more">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:59,61</note>
+      </notes>
+      <segment>
+        <source>Load more</source>
+      </segment>
+    </unit>
+    <unit id="users.loading">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:64,66</note>
+      </notes>
+      <segment>
+        <source>Loading users.</source>
+      </segment>
+    </unit>
+    <unit id="users.any">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:41</note>
+        <note category="location">src/app/features/users/user-list.ts:47</note>
+        <note category="location">src/app/features/users/user-list.ts:54</note>
+      </notes>
+      <segment>
+        <source>Any</source>
+      </segment>
+    </unit>
+    <unit id="users.status.active">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:42</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="users.status.disabled">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:43</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+      </segment>
+    </unit>
+    <unit id="users.status.locked">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:44</note>
+      </notes>
+      <segment>
+        <source>Locked</source>
+      </segment>
+    </unit>
+    <unit id="users.admin.yes">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:55</note>
+      </notes>
+      <segment>
+        <source>Administrators</source>
+      </segment>
+    </unit>
+    <unit id="users.admin.no">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:56</note>
+      </notes>
+      <segment>
+        <source>Not administrators</source>
+      </segment>
+    </unit>
     <unit id="route.users.title">
       <notes>
-        <note category="location">src/app/features/users/users.routes.ts:6</note>
+        <note category="location">src/app/features/users/users.routes.ts:7</note>
       </notes>
       <segment>
         <source>Users</source>
@@ -1395,10 +6034,635 @@
     </unit>
     <unit id="route.users.detail.title">
       <notes>
-        <note category="location">src/app/features/users/users.routes.ts:7</note>
+        <note category="location">src/app/features/users/users.routes.ts:12</note>
       </notes>
       <segment>
         <source>User</source>
+      </segment>
+    </unit>
+    <unit id="confirm.cancel">
+      <notes>
+        <note category="location">src/app/shared/access/confirm-dialog.ts:38,39</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+      </segment>
+    </unit>
+    <unit id="needs.text">
+      <notes>
+        <note category="location">src/app/shared/access/needs.ts:17</note>
+      </notes>
+      <segment>
+        <source>Read only: changing this needs the permission</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.heading">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:37,39</note>
+      </notes>
+      <segment>
+        <source>System roles</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.none">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:43,45</note>
+      </notes>
+      <segment>
+        <source>No system role is bound to this principal.</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.caption">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:47,49</note>
+      </notes>
+      <segment>
+        <source>System roles of this principal</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.role">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:50,51</note>
+      </notes>
+      <segment>
+        <source>Role</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.granted">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:51,52</note>
+      </notes>
+      <segment>
+        <source>Granted</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.actions">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:53,55</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.unbind">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:71,72</note>
+        <note category="location">src/app/shared/access/principal-roles.ts:174</note>
+      </notes>
+      <segment>
+        <source>Unbind</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.guard">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:83,85</note>
+      </notes>
+      <segment>
+        <source> The last administrator binding cannot be removed. </source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.bind-label">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:91,93</note>
+      </notes>
+      <segment>
+        <source>Role to bind</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.bind">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:97,98</note>
+      </notes>
+      <segment>
+        <source> Bind role </source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.link">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:101,104</note>
+      </notes>
+      <segment>
+        <source>All system roles</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.bound">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:166</note>
+      </notes>
+      <segment>
+        <source>Role bound.</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.unbind-title">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:172</note>
+      </notes>
+      <segment>
+        <source>Unbind this role?</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.unbind-text">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:173</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="role" disp="b.role"/> will no longer apply to <ph id="1" equiv="principal" disp="b.principal"/>.</source>
+      </segment>
+    </unit>
+    <unit id="principal-roles.unbound">
+      <notes>
+        <note category="location">src/app/shared/access/principal-roles.ts:179</note>
+      </notes>
+      <segment>
+        <source>Role unbound.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.description">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:47,49</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="token-form.description-hint">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:53,56</note>
+      </notes>
+      <segment>
+        <source>What the token is for, for example the machine or the job.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.lifetime">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:57,59</note>
+      </notes>
+      <segment>
+        <source>Lifetime</source>
+      </segment>
+    </unit>
+    <unit id="token-form.expires">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:66,68</note>
+      </notes>
+      <segment>
+        <source>Expires on (UTC)</source>
+      </segment>
+    </unit>
+    <unit id="token-form.scope">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:76,77</note>
+      </notes>
+      <segment>
+        <source>Scope</source>
+      </segment>
+    </unit>
+    <unit id="token-form.scope-all">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:79,81</note>
+      </notes>
+      <segment>
+        <source>All permissions of the owner</source>
+      </segment>
+    </unit>
+    <unit id="token-form.scope-restricted">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:83,85</note>
+      </notes>
+      <segment>
+        <source>Only the repositories and actions below</source>
+      </segment>
+    </unit>
+    <unit id="token-form.repositories">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:88,90</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="token-form.repositories-hint">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:95,98</note>
+      </notes>
+      <segment>
+        <source>One repository key or pattern per line, for example npm-internal or npm-team-*.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.packages">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:99,101</note>
+      </notes>
+      <segment>
+        <source>Package patterns (optional)</source>
+      </segment>
+    </unit>
+    <unit id="token-form.packages-hint">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:104,106</note>
+      </notes>
+      <segment>
+        <source>One pattern per line, for example @team-a/*. Empty means every package.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.actions">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:107,108</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="token-form.cancel">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:121,123</note>
+      </notes>
+      <segment>
+        <source> Cancel </source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.default">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:191</note>
+      </notes>
+      <segment>
+        <source>Server default</source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.d7">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:192</note>
+      </notes>
+      <segment>
+        <source>7 days</source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.d30">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:193</note>
+      </notes>
+      <segment>
+        <source>30 days</source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.d90">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:194</note>
+      </notes>
+      <segment>
+        <source>90 days</source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.d365">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:195</note>
+      </notes>
+      <segment>
+        <source>1 year</source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.custom">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:196</note>
+      </notes>
+      <segment>
+        <source>Custom date</source>
+      </segment>
+    </unit>
+    <unit id="token-form.life.never">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:198</note>
+      </notes>
+      <segment>
+        <source>Never expires</source>
+      </segment>
+    </unit>
+    <unit id="token-form.err.description">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:250</note>
+      </notes>
+      <segment>
+        <source>Enter a description.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.err.date">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:254</note>
+      </notes>
+      <segment>
+        <source>Pick the expiry date.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.err.repositories">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:259</note>
+      </notes>
+      <segment>
+        <source>Name at least one repository.</source>
+      </segment>
+    </unit>
+    <unit id="token-form.err.actions">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:262</note>
+      </notes>
+      <segment>
+        <source>Choose at least one action.</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.heading">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:16,18</note>
+      </notes>
+      <segment>
+        <source>Your new token</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.warning">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:20,22</note>
+      </notes>
+      <segment>
+        <source> Copy the token now. It is shown only once and cannot be retrieved again. </source>
+      </segment>
+    </unit>
+    <unit id="token-secret.label">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:25,27</note>
+      </notes>
+      <segment>
+        <source>Token value</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.hide">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Hide</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.show">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:44,46</note>
+      </notes>
+      <segment>
+        <source>Show</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.copy">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:47,49</note>
+      </notes>
+      <segment>
+        <source>Copy</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.done">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:50,52</note>
+      </notes>
+      <segment>
+        <source> I have copied it </source>
+      </segment>
+    </unit>
+    <unit id="token-secret.copied">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:117</note>
+      </notes>
+      <segment>
+        <source>Token copied to the clipboard.</source>
+      </segment>
+    </unit>
+    <unit id="token-secret.copy-failed">
+      <notes>
+        <note category="location">src/app/shared/access/token-secret.ts:120</note>
+      </notes>
+      <segment>
+        <source>The token could not be copied. Show it and copy it by hand.</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope.inherit">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:14</note>
+      </notes>
+      <segment>
+        <source>All permissions of the owner</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope.none">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:19</note>
+      </notes>
+      <segment>
+        <source>No repository access</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope.grants">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:20</note>
+      </notes>
+      <segment>
+        <source>Repository grants: <ph id="0" equiv="count" disp="grants.length"/></source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope.admin">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:23</note>
+      </notes>
+      <segment>
+        <source>administrator roles</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope.system">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:25</note>
+      </notes>
+      <segment>
+        <source>system: <ph id="0" equiv="list" disp="system.join(&apos;, &apos;)"/></source>
+      </segment>
+    </unit>
+    <unit id="token-table.empty">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:46,48</note>
+      </notes>
+      <segment>
+        <source>No tokens match.</source>
+      </segment>
+    </unit>
+    <unit id="token-table.region">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:49,50</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+      </segment>
+    </unit>
+    <unit id="token-table.caption">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:50,52</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+      </segment>
+    </unit>
+    <unit id="token-table.select">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:54,56</note>
+      </notes>
+      <segment>
+        <source>Select</source>
+      </segment>
+    </unit>
+    <unit id="token-table.description">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:56,57</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="token-table.type">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:57,58</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+      </segment>
+    </unit>
+    <unit id="token-table.owner">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:59,61</note>
+      </notes>
+      <segment>
+        <source>Owner</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:61,62</note>
+      </notes>
+      <segment>
+        <source>Scope</source>
+      </segment>
+    </unit>
+    <unit id="token-table.created">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:62,63</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="token-table.expires">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:63,64</note>
+      </notes>
+      <segment>
+        <source>Expires</source>
+      </segment>
+    </unit>
+    <unit id="token-table.last-used">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:64,65</note>
+      </notes>
+      <segment>
+        <source>Last used</source>
+      </segment>
+    </unit>
+    <unit id="token-table.via">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:65,66</note>
+      </notes>
+      <segment>
+        <source>Created via</source>
+      </segment>
+    </unit>
+    <unit id="token-table.state">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:66,67</note>
+      </notes>
+      <segment>
+        <source>State</source>
+      </segment>
+    </unit>
+    <unit id="token-table.actions">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:67,69</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="token-table.soon">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:100,101</note>
+      </notes>
+      <segment>
+        <source>Expires soon</source>
+      </segment>
+    </unit>
+    <unit id="token-table.never">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:104,105</note>
+      </notes>
+      <segment>
+        <source>Never</source>
+      </segment>
+    </unit>
+    <unit id="token-table.not-recorded">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:111,113</note>
+      </notes>
+      <segment>
+        <source>Not recorded</source>
+      </segment>
+    </unit>
+    <unit id="token-table.state.active">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:118,119</note>
+      </notes>
+      <segment>
+        <source>Active</source>
+      </segment>
+    </unit>
+    <unit id="token-table.state.expired">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:121,122</note>
+      </notes>
+      <segment>
+        <source>Expired</source>
+      </segment>
+    </unit>
+    <unit id="token-table.state.revoked">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:124,125</note>
+      </notes>
+      <segment>
+        <source>Revoked</source>
+      </segment>
+    </unit>
+    <unit id="token-table.rotate">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:132,133</note>
+      </notes>
+      <segment>
+        <source>Rotate</source>
+      </segment>
+    </unit>
+    <unit id="token-table.revoke">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:138,139</note>
+      </notes>
+      <segment>
+        <source>Revoke</source>
+      </segment>
+    </unit>
+    <unit id="token-table.select-one">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:182</note>
+      </notes>
+      <segment>
+        <source>Select <ph id="0" equiv="description" disp="t.description"/></source>
       </segment>
     </unit>
     <unit id="banner.label">
@@ -1407,6 +6671,78 @@
       </notes>
       <segment>
         <source>System notice</source>
+      </segment>
+    </unit>
+    <unit id="conflict.title">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:39,40</note>
+      </notes>
+      <segment>
+        <source>Changed by someone else since you opened it</source>
+      </segment>
+    </unit>
+    <unit id="conflict.same">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:42,44</note>
+      </notes>
+      <segment>
+        <source>The stored version already equals yours.</source>
+      </segment>
+    </unit>
+    <unit id="conflict.caption">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:46,47</note>
+      </notes>
+      <segment>
+        <source> Fields that differ between the stored version and your version </source>
+      </segment>
+    </unit>
+    <unit id="conflict.field">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:50,51</note>
+      </notes>
+      <segment>
+        <source>Field</source>
+      </segment>
+    </unit>
+    <unit id="conflict.theirs">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:51,52</note>
+      </notes>
+      <segment>
+        <source>Stored now</source>
+      </segment>
+    </unit>
+    <unit id="conflict.mine">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:52,54</note>
+      </notes>
+      <segment>
+        <source>Yours</source>
+      </segment>
+    </unit>
+    <unit id="conflict.copy">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:69,71</note>
+      </notes>
+      <segment>
+        <source> Copy my changes </source>
+      </segment>
+    </unit>
+    <unit id="conflict.reload">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:72,74</note>
+      </notes>
+      <segment>
+        <source> Reload (discard mine) </source>
+      </segment>
+    </unit>
+    <unit id="conflict.overwrite">
+      <notes>
+        <note category="location">src/app/shared/conflict-dialog.ts:80,82</note>
+      </notes>
+      <segment>
+        <source> Overwrite </source>
       </segment>
     </unit>
     <unit id="error.request-id">
@@ -1467,7 +6803,7 @@
     </unit>
     <unit id="session.ended.title">
       <notes>
-        <note category="location">src/app/shared/session-dialog.ts:21,22</note>
+        <note category="location">src/app/shared/session-dialog.ts:24,25</note>
       </notes>
       <segment>
         <source>Your session has ended</source>
@@ -1475,7 +6811,7 @@
     </unit>
     <unit id="session.ended.text">
       <notes>
-        <note category="location">src/app/shared/session-dialog.ts:23,24</note>
+        <note category="location">src/app/shared/session-dialog.ts:26,27</note>
       </notes>
       <segment>
         <source> You were signed out. Sign in again to continue where you left off. </source>
@@ -1483,7 +6819,7 @@
     </unit>
     <unit id="session.reauth.title">
       <notes>
-        <note category="location">src/app/shared/session-dialog.ts:26,27</note>
+        <note category="location">src/app/shared/session-dialog.ts:29,30</note>
       </notes>
       <segment>
         <source>Confirm it is you</source>
@@ -1491,15 +6827,23 @@
     </unit>
     <unit id="session.reauth.text">
       <notes>
-        <note category="location">src/app/shared/session-dialog.ts:28,29</note>
+        <note category="location">src/app/shared/session-dialog.ts:31,32</note>
       </notes>
       <segment>
         <source> This action needs a recent sign-in. Sign in again, then repeat the action. </source>
       </segment>
     </unit>
+    <unit id="session.copy-draft">
+      <notes>
+        <note category="location">src/app/shared/session-dialog.ts:38,40</note>
+      </notes>
+      <segment>
+        <source> Copy draft as JSON </source>
+      </segment>
+    </unit>
     <unit id="session.later">
       <notes>
-        <note category="location">src/app/shared/session-dialog.ts:32,33</note>
+        <note category="location">src/app/shared/session-dialog.ts:42,43</note>
       </notes>
       <segment>
         <source>Not now</source>
@@ -1507,7 +6851,7 @@
     </unit>
     <unit id="session.sign-in-again">
       <notes>
-        <note category="location">src/app/shared/session-dialog.ts:34,36</note>
+        <note category="location">src/app/shared/session-dialog.ts:44,46</note>
       </notes>
       <segment>
         <source> Sign in again </source>

@@ -1,0 +1,67 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@policies.heading">Permission policies</h1>
+  @if (session.has('policies:write')) {
+    <a mat-flat-button routerLink="/admin/permissions/new" i18n="@@policies.new">New policy</a>
+  } @else {
+    <button mat-flat-button type="button" disabled aria-describedby="needs-policies" i18n="@@policies.new-disabled">New policy</button>
+  }
+</header>
+<trove-needs id="needs-policies" capability="policies:write" />
+
+<form class="toolbar" (submit)="submit($event)" role="search" i18n-aria-label="@@policies.filters" aria-label="Policy filters">
+  <trove-text-field
+    i18n-label="@@policies.principal"
+    label="Principal"
+    name="principal"
+    [(value)]="principalFilter"
+    i18n-hint="@@policies.principal-hint"
+    hint="user:name, group:name, sa:name, anonymous or authenticated"
+  />
+  <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
+  <button mat-flat-button type="submit" i18n="@@policies.apply">Apply filters</button>
+</form>
+
+@if (list.error(); as e) {
+  <trove-error-notice [error]="e" (retry)="list.reload()" />
+}
+@if (list.loaded()) {
+  @if (list.items().length === 0) {
+    <p i18n="@@policies.empty">No policy matches.</p>
+  } @else {
+    <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@policies.region" aria-label="Permission policies">
+      <table class="data">
+        <caption class="visually-hidden" i18n="@@policies.caption">Permission policies</caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@policies.col.name">Name</th>
+            <th scope="col" i18n="@@policies.col.description">Description</th>
+            <th scope="col" i18n="@@policies.col.principals">Principals</th>
+            <th scope="col" i18n="@@policies.col.resources">Repositories</th>
+            <th scope="col" i18n="@@policies.col.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of list.items(); track p.name) {
+            <tr>
+              <th scope="row">
+                <a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a>
+                @if (p.inert) {
+                  <br /><span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@policies.inert">Grants nothing</ng-container></span>
+                }
+              </th>
+              <td>{{ p.description }}</td>
+              <td>{{ principalSummary(p) }}</td>
+              <td translate="no">{{ repositorySummary(p) }}</td>
+              <td translate="no">{{ actionSummary(p) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (list.hasMore()) {
+      <p><button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@policies.more">Load more</button></p>
+    }
+  }
+} @else if (list.loading()) {
+  <p role="status" i18n="@@policies.loading">Loading policies.</p>
+}

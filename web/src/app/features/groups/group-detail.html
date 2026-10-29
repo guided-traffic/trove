@@ -1,0 +1,142 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@group.heading">Group</h1>
+  <a mat-button routerLink="/admin/groups" i18n="@@group.back">All groups</a>
+</header>
+<p class="subject" translate="no">{{ name() }}</p>
+<trove-needs capability="identities:write" />
+
+@if (loadError(); as e) {
+  <trove-error-notice [error]="e" (retry)="load()" />
+}
+
+@if (group(); as g) {
+  <section class="card" aria-labelledby="group-general">
+    <h2 id="group-general" i18n="@@group.general">General</h2>
+    @if (readOnly()) {
+      <p role="status" class="warn">
+        <span class="material-icons" aria-hidden="true">lock</span>
+        <ng-container i18n="@@group.scim-note">This group is managed by SCIM and cannot be changed here.</ng-container>
+      </p>
+    }
+    @if (editError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+    <form class="form-grid" (submit)="save($event)">
+      <trove-text-field i18n-label="@@group.name" label="Name" name="name" [(value)]="newName" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/name')" />
+      <trove-text-field i18n-label="@@group.description" label="Description" name="description" [(value)]="description" [readonly]="readOnly() || !canWrite()" [error]="fieldError('/description')" />
+      <mat-checkbox [checked]="autoJoin()" [disabled]="readOnly() || !canWrite()" (change)="autoJoin.set($event.checked)">
+        <ng-container i18n="@@group.auto-join">Every user joins this group automatically</ng-container>
+      </mat-checkbox>
+      <dl class="facts">
+        <dt i18n="@@group.origin">Origin</dt>
+        <dd>{{ originLabel(g.origin) }}</dd>
+        <dt i18n="@@group.created">Created</dt>
+        <dd>{{ g.createdAt | date: 'medium' }}</dd>
+      </dl>
+      @if (canWrite() && !readOnly()) {
+        <div class="row-actions">
+          <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@group.save">Save group</button>
+          <button mat-button type="button" [disabled]="busy()" (click)="remove()" i18n="@@group.delete">Delete group</button>
+        </div>
+      }
+    </form>
+  </section>
+
+  <section class="card" aria-labelledby="group-members">
+    <h2 id="group-members" i18n="@@group.members">Members ({{ g.memberCount }})</h2>
+    @if (memberError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+    <div class="toolbar">
+      <trove-select-field i18n-label="@@group.source-filter" label="Source" name="source" [options]="sourceOptions" [(value)]="sourceFilter" />
+    </div>
+    @if (members.error(); as e) {
+      <trove-error-notice [error]="e" (retry)="members.reload()" />
+    }
+    @if (members.loaded()) {
+      @if (members.items().length === 0) {
+        <p i18n="@@group.no-members">No member matches.</p>
+      } @else {
+        <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@group.members-region" aria-label="Members">
+          <table class="data">
+            <caption class="visually-hidden" i18n="@@group.members-caption">Members and where each membership comes from</caption>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@group.member">Member</th>
+                <th scope="col" i18n="@@group.sources">Sources</th>
+                <th scope="col"><span class="visually-hidden" i18n="@@group.member-actions">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (m of members.items(); track m.principal) {
+                <tr>
+                  <th scope="row"><a [routerLink]="memberLink(m)" translate="no">{{ m.principal }}</a></th>
+                  <td>
+                    @for (s of m.sources; track s) {
+                      <span class="badge">{{ sourceLabel(s) }}</span>{{ ' ' }}
+                    }
+                  </td>
+                  <td class="actions">
+                    @if (removable(m)) {
+                      <button mat-button type="button" [disabled]="busy()" (click)="removeMember(m)">
+                        <ng-container i18n="@@group.remove">Remove</ng-container>
+                        <span class="visually-hidden" translate="no"> {{ m.principal }}</span>
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (members.hasMore()) {
+          <p><button mat-button type="button" [disabled]="members.loading()" (click)="members.more()" i18n="@@group.more">Load more</button></p>
+        }
+      }
+    }
+    @if (canWrite() && !readOnly()) {
+      <form class="toolbar" (submit)="addMember($event)">
+        <trove-text-field
+          i18n-label="@@group.add-member"
+          label="Add a member"
+          name="member"
+          [(value)]="newMember"
+          i18n-hint="@@group.add-member-hint"
+          hint="A user name, or sa:name for a service account"
+        />
+        <button mat-flat-button type="submit" [disabled]="busy() || newMember().trim() === ''" i18n="@@group.add-member-submit">Add</button>
+      </form>
+    }
+  </section>
+
+  <section class="card" aria-labelledby="group-roles">
+    <h2 id="group-roles" i18n="@@group.roles">System roles</h2>
+    @if (g.roles.length === 0) {
+      <p i18n="@@group.no-roles">No system role is bound to this group.</p>
+    } @else {
+      <ul>
+        @for (r of g.roles; track r) {
+          <li translate="no">{{ r }}</li>
+        }
+      </ul>
+    }
+    @if (session.has('roles:read')) {
+      <p><a routerLink="/admin/roles" i18n="@@group.roles-link">Manage role bindings</a></p>
+    }
+  </section>
+
+  @if (policies(); as list) {
+    <section class="card" aria-labelledby="group-policies">
+      <h2 id="group-policies" i18n="@@group.policies">Permission policies naming this group</h2>
+      @if (list.length === 0) {
+        <p i18n="@@group.no-policies">No policy names this group.</p>
+      } @else {
+        <ul>
+          @for (p of list; track p.name) {
+            <li><a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a></li>
+          }
+        </ul>
+      }
+    </section>
+  }
+}

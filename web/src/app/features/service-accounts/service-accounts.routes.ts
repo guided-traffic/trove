@@ -1,8 +1,15 @@
 import { Routes } from '@angular/router';
-import { placeholderRoute } from '../../shared/placeholder-route';
 
 /** R-UI-026. */
 export const SERVICE_ACCOUNTS_ROUTES: Routes = [
-  placeholderRoute('', $localize`:@@route.service-accounts.title:Service accounts`),
-  placeholderRoute(':name', $localize`:@@route.service-accounts.detail.title:Service account`),
+  {
+    path: '',
+    title: $localize`:@@route.service-accounts.title:Service accounts`,
+    loadComponent: () => import('./service-account-list').then((m) => m.ServiceAccountList),
+  },
+  {
+    path: ':name',
+    title: $localize`:@@route.service-accounts.detail.title:Service account`,
+    loadComponent: () => import('./service-account-detail').then((m) => m.ServiceAccountDetail),
+  },
 ];

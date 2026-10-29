@@ -1,0 +1,209 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@user.heading">User</h1>
+  <a mat-button routerLink="/admin/users" i18n="@@user.back">All users</a>
+</header>
+<p class="subject" translate="no">{{ username() }}</p>
+<trove-needs capability="identities:write" />
+
+@if (loadError(); as e) {
+  <trove-error-notice [error]="e" (retry)="load()" />
+}
+@if (actionError(); as e) {
+  <trove-error-notice [error]="e" />
+}
+
+@if (user(); as u) {
+  <section class="card" aria-labelledby="user-attributes">
+    <h2 id="user-attributes" i18n="@@user.attributes">Attributes</h2>
+    <dl class="facts">
+      <dt i18n="@@user.id">ID</dt>
+      <dd><code translate="no">{{ u.id }}</code></dd>
+      <dt i18n="@@user.display-name-fact">Display name</dt>
+      <dd>{{ u.displayName ?? '' }}</dd>
+      <dt i18n="@@user.email-fact">Email</dt>
+      <dd>{{ u.email ?? '' }}</dd>
+      <dt i18n="@@user.origin">Origin</dt>
+      <dd>{{ originLabel(u.origin) }}</dd>
+      <dt i18n="@@user.status">Status</dt>
+      <dd>
+        @if (u.status === 'active') {
+          <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@user.status.active">Active</ng-container></span>
+        } @else {
+          <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@user.status.disabled">Disabled</ng-container></span>
+          @if (u.disabledReason) {
+            (<span translate="no">{{ u.disabledReason }}</span>)
+          }
+        }
+        @if (locked()) {
+          <br /><span class="warn"><span class="material-icons" aria-hidden="true">lock</span> <ng-container i18n="@@user.locked">Locked until</ng-container> {{ u.lockedUntil | date: 'medium' }}</span>
+        }
+      </dd>
+      <dt i18n="@@user.admin">Administrator</dt>
+      <dd>
+        @if (u.isAdmin) {
+          <ng-container i18n="@@user.admin.yes">Yes</ng-container> (<span translate="no">{{ u.adminVia.join(', ') }}</span>)
+        } @else {
+          <ng-container i18n="@@user.admin.no">No</ng-container>
+        }
+      </dd>
+      <dt i18n="@@user.last-login">Last sign-in</dt>
+      <dd>{{ u.lastLoginAt | date: 'medium' }}</dd>
+      <dt i18n="@@user.created">Created</dt>
+      <dd>{{ u.createdAt | date: 'medium' }}</dd>
+    </dl>
+    <p class="muted" i18n="@@user.attributes-note">
+      Name and email come from the identity provider and are replaced at the user's next sign-in.
+    </p>
+
+    @if (canWrite() && editable()) {
+      <form class="form-grid" (submit)="saveAttributes($event)">
+        @if (editError(); as e) {
+          <trove-error-notice [error]="e" />
+        }
+        <trove-text-field i18n-label="@@user.display-name" label="Display name" name="displayName" [(value)]="displayName" [error]="fieldError('/displayName')" />
+        <trove-text-field i18n-label="@@user.email" label="Email" name="email" type="email" [(value)]="email" [error]="fieldError('/email')" />
+        <div class="row-actions">
+          <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@user.save">Save correction</button>
+        </div>
+      </form>
+    }
+
+    <div class="row-actions">
+      @if (canWrite() && editable()) {
+        @if (u.status === 'active') {
+          <button mat-button type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="disable()" i18n="@@user.disable">Disable</button>
+        } @else {
+          <button mat-button type="button" [disabled]="busy()" (click)="enable()" i18n="@@user.enable">Enable</button>
+        }
+        <button mat-button type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="remove()" i18n="@@user.delete">Delete</button>
+      }
+      @if (locked() && session.has('content:bypass')) {
+        <button mat-button type="button" [disabled]="busy()" (click)="unlock()" i18n="@@user.unlock">Unlock</button>
+      }
+      @if (session.has('audit:read')) {
+        <a mat-button routerLink="/admin/audit" [queryParams]="{ actor: u.username }" i18n="@@user.audit">Audit log of this user</a>
+      }
+    </div>
+    @if (isSelf()) {
+      <p id="self-guard" class="muted" i18n="@@user.self-guard">You cannot disable or delete your own account.</p>
+    }
+  </section>
+
+  <section class="card" aria-labelledby="user-identities">
+    <h2 id="user-identities" i18n="@@user.identities">Identities</h2>
+    @if (u.identities.length === 0) {
+      <p i18n="@@user.no-identities">No identity provider is linked.</p>
+    } @else {
+      <ul>
+        @for (i of u.identities; track i.provider) {
+          <li>
+            <code translate="no">{{ i.provider }}</code>
+            @if (i.linked) {
+              <span class="badge"><span class="material-icons" aria-hidden="true">link</span><ng-container i18n="@@user.linked">Linked</ng-container></span>
+            } @else {
+              <span class="badge"><span class="material-icons" aria-hidden="true">pending</span><ng-container i18n="@@user.pending">Pending first sign-in</ng-container></span>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </section>
+
+  <section class="card" aria-labelledby="user-groups">
+    <h2 id="user-groups" i18n="@@user.groups">Groups</h2>
+    @if (u.groupClaimMissing; as missing) {
+      <p role="status" class="warn">
+        <span class="material-icons" aria-hidden="true">warning</span>
+        <ng-container i18n="@@user.claim-missing">
+          The last sign-in through {{ missing.provider }} carried no usable group claim ({{ missing.reason }}), so groups synchronized from it may be missing.
+        </ng-container>
+      </p>
+    }
+    @if (u.groups.length === 0) {
+      <p i18n="@@user.no-groups">This user is in no group.</p>
+    } @else {
+      <table class="data">
+        <caption class="visually-hidden" i18n="@@user.groups-caption">Group memberships and their sources</caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@user.group">Group</th>
+            <th scope="col" i18n="@@user.source">Source</th>
+            <th scope="col"><span class="visually-hidden" i18n="@@user.actions">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (g of u.groups; track g.name + g.source) {
+            <tr>
+              <th scope="row"><a [routerLink]="['/admin/groups', g.name]" translate="no">{{ g.name }}</a></th>
+              <td><span class="badge">{{ sourceLabel(g.source) }}</span></td>
+              <td class="actions">
+                @if (editableGroup(g)) {
+                  <button mat-button type="button" [disabled]="busy()" (click)="removeGroup(g)">
+                    <ng-container i18n="@@user.remove-group">Remove</ng-container>
+                    <span class="visually-hidden" translate="no"> {{ g.name }}</span>
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+    @if (canWrite() && editable()) {
+      <form class="toolbar" (submit)="addGroup($event)">
+        <trove-text-field i18n-label="@@user.add-group" label="Add to group" name="group" [(value)]="newGroup" />
+        <button mat-flat-button type="submit" [disabled]="busy() || newGroup().trim() === ''" i18n="@@user.add-group-submit">Add</button>
+      </form>
+    }
+  </section>
+
+  @if (session.has('roles:read')) {
+    <trove-principal-roles [principal]="'user:' + u.username" />
+  }
+
+  @if (session.has('tokens:read')) {
+    <section class="card" aria-labelledby="user-tokens">
+      <h2 id="user-tokens" i18n="@@user.tokens">Tokens</h2>
+      <trove-token-manager [scope]="scope()" />
+    </section>
+  }
+
+  <section class="card" aria-labelledby="user-sessions">
+    <h2 id="user-sessions" i18n="@@user.sessions">Sessions</h2>
+    @if (sessionError(); as e) {
+      <trove-error-notice [error]="e" (retry)="load()" />
+    }
+    @if (sessions(); as list) {
+      @if (list.length === 0) {
+        <p i18n="@@user.no-sessions">No open session.</p>
+      } @else {
+        <table class="data">
+          <caption class="visually-hidden" i18n="@@user.sessions-caption">Open sessions of this user</caption>
+          <thead>
+            <tr>
+              <th scope="col" i18n="@@user.session.created">Created</th>
+              <th scope="col" i18n="@@user.session.last-seen">Last seen</th>
+              <th scope="col" i18n="@@user.session.address">Address</th>
+              <th scope="col" i18n="@@user.session.agent">Browser</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (s of list; track s.id) {
+              <tr>
+                <th scope="row">{{ s.createdAt | date: 'medium' }}</th>
+                <td>{{ s.lastSeenAt | date: 'medium' }}</td>
+                <td translate="no">{{ s.createdAddr ?? '' }}</td>
+                <td translate="no">{{ s.userAgent ?? '' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        @if (canWrite()) {
+          <div class="row-actions">
+            <button mat-button type="button" [disabled]="busy()" (click)="endSessions()" i18n="@@user.end-sessions">End all sessions</button>
+          </div>
+        }
+      }
+    }
+  </section>
+}

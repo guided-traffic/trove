@@ -1,0 +1,163 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@auth-settings.heading">Authentication settings</h1>
+</header>
+<trove-needs capability="settings:write" />
+
+@if (loadError(); as e) {
+  <trove-error-notice [error]="e" (retry)="load()" />
+}
+
+@if (settings(); as s) {
+  <form (submit)="save($event)" novalidate>
+    @if (saveError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+
+    <section class="card" aria-labelledby="as-anonymous">
+      <h2 id="as-anonymous" i18n="@@auth-settings.anonymous">Anonymous access</h2>
+      <mat-checkbox
+        [checked]="anonymousAccess()"
+        [disabled]="!canWrite() || (!s.ceilings.anonymousAllowed && !anonymousAccess())"
+        [attr.aria-describedby]="!s.ceilings.anonymousAllowed ? 'anonymous-ceiling' : null"
+        (change)="anonymousAccess.set($event.checked)"
+      >
+        <ng-container i18n="@@auth-settings.anonymous-switch">Allow requests without a credential to read what the anonymous principal may read</ng-container>
+      </mat-checkbox>
+      @if (!s.ceilings.anonymousAllowed) {
+        <p id="anonymous-ceiling" class="muted">
+          <span class="material-icons" aria-hidden="true">lock</span>
+          <ng-container i18n="@@auth-settings.anonymous-ceiling">The installation's configuration does not allow anonymous access, so it cannot be switched on here.</ng-container>
+        </p>
+      }
+      @if (session.has('policies:read')) {
+        <p>
+          <a routerLink="/admin/permissions" [queryParams]="{ principal: 'anonymous' }" i18n="@@auth-settings.anonymous-link">Policies that name the anonymous principal</a>
+        </p>
+      }
+    </section>
+
+    <section class="card" aria-labelledby="as-tokens">
+      <h2 id="as-tokens" i18n="@@auth-settings.tokens">Token lifetimes</h2>
+      <p class="muted" i18n="@@auth-settings.tokens-note">
+        Values are in days (fractions allowed, at least 60 seconds). The ceiling comes from the installation's configuration and cannot be exceeded here.
+      </p>
+      <div class="form-grid">
+        <h3 i18n="@@auth-settings.pat">Personal tokens</h3>
+        <trove-text-field
+          i18n-label="@@auth-settings.pat-default"
+          label="Default lifetime (days)"
+          name="patDefault"
+          type="number"
+          [(value)]="patDefault"
+          [readonly]="!canWrite()"
+          [error]="fieldError('/tokens/pat/defaultTTLSeconds')"
+          [hint]="ceilingHint(s.ceilings.tokens.pat.defaultTTLSeconds)"
+        />
+        <trove-text-field
+          i18n-label="@@auth-settings.pat-max"
+          label="Maximum lifetime (days)"
+          name="patMax"
+          type="number"
+          [(value)]="patMax"
+          [readonly]="!canWrite()"
+          [error]="fieldError('/tokens/pat/maxTTLSeconds')"
+          [hint]="ceilingHint(s.ceilings.tokens.pat.maxTTLSeconds)"
+        />
+        <h3 i18n="@@auth-settings.sat">Service account tokens</h3>
+        <trove-text-field
+          i18n-label="@@auth-settings.sat-default"
+          label="Default lifetime (days)"
+          name="satDefault"
+          type="number"
+          [(value)]="satDefault"
+          [readonly]="!canWrite()"
+          [error]="fieldError('/tokens/sat/defaultTTLSeconds')"
+          [hint]="ceilingHint(s.ceilings.tokens.sat.defaultTTLSeconds)"
+        />
+        <trove-text-field
+          i18n-label="@@auth-settings.sat-max"
+          label="Maximum lifetime (days)"
+          name="satMax"
+          type="number"
+          [(value)]="satMax"
+          [readonly]="!canWrite()"
+          [error]="fieldError('/tokens/sat/maxTTLSeconds')"
+          [hint]="ceilingHint(s.ceilings.tokens.sat.maxTTLSeconds)"
+        />
+        <h3 i18n="@@auth-settings.notice">Expiry notice</h3>
+        <trove-text-field
+          i18n-label="@@auth-settings.notice-lead"
+          label="Notify this many days before a token expires"
+          name="expiryNotice"
+          type="number"
+          [(value)]="expiryNotice"
+          [readonly]="!canWrite()"
+          [error]="fieldError('/tokens/expiryNoticeSeconds')"
+          [hint]="ceilingHint(s.ceilings.tokens.expiryNoticeSeconds)"
+        />
+      </div>
+    </section>
+
+    @if (canWrite()) {
+      <div class="row-actions">
+        <button mat-flat-button type="submit" [disabled]="busy() || !dirty()" i18n="@@auth-settings.save">Save settings</button>
+      </div>
+    }
+  </form>
+
+  <section class="card" aria-labelledby="as-status">
+    <h2 id="as-status" i18n="@@auth-settings.status">Status (read only)</h2>
+    <p class="muted" i18n="@@auth-settings.status-note">These values come from the installation's configuration.</p>
+
+    <h3 i18n="@@auth-settings.providers">Identity providers</h3>
+    @if (s.status.providers.length === 0) {
+      <p i18n="@@auth-settings.no-providers">No identity provider is configured.</p>
+    } @else {
+      <ul>
+        @for (p of s.status.providers; track p.id) {
+          <li>
+            <span translate="no">{{ p.displayName }}</span> (<code translate="no">{{ p.id }}</code>):
+            @if (p.available) {
+              <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@auth-settings.provider-up">discovery document loaded</ng-container></span>
+            } @else {
+              <span class="bad"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@auth-settings.provider-down">not available on this replica</ng-container></span>
+            }
+          </li>
+        }
+      </ul>
+    }
+
+    <h3 i18n="@@auth-settings.break-glass">Break-glass account</h3>
+    <p>
+      @if (s.status.breakGlass.enabled) {
+        <ng-container i18n="@@auth-settings.break-glass-on">Enabled.</ng-container>
+      } @else {
+        <ng-container i18n="@@auth-settings.break-glass-off">Disabled.</ng-container>
+      }
+      @if (s.status.breakGlass.lockedUntil) {
+        <span class="warn"><span class="material-icons" aria-hidden="true">lock</span> <ng-container i18n="@@auth-settings.break-glass-locked">Locked until</ng-container> {{ s.status.breakGlass.lockedUntil }}</span>
+      }
+    </p>
+
+    <h3 i18n="@@auth-settings.sessions">Sessions</h3>
+    <dl class="facts">
+      <dt i18n="@@auth-settings.idle">Idle timeout</dt>
+      <dd>{{ duration(s.status.sessions.idleTimeoutSeconds) }}</dd>
+      <dt i18n="@@auth-settings.absolute">Absolute timeout</dt>
+      <dd>{{ duration(s.status.sessions.absoluteTimeoutSeconds) }}</dd>
+      <dt i18n="@@auth-settings.max-sessions">Sessions per user</dt>
+      <dd>{{ s.status.sessions.maxPerUser }}</dd>
+      <dt i18n="@@auth-settings.recent">Recent sign-in window</dt>
+      <dd>{{ duration(s.status.sessions.recentAuthWindowSeconds) }}</dd>
+    </dl>
+
+    <h3 i18n="@@auth-settings.clients">Clients</h3>
+    <p>
+      @if (s.status.clients.basicEnabled) {
+        <ng-container i18n="@@auth-settings.basic-on">HTTP Basic with a token as the password is enabled.</ng-container>
+      } @else {
+        <ng-container i18n="@@auth-settings.basic-off">HTTP Basic with a token as the password is disabled.</ng-container>
+      }
+    </p>
+  </section>
+}

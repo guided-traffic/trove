@@ -8,9 +8,17 @@ describe('describeProblem', () => {
   });
 
   it('R-UI-042 an unknown code shows the English detail and is marked unknown, so the request ID is offered', () => {
-    const e = new ApiError(409, { code: 'last_admin', detail: 'The last administrator cannot be removed.' }, 'rid-1');
-    expect(describeProblem(e)).toEqual({ text: 'The last administrator cannot be removed.', known: false });
+    const e = new ApiError(409, { code: 'a_code_from_the_future', detail: 'The server explains it in English.' }, 'rid-1');
+    expect(describeProblem(e)).toEqual({ text: 'The server explains it in English.', known: false });
   });
+
+  // >>> M1 ui-b
+  it('R-UI-042 the codes of the identity and permission screens are translated and known', () => {
+    const e = new ApiError(409, { code: 'last_admin', detail: 'The last administrator cannot be removed.' }, 'rid-1');
+    expect(describeProblem(e)).toEqual({ text: 'The last administrator binding cannot be removed.', known: true });
+    expect(describeProblem(new ApiError(422, { code: 'unknown_principal' }, null)).known).toBe(true);
+  });
+  // <<< M1 ui-b
 
   it('R-UI-042 a lost connection and a rate limit with a wait time are described', () => {
     expect(describeProblem(new ApiError(0, null, null)).text).toContain('could not be reached');

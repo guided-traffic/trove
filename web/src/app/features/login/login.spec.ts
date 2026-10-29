@@ -2,6 +2,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { LoginApi } from '../../api/login-api';
+import { ApiError } from '../../api/problem';
+import { seriousViolations } from '../../testing/axe';
 import { FakeLoginApi, provideFakeApis } from '../../api/testing/fakes';
 import { BrowserNavigation } from '../../core/browser-navigation';
 import { routes } from '../../app.routes';
@@ -77,5 +79,40 @@ describe('Sign-in screen', () => {
     (root.querySelector('main button') as HTMLButtonElement).click();
     const target = new URL(assign.mock.calls[0]?.[0] ?? '', 'https://trove.test');
     expect(target.searchParams.get('purpose')).toBe('reauth');
+  });
+
+  it('R-AUTH-011 a re-authentication explains why and offers no way around it', async () => {
+    const { root } = await open('/login?returnTo=%2Fprofile%2Ftokens&reauth=1', (api) => {
+      api.optionsResult = { ...api.optionsResult, anonymousAccess: true };
+    });
+    expect(root.querySelector('p[role="status"].reauth')?.textContent).toContain('needs a recent sign-in');
+    expect(root.textContent).not.toContain('Continue without signing in');
+  });
+
+  it('R-UI-004 with anonymous access on the screen offers to continue without signing in', async () => {
+    const { root } = await open('/login?returnTo=%2Fbrowse', (api) => {
+      api.optionsResult = { ...api.optionsResult, anonymousAccess: true };
+    });
+    const link = [...root.querySelectorAll('a')].find((a) => a.textContent?.includes('Continue without signing in'));
+    expect(link?.getAttribute('href')).toBe('/browse');
+  });
+
+  it('R-UI-004 a refused break-glass sign-in shows the translated reason and no password stays in the field', async () => {
+    const { root, fixture } = await open('/login?local=1', (api) => {
+      api.localLogin = async () => {
+        throw new ApiError(401, { code: 'invalid_credentials' }, null);
+      };
+    });
+    const form = root.querySelector('form.local') as HTMLFormElement;
+    const password = form.querySelector('input[type="password"]') as HTMLInputElement;
+    expect(password.getAttribute('autocomplete')).toBe('current-password');
+    password.value = 'wrong';
+    password.dispatchEvent(new Event('input'));
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+    await new Promise((r) => setTimeout(r, 0));
+    fixture.detectChanges();
+    expect(root.querySelector('.local-error')?.textContent).toContain('wrong');
+    expect(await seriousViolations(root)).toEqual([]);
   });
 });

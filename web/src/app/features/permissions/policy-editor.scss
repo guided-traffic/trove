@@ -1,0 +1,176 @@
+// One page, sections down the left with a table of contents, a sticky preview on the right while
+// the content area is at least 960 CSS px wide, a collapsible region above the save bar below
+// that (Q-UI-4, R-UI-027).
+
+.editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--trove-space-4);
+  align-items: start;
+}
+
+.toc ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.link {
+  padding: var(--trove-space-1) var(--trove-space-2);
+  border: 0;
+  background: none;
+  color: var(--mat-sys-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  min-block-size: 24px;
+}
+
+.preview {
+  padding: var(--trove-space-4);
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-medium);
+
+  h2 {
+    margin-block: 0 var(--trove-space-2);
+    font: var(--mat-sys-title-medium);
+  }
+
+  h3 {
+    margin-block: var(--trove-space-3) var(--trove-space-1);
+    font: var(--mat-sys-title-small);
+  }
+}
+
+.preview-body {
+  overflow-wrap: anywhere;
+}
+
+.entry {
+  margin: 0 0 var(--trove-space-3);
+  padding: var(--trove-space-2) var(--trove-space-3);
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-small);
+}
+
+.actions-row,
+.entry-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-1) var(--trove-space-3);
+}
+
+.help {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--trove-space-1) var(--trove-space-4);
+  margin: 0 0 var(--trove-space-3);
+
+  dd {
+    margin: 0;
+  }
+}
+
+.two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--trove-space-3);
+}
+
+.tester,
+.try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--trove-space-3);
+}
+
+.problems,
+.steps,
+.covered {
+  margin: 0;
+  padding-inline-start: var(--trove-space-6);
+}
+
+.steps {
+  list-style: none;
+  padding-inline-start: 0;
+
+  li {
+    display: flex;
+    gap: var(--trove-space-2);
+    align-items: flex-start;
+  }
+}
+
+.save-bar {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+  padding: var(--trove-space-3);
+  background: var(--trove-surface);
+  border-block-start: 1px solid var(--mat-sys-outline-variant);
+}
+
+@media (min-width: 60rem) {
+  .editor {
+    grid-template-columns: 12rem minmax(0, 1fr) 24rem;
+  }
+
+  .toc {
+    position: sticky;
+    inset-block-start: var(--trove-space-4);
+    grid-column: 1;
+    grid-row: 1;
+
+    ul {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .sections {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .preview {
+    position: sticky;
+    inset-block-start: var(--trove-space-4);
+    grid-column: 3;
+    grid-row: 1;
+    max-block-size: calc(100vh - 8rem);
+    overflow-y: auto;
+  }
+
+  .preview-toggle {
+    display: none;
+  }
+
+  // The body is always visible in the wide layout, whatever the toggle says.
+  .preview-body[hidden] {
+    display: block;
+  }
+
+  .save-bar {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 59.99rem) {
+  .preview {
+    order: 1;
+  }
+
+  .save-bar {
+    order: 2;
+  }
+}

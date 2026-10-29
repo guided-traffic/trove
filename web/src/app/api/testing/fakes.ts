@@ -1,7 +1,7 @@
 import { Provider } from '@angular/core';
 import { LoginApi, LoginOptions } from '../login-api';
 import { ApiError } from '../problem';
-import { LoadedPreferences, PreferencesApi, Preferences } from '../preferences-api';
+import { LoadedPreferences, PreferencesApi, Preferences, PreferencesPatch } from '../preferences-api';
 import {
   AuthzMe,
   LogoutAnswer,
@@ -11,6 +11,9 @@ import {
   Whoami,
 } from '../session-api';
 import { EncryptionApi, EncryptionStatus, Replica, SystemApi, SystemInfo } from '../system-api';
+// >>> M1 ui-b
+import { provideAccessFakes } from './access-fakes';
+// <<< M1 ui-b
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -40,9 +43,16 @@ export const ADMIN_CAPABILITIES: readonly string[] = [
 export class FakeSessionApi extends SessionApi {
   whoamiResult: Whoami | ApiError = {
     principal: { kind: 'user', name: 'alice', id: '00000000-0000-0000-0000-000000000001' },
-    credential: { type: 'session' },
+    credential: { type: 'session', tokenId: null, scope: null, expiresAt: null },
   };
-  meResult: AuthzMe | ApiError = { capabilities: ADMIN_CAPABILITIES };
+  /** `capabilities` is what specs set; the other members default to an administrator's. */
+  meResult: (Pick<AuthzMe, 'capabilities'> & Partial<AuthzMe>) | ApiError = {
+    roles: ['admin'],
+    capabilities: [...ADMIN_CAPABILITIES],
+    principals: ['user:alice'],
+    scope: null,
+    epoch: 1,
+  };
   logoutResult: LogoutAnswer = {};
   checkCalls: (readonly PermissionCheck[])[] = [];
   allow: (check: PermissionCheck) => boolean = () => true;
@@ -55,12 +65,12 @@ export class FakeSessionApi extends SessionApi {
 
   override async authzMe(): Promise<AuthzMe> {
     if (this.meResult instanceof ApiError) throw this.meResult;
-    return this.meResult;
+    return { roles: [], principals: [], scope: null, epoch: 1, ...this.meResult };
   }
 
   override async check(checks: readonly PermissionCheck[]): Promise<PermissionCheckAnswer> {
     this.checkCalls.push(checks);
-    return { results: checks.map((c) => ({ allowed: this.allow(c) })) };
+    return { results: checks.map((c) => ({ allowed: this.allow(c) })), epoch: 1 };
   }
 
   override async logout(): Promise<LogoutAnswer> {
@@ -103,13 +113,17 @@ export class FakePreferencesApi extends PreferencesApi {
   }
 
   override async patch(
-    patch: Partial<Pick<Preferences, 'locale' | 'theme' | 'keyboardShortcuts'>>,
+    patch: PreferencesPatch,
     etag: string,
   ): Promise<LoadedPreferences> {
     if (etag !== `"${this.stored.revision}"`) {
       throw new ApiError(412, { code: 'precondition_failed', currentEtag: `"${this.stored.revision}"` }, null);
     }
-    this.stored = { ...this.stored, ...patch, revision: this.stored.revision + 1 };
+    this.stored = {
+      ...this.stored,
+      ...(patch as Partial<Preferences>),
+      revision: this.stored.revision + 1,
+    };
     return this.load();
   }
 }
@@ -237,5 +251,8 @@ export function provideFakeApis(): Provider[] {
     { provide: PreferencesApi, useClass: FakePreferencesApi },
     { provide: EncryptionApi, useClass: FakeEncryptionApi },
     { provide: SystemApi, useClass: FakeSystemApi },
+    // >>> M1 ui-b
+    ...provideAccessFakes(),
+    // <<< M1 ui-b
   ];
 }
