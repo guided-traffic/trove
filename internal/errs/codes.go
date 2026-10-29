@@ -53,6 +53,17 @@ const CodeInvalidAuditRange = "invalid_audit_range"
 // <<< M1 audit
 //
 // >>> M1 api
+const (
+	CodeInvalidCursor        = "invalid_cursor"
+	CodeInvalidHeader        = "invalid_header"
+	CodeAlreadyExists        = "already_exists"
+	CodeIdempotencyInFlight  = "idempotency_in_progress"
+	CodeIdempotencyKeyReused = "idempotency_key_reused"
+	CodePreconditionRequired = "precondition_required"
+	CodeReservedName         = "reserved_name"
+	CodeManagedByConfig      = "managed_by_config"
+)
+
 // <<< M1 api
 //
 // >>> M1 identity
@@ -94,7 +105,6 @@ const (
 const (
 	CodeAuthzStale                 = "authz_stale"
 	CodeAuthzEpochUnknown          = "authz_epoch_unknown"
-	CodeInvalidHeader              = "invalid_header"
 	CodeRoleNotAllowed             = "role_not_allowed"
 	CodeUnknownRole                = "unknown_role"
 	CodeAuthenticatedWriteAction   = "authenticated_write_action"
@@ -183,6 +193,14 @@ var registry = []CodeInfo{
 	// <<< M1 audit
 	//
 	// >>> M1 api
+	{CodeInvalidCursor, Invalid, "Invalid cursor", "The cursor was not issued by this server, is of an unsupported version, or was issued for other filters or another sort order. Restart the traversal without a cursor."},
+	{CodeInvalidHeader, Invalid, "Invalid header", "A trove request header has an invalid value; the detail names the header."},
+	{CodeAlreadyExists, Conflict, "Already exists", "A resource with this key or name exists already."},
+	{CodeIdempotencyInFlight, Conflict, "Idempotent request in progress", "The first request with this Idempotency-Key has not finished. Retry after the Retry-After period; the retry replays its outcome."},
+	{CodeIdempotencyKeyReused, Unprocessable, "Idempotency key reused", "The Idempotency-Key was used before with another method, route or body. Use a new key for a different request."},
+	{CodePreconditionRequired, PreconditionRequired, "Precondition required", "The operation needs an If-Match header carrying the ETag the client loaded, or * to overwrite deliberately."},
+	{CodeReservedName, Unprocessable, "Reserved name", "The name is reserved because a route of the collection uses it as a literal path segment."},
+	{CodeManagedByConfig, Conflict, "Managed by configuration", "The value is set in the configuration file or an environment override and cannot be changed through the API; change it where it is set."},
 	// <<< M1 api
 	//
 	// >>> M1 identity
@@ -217,7 +235,6 @@ var registry = []CodeInfo{
 	// >>> M1 authz
 	{CodeAuthzStale, Unavailable, "Authorization state not confirmed", "The replica could not confirm that its grant index is current within the wait of R-AUTHZ-028; retry after the Retry-After period, the request can succeed on another replica."},
 	{CodeAuthzEpochUnknown, PreconditionFailed, "Authorization epoch unknown", "Trove-Authz-Min-Epoch names an epoch the database has not reached. Stop sending that epoch and read the changed object again."},
-	{CodeInvalidHeader, Invalid, "Invalid header", "A request header holds a value of the wrong form, for example a Trove-Authz-Min-Epoch that is not a decimal integer between 1 and 2^63-1."},
 	{CodeRoleNotAllowed, Invalid, "Role not allowed", "System roles are bound to users, groups and service accounts only; never to anonymous, authenticated or CI identity mappings."},
 	{CodeUnknownRole, Invalid, "Unknown role", "The role is not one of admin, security-admin, auditor, repository-admin, webhook-admin."},
 	{CodeAuthenticatedWriteAction, Invalid, "Authenticated principal may only read", "Policy entries for the built-in principal authenticated hold only read."},

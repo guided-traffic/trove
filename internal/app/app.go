@@ -336,6 +336,9 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 repository
 	//
 	// >>> M1 identity
+	if err := a.wireFailureLimiter(ctx); err != nil {
+		return err
+	}
 	if err := a.wireIdentity(); err != nil {
 		return err
 	}
@@ -359,6 +362,9 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// <<< M1 endpoints
 	//
 	// >>> M1 api
+	if err := a.wireAPI(ctx, infra); err != nil {
+		return err
+	}
 	// <<< M1 api
 	// Wiring of the M1 areas ends here.
 	a.freezeRegistries()
@@ -429,6 +435,7 @@ func (a *App) startClient() error {
 			Ready: a.health.Serving, PublicVersion: cfg.System.PublicVersion,
 			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
+			API: a.apiServices(),
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

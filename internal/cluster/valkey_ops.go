@@ -181,8 +181,8 @@ func (v *Valkey) delIfEq(ctx context.Context, k Key, value string) (deleted bool
 
 // incr increments the counter k and returns its new value. The first increment
 // of a key sets k's expiry; later ones leave it, so a counter cannot be kept
-// alive by traffic (the rule of R-ARCH-030 that the rate-limit counters of
-// R-ARCH-034 will rely on; no limiter exists yet). INCR and EXPIRE run in one
+// alive by traffic (the rule of R-ARCH-030 that Count of the rate-limit counters of
+// R-ARCH-034 relies on; Take uses its own pipeline, valkey_ratelimit.go). INCR and EXPIRE run in one
 // MULTI/EXEC.
 func (v *Valkey) incr(ctx context.Context, k Key) (n int64, err error) {
 	if err := validKey(k); err != nil {

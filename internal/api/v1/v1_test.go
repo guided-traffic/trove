@@ -42,6 +42,9 @@ func (f fakeFacts) Facts(context.Context) (Facts, error) { return f.f, nil }
 func ptr[T any](v T) *T { return &v }
 
 func replica(name, role, node string, state gen.ReplicaState, lost bool, degraded ...string) gen.Replica {
+	if degraded == nil {
+		degraded = []string{}
+	}
 	return gen.Replica{
 		Name: name, InstanceUid: "uid-" + name, Version: "0.1.0", Revision: "abc", Roles: []gen.ReplicaRoles{gen.ReplicaRoles(role)},
 		State: state, Lost: lost, StartedAt: time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC), HeartbeatAt: time.Date(2026, 10, 29, 8, 1, 0, 0, time.UTC),

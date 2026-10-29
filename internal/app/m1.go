@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -34,6 +35,9 @@ type m1Wiring struct {
 	// >>> M1 api
 	// rateLimit is stage 7 of the chain (R-ARCH-005, R-API-016); nil: none.
 	rateLimit func(http.Handler) http.Handler
+	// limiters is the replica's cluster limiter set (R-ARCH-034), built once by
+	// limiterSet; the identity stage takes its failure throttle from it.
+	limiters *cluster.LimiterSet
 	// <<< M1 api
 
 	// >>> M1 identity

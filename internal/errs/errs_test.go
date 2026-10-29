@@ -36,6 +36,8 @@ func TestKindStatus(t *testing.T) {
 		{UpstreamFailed, nil, 502},
 		{UpstreamTimeout, nil, 504},
 		{Misdirected, nil, 421},
+		{Unprocessable, nil, 422},
+		{PreconditionRequired, nil, 428},
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("R-ARCH-023 %s maps to %d", c.kind, c.want), func(t *testing.T) {
@@ -193,7 +195,7 @@ func TestRegistry(t *testing.T) {
 		for _, c := range Codes() {
 			kinds[c.Kind] = true
 		}
-		for k := Internal; k <= Misdirected; k++ {
+		for k := Internal; k <= PreconditionRequired; k++ {
 			if !kinds[k] {
 				t.Errorf("kind %s has no registered code", k)
 			}

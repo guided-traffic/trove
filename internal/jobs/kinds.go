@@ -63,6 +63,11 @@ type TaskSpec struct {
 	// DedupKey overrides the default key (the task name), for tasks that share
 	// one key, such as gc and gc-full.
 	DedupKey string
+	// ManualOnly marks a task without a schedule: the scheduler never enqueues
+	// it and it runs only through POST /api/v1/system/tasks/{name}/run
+	// (R-OPS-019, for example secrets-reencrypt). Schedule must be empty, and a
+	// maintenance.tasks.<name> entry for it is a configuration error.
+	ManualOnly bool
 }
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_.:-]{0,62}$`)
@@ -138,7 +143,11 @@ func (r *Registry) RegisterTask(name string, spec TaskSpec) {
 	if !namePattern.MatchString(name) {
 		panic(fmt.Sprintf("jobs: invalid task name %q", name))
 	}
-	if _, err := ParseSchedule(spec.Schedule); err != nil {
+	if spec.ManualOnly {
+		if spec.Schedule != "" {
+			panic(fmt.Sprintf("jobs: task %q is manual-only and has a schedule", name))
+		}
+	} else if _, err := ParseSchedule(spec.Schedule); err != nil {
 		panic(fmt.Sprintf("jobs: task %q: %v", name, err))
 	}
 	if spec.Kind == "" {

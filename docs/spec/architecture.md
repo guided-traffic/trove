@@ -2603,7 +2603,7 @@ The owning pages define the limit classes, their bucket keys and their values
 [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-021). This requirement provides the limiter they use
 (Q-ARCH-17).
 
-- A limiter is registered with `cluster.NewLimiter(name, scope, rate, burst)`. Scope `cluster`
+- A limiter is registered with `LimiterSet.NewLimiter(name, scope, rate, burst)` (Q-ARCH-38). Scope `cluster`
   counts across all replicas. Scope `replica` counts in the replica's memory and is meant for limits
   that protect the replica itself.
 - **Cluster scope** uses a sliding-window counter in Valkey.
@@ -2623,7 +2623,8 @@ The owning pages define the limit classes, their bucket keys and their values
 
   ```go
   // Exceeded pipelines a GET of the current and the previous window's key, without INCR, and
-  // reports whether previous × (1 − elapsed ÷ W) + current exceeds burst.
+  // reports whether previous × (1 − elapsed ÷ W) + current reaches burst: a limit of n failures
+  // admits n and refuses the next (Q-AUTH-20).
   func (l *Limiter) Exceeded(ctx context.Context, bucket string) bool
   // Count records one failure: MULTI, INCR of the current window's key, EXPIRE <key> <2W> NX, EXEC.
   func (l *Limiter) Count(ctx context.Context, bucket string)
@@ -4737,6 +4738,38 @@ the last one. The development agent would revisit the trailing-dot refusal if an
 
 **Applied in the spec:** [R-ARCH-005](#r-arch-005--http-listeners-routing-and-middleware-chain) and
 [endpoints.md](endpoints.md) R-EP-002, R-EP-003, R-EP-005 (text edits belong to the owner of that page).
+
+### Q-ARCH-38 · The limiter is created from a set, not by a package function
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `LimiterSet.NewLimiter(name, scope, rate, burst)` | A set holds the Valkey client, the metrics registry and the live-replica count; limiters are created from it | No package-level state (R-ARCH-032); several replicas in one test process; the Valkey client stays private to `internal/cluster` | The signature differs from R-ARCH-034's `cluster.NewLimiter(...)` |
+| (b) `cluster.NewLimiter` with a package-level default client | Matches the text | One call | A global client; tests with several replicas cannot coexist |
+
+The verdict also gained fields (`Remaining`, `Reset`, `Window`, `Mode`, `Limit`) that the `RateLimit` fields and the fallback gauge need, and the call that counts and decides is `Take` (with `Allow` as its boolean); the count-only calls are `Exceeded` and `Count` as specified.
+
+**Choice:** (a).
+
+**Rationale:** The set is the unit a replica owns. The development agent would revisit this if a package needs a limiter before the composition root exists.
+
+**Applied in the spec:** R-ARCH-034: "A limiter is registered with `LimiterSet.NewLimiter(name, scope, rate, burst)`".
+
+### Q-ARCH-39 · The start-up canary of R-ARCH-021 is built with the key-ring status
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) At step 8, with the API wiring | `verifyKeyRingCanaries`: refuse when sealed values reference a key the ring lacks, seed the canary of each key ID, refuse a ring that cannot open an existing canary | The status of R-API-049 reports a canary state that exists; the guard of R-ARCH-021 exists before the first secret | New start-up step on every replica |
+| (b) Leave the canary to the first sealed column | Status shows `absent` everywhere | Nothing to do now | R-ARCH-021 says the guard comes first, and a mismatched ring is cheapest to catch before data exists |
+
+**Choice:** (a). The seed is `INSERT … ON CONFLICT DO NOTHING`, so two replicas starting together agree; a second ring with other key material under the same ID fails at start-up with `key ring does not match database`.
+
+**Rationale:** The check costs one query at start. The development agent would revisit this if start-up must work without PostgreSQL write access.
+
+**Applied in the spec:** R-ARCH-021's start-up canary is implemented as described; no text changes.
 
 ## What this does not cover
 

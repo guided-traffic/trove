@@ -1,6 +1,9 @@
 package config
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // The sections of the M1 areas (docs/developer/m1-contracts.md). Each struct is
 // empty until its owner fills it inside its own markers; the field of the
@@ -45,8 +48,71 @@ type Authz struct {
 // idempotency retention, CORS, rate limits. WP1.6 owns it.
 type API struct {
 	// >>> M1 api
-
+	PageSizeDefault           int           `yaml:"page_size_default" default:"50" validate:"min=1" doc:"limit of a list request that sends none (R-API-010)."`
+	PageSizeMax               int           `yaml:"page_size_max" default:"500" validate:"min=1" doc:"Largest limit; a larger one is clamped to it (R-API-010)."`
+	IdempotencyRetention      time.Duration `yaml:"idempotency_retention" default:"24h" validate:"min=1m" doc:"How long the outcome of an Idempotency-Key is replayed (R-API-014)."`
+	MaxRequestBodyBytes       ByteSize      `yaml:"max_request_body_bytes" default:"1MiB" validate:"min=1KiB" doc:"Largest JSON request body of /api/v1/; larger answers 413 (R-API-017)."`
+	MaxConfigurationBodyBytes ByteSize      `yaml:"max_configuration_body_bytes" default:"4MiB" validate:"min=1KiB" doc:"Largest YAML configuration body (R-API-017)."`
+	CORS                      APICORS       `yaml:"cors"`
+	RateLimits                APIRateLimits `yaml:"rate_limits"`
 	// <<< M1 api
+}
+
+// Validate checks the cross-field rules of the section.
+func (a *API) Validate(r *Report) {
+	if a.PageSizeDefault > a.PageSizeMax {
+		r.Add("page_size_default", "must not exceed page_size_max (is %d, page_size_max is %d)", a.PageSizeDefault, a.PageSizeMax)
+	}
+	for i, o := range a.CORS.AllowedOrigins {
+		if !validOrigin(o) {
+			r.Add("cors.allowed_origins", "entry %d (%q) must be an exact origin: scheme://host[:port], no path, no wildcard", i, o)
+		}
+	}
+}
+
+// validOrigin reports whether s is an exact web origin without wildcard.
+func validOrigin(s string) bool {
+	scheme, rest, ok := strings.Cut(s, "://")
+	if !ok || (scheme != "http" && scheme != "https") || rest == "" {
+		return false
+	}
+	return !strings.ContainsAny(rest, "*/?#@ ")
+}
+
+// APICORS enables cross-origin access for requests that carry an Authorization
+// header (R-API-018). Credentials are never allowed cross-origin.
+type APICORS struct {
+	AllowedOrigins []string `yaml:"allowed_origins" default:"[]" doc:"Exact origins (scheme://host[:port]), no wildcards. Empty: CORS is off and no Access-Control-Allow-* header is sent."`
+}
+
+// APIRateLimits are the general rate-limit classes of /api/v1/ and /files/
+// (R-API-016). Each value is the budget of one bucket across the whole
+// installation (R-ARCH-034).
+type APIRateLimits struct {
+	Enabled      bool                  `yaml:"enabled" default:"true"`
+	ExemptAdmins bool                  `yaml:"exempt_admins" default:"false" doc:"Callers who hold the admin capability bypass the limits."`
+	Read         APIRateLimitRead      `yaml:"read"`
+	Write        APIRateLimitWrite     `yaml:"write"`
+	Anonymous    APIRateLimitAnonymous `yaml:"anonymous"`
+}
+
+// APIRateLimitRead is the class of safe methods (R-API-016, limiter api_read).
+type APIRateLimitRead struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second" default:"50" validate:"min=0.001" doc:"Sustained rate; the window is burst divided by this, at least 1s."`
+	Burst             int     `yaml:"burst" default:"200" validate:"min=1" doc:"Most requests one window admits."`
+}
+
+// APIRateLimitWrite is the class of unsafe methods (R-API-016, limiter api_write).
+type APIRateLimitWrite struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second" default:"10" validate:"min=0.001"`
+	Burst             int     `yaml:"burst" default:"50" validate:"min=1"`
+}
+
+// APIRateLimitAnonymous is the class of requests without credentials, keyed by
+// client address (R-API-016, limiter api_anonymous).
+type APIRateLimitAnonymous struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second" default:"5" validate:"min=0.001"`
+	Burst             int     `yaml:"burst" default:"20" validate:"min=1"`
 }
 
 // Repositories is the repositories section (R-REPO-009 to R-REPO-015): batch

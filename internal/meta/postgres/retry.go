@@ -210,6 +210,15 @@ func IsUnavailable(err error) bool {
 	return errs.KindOf(err) == errs.Unavailable || classify(err) == retryFailover || IsStatementTimeout(err)
 }
 
+// IsLockTimeout reports a statement cancelled by lock_timeout (55P03), also
+// when the error travels as the cause of an *errs.Error. The idempotent create
+// of R-API-014 sets a short lock_timeout and reads this as "the first request
+// has not finished".
+func IsLockTimeout(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "55P03"
+}
+
 // IsStatementTimeout reports a statement cancelled by statement_timeout or lock_timeout.
 func IsStatementTimeout(err error) bool {
 	var pe *pgconn.PgError

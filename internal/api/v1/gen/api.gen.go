@@ -6,11 +6,13 @@
 package gen
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for CheckResultStatus.
@@ -28,6 +30,78 @@ func (e CheckResultStatus) Valid() bool {
 	case CheckResultStatusFail:
 		return true
 	case CheckResultStatusPass:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EncryptionKeyCanary.
+const (
+	EncryptionKeyCanaryAbsent EncryptionKeyCanary = "absent"
+	EncryptionKeyCanaryFailed EncryptionKeyCanary = "failed"
+	EncryptionKeyCanaryOk     EncryptionKeyCanary = "ok"
+)
+
+// Valid indicates whether the value is a known member of the EncryptionKeyCanary enum.
+func (e EncryptionKeyCanary) Valid() bool {
+	switch e {
+	case EncryptionKeyCanaryAbsent:
+		return true
+	case EncryptionKeyCanaryFailed:
+		return true
+	case EncryptionKeyCanaryOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EncryptionReplicaRole.
+const (
+	EncryptionReplicaRoleAll    EncryptionReplicaRole = "all"
+	EncryptionReplicaRoleWeb    EncryptionReplicaRole = "web"
+	EncryptionReplicaRoleWorker EncryptionReplicaRole = "worker"
+)
+
+// Valid indicates whether the value is a known member of the EncryptionReplicaRole enum.
+func (e EncryptionReplicaRole) Valid() bool {
+	switch e {
+	case EncryptionReplicaRoleAll:
+		return true
+	case EncryptionReplicaRoleWeb:
+		return true
+	case EncryptionReplicaRoleWorker:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobState.
+const (
+	JobStateCancelled  JobState = "cancelled"
+	JobStateCancelling JobState = "cancelling"
+	JobStateFailed     JobState = "failed"
+	JobStateQueued     JobState = "queued"
+	JobStateRunning    JobState = "running"
+	JobStateSucceeded  JobState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the JobState enum.
+func (e JobState) Valid() bool {
+	switch e {
+	case JobStateCancelled:
+		return true
+	case JobStateCancelling:
+		return true
+	case JobStateFailed:
+		return true
+	case JobStateQueued:
+		return true
+	case JobStateRunning:
+		return true
+	case JobStateSucceeded:
 		return true
 	default:
 		return false
@@ -154,6 +228,24 @@ func (e ValkeyViewState) Valid() bool {
 	}
 }
 
+// Defines values for ListJobsParamsSort.
+const (
+	EnqueuedAt      ListJobsParamsSort = "enqueuedAt"
+	MinusEnqueuedAt ListJobsParamsSort = "-enqueuedAt"
+)
+
+// Valid indicates whether the value is a known member of the ListJobsParamsSort enum.
+func (e ListJobsParamsSort) Valid() bool {
+	switch e {
+	case EnqueuedAt:
+		return true
+	case MinusEnqueuedAt:
+		return true
+	default:
+		return false
+	}
+}
+
 // CheckResult defines model for CheckResult.
 type CheckResult struct {
 	ConfigError *bool `json:"configError,omitempty"`
@@ -178,6 +270,47 @@ type DatabaseFacts struct {
 	SupportedSchemaVersions []int                `json:"supportedSchemaVersions"`
 }
 
+// EncryptionKey defines model for EncryptionKey.
+type EncryptionKey struct {
+	// Active The answering replica seals with this key.
+	Active bool                `json:"active"`
+	Canary EncryptionKeyCanary `json:"canary"`
+	Id     string              `json:"id"`
+
+	// SealedValues Sealed values under this key ID over every registered sealed column.
+	SealedValues int64 `json:"sealedValues"`
+}
+
+// EncryptionKeyCanary defines model for EncryptionKey.Canary.
+type EncryptionKeyCanary string
+
+// EncryptionReplica defines model for EncryptionReplica.
+type EncryptionReplica struct {
+	ActiveKeyId string                `json:"activeKeyId"`
+	KeyIds      []string              `json:"keyIds"`
+	Name        string                `json:"name"`
+	Role        EncryptionReplicaRole `json:"role"`
+}
+
+// EncryptionReplicaRole defines model for EncryptionReplica.Role.
+type EncryptionReplicaRole string
+
+// EncryptionStatus defines model for EncryptionStatus.
+type EncryptionStatus struct {
+	ActiveKeyId string `json:"activeKeyId"`
+
+	// AnsweredBy The replica whose ring `activeKeyId` and `keys[].canary` describe.
+	AnsweredBy       string            `json:"answeredBy"`
+	Keys             []EncryptionKey   `json:"keys"`
+	LastReencryption *LastReencryption `json:"lastReencryption"`
+
+	// Replicas The live `web` and `worker` replicas, from the replica registry.
+	Replicas []EncryptionReplica `json:"replicas"`
+
+	// RingsCompatible Every live replica's ring holds every key ID that is active on any live replica or referenced by a sealed value.
+	RingsCompatible bool `json:"ringsCompatible"`
+}
+
 // FieldError defines model for FieldError.
 type FieldError struct {
 	Code   string `json:"code"`
@@ -185,6 +318,79 @@ type FieldError struct {
 
 	// Pointer RFC 6901 JSON pointer into the request body.
 	Pointer string `json:"pointer"`
+}
+
+// Job defines model for Job.
+type Job struct {
+	Attempt    int       `json:"attempt"`
+	EnqueuedAt time.Time `json:"enqueuedAt"`
+
+	// Error A stable `code` and a sanitised message; `null` unless the job failed or was cancelled.
+	Error      *map[string]interface{} `json:"error"`
+	FinishedAt *time.Time              `json:"finishedAt"`
+
+	// Href The path to poll.
+	Href        string             `json:"href"`
+	Id          openapi_types.UUID `json:"id"`
+	Kind        string             `json:"kind"`
+	MaxAttempts int                `json:"maxAttempts"`
+	Progress    *JobProgress       `json:"progress"`
+
+	// Replica The name of the replica that ran or runs the job; `null` while it is queued.
+	Replica *string `json:"replica"`
+
+	// Result The result summary the kind defines; `null` until the job succeeded.
+	Result    *map[string]interface{} `json:"result"`
+	StartedAt *time.Time              `json:"startedAt"`
+	State     JobState                `json:"state"`
+	Target    *JobTarget              `json:"target"`
+
+	// TriggeredBy The ID of the principal that started the job; `null` for scheduled and system runs.
+	TriggeredBy *string `json:"triggeredBy"`
+}
+
+// JobList defines model for JobList.
+type JobList struct {
+	Items []Job `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// JobProgress defines model for JobProgress.
+type JobProgress struct {
+	Done  int64   `json:"done"`
+	Total *int64  `json:"total"`
+	Unit  *string `json:"unit"`
+}
+
+// JobReference defines model for JobReference.
+type JobReference struct {
+	Href  string             `json:"href"`
+	Id    openapi_types.UUID `json:"id"`
+	Kind  string             `json:"kind"`
+	State JobState           `json:"state"`
+}
+
+// JobReferenceEnvelope defines model for JobReferenceEnvelope.
+type JobReferenceEnvelope struct {
+	Job JobReference `json:"job"`
+}
+
+// JobState defines model for JobState.
+type JobState string
+
+// JobTarget defines model for JobTarget.
+type JobTarget struct {
+	Key  string `json:"key"`
+	Kind string `json:"kind"`
+}
+
+// LastReencryption defines model for LastReencryption.
+type LastReencryption struct {
+	FinishedAt *time.Time         `json:"finishedAt"`
+	JobId      openapi_types.UUID `json:"jobId"`
+	State      JobState           `json:"state"`
 }
 
 // ObjectStoreFacts defines model for ObjectStoreFacts.
@@ -207,12 +413,16 @@ type PoolFacts struct {
 // Problem RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type Problem struct {
 	// Code Stable snake_case identifier; clients match on it.
-	Code   string        `json:"code"`
-	Detail *string       `json:"detail,omitempty"`
-	Errors *[]FieldError `json:"errors,omitempty"`
+	Code string `json:"code"`
+
+	// CurrentEtag Extension of `precondition_failed`: the current ETag of the resource (R-API-012).
+	CurrentEtag *string       `json:"currentEtag,omitempty"`
+	Detail      *string       `json:"detail,omitempty"`
+	Errors      *[]FieldError `json:"errors,omitempty"`
 
 	// Instance The request path.
-	Instance *string `json:"instance,omitempty"`
+	Instance *string       `json:"instance,omitempty"`
+	Job      *JobReference `json:"job,omitempty"`
 
 	// RequestId Equals the `X-Request-Id` response header.
 	RequestId *string `json:"requestId,omitempty"`
@@ -353,6 +563,41 @@ type SystemInfoAnsweredByRole string
 // SystemInfoBaseUrlSource `request` means `server.base_url` is unset and the origin was derived from the request (development only).
 type SystemInfoBaseUrlSource string
 
+// Task defines model for Task.
+type Task struct {
+	Enabled bool         `json:"enabled"`
+	LastRun *TaskLastRun `json:"lastRun"`
+	Name    TaskName     `json:"name"`
+
+	// NextRunAt `null` for a manual-only or disabled task.
+	NextRunAt *time.Time `json:"nextRunAt"`
+	Running   bool       `json:"running"`
+
+	// Schedule Five-field cron expression in UTC; `null` for a manual-only task.
+	Schedule *string `json:"schedule"`
+}
+
+// TaskLastRun defines model for TaskLastRun.
+type TaskLastRun struct {
+	FinishedAt *time.Time         `json:"finishedAt"`
+	JobId      openapi_types.UUID `json:"jobId"`
+	Outcome    JobState           `json:"outcome"`
+	Replica    *string            `json:"replica"`
+	StartedAt  *time.Time         `json:"startedAt"`
+}
+
+// TaskList defines model for TaskList.
+type TaskList struct {
+	Items      []Task  `json:"items"`
+	NextCursor *string `json:"nextCursor"`
+}
+
+// TaskName defines model for TaskName.
+type TaskName = string
+
+// TaskRunRequest The parameters of the task; each task defines its own (garbage collection takes `dryRun`).
+type TaskRunRequest map[string]interface{}
+
 // ValkeyFacts Installation facts only; each replica's view is in the replica registry. No Sentinel address appears.
 type ValkeyFacts struct {
 	// DegradedReplicas Live replicas whose Valkey check is degraded; `null` until the replica registry exists.
@@ -410,6 +655,30 @@ type Version struct {
 	Version string `json:"version"`
 }
 
+// Cursor defines model for Cursor.
+type Cursor = string
+
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = string
+
+// IfMatch defines model for IfMatch.
+type IfMatch = string
+
+// IfNoneMatch defines model for IfNoneMatch.
+type IfNoneMatch = string
+
+// JobId defines model for JobId.
+type JobId = openapi_types.UUID
+
+// Limit defines model for Limit.
+type Limit = int
+
+// BadRequest RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type BadRequest = Problem
+
+// Conflict RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type Conflict = Problem
+
 // Forbidden RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type Forbidden = Problem
 
@@ -419,11 +688,68 @@ type Internal = Problem
 // NotFound RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type NotFound = Problem
 
+// PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type PayloadTooLarge = Problem
+
+// PreconditionFailed RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type PreconditionFailed = Problem
+
+// PreconditionRequired RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type PreconditionRequired = Problem
+
+// TooManyRequests RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type TooManyRequests = Problem
+
 // Unauthenticated RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type Unauthenticated = Problem
 
 // Unavailable RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type Unavailable = Problem
+
+// Unprocessable RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type Unprocessable = Problem
+
+// UnsupportedMediaType RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type UnsupportedMediaType = Problem
+
+// ListJobsParams defines parameters for ListJobs.
+type ListJobsParams struct {
+	// Kind Repeat the parameter to select several kinds.
+	Kind *[]string `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// State Repeat the parameter to select several states.
+	State *[]JobState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Sort `enqueuedAt` or `-enqueuedAt` (default).
+	Sort *ListJobsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListJobsParamsSort defines parameters for ListJobs.
+type ListJobsParamsSort string
+
+// ListTasksParams defines parameters for ListTasks.
+type ListTasksParams struct {
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// RunTaskParams defines parameters for RunTask.
+type RunTaskParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// RunTaskJSONRequestBody defines body for RunTask for application/json ContentType.
+type RunTaskJSONRequestBody = TaskRunRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -436,15 +762,33 @@ type ServerInterface interface {
 	// GetProblemType Describe a problem code
 	// (GET /api/v1/problems/{code})
 	GetProblemType(w http.ResponseWriter, r *http.Request, code string)
+	// GetEncryptionStatus Status of the stored-secret key ring
+	// (GET /api/v1/system/encryption)
+	GetEncryptionStatus(w http.ResponseWriter, r *http.Request)
 	// GetSystemInfo Installation facts
 	// (GET /api/v1/system/info)
 	GetSystemInfo(w http.ResponseWriter, r *http.Request)
+	// ListJobs List jobs
+	// (GET /api/v1/system/jobs)
+	ListJobs(w http.ResponseWriter, r *http.Request, params ListJobsParams)
+	// GetJob Read a job
+	// (GET /api/v1/system/jobs/{id})
+	GetJob(w http.ResponseWriter, r *http.Request, id JobId)
+	// CancelJob Cancel a job
+	// (POST /api/v1/system/jobs/{id}/cancel)
+	CancelJob(w http.ResponseWriter, r *http.Request, id JobId)
 	// GetPing Check that this replica is ready to take work
 	// (GET /api/v1/system/ping)
 	GetPing(w http.ResponseWriter, r *http.Request)
 	// ListReplicas The replica registry
 	// (GET /api/v1/system/replicas)
 	ListReplicas(w http.ResponseWriter, r *http.Request)
+	// ListTasks List the maintenance tasks
+	// (GET /api/v1/system/tasks)
+	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
+	// RunTask Run a maintenance task now
+	// (POST /api/v1/system/tasks/{name}/run)
+	RunTask(w http.ResponseWriter, r *http.Request, name TaskName, params RunTaskParams)
 	// GetVersion Build facts of this replica
 	// (GET /api/v1/system/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
@@ -513,11 +857,162 @@ func (siw *ServerInterfaceWrapper) GetProblemType(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetEncryptionStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetEncryptionStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEncryptionStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetSystemInfo operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSystemInfo(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListJobs operation middleware
+func (siw *ServerInterfaceWrapper) ListJobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListJobsParams
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListJobs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetJob operation middleware
+func (siw *ServerInterfaceWrapper) GetJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id JobId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetJob(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelJob operation middleware
+func (siw *ServerInterfaceWrapper) CancelJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id JobId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelJob(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -546,6 +1041,102 @@ func (siw *ServerInterfaceWrapper) ListReplicas(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListReplicas(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTasksParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTasks(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunTask operation middleware
+func (siw *ServerInterfaceWrapper) RunTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name TaskName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunTaskParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunTask(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -696,6 +1287,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.json", wrapper.GetOpenApiJson)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.yaml", wrapper.GetOpenApiYaml)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/problems/{code}", wrapper.GetProblemType)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/jobs", wrapper.ListJobs)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/jobs/{id}", wrapper.GetJob)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/jobs/{id}/cancel", wrapper.CancelJob)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/tasks", wrapper.ListTasks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/tasks/{name}/run", wrapper.RunTask)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/encryption", wrapper.GetEncryptionStatus)
 
 	return m
 }

@@ -19,22 +19,24 @@ type Kind uint8
 // The kinds of R-ARCH-023. Internal is the zero value on purpose: an error
 // nobody classified is an internal error.
 const (
-	Internal            Kind = iota
-	Invalid                  // 400; 422 when the body parsed but failed validation
-	Unauthenticated          // 401 + WWW-Authenticate
-	Forbidden                // 403
-	NotFound                 // 404
-	MethodNotAllowed         // 405 + Allow
-	Conflict                 // 409
-	PreconditionFailed       // 412
-	TooLarge                 // 413
-	Unsupported              // 415
-	RateLimited              // 429 + Retry-After
-	InsufficientStorage      // 507
-	Unavailable              // 503 + Retry-After
-	UpstreamFailed           // 502
-	UpstreamTimeout          // 504
-	Misdirected              // 421: the request's host is not one this endpoint answers for (R-EP-003)
+	Internal             Kind = iota
+	Invalid                   // 400; 422 when the body parsed but failed validation
+	Unauthenticated           // 401 + WWW-Authenticate
+	Forbidden                 // 403
+	NotFound                  // 404
+	MethodNotAllowed          // 405 + Allow
+	Conflict                  // 409
+	PreconditionFailed        // 412
+	TooLarge                  // 413
+	Unsupported               // 415
+	RateLimited               // 429 + Retry-After
+	InsufficientStorage       // 507
+	Unavailable               // 503 + Retry-After
+	UpstreamFailed            // 502
+	UpstreamTimeout           // 504
+	Misdirected               // 421: the request's host is not one this endpoint answers for (R-EP-003)
+	Unprocessable             // 422 without field errors: a state or name rule refused a well-formed request (R-API-014, R-API-004)
+	PreconditionRequired      // 428: the operation needs If-Match (R-API-012)
 )
 
 // StatusClientClosed is the status logged for a request whose client went away.
@@ -76,6 +78,10 @@ func (k Kind) String() string {
 		return "upstream_timeout"
 	case Misdirected:
 		return "misdirected"
+	case Unprocessable:
+		return "unprocessable"
+	case PreconditionRequired:
+		return "precondition_required"
 	default:
 		return fmt.Sprintf("kind(%d)", uint8(k))
 	}
@@ -97,8 +103,16 @@ type Error struct {
 	RetryAfter time.Duration
 	Challenge  string   // WWW-Authenticate value of an Unauthenticated error
 	Allow      []string // Allow methods of a MethodNotAllowed error
-	Op         string   // where it happened; logged, never rendered
-	Err        error    // cause; logged, never rendered
+	// Extensions are further members of the problem body (R-API-009): currentEtag
+	// of a 412, tokenId of a replayed token creation, job of a 409 on a task.
+	// Values are plain JSON values; a key never replaces a standard member.
+	Extensions map[string]any
+	// status, when set, replaces the status of the kind. It exists for the one
+	// case the kind cannot express: a 400 that lists the offending member of an
+	// unparsable body (R-API-003).
+	status int
+	Op     string // where it happened; logged, never rendered
+	Err    error  // cause; logged, never rendered
 }
 
 // Option adjusts an Error under construction.
@@ -128,6 +142,24 @@ func WithRetryAfter(d time.Duration) Option { return func(e *Error) { e.RetryAft
 // WithChallenge sets the WWW-Authenticate value of an Unauthenticated error.
 func WithChallenge(c string) Option { return func(e *Error) { e.Challenge = c } }
 
+// WithBadRequest keeps an Invalid error at 400 although it lists fields: the
+// body could not be read as the resource at all (unknown or duplicate member,
+// wrong JSON type), as opposed to a well-formed body whose values are invalid
+// (422, R-API-003, R-API-009).
+func WithBadRequest() Option { return func(e *Error) { e.status = 400 } }
+
+// WithExtension adds one extension member to the problem body (R-API-009). The
+// names type, title, status, detail, instance, code, requestId and errors are
+// the standard members and are ignored.
+func WithExtension(name string, value any) Option {
+	return func(e *Error) {
+		if e.Extensions == nil {
+			e.Extensions = map[string]any{}
+		}
+		e.Extensions[name] = value
+	}
+}
+
 // WithAllow sets the Allow methods of a MethodNotAllowed error.
 func WithAllow(methods ...string) Option { return func(e *Error) { e.Allow = methods } }
 
@@ -156,6 +188,9 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Status returns the HTTP status of the error.
 func (e *Error) Status() int {
+	if e.status != 0 {
+		return e.status
+	}
 	switch e.Kind {
 	case Invalid:
 		if len(e.Fields) > 0 {
@@ -190,6 +225,10 @@ func (e *Error) Status() int {
 		return 504
 	case Misdirected:
 		return 421
+	case Unprocessable:
+		return 422
+	case PreconditionRequired:
+		return 428
 	default:
 		return 500
 	}

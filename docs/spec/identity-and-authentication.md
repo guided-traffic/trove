@@ -4147,8 +4147,8 @@ or expired one. A disabled owner and a storage failure are not.
 **Rationale:** a limit documented as 300 must admit 300. Revisit when the cluster limiter lands and
 its own test pins the comparison.
 
-**Applied in the spec:** R-ARCH-034 count-only form should read "reports whether … reaches burst"; left
-to the owner of that page.
+**Applied in the spec:** R-ARCH-034's count-only form reads "reports whether … reaches burst", and
+`cluster.Limiter.Exceeded` compares with `>=`; its unit test pins the comparison.
 
 ### Q-AUTH-21 · What the login flow hands to the provisioner
 

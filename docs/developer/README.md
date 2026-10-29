@@ -98,7 +98,8 @@ trove/
 ├── api/openapi.yaml          # OpenAPI 3.1 source of truth; go generate copies it into internal/api/v1
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
-│   ├── api/v1/               # system API handlers; gen/ is generated (oapi-codegen)
+│   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
+│   │                         # rate limits); gen/ is generated (oapi-codegen); apitest/ validates responses against the document
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
 │   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
 │   ├── auth/                 # the authentication stage and the failed-credential throttle; principal/ (users, groups,
@@ -109,13 +110,14 @@ trove/
 │   ├── buildinfo/            # version, commit and build date from -ldflags
 │   ├── cache/                # bounded in-process caches with change-area invalidation
 │   ├── cluster/              # the only Valkey client and key registry (valkey_keys.go), change log, signals,
-│   │                         # FlightLock, leases, lock categories, replica registry, watchdog loops
+│   │                         # FlightLock, leases, lock categories, replica registry, watchdog loops, the cluster limiter
 │   ├── config/               # struct tree with defaults, loader, validation, schema.json (generated)
 │   ├── errs/                 # error kinds, the code registry (codes.go), problem rendering
 │   ├── httpserver/           # listeners, routes, middleware chain, client address, ops endpoints
 │   ├── jobs/                 # job kinds, tasks, the queue, workers, scheduler, reaper
 │   ├── meta/                 # transactions and the revision-column registry
-│   ├── meta/postgres/        # pools, connect, retry, migrations/ (embedded), queries/ (sqlc input), q/ (sqlc output)
+│   ├── meta/postgres/        # pools, connect, retry, migrations/ (embedded), queries/ (sqlc input), q/ (sqlc output),
+│   │                         # listq/ (dynamic queries with bound values)
 │   ├── observability/        # logs, metrics, tracing and OTLP export, health checks
 │   ├── outbound/             # the one HTTP client factory and the egress address policy
 │   ├── repository/           # repository model: service, snapshot reader, validation, patterns, deletion job

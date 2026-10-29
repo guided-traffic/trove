@@ -168,7 +168,7 @@ constant. The list is the starting set from the spec pages; an owner adds more i
 
 | Area | Codes |
 |---|---|
-| `api` | `invalid_cursor`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `invalid_request` (R-API-004 to R-API-022) |
+| `api` | `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config` (R-API-004 to R-API-022). `invalid_request` is `malformed_request`, which exists. `errs` gained the kinds `Unprocessable` (422) and `PreconditionRequired` (428), problem extensions (`WithExtension`) and `WithBadRequest` |
 | `audit` | `invalid_audit_range` (R-OPS-017) |
 | `identity` | `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict` |
 | `login` | `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating` |
@@ -183,7 +183,7 @@ constant. The list is the starting set from the spec pages; an owner adds more i
 
 | Kind | Name | Area | Where specified |
 |---|---|---|---|
-| Key family | `rl` v1 (`rl:v1:<limiter>:<b>:<window>`), expiry 2 x window | `api` (the limiter `cluster.NewLimiter`, also used by identity for `auth.credential_failures`, `auth.flow_starts`, `auth.device_code_failures`) | R-ARCH-034, R-AUTH-038 |
+| Key family | `rl` v1 (`rl:v1:<limiter>:<b>:<window>`), expiry 2 x window | `api` (the limiter `cluster.LimiterSet.NewLimiter`, see [valkey.md](valkey.md#rate-limit-counters); also used by identity for `auth.credential_failures`, `auth.flow_starts`, `auth.device_code_failures`) | R-ARCH-034, R-AUTH-038 |
 | Key family | `tokseen` v1 (`tokseen:v1:<t>`), expiry `auth.rate_limit.recent_token_window` | `identity` | R-ARCH-030, R-AUTH-038 |
 | Change area | `auth` (token, session, principal, group and settings changes; the caches `auth_tokens`, `auth_sessions`, `auth_principals`, `auth_settings`) | `identity`, with `login` notifying it when a session ends | R-AUTH-023, R-ARCH-018 |
 | Change area | `authz` (policies, role bindings, exposure rules, authorization settings) | `authz`; `endpoints` notifies it for exposure rules | R-AUTHZ-028 |
@@ -221,7 +221,7 @@ Paths are those the spec pages name; an owner does not rename them. All are unde
 | Area | Prefixes |
 |---|---|
 | `audit` | `/audit/events`, `/audit/events/{id}`, `/audit/events/export` |
-| `api` | `/system/jobs`, `/system/jobs/{id}`, `/system/jobs/{id}/cancel`, `/system/tasks`, `/system/tasks/{name}/run` (the GC trigger is `gc`), `/system/encryption` (key-ring status), `/storage/gc-runs`; conventions for every list; CORS and rate limits as middleware |
+| `api` | `/system/jobs`, `/system/jobs/{id}`, `/system/jobs/{id}/cancel`, `/system/tasks`, `/system/tasks/{name}/run` (the GC trigger is `gc`), `/system/encryption` (key-ring status), conventions for every list; CORS and rate limits as middleware (`/storage/gc-runs` is not built, Q-API-20) |
 | `identity` | `/users`, `/users/{username}`, `/users/me`, `/users/{username}/tokens`, `/users/me/tokens`, `/groups`, `/groups/{name}`, `/groups/{name}/members`, `/service-accounts`, `/service-accounts/{name}`, `/service-accounts/{name}/tokens`, `/tokens`, `/tokens/{id}`, `/tokens/{id}/rotate`, `/tokens/current`, `/tokens/revoke`, `/settings/auth` |
 | `login` | `/auth/login-options`, `/auth/whoami`, `/users/me/sessions`, `/users/{username}/sessions`, `/users/{breakGlassName}/unlock`; outside `/api/v1/`: `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback`, `/auth/logout`, `/auth/local/login` |
 | `authz` | `/permission-policies`, `/roles`, `/role-bindings`, `/authz/me`, `/authz/effective`, `/authz/check`, `/authz/explain`, `/authz/validate-policy` |
@@ -244,3 +244,19 @@ form of the `x-trove-permission` of each operation (R-API-008).
 | Event spelling | R-AUTH-041 names (Q-OPS-37) | the owning page defines the events and their journal entries |
 | State in `audit` | `internal/audit` joins the packages allowed a frozen registry (`archtest/state.go`, R-ARCH-032) | the event registry is filled at initialisation and frozen like the job registry |
 | Empty config sections | `Auth`, `Authz`, `API`, `Repositories` exist as empty structs in `config/m1.go` | owners only add fields in their markers and never edit `Config` |
+
+## As built by the api area (WP1.6)
+
+- **Services for handlers.** `v1.Options.API` is a `v1.Services`: store, job queue, job registry, audit recorder, key ring.
+  Wave-2 resources add their own services next to it inside their markers. `v1.Store` (`Read`, `InTx`) is `*postgres.DB`.
+- **Conventions** are the helpers listed in [http-api.md](http-api.md#conventions-every-resource-inherits-wp16); a resource
+  that does not use them for its list, ETag, patch or idempotent create is a defect.
+- **Shared OpenAPI components** (`components.parameters`, `components.headers`, `components.responses`) were added outside the
+  area markers, because they belong to no area: `Limit`, `Cursor`, `IfMatch`, `IfNoneMatch`, `IdempotencyKey`,
+  `ETag`, `Location`, `Link`, `BadRequest`, `Conflict`, `PreconditionFailed`, `PreconditionRequired`, `Unprocessable`,
+  `PayloadTooLarge`, `UnsupportedMediaType`, `TooManyRequests`, `NotModified`; the `Problem` schema gained `currentEtag` and
+  `job`. Every operation of the document references `TooManyRequests` (Q-API-22).
+- **Stage 7.** `a.m1.rateLimit` is `v1.EdgeStage(CORS, limiter)`; the endpoints area, which owns the per-endpoint class
+  (R-EP-015), plugs into the same stage.
+- **Audit.** `system.task_triggered` and `system.job.cancelled` are registered in `internal/audit/events_api.go`;
+  `wire_api.go` passes `audit.Nop` until the recorder of the audit area is wired (`auditRecorder`).

@@ -2028,6 +2028,7 @@ shared key is offered again on the next scheduler tick, so it is postponed, neve
 | `token-cleanup`, `session-cleanup` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-043 (R-AUTH-023; R-AUTH-005, R-AUTH-010, R-AUTH-034) | `40 3 * * *` and `*/10 * * * *` (proposed, identity-and-authentication.md) |
 | `token-expiry-notice` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-043, R-AUTH-032: writes `token.expiring` for tokens entering the notice period | `0 6 * * *` (proposed, identity-and-authentication.md) |
 | `user-dormancy` (P1) | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-043, R-AUTH-021: disables dormant users and emits the dormancy warnings | `30 4 * * *` (proposed, identity-and-authentication.md) |
+| `idempotency-cleanup` | [api-and-ui.md](api-and-ui.md) R-API-014: deletes the expired rows of `api_idempotency_keys` | `13 * * * *` (proposed) |
 | `ci-keys-refresh` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-030, R-CI-003 | `*/5 * * * *` (proposed, gitlab-ci-oidc.md) |
 | `ci-replay-cleanup` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-030, R-CI-018 | `7 * * * *` (proposed, gitlab-ci-oidc.md) |
 | `ci-issuance-retention` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-030, R-CI-020 | `40 3 * * *` (proposed, gitlab-ci-oidc.md) |
@@ -2047,7 +2048,7 @@ API:
 
 | Method and path | Request | Response | Permission |
 |---|---|---|---|
-| `GET /api/v1/system/tasks` | — | `200` per task: `name`, `schedule`, `enabled`, `nextRunAt`, `running`, `lastRun{jobId,startedAt,finishedAt,outcome,replica}`; `schedule` and `nextRunAt` are `null` for a manual-only task | `system.read` |
+| `GET /api/v1/system/tasks` | `limit`, `cursor` (Q-OPS-48) | `200` per task: `name`, `schedule`, `enabled`, `nextRunAt`, `running`, `lastRun{jobId,startedAt,finishedAt,outcome,replica}`; `schedule` and `nextRunAt` are `null` for a manual-only task | `system.read` |
 | `POST /api/v1/system/tasks/{name}/run` | optional task parameters, e.g. `{"dryRun":true}` | `202 {"job":{…}}` with `Location` of the job ([api-and-ui.md](api-and-ui.md) R-API-015); `409 {"job":{…}}` if a run of the task, or of a task sharing its dedup key, is already queued or running; `409` problem when the task's precondition fails (`key_ring_incompatible` for `secrets-reencrypt`); `404` unknown task; `503` in read-only mode for mutating tasks (R-OPS-024) | system administrator |
 | `GET /api/v1/system/jobs` | `kind`, `state` (the job states of R-ARCH-016: `queued`, `running`, `succeeded`, `failed`, `cancelling`, `cancelled`), `limit`, `cursor` | `200` jobs with `id`, `kind`, `state`, `replica`, `enqueuedAt`, `startedAt`, `finishedAt`, `attempt`, `progress`, `error`, `triggeredBy` | `system.read`; any other caller sees only the jobs it started (R-API-015) |
 | `GET /api/v1/system/jobs/{id}` | — | `200` one job, including its result summary | `system.read`, or the caller started the job (R-API-015) |
@@ -2078,6 +2079,7 @@ maintenance:
     token-cleanup: {enabled: true, schedule: "40 3 * * *"}             # default (proposed); owned by identity-and-authentication.md R-AUTH-043
     token-expiry-notice: {enabled: true, schedule: "0 6 * * *"}        # default (proposed); owned by identity-and-authentication.md R-AUTH-043
     user-dormancy: {enabled: true, schedule: "30 4 * * *"}             # default (proposed); owned by identity-and-authentication.md R-AUTH-043 (P1)
+    idempotency-cleanup: {enabled: true, schedule: "13 * * * *"}      # default (proposed); owned by api-and-ui.md R-API-014
     ci-keys-refresh: {enabled: true, schedule: "*/5 * * * *"}          # default (proposed); owned by gitlab-ci-oidc.md R-CI-030
     ci-replay-cleanup: {enabled: true, schedule: "7 * * * *"}          # default (proposed); owned by gitlab-ci-oidc.md R-CI-030
     ci-issuance-retention: {enabled: true, schedule: "40 3 * * *"}     # default (proposed); owned by gitlab-ci-oidc.md R-CI-030
@@ -5183,6 +5185,53 @@ is measured slow; the move is to `listq` without a change to the Go signature.
 asks of the export as well.
 
 **Applied in the spec:** none.
+
+### Q-OPS-46 · A finished job remembers the replica that ran it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A column `job.ran_by`, set by the claim | Migration 00009 adds it; `ClaimJobs` copies `locked_by`; the job and task lists join the replica registry for the name | `replica` of R-OPS-019 and the acceptance "its `replica` is always a worker pod" work after the job ended; one statement | A column on a hot table; a pruned replica row shows the instance UID |
+| (b) Keep `locked_by` after the end | The completing statements stop clearing it | No column | `locked_by` is the lease owner; the reaper and the heartbeat treat it as such |
+| (c) The handler records it in the result | Each kind writes the replica into its result | No schema change | Every kind must remember; failed jobs have no result |
+
+**Choice:** (a). The claim sets it on every attempt, so a retried job shows the last replica.
+
+**Rationale:** (b) would blur the lease. The development agent would revisit this if the job table grows an `event` history.
+
+**Applied in the spec:** R-OPS-019 reads `replica` of a job and of `lastRun` from this column; [database.md](../developer/database.md) lists it under 00009.
+
+### Q-OPS-47 · `secrets-reencrypt` is registered as a manual-only task whose body is empty until a sealed column exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Register it now | `jobs.TaskSpec.ManualOnly`; the trigger checks the key-ring precondition; the job reseals every registered column, which is none, and fails permanently naming the first column once one is registered | The API of R-API-049 and R-OPS-019 is complete and the precondition is testable; the gap is explicit | The reseal walk is not written |
+| (b) Register it with the first sealed column | Nothing exists in M1 | No unfinished job body | `GET /system/tasks` lacks the manual-only task the acceptance names; the 409 path has no route |
+| (c) Write the walk against a test table | A generic walk now | Complete | Dynamic SQL per column with no column to prove it on |
+
+**Choice:** (a).
+
+**Rationale:** The task, the precondition (`key_ring_incompatible`) and the list entry with `schedule: null` are what R-OPS-019 asks for in M1; the walk needs a real column to be written and tested against. The development agent would revisit this when the first feature registers a sealed column; that change writes the walk.
+
+**Applied in the spec:** R-OPS-019: `ManualOnly` is the registration of a manual-only task, and a `maintenance.tasks.<name>` entry for it stops start-up and names the key. The task table gains `idempotency-cleanup`.
+
+### Q-OPS-48 · The task list is paginated by name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Cursor pagination over the sorted registry | The envelope and cursor of R-API-010, key `[name]` | One list convention; walkable with `limit=1` as R-API-051 asks of every list | A fixed, small list is paged |
+| (b) One answer | `{items}` as the replica list | Simple | R-API-051's walk over "every list operation" |
+
+**Choice:** (a). The registry is identical on every replica of a release; during a rolling upgrade, tasks of the newer release may be missing from or extra in a page, as any list that changes during a traversal.
+
+**Rationale:** One rule for lists. The development agent would revisit this if the registry grows large.
+
+**Applied in the spec:** R-OPS-019: `GET /api/v1/system/tasks` takes `limit` and `cursor` and answers the envelope.
 
 ## What this does not cover
 

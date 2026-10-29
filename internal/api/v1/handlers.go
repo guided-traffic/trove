@@ -75,17 +75,30 @@ type Options struct {
 	Facts         FactSource
 	// Formats is the list of served package formats; empty in M0.
 	Formats []string
+
+	// >>> M1 api
+	// API holds the services of the conventions and the system operations of
+	// M1: store, job queue, key ring, audit (services.go).
+	API Services
+	// <<< M1 api
 }
 
 // Server implements gen.ServerInterface.
 type Server struct {
-	o Options
+	o    Options
+	idem *Idempotency
 }
 
 var _ gen.ServerInterface = (*Server)(nil)
 
 // New returns the handlers.
-func New(o Options) *Server { return &Server{o: o} }
+func New(o Options) *Server {
+	s := &Server{o: o}
+	if o.API.Store != nil {
+		s.idem = NewIdempotency(o.API.Store, o.API.Config.IdempotencyRetention)
+	}
+	return s
+}
 
 // Register mounts the operations on the router, each behind the authorization
 // step of its x-trove-permission declaration (authorize.go). The caller then

@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/observability"
 )
 
@@ -40,7 +42,9 @@ func (a *App) startAudit(ctx context.Context) error {
 	if err := a.startComponent(ctx, &auditComponent{w: w}); err != nil {
 		return err
 	}
+	a.mu.Lock()
 	a.m1.recorder, a.m1.auditStore = w, store
+	a.mu.Unlock()
 	return nil
 }
 
@@ -80,3 +84,30 @@ func newAuditMetrics(m *observability.Metrics) audit.Metrics {
 
 func (c counters) Recorded(category string, o audit.Outcome) { c.recorded(category, string(o)) }
 func (c counters) Dropped()                                  { c.dropped() }
+
+// taskAuditRetention is the daily partition maintenance of R-OPS-015 and
+// R-OPS-017: audit_maintain_partitions() creates the partitions ahead and drops
+// the expired ones.
+const taskAuditRetention = "audit-retention"
+
+// registerAuditJobs registers the audit-retention task (R-OPS-019). Its body runs
+// on a worker; a replica without the audit store fails it permanently.
+func (a *App) registerAuditJobs(r *jobs.Registry) {
+	r.RegisterKind(taskAuditRetention, jobs.KindSpec{
+		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3,
+		Handler: func(ctx context.Context, _ *jobs.Run) error {
+			a.mu.Lock()
+			store := a.m1.auditStore
+			a.mu.Unlock()
+			if store == nil {
+				return jobs.Permanent(errors.New("this replica has no audit store"))
+			}
+			return store.Maintain(ctx)
+		},
+	})
+	spec := jobs.TaskSpec{Schedule: "30 3 * * *"}
+	if c, ok := a.cfg.Maintenance.Tasks[taskAuditRetention]; ok && c.Schedule != "" {
+		spec.Schedule, spec.Disabled = c.Schedule, !c.Enabled
+	}
+	r.RegisterTask(taskAuditRetention, spec)
+}

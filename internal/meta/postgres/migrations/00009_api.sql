@@ -48,3 +48,13 @@ CREATE TABLE secret_key_canary (
     ciphertext  text        NOT NULL,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- The replica that last claimed a job (R-OPS-019: jobs and tasks name the
+-- replica that ran them). job.locked_by is cleared when a job ends, so the
+-- finished job would not say where it ran; the claim query copies it here.
+-- The job list sorts by creation time with the job ID as the tie-breaker
+-- (R-API-010: each sortable field has a composite index with the ID), alone and
+-- under a kind filter (GET /api/v1/system/jobs?kind=gc).
+ALTER TABLE job ADD COLUMN ran_by uuid;
+CREATE INDEX job_created ON job (created_at, id);
+CREATE INDEX job_kind_created ON job (kind, created_at, id);

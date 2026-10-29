@@ -105,8 +105,8 @@ func (a *App) wireIdentity() error {
 
 	limiter := a.m1.failureLimiter
 	if limiter == nil {
-		// WIRING POINT: the api area's cluster limiter (auth.credential_failures,
-		// count-only form) replaces the per-replica one at the merge.
+		// A process without a client listener validates no credential; the
+		// per-replica counter keeps the stage complete.
 		limiter = auth.NewLocalLimiter(cfg.RateLimit.FailuresPerAddress, time.Minute, nil, nil)
 	}
 	stage := auth.New(auth.Options{

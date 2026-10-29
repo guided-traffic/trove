@@ -94,6 +94,10 @@ func newInstall(t *testing.T) *install {
 		"TROVE_DATABASE_USERNAME_FILE=" + write(t, dir, "db-user", user+"\n"), "TROVE_DATABASE_PASSWORD_FILE=" + write(t, dir, "db-pass", pass+"\n"),
 		"TROVE_DATABASE_SSL_MODE=verify-full", "TROVE_DATABASE_SSL_ROOT_CERT_FILE=" + testenv.CAFile(t), "TROVE_DATABASE_PREFLIGHT_ALLOW_SUPERUSER=true",
 		"TROVE_DATABASE_RETRY_MAX_ELAPSED=3s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=2s",
+		// The tests poll the bootstrap read anonymously, far above the default anonymous
+		// class (R-API-016); the limiter stays on with a budget the polling never reaches.
+		// The limits themselves are tested in test/integration/api.
+		"TROVE_API_RATE_LIMITS_ANONYMOUS_REQUESTS_PER_SECOND=1000", "TROVE_API_RATE_LIMITS_ANONYMOUS_BURST=10000",
 		"TROVE_VALKEY_SENTINEL_ADDRESSES=[" + strings.Join(sentinels, ",") + "]", "TROVE_VALKEY_SENTINEL_PRIMARY_NAME=" + vk.PrimaryName,
 		"TROVE_VALKEY_SENTINEL_PASSWORD_FILE=" + write(t, dir, "vk-sentinel-pass", vk.SentinelPassword),
 		"TROVE_VALKEY_USERNAME_FILE=" + write(t, dir, "vk-user", vk.Username), "TROVE_VALKEY_PASSWORD_FILE=" + write(t, dir, "vk-pass", vk.Password),

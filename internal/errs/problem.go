@@ -27,6 +27,41 @@ type Problem struct {
 	Code      string       `json:"code"`
 	RequestID string       `json:"requestId,omitempty"`
 	Errors    []FieldError `json:"errors,omitempty"`
+	// Extensions are the further members of the body (Error.Extensions).
+	Extensions map[string]any `json:"-"`
+}
+
+// MarshalJSON writes the standard members and then the extensions, which never
+// replace a standard member.
+func (p Problem) MarshalJSON() ([]byte, error) {
+	type plain Problem
+	base, err := json.Marshal(plain(p))
+	if err != nil || len(p.Extensions) == 0 {
+		return base, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(base, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range p.Extensions {
+		if _, standard := m[k]; standard || reservedMember(k) {
+			continue
+		}
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		m[k] = raw
+	}
+	return json.Marshal(m)
+}
+
+func reservedMember(name string) bool {
+	switch name {
+	case "type", "title", "status", "detail", "instance", "code", "requestId", "errors":
+		return true
+	}
+	return false
 }
 
 // Problem converts err into its wire form. An error that is not an *Error
@@ -45,14 +80,15 @@ func ProblemOf(err error, requestID, instance string) (Problem, *Error) {
 		detail = "The server failed to process the request."
 	}
 	return Problem{
-		Type:      ProblemTypePrefix + e.Code,
-		Title:     title,
-		Status:    e.Status(),
-		Detail:    detail,
-		Instance:  instance,
-		Code:      e.Code,
-		RequestID: requestID,
-		Errors:    e.Fields,
+		Type:       ProblemTypePrefix + e.Code,
+		Title:      title,
+		Status:     e.Status(),
+		Detail:     detail,
+		Instance:   instance,
+		Code:       e.Code,
+		RequestID:  requestID,
+		Errors:     e.Fields,
+		Extensions: e.Extensions,
 	}, e
 }
 
@@ -91,6 +127,12 @@ func Write(w http.ResponseWriter, r *http.Request, err error, requestID string, 
 		}
 	case RateLimited, Unavailable:
 		h.Set("Retry-After", retryAfterSeconds(e.RetryAfter))
+	default:
+		// A conflict that tells the client when to try again, such as an
+		// idempotent request still in progress (R-API-014).
+		if e.RetryAfter > 0 {
+			h.Set("Retry-After", retryAfterSeconds(e.RetryAfter))
+		}
 	}
 	body, mErr := json.Marshal(p)
 	if mErr != nil { // cannot happen: Problem holds only strings and ints

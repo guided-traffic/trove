@@ -56,7 +56,8 @@ WITH next AS (
 UPDATE job
    SET state = 'running', locked_by = sqlc.arg(locked_by)::text::uuid,
        locked_until = now() + make_interval(secs => sqlc.arg(lease_secs)::float8),
-       attempt = job.attempt + 1, started_at = coalesce(job.started_at, now())
+       attempt = job.attempt + 1, started_at = coalesce(job.started_at, now()),
+       ran_by = sqlc.arg(locked_by)::text::uuid
   FROM next
  WHERE job.id = next.id
 RETURNING job.*;

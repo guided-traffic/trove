@@ -248,6 +248,12 @@ func (v *Valkey) channel(f *ChannelFamily, parts ...string) (Channel, error) {
 // edit the same lines. Reserved names are in docs/developer/m1-contracts.md.
 
 // >>> M1 api
+
+// rlFamily is the key family of the rate-limit counters (R-ARCH-034, mechanism in
+// valkey_ratelimit.go). Its longest expiry bounds the longest window of a
+// limiter to half of it, because a counter lives two windows.
+var rlFamily = registerKeyFamily("rl", 1, 24*time.Hour)
+
 // <<< M1 api
 //
 // >>> M1 identity

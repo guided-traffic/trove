@@ -27,6 +27,8 @@ tags:
   # <<< M1 audit
   #
   # >>> M1 api
+  - name: jobs
+    description: Background jobs and the maintenance tasks that start them.
   # <<< M1 api
   #
   # >>> M1 identity
@@ -89,6 +91,8 @@ paths:
                 type: string
                 enum: [UNAVAILABLE]
               example: UNAVAILABLE
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
   /api/v1/system/version:
@@ -121,6 +125,8 @@ paths:
                 formats: []
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
   /api/v1/system/info:
@@ -146,6 +152,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
         "503":
@@ -171,6 +179,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
         "503":
@@ -194,6 +204,8 @@ paths:
                 additionalProperties: true
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
   /api/v1/openapi.yaml:
@@ -211,9 +223,12 @@ paths:
           content:
             application/yaml:
               schema:
-                type: string
+                type: object
+                additionalProperties: true
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
   /api/v1/problems/{code}:
@@ -246,12 +261,296 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
   # >>> M1 audit
   # <<< M1 audit
   #
   # >>> M1 api
+  /api/v1/system/jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List jobs
+      description: |
+        The durable background jobs of every kind (R-OPS-019, R-API-015), newest first. A caller who
+        holds `settings:read` sees all jobs; any other authenticated caller sees only the jobs it
+        started. A garbage-collection run is `?kind=gc` or `?kind=gc-full`. Cursor pagination
+        (R-API-010) over `(enqueuedAt, id)`: the cursor is valid on every replica.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: kind
+          in: query
+          description: Repeat the parameter to select several kinds.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: state
+          in: query
+          description: Repeat the parameter to select several states.
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/JobState"
+          style: form
+          explode: true
+        - name: sort
+          in: query
+          description: "`enqueuedAt` or `-enqueuedAt` (default)."
+          schema:
+            type: string
+            enum: [enqueuedAt, "-enqueuedAt"]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of jobs.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobList"
+              example:
+                items:
+                  - id: 01933b2a-7c41-7d1e-9a52-3f0e4b8c2d11
+                    kind: gc
+                    state: succeeded
+                    replica: trove-worker-7d4b9c6f8-q8n2m
+                    enqueuedAt: "2026-10-28T12:40:00.000Z"
+                    startedAt: "2026-10-28T12:40:01.200Z"
+                    finishedAt: "2026-10-28T12:40:02.118Z"
+                    attempt: 1
+                    maxAttempts: 10
+                    progress: null
+                    result: {dryRun: false, candidates: 3, kept: 1, deleted: 2, bytesReclaimed: 4096, errors: 0}
+                    error: null
+                    triggeredBy: null
+                    target: null
+                    href: /api/v1/system/jobs/01933b2a-7c41-7d1e-9a52-3f0e4b8c2d11
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/jobs/{id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Read a job
+      description: |
+        One job with its progress and result summary. A caller without `settings:read` reads only the
+        jobs it started; any other job answers `404`, like a missing one. While the job is queued,
+        running or cancelling, the answer carries `Retry-After` with a suggested polling interval
+        (R-API-015).
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: The job.
+          headers:
+            Retry-After:
+              description: Suggested polling interval in seconds, present while the job has not ended.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/jobs/{id}/cancel:
+    post:
+      operationId: cancelJob
+      tags: [jobs]
+      summary: Cancel a job
+      description: |
+        A queued job ends `cancelled` at once; a running job turns `cancelling` and stops at its next
+        checkpoint. Allowed for a caller with `settings:write` and for the caller who started the job
+        (R-API-015); for anyone else the job does not exist. A finished job answers `409`.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "202":
+          description: The job is cancelled or cancelling.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/tasks:
+    get:
+      operationId: listTasks
+      tags: [jobs]
+      summary: List the maintenance tasks
+      description: |
+        The registered maintenance tasks with their schedule (from `maintenance.tasks`, read only),
+        the next scheduled run, whether a run is going on, and the last run (R-OPS-019). A manual-only
+        task such as `secrets-reencrypt` has `schedule` and `nextRunAt` `null`. Ordered by name; cursor
+        pagination as everywhere (R-API-010).
+      x-trove-permission:
+        permission: settings:read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of tasks.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/tasks/{name}/run:
+    post:
+      operationId: runTask
+      tags: [jobs]
+      summary: Run a maintenance task now
+      description: |
+        Enqueues a run of the task and answers `202` with the job and its `Location`. The `web`
+        replica that answers only enqueues; a `worker` replica executes the run (R-ARCH-001). While a
+        run of the task, or of a task that shares its exclusive key (`gc` and `gc-full`), is queued or
+        running, the answer is `409` with that job. A task with a precondition that fails answers
+        `409` with the code of the precondition (`key_ring_incompatible` for `secrets-reencrypt`) and
+        enqueues nothing. The optional body holds the task's parameters, for example
+        `{"dryRun": true}` for garbage collection. Starting a run is audited as `system.task_triggered`.
+      x-trove-permission:
+        permission: settings:write
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TaskName"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskRunRequest"
+            example:
+              dryRun: true
+      responses:
+        "202":
+          description: The run is queued.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobReferenceEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/encryption:
+    get:
+      operationId: getEncryptionStatus
+      tags: [system]
+      summary: Status of the stored-secret key ring
+      description: |
+        Key IDs, the number of sealed values per key ID, the canary state, the key IDs every live
+        replica holds, and the last re-encryption (R-API-049). `activeKeyId` and `keys[].canary` are
+        the answering replica's view, named by `answeredBy`; the other replicas are in `replicas`.
+        The answer carries key IDs only, never key material, fingerprints, ciphertext or plaintext.
+      x-trove-permission:
+        permission: settings:read
+      responses:
+        "200":
+          description: The key-ring status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncryptionStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 api
   #
   # >>> M1 identity
@@ -283,6 +582,76 @@ components:
       schema:
         type: string
         pattern: "^[0-9a-f]{32}$"
+    ETag:
+      description: Strong entity tag of the representation, the quoted revision (R-API-012).
+      schema:
+        type: string
+        example: '"4"'
+    Location:
+      description: The URL of the created resource, or of the job to poll (R-API-004, R-API-015).
+      schema:
+        type: string
+    Link:
+      description: 'RFC 8288 link to the next page, `rel="next"`, present while more items exist (R-API-010).'
+      schema:
+        type: string
+    RateLimitPolicy:
+      description: 'The limit class of the route, `"read";q=200;w=4` (R-API-016).'
+      schema:
+        type: string
+    RateLimit:
+      description: 'The remaining budget, `"read";r=199;t=3` (R-API-016).'
+      schema:
+        type: string
+    IdempotencyReplayed:
+      description: '`true` when the answer is the stored outcome of an earlier request with the same Idempotency-Key (R-API-014).'
+      schema:
+        type: string
+        enum: ["true"]
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Page size, 1 to `api.page_size_max` (R-API-010).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+      schema:
+        type: string
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+      schema:
+        type: string
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: An ETag the client holds; a match answers `304` (R-API-012).
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     Unauthenticated:
       description: The request carries no valid credential.
@@ -323,6 +692,73 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    BadRequest:
+      description: The request cannot be read, or a parameter, header, cursor or sort field is not valid (`malformed_request`, `invalid_cursor`, `invalid_header`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: The request conflicts with the current state, or an idempotent request is still in progress (`Retry-After` is set then).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PreconditionFailed:
+      description: '`If-Match` does not match; the extension `currentEtag` holds the current tag (R-API-012).'
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PreconditionRequired:
+      description: The operation needs `If-Match` (R-API-012).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLarge:
+      description: The body exceeds `api.max_request_body_bytes`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnsupportedMediaType:
+      description: The body is not of the media type the operation takes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unprocessable:
+      description: The body is well-formed but a value is invalid, or an `Idempotency-Key` was reused for another request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: The rate limit of the caller's class is used up (R-API-016). `Retry-After` is set.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+        RateLimit-Policy:
+          $ref: "#/components/headers/RateLimitPolicy"
+        RateLimit:
+          $ref: "#/components/headers/RateLimit"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotModified:
+      description: The ETag matches `If-None-Match`; no body.
+      headers:
+        ETag:
+          $ref: "#/components/headers/ETag"
   schemas:
     Problem:
       type: object
@@ -356,6 +792,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FieldError"
+        currentEtag:
+          type: string
+          description: "Extension of `precondition_failed`: the current ETag of the resource (R-API-012)."
+        job:
+          $ref: "#/components/schemas/JobReference"
     FieldError:
       type: object
       required: [pointer, code, detail]
@@ -716,6 +1157,232 @@ components:
     # <<< M1 audit
     #
     # >>> M1 api
+    JobState:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelling, cancelled]
+    TaskName:
+      type: string
+      pattern: "^[a-z][a-z0-9_.:-]{0,62}$"
+    TaskRunRequest:
+      type: object
+      description: The parameters of the task; each task defines its own (garbage collection takes `dryRun`).
+      additionalProperties: true
+    JobProgress:
+      type: object
+      required: [done, total, unit]
+      properties:
+        done:
+          type: integer
+          format: int64
+        total:
+          type: [integer, "null"]
+          format: int64
+        unit:
+          type: [string, "null"]
+    JobTarget:
+      type: object
+      required: [kind, key]
+      properties:
+        kind:
+          type: string
+        key:
+          type: string
+    Job:
+      type: object
+      required: [id, kind, state, replica, enqueuedAt, startedAt, finishedAt, attempt, maxAttempts, progress, result, error, triggeredBy, target, href]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          example: gc
+        state:
+          $ref: "#/components/schemas/JobState"
+        replica:
+          type: [string, "null"]
+          description: The name of the replica that ran or runs the job; `null` while it is queued.
+        enqueuedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        attempt:
+          type: integer
+        maxAttempts:
+          type: integer
+        progress:
+          oneOf:
+            - $ref: "#/components/schemas/JobProgress"
+            - type: "null"
+        result:
+          type: [object, "null"]
+          description: The result summary the kind defines; `null` until the job succeeded.
+          additionalProperties: true
+        error:
+          type: [object, "null"]
+          description: A stable `code` and a sanitised message; `null` unless the job failed or was cancelled.
+          additionalProperties: true
+        triggeredBy:
+          type: [string, "null"]
+          description: The ID of the principal that started the job; `null` for scheduled and system runs.
+        target:
+          oneOf:
+            - $ref: "#/components/schemas/JobTarget"
+            - type: "null"
+        href:
+          type: string
+          description: The path to poll.
+    JobList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    JobReference:
+      type: object
+      required: [id, kind, state, href]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        state:
+          $ref: "#/components/schemas/JobState"
+        href:
+          type: string
+    JobReferenceEnvelope:
+      type: object
+      required: [job]
+      properties:
+        job:
+          $ref: "#/components/schemas/JobReference"
+    TaskLastRun:
+      type: object
+      required: [jobId, startedAt, finishedAt, outcome, replica]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        outcome:
+          $ref: "#/components/schemas/JobState"
+        replica:
+          type: [string, "null"]
+    Task:
+      type: object
+      required: [name, schedule, enabled, nextRunAt, running, lastRun]
+      properties:
+        name:
+          $ref: "#/components/schemas/TaskName"
+        schedule:
+          type: [string, "null"]
+          description: Five-field cron expression in UTC; `null` for a manual-only task.
+        enabled:
+          type: boolean
+        nextRunAt:
+          type: [string, "null"]
+          format: date-time
+          description: "`null` for a manual-only or disabled task."
+        running:
+          type: boolean
+        lastRun:
+          oneOf:
+            - $ref: "#/components/schemas/TaskLastRun"
+            - type: "null"
+    TaskList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        nextCursor:
+          type: [string, "null"]
+    EncryptionKey:
+      type: object
+      required: [id, active, sealedValues, canary]
+      properties:
+        id:
+          type: string
+        active:
+          type: boolean
+          description: The answering replica seals with this key.
+        sealedValues:
+          type: integer
+          format: int64
+          description: Sealed values under this key ID over every registered sealed column.
+        canary:
+          type: string
+          enum: [ok, failed, absent]
+    EncryptionReplica:
+      type: object
+      required: [name, role, activeKeyId, keyIds]
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [web, worker, all]
+        activeKeyId:
+          type: string
+        keyIds:
+          type: array
+          items:
+            type: string
+    LastReencryption:
+      type: object
+      required: [jobId, state, finishedAt]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        state:
+          $ref: "#/components/schemas/JobState"
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+    EncryptionStatus:
+      type: object
+      required: [answeredBy, activeKeyId, keys, replicas, ringsCompatible, lastReencryption]
+      properties:
+        answeredBy:
+          type: string
+          description: The replica whose ring `activeKeyId` and `keys[].canary` describe.
+        activeKeyId:
+          type: string
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/EncryptionKey"
+        replicas:
+          type: array
+          description: The live `web` and `worker` replicas, from the replica registry.
+          items:
+            $ref: "#/components/schemas/EncryptionReplica"
+        ringsCompatible:
+          type: boolean
+          description: Every live replica's ring holds every key ID that is active on any live replica or referenced by a sealed value.
+        lastReencryption:
+          oneOf:
+            - $ref: "#/components/schemas/LastReencryption"
+            - type: "null"
     # <<< M1 api
     #
     # >>> M1 identity

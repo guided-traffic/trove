@@ -17,7 +17,7 @@ UPDATE job
        error = CASE WHEN state = 'queued' THEN '{"code":"cancelled"}'::jsonb ELSE error END,
        finished_at = CASE WHEN state = 'queued' THEN now() ELSE finished_at END
  WHERE id = $1::text::uuid AND state IN ('queued', 'running')
-RETURNING id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at
+RETURNING id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by
 `
 
 // A queued job is cancelled at once; a running one is marked cancelling and its
@@ -60,6 +60,7 @@ func (q *Queries) CancelJob(ctx context.Context, id string) ([]Job, error) {
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.RanBy,
 		); err != nil {
 			return nil, err
 		}
@@ -90,10 +91,11 @@ WITH next AS (
 UPDATE job
    SET state = 'running', locked_by = $1::text::uuid,
        locked_until = now() + make_interval(secs => $2::float8),
-       attempt = job.attempt + 1, started_at = coalesce(job.started_at, now())
+       attempt = job.attempt + 1, started_at = coalesce(job.started_at, now()),
+       ran_by = $1::text::uuid
   FROM next
  WHERE job.id = next.id
-RETURNING job.id, job.kind, job.queue, job.args, job.state, job.priority, job.run_at, job.attempt, job.max_attempts, job.dedup_key, job.dedup_mode, job.task, job.scheduled_for, job.target_kind, job.target_key, job.locked_by, job.locked_until, job.progress_done, job.progress_total, job.progress_unit, job.checkpoint, job.result, job.error, job.created_by, job.traceparent, job.created_at, job.started_at, job.finished_at
+RETURNING job.id, job.kind, job.queue, job.args, job.state, job.priority, job.run_at, job.attempt, job.max_attempts, job.dedup_key, job.dedup_mode, job.task, job.scheduled_for, job.target_kind, job.target_key, job.locked_by, job.locked_until, job.progress_done, job.progress_total, job.progress_unit, job.checkpoint, job.result, job.error, job.created_by, job.traceparent, job.created_at, job.started_at, job.finished_at, job.ran_by
 `
 
 type ClaimJobsParams struct {
@@ -151,6 +153,7 @@ func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, er
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.RanBy,
 		); err != nil {
 			return nil, err
 		}
@@ -328,7 +331,7 @@ func (q *Queries) FailOrRetryJob(ctx context.Context, arg FailOrRetryJobParams) 
 }
 
 const findActiveJobByKey = `-- name: FindActiveJobByKey :many
-SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at FROM job
+SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by FROM job
  WHERE dedup_key = $1::text AND state IN ('queued', 'running', 'cancelling')
  ORDER BY (state = 'queued') DESC, created_at
  LIMIT 1
@@ -372,6 +375,7 @@ func (q *Queries) FindActiveJobByKey(ctx context.Context, dedupKey string) ([]Jo
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.RanBy,
 		); err != nil {
 			return nil, err
 		}
@@ -384,7 +388,7 @@ func (q *Queries) FindActiveJobByKey(ctx context.Context, dedupKey string) ([]Jo
 }
 
 const findWaitingJobByKey = `-- name: FindWaitingJobByKey :many
-SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at FROM job
+SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by FROM job
  WHERE dedup_key = $1::text AND state = 'queued'
  LIMIT 1
 `
@@ -427,6 +431,7 @@ func (q *Queries) FindWaitingJobByKey(ctx context.Context, dedupKey string) ([]J
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.RanBy,
 		); err != nil {
 			return nil, err
 		}
@@ -439,7 +444,7 @@ func (q *Queries) FindWaitingJobByKey(ctx context.Context, dedupKey string) ([]J
 }
 
 const getJob = `-- name: GetJob :many
-SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at FROM job WHERE id = $1::text::uuid
+SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by FROM job WHERE id = $1::text::uuid
 `
 
 func (q *Queries) GetJob(ctx context.Context, id string) ([]Job, error) {
@@ -480,6 +485,7 @@ func (q *Queries) GetJob(ctx context.Context, id string) ([]Job, error) {
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.RanBy,
 		); err != nil {
 			return nil, err
 		}
@@ -558,7 +564,7 @@ VALUES ($1::text::uuid, $2::text, $3::text, $4::text::jsonb,
         NULLIF($12::text, ''), NULLIF($13::text, ''),
         NULLIF($14::text, '')::uuid, NULLIF($15::text, ''))
 ON CONFLICT DO NOTHING
-RETURNING id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at
+RETURNING id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by
 `
 
 type InsertJobParams struct {
@@ -639,6 +645,7 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) ([]Job, er
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.RanBy,
 		); err != nil {
 			return nil, err
 		}

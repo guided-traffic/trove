@@ -1701,7 +1701,7 @@ settings screens (R-UI-031 to R-UI-034) call:
 | Maintenance (read-only) mode | `GET`, `PUT /api/v1/system/maintenance` | [operations-and-observability.md](operations-and-observability.md) |
 
 Rule for all settings documents: a value set in YAML or its environment override (INV-15) is shown
-with its source and cannot be changed through the API (409), so operators who manage settings
+with its source and cannot be changed through the API (409 `managed_by_config`, Q-API-19), so operators who manage settings
 through Helm keep control.
 
 Acceptance criteria:
@@ -4536,6 +4536,135 @@ Status: **Decided by the development agent** — selected from the options below
 re-encryption gate when `authz/me` also reports roles.
 
 **Applied in the spec:** R-UI-038 and R-UI-002 are unchanged; this block records the interpretation.
+
+### Q-API-16 · A `limit` above the maximum is clamped
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Clamp | `limit=10000` returns pages of `api.page_size_max` | A client that asks for "as many as possible" works against any installation; the cursor makes the next page cheap | The page is smaller than asked and the client must read `nextCursor`, which it does anyway |
+| (b) Refuse | `limit` above the maximum answers 400 | The client learns the bound | Every client hard-codes the bound or retries; the maximum is configuration, so the same call works on one installation and fails on another |
+
+**Choice:** (a). A `limit` that is not an integer of 1 or more is 400 `malformed_request`.
+
+**Rationale:** R-API-010 gives the maximum as a configuration value, so a client cannot know it; pages are defined by `nextCursor`, not by their size. The development agent would revisit this if a list appears whose callers need to know that they got fewer items than asked.
+
+**Applied in the spec:** R-API-010 reads "default 50, maximum 500" as a clamp; implemented in `ParseList` ([http-api.md](../developer/http-api.md)).
+
+### Q-API-17 · The body of an idempotent answer is the database's rendering, and a refusal is stored in a second transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Write the answer from the stored `jsonb` | The first answer and every replay send the text PostgreSQL renders for the stored body (`response_body::text`) | The first answer and a replay are byte-identical on every replica, as the acceptance criterion says ("identical bodies") | Member order and spacing differ from the handler's own rendering |
+| (b) Store the handler's bytes in a `text` column | The replay sends exactly what the handler wrote | Handler rendering is kept | `response_body` is `jsonb` in the data model of R-API-014; a column change |
+| (c) Compare semantically | Replay renders `jsonb` as is; first answer is the handler's | No change | Bodies are equal as JSON, not as bytes; a client that hashes the body sees two values |
+
+A 4xx outcome has a second question: the change must be rolled back and the refusal stored.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (d) Savepoint | The operation runs under `SAVEPOINT`; a refusal rolls back to it and the row is completed in the same transaction | One transaction | A transaction-mode pooler is fine with savepoints, but every helper and store has to be savepoint-aware |
+| (e) Second transaction | The change transaction rolls back; the refusal is inserted in a new one with `ON CONFLICT DO UPDATE … WHERE expired` | Simple; the change is never half-applied | A duplicate that was waiting on the first transaction may run the operation itself before the refusal is stored (it gets the same refusal) |
+
+**Choice:** (a) and (e).
+
+**Rationale:** The criterion asks for identical bodies, which only (a) guarantees without changing the table. Two concurrent first requests that both end in a refusal each answer the same refusal, so (e) cannot produce two different outcomes for one key. The development agent would revisit (e) if an operation can refuse after a side effect outside the transaction.
+
+**Applied in the spec:** R-API-014 is implemented as written; the data model is unchanged.
+
+### Q-API-18 · An unknown or duplicate member of a body is 400, although it lists a field
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 400 with `errors[]` | Status 400, code `malformed_request`, `errors[0].pointer` names the member (`errs.WithBadRequest`) | R-API-003's criterion says exactly this; the body could not be read as the resource | `errs.Error.Status` maps "Invalid with fields" to 422, so the kind alone does not say it |
+| (b) 422 `validation_failed` | A parsed body with a bad member is a validation problem | One rule for "errors lists fields" | Contradicts the criterion and R-API-009's table (`malformed_request` is 400) |
+
+**Choice:** (a). Member names are compared exactly, unlike `encoding/json`, so `Name` for `name` is unknown.
+
+**Rationale:** The spec fixes both the status and the code. A value of the right shape that fails a rule stays 422 `validation_failed`. The development agent would revisit this if clients need case-insensitive member names.
+
+**Applied in the spec:** none (R-API-003, R-API-009 already say it); `errs.WithBadRequest` is the mechanism.
+
+### Q-API-19 · M1 builds no settings resource; it supplies the rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The rule only | The code `managed_by_config` (409) and the pattern of R-API-037 are provided; each settings document belongs to its owner (`/settings/auth` to identity) | No settings document exists in M1 apart from authentication settings, which R-AUTH-040 owns | The first owner adds the check itself |
+| (b) A generic settings store | A key-value settings API | One place for all | R-API-037 says "the page per setting"; a generic store would own semantics it does not know |
+
+**Choice:** (a).
+
+**Rationale:** `/settings/storage`, the banner, maintenance mode and offline mode belong to later milestones; `/settings/auth` is the identity area's. The development agent would revisit this when two settings documents repeat the same code.
+
+**Applied in the spec:** R-API-037: a value set in YAML is shown with its source and a change is refused with 409 `managed_by_config`.
+
+### Q-API-20 · No `/storage/gc-runs`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not built | Runs are `GET /api/v1/system/jobs?kind=gc` (and `gc-full`) | Q-API-9 chose one path per function; storage.md's option (d) was not taken; no M1 screen needs more | The contracts page lists the prefix |
+| (b) A read-only domain view | `GET /api/v1/storage/gc-runs` referencing the jobs | Storage-shaped history | A second listing to build, paginate and authorize |
+
+**Choice:** (a).
+
+**Rationale:** Q-API-9 and the storage decision made the job list the one listing. The development agent would revisit this when a screen needs per-run columns the job list lacks.
+
+**Applied in the spec:** none; [m1-contracts.md](../developer/m1-contracts.md) drops the prefix.
+
+### Q-API-21 · How the job and system operations declare their permission
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Capabilities, and `authenticated` plus a handler check where the caller started the resource | `settings:read` for tasks and the key-ring status, `settings:write` to run a task; jobs are `authenticated`, and the handler grants all jobs with `settings:read` and the caller's own otherwise (R-API-015) | Uses the M0 forms; R-API-008 allows a handler check where the decision depends on the resource | The declaration alone does not say who may call jobs |
+| (b) `settings:read` for jobs | Only readers list jobs | Simple declaration | Contradicts R-API-015: a caller who started a job must read and cancel it |
+| (c) The `role: admin` form | R-API-008's role form | Matches "system administrator" | The form belongs to the authz area and does not exist yet |
+
+**Choice:** (a). "System administrator" for running a task and cancelling any job is `settings:write`, the capability only `admin` holds among the MVP roles (R-AUTHZ-010).
+
+**Rationale:** Switching `settings:write` to the role form later is a one-line change per operation. The development agent would revisit this when the authz area ships the role form or a role other than `admin` holds `settings:write`.
+
+**Applied in the spec:** none.
+
+### Q-API-22 · Every operation documents `429`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `429` in every operation | The response `TooManyRequests` is referenced by all operations; a test fails on an operation without it | The validation against the document (E1.6) holds for the answer the stage can give anywhere; R-API-002 asks for "every possible 4xx" | A repeated reference |
+| (b) A document-wide default response | OpenAPI has no document-wide default | — | Not expressible |
+
+**Choice:** (a). The M0 operations gained the reference.
+
+**Rationale:** The response validator found it: a `429` on an M0 operation failed as "status is not supported". The `RateLimit-Policy` and `RateLimit` fields are described on the `429` response and in [http-api.md](../developer/http-api.md), not repeated on each success response. The development agent would revisit this if clients need the fields typed on every response.
+
+**Applied in the spec:** none.
+
+### Q-API-23 · A job the caller may not see answers 404
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 404 | `GET /system/jobs/{id}` and `cancel` for a job another principal started answer like a missing one | A caller learns nothing about jobs of others | An administrator-only job looks like a missing one to a user |
+| (b) 403 | The job exists but is not yours | Clear | Leaks that the ID exists |
+
+**Choice:** (a) for a caller without `settings:read`. A caller with `settings:read` who may see the job but not stop it gets 403 on cancel.
+
+**Rationale:** Job IDs are time-ordered UUIDs; existence is not a secret worth a leak. The development agent would revisit this if job IDs become guessable.
+
+**Applied in the spec:** R-API-015 and R-OPS-019 say "or the caller started the job"; the answer for others is as above.
 
 ## What this does not cover
 

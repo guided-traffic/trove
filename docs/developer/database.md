@@ -208,7 +208,7 @@ Rules that hold for all of them:
 | [00006_audit](../../internal/meta/postgres/migrations/00006_audit.sql) | audit (WP1.7) | `audit_event`, `audit_policy`, `revocation_outbox` |
 | [00007_identity](../../internal/meta/postgres/migrations/00007_identity.sql) | identity (WP1.2) | `principal`, `app_user`, `user_group`, `group_membership`, `service_account`, `api_token`, `auth_settings` |
 | [00008_login](../../internal/meta/postgres/migrations/00008_login.sql) | login (WP1.1) | `user_identity`, `ui_session`, `oidc_login_flow`, `cli_login`, `auth_lockout` |
-| [00009_api](../../internal/meta/postgres/migrations/00009_api.sql) | api (WP1.6) | `api_idempotency_keys`, `user_preferences`, `secret_key_canary` |
+| [00009_api](../../internal/meta/postgres/migrations/00009_api.sql) | api (WP1.6) | `api_idempotency_keys`, `user_preferences`, `secret_key_canary`; `job.ran_by` and two job indexes |
 | [00010_repositories](../../internal/meta/postgres/migrations/00010_repositories.sql) | repository (WP1.4) | columns of `repositories` |
 | [00011_authz](../../internal/meta/postgres/migrations/00011_authz.sql) | authz (WP1.3) | `authz_policy`, `authz_policy_selector`, `authz_policy_pattern`, `authz_policy_entry`, `authz_role_binding` |
 | [00012_endpoints](../../internal/meta/postgres/migrations/00012_endpoints.sql) | endpoints (WP1.9) | `endpoint_exposure_rule` |
@@ -270,6 +270,15 @@ counters in Valkey with per-replica fallback buckets (R-AUTH-038, Q-AUTH-11).
 | `api_idempotency_keys` | The stored outcome of an idempotent create (R-API-014), inserted in the transaction of the change | `(principal_id, idem_key)`, `method`, `route`, `request_sha256`, `response_*`, `secret_issued_id`, `expires_at` | transient |
 | `user_preferences` | UI preferences of a user (R-API-021) | `user_id` (to `app_user`), `revision` (ETag, registered) | data |
 | `secret_key_canary` | The known text sealed under each key ID, for the key-ring status (R-API-049) | `key_id`, `ciphertext` | data |
+
+Beyond the tables, 00009 adds to `job` the column `ran_by` (uuid, no foreign key: the replica row may be pruned) and the
+indexes `job_created (created_at, id)` and `job_kind_created (kind, created_at, id)`. `ClaimJobs` copies `locked_by` into
+`ran_by`, so a finished job still says which replica ran it (Q-OPS-46); the job list sorts by the two indexes
+(R-API-010). Each replica seeds the `secret_key_canary` row of every key ID of its ring at start-up and opens the rows of
+the IDs it holds (`verifyKeyRingCanaries`, Q-ARCH-39). The query file is
+[api.sql](../../internal/meta/postgres/queries/api.sql); the one statement that cannot be fixed SQL, the count of sealed
+values per key ID over the registered columns, is in [listq](../../internal/meta/postgres/listq/sealed.go), the confined
+builder the architecture test allows to assemble SQL text.
 
 ### 00010 · Repositories (WP1.4)
 

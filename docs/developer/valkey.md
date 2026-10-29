@@ -14,6 +14,7 @@ Nothing outside `internal/cluster` reads or writes a Valkey key (Q-ARCH-16: noth
 | [`valkey.go`](../../internal/cluster/valkey.go) | `NewValkey`, lifecycle, `Available`/`Status`/`StartupError`, connect loop, monitor (primary changes, health probe), version check, start-up trust warnings |
 | [`valkey_ops.go`](../../internal/cluster/valkey_ops.go) | The commands trove needs (`get`, `set`, `setNX`, `setIfEq`, `delIfEq`, `incr`, `publish`, `ping`), unexported, behind breaker and command timeout |
 | [`valkey_keys.go`](../../internal/cluster/valkey_keys.go) | Key and channel family registry (`registerKeyFamily`, `registerChannelFamily`), `Key`/`Channel` types, `formKey`/`formKeyTTL`/`channel`, keyspace |
+| [`valkey_ratelimit.go`](../../internal/cluster/valkey_ratelimit.go), [`limiter.go`](../../internal/cluster/limiter.go) | The rate-limit counters (key family `rl`) and the limiter with its per-replica fallback, see [Rate-limit counters](#rate-limit-counters) |
 | [`valkey_pubsub.go`](../../internal/cluster/valkey_pubsub.go) | `subscribe`, the one Pub/Sub connection and its resubscription |
 | [`valkey_reason.go`](../../internal/cluster/valkey_reason.go) | `ReasonCode`, the fixed vocabulary of `ValkeyStatus.ReasonCode` |
 | [`valkey_integration.go`](../../internal/cluster/valkey_integration.go) | Compiled only with the `integration` build tag: `cluster.Raw(v)` and `RegisterTestKeyFamily`/`RegisterTestChannelFamily` for `test/integration/valkey`; no build of the binary has it |
@@ -79,6 +80,59 @@ Every key is `<key_prefix><keyspace>:<mechanism>:v<version>[:<part>...]`; channe
 5. A changed encoding gets a new version number, never an edited one.
 
 (R-ARCH-030 names `internal/cluster/keys.go` for the registry; the family registry is in `valkey_keys.go` because that package is shared with other work.)
+
+## Rate-limit counters
+
+[`limiter.go`](../../internal/cluster/limiter.go) and [`valkey_ratelimit.go`](../../internal/cluster/valkey_ratelimit.go) are the
+limiter of R-ARCH-034. It is the one mechanism that other packages use through a typed API: the management API's classes
+(`api_read`, `api_write`, `api_anonymous`, R-API-016) and, from the identity area, the brute-force counters of R-AUTH-038
+(`auth.credential_failures`, `auth.flow_starts`, `auth.device_code_failures`).
+
+```go
+set, err := cluster.NewLimiterSet(cluster.LimiterOptions{
+    Valkey: vk,                  // nil: every limiter runs its fallback
+    Registry: reg,               // trove_ratelimit_decisions_total, trove_ratelimit_fallback
+    LiveReplicas: live.Get,      // n: live replicas of this replica's role, refreshed with the heartbeat
+})
+l := set.NewLimiter("api_read", cluster.ScopeCluster, 50 /* per second */, 200 /* burst */)
+
+v := l.Take(ctx, bucket)         // counts the request, then decides
+v.Allowed; v.Remaining; v.RetryAfter; v.Reset; v.Limit; v.Window; v.Mode
+
+l.Allow(ctx, bucket)             // Take reduced to a bool
+
+// Count-only form (failures are counted after the request is processed, the check comes before it):
+if l.Exceeded(ctx, bucket) { /* refuse */ }
+l.Count(ctx, bucket)             // one failure
+```
+
+- `NewLimiter(name, scope, rate, burst)` is a method of the set, not a package function (Q-ARCH-38): the limiter needs the
+  Valkey client, the registry and the live-replica count. The name is lower-case words separated by `_` or `.`; it panics
+  on a bad or duplicate name or a window above 12 h. The window is `burst ÷ rate` seconds, at least 1 s.
+- Scope `cluster` counts in Valkey (key family `rl`, version 1, `rl:v1:<limiter>:<bucket hash>:<window index>`, expiry
+  two windows; the limiter name has `.` written as `-`; the bucket is a SHA-256, never a raw name). A `Take` is one round
+  trip, `MULTI`, `INCR`, `EXPIRE … NX`, `GET` of the previous window, `EXEC`, and no script. The request is counted before
+  it is decided, so refused requests use up budget. `Exceeded` is a pipelined `GET` of both windows, `Count` the `INCR` part.
+  The window index comes from the replica's wall clock; clock skew between replicas of some milliseconds moves a window
+  boundary by that much.
+- Scope `replica` counts in memory and never touches Valkey.
+- **Fallback.** When `Valkey.Available()` is false (client down, circuit open, probe failed) or a call fails, the check is
+  answered from a local token bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`; no Valkey I/O is attempted while the
+  client says it is unavailable, so an open breaker adds no delay, and a failing call has already cost at most
+  `valkey.command_timeout` (and counts for the breaker). The count-only form falls back to local sliding-window counters with
+  the limit `max(1, burst ÷ n)`. Local buckets are bounded (`MaxFallbackBuckets` per limiter, idle buckets dropped first); a
+  dropped bucket starts full.
+- **Metrics.** `trove_ratelimit_decisions_total{limiter,mode,outcome}`, `trove_ratelimit_fallback{limiter}` (1 from the first
+  fallback decision until a decision used Valkey again, and while Valkey is unavailable), and
+  `trove_valkey_degraded_total{mechanism="rate_limit"}`.
+- The verdict carries what the `429` and the `RateLimit` fields need: `RetryAfter` is computed from the same counters
+  (whole seconds, at least 1), `Remaining` is `burst` minus the window's estimate, `Reset` the time to the end of the
+  window. During the fallback they describe the replica's share.
+
+Tests: [limiter_test.go](../../internal/cluster/limiter_test.go) (fake storage and clock: the 300-of-1000 bound over three
+replicas with and without storage, the 4 s / 5 s windows, Retry-After, count-only, fallback bounds) and
+[test/integration/api](../../test/integration/api/ratelimit_test.go) (three replicas against the real Valkey, the client
+closed, a Sentinel that does not answer, and `CLIENT PAUSE WRITE` for the delay bound).
 
 ## Breaker and degraded mode
 

@@ -39,50 +39,21 @@ type scheduledTask struct {
 	args                 []byte
 }
 
-// resolveTasks merges the registered tasks with maintenance.tasks.<name> of the
-// configuration and parses every schedule with the one parser. A bad schedule is
-// a configuration error naming the key.
+// resolveTasks resolves the registered tasks against maintenance.tasks.<name>
+// of the configuration (Registry.ResolveTasks) and keeps the ones the scheduler
+// enqueues: enabled, with a schedule. A bad schedule is a configuration error
+// naming the key.
 func (w *Worker) resolveTasks() ([]scheduledTask, error) {
-	if err := ValidateSchedules(w.o.Maintenance); err != nil {
+	infos, err := w.o.Registry.ResolveTasks(w.o.Maintenance)
+	if err != nil {
 		return nil, err
 	}
-	reg := w.o.Registry.Tasks()
-	names := make([]string, 0, len(reg))
-	for n := range reg {
-		names = append(names, n)
-	}
-	sort.Strings(names)
 	var out []scheduledTask
-	for _, name := range names {
-		spec := reg[name]
-		enabled, expr := !spec.Disabled, spec.Schedule
-		if ct, ok := w.o.Maintenance.Tasks[name]; ok {
-			enabled = ct.Enabled
-			if ct.Schedule != "" {
-				expr = ct.Schedule
-			}
-		}
-		if !enabled {
+	for _, ti := range infos {
+		if !ti.Enabled || ti.ManualOnly {
 			continue
 		}
-		if _, ok := w.o.Registry.Kind(spec.Kind); !ok {
-			return nil, fmt.Errorf("jobs: task %q enqueues kind %q, which is not registered", name, spec.Kind)
-		}
-		sched, err := ParseSchedule(expr)
-		if err != nil {
-			return nil, fmt.Errorf("maintenance.tasks.%s.schedule: %w", name, err)
-		}
-		args := []byte("{}")
-		if spec.Args != nil {
-			if args, err = json.Marshal(spec.Args); err != nil {
-				return nil, fmt.Errorf("jobs: args of task %q: %w", name, err)
-			}
-		}
-		key := spec.DedupKey
-		if key == "" {
-			key = name
-		}
-		out = append(out, scheduledTask{name: name, kind: spec.Kind, dedupKey: key, sched: sched, args: args})
+		out = append(out, scheduledTask{name: ti.Name, kind: ti.Kind, dedupKey: ti.DedupKey, sched: ti.Sched, args: ti.Args})
 	}
 	return out, nil
 }
