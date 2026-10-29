@@ -4,7 +4,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { ApiError } from '../../api/problem';
 import { CreateTokenRequest } from '../../api/tokens-api';
 import { SelectField, SelectOption, TextField } from './fields';
-import { fieldProblemText } from './field-problem';
+import { fieldMessage } from '../field-errors';
 
 export const TOKEN_ACTIONS = ['read', 'annotate', 'deploy', 'overwrite', 'delete', 'manage'] as const;
 type TokenAction = (typeof TOKEN_ACTIONS)[number];
@@ -221,7 +221,7 @@ export class TokenForm {
     if (local) return local;
     const server = this.failure()?.fieldErrors.get(pointer);
     if (!server) return null;
-    return fieldProblemText(server);
+    return fieldMessage(server);
   }
 
   protected toggle(action: TokenAction, on: boolean): void {

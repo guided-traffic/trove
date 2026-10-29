@@ -26,29 +26,10 @@ export class HttpSystemApi extends SystemApi {
   }
 }
 
-/** `GET /api/v1/system/encryption` (R-API-049). Hand-typed until the operation is in the document. */
-export interface EncryptionStatus {
-  readonly answeredBy: string;
-  readonly activeKeyId: string;
-  readonly keys: readonly {
-    readonly id: string;
-    readonly active: boolean;
-    readonly sealedValues: number;
-    readonly canary: 'ok' | 'failed' | 'absent';
-  }[];
-  readonly replicas: readonly {
-    readonly name: string;
-    readonly role: string;
-    readonly activeKeyId: string;
-    readonly keyIds: readonly string[];
-  }[];
-  readonly ringsCompatible: boolean;
-  readonly lastReencryption: {
-    readonly jobId: string;
-    readonly state: string;
-    readonly finishedAt: string | null;
-  } | null;
-}
+// >>> M1 ui-a
+/** `GET /api/v1/system/encryption` (R-API-049), from the generated document (Q-UI-12). */
+export type EncryptionStatus = Schema<'EncryptionStatus'>;
+// <<< M1 ui-a
 
 export abstract class EncryptionApi {
   abstract status(): Promise<EncryptionStatus>;
@@ -61,15 +42,17 @@ export class HttpEncryptionApi extends EncryptionApi {
   private readonly client = inject(ApiClient);
 
   async status(): Promise<EncryptionStatus> {
-    return (await this.client.getJson<EncryptionStatus>('/api/v1/system/encryption')).body;
+    return (await this.client.get('/api/v1/system/encryption')).body;
   }
 
   async reencrypt(idempotencyKey: string): Promise<string> {
-    const r = await this.client.post<{ id: string }>(
+    // >>> M1 ui-a
+    const r = await this.client.post<{ job: { id: string } }>(
       '/api/v1/system/tasks/secrets-reencrypt/run',
       undefined,
       { idempotencyKey },
     );
-    return r.body.id;
+    return r.body.job.id;
+    // <<< M1 ui-a
   }
 }

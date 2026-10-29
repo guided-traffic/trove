@@ -6,10 +6,10 @@ import { IdentityApi, ServiceAccount } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
+import { Confirm } from '../../shared/confirm-dialog';
 import { TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
-import { toApiError } from '../../shared/access/paged-signal';
+import { fieldErrorAt } from '../../shared/field-errors';
+import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -92,7 +92,7 @@ export class ServiceAccountDetail {
   readonly name = input.required<string>();
 
   private readonly api = inject(IdentityApi);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
@@ -121,7 +121,7 @@ export class ServiceAccountDetail {
       this.description.set(a.description);
     } catch (e) {
       this.account.set(null);
-      this.loadError.set(toApiError(e));
+      this.loadError.set(asApiError(e));
     }
   }
 
@@ -141,13 +141,14 @@ export class ServiceAccountDetail {
   protected async disable(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@sa.disable-title:Disable this service account?`,
-      text: $localize`:@@sa.disable-text:${this.name()}:account: can no longer authenticate.`,
-      confirm: $localize`:@@sa.disable-confirm:Disable`,
-      option: { label: $localize`:@@sa.disable-revoke:Also revoke all tokens of this account`, checked: false },
+      lines: [$localize`:@@sa.disable-text:${this.name()}:account: can no longer authenticate.`],
+      confirmLabel: $localize`:@@sa.disable-confirm:Disable`,
+      choice: $localize`:@@sa.disable-revoke:Also revoke all tokens of this account`,
+      choiceChecked: false,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     await this.act(async () => {
-      await this.api.disableServiceAccount(this.name(), { revokeTokens: answer.option });
+      await this.api.disableServiceAccount(this.name(), { revokeTokens: answer.checked });
       await this.load();
     }, $localize`:@@sa.disabled-done:Service account disabled.`);
   }
@@ -162,17 +163,17 @@ export class ServiceAccountDetail {
   protected async remove(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@sa.delete-title:Delete this service account?`,
-      text: $localize`:@@sa.delete-text:${this.name()}:account: and its tokens are removed. This cannot be undone.`,
-      confirm: $localize`:@@sa.delete-confirm:Delete`,
+      lines: [$localize`:@@sa.delete-text:${this.name()}:account: and its tokens are removed. This cannot be undone.`],
+      confirmLabel: $localize`:@@sa.delete-confirm:Delete`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     this.actionError.set(null);
     try {
       await this.api.deleteServiceAccount(this.name());
       this.notifier.status($localize`:@@sa.deleted:Service account deleted.`);
       await this.router.navigate(['/admin/service-accounts']);
     } catch (e) {
-      this.actionError.set(toApiError(e));
+      this.actionError.set(asApiError(e));
     }
   }
 
@@ -183,7 +184,7 @@ export class ServiceAccountDetail {
       await run();
       this.notifier.status(done);
     } catch (e) {
-      this.actionError.set(toApiError(e));
+      this.actionError.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

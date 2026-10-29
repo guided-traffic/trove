@@ -8,7 +8,7 @@ import { IdentityApi, User, UserFilters } from '../../api/identity-api';
 import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
-import { PagedSignal } from '../../shared/access/paged-signal';
+import { PagedResource } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { UserCreateDialog } from './user-create-dialog';
 import { originLabel } from './user-labels';
@@ -30,7 +30,7 @@ export class UserList {
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
-  protected readonly list = new PagedSignal<User>();
+  protected readonly list = new PagedResource<User>();
   protected readonly q = signal('');
   protected readonly status = signal('');
   protected readonly origin = signal('');

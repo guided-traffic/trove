@@ -1,11 +1,6 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@system.heading">System status</h1>
-  <button
-    mat-stroked-button
-    type="button"
-    [attr.aria-pressed]="paused()"
-    (click)="togglePause()"
-  >
+  <button mat-stroked-button type="button" [attr.aria-pressed]="paused()" (click)="togglePause()">
     @if (paused()) {
       <ng-container i18n="@@system.resume">Resume automatic refresh</ng-container>
     } @else {
@@ -42,7 +37,7 @@
   </p>
 }
 
-@if (info.value(); as i) {
+@if (valueOf(info); as i) {
   <div class="cards">
     <section class="card" aria-labelledby="card-install">
       <h2 id="card-install" i18n="@@system.install.heading">Installation</h2>
@@ -104,14 +99,14 @@
       <span class="material-icons" aria-hidden="true">info</span>
       <span i18n="@@system.versions.mixed"
         >Replicas of two versions run side by side:
-        <span translate="no">{{ versions().join(', ') }}</span>. This is normal during a rolling
-        upgrade.</span
+        <span translate="no">{{ versions().join(', ') }}</span
+        >. This is normal during a rolling upgrade.</span
       >
     </p>
   }
 }
 
-@if (replicas.value()) {
+@if (valueOf(replicas)) {
   <section aria-labelledby="replicas-heading">
     <h2 id="replicas-heading" i18n="@@system.replicas.heading">Replicas by role</h2>
     @for (g of groups(); track g.role) {
@@ -149,7 +144,12 @@
             </p>
           }
           @if (g.replicas.length > 0) {
-            <div class="scroll" tabindex="0" role="region" [attr.aria-labelledby]="'role-' + g.role">
+            <div
+              class="scroll"
+              tabindex="0"
+              role="region"
+              [attr.aria-labelledby]="'role-' + g.role"
+            >
               <table>
                 <thead>
                   <tr>
@@ -204,7 +204,11 @@
                           </div>
                         }
                       </td>
-                      <td><time [attr.datetime]="r.heartbeatAt">{{ r.heartbeatAt | date: 'mediumTime' }}</time></td>
+                      <td>
+                        <time [attr.datetime]="r.heartbeatAt">{{
+                          r.heartbeatAt | date: 'mediumTime'
+                        }}</time>
+                      </td>
                       <td>
                         @if (r.valkey; as v) {
                           @if (v.state === 'available') {
@@ -273,7 +277,7 @@
         >
       </p>
     }
-    @if (info.value(); as i) {
+    @if (valueOf(info); as i) {
       <dl>
         <dt i18n="@@system.valkey.mode">Mode</dt>
         <dd translate="no">{{ i.valkey.mode }}</dd>
@@ -285,7 +289,9 @@
         <dd translate="no">{{ i.valkey.tls }}</dd>
         @if (v.lastPrimaryChangeAt; as t) {
           <dt i18n="@@system.valkey.last-change">Last primary change</dt>
-          <dd><time [attr.datetime]="t">{{ t | date: 'medium' }}</time></dd>
+          <dd>
+            <time [attr.datetime]="t">{{ t | date: 'medium' }}</time>
+          </dd>
         }
         @if (v.serverVersions.length > 0) {
           <dt i18n="@@system.valkey.server-version">Server version</dt>
@@ -300,11 +306,13 @@
   <h2 id="card-keys" i18n="@@system.keys.heading">Stored-secret keys</h2>
   @if (encryptionFailure(); as f) {
     <trove-error-notice [error]="f" (retry)="encryption.reload()" />
-  } @else if (encryption.value(); as e) {
+  } @else if (valueOf(encryption); as e) {
     <p>
       <ng-container i18n="@@system.keys.active">Active key ID</ng-container>:
       <code translate="no">{{ e.activeKeyId }}</code>
-      <span class="answered" i18n="@@system.keys.answered-by">(answered by {{ e.answeredBy }})</span>
+      <span class="answered" i18n="@@system.keys.answered-by"
+        >(answered by {{ e.answeredBy }})</span
+      >
     </p>
     <p>
       @if (e.ringsCompatible) {
@@ -319,12 +327,16 @@
       }
     </p>
     <table>
-      <caption class="visually-hidden" i18n="@@system.keys.caption">Key IDs and sealed values</caption>
+      <caption class="visually-hidden" i18n="@@system.keys.caption">
+        Key IDs and sealed values
+      </caption>
       <thead>
         <tr>
           <th scope="col" i18n="@@system.keys.col.id">Key ID</th>
           <th scope="col" i18n="@@system.keys.col.sealed">Sealed values</th>
-          <th scope="col" i18n="@@system.keys.col.canary">Canary</th>
+          <th scope="col" i18n="@@system.keys.col.canary-by">
+            Canary (reported by {{ e.answeredBy }})
+          </th>
           <th scope="col" i18n="@@system.keys.col.status">Status</th>
         </tr>
       </thead>
@@ -333,7 +345,22 @@
           <tr>
             <th scope="row" translate="no">{{ k.id }}</th>
             <td translate="no">{{ k.sealedValues }}</td>
-            <td translate="no">{{ k.canary }}</td>
+            <td>
+              @switch (k.canary) {
+                @case ('ok') {
+                  <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                  <span i18n="@@system.keys.canary.ok">ok</span>
+                }
+                @case ('failed') {
+                  <span class="material-icons bad" aria-hidden="true">error</span>
+                  <span i18n="@@system.keys.canary.failed">failed</span>
+                }
+                @case ('absent') {
+                  <span class="material-icons warn" aria-hidden="true">warning</span>
+                  <span i18n="@@system.keys.canary.absent">absent</span>
+                }
+              }
+            </td>
             <td>
               @switch (keyStatus(k)) {
                 @case ('active') {
@@ -355,11 +382,92 @@
         }
       </tbody>
     </table>
+
+    <h3 i18n="@@system.keys.replicas.heading">Key IDs per replica</h3>
+    <table>
+      <caption class="visually-hidden" i18n="@@system.keys.replicas.caption">
+        Key rings of the live replicas
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col" i18n="@@system.col.name">Name</th>
+          <th scope="col" i18n="@@system.keys.replicas.role">Role</th>
+          <th scope="col" i18n="@@system.keys.active">Active key ID</th>
+          <th scope="col" i18n="@@system.keys.replicas.ring">Key IDs held</th>
+          <th scope="col" i18n="@@system.col.state">State</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of e.replicas; track r.name) {
+          <tr>
+            <th scope="row" translate="no">{{ r.name }}</th>
+            <td translate="no">{{ r.role }}</td>
+            <td translate="no">{{ r.activeKeyId }}</td>
+            <td translate="no">{{ r.keyIds.join(', ') }}</td>
+            <td>
+              @if (gapOf(r.name); as gap) {
+                <span class="material-icons bad" aria-hidden="true">error</span>
+                <span i18n="@@system.keys.replicas.missing">lacks</span>
+                <span translate="no"> {{ gap.missing.join(', ') }}</span>
+              } @else {
+                <span class="material-icons ok" aria-hidden="true">check_circle</span>
+                <span i18n="@@system.keys.replicas.complete">complete</span>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    @switch (step()?.kind) {
+      @case ('incompatible') {
+        <p>
+          <span class="material-icons warn" aria-hidden="true">warning</span>
+          <span i18n="@@system.keys.step.incompatible"
+            >Next step: give every replica the key files it lacks. Re-encryption stays disabled
+            until all rings hold the same key IDs.</span
+          >
+        </p>
+      }
+      @case ('reencrypt') {
+        <p>
+          <span class="material-icons warn" aria-hidden="true">warning</span>
+          <span i18n="@@system.keys.step.reencrypt"
+            >Next step: re-encrypt the values that are still sealed under an old key ID.</span
+          >
+        </p>
+      }
+      @case ('remove') {
+        <p>
+          <span class="material-icons ok" aria-hidden="true">check_circle</span>
+          <span i18n="@@system.keys.step.remove"
+            >Next step: no values are left under an old key ID, so its key file can be removed from
+            every replica.</span
+          >
+        </p>
+      }
+    }
+
+    @if (e.lastReencryption; as last) {
+      <p>
+        <ng-container i18n="@@system.keys.last">Last re-encryption</ng-container>:
+        <span translate="no">{{ last.state }}</span>
+        @if (last.finishedAt; as at) {
+          <time [attr.datetime]="at"> {{ at | date: 'medium' }}</time>
+        }
+      </p>
+    }
+
+    @if (reencryptJob(); as id) {
+      <div class="job-line">
+        <trove-job-progress [jobId]="id" [label]="reencryptLabel" (finished)="reencryptEnded()" />
+      </div>
+    }
     @if (canReencrypt()) {
       <button
         mat-flat-button
         type="button"
-        [disabled]="reencrypting() || !e.ringsCompatible"
+        [disabled]="reencrypting() || !e.ringsCompatible || reencryptJob() !== null"
         [attr.aria-describedby]="e.ringsCompatible ? null : 'reencrypt-reason'"
         (click)="reencrypt()"
         i18n="@@system.keys.reencrypt"
@@ -375,6 +483,28 @@
   } @else if (encryption.isLoading()) {
     <p role="status" i18n="@@system.loading">Loading.</p>
   }
+</section>
+
+<trove-tasks-card />
+
+<section class="card" aria-labelledby="card-jobs">
+  <h2 id="card-jobs" i18n="@@system.jobs.heading">Recent jobs</h2>
+  @if (recentFailure(); as f) {
+    <trove-error-notice [error]="f" (retry)="recentJobs.reload()" />
+  } @else if (valueOf(recentJobs); as jobs) {
+    @if (jobs.length === 0) {
+      <p class="empty" i18n="@@jobs.empty-recent">No job has run yet.</p>
+    } @else {
+      <trove-job-table
+        [jobs]="jobs"
+        [caption]="recentCaption"
+        (cancelRequested)="cancelJob($event)"
+      />
+    }
+  } @else {
+    <p role="status" i18n="@@system.loading">Loading.</p>
+  }
+  <p><a routerLink="/admin/system/jobs" i18n="@@system.jobs.all">All jobs</a></p>
 </section>
 
 <p class="more">

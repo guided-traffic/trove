@@ -33,3 +33,11 @@ before using a new term in a German text.
 | rotate (a token) | rotieren |
 | revoke (a token) | widerrufen |
 | group claim | Gruppen-Claim |
+| client address | Client-Adresse |
+| job, maintenance task | Job, Wartungsaufgabe |
+| upload, folder | Upload (hochladen), Ordner |
+| exposure (mode, rule) | Freigabe (Modus, Regel) |
+| surface (of an endpoint) | angebotene Routen |
+| pre-release | Vorabversion |
+| include / exclude pattern | Einschluss- / Ausschlussmuster |
+| load more | Mehr laden |

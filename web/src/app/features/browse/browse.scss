@@ -1,0 +1,99 @@
+// Two panes side by side in a wide content area, stacked with a back button in a narrow one
+// (R-UI-010). The container query follows the content area, so collapsing the side bar never
+// breaks the layout (R-UI-002).
+.browse {
+  display: grid;
+  grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr);
+  gap: var(--trove-space-4);
+  align-items: start;
+}
+
+.back {
+  display: none;
+  margin: 0;
+}
+
+@container content (max-width: 48rem) {
+  .browse {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .browse.has-selection .pane-tree {
+    display: none;
+  }
+
+  .browse:not(.has-selection) .pane-details {
+    display: none;
+  }
+
+  .back {
+    display: block;
+  }
+}
+
+.tree,
+.tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree ul {
+  padding-inline-start: var(--trove-space-4);
+}
+
+[ngTreeItem] {
+  outline: none;
+
+  > .node-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    min-block-size: 24px;
+    padding: 0 var(--trove-space-2);
+    border-radius: var(--mat-sys-corner-extra-small);
+    cursor: pointer;
+  }
+
+  &[aria-selected='true'] > .node-label {
+    background: var(--mat-sys-secondary-container);
+    color: var(--mat-sys-on-secondary-container);
+    font-weight: 600;
+  }
+
+  &:focus-visible > .node-label,
+  &[data-active='true']:focus > .node-label {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 1px;
+  }
+}
+
+.meta {
+  font-size: 0.75rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.status-row {
+  padding-inline-start: var(--trove-space-4);
+}
+
+.location {
+  overflow-wrap: anywhere;
+}
+
+.tab {
+  padding-block: var(--trove-space-3);
+}
+
+.deleting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+  margin-block: var(--trove-space-2);
+}
+
+.row-actions {
+  margin-block-end: var(--trove-space-3);
+  align-items: center;
+}

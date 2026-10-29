@@ -6,11 +6,11 @@ import { collectAll } from '../../api/pagination';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
+import { Confirm } from '../../shared/confirm-dialog';
 import { TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
+import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
-import { toApiError } from '../../shared/access/paged-signal';
+import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 
 /**
@@ -29,7 +29,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 })
 export class RoleBindings {
   private readonly api = inject(RolesApi);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   protected readonly session = inject(SessionStore);
 
@@ -56,7 +56,7 @@ export class RoleBindings {
       this.bindings.set(await collectAll(this.api.bindings({})));
       this.loaded.set(true);
     } catch (e) {
-      this.loadError.set(toApiError(e));
+      this.loadError.set(asApiError(e));
     }
   }
 
@@ -93,10 +93,10 @@ export class RoleBindings {
   protected async unbind(b: RoleBinding): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@roles.unbind-title:Unbind this role?`,
-      text: $localize`:@@roles.unbind-text:${b.role}:role: will no longer apply to ${b.principal}:principal:.`,
-      confirm: $localize`:@@roles.unbind:Unbind`,
+      lines: [$localize`:@@roles.unbind-text:${b.role}:role: will no longer apply to ${b.principal}:principal:.`],
+      confirmLabel: $localize`:@@roles.unbind:Unbind`,
     });
-    if (answer.confirmed) {
+    if (answer !== null) {
       await this.write(() => this.api.unbind(b.role, b.principal), $localize`:@@roles.unbound:Role unbound.`);
     }
   }
@@ -110,7 +110,7 @@ export class RoleBindings {
       await this.load();
       await this.session.refreshCapabilities();
     } catch (e) {
-      this.writeError.set(toApiError(e));
+      this.writeError.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

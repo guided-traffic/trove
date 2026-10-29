@@ -1,0 +1,198 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@repo.list.heading">Repositories</h1>
+  @if (canCreate()) {
+    <a mat-flat-button routerLink="/admin/repositories/new" i18n="@@repo.list.create"
+      >Create repository</a
+    >
+  }
+</header>
+
+<form class="toolbar" role="search" (submit)="submitSearch($event)">
+  <div class="field">
+    <label class="field-label" for="flt-q" i18n="@@repo.filter.text">Key or description</label>
+    <input
+      id="flt-q"
+      class="text-input"
+      type="search"
+      [value]="search()"
+      (input)="search.set($any($event.target).value)"
+    />
+  </div>
+  <div class="field">
+    <label class="field-label" for="flt-class" i18n="@@repo.col.class">Class</label>
+    <select
+      id="flt-class"
+      class="select-input"
+      (change)="applyFilter({ class: $any($event.target).value || null })"
+    >
+      <option value="" [selected]="!class()" i18n="@@repo.filter.any">Any</option>
+      @for (c of ['local', 'remote', 'virtual']; track c) {
+        <option [value]="c" [selected]="class() === c">{{ classText(c) }}</option>
+      }
+    </select>
+  </div>
+  <div class="field">
+    <label class="field-label" for="flt-format" i18n="@@repo.col.format">Format</label>
+    <select
+      id="flt-format"
+      class="select-input"
+      (change)="applyFilter({ format: $any($event.target).value || null })"
+    >
+      <option value="" [selected]="!format()" i18n="@@repo.filter.any">Any</option>
+      @for (f of formatOptions(); track f) {
+        <option [value]="f" [selected]="format() === f" translate="no">{{ f }}</option>
+      }
+    </select>
+  </div>
+  <label class="check-row" for="flt-inactive">
+    <input
+      id="flt-inactive"
+      type="checkbox"
+      [checked]="state() === 'inactive'"
+      (change)="applyFilter({ state: $any($event.target).checked ? 'inactive' : null })"
+    />
+    <span i18n="@@repo.filter.inactive">Disabled only</span>
+  </label>
+  <button mat-flat-button type="submit" i18n="@@repo.filter.apply">Search</button>
+  @if (filtered()) {
+    <button mat-button type="button" (click)="clearFilters()" i18n="@@repo.filter.clear">
+      Clear filters
+    </button>
+  }
+</form>
+
+@if (recent.keys().length > 0 && !filtered()) {
+  <section aria-labelledby="recent-heading" class="recent">
+    <h2 id="recent-heading" i18n="@@repo.recent">Recently viewed</h2>
+    <ul>
+      @for (key of recent.keys(); track key) {
+        <li>
+          <a [routerLink]="['/admin/repositories', key]" translate="no">{{ key }}</a>
+        </li>
+      }
+    </ul>
+  </section>
+}
+
+@if (deleteFailure(); as f) {
+  <trove-error-notice [error]="f" />
+}
+@if (list.error(); as f) {
+  <trove-error-notice [error]="f" (retry)="list.more()" />
+}
+
+@if (list.loaded()) {
+  @if (list.items().length === 0) {
+    <p class="empty">
+      @if (filtered()) {
+        <ng-container i18n="@@repo.list.empty-filtered"
+          >No repository matches the filters.</ng-container
+        >
+      } @else {
+        <ng-container i18n="@@repo.list.empty">There is no repository yet.</ng-container>
+      }
+    </p>
+  } @else {
+    <div class="scroll" tabindex="0" role="region" aria-labelledby="repo-table-caption">
+      <table class="data">
+        <caption id="repo-table-caption" class="visually-hidden" i18n="@@repo.list.caption">
+          Repositories
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@repo.col.key">Key</th>
+            <th scope="col" i18n="@@repo.col.format">Format</th>
+            <th scope="col" i18n="@@repo.col.class">Class</th>
+            <th scope="col" i18n="@@repo.col.description">Description</th>
+            <th scope="col" i18n="@@repo.col.address">Client address</th>
+            <th scope="col" i18n="@@repo.col.activity">Last activity</th>
+            <th scope="col" i18n="@@repo.col.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of list.items(); track row.key) {
+            <tr>
+              <th scope="row">
+                <a
+                  [routerLink]="['/admin/repositories', row.key]"
+                  (click)="visit(row.key)"
+                  translate="no"
+                  >{{ row.key }}</a
+                >
+                @if (row.disabled) {
+                  <span class="badge" i18n="@@repo.badge.disabled">disabled</span>
+                }
+                @if (row.lifecycle === 'deleting') {
+                  <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
+                }
+              </th>
+              <td translate="no">{{ row.format }}</td>
+              <td>{{ classText(row.class) }}</td>
+              <td>{{ row.description }}</td>
+              <td>
+                <code translate="no">{{ address(row) }}</code>
+                <trove-copy-button [value]="address(row)" [label]="copyLabel" />
+              </td>
+              <td>
+                @if (row.lastActivityAt; as at) {
+                  <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+                } @else {
+                  –
+                }
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a
+                    mat-button
+                    [routerLink]="['/admin/repositories', row.key]"
+                    (click)="visit(row.key)"
+                    i18n="@@repo.action.edit"
+                    >Edit</a
+                  >
+                  <a mat-button [routerLink]="['/browse', row.key]" i18n="@@repo.action.browse"
+                    >Browse</a
+                  >
+                  @if (canDelete() && row.lifecycle !== 'deleting' && !deleting().has(row.key)) {
+                    <button
+                      mat-button
+                      type="button"
+                      (click)="remove(row)"
+                      i18n="@@repo.action.delete"
+                    >
+                      Delete
+                    </button>
+                  }
+                </div>
+                @if (deleting().get(row.key); as job) {
+                  <div class="deleting">
+                    <span i18n="@@repo.deleting">Deleting</span>
+                    <trove-job-progress
+                      [jobId]="job.id"
+                      [label]="deleteLabel"
+                      (finished)="jobEnded(row.key, $event.state)"
+                    />
+                  </div>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (list.hasMore()) {
+      <p>
+        <button
+          mat-stroked-button
+          type="button"
+          [disabled]="list.loading()"
+          (click)="list.more()"
+          i18n="@@list.load-more"
+        >
+          Load more
+        </button>
+      </p>
+    }
+  }
+} @else if (list.loading()) {
+  <p role="status" i18n="@@repo.loading">Loading.</p>
+}

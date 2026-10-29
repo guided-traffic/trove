@@ -1,0 +1,218 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@repo.wizard.heading">New repository</h1>
+  <a mat-button routerLink="/admin/repositories" i18n="@@repo.wizard.cancel">Cancel</a>
+</header>
+
+@if (loadFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="formats.reload()" />
+} @else if (formats.isLoading()) {
+  <p role="status" i18n="@@repo.loading">Loading.</p>
+} @else {
+  <nav aria-labelledby="wizard-steps">
+    <h2 id="wizard-steps" class="visually-hidden" i18n="@@repo.wizard.steps">Steps</h2>
+    <ol class="steps">
+      @for (name of steps; track $index) {
+        <li [attr.aria-current]="$index === step() ? 'step' : null" [class.done]="$index < step()">
+          @if ($index < step()) {
+            <button type="button" class="step-link" (click)="goTo($index)">
+              {{ $index + 1 }}. {{ name }}
+            </button>
+          } @else {
+            <span>{{ $index + 1 }}. {{ name }}</span>
+          }
+        </li>
+      }
+    </ol>
+  </nav>
+
+  <trove-error-summary [items]="summary()" />
+  @if (failure(); as f) {
+    @if (f.fieldErrors.size === 0) {
+      <trove-error-notice [error]="f" />
+    }
+  }
+
+  @switch (step()) {
+    @case (0) {
+      <fieldset class="choices">
+        <legend i18n="@@repo.wizard.class.legend">What kind of repository?</legend>
+        @for (c of classes(); track c) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="class"
+              [value]="c"
+              [checked]="cls() === c"
+              (change)="chooseClass(c)"
+            />
+            <span class="choice-title">{{ classText(c) }}</span>
+            <span class="hint">{{ classHelpText(c) }}</span>
+          </label>
+        }
+        @if (classes().length === 0) {
+          <p class="empty" i18n="@@repo.wizard.no-classes">
+            This installation offers no format to create repositories of.
+          </p>
+        }
+        <p class="hint" i18n="@@repo.wizard.class.hint">
+          Only the classes that at least one installed format implements are offered.
+        </p>
+      </fieldset>
+    }
+    @case (1) {
+      <fieldset class="choices">
+        <legend i18n="@@repo.wizard.format.legend">Which format?</legend>
+        @for (f of formatsOfClass(); track f.name) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="format"
+              [value]="f.name"
+              [checked]="formatName() === f.name"
+              (change)="chooseFormat(f.name)"
+            />
+            <span class="choice-title" translate="no">{{ f.displayName ?? f.name }}</span>
+            <span class="hint" translate="no">{{ f.protocolBasePath }}</span>
+          </label>
+        }
+      </fieldset>
+    }
+    @case (2) {
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label" for="f-key" i18n="@@repo.field.key">Key</label>
+          <input
+            id="f-key"
+            class="text-input"
+            autocomplete="off"
+            spellcheck="false"
+            [value]="form().key"
+            [attr.aria-invalid]="
+              (showErrors() && !keyValid()) || keyCheck() === 'taken' || keyErrors().length > 0
+                ? 'true'
+                : null
+            "
+            aria-describedby="d-key"
+            (input)="setKey($any($event.target).value)"
+          />
+          <p id="d-key" class="hint" i18n="@@repo.field.key.hint">
+            2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part
+            of every address and cannot be changed later.
+          </p>
+          <p class="hint" role="status">
+            @switch (keyCheck()) {
+              @case ('checking') {
+                <ng-container i18n="@@repo.key.checking">Checking the key.</ng-container>
+              }
+              @case ('free') {
+                <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
+                <ng-container i18n="@@repo.key.free">The key is available.</ng-container>
+              }
+              @case ('unknown') {
+                <ng-container i18n="@@repo.key.unknown"
+                  >Availability could not be checked; the server decides when you
+                  create.</ng-container
+                >
+              }
+            }
+          </p>
+          @if (showErrors() && !keyValid()) {
+            <p class="field-error">
+              <span class="material-icons inline" aria-hidden="true">error</span>
+              <span i18n="@@repo.key.invalid">The key does not match the pattern.</span>
+            </p>
+          }
+          @if (keyCheck() === 'taken') {
+            <p class="field-error">
+              <span class="material-icons inline" aria-hidden="true">error</span>
+              <span i18n="@@repo.key.taken">A repository with this key already exists.</span>
+            </p>
+          }
+          @for (e of keyErrors(); track e.code) {
+            <p class="field-error">{{ message(e) }}</p>
+          }
+        </div>
+      </div>
+      <trove-repository-fields section="basic" [(form)]="form" [fieldErrors]="fieldErrors()" />
+    }
+    @case (3) {
+      <h2 i18n="@@repo.wizard.access.heading">Access settings</h2>
+      <p class="hint" i18n="@@repo.wizard.access.hint">
+        Settings of the local class. Remote and virtual repositories add their own settings once a
+        format implements them.
+      </p>
+      <trove-repository-fields section="access" [(form)]="form" [fieldErrors]="fieldErrors()" />
+    }
+    @case (4) {
+      <h2 i18n="@@repo.wizard.review.heading">Review</h2>
+      <dl class="facts">
+        <dt i18n="@@repo.field.key">Key</dt>
+        <dd translate="no">{{ form().key }}</dd>
+        <dt i18n="@@repo.col.class">Class</dt>
+        <dd>{{ cls() ? classText(cls()!) : '' }}</dd>
+        <dt i18n="@@repo.col.format">Format</dt>
+        <dd translate="no">{{ format()?.displayName ?? formatName() }}</dd>
+        <dt i18n="@@repo.field.description">Description</dt>
+        <dd>{{ form().description || '–' }}</dd>
+        <dt i18n="@@repo.review.address">Client address</dt>
+        <dd translate="no">{{ address() || '–' }}</dd>
+        <dt i18n="@@repo.field.include">Include patterns</dt>
+        <dd translate="no">{{ includes().length > 0 ? includes().join(', ') : '–' }}</dd>
+        <dt i18n="@@repo.field.exclude">Exclude patterns</dt>
+        <dd translate="no">{{ excludes().length > 0 ? excludes().join(', ') : '–' }}</dd>
+        <dt i18n="@@repo.review.switches">Switches</dt>
+        <dd>
+          @if (form().disabled) {
+            <span i18n="@@repo.review.disabled">Disabled.</span>
+          }
+          @if (form().requireAuthentication) {
+            <span i18n="@@repo.review.require-auth">Authentication required.</span>
+          }
+          @if (!form().disabled && !form().requireAuthentication) {
+            –
+          }
+        </dd>
+      </dl>
+      <details class="api-request">
+        <summary i18n="@@repo.review.api">Show as API request</summary>
+        <h3 i18n="@@repo.review.api.json">Request body</h3>
+        <pre class="code-block" translate="no" tabindex="0">{{ requestJson() }}</pre>
+        <h3 i18n="@@repo.review.api.curl">The same request with curl</h3>
+        <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
+      </details>
+    }
+  }
+
+  <div class="nav-buttons">
+    <button
+      mat-button
+      type="button"
+      [disabled]="step() === 0"
+      (click)="back()"
+      i18n="@@repo.wizard.back"
+    >
+      Back
+    </button>
+    @if (step() < steps.length - 1) {
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!canNext() && step() !== 2"
+        (click)="next()"
+        i18n="@@repo.wizard.next"
+      >
+        Next
+      </button>
+    } @else {
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="creating()"
+        (click)="create()"
+        i18n="@@repo.wizard.create"
+      >
+        Create repository
+      </button>
+    }
+  </div>
+}

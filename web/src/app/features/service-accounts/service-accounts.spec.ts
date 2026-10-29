@@ -1,7 +1,7 @@
 import { IdentityApi } from '../../api/identity-api';
 import { TokensApi } from '../../api/tokens-api';
 import { FakeIdentityApi, FakeTokensApi, SECRET_VALUE, problem } from '../../api/testing/access-fakes';
-import { buttonByText, renderScreen, settle, storedText, textOf, typeInto } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, storedText, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { ServiceAccountDetail } from './service-account-detail';
 import { ServiceAccountList } from './service-account-list';
@@ -11,11 +11,11 @@ const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-containe
 describe('Service accounts (R-UI-026)', () => {
   it('R-UI-026 lists name, description and status with the hint when to use one, and passes axe', async () => {
     const { root } = await renderScreen(ServiceAccountList);
-    expect(textOf(root)).toContain('CI systems that cannot sign in through OpenID Connect');
+    expect(text(root)).toContain('CI systems that cannot sign in through OpenID Connect');
     const rows = root.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(1);
-    expect(textOf(rows[0]!)).toContain('ci-bot');
-    expect(textOf(rows[0]!)).toContain('Active');
+    expect(text(rows[0]!)).toContain('ci-bot');
+    expect(text(rows[0]!)).toContain('Active');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -37,9 +37,9 @@ describe('Service accounts (R-UI-026)', () => {
     buttonByText(root, 'Disable').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Disable').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('disableServiceAccount ci-bot revokeTokens=false');
-    expect(textOf(root)).toContain('Disabled');
+    expect(text(root)).toContain('Disabled');
   });
 
   it('R-UI-026 issues a token on the Tokens section, shows it once and never stores it', async () => {
@@ -48,7 +48,7 @@ describe('Service accounts (R-UI-026)', () => {
     await settle(fixture);
     typeInto(root.querySelector('trove-token-form')!, 'Description', 'nightly deploy');
     // A service-account token may be non-expiring.
-    expect(textOf(root)).toContain('Never expires');
+    expect(text(root)).toContain('Never expires');
     buttonByText(root.querySelector('trove-token-form')!, 'Create token').click();
     await settle(fixture);
     const tokens = get(TokensApi) as FakeTokensApi;
@@ -56,7 +56,7 @@ describe('Service accounts (R-UI-026)', () => {
     const secret = root.querySelector('trove-token-secret') as HTMLElement;
     expect(secret).toBeTruthy();
     expect((secret.querySelector('input') as HTMLInputElement).value).toBe(SECRET_VALUE);
-    expect(textOf(secret)).toContain('shown only once');
+    expect(text(secret)).toContain('shown only once');
     // R-UI-043: the value is in the component only.
     expect(storedText()).not.toContain('trv_');
     expect(await seriousViolations(root)).toEqual([]);
@@ -74,7 +74,7 @@ describe('Service accounts (R-UI-026)', () => {
     (get(TokensApi) as FakeTokensApi).failure = problem(422, 'ttl_exceeds_maximum');
     buttonByText(root.querySelector('trove-token-form')!, 'Create token').click();
     await settle(fixture);
-    expect(textOf(root)).toContain('longer than the maximum');
+    expect(text(root)).toContain('longer than the maximum');
     expect(root.querySelector('trove-token-form')).toBeTruthy();
     expect(root.querySelector('trove-token-secret')).toBeNull();
   });

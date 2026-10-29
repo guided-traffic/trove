@@ -7,8 +7,8 @@ import { LoginApi } from '../../api/login-api';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
-import { toApiError } from '../../shared/access/paged-signal';
+import { fieldErrorAt } from '../../shared/field-errors';
+import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 
 /**
@@ -107,7 +107,7 @@ export class UserCreateDialog {
       this.notifier.status($localize`:@@user-create.created:User added.`);
       this.ref.close(created);
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

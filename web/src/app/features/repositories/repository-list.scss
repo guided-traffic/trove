@@ -1,0 +1,25 @@
+.recent ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  margin-inline-start: var(--trove-space-2);
+  padding: 0 var(--trove-space-2);
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: var(--mat-sys-corner-extra-small);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.deleting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+  margin-block-start: var(--trove-space-1);
+}

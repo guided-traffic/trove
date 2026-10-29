@@ -1,0 +1,335 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@audit.heading">Audit log</h1>
+  <button mat-button type="button" (click)="refresh()" i18n="@@audit.refresh">Refresh</button>
+</header>
+
+<form class="toolbar" role="search" (submit)="apply($event)">
+  <div class="field">
+    <label class="field-label" for="a-range" i18n="@@audit.filter.range">Time range</label>
+    <select id="a-range" class="select-input" (change)="presetDraft.set($any($event.target).value)">
+      <option value="1h" [selected]="presetDraft() === '1h'" i18n="@@audit.range.1h">
+        Last hour
+      </option>
+      <option value="24h" [selected]="presetDraft() === '24h'" i18n="@@audit.range.24h">
+        Last 24 hours
+      </option>
+      <option value="7d" [selected]="presetDraft() === '7d'" i18n="@@audit.range.7d">
+        Last 7 days
+      </option>
+      <option value="30d" [selected]="presetDraft() === '30d'" i18n="@@audit.range.30d">
+        Last 30 days
+      </option>
+      <option value="custom" [selected]="presetDraft() === 'custom'" i18n="@@audit.range.custom">
+        Custom
+      </option>
+    </select>
+  </div>
+  @if (presetDraft() === 'custom') {
+    <div class="field">
+      <label class="field-label" for="a-from" i18n="@@audit.filter.from"
+        >From (your time zone)</label
+      >
+      <input
+        id="a-from"
+        class="text-input"
+        type="datetime-local"
+        [value]="draft()['from']"
+        (input)="setDraft('from', $any($event.target).value)"
+      />
+    </div>
+    <div class="field">
+      <label class="field-label" for="a-to" i18n="@@audit.filter.to">To (your time zone)</label>
+      <input
+        id="a-to"
+        class="text-input"
+        type="datetime-local"
+        [value]="draft()['to']"
+        (input)="setDraft('to', $any($event.target).value)"
+      />
+    </div>
+  }
+  <div class="field">
+    <label class="field-label" for="a-actor" i18n="@@audit.filter.actor">Actor (name or ID)</label>
+    <input
+      id="a-actor"
+      class="text-input"
+      autocomplete="off"
+      [value]="draft()['actor']"
+      (input)="setDraft('actor', $any($event.target).value)"
+    />
+  </div>
+  <div class="field">
+    <label class="field-label" for="a-action" i18n="@@audit.filter.action">Action</label>
+    <input
+      id="a-action"
+      class="text-input"
+      autocomplete="off"
+      spellcheck="false"
+      list="a-actions"
+      [value]="draft()['action']"
+      (input)="setDraft('action', $any($event.target).value)"
+    />
+    <datalist id="a-actions">
+      @for (a of knownActions; track a) {
+        <option [value]="a"></option>
+      }
+    </datalist>
+  </div>
+  <div class="field">
+    <label class="field-label" for="a-category" i18n="@@audit.filter.category">Category</label>
+    <select
+      id="a-category"
+      class="select-input"
+      (change)="setDraft('category', $any($event.target).value)"
+    >
+      <option value="" [selected]="!draft()['category']" i18n="@@repo.filter.any">Any</option>
+      @for (c of categories; track c) {
+        <option [value]="c" [selected]="draft()['category'] === c">{{ categoryText(c) }}</option>
+      }
+    </select>
+  </div>
+  <div class="field">
+    <label class="field-label" for="a-repository" i18n="@@audit.filter.repository"
+      >Repository</label
+    >
+    <input
+      id="a-repository"
+      class="text-input"
+      autocomplete="off"
+      spellcheck="false"
+      [value]="draft()['repository']"
+      (input)="setDraft('repository', $any($event.target).value)"
+    />
+  </div>
+  <div class="field">
+    <label class="field-label" for="a-outcome" i18n="@@audit.filter.outcome">Outcome</label>
+    <select
+      id="a-outcome"
+      class="select-input"
+      (change)="setDraft('outcome', $any($event.target).value)"
+    >
+      <option value="" [selected]="!draft()['outcome']" i18n="@@repo.filter.any">Any</option>
+      @for (o of ['success', 'failure', 'denied']; track o) {
+        <option [value]="o" [selected]="draft()['outcome'] === o">{{ outcomeText(o) }}</option>
+      }
+    </select>
+  </div>
+  <button mat-flat-button type="submit" i18n="@@repo.filter.apply">Search</button>
+  @if (filtered()) {
+    <button mat-button type="button" (click)="clear()" i18n="@@repo.filter.clear">
+      Clear filters
+    </button>
+  }
+</form>
+
+<div class="options">
+  <label class="check-row" for="a-utc">
+    <input
+      id="a-utc"
+      type="checkbox"
+      [checked]="utc() === '1'"
+      (change)="toggleUtc($any($event.target).checked)"
+    />
+    <span i18n="@@audit.utc">Show times in UTC</span>
+  </label>
+  <span class="spacer"></span>
+  <a mat-stroked-button [href]="csvUrl()" download i18n="@@audit.export.csv">Export CSV</a>
+  <a mat-stroked-button [href]="jsonlUrl()" download i18n="@@audit.export.jsonl"
+    >Export JSON Lines</a
+  >
+</div>
+
+@if (list.error(); as f) {
+  <trove-error-notice [error]="f" (retry)="list.more()" />
+}
+
+<div class="layout" [class.with-detail]="event()">
+  <div class="table-pane">
+    @if (list.loaded()) {
+      @if (list.items().length === 0) {
+        <p class="empty" i18n="@@audit.empty">No event matches the filters in this time range.</p>
+      } @else {
+        <div class="scroll" tabindex="0" role="region" aria-labelledby="audit-caption">
+          <table class="data">
+            <caption id="audit-caption" class="visually-hidden" i18n="@@audit.caption">
+              Audit events, newest first
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@audit.col.time">Time</th>
+                <th scope="col" i18n="@@audit.col.actor">Actor</th>
+                <th scope="col" i18n="@@audit.col.action">Action</th>
+                <th scope="col" i18n="@@audit.col.target">Target</th>
+                <th scope="col" i18n="@@audit.col.outcome">Outcome</th>
+                <th scope="col" i18n="@@audit.col.source">Source address</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (e of list.items(); track e.id) {
+                <tr [class.current]="e.id === event()">
+                  <td>
+                    <time [attr.datetime]="e.occurredAt">{{
+                      e.occurredAt | date: 'medium' : timeZone()
+                    }}</time>
+                  </td>
+                  <td translate="no">{{ actorName(e) }}</td>
+                  <th scope="row">
+                    <button
+                      type="button"
+                      class="link"
+                      [attr.aria-current]="e.id === event() ? 'true' : null"
+                      (click)="open(e.id)"
+                    >
+                      {{ actionLabel(e.action) }}
+                    </button>
+                    <div class="hint" translate="no">{{ e.action }}</div>
+                  </th>
+                  <td translate="no">{{ targetText(e) }}</td>
+                  <td>
+                    @switch (e.outcome) {
+                      @case ('success') {
+                        <span class="material-icons inline ok" aria-hidden="true"
+                          >check_circle</span
+                        >
+                      }
+                      @case ('failure') {
+                        <span class="material-icons inline bad" aria-hidden="true">error</span>
+                      }
+                      @case ('denied') {
+                        <span class="material-icons inline warn" aria-hidden="true">block</span>
+                      }
+                    }
+                    {{ outcomeText(e.outcome) }}
+                  </td>
+                  <td translate="no">{{ e.source.ip ?? '–' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (list.hasMore()) {
+          <p>
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="list.loading()"
+              (click)="list.more()"
+              i18n="@@list.load-more"
+            >
+              Load more
+            </button>
+          </p>
+        }
+      }
+    } @else if (list.loading()) {
+      <p role="status" i18n="@@repo.loading">Loading.</p>
+    }
+  </div>
+
+  @if (event()) {
+    <section class="detail" aria-labelledby="event-heading">
+      <div class="detail-head">
+        <h2 id="event-heading" tabindex="-1" i18n="@@audit.detail.heading">Event</h2>
+        <button mat-button type="button" (click)="close()" i18n="@@audit.detail.close">
+          Close
+        </button>
+      </div>
+      @if (selectedFailure(); as f) {
+        <trove-error-notice [error]="f" (retry)="selected.reload()" />
+      } @else if (valueOf(selected); as e) {
+        <dl class="facts">
+          <dt i18n="@@audit.col.time">Time</dt>
+          <dd>
+            <time [attr.datetime]="e.occurredAt">{{
+              e.occurredAt | date: 'long' : timeZone()
+            }}</time>
+          </dd>
+          <dt i18n="@@audit.col.action">Action</dt>
+          <dd>
+            {{ actionLabel(e.action) }} (<code translate="no">{{ e.action }}</code
+            >)
+          </dd>
+          <dt i18n="@@audit.filter.category">Category</dt>
+          <dd>{{ categoryText(e.category) }}</dd>
+          <dt i18n="@@audit.col.outcome">Outcome</dt>
+          <dd>
+            {{ outcomeText(e.outcome) }}
+            @if (e.reason) {
+              (<span translate="no">{{ e.reason }}</span
+              >)
+            }
+          </dd>
+          <dt i18n="@@audit.col.actor">Actor</dt>
+          <dd>
+            @if (actorLink(e); as link) {
+              <a [routerLink]="link" translate="no">{{ actorName(e) }}</a>
+            } @else {
+              <span translate="no">{{ actorName(e) }}</span>
+            }
+            <span class="hint" translate="no"
+              >{{ e.actor.type }}{{ e.actor.authMethod ? ', ' + e.actor.authMethod : '' }}</span
+            >
+          </dd>
+          @if (e.actor.tokenId) {
+            <dt i18n="@@audit.detail.token">Token</dt>
+            <dd translate="no">{{ e.actor.tokenId }}</dd>
+          }
+          @if (e.repository) {
+            <dt i18n="@@audit.filter.repository">Repository</dt>
+            <dd>
+              <a [routerLink]="['/admin/repositories', e.repository]" translate="no">{{
+                e.repository
+              }}</a>
+              @if (e.path) {
+                <ng-container>
+                  /
+                  <a
+                    [routerLink]="['/browse', e.repository].concat(e.path.split('/'))"
+                    translate="no"
+                    >{{ e.path }}</a
+                  ></ng-container
+                >
+              }
+            </dd>
+          }
+          @if (e.resource.type) {
+            <dt i18n="@@audit.detail.resource">Resource</dt>
+            <dd translate="no">
+              {{ e.resource.type }}{{ e.resource.id ? ' ' + e.resource.id : '' }}
+            </dd>
+          }
+          <dt i18n="@@audit.col.source">Source address</dt>
+          <dd translate="no">
+            {{ e.source.ip ?? '–' }}{{ e.source.userAgent ? ' (' + e.source.userAgent + ')' : '' }}
+          </dd>
+          @if (e.endpoint) {
+            <dt i18n="@@audit.detail.endpoint">Endpoint</dt>
+            <dd>
+              <a [routerLink]="['/admin/endpoints', e.endpoint]" translate="no">{{ e.endpoint }}</a>
+            </dd>
+          }
+          @if (e.replica) {
+            <dt i18n="@@audit.detail.replica">Replica</dt>
+            <dd translate="no">{{ e.replica }}</dd>
+          }
+          <dt i18n="@@audit.detail.event-id">Event ID</dt>
+          <dd>
+            <code translate="no">{{ e.id }}</code>
+            <trove-copy-button [value]="e.id" [label]="copyId" />
+          </dd>
+          @if (e.traceId) {
+            <dt i18n="@@audit.detail.trace">Trace ID</dt>
+            <dd>
+              <code translate="no">{{ e.traceId }}</code>
+              <trove-copy-button [value]="e.traceId" [label]="copyTrace" />
+            </dd>
+          }
+        </dl>
+        <h3 i18n="@@audit.detail.details">Details</h3>
+        <pre class="code-block" translate="no" tabindex="0">{{ detailsJson() }}</pre>
+      } @else {
+        <p role="status" i18n="@@repo.loading">Loading.</p>
+      }
+    </section>
+  }
+</div>

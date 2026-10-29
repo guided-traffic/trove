@@ -64,6 +64,52 @@ export function describeProblem(error: ApiError): ProblemText {
       return known($localize`:@@problem.unavailable:The service is temporarily unavailable.`);
     case 'internal':
       return known($localize`:@@problem.internal:Something went wrong on the server.`);
+    // >>> M1 ui-a
+    case 'repository_exists':
+      return known($localize`:@@problem.repository_exists:A repository with this key exists, or is still being deleted.`);
+    case 'repository_not_found':
+      return known($localize`:@@problem.repository_not_found:This repository does not exist, or you may not see it.`);
+    case 'repository_disabled':
+      return known($localize`:@@problem.repository_disabled:This repository is disabled.`);
+    case 'repository_referenced':
+      return known($localize`:@@problem.repository_referenced:Other repositories still include this one.`);
+    case 'invalid_key':
+      return known($localize`:@@problem.invalid_key:The key must have 2 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or digit, without two dots in a row and not ending in a dot.`);
+    case 'reserved_name':
+      return known($localize`:@@problem.reserved_name:This name is reserved.`);
+    case 'invalid_pattern':
+      return known($localize`:@@problem.invalid_pattern:This pattern is not valid.`);
+    case 'invalid_document':
+      return known($localize`:@@problem.invalid_document:The document contains a member that is unknown or misspelt.`);
+    case 'immutable_field':
+      return known($localize`:@@problem.immutable_field:This field cannot be changed after creation.`);
+    case 'not_applicable':
+      return known($localize`:@@problem.not_applicable:This setting does not apply to this class or format.`);
+    case 'unsupported_class':
+      return known($localize`:@@problem.unsupported_class:This format does not support the chosen class.`);
+    case 'invalid_path':
+      return known($localize`:@@problem.invalid_path:The path is not valid: no empty, dot or double-dot segments, no backslash or control characters.`);
+    case 'path_conflict':
+      return known($localize`:@@problem.path_conflict:A file and a folder cannot share a path.`);
+    case 'not_admitted':
+      return known($localize`:@@problem.not_admitted:The include and exclude patterns of this repository do not admit this path.`);
+    case 'content_unavailable':
+      return known($localize`:@@problem.content_unavailable:The content is temporarily unavailable. Try again later.`);
+    case 'endpoint_not_configured':
+      return known($localize`:@@problem.endpoint_not_configured:This endpoint is no longer configured, so its rules cannot be created or replaced.`);
+    case 'exposure_rule_limit_reached':
+      return known($localize`:@@problem.exposure_rule_limit_reached:This endpoint has reached the maximum number of exposure rules.`);
+    case 'format_not_exposable':
+      return known($localize`:@@problem.format_not_exposable:Repositories of this format cannot be exposed through rules yet.`);
+    case 'invalid_version_range':
+      return known($localize`:@@problem.invalid_version_range:The version range is not valid in the syntax of this format.`);
+    case 'dimension_not_supported':
+      return known($localize`:@@problem.dimension_not_supported:This format has no such filter.`);
+    case 'invalid_audit_range':
+      return known($localize`:@@problem.invalid_audit_range:The export needs a start and an end, at most 400 days apart.`);
+    case 'key_ring_incompatible':
+      return known($localize`:@@problem.key_ring_incompatible:The replicas do not hold the same key IDs, so the secrets cannot be re-encrypted yet.`);
+    // <<< M1 ui-a
     default:
       // >>> M1 ui-b
       return accessProblem(error) ?? fallback(error);

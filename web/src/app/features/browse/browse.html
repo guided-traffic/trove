@@ -1,0 +1,378 @@
+<header class="page-header">
+  <h1 tabindex="-1">{{ title }}</h1>
+</header>
+
+<div class="browse" [class.has-selection]="selected() !== null">
+  <section class="pane-tree" aria-labelledby="tree-heading">
+    <h2 id="tree-heading" class="visually-hidden" i18n="@@browse.tree.heading">
+      Repositories and files
+    </h2>
+
+    <form class="toolbar" role="search" (submit)="submitSearch($event)">
+      <div class="field">
+        <label class="field-label" for="tree-q" i18n="@@browse.filter.key">Repository key</label>
+        <input
+          id="tree-q"
+          class="text-input"
+          type="search"
+          [value]="search()"
+          (input)="search.set($any($event.target).value)"
+        />
+      </div>
+      <div class="field">
+        <label class="field-label" for="tree-class" i18n="@@repo.col.class">Class</label>
+        <select
+          id="tree-class"
+          class="select-input"
+          (change)="applyFilter({ class: $any($event.target).value || null })"
+        >
+          <option value="" [selected]="!class()" i18n="@@repo.filter.any">Any</option>
+          @for (c of ['virtual', 'local', 'remote']; track c) {
+            <option [value]="c" [selected]="class() === c">{{ classLabel(c) }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="tree-format" i18n="@@repo.col.format">Format</label>
+        <select
+          id="tree-format"
+          class="select-input"
+          (change)="applyFilter({ format: $any($event.target).value || null })"
+        >
+          <option value="" [selected]="!format()" i18n="@@repo.filter.any">Any</option>
+          @for (f of valueOf(formats) ?? []; track f.name) {
+            <option [value]="f.name" [selected]="format() === f.name" translate="no">
+              {{ f.name }}
+            </option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="tree-sort" i18n="@@browse.sort">Sort by</label>
+        <select
+          id="tree-sort"
+          class="select-input"
+          (change)="applyFilter({ sort: $any($event.target).value || null })"
+        >
+          <option value="" [selected]="sort() !== 'class'" i18n="@@browse.sort.key">Key</option>
+          <option value="class" [selected]="sort() === 'class'" i18n="@@browse.sort.class">
+            Class, then key
+          </option>
+        </select>
+      </div>
+      <button mat-stroked-button type="submit" i18n="@@repo.filter.apply">Search</button>
+    </form>
+
+    @if (list.error(); as f) {
+      <trove-error-notice [error]="f" (retry)="list.more()" />
+    }
+
+    <ng-template #nodeList let-nodes="nodes" let-parent="parent">
+      @for (node of nodes; track node.id) {
+        <li
+          ngTreeItem
+          #item="ngTreeItem"
+          [parent]="parent"
+          [value]="node.id"
+          [label]="node.label"
+          [expanded]="node.expanded()"
+          (expandedChange)="onExpand(node, $event)"
+        >
+          <span class="node-label">
+            <span class="material-icons inline" aria-hidden="true">{{
+              node.kind === 'repository'
+                ? 'inventory_2'
+                : node.kind === 'folder'
+                  ? 'folder'
+                  : 'description'
+            }}</span>
+            <span translate="no">{{ node.label }}</span>
+            @if (node.kind === 'repository') {
+              <span class="meta"
+                >{{ classLabel(node.meta.cls) }},
+                <span translate="no">{{ node.meta.format }}</span></span
+              >
+              @if (node.meta.disabled) {
+                <span class="meta" i18n="@@repo.badge.disabled">disabled</span>
+              }
+            }
+          </span>
+          @if (node.expandable) {
+            <ul role="group">
+              <ng-template ngTreeItemGroup [ownedBy]="item" #group="ngTreeItemGroup">
+                <ng-container
+                  *ngTemplateOutlet="nodeList; context: { nodes: node.children(), parent: group }"
+                />
+                @if (node.hasMore()) {
+                  <li
+                    ngTreeItem
+                    [parent]="group"
+                    [value]="moreId(node)"
+                    [label]="moreLabel"
+                    [selectable]="true"
+                  >
+                    <span class="node-label more" i18n="@@browse.load-more">Load more</span>
+                  </li>
+                }
+                @if (node.loading()) {
+                  <li class="status-row" role="presentation">
+                    <span role="status" i18n="@@repo.loading">Loading.</span>
+                  </li>
+                }
+                @if (node.error(); as e) {
+                  <li class="status-row" role="presentation">
+                    <trove-error-notice [error]="e" (retry)="loadChildren(node, node.loaded())" />
+                  </li>
+                }
+              </ng-template>
+            </ul>
+          }
+        </li>
+      }
+    </ng-template>
+
+    @if (list.loaded() && roots().length === 0) {
+      <p class="empty" i18n="@@browse.empty">
+        No repository matches. Repositories you may not read are not listed.
+      </p>
+    }
+    <ul
+      ngTree
+      #tree="ngTree"
+      class="tree"
+      aria-label="Repositories and files"
+      i18n-aria-label="@@browse.tree.label"
+      selectionMode="explicit"
+      [value]="treeValue()"
+      (valueChange)="onTreeValue($event)"
+    >
+      <ng-container *ngTemplateOutlet="nodeList; context: { nodes: roots(), parent: tree }" />
+    </ul>
+    @if (list.loading() && !list.loaded()) {
+      <p role="status" i18n="@@repo.loading">Loading.</p>
+    }
+    @if (list.hasMore()) {
+      <p>
+        <button
+          mat-stroked-button
+          type="button"
+          [disabled]="list.loading()"
+          (click)="list.more()"
+          i18n="@@browse.more-repositories"
+        >
+          Load more repositories
+        </button>
+      </p>
+    }
+  </section>
+
+  <section class="pane-details" aria-labelledby="detail-heading">
+    <h2 id="detail-heading" i18n="@@browse.details.heading">Details</h2>
+    @if (selected(); as sel) {
+      <p class="back">
+        <button mat-button type="button" (click)="goRoot()">
+          <span class="material-icons" aria-hidden="true">arrow_back</span>
+          <ng-container i18n="@@browse.back">Back to the tree</ng-container>
+        </button>
+      </p>
+      <p class="location" translate="no">
+        <strong>{{ sel.repo }}</strong
+        >{{ sel.path ? '/' + sel.path : '' }}
+      </p>
+
+      @if (actionFailure(); as f) {
+        <trove-error-notice [error]="f" />
+      }
+      @if (detailFailure(); as f) {
+        <trove-error-notice [error]="f" (retry)="detail.reload()" />
+      } @else if (detail.isLoading() && !valueOf(detail)) {
+        <p role="status" i18n="@@repo.loading">Loading.</p>
+      } @else {
+        <div
+          id="browse-actions"
+          class="row-actions"
+          role="toolbar"
+          aria-label="Actions"
+          i18n-aria-label="@@browse.actions"
+        >
+          @if (item(); as it) {
+            @if (it.kind === 'file' && it.downloadUrl) {
+              <a mat-flat-button [href]="it.downloadUrl" download i18n="@@browse.download"
+                >Download</a
+              >
+              <trove-copy-button [value]="it.downloadUrl" [label]="copyUrl" />
+            }
+            <trove-copy-button [value]="it.path" [label]="copyPath" />
+          }
+          @if (folderPath() !== null && can().deploy) {
+            <button mat-stroked-button type="button" (click)="upload()" i18n="@@browse.upload">
+              Upload files
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="newFolder()"
+              i18n="@@browse.new-folder"
+            >
+              New folder
+            </button>
+          }
+          @if (item() && can().delete && sel.path !== '') {
+            <button mat-button type="button" (click)="remove()" i18n="@@browse.delete">
+              Delete
+            </button>
+          }
+        </div>
+
+        @if (deletion(); as d) {
+          <div class="deleting">
+            <span i18n="@@repo.deleting">Deleting</span>
+            <trove-job-progress
+              [jobId]="d.job.id"
+              [label]="deleteProgress"
+              (finished)="jobEnded($event.state)"
+            />
+          </div>
+        }
+
+        @if (repository(); as r) {
+          <dl class="facts">
+            <dt i18n="@@repo.col.class">Class</dt>
+            <dd>{{ classLabel(r.class) }}</dd>
+            <dt i18n="@@repo.col.format">Format</dt>
+            <dd translate="no">{{ r.format }}</dd>
+            <dt i18n="@@repo.field.description">Description</dt>
+            <dd>{{ r.description || '–' }}</dd>
+          </dl>
+          <p>
+            <a [routerLink]="['/admin/repositories', sel.repo]" i18n="@@browse.repo-config"
+              >Repository configuration</a
+            >
+          </p>
+        } @else if (item(); as it) {
+          <mat-tab-group
+            animationDuration="0ms"
+            [selectedIndex]="tabIndex()"
+            (selectedIndexChange)="setTab($event)"
+          >
+            <mat-tab [label]="tabGeneral">
+              <div class="tab">
+                <dl class="facts">
+                  <dt i18n="@@browse.fact.path">Path</dt>
+                  <dd translate="no">{{ it.path }}</dd>
+                  <dt i18n="@@browse.fact.kind">Kind</dt>
+                  <dd>
+                    @if (it.kind === 'file') {
+                      <ng-container i18n="@@browse.kind.file">File</ng-container>
+                    } @else {
+                      <ng-container i18n="@@browse.kind.folder">Folder</ng-container>
+                    }
+                  </dd>
+                  @if (it.kind === 'file') {
+                    <dt i18n="@@browse.fact.size">Size</dt>
+                    <dd translate="no">{{ it.size }} B</dd>
+                    <dt i18n="@@browse.fact.media">Media type</dt>
+                    <dd translate="no">{{ it.mediaType }}</dd>
+                  }
+                  <dt i18n="@@browse.fact.created">Created</dt>
+                  <dd>
+                    <time [attr.datetime]="it.created.at">{{
+                      it.created.at | date: 'medium'
+                    }}</time>
+                    @if (it.created.by) {
+                      <ng-container>
+                        <span i18n="@@browse.by">by</span>
+                        <span translate="no">{{ it.created.by }}</span></ng-container
+                      >
+                    }
+                  </dd>
+                  <dt i18n="@@browse.fact.modified">Last changed</dt>
+                  <dd>
+                    <time [attr.datetime]="it.modified.at">{{
+                      it.modified.at | date: 'medium'
+                    }}</time>
+                    @if (it.modified.by) {
+                      <ng-container>
+                        <span i18n="@@browse.by">by</span>
+                        <span translate="no">{{ it.modified.by }}</span></ng-container
+                      >
+                    }
+                  </dd>
+                  @if (it.kind === 'file' && it.contentStatus && it.contentStatus !== 'ok') {
+                    <dt i18n="@@browse.fact.content">Content</dt>
+                    <dd>
+                      <span class="material-icons inline bad" aria-hidden="true">error</span>
+                      @if (it.contentStatus === 'missing') {
+                        <ng-container i18n="@@browse.content.missing"
+                          >The stored content is missing.</ng-container
+                        >
+                      } @else {
+                        <ng-container i18n="@@browse.content.corrupt"
+                          >The stored content failed its checksum.</ng-container
+                        >
+                      }
+                    </dd>
+                  }
+                  @if (it.kind === 'file') {
+                    @for (d of digestNames; track d[0]) {
+                      @if (it.digests?.[d[0]]; as value) {
+                        <dt translate="no">{{ d[1] }}</dt>
+                        <dd>
+                          <code translate="no">{{ value }}</code>
+                          <trove-copy-button [value]="value" [label]="copyDigest" />
+                        </dd>
+                      }
+                    }
+                  }
+                </dl>
+              </div>
+            </mat-tab>
+            @if (it.kind === 'file') {
+              <mat-tab [label]="tabStats">
+                <div class="tab">
+                  @if (statsFailure(); as f) {
+                    <trove-error-notice [error]="f" (retry)="stats.reload()" />
+                  } @else if (valueOf(stats); as s) {
+                    <dl class="facts">
+                      <dt i18n="@@browse.stats.downloads">Downloads</dt>
+                      <dd translate="no">{{ s.downloads }}</dd>
+                      <dt i18n="@@browse.stats.last">Last download</dt>
+                      <dd>
+                        @if (s.lastDownloadAt; as at) {
+                          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+                        } @else {
+                          –
+                        }
+                      </dd>
+                      <dt i18n="@@browse.stats.by">Last downloader</dt>
+                      <dd translate="no">{{ s.lastDownloader ?? '–' }}</dd>
+                    </dl>
+                    <p class="hint" i18n="@@browse.stats.hint">
+                      Counts reach the database within a minute of a download.
+                    </p>
+                  } @else {
+                    <p role="status" i18n="@@repo.loading">Loading.</p>
+                  }
+                </div>
+              </mat-tab>
+            }
+            <mat-tab [label]="tabApi">
+              <div class="tab">
+                <h3 i18n="@@browse.api.json">The item as the API describes it</h3>
+                <pre class="code-block" translate="no" tabindex="0">{{ itemJson() }}</pre>
+                <h3 i18n="@@browse.api.curl">The same request with curl</h3>
+                <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
+                @if (downloadCurl()) {
+                  <h3 i18n="@@browse.api.download">Download with curl</h3>
+                  <pre class="code-block" translate="no" tabindex="0">{{ downloadCurl() }}</pre>
+                }
+              </div>
+            </mat-tab>
+          </mat-tab-group>
+        }
+      }
+    } @else {
+      <p class="empty" i18n="@@browse.none">Select a repository, folder or file in the tree.</p>
+    }
+  </section>
+</div>

@@ -4,8 +4,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { ApiError } from '../../api/problem';
 import { SessionsApi, UserSession } from '../../api/sessions-api';
 import { Notifier } from '../../core/notifier';
-import { Confirmer } from '../../shared/access/confirm-dialog';
-import { toApiError } from '../../shared/access/paged-signal';
+import { Confirm } from '../../shared/confirm-dialog';
+import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ProfileNav } from './profile-nav';
 
@@ -79,7 +79,7 @@ import { ProfileNav } from './profile-nav';
 })
 export class ProfileSessions {
   private readonly api = inject(SessionsApi);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
 
   protected readonly sessions = signal<readonly UserSession[]>([]);
@@ -100,7 +100,7 @@ export class ProfileSessions {
       this.sessions.set(await this.api.own());
       this.loaded.set(true);
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     }
   }
 
@@ -114,10 +114,10 @@ export class ProfileSessions {
   protected async endOthers(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@profile.sessions.end-others-title:End all other sessions?`,
-      text: $localize`:@@profile.sessions.end-others-text:Every other browser is signed out at once. This session stays.`,
-      confirm: $localize`:@@profile.sessions.end-others-confirm:End other sessions`,
+      lines: [$localize`:@@profile.sessions.end-others-text:Every other browser is signed out at once. This session stays.`],
+      confirmLabel: $localize`:@@profile.sessions.end-others-confirm:End other sessions`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     await this.act(
       () => this.api.endOwnAll(true),
       $localize`:@@profile.sessions.ended-others:Other sessions ended.`,
@@ -131,7 +131,7 @@ export class ProfileSessions {
       this.notifier.status(done);
       await this.load();
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     }
   }
 }

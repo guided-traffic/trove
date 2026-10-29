@@ -1,6 +1,6 @@
 import { IdentityApi } from '../../api/identity-api';
 import { FakeIdentityApi } from '../../api/testing/access-fakes';
-import { buttonByText, renderScreen, settle, textOf, typeInto } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, text, typeInto } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { GroupDetail } from './group-detail';
 import { GroupList } from './group-list';
@@ -12,9 +12,9 @@ describe('Groups (R-UI-025)', () => {
     const { root } = await renderScreen(GroupList);
     const rows = [...root.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(3);
-    expect(textOf(rows[1]!)).toContain('team-web');
-    expect(textOf(rows[1]!)).toContain('Identity provider');
-    expect(textOf(rows[1]!)).toContain('2');
+    expect(text(rows[1]!)).toContain('team-web');
+    expect(text(rows[1]!)).toContain('Identity provider');
+    expect(text(rows[1]!)).toContain('2');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -38,24 +38,24 @@ describe('Groups (R-UI-025)', () => {
     buttonByText(root, 'Add').click();
     await settle(fixture);
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('changeGroupMembers platform +bob -');
-    const row = [...root.querySelectorAll('tbody tr')].find((r) => textOf(r).startsWith('bob'));
+    const row = [...root.querySelectorAll('tbody tr')].find((r) => text(r).startsWith('bob'));
     expect(row).toBeTruthy();
-    expect(textOf(row!)).toContain('Manual');
+    expect(text(row!)).toContain('Manual');
   });
 
   it('R-UI-025 only manual members can be removed', async () => {
     const { root } = await renderScreen(GroupDetail, { inputs: { name: 'team-web' } });
     const rows = [...root.querySelectorAll('section[aria-labelledby="group-members"] tbody tr')];
     expect(rows).toHaveLength(2);
-    const provider = rows.find((r) => textOf(r).startsWith('alice'))!;
-    const mixed = rows.find((r) => textOf(r).startsWith('sa:ci-bot'))!;
+    const provider = rows.find((r) => text(r).startsWith('alice'))!;
+    const mixed = rows.find((r) => text(r).startsWith('sa:ci-bot'))!;
     expect(provider.querySelector('button')).toBeNull();
     expect(mixed.querySelector('button')).toBeTruthy();
   });
 
   it('R-UI-025 a SCIM group is read-only and says why', async () => {
     const { root } = await renderScreen(GroupDetail, { inputs: { name: 'scim-sales' } });
-    expect(textOf(root)).toContain('managed by SCIM');
+    expect(text(root)).toContain('managed by SCIM');
     expect(root.textContent).not.toContain('Save group');
     expect(root.textContent).not.toContain('Add a member');
     expect(await seriousViolations(root)).toEqual([]);
@@ -63,9 +63,9 @@ describe('Groups (R-UI-025)', () => {
 
   it('R-UI-025 shows the bound roles and the policies that name the group, both read only', async () => {
     const { root } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
-    expect(textOf(root)).toContain('repository-admin');
+    expect(text(root)).toContain('repository-admin');
     expect(root.querySelector('a[href="/admin/roles"]')).toBeTruthy();
-    expect(textOf(root)).toContain('Permission policies naming this group');
+    expect(text(root)).toContain('Permission policies naming this group');
   });
 
   it('R-UI-025 saves only the members that changed and passes axe', async () => {

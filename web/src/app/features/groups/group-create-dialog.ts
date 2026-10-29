@@ -7,8 +7,8 @@ import { Group, IdentityApi } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
-import { toApiError } from '../../shared/access/paged-signal';
+import { fieldErrorAt } from '../../shared/field-errors';
+import { asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 
 /** "New group" (R-UI-025). The idempotency key lives as long as the dialog (R-UI-042). */
@@ -73,7 +73,7 @@ export class GroupCreateDialog {
       this.notifier.status($localize`:@@group-create.created:Group created.`);
       this.ref.close(created);
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

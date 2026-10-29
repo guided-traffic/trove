@@ -8,10 +8,10 @@ import { ApiError } from '../../api/problem';
 import { CreateTokenRequest, Token, TokenCreated, TokensApi } from '../../api/tokens-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
-import { DraftStore } from '../../shared/access/drafts';
+import { Confirm } from '../../shared/confirm-dialog';
+import { DraftStore } from '../../shared/drafts';
 import { SelectField } from '../../shared/access/fields';
-import { PagedSignal, toApiError } from '../../shared/access/paged-signal';
+import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { TokenDraft, TokenForm } from '../../shared/access/token-form';
 import { TokenSecret } from '../../shared/access/token-secret';
 import { TokenTable } from '../../shared/access/token-table';
@@ -143,12 +143,12 @@ export class TokenManager {
 
   private readonly api = inject(TokensApi);
   private readonly session = inject(SessionStore);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly drafts = inject(DraftStore);
   private readonly dialog = inject(MatDialog);
 
-  protected readonly list = new PagedSignal<Token>();
+  protected readonly list = new PagedResource<Token>();
   protected readonly showAll = signal(false);
   protected readonly formOpen = signal(false);
   protected readonly busy = signal(false);
@@ -227,7 +227,7 @@ export class TokenManager {
       this.closeForm();
       await this.reload();
     } catch (e) {
-      const error = toApiError(e);
+      const error = asApiError(e);
       this.formError.set(error);
       if (error.code === 'reauthentication_required' && this.lastDraft) this.drafts.keep(this.lastDraft);
     } finally {
@@ -257,10 +257,10 @@ export class TokenManager {
   protected async revoke(token: Token): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@tokens.revoke-title:Revoke this token?`,
-      text: $localize`:@@tokens.revoke-text:“${token.description}:description:” stops working at once on every replica. This cannot be undone.`,
-      confirm: $localize`:@@tokens.revoke-confirm:Revoke`,
+      lines: [$localize`:@@tokens.revoke-text:“${token.description}:description:” stops working at once on every replica. This cannot be undone.`],
+      confirmLabel: $localize`:@@tokens.revoke-confirm:Revoke`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     await this.act(async () => {
       await this.api.revoke(token.id);
       this.notifier.status($localize`:@@tokens.revoked:Token revoked.`);
@@ -270,10 +270,10 @@ export class TokenManager {
   protected async revokeAllTokens(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@tokens.revoke-all-title:Revoke all tokens?`,
-      text: $localize`:@@tokens.revoke-all-text:Every token of this owner stops working at once. This cannot be undone.`,
-      confirm: $localize`:@@tokens.revoke-all-confirm:Revoke all`,
+      lines: [$localize`:@@tokens.revoke-all-text:Every token of this owner stops working at once. This cannot be undone.`],
+      confirmLabel: $localize`:@@tokens.revoke-all-confirm:Revoke all`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     const s = this.scope();
     await this.act(async () => {
       if (s.kind === 'own') await this.api.revokeAllOwn();
@@ -299,7 +299,7 @@ export class TokenManager {
       await run();
       await this.reload();
     } catch (e) {
-      this.actionError.set(toApiError(e));
+      this.actionError.set(asApiError(e));
     }
   }
 }

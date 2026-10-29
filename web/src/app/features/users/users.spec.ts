@@ -3,7 +3,7 @@ import { FakeIdentityApi, problem } from '../../api/testing/access-fakes';
 import { SessionsApi } from '../../api/sessions-api';
 import { FakeSessionsApi } from '../../api/testing/access-fakes';
 import { seriousViolations } from '../../testing/axe';
-import { buttonByText, renderScreen, settle, textOf, typeInto } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
 import { UserDetail } from './user-detail';
 import { UserList } from './user-list';
 
@@ -14,9 +14,9 @@ describe('Users list (R-UI-024)', () => {
     const { root } = await renderScreen(UserList);
     const rows = [...root.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(2);
-    expect(textOf(rows[0]!)).toContain('alice');
-    expect(textOf(rows[0]!)).toContain('Identity provider');
-    expect(textOf(rows[1]!)).toContain('Disabled');
+    expect(text(rows[0]!)).toContain('alice');
+    expect(text(rows[0]!)).toContain('Identity provider');
+    expect(text(rows[1]!)).toContain('Disabled');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -25,7 +25,7 @@ describe('Users list (R-UI-024)', () => {
     const add = buttonByText(root, 'Add user') as HTMLButtonElement;
     expect(add.disabled).toBe(true);
     expect(add.getAttribute('aria-describedby')).toBe('needs-users');
-    expect(textOf(root.querySelector('#needs-users')!)).toContain('needs the permission identities:write');
+    expect(text(root.querySelector('#needs-users')!)).toContain('needs the permission identities:write');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -47,7 +47,7 @@ describe('Users list (R-UI-024)', () => {
     await settle(fixture);
     const rows = root.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(1);
-    expect(textOf(rows[0]!)).toContain('bob');
+    expect(text(rows[0]!)).toContain('bob');
   });
 
   it('R-UI-024 "Add user" pre-provisions a user with an idempotency key and has no password field', async () => {
@@ -76,7 +76,7 @@ describe('Users list (R-UI-024)', () => {
     typeInto(dialog, 'User name', 'Bad Name');
     buttonByText(dialog, 'Add user').click();
     await settle(fixture);
-    expect(textOf(dialog.querySelector('.field-error')!)).toContain('lower-case letters');
+    expect(text(dialog.querySelector('.field-error')!)).toContain('lower-case letters');
     expect(await seriousViolations(overlay())).toEqual([]);
   });
 });
@@ -84,7 +84,7 @@ describe('Users list (R-UI-024)', () => {
 describe('User detail (R-UI-024)', () => {
   it('R-UI-024 shows attributes, identities, groups, roles, tokens and sessions, and passes axe', async () => {
     const { root } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
-    const t = textOf(root);
+    const t = text(root);
     expect(t).toContain('Alice Example');
     expect(t).toContain('corp');
     expect(t).toContain('team-web');
@@ -104,10 +104,10 @@ describe('User detail (R-UI-024)', () => {
   it('R-UI-024 identity-provider memberships are read only; a manual one can be removed', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
     const rows = [...root.querySelectorAll('section[aria-labelledby="user-groups"] tbody tr')];
-    const web = rows.find((r) => textOf(r).includes('team-web'))!;
-    const platform = rows.find((r) => textOf(r).includes('platform'))!;
+    const web = rows.find((r) => text(r).includes('team-web'))!;
+    const platform = rows.find((r) => text(r).includes('platform'))!;
     expect(web.querySelector('button')).toBeNull();
-    expect(textOf(web)).toContain('Identity provider');
+    expect(text(web)).toContain('Identity provider');
     platform.querySelector('button')!.click();
     await settle(fixture);
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('changeUserGroups alice + -platform');
@@ -126,7 +126,7 @@ describe('User detail (R-UI-024)', () => {
     const confirm = overlay().querySelector('trove-confirm-dialog') as HTMLElement;
     expect(confirm.textContent).toContain('Also revoke all tokens');
     buttonByText(confirm, 'Disable').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     const calls = (get(IdentityApi) as FakeIdentityApi).calls;
     expect(calls).toContain('enableUser bob');
     expect(calls).toContain('disableUser bob revokeTokens=true');
@@ -137,7 +137,7 @@ describe('User detail (R-UI-024)', () => {
     buttonByText(root, 'End all sessions').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'End sessions').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(SessionsApi) as FakeSessionsApi).calls).toContain('endAllOfUser alice');
   });
 

@@ -5,7 +5,7 @@ import { PermissionPolicy, PolicyApi, PolicyFilters } from '../../api/authz-api'
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
-import { PagedSignal } from '../../shared/access/paged-signal';
+import { PagedResource } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { expandActions } from './policy-model';
 
@@ -50,7 +50,7 @@ export class PolicyList {
   private readonly api = inject(PolicyApi);
   protected readonly session = inject(SessionStore);
 
-  protected readonly list = new PagedSignal<PermissionPolicy>();
+  protected readonly list = new PagedResource<PermissionPolicy>();
   protected readonly principalFilter = signal('');
   protected readonly repositoryFilter = signal('');
   protected readonly principalSummary = principalSummary;

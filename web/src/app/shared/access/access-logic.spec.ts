@@ -5,15 +5,15 @@ import { ApiError } from '../../api/problem';
 import { arrayPages } from '../../api/testing/access-fakes';
 import { cleanQuery } from '../../api/query';
 import { formatDuration, fromDays, toDays } from './duration';
-import { DraftStore } from './drafts';
-import { PagedSignal } from './paged-signal';
-import { browserStorage } from './testing';
+import { DraftStore } from '../drafts';
+import { PagedResource } from '../paged-resource';
+import { browserStorage } from '../../testing/screen';
 import { expiresSoon, scopeSummary } from './token-table';
 
-describe('PagedSignal', () => {
+describe('PagedResource', () => {
   it('R-API-010 accumulates pages and stops at the last cursor', async () => {
     const all = Array.from({ length: 5 }, (_, i) => i);
-    const list = new PagedSignal<number>(2);
+    const list = new PagedResource<number>(2);
     await list.start(arrayPages(() => all));
     expect(list.items()).toEqual([0, 1]);
     expect(list.hasMore()).toBe(true);
@@ -24,7 +24,7 @@ describe('PagedSignal', () => {
   });
 
   it('R-API-010 a new traversal replaces the old one and drops its late answer', async () => {
-    const list = new PagedSignal<string>(10);
+    const list = new PagedResource<string>(10);
     const held: { release?: () => void } = {};
     const slow = (): Promise<{ items: string[]; nextCursor: null }> =>
       new Promise((resolve) => {
@@ -38,7 +38,7 @@ describe('PagedSignal', () => {
   });
 
   it('R-UI-042 a failing page leaves the items and exposes the error', async () => {
-    const list = new PagedSignal<number>(10);
+    const list = new PagedResource<number>(10);
     await list.start(async () => {
       throw new ApiError(503, { code: 'unavailable' }, 'r1');
     });

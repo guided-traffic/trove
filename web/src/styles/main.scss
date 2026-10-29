@@ -2,6 +2,9 @@
 @use '@angular/material' as mat;
 @use 'tokens';
 @use 'icons';
+// >>> M1 ui-a
+@use 'catalog-screens';
+// <<< M1 ui-a
 
 // Material is themed through its design tokens and mapped to trove's custom properties in
 // tokens. Compact density (-2) everywhere (Q-UI-2). `color-scheme: light dark` makes the

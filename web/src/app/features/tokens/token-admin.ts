@@ -5,10 +5,10 @@ import { ApiError } from '../../api/problem';
 import { Token, TokenFilters, TokensApi } from '../../api/tokens-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
+import { Confirm } from '../../shared/confirm-dialog';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
-import { PagedSignal, toApiError } from '../../shared/access/paged-signal';
+import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { TokenTable } from '../../shared/access/token-table';
 import { ErrorNotice } from '../../shared/error-notice';
 
@@ -27,11 +27,11 @@ import { ErrorNotice } from '../../shared/error-notice';
 })
 export class TokenAdmin {
   private readonly api = inject(TokensApi);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   protected readonly session = inject(SessionStore);
 
-  protected readonly list = new PagedSignal<Token>();
+  protected readonly list = new PagedResource<Token>();
   protected readonly owner = signal('');
   protected readonly type = signal('');
   protected readonly state = signal('active');
@@ -85,10 +85,10 @@ export class TokenAdmin {
   protected async revokeOne(token: Token): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@tokens-admin.revoke-title:Revoke this token?`,
-      text: $localize`:@@tokens-admin.revoke-text:“${token.description}:description:” of ${token.owner.name}:owner: stops working at once on every replica.`,
-      confirm: $localize`:@@tokens-admin.revoke-confirm:Revoke`,
+      lines: [$localize`:@@tokens-admin.revoke-text:“${token.description}:description:” of ${token.owner.name}:owner: stops working at once on every replica.`],
+      confirmLabel: $localize`:@@tokens-admin.revoke-confirm:Revoke`,
     });
-    if (answer.confirmed) await this.revoke([token.id]);
+    if (answer !== null) await this.revoke([token.id]);
   }
 
   protected async revokeSelected(): Promise<void> {
@@ -96,10 +96,10 @@ export class TokenAdmin {
     if (ids.length === 0) return;
     const answer = await this.confirmer.ask({
       title: $localize`:@@tokens-admin.revoke-selected-title:Revoke the selected tokens?`,
-      text: $localize`:@@tokens-admin.revoke-selected-text:The selected tokens (${ids.length}:count:) stop working at once on every replica. This cannot be undone.`,
-      confirm: $localize`:@@tokens-admin.revoke-confirm:Revoke`,
+      lines: [$localize`:@@tokens-admin.revoke-selected-text:The selected tokens (${ids.length}:count:) stop working at once on every replica. This cannot be undone.`],
+      confirmLabel: $localize`:@@tokens-admin.revoke-confirm:Revoke`,
     });
-    if (answer.confirmed) await this.revoke(ids);
+    if (answer !== null) await this.revoke(ids);
   }
 
   private async revoke(ids: readonly string[]): Promise<void> {
@@ -110,7 +110,7 @@ export class TokenAdmin {
         await this.api.revoke(id);
       } catch (e) {
         failed.push(id);
-        this.actionError.set(toApiError(e));
+        this.actionError.set(asApiError(e));
       }
     }
     if (failed.length < ids.length) this.notifier.status($localize`:@@tokens-admin.revoked:Tokens revoked.`);
@@ -128,7 +128,7 @@ export class TokenAdmin {
       this.notifier.status($localize`:@@tokens-admin.value-revoked:The token of ${revoked.owner}:owner: was revoked.`);
       await this.apply();
     } catch (e) {
-      this.valueError.set(toApiError(e));
+      this.valueError.set(asApiError(e));
     } finally {
       // The value was sent once; it is gone from the form whatever the answer was (R-UI-043).
       this.pasted.set('');

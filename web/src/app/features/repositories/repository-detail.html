@@ -1,0 +1,175 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository</h1>
+  <a mat-button routerLink="/admin/repositories" i18n="@@repo.detail.back">All repositories</a>
+  <a mat-button [routerLink]="['/browse', key()]" i18n="@@repo.action.browse">Browse</a>
+</header>
+
+@if (loadFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="loaded.reload()" />
+} @else if (loaded.isLoading() && !stored() && !consumer()) {
+  <p role="status" i18n="@@repo.loading">Loading.</p>
+} @else {
+  <p class="subject" translate="no">
+    <strong>{{ key() }}</strong>
+  </p>
+
+  @if (consumer(); as c) {
+    <p class="banner-warning" role="note">
+      <span class="material-icons inline" aria-hidden="true">info</span>
+      <span i18n="@@repo.detail.consumer">
+        You may use this repository but not read or change its configuration.
+      </span>
+    </p>
+    <dl class="facts">
+      <dt i18n="@@repo.col.class">Class</dt>
+      <dd>{{ classText(c.class) }}</dd>
+      <dt i18n="@@repo.col.format">Format</dt>
+      <dd translate="no">{{ c.format }}</dd>
+      <dt i18n="@@repo.field.description">Description</dt>
+      <dd>{{ c.description || '–' }}</dd>
+      <dt i18n="@@repo.col.address">Client address</dt>
+      <dd>
+        @for (a of c.addresses; track a) {
+          <code translate="no">{{ a }}</code>
+        }
+      </dd>
+    </dl>
+  } @else if (stored(); as repo) {
+    <trove-error-summary [items]="summary()" />
+    @if (failure(); as f) {
+      @if (f.fieldErrors.size === 0) {
+        <trove-error-notice [error]="f" />
+      }
+    }
+    @for (w of warnings(); track w) {
+      <p class="banner-warning" role="status">
+        <span class="material-icons inline warn" aria-hidden="true">warning</span>
+        <span>{{ w }}</span>
+      </p>
+    }
+
+    <dl class="facts">
+      <dt i18n="@@repo.col.class">Class</dt>
+      <dd>{{ classText(repo.class) }}</dd>
+      <dt i18n="@@repo.col.format">Format</dt>
+      <dd translate="no">{{ repo.format }}</dd>
+      <dt i18n="@@repo.detail.layout">Layout</dt>
+      <dd translate="no">{{ repo.layout }}</dd>
+      @if (address()) {
+        <dt i18n="@@repo.col.address">Client address</dt>
+        <dd>
+          <code translate="no">{{ address() }}</code>
+          <trove-copy-button [value]="address()" [label]="copyAddress" />
+        </dd>
+      }
+      @if (repo.createdAt; as at) {
+        <dt i18n="@@repo.detail.created">Created</dt>
+        <dd>
+          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+        </dd>
+      }
+      @if (repo.updatedAt; as at) {
+        <dt i18n="@@repo.detail.updated">Last changed</dt>
+        <dd>
+          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+        </dd>
+      }
+      @if (repo.lastActivityAt; as at) {
+        <dt i18n="@@repo.col.activity">Last activity</dt>
+        <dd>
+          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+        </dd>
+      }
+    </dl>
+
+    @if (repo.lifecycle === 'deleting') {
+      <p class="banner-warning" role="status">
+        <span class="material-icons inline warn" aria-hidden="true">hourglass_empty</span>
+        <span i18n="@@repo.detail.deleting"
+          >This repository is being deleted. It cannot be changed.</span
+        >
+      </p>
+    }
+
+    @if (form(); as current) {
+      <mat-tab-group animationDuration="0ms" class="tabs">
+        <mat-tab [label]="tabGeneral">
+          <div class="tab">
+            <trove-repository-fields
+              section="basic"
+              [form]="current"
+              (formChange)="setForm($event)"
+              [fieldErrors]="fieldErrors()"
+            />
+          </div>
+        </mat-tab>
+        <mat-tab [label]="tabAccess">
+          <div class="tab">
+            <trove-repository-fields
+              section="access"
+              [form]="current"
+              (formChange)="setForm($event)"
+              [fieldErrors]="fieldErrors()"
+            />
+          </div>
+        </mat-tab>
+        <mat-tab [label]="tabApi">
+          <div class="tab">
+            <h2 i18n="@@repo.detail.api.document">Stored document</h2>
+            <pre class="code-block" translate="no" tabindex="0">{{ documentJson() }}</pre>
+            <h2 i18n="@@repo.detail.api.patch">Your change as a request</h2>
+            @if (dirty()) {
+              <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
+            } @else {
+              <p class="hint" i18n="@@repo.detail.api.nochange">
+                Change a setting to see the request that saves it.
+              </p>
+            }
+          </div>
+        </mat-tab>
+      </mat-tab-group>
+
+      @if (canWrite() && repo.lifecycle !== 'deleting') {
+        <div class="actions">
+          <button
+            mat-flat-button
+            type="button"
+            [disabled]="!dirty() || saving()"
+            (click)="save()"
+            i18n="@@repo.edit.save"
+          >
+            Save changes
+          </button>
+          <button
+            mat-button
+            type="button"
+            [disabled]="!dirty() || saving()"
+            (click)="reset()"
+            i18n="@@repo.edit.reset"
+          >
+            Discard changes
+          </button>
+          @if (dirty()) {
+            <span class="hint" role="status" i18n="@@repo.edit.unsaved"
+              >You have unsaved changes.</span
+            >
+          }
+          <span class="spacer"></span>
+          <button mat-button type="button" (click)="remove()" i18n="@@repo.action.delete">
+            Delete
+          </button>
+        </div>
+      }
+      @if (deletion(); as job) {
+        <div class="deleting">
+          <span i18n="@@repo.deleting">Deleting</span>
+          <trove-job-progress
+            [jobId]="job.id"
+            [label]="deleteLabel"
+            (finished)="jobEnded($event.state)"
+          />
+        </div>
+      }
+    }
+  }
+}

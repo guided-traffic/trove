@@ -9,9 +9,9 @@ import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
+import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
-import { PagedSignal, toApiError } from '../../shared/access/paged-signal';
+import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 
 /** "New service account" (R-UI-026). The idempotency key lives as long as the dialog (R-UI-042). */
@@ -72,7 +72,7 @@ export class ServiceAccountCreateDialog {
       this.notifier.status($localize`:@@sa-create.created:Service account created.`);
       this.ref.close(created);
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }
@@ -151,7 +151,7 @@ export class ServiceAccountList {
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
-  protected readonly list = new PagedSignal<ServiceAccount>();
+  protected readonly list = new PagedResource<ServiceAccount>();
   protected readonly q = signal('');
 
   constructor() {

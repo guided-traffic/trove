@@ -1,0 +1,619 @@
+<header class="page-header">
+  <h1 tabindex="-1">
+    @if (creating()) {
+      <ng-container i18n="@@ep.editor.heading.new">New exposure rule</ng-container>
+    } @else {
+      <ng-container i18n="@@ep.editor.heading.edit">Exposure rule</ng-container>
+    }
+  </h1>
+  <a mat-button [routerLink]="['/admin/endpoints', endpoint()]" i18n="@@ep.editor.back"
+    >Back to the endpoint</a
+  >
+</header>
+
+@if (loadFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="loaded.reload()" />
+} @else {
+  <p class="subject">
+    <span i18n="@@ep.editor.on">on endpoint</span> <strong translate="no">{{ endpoint() }}</strong>
+  </p>
+
+  @if (modeAll()) {
+    <p class="banner-warning" role="note">
+      <span class="material-icons inline warn" aria-hidden="true">warning</span>
+      <span i18n="@@ep.banner.all-rule">
+        This endpoint is in mode "all": it exposes everything the caller may read, so this rule has
+        no effect here.
+      </span>
+    </p>
+  }
+  @if (inert()) {
+    <p class="banner-warning" role="note">
+      <span class="material-icons inline warn" aria-hidden="true">warning</span>
+      <span i18n="@@ep.banner.inert-editor"
+        >This endpoint is no longer configured: its rules can only be read and deleted.</span
+      >
+    </p>
+  }
+  @for (w of warnings(); track w) {
+    <p class="banner-warning" role="status">
+      <span class="material-icons inline warn" aria-hidden="true">warning</span>
+      <span>{{ w }}</span>
+    </p>
+  }
+
+  <trove-error-summary [items]="summary()" />
+  @if (failure(); as f) {
+    @if (f.fieldErrors.size === 0) {
+      <trove-error-notice [error]="f" />
+    }
+  }
+
+  <div class="editor">
+    <form class="form" (submit)="$event.preventDefault(); save()">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label" for="f-name" i18n="@@ep.field.name">Name</label>
+          @if (creating()) {
+            <input
+              id="f-name"
+              class="text-input"
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby="d-name"
+              [value]="form().name"
+              [attr.aria-invalid]="
+                (showErrors() && !nameValid()) || errors('/name').length > 0 ? 'true' : null
+              "
+              (input)="set({ name: $any($event.target).value })"
+            />
+            <p id="d-name" class="hint" i18n="@@ep.field.name.hint">
+              Lower-case letters, digits, dot, underscore and hyphen, up to 64 characters. It cannot
+              be changed later.
+            </p>
+            @if (showErrors() && !nameValid()) {
+              <p class="field-error" i18n="@@ep.field.name.invalid">
+                The name does not match the pattern.
+              </p>
+            }
+          } @else {
+            <code id="f-name" translate="no">{{ form().name }}</code>
+          }
+          @for (e of errors('/name'); track e.code) {
+            <p class="field-error">{{ message(e) }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-repository" i18n="@@ep.field.repository"
+            >Repository</label
+          >
+          <select
+            id="f-repository"
+            class="select-input"
+            [disabled]="!creating()"
+            [attr.aria-invalid]="
+              invalid('/repository') ?? (showErrors() && !form().repository ? 'true' : null)
+            "
+            (change)="set({ repository: $any($event.target).value })"
+          >
+            <option value="" [selected]="!form().repository" i18n="@@ep.field.repository.choose">
+              Choose a repository
+            </option>
+            @for (r of valueOf(repos) ?? []; track r.key) {
+              <option [value]="r.key" [selected]="form().repository === r.key" translate="no">
+                {{ r.key }} ({{ r.format }})
+              </option>
+            }
+            @if (form().repository && !repository()) {
+              <option [value]="form().repository" selected translate="no">
+                {{ form().repository }}
+              </option>
+            }
+          </select>
+          @if (!creating()) {
+            <p class="hint" i18n="@@ep.field.repository.fixed">
+              The repository of a rule cannot be changed. Create a new rule for another repository.
+            </p>
+          }
+          @for (e of errors('/repository'); track e.code) {
+            <p class="field-error">{{ message(e) }}</p>
+          }
+          @if (address(); as a) {
+            <p class="hint">
+              <span i18n="@@ep.editor.address">Client address on this endpoint:</span>
+              <code translate="no">{{ a.url }}</code>
+              <trove-copy-button [value]="a.url" [label]="copyAddress" />
+            </p>
+            @if (!a.served) {
+              <p class="hint" i18n="@@ep.address.not-served">
+                This endpoint does not serve this address.
+              </p>
+            }
+          }
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-description" i18n="@@ep.field.description"
+            >Description</label
+          >
+          <input
+            id="f-description"
+            class="text-input"
+            [value]="form().description"
+            [attr.aria-invalid]="invalid('/description')"
+            (input)="set({ description: $any($event.target).value })"
+          />
+          @for (e of errors('/description'); track e.code) {
+            <p class="field-error">{{ message(e) }}</p>
+          }
+        </div>
+
+        <label class="check-row" for="f-enabled">
+          <input
+            id="f-enabled"
+            type="checkbox"
+            [checked]="form().enabled"
+            (change)="set({ enabled: $any($event.target).checked })"
+          />
+          <span i18n="@@ep.field.enabled">Enabled</span>
+        </label>
+      </div>
+
+      @if (byName()) {
+        <fieldset class="dimension">
+          <legend i18n="@@ep.dim.packages">Package names</legend>
+          <div class="pair">
+            <div class="field">
+              <label class="field-label" for="f-packages-include" i18n="@@ep.field.include"
+                >Include (one per line)</label
+              >
+              <textarea
+                id="f-packages-include"
+                class="area-input"
+                rows="3"
+                spellcheck="false"
+                [value]="form().packagesInclude"
+                [attr.aria-invalid]="invalid('/packages/include')"
+                (input)="set({ packagesInclude: $any($event.target).value })"
+              ></textarea>
+              @for (e of errors('/packages/include'); track e.code + e.detail) {
+                <p class="field-error">{{ message(e) }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" for="f-packages-exclude" i18n="@@ep.field.exclude"
+                >Exclude (one per line)</label
+              >
+              <textarea
+                id="f-packages-exclude"
+                class="area-input"
+                rows="3"
+                spellcheck="false"
+                [value]="form().packagesExclude"
+                [attr.aria-invalid]="invalid('/packages/exclude')"
+                (input)="set({ packagesExclude: $any($event.target).value })"
+              ></textarea>
+              @for (e of errors('/packages/exclude'); track e.code + e.detail) {
+                <p class="field-error">{{ message(e) }}</p>
+              }
+            </div>
+          </div>
+          <details class="syntax">
+            <summary i18n="@@ep.syntax.names.summary">Name pattern syntax</summary>
+            <ul>
+              <li>
+                <code>*</code>
+                <span i18n="@@ep.syntax.star">matches any run of characters except the slash.</span>
+              </li>
+              <li>
+                <code>**</code>
+                <span i18n="@@ep.syntax.starstar"
+                  >matches any run of characters including the slash.</span
+                >
+              </li>
+              <li>
+                <code>?</code> <span i18n="@@ep.syntax.question">matches one character.</span>
+              </li>
+              <li>
+                <code>\\</code>
+                <span i18n="@@ep.syntax.backslash">makes the next character literal.</span>
+              </li>
+            </ul>
+            <p i18n="@@ep.syntax.empty-include">
+              An empty include list leaves the dimension open; an exclude pattern wins.
+            </p>
+          </details>
+        </fieldset>
+
+        <fieldset class="dimension">
+          <legend i18n="@@ep.dim.versions">Versions</legend>
+          <div class="field">
+            <label class="field-label" for="f-versions-range" i18n="@@ep.field.range"
+              >Version range</label
+            >
+            <input
+              id="f-versions-range"
+              class="text-input"
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby="d-range"
+              [value]="form().range"
+              [attr.aria-invalid]="invalid('/versions/range')"
+              (input)="set({ range: $any($event.target).value })"
+            />
+            <p id="d-range" class="hint" i18n="@@ep.field.range.hint">
+              In the version syntax of the format, for example ">=2.0.0". The server checks it.
+            </p>
+            @for (e of errors('/versions/range'); track e.code) {
+              <p class="field-error">{{ message(e) }}</p>
+            }
+          </div>
+          <div class="pair">
+            <div class="field">
+              <label class="field-label" for="f-versions-include" i18n="@@ep.field.include"
+                >Include (one per line)</label
+              >
+              <textarea
+                id="f-versions-include"
+                class="area-input"
+                rows="2"
+                spellcheck="false"
+                [value]="form().versionsInclude"
+                [attr.aria-invalid]="invalid('/versions/include')"
+                (input)="set({ versionsInclude: $any($event.target).value })"
+              ></textarea>
+            </div>
+            <div class="field">
+              <label class="field-label" for="f-versions-exclude" i18n="@@ep.field.exclude"
+                >Exclude (one per line)</label
+              >
+              <textarea
+                id="f-versions-exclude"
+                class="area-input"
+                rows="2"
+                spellcheck="false"
+                [value]="form().versionsExclude"
+                [attr.aria-invalid]="invalid('/versions/exclude')"
+                (input)="set({ versionsExclude: $any($event.target).value })"
+              ></textarea>
+            </div>
+          </div>
+          <label class="check-row" for="f-prereleases">
+            <input
+              id="f-prereleases"
+              type="checkbox"
+              [checked]="form().prereleases"
+              (change)="set({ prereleases: $any($event.target).checked })"
+            />
+            <span i18n="@@ep.field.prereleases">Expose pre-release versions</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="dimension">
+          <legend i18n="@@ep.dim.tags">Tags (formats with tags only)</legend>
+          <div class="pair">
+            <div class="field">
+              <label class="field-label" for="f-distTags-include" i18n="@@ep.field.include"
+                >Include (one per line)</label
+              >
+              <textarea
+                id="f-distTags-include"
+                class="area-input"
+                rows="2"
+                spellcheck="false"
+                [value]="form().tagsInclude"
+                [attr.aria-invalid]="invalid('/distTags/include')"
+                (input)="set({ tagsInclude: $any($event.target).value })"
+              ></textarea>
+              @for (e of errors('/distTags'); track e.code + e.detail) {
+                <p class="field-error">{{ message(e) }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" for="f-distTags-exclude" i18n="@@ep.field.exclude"
+                >Exclude (one per line)</label
+              >
+              <textarea
+                id="f-distTags-exclude"
+                class="area-input"
+                rows="2"
+                spellcheck="false"
+                [value]="form().tagsExclude"
+                [attr.aria-invalid]="invalid('/distTags/exclude')"
+                (input)="set({ tagsExclude: $any($event.target).value })"
+              ></textarea>
+            </div>
+          </div>
+        </fieldset>
+      } @else {
+        <fieldset class="dimension">
+          <legend i18n="@@ep.dim.paths">Paths</legend>
+          <div class="pair">
+            <div class="field">
+              <label class="field-label" for="f-paths-include" i18n="@@ep.field.include"
+                >Include (one per line)</label
+              >
+              <textarea
+                id="f-paths-include"
+                class="area-input"
+                rows="3"
+                spellcheck="false"
+                [value]="form().pathsInclude"
+                [attr.aria-invalid]="invalid('/paths/include')"
+                (input)="set({ pathsInclude: $any($event.target).value })"
+              ></textarea>
+              @for (e of errors('/paths/include'); track e.code + e.detail) {
+                <p class="field-error">{{ message(e) }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" for="f-paths-exclude" i18n="@@ep.field.exclude"
+                >Exclude (one per line)</label
+              >
+              <textarea
+                id="f-paths-exclude"
+                class="area-input"
+                rows="3"
+                spellcheck="false"
+                [value]="form().pathsExclude"
+                [attr.aria-invalid]="invalid('/paths/exclude')"
+                (input)="set({ pathsExclude: $any($event.target).value })"
+              ></textarea>
+              @for (e of errors('/paths/exclude'); track e.code + e.detail) {
+                <p class="field-error">{{ message(e) }}</p>
+              }
+            </div>
+          </div>
+          <details class="syntax">
+            <summary i18n="@@ep.syntax.paths.summary">Path pattern syntax</summary>
+            <ul>
+              <li>
+                <code>*</code>
+                <span i18n="@@ep.syntax.path.star"
+                  >matches any run of characters within one segment.</span
+                >
+              </li>
+              <li>
+                <code>**</code>
+                <span i18n="@@ep.syntax.path.starstar"
+                  >as a whole segment matches any number of segments.</span
+                >
+              </li>
+              <li>
+                <code>?</code>
+                <span i18n="@@ep.syntax.path.question"
+                  >matches one character within a segment.</span
+                >
+              </li>
+              <li>
+                <code>\\</code>
+                <span i18n="@@ep.syntax.path.backslash">makes the next character literal.</span>
+              </li>
+            </ul>
+            <p i18n="@@ep.syntax.empty-include">
+              An empty include list leaves the dimension open; an exclude pattern wins.
+            </p>
+          </details>
+        </fieldset>
+      }
+
+      @if (canWrite() && !inert()) {
+        <div class="actions">
+          <button mat-flat-button type="submit" [disabled]="saving() || (!creating() && !dirty())">
+            @if (creating()) {
+              <ng-container i18n="@@ep.editor.create">Create rule</ng-container>
+            } @else {
+              <ng-container i18n="@@ep.editor.review">Review and save</ng-container>
+            }
+          </button>
+          @if (!creating()) {
+            <button
+              mat-button
+              type="button"
+              [disabled]="!dirty() || saving()"
+              (click)="reset()"
+              i18n="@@repo.edit.reset"
+            >
+              Discard changes
+            </button>
+          }
+          @if (dirty()) {
+            <span class="hint" role="status" i18n="@@repo.edit.unsaved"
+              >You have unsaved changes.</span
+            >
+          }
+        </div>
+      }
+      @if (!creating() && canWrite()) {
+        <p class="danger">
+          <button mat-button type="button" (click)="remove()" i18n="@@ep.editor.delete">
+            Delete this rule
+          </button>
+        </p>
+      }
+    </form>
+
+    <section class="preview" aria-labelledby="preview-heading">
+      <h2 id="preview-heading" i18n="@@ep.preview.heading">Preview</h2>
+      <p class="hint" i18n="@@ep.preview.hint">
+        Shows what this endpoint would expose with the rule as you have it now, saved or not.
+      </p>
+      @if (!form().repository) {
+        <p class="empty" i18n="@@ep.preview.choose">Choose a repository to see the preview.</p>
+      } @else {
+        @if (byName()) {
+          <div class="field">
+            <label class="field-label" for="t-package" i18n="@@ep.preview.package"
+              >Package to test</label
+            >
+            <input
+              id="t-package"
+              class="text-input"
+              autocomplete="off"
+              spellcheck="false"
+              [value]="testPackage()"
+              (input)="testPackage.set($any($event.target).value)"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label" for="t-versions" i18n="@@ep.preview.versions"
+              >Versions to test (one per line, empty for the stored ones)</label
+            >
+            <textarea
+              id="t-versions"
+              class="area-input"
+              rows="3"
+              spellcheck="false"
+              [value]="testVersions()"
+              (input)="testVersions.set($any($event.target).value)"
+            ></textarea>
+          </div>
+        } @else {
+          <div class="field">
+            <label class="field-label" for="t-paths" i18n="@@ep.preview.paths"
+              >Paths to test (one per line)</label
+            >
+            <textarea
+              id="t-paths"
+              class="area-input"
+              rows="4"
+              spellcheck="false"
+              [value]="testPaths()"
+              (input)="testPaths.set($any($event.target).value)"
+            ></textarea>
+          </div>
+        }
+
+        <div role="status" aria-live="polite">
+          @if (previewing()) {
+            <p class="hint" i18n="@@ep.preview.updating">Updating the preview.</p>
+          }
+        </div>
+        @if (previewFailure(); as f) {
+          <trove-error-notice [error]="f" />
+        }
+        @if (preview(); as p) {
+          @if (p.mode === 'all') {
+            <p class="banner-warning" role="note">
+              <span class="material-icons inline warn" aria-hidden="true">warning</span>
+              <span i18n="@@ep.preview.mode-all"
+                >Mode "all": everything is exposed; rules have no effect.</span
+              >
+            </p>
+          }
+          <p>
+            @if (p.packageExposed) {
+              <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
+              <span i18n="@@ep.preview.exposed">The repository or package is exposed</span>
+            } @else {
+              <span class="material-icons inline bad" aria-hidden="true">block</span>
+              <span i18n="@@ep.preview.hidden">The repository or package is hidden</span>
+            }
+            <span>{{ verdictText(p) }}</span>
+          </p>
+          @for (w of p.warnings; track w) {
+            <p class="hint">{{ warningText(w) }}</p>
+          }
+          @if (p.paths.length > 0) {
+            <table class="data">
+              <caption class="visually-hidden" i18n="@@ep.preview.paths.caption">
+                Verdict per path
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" i18n="@@ep.preview.col.path">Path</th>
+                  <th scope="col" i18n="@@ep.preview.col.verdict">Verdict</th>
+                  <th scope="col" i18n="@@ep.preview.col.rule">Rule</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (x of p.paths; track x.path) {
+                  <tr>
+                    <th scope="row" translate="no">{{ x.path }}</th>
+                    <td>
+                      @if (x.exposed) {
+                        <span class="material-icons inline ok" aria-hidden="true"
+                          >check_circle</span
+                        >
+                      } @else {
+                        <span class="material-icons inline bad" aria-hidden="true">block</span>
+                      }
+                      {{ reasonText(x.reason) }}
+                    </td>
+                    <td translate="no">{{ x.rule ?? '–' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+          @if (p.versions.length > 0) {
+            <table class="data">
+              <caption class="visually-hidden" i18n="@@ep.preview.versions.caption">
+                Verdict per version
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" i18n="@@ep.preview.col.version">Version</th>
+                  <th scope="col" i18n="@@ep.preview.col.verdict">Verdict</th>
+                  <th scope="col" i18n="@@ep.preview.col.rule">Rule</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (x of p.versions; track x.version) {
+                  <tr>
+                    <th scope="row" translate="no">{{ x.version }}</th>
+                    <td>
+                      @if (x.exposed) {
+                        <span class="material-icons inline ok" aria-hidden="true"
+                          >check_circle</span
+                        >
+                      } @else {
+                        <span class="material-icons inline bad" aria-hidden="true">block</span>
+                      }
+                      {{ reasonText(x.reason) }}
+                    </td>
+                    <td translate="no">{{ x.rule ?? '–' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+          @if (p.distTags.length > 0) {
+            <table class="data">
+              <caption class="visually-hidden" i18n="@@ep.preview.tags.caption">
+                Visibility per tag
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" i18n="@@ep.preview.col.tag">Tag</th>
+                  <th scope="col" i18n="@@ep.preview.col.version">Version</th>
+                  <th scope="col" i18n="@@ep.preview.col.visible">Visible</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (x of p.distTags; track x.tag) {
+                  <tr>
+                    <th scope="row" translate="no">{{ x.tag }}</th>
+                    <td translate="no">{{ x.version }}</td>
+                    <td>
+                      @if (x.visible) {
+                        <span class="material-icons inline ok" aria-hidden="true"
+                          >check_circle</span
+                        >
+                        <span i18n="@@ep.yes">yes</span>
+                      } @else {
+                        <span class="material-icons inline bad" aria-hidden="true">block</span>
+                        <span i18n="@@ep.no">no</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        }
+      }
+    </section>
+  </div>
+}

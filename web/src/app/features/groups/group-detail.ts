@@ -9,11 +9,11 @@ import { collectAll } from '../../api/pagination';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
+import { Confirm } from '../../shared/confirm-dialog';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
+import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
-import { PagedSignal, toApiError } from '../../shared/access/paged-signal';
+import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { groupOriginLabel } from './group-list';
 
@@ -35,7 +35,7 @@ export class GroupDetail {
 
   private readonly api = inject(IdentityApi);
   private readonly policyApi = inject(PolicyApi);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
@@ -45,7 +45,7 @@ export class GroupDetail {
   protected readonly editError = signal<ApiError | null>(null);
   protected readonly memberError = signal<ApiError | null>(null);
   protected readonly policies = signal<readonly PermissionPolicy[] | null>(null);
-  protected readonly members = new PagedSignal<GroupMember>();
+  protected readonly members = new PagedResource<GroupMember>();
 
   protected readonly newName = signal('');
   protected readonly description = signal('');
@@ -84,7 +84,7 @@ export class GroupDetail {
       this.autoJoin.set(g.autoJoin);
     } catch (e) {
       this.group.set(null);
-      this.loadError.set(toApiError(e));
+      this.loadError.set(asApiError(e));
       return;
     }
     await this.loadPolicies();
@@ -125,7 +125,7 @@ export class GroupDetail {
       if (next.name !== g.name) await this.router.navigate(['/admin/groups', next.name]);
       else await this.load();
     } catch (e) {
-      this.editError.set(toApiError(e));
+      this.editError.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }
@@ -134,17 +134,17 @@ export class GroupDetail {
   protected async remove(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@group.delete-title:Delete this group?`,
-      text: $localize`:@@group.delete-text:${this.name()}:group: and its memberships are removed. Policies and roles that name it stop applying.`,
-      confirm: $localize`:@@group.delete-confirm:Delete`,
+      lines: [$localize`:@@group.delete-text:${this.name()}:group: and its memberships are removed. Policies and roles that name it stop applying.`],
+      confirmLabel: $localize`:@@group.delete-confirm:Delete`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     this.editError.set(null);
     try {
       await this.api.deleteGroup(this.name());
       this.notifier.status($localize`:@@group.deleted:Group deleted.`);
       await this.router.navigate(['/admin/groups']);
     } catch (e) {
-      this.editError.set(toApiError(e));
+      this.editError.set(asApiError(e));
     }
   }
 
@@ -175,7 +175,7 @@ export class GroupDetail {
       await this.members.reload();
       await this.load();
     } catch (e) {
-      this.memberError.set(toApiError(e));
+      this.memberError.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

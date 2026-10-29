@@ -1,7 +1,7 @@
 import { PolicyApi } from '../../api/authz-api';
 import { FakePolicyApi, problem } from '../../api/testing/access-fakes';
 import { Notifier } from '../../core/notifier';
-import { buttonByText, renderScreen, settle, textOf, typeInto } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { PREVIEW_DEBOUNCE_MS, PolicyEditor } from './policy-editor';
 import { PolicyList } from './policy-list';
@@ -13,10 +13,10 @@ describe('Policy list (R-UI-027)', () => {
   it('R-UI-027 lists name, description, principals, repositories and actions, and passes axe', async () => {
     const { root } = await renderScreen(PolicyList);
     const row = root.querySelector('tbody tr') as HTMLElement;
-    expect(textOf(row)).toContain('team-web-publish');
-    expect(textOf(row)).toContain('Groups: 1');
-    expect(textOf(row)).toContain('npm-internal');
-    expect(textOf(row)).toContain('read, annotate, deploy');
+    expect(text(row)).toContain('team-web-publish');
+    expect(text(row)).toContain('Groups: 1');
+    expect(text(row)).toContain('npm-internal');
+    expect(text(row)).toContain('read, annotate, deploy');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -39,8 +39,8 @@ describe('Policy editor (R-UI-027)', () => {
     await settle(fixture);
     expect(api.validated).toHaveLength(1);
     expect(api.validated[0]?.resources?.repositories).toEqual(['npm-internal']);
-    expect(textOf(root)).toContain('Repositories covered now: 1');
-    expect(textOf(root.querySelector('.covered')!)).toBe('npm-internal');
+    expect(text(root)).toContain('Repositories covered now: 1');
+    expect(text(root.querySelector('.covered')!)).toBe('npm-internal');
   });
 
   it('R-UI-027 shows validation problems next to the field and refuses to save before the API does', async () => {
@@ -60,14 +60,14 @@ describe('Policy editor (R-UI-027)', () => {
     typeInto(root, 'Principal', 'group:nope');
     await afterDebounce();
     await settle(fixture);
-    expect(textOf(root.querySelector('fieldset.entry .field-error')!)).toContain('A principal does not exist');
-    expect(textOf(root)).toContain('A repository selector matches no repository yet');
+    expect(text(root.querySelector('fieldset.entry .field-error')!)).toContain('A principal does not exist');
+    expect(text(root)).toContain('A repository selector matches no repository yet');
     expect(await seriousViolations(root)).toEqual([]);
 
     buttonByText(root, 'Create policy').click();
     await settle(fixture);
     expect((get(PolicyApi) as FakePolicyApi).calls).toEqual([]);
-    expect(textOf(root)).toContain('Fix the problems in the preview first');
+    expect(text(root)).toContain('Fix the problems in the preview first');
   });
 
   it('R-UI-027 creating through the editor sends the same document the API takes, with an idempotency key', async () => {
@@ -102,10 +102,10 @@ describe('Policy editor (R-UI-027)', () => {
     const dialog = overlay().querySelector('trove-policy-diff-dialog') as HTMLElement;
     const items = dialog.querySelectorAll('li');
     expect(items).toHaveLength(1);
-    expect(textOf(items[0]!)).toContain('Principal added: user:bob');
+    expect(text(items[0]!)).toContain('Principal added: user:bob');
     expect(await seriousViolations(overlay())).toEqual([]);
     buttonByText(dialog, 'Save policy').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(PolicyApi) as FakePolicyApi).calls).toEqual(['replace team-web-publish "3"']);
   });
 
@@ -125,12 +125,12 @@ describe('Policy editor (R-UI-027)', () => {
     buttonByText(root, 'Review and save').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-policy-diff-dialog') as HTMLElement, 'Save policy').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     const conflict = overlay().querySelector('trove-conflict-dialog') as HTMLElement;
     expect(conflict).toBeTruthy();
-    expect(textOf(conflict)).toContain('Changed by someone else');
+    expect(text(conflict)).toContain('Changed by someone else');
     buttonByText(conflict, 'Overwrite').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect(api.calls).toEqual(['replace team-web-publish "3"', 'replace team-web-publish "4"']);
     expect(api.policies[0]?.description).toBe('Mine');
   });
@@ -149,7 +149,7 @@ describe('Policy editor (R-UI-027)', () => {
     buttonByText(root, 'Review and save').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-policy-diff-dialog') as HTMLElement, 'Save policy').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect(api.policies[0]?.description).toBe('Same text');
     expect(get(Notifier).notices().map((n) => n.text)).toContain('The change is stored.');
     expect(document.querySelector('trove-conflict-dialog')).toBeNull();
@@ -161,10 +161,10 @@ describe('Policy editor (R-UI-027)', () => {
     await settle(fixture);
     typeInto(root, 'Does this match?', '@team-a/ui');
     await settle(fixture);
-    expect(textOf(root.querySelector('.tester + p')!)).toContain('Matches: included by @team-a/*');
+    expect(text(root.querySelector('.tester + p')!)).toContain('Matches: included by @team-a/*');
     typeInto(root, 'Does this match?', '@team-b/ui');
     await settle(fixture);
-    expect(textOf(root.querySelector('.tester + p')!)).toContain('no include pattern matches');
+    expect(text(root.querySelector('.tester + p')!)).toContain('no include pattern matches');
   });
 
   it('R-UI-027 "Try it" explains an allowed and a denied question from the draft, in order', async () => {
@@ -179,7 +179,7 @@ describe('Policy editor (R-UI-027)', () => {
       await settle(fixture);
       buttonByText(root, 'Explain').click();
       await settle(fixture);
-      return textOf(root.querySelector('.preview-body > div[role="status"]') ?? root);
+      return text(root.querySelector('.preview-body > div[role="status"]') ?? root);
     };
     // The fake user alice is in team-web, which the stored entry names.
     const allowed = await ask('deploy');

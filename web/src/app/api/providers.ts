@@ -2,6 +2,13 @@ import { Provider } from '@angular/core';
 import { HttpLoginApi, LoginApi } from './login-api';
 import { HttpPreferencesApi, PreferencesApi } from './preferences-api';
 import { HttpSessionApi, SessionApi } from './session-api';
+// >>> M1 ui-a
+import { AuditApi, HttpAuditApi } from './audit-api';
+import { EndpointsApi, HttpEndpointsApi } from './endpoints-api';
+import { FilesApi, HttpFilesApi } from './files-api';
+import { HttpJobsApi, JobsApi } from './jobs-api';
+import { HttpRepositoriesApi, RepositoriesApi } from './repositories-api';
+// <<< M1 ui-a
 import { EncryptionApi, HttpEncryptionApi, HttpSystemApi, SystemApi } from './system-api';
 // >>> M1 ui-b
 import { AuthSettingsApi, HttpAuthSettingsApi } from './auth-settings-api';
@@ -32,5 +39,12 @@ export function provideApiServices(): Provider[] {
     { provide: RolesApi, useClass: HttpRolesApi },
     { provide: PolicyExplainer, useClass: DraftPolicyExplainer },
     // <<< M1 ui-b
+    // >>> M1 ui-a
+    { provide: RepositoriesApi, useClass: HttpRepositoriesApi },
+    { provide: FilesApi, useClass: HttpFilesApi },
+    { provide: EndpointsApi, useClass: HttpEndpointsApi },
+    { provide: AuditApi, useClass: HttpAuditApi },
+    { provide: JobsApi, useClass: HttpJobsApi },
+    // <<< M1 ui-a
   ];
 }

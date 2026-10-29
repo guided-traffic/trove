@@ -9,7 +9,7 @@ import { Notifier } from '../../core/notifier';
 import { PreferencesStore } from '../../core/preferences-store';
 import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption } from '../../shared/access/fields';
-import { toApiError } from '../../shared/access/paged-signal';
+import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ProfileNav } from './profile-nav';
@@ -68,7 +68,7 @@ export class Profile {
     try {
       this.user.set(await this.identity.me());
     } catch (e) {
-      this.loadError.set(toApiError(e));
+      this.loadError.set(asApiError(e));
     }
     await this.loadPreferences();
   }
@@ -79,7 +79,7 @@ export class Profile {
       this.adopt(await this.preferencesApi.load());
     } catch (e) {
       // Service accounts and CI tokens have no preferences (R-API-021); the section says so.
-      this.prefError.set(toApiError(e));
+      this.prefError.set(asApiError(e));
     }
   }
 
@@ -107,7 +107,7 @@ export class Profile {
     try {
       await this.store(this.loaded.etag);
     } catch (e) {
-      const error = toApiError(e);
+      const error = asApiError(e);
       if (error.status === 412) await this.resolveConflict();
       else this.prefError.set(error);
     } finally {
@@ -135,7 +135,7 @@ export class Profile {
       try {
         await this.store(current.etag);
       } catch (e) {
-        this.prefError.set(toApiError(e));
+        this.prefError.set(asApiError(e));
       }
     } else {
       this.adopt(current);

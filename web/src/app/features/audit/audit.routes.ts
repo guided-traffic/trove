@@ -1,5 +1,10 @@
 import { Routes } from '@angular/router';
-import { placeholderRoute } from '../../shared/placeholder-route';
 
 /** Audit log, R-UI-037. */
-export const AUDIT_ROUTES: Routes = [placeholderRoute('', $localize`:@@route.audit.title:Audit log`)];
+export const AUDIT_ROUTES: Routes = [
+  {
+    path: '',
+    title: $localize`:@@route.audit.title:Audit log`,
+    loadComponent: () => import('./audit-log').then((m) => m.AuditLog),
+  },
+];

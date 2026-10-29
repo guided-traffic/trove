@@ -12,11 +12,11 @@ import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { fromDays, formatDuration, toDays } from '../../shared/access/duration';
-import { DraftStore } from '../../shared/access/drafts';
+import { DraftStore } from '../../shared/drafts';
 import { TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
+import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
-import { toApiError } from '../../shared/access/paged-signal';
+import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 
@@ -86,7 +86,7 @@ export class AuthSettings {
         this.notifier.status($localize`:@@auth-settings.draft:Your entries were restored. Save them again.`);
       }
     } catch (e) {
-      this.loadError.set(toApiError(e));
+      this.loadError.set(asApiError(e));
     }
   }
 
@@ -186,7 +186,7 @@ export class AuthSettings {
       this.adopt(await this.api.patch(patch, current.etag));
       this.notifier.status($localize`:@@auth-settings.saved:Settings saved.`);
     } catch (e) {
-      const error = toApiError(e);
+      const error = asApiError(e);
       if (error.status === 412) await this.resolveConflict(patch);
       else {
         this.saveError.set(error);
@@ -209,7 +209,7 @@ export class AuthSettings {
         this.adopt(await this.api.patch(patch, theirs.etag));
         this.notifier.status($localize`:@@auth-settings.saved:Settings saved.`);
       } catch (e) {
-        this.saveError.set(toApiError(e));
+        this.saveError.set(asApiError(e));
       }
     } else {
       this.adopt(theirs);

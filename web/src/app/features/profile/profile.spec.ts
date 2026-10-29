@@ -12,7 +12,7 @@ import {
   sampleUser,
 } from '../../api/testing/access-fakes';
 import { FakePreferencesApi } from '../../api/testing/fakes';
-import { buttonByText, renderScreen, settle, textOf, typeInto, browserStorage, storedText } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, text, typeInto, browserStorage, storedText, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { Profile } from './profile';
 import { ProfileSessions } from './profile-sessions';
@@ -28,7 +28,7 @@ describe('Profile (R-UI-029)', () => {
 
   it('R-UI-029 shows identity, groups with source and roles; it has no password, unlock or editable email', async () => {
     const { root } = await renderScreen(Profile);
-    const t = textOf(root);
+    const t = text(root);
     expect(t).toContain('Alice Example');
     expect(t).toContain('team-web');
     expect(t).toContain('oidc:corp');
@@ -47,8 +47,8 @@ describe('Profile (R-UI-029)', () => {
         })),
     });
     const notice = root.querySelector('p[role="status"]') as HTMLElement;
-    expect(textOf(notice)).toContain('corp');
-    expect(textOf(notice)).toContain('carried no group claim');
+    expect(text(notice)).toContain('corp');
+    expect(text(notice)).toContain('carried no group claim');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -81,9 +81,9 @@ describe('Profile (R-UI-029)', () => {
     await settle(fixture);
     const dialog = overlay().querySelector('trove-conflict-dialog') as HTMLElement;
     expect(dialog).toBeTruthy();
-    expect(textOf(dialog)).toContain('Changed by someone else');
+    expect(text(dialog)).toContain('Changed by someone else');
     buttonByText(dialog, 'Overwrite').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect(prefs.stored.theme).toBe('light');
     expect(prefs.stored.revision).toBe(3);
     document.documentElement.removeAttribute('data-theme');
@@ -103,8 +103,8 @@ describe('Personal tokens (R-UI-029)', () => {
         (get(TokensApi) as FakeTokensApi).tokenList = [sampleToken({ description: 'laptop', expiresAt: soon })];
       },
     });
-    expect(textOf(root)).toContain('laptop');
-    expect(textOf(root)).toContain('Expires soon');
+    expect(text(root)).toContain('laptop');
+    expect(text(root)).toContain('Expires soon');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -127,7 +127,7 @@ describe('Personal tokens (R-UI-029)', () => {
     expect(input.getAttribute('autocomplete')).toBe('off');
     expect(input.getAttribute('spellcheck')).toBe('false');
     expect(input.value).toBe(SECRET_VALUE);
-    expect(textOf(secret)).toContain('cannot be retrieved again');
+    expect(text(secret)).toContain('cannot be retrieved again');
     expect(await seriousViolations(root)).toEqual([]);
 
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -167,7 +167,7 @@ describe('Personal tokens (R-UI-029)', () => {
     await settle(fixture);
     buttonByText(root.querySelector('trove-token-form')!, 'Create token').click();
     await settle(fixture);
-    expect(textOf(root)).toContain('Enter a description');
+    expect(text(root)).toContain('Enter a description');
     expect((get(TokensApi) as FakeTokensApi).calls).toHaveLength(0);
   });
 
@@ -204,7 +204,7 @@ describe('Personal tokens (R-UI-029)', () => {
     buttonByText(root.querySelector('trove-token-table')!, 'Revoke').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Revoke').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(TokensApi) as FakeTokensApi).calls[0]).toMatch(/^revoke /);
   });
 
@@ -215,7 +215,7 @@ describe('Personal tokens (R-UI-029)', () => {
     const dialog = overlay().querySelector('trove-rotate-dialog') as HTMLElement;
     expect(await seriousViolations(dialog)).toEqual([]);
     buttonByText(dialog, 'Rotate').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(TokensApi) as FakeTokensApi).calls.some((c) => c.startsWith('rotate') && c.endsWith('overlap=0'))).toBe(true);
     expect(root.querySelector('trove-token-secret')).toBeTruthy();
   });
@@ -226,7 +226,7 @@ describe('Sessions (R-UI-029)', () => {
     const { fixture, root, get } = await renderScreen(ProfileSessions);
     const rows = [...root.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(2);
-    expect(textOf(rows[0]!)).toContain('This session');
+    expect(text(rows[0]!)).toContain('This session');
     expect(rows[0]!.querySelector('button')).toBeNull();
     expect(await seriousViolations(root)).toEqual([]);
     rows[1]!.querySelector('button')!.click();
@@ -240,7 +240,7 @@ describe('Sessions (R-UI-029)', () => {
     buttonByText(root, 'End all other sessions').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'End other sessions').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(SessionsApi) as FakeSessionsApi).calls).toContain('endOwnAll keepCurrent=true');
     expect(root.textContent).not.toContain('End all other sessions');
   });

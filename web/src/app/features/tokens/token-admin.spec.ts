@@ -1,6 +1,6 @@
 import { TokensApi } from '../../api/tokens-api';
 import { FakeTokensApi, SECRET_VALUE, sampleToken } from '../../api/testing/access-fakes';
-import { buttonByText, renderScreen, settle, storedText, textOf, typeInto } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, storedText, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { TokenAdmin } from './token-admin';
 
@@ -11,9 +11,9 @@ describe('Token administration (R-UI-030)', () => {
     const { root } = await renderScreen(TokenAdmin);
     const rows = root.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(1);
-    expect(textOf(rows[0]!)).toContain('laptop npm');
-    expect(textOf(rows[0]!)).toContain('alice');
-    expect(textOf(rows[0]!)).toContain('Active');
+    expect(text(rows[0]!)).toContain('laptop npm');
+    expect(text(rows[0]!)).toContain('alice');
+    expect(text(rows[0]!)).toContain('Active');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -23,7 +23,7 @@ describe('Token administration (R-UI-030)', () => {
     buttonByText(root, 'Apply filters').click();
     await settle(fixture);
     expect(root.querySelectorAll('tbody tr')).toHaveLength(2);
-    expect(textOf(root)).toContain('Revoked');
+    expect(text(root)).toContain('Revoked');
   });
 
   it('R-UI-030 "unused for N days" becomes lastUsedBefore N days ago', async () => {
@@ -55,7 +55,7 @@ describe('Token administration (R-UI-030)', () => {
     buttonByText(root, 'Revoke selected').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Revoke').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(TokensApi) as FakeTokensApi).calls).toEqual(['revoke t1', 'revoke t2']);
   });
 

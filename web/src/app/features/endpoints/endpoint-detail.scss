@@ -1,0 +1,11 @@
+.subject {
+  margin-block: 0 var(--trove-space-3);
+  font: var(--mat-sys-title-medium);
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+  min-block-size: 24px;
+}

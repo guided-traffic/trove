@@ -11,11 +11,11 @@ import { ExplainDraft, Explanation, PolicyExplainer } from '../../api/policy-exp
 import { describeAccessProblem } from '../../core/http/problem-messages-access';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
-import { DraftStore } from '../../shared/access/drafts';
+import { Confirm } from '../../shared/confirm-dialog';
+import { DraftStore } from '../../shared/drafts';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
-import { toApiError } from '../../shared/access/paged-signal';
+import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { SetVerdict, verdict } from './glob';
@@ -62,7 +62,7 @@ export class PolicyEditor {
   private readonly api = inject(PolicyApi);
   private readonly explainer = inject(PolicyExplainer);
   private readonly dialog = inject(MatDialog);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly conflicts = inject(ConflictResolver);
   private readonly notifier = inject(Notifier);
   private readonly drafts = inject(DraftStore);
@@ -183,7 +183,7 @@ export class PolicyEditor {
         this.loaded.set(l);
         this.setForm(formFromPolicy(l.policy));
       } catch (e) {
-        this.loadError.set(toApiError(e));
+        this.loadError.set(asApiError(e));
         return;
       }
     }
@@ -322,7 +322,7 @@ export class PolicyEditor {
       this.mine.set(allowed ?? false);
     } catch (e) {
       this.explanation.set(null);
-      this.explainError.set(toApiError(e));
+      this.explainError.set(asApiError(e));
     }
   }
 
@@ -351,7 +351,7 @@ export class PolicyEditor {
         if ((await firstValueFrom(ref.afterClosed())) === true) await this.replace(l);
       }
     } catch (e) {
-      await this.failed(toApiError(e));
+      await this.failed(asApiError(e));
     } finally {
       this.busy.set(false);
     }
@@ -410,7 +410,7 @@ export class PolicyEditor {
         );
       }
     } catch (e) {
-      this.saveError.set(toApiError(e));
+      this.saveError.set(asApiError(e));
     }
   }
 
@@ -440,17 +440,17 @@ export class PolicyEditor {
     if (!l) return;
     const answer = await this.confirmer.ask({
       title: $localize`:@@policy.delete-title:Delete this policy?`,
-      text: $localize`:@@policy.delete-text:${l.policy.name}:policy: stops granting access at once on every replica.`,
-      confirm: $localize`:@@policy.delete-confirm:Delete`,
+      lines: [$localize`:@@policy.delete-text:${l.policy.name}:policy: stops granting access at once on every replica.`],
+      confirmLabel: $localize`:@@policy.delete-confirm:Delete`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     try {
       await this.api.delete(l.policy.name, l.etag);
       this.notifier.status($localize`:@@policy.deleted:Policy deleted.`);
       void this.session.refreshCapabilities().catch(() => undefined);
       await this.router.navigate(['/admin/permissions']);
     } catch (e) {
-      this.saveError.set(toApiError(e));
+      this.saveError.set(asApiError(e));
     }
   }
 

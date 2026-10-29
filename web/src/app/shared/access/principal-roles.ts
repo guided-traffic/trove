@@ -8,9 +8,9 @@ import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { ErrorNotice } from '../error-notice';
-import { Confirmer } from './confirm-dialog';
+import { Confirm } from '../confirm-dialog';
 import { SelectField } from './fields';
-import { toApiError } from './paged-signal';
+import { asApiError } from '../paged-resource';
 
 /** The five fixed system roles (R-AUTHZ-010). The API refuses any other. */
 export const ROLE_NAMES: readonly RoleName[] = [
@@ -110,7 +110,7 @@ export class PrincipalRoles {
 
   private readonly api = inject(RolesApi);
   private readonly session = inject(SessionStore);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
 
   protected readonly headingId = `roles-${Math.random().toString(36).slice(2, 8)}`;
@@ -154,7 +154,7 @@ export class PrincipalRoles {
       this.admins.set(await collectAll(this.api.bindings({ role: 'admin' })));
       this.loaded.set(true);
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     }
   }
 
@@ -170,10 +170,10 @@ export class PrincipalRoles {
   protected async unbind(b: RoleBinding): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@principal-roles.unbind-title:Unbind this role?`,
-      text: $localize`:@@principal-roles.unbind-text:${b.role}:role: will no longer apply to ${b.principal}:principal:.`,
-      confirm: $localize`:@@principal-roles.unbind:Unbind`,
+      lines: [$localize`:@@principal-roles.unbind-text:${b.role}:role: will no longer apply to ${b.principal}:principal:.`],
+      confirmLabel: $localize`:@@principal-roles.unbind:Unbind`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     await this.write(
       () => this.api.unbind(b.role, b.principal),
       $localize`:@@principal-roles.unbound:Role unbound.`,
@@ -190,7 +190,7 @@ export class PrincipalRoles {
       await this.load();
       await this.session.refreshCapabilities();
     } catch (e) {
-      this.error.set(toApiError(e));
+      this.error.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

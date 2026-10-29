@@ -1,0 +1,31 @@
+.subject {
+  margin-block: 0 var(--trove-space-3);
+  font: var(--mat-sys-title-medium);
+}
+
+.tabs {
+  margin-block: var(--trove-space-4);
+}
+
+.tab {
+  padding-block: var(--trove-space-4);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.deleting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+  margin-block-start: var(--trove-space-3);
+}

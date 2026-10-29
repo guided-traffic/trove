@@ -7,10 +7,10 @@ import { ApiError } from '../../api/problem';
 import { SessionsApi, UserSession } from '../../api/sessions-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
-import { Confirmer } from '../../shared/access/confirm-dialog';
+import { Confirm } from '../../shared/confirm-dialog';
 import { TextField } from '../../shared/access/fields';
-import { fieldErrorAt } from '../../shared/access/field-problem';
-import { toApiError } from '../../shared/access/paged-signal';
+import { fieldErrorAt } from '../../shared/field-errors';
+import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -36,7 +36,7 @@ export class UserDetail {
 
   private readonly api = inject(IdentityApi);
   private readonly sessionsApi = inject(SessionsApi);
-  private readonly confirmer = inject(Confirmer);
+  private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
@@ -80,7 +80,7 @@ export class UserDetail {
       this.displayName.set(u.displayName ?? '');
     } catch (e) {
       this.user.set(null);
-      this.loadError.set(toApiError(e));
+      this.loadError.set(asApiError(e));
       return;
     }
     await this.loadSessions();
@@ -92,7 +92,7 @@ export class UserDetail {
       this.sessions.set(await this.sessionsApi.ofUser(this.username()));
     } catch (e) {
       this.sessions.set(null);
-      this.sessionError.set(toApiError(e));
+      this.sessionError.set(asApiError(e));
     }
   }
 
@@ -121,13 +121,14 @@ export class UserDetail {
   protected async disable(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@user.disable-title:Disable this user?`,
-      text: $localize`:@@user.disable-text:${this.username()}:user: can no longer sign in, and their sessions end.`,
-      confirm: $localize`:@@user.disable-confirm:Disable`,
-      option: { label: $localize`:@@user.disable-revoke:Also revoke all tokens of this user`, checked: true },
+      lines: [$localize`:@@user.disable-text:${this.username()}:user: can no longer sign in, and their sessions end.`],
+      confirmLabel: $localize`:@@user.disable-confirm:Disable`,
+      choice: $localize`:@@user.disable-revoke:Also revoke all tokens of this user`,
+      choiceChecked: true,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     await this.act(
-      () => this.api.disableUser(this.username(), { revokeTokens: answer.option }),
+      () => this.api.disableUser(this.username(), { revokeTokens: answer.checked }),
       $localize`:@@user.disabled:User disabled.`,
     );
   }
@@ -143,17 +144,17 @@ export class UserDetail {
   protected async remove(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@user.delete-title:Delete this user?`,
-      text: $localize`:@@user.delete-text:${this.username()}:user: and their tokens and sessions are removed. This cannot be undone.`,
-      confirm: $localize`:@@user.delete-confirm:Delete`,
+      lines: [$localize`:@@user.delete-text:${this.username()}:user: and their tokens and sessions are removed. This cannot be undone.`],
+      confirmLabel: $localize`:@@user.delete-confirm:Delete`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     this.actionError.set(null);
     try {
       await this.api.deleteUser(this.username());
       this.notifier.status($localize`:@@user.deleted:User deleted.`);
       await this.router.navigate(['/admin/users']);
     } catch (e) {
-      this.actionError.set(toApiError(e));
+      this.actionError.set(asApiError(e));
     }
   }
 
@@ -182,10 +183,10 @@ export class UserDetail {
   protected async endSessions(): Promise<void> {
     const answer = await this.confirmer.ask({
       title: $localize`:@@user.end-sessions-title:End all sessions of this user?`,
-      text: $localize`:@@user.end-sessions-text:${this.username()}:user: is signed out of every browser at once.`,
-      confirm: $localize`:@@user.end-sessions-confirm:End sessions`,
+      lines: [$localize`:@@user.end-sessions-text:${this.username()}:user: is signed out of every browser at once.`],
+      confirmLabel: $localize`:@@user.end-sessions-confirm:End sessions`,
     });
-    if (!answer.confirmed) return;
+    if (answer === null) return;
     await this.run(
       this.actionError,
       async () => {
@@ -234,7 +235,7 @@ export class UserDetail {
       await call();
       this.notifier.status(done);
     } catch (e) {
-      target.set(toApiError(e));
+      target.set(asApiError(e));
     } finally {
       this.busy.set(false);
     }

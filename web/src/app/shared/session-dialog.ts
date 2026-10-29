@@ -3,7 +3,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { Router } from '@angular/router';
 // >>> M1 ui-b
-import { DraftStore } from './access/drafts';
+import { DraftStore } from './drafts';
 // <<< M1 ui-b
 
 export interface SessionDialogData {

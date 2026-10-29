@@ -8,11 +8,12 @@ Requirements: [R-ARCH-004](../spec/architecture.md), [R-UI-001](../spec/api-and-
 
 The shell (skip link, header with user menu, side bar pinned from 1024 CSS px and a drawer below,
 banner area, notice regions, router outlet), the HTTP layer, the session handling and every
-cross-cutting UI mechanism are in place, so the screens of the later work packages are content. The
-routed M1 screens are placeholders with their final path and title, except sign-in, signed out and
-the system status screen, which are built. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
-[R-UI-038](../spec/api-and-ui.md), [R-UI-042 to R-UI-047](../spec/api-and-ui.md); decisions Q-UI-10 to
-Q-UI-13 on the same page.
+cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
+screen with its jobs screen, the repository list, wizard and edit form, the file tree, the endpoint screens with the exposure rule editor and
+the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)); the other routed M1 screens are placeholders with their final
+path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
+[R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
+[R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 on the same page.
 
 ## Workspace layout
 
@@ -29,12 +30,12 @@ Q-UI-13 on the same page.
 | [web/src/app/app.ts](../../web/src/app/app.ts), `app.html` | Root standalone component: skip link, header and user menu (language, theme, sign out), side bar from `core/navigation.ts`, banner, notices, outlet; opens the session dialogs |
 | [web/src/app/app.config.ts](../../web/src/app/app.config.ts) | Router (component input binding, `TroveTitleStrategy`), `HttpClient` on fetch with the XSRF configuration of R-AUTH-012 and the three interceptors, `provideApiServices()`, global error listeners |
 | [web/src/app/app.routes.ts](../../web/src/app/app.routes.ts) | `/login` and `/logged-out` without a guard; everything else under `authGuard`; one lazy `loadChildren` per area |
-| [web/src/app/api/](../../web/src/app/api/) | `client.ts` (`ApiClient`), `problem.ts` (`Problem`, `ApiError`), `pagination.ts` (`collectAll`, `PagedList`), `types.ts` (helpers over the generated types), one `*-api.ts` per endpoint family (abstract service class, hand-typed DTO where the OpenAPI document lacks the operation, HTTP implementation), `providers.ts`, `testing/fakes.ts` |
+| [web/src/app/api/](../../web/src/app/api/) | `client.ts` (`ApiClient`), `problem.ts` (`Problem`, `ApiError`), `pagination.ts` (`collectAll`, `PagedList`), `types.ts` (helpers over the generated types), one `*-api.ts` per endpoint family (abstract service class, hand-typed DTO where the OpenAPI document lacks the operation, HTTP implementation), `providers.ts`, `testing/fakes.ts`. Catalog services typed from the generated schema: `repositories-api.ts` (repositories and the format catalog), `files-api.ts` (items, children, statistics, delete, upload and folder creation; the XHR client of Q-UI-16), `endpoints-api.ts` (endpoints, exposure rules, the dry run), `audit-api.ts`, `jobs-api.ts` (jobs and tasks); `csrf.ts` holds the CSRF cookie and header names; their fakes are in `testing/fakes-catalog.ts` and `provideFakeApis()` spreads them |
 | `web/src/app/api/generated/` | `schema.d.ts` from openapi-typescript, committed, never edited |
 | [web/src/app/core/](../../web/src/app/core/) | `session-store.ts`, `authz-epoch.ts`, `auth-guard.ts`, `navigation.ts`, `preferences-store.ts`, `notifier.ts`, `title-strategy.ts`, `focus-on-navigation.ts`, `storage.ts` (the only user of browser storage), `browser-navigation.ts` (`safeReturnTo`), `layout.ts`, `banner-store.ts`; `http/interceptors.ts` and `http/problem-messages.ts` |
-| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute`; `access/` (building blocks of the identity and permission screens, see below) |
-| [web/src/app/features/](../../web/src/app/features/) | One folder per area with an `<area>.routes.ts` (`login` <!-- M1 ui-b -->, the identity and permission areas of the section below, and `system` carry built screens), `not-found` |
-| [web/src/app/testing/](../../web/src/app/testing/) | `axe.ts`, the accessibility helper of the component specs |
+| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute`; `access/` (building blocks of the identity and permission screens, see below); for the forms and lists of the catalog area: `PagedResource` (a "Load more" list as signals, with `start`, `more`, `reload`, `replace`, `remove`; used by every list screen) with `asApiError`, and `valueOf` (a resource's value without the throw of the error state), `merge-patch.ts` (RFC 7396 diff and apply), `field-errors.ts` (`ErrorSummary`, `fieldMessage`, `fieldErrorAt`, `problemsAt`), `unsaved-guard.ts`, `drafts.ts` (`DraftStore`: a draft across a re-authentication and the registry behind "Copy draft as JSON"), `confirm-dialog.ts` (`Confirm`: confirm, type-to-confirm, an optional choice that starts ticked or not), `diff-dialog.ts`, `copy-button.ts`, `job-progress.ts` (polling progress component) |
+| [web/src/app/features/](../../web/src/app/features/) | One folder per area with an `<area>.routes.ts` (`login`, the identity and permission areas of the section below, `system`, `repositories`, `browse`, `endpoints` and `audit` carry built screens), `not-found` |
+| [web/src/app/testing/](../../web/src/app/testing/) | `axe.ts`, the accessibility helper of the component specs; `screen.ts`, `renderScreen` (a screen against the fakes, dialogs without animation, a catch-all route), `settle`, `sleep`, `expectAccessible`, `browserStorage` and `storedText`, and the small DOM helpers of the specs (`text`, `button`, `buttonByText`, `type`, `typeInto`) |
 | [web/scripts/](../../web/scripts/) | `build-embed.mjs`, `check-budget.mjs`, `check-rules.mjs` |
 | [web/eslint.config.js](../../web/eslint.config.js) | angular-eslint plus the R-UI-046 rules |
 
@@ -115,6 +116,24 @@ h, err := webui.New(webui.Options{
 mux.Handle("/ui/", h) // do not strip the prefix
 ```
 
+## Screens of the catalog area
+
+| Route | Component | Services | Notes |
+|---|---|---|---|
+| `/admin/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Filters `q`, `class`, `format`, `state` in the query; cursor "Load more"; delete with typed key and job progress; "recently viewed" in browser storage |
+| `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps; classes and formats only from `GET /api/v1/formats`; live key check; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
+| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi` | Tabs General, Access, API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form; delete |
+| `/browse`, `/browse/{repo}/{path…}` | [browse](../../web/src/app/features/browse/browse.ts) | `RepositoriesApi`, `FilesApi`, `SessionStore.check` | `@angular/aria` tree with lazy pages; details General, Statistics, API; upload and folder dialogs, delete (204 or job) |
+| `/admin/endpoints` | [endpoint-list](../../web/src/app/features/endpoints/endpoint-list.ts) | `EndpointsApi` | Inert names flagged |
+| `/admin/endpoints/:endpoint` | [endpoint-detail](../../web/src/app/features/endpoints/endpoint-detail.ts) | `EndpointsApi`, `RepositoriesApi` | Read-only configuration, mode `all` banner, rule table with the enable switch (`PATCH {enabled}`), client addresses |
+| `/admin/endpoints/:endpoint/rules/new`, `…/rules/:name` | [exposure-rule-editor](../../web/src/app/features/endpoints/exposure-rule-editor.ts) | `EndpointsApi`, `RepositoriesApi` | Dimensions by pattern subject; preview through `check-exposure` after 500 ms; diff dialog before `PUT`; create with an idempotency key |
+| `/admin/audit` | [audit-log](../../web/src/app/features/audit/audit-log.ts) | `AuditApi` | Filters and the open event in the query; keyset "Load more"; UTC switch; export links |
+| `/admin/system` | [system-status](../../web/src/app/features/system/system-status.ts) | `SystemApi`, `EncryptionApi`, `JobsApi` | Key card with per-replica rings, scheduled tasks card, recent jobs |
+| `/admin/system/jobs` | [jobs-page](../../web/src/app/features/system/jobs-page.ts) | `JobsApi` | Filters `kind` and `state`; refresh with a pause control; cancel |
+
+Every screen has a loading, an empty, an error and a filled state, covered by component specs that run axe (no serious or critical violation).
+Decisions: Q-UI-14 (forms), Q-UI-15 (`ui.*` constants), Q-UI-16 (upload), Q-UI-17 (tree), Q-UI-18 (repositories), Q-UI-19 (endpoints, audit, status).
+
 ## Conventions that CI enforces
 
 - **No NgModule, no zone** ([check-rules.mjs](../../web/scripts/check-rules.mjs)): `NgModule(`,
@@ -140,7 +159,7 @@ mux.Handle("/ui/", h) // do not strip the prefix
 | Tier | State |
 |---|---|
 | Unit | In place: Vitest through the Angular builder, specs next to code (`*.spec.ts`), requirement IDs in test names. Covers the interceptors (`HttpTestingController`), the session store, pagination, problem messages, the status model |
-| Component | In place with `TestBed` on jsdom; screens run against the fakes of `api/testing/fakes.ts`. Vitest browser mode (real Chromium) is **not** set up: it needs a browser provider package and browser binaries in CI |
+| Component | In place with `TestBed` on jsdom; screens run against the fakes of `api/testing/fakes.ts` and `fakes-catalog.ts` through `testing/screen.ts`. Vitest browser mode (real Chromium) is **not** set up: it needs a browser provider package and browser binaries in CI. A spec that uses fake timers switches back to real timers before it calls axe, which schedules its own |
 | Contract | Partly: the clients are typed against `schema.d.ts` and compile with it. Mock answers validated against the document are not written yet |
 | Accessibility | In place on jsdom: `axe-core` (pinned in the lockfile) through `src/app/testing/axe.ts`; `app.routes.spec.ts` renders every routed screen and fails on a serious or critical violation (Q-UI-11). jsdom has no layout, so `color-contrast`, the document-level rules, focus across a real navigation and reflow wait for Playwright |
 | End-to-end, security | Not set up (Playwright). They belong to the e2e work with the chart-installed build |
@@ -217,9 +236,9 @@ Services of `api/` (abstract class, HTTP implementation, fake in [api/testing/ac
 | `PolicyApi`, `RolesApi` | `authz-api.ts` | policies (`PUT` with `If-Match`, `validate-policy`), roles, role bindings (`ApiClient.putBinding`) |
 | `PolicyExplainer` | `policy-explainer.ts` | the preview's "why can X do Y": `DraftPolicyExplainer` today, an implementation of `POST /authz/explain` once R-AUTHZ-024 is built |
 
-Building blocks under [shared/access/](../../web/src/app/shared/access/): `PagedSignal` (cursor paging as signals), `TextField` and `SelectField` (label, hint,
-error text tied with `aria-describedby`), `Confirmer` (confirmation dialog with an optional checkbox), `Needs` (the reason behind a missing write control, R-UI-005),
-`TokenForm`, `TokenSecret` (one-time display), `TokenTable`, `PrincipalRoles`, `DraftStore`, `formatDuration`. [features/tokens/token-manager.ts](../../web/src/app/features/tokens/token-manager.ts)
+Building blocks under [shared/access/](../../web/src/app/shared/access/): `TextField` and `SelectField` (label, hint,
+error text tied with `aria-describedby`), `Needs` (the reason behind a missing write control, R-UI-005),
+`TokenForm`, `TokenSecret` (one-time display), `TokenTable`, `PrincipalRoles`, `formatDuration`; the shared pieces they use (`PagedResource`, `Confirm`, `DraftStore`, `fieldErrorAt`) live one level up in `shared/`. [features/tokens/token-manager.ts](../../web/src/app/features/tokens/token-manager.ts)
 is the one token list-and-create component used by the profile, the user detail and the service account detail.
 
 Conventions these screens follow:
@@ -238,7 +257,7 @@ Conventions these screens follow:
 - **Lost token value.** A retried create that answers 409 `token_already_issued` carries the `tokenId`; `TokenManager` revokes it and creates again with a new key (R-UI-042).
 - **Permission-driven rendering.** Entries show with `identities:read`, `policies:read` and so on; controls that need a write capability are disabled with `<trove-needs>` next to them
   (list pages) or absent with the same note at the top (detail pages). The API decides in any case.
-- **Tests.** Component specs use `renderScreen` from [shared/access/testing.ts](../../web/src/app/shared/access/testing.ts) against the fakes; each screen's spec runs axe on its states
+- **Tests.** Component specs use `renderScreen` from [testing/screen.ts](../../web/src/app/testing/screen.ts) against the fakes; each screen's spec runs axe on its states
   (loaded, error, read-only, open dialog), including the one-time token display and the policy editor with validation errors.
 <!-- <<< M1 ui-b -->
 
@@ -252,7 +271,8 @@ Conventions these screens follow:
    add a fake to `api/testing/fakes.ts`). Use the generated type when `schema.d.ts` has the operation. Shared state goes in an injectable store
    exposing read-only signals.
 4. Create forms with an idempotency key from `newIdempotencyKey()` for creates and the loaded `ETag` for edits; show failures with `<trove-error-notice>`
-   and field errors from `ApiError.fieldErrors`.
+   and field errors from `ApiError.fieldErrors` (`ErrorSummary` and `problemsAt` of `shared/field-errors.ts`). Forms use signals and native controls (Q-UI-14);
+   read a resource's value with `valueOf(resource)` wherever the error state is shown next to it, because `resource.value()` throws in that state.
 5. Add the navigation entry to `NAV_GROUPS` in [core/navigation.ts](../../web/src/app/core/navigation.ts) with the capability that shows it.
 6. Mark every text with `i18n`/`$localize`, run `npm run extract-i18n`, add the German `<target>`s to `messages.de.xlf`, extend the glossary.
 7. Write specs next to the code with the requirement ID in the test name, add the route to `SCREENS` in `app.routes.spec.ts` (heading, title and the axe check come with it),
@@ -261,14 +281,19 @@ Conventions these screens follow:
 
 ## What is not done yet
 
-- `system/encryption` has no operation in the OpenAPI document yet; its DTO is typed by hand in `api/system-api.ts` (Q-UI-12). `GET /api/v1/system/banner` is not wired to
-  `BannerStore` either. <!-- >>> M1 ui-b --> `whoami`, `login-options`, `authz/me`, `authz/check` and `users/me/preferences` use the generated types since wave 3. <!-- <<< M1 ui-b -->
-- System status: scheduled tasks, jobs and backups have no card yet (R-UI-038, R-UI-048); the jobs and backups routes are placeholders.
+- `GET /api/v1/system/banner` is not wired to `BannerStore`. The catalog services, `system/encryption`, `whoami`, `login-options`, `authz/me`, `authz/check` and `users/me/preferences` use the generated types (Q-UI-12).
+- System status: the backups card and route are placeholders (R-UI-048).
+- What the API lacks for the catalog screens, and the UI works around (Q-UI-15, Q-UI-18, Q-UI-19): the values of `ui.browser.page_size` and
+  `ui.deploy.max_upload_bytes`; a creation time and a sort by creation on the repository summary view; a settings schema in the format descriptor; a flag for
+  formats with tags in the descriptor.
+- The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: M1 has neither class. Copy, move, properties and the trash can are P1.
+- The repository settings forms cover the generic format; NuGet's `deleteMode` view, upstream presets, "Test connection", the member editor and the other format
+  panels arrive with those formats.
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
-  expiry; the timeouts are in `settings/auth`, which needs `settings:read`). <!-- >>> M1 ui-b --> The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
-  settings and policy editors keep and restore their non-secret drafts (see above); other editors adopt `DraftStore` as they are built. <!-- <<< M1 ui-b -->
+  expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
+  settings and policy editors and the catalog editors keep and restore their non-secret drafts (see above).
 - No project filter, global search, help link or keyboard-shortcut switch in the header (P1 entries of R-UI-002).
-- Forms: <!-- >>> M1 ui-b --> every form uses plain signals with `TextField` and `SelectField` (Q-UI-20); the server's `validate-policy` and field errors by JSON pointer carry the validation, and the client checks only what saves a round trip. Signal Forms with validators derived from the OpenAPI constraints are not used. <!-- <<< M1 ui-b -->
+- Forms: the identity, token, settings and policy forms use plain signals with `TextField` and `SelectField` (Q-UI-20), the catalog forms plain signals with native controls (Q-UI-14); in both the server's field errors by JSON pointer carry the validation, and the client checks only what saves a round trip. Signal Forms with validators derived from the OpenAPI constraints are not used.
 - Browser-mode component tests, contract mocks, Playwright (contrast in both themes, reflow, focus order, both locales) and the security tier.
 - Local runs on a Node.js other than `web/.nvmrc` work only while the version satisfies `engines`; `make versions-check` names a mismatch.
 - npm 11 prints `allow-scripts` warnings for the install scripts of `esbuild`, `lmdb`,

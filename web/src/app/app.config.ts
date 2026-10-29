@@ -8,6 +8,7 @@ import {
 import { provideRouter, TitleStrategy, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
 import { provideApiServices } from './api/providers';
+import { CSRF_COOKIE, CSRF_HEADER } from './api/csrf';
 import {
   conventionsInterceptor,
   problemInterceptor,
@@ -15,9 +16,10 @@ import {
 } from './core/http/interceptors';
 import { TroveTitleStrategy } from './core/title-strategy';
 
-/** Cookie and header of the CSRF protection for cookie-authenticated requests (R-AUTH-012). */
-export const CSRF_COOKIE = '__Host-trv_csrf';
-export const CSRF_HEADER = 'X-CSRF-Token';
+// >>> M1 ui-a
+// The constants live in api/csrf.ts so that the upload client of api/files-api.ts can read them.
+export { CSRF_COOKIE, CSRF_HEADER };
+// <<< M1 ui-a
 
 /**
  * Root providers. Zoneless change detection is the Angular 22 default, so no provider names it.

@@ -1,5 +1,4 @@
 import { Routes, UrlMatcher, UrlSegment } from '@angular/router';
-import { loadPlaceholder, placeholderRoute } from '../../shared/placeholder-route';
 
 /**
  * `/browse/{repo}/{path…}` (R-UI-003): the first segment is the repository, the rest is the item
@@ -18,11 +17,14 @@ export const browseMatcher: UrlMatcher = (segments) => {
 };
 
 /** R-UI-010. */
+const loadBrowse = (): Promise<typeof import('./browse').Browse> =>
+  import('./browse').then((m) => m.Browse);
+
 export const BROWSE_ROUTES: Routes = [
-  placeholderRoute('', $localize`:@@route.browse.title:Browse`),
+  { path: '', title: $localize`:@@route.browse.title:Browse`, loadComponent: loadBrowse },
   {
     matcher: browseMatcher,
     title: $localize`:@@route.browse.tree.title:File tree`,
-    loadComponent: loadPlaceholder,
+    loadComponent: loadBrowse,
   },
 ];

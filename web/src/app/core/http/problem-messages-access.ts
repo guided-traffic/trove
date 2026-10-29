@@ -1,7 +1,8 @@
 /**
  * Translated messages of the problem codes of the identity, token, login and permission areas
  * (R-UI-042, R-UI-045). `describeProblem` consults this table before it falls back to the server's
- * English `detail`. Returns null for a code this table does not know.
+ * English `detail`. Returns null for a code this table does not know. `reserved_name` and `invalid_pattern` are
+ * shared with the catalog area and live in `problem-messages.ts`.
  */
 export function describeAccessProblem(code: string | null): string | null {
   switch (code) {
@@ -23,8 +24,6 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.provider_unavailable:The identity provider is not available right now.`;
     case 'principal_disabled':
       return $localize`:@@problem.principal_disabled:This account is disabled.`;
-    case 'reserved_name':
-      return $localize`:@@problem.reserved_name:This name is reserved.`;
     case 'username_invalid':
       return $localize`:@@problem.username_invalid:The user name may contain lower-case letters, digits and . _ @ + - only, and must start with a letter or digit.`;
     case 'managed_by_scim':
@@ -71,8 +70,6 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.anonymous_not_allowed:Anonymous access is not allowed by the installation's configuration.`;
     case 'invalid_action':
       return $localize`:@@problem.invalid_action:An action is not valid.`;
-    case 'invalid_pattern':
-      return $localize`:@@problem.invalid_pattern:A pattern is not valid.`;
     case 'unknown_principal':
       return $localize`:@@problem.unknown_principal:A principal does not exist.`;
     case 'unknown_repository':

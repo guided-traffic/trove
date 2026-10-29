@@ -7,7 +7,7 @@ import { Group, GroupFilters, IdentityApi } from '../../api/identity-api';
 import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
-import { PagedSignal } from '../../shared/access/paged-signal';
+import { PagedResource } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
 import { GroupCreateDialog } from './group-create-dialog';
 
@@ -85,7 +85,7 @@ export class GroupList {
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
-  protected readonly list = new PagedSignal<Group>();
+  protected readonly list = new PagedResource<Group>();
   protected readonly q = signal('');
   protected readonly origin = signal('');
   protected readonly originLabel = groupOriginLabel;

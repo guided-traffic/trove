@@ -1,6 +1,6 @@
 import { AuthSettingsApi } from '../../api/auth-settings-api';
 import { FakeAuthSettingsApi, problem, sampleAuthSettings } from '../../api/testing/access-fakes';
-import { browserStorage, buttonByText, renderScreen, settle, textOf, typeInto } from '../../shared/access/testing';
+import { browserStorage, buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { AuthSettings } from './auth-settings';
 
@@ -11,7 +11,7 @@ describe('Authentication settings (R-UI-031)', () => {
 
   it('R-UI-031 shows the runtime values with their ceilings and the read-only status, and passes axe', async () => {
     const { root } = await renderScreen(AuthSettings);
-    const t = textOf(root);
+    const t = text(root);
     expect(t).toContain('Anonymous access');
     expect(t).toContain('Ceiling from the configuration: 365 days');
     expect(t).toContain('Corporate SSO');
@@ -46,7 +46,7 @@ describe('Authentication settings (R-UI-031)', () => {
       },
     });
     expect(root.querySelector<HTMLInputElement>('mat-checkbox input')!.disabled).toBe(true);
-    expect(textOf(root)).toContain('does not allow anonymous access');
+    expect(text(root)).toContain('does not allow anonymous access');
   });
 
   it('R-UI-042 a 412 opens the conflict dialog; Overwrite sends my patch with the ETag read now', async () => {
@@ -61,7 +61,7 @@ describe('Authentication settings (R-UI-031)', () => {
     const dialog = overlay().querySelector('trove-conflict-dialog') as HTMLElement;
     expect(dialog).toBeTruthy();
     buttonByText(dialog, 'Overwrite').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect(api.stored.settings.tokens.pat.defaultTTLSeconds).toBe(2_592_000);
     expect(api.stored.etag).toBe('"102"');
   });
@@ -75,7 +75,7 @@ describe('Authentication settings (R-UI-031)', () => {
     await settle(fixture);
     buttonByText(root, 'Save settings').click();
     await settle(fixture);
-    expect(textOf(root.querySelector('.field-error')!)).toContain('above the ceiling');
+    expect(text(root.querySelector('.field-error')!)).toContain('above the ceiling');
   });
 
   it('R-UI-042 recent authentication keeps the entries as a draft and restores them after sign-in', async () => {
@@ -93,7 +93,7 @@ describe('Authentication settings (R-UI-031)', () => {
     expect(
       again.root.querySelector<HTMLInputElement>('input[name="patDefault"]')!.value,
     ).toBe('30');
-    expect(textOf(again.root)).toBeDefined();
+    expect(text(again.root)).toBeDefined();
   });
 
   it('R-UI-005 without settings:write the values are read only and there is no save button', async () => {

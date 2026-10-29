@@ -14,6 +14,9 @@ import { EncryptionApi, EncryptionStatus, Replica, SystemApi, SystemInfo } from 
 // >>> M1 ui-b
 import { provideAccessFakes } from './access-fakes';
 // <<< M1 ui-b
+// >>> M1 ui-a
+import { provideCatalogFakes } from './fakes-catalog';
+// <<< M1 ui-a
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -254,5 +257,8 @@ export function provideFakeApis(): Provider[] {
     // >>> M1 ui-b
     ...provideAccessFakes(),
     // <<< M1 ui-b
+    // >>> M1 ui-a
+    ...provideCatalogFakes(),
+    // <<< M1 ui-a
   ];
 }

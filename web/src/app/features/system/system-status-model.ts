@@ -1,4 +1,4 @@
-import { Replica, SystemInfo } from '../../api/system-api';
+import { EncryptionStatus, Replica, SystemInfo } from '../../api/system-api';
 
 /**
  * Pure derivations of the system status screen (R-UI-038, Q-UI-7). They read the registry as the
@@ -103,17 +103,21 @@ export function valkeySummary(info: SystemInfo, replicas: readonly Replica[]): V
     .map((v) => v.lastPrimaryChangeAt)
     .filter((t): t is string => t !== null)
     .sort();
-  const versions = new Set(views.map((v) => v.serverVersion).filter((v): v is string => v !== null));
+  const versions = new Set(
+    views.map((v) => v.serverVersion).filter((v): v is string => v !== null),
+  );
   const reasons = new Set(
     views.map((v) => v.reason).filter((r): r is string => r !== null && r !== ''),
   );
   return {
-    degradedReplicas: info.valkey.degradedReplicas ?? views.filter((v) => v.state === 'degraded').length,
+    degradedReplicas:
+      info.valkey.degradedReplicas ?? views.filter((v) => v.state === 'degraded').length,
     liveReplicas: info.replicas.live,
     reasons: [...reasons],
     primariesDisagree: primaries.size > 1,
     sentinelsUnreachable: views.some(
-      (v) => v.sentinelsConfigured > 0 && v.sentinelsReachable < sentinelMajority(v.sentinelsConfigured),
+      (v) =>
+        v.sentinelsConfigured > 0 && v.sentinelsReachable < sentinelMajority(v.sentinelsConfigured),
     ),
     lastPrimaryChangeAt: changes.at(-1) ?? null,
     serverVersions: [...versions],
@@ -133,3 +137,51 @@ export function keyStatus(key: { active: boolean; sealedValues: number }): KeySt
   if (key.active) return 'active';
   return key.sealedValues > 0 ? 're-encryption-pending' : 'unused';
 }
+
+// >>> M1 ui-a
+/** A replica whose key ring lacks key IDs that others use or that still seal values (E1.9). */
+export interface RingGap {
+  readonly replica: string;
+  readonly role: string;
+  readonly missing: readonly string[];
+}
+
+/**
+ * The key IDs every live replica must hold: the active key ID of every live replica and every
+ * key ID that still seals a value (R-API-049). A replica that lacks one cannot open what another
+ * replica sealed. The list is derived from the same answer that carries `ringsCompatible`, so the
+ * card shows which replica is the incompatible one.
+ */
+export function ringGaps(status: EncryptionStatus): RingGap[] {
+  const needed = new Set<string>([status.activeKeyId]);
+  for (const r of status.replicas) needed.add(r.activeKeyId);
+  for (const k of status.keys) if (k.sealedValues > 0) needed.add(k.id);
+  return status.replicas
+    .map((r) => ({
+      replica: r.name,
+      role: r.role,
+      missing: [...needed].filter((id) => !r.keyIds.includes(id)).sort(),
+    }))
+    .filter((g) => g.missing.length > 0);
+}
+
+export type RotationStep =
+  | { readonly kind: 'incompatible' }
+  | { readonly kind: 'reencrypt'; readonly keyIds: readonly string[] }
+  | { readonly kind: 'remove'; readonly keyIds: readonly string[] }
+  | { readonly kind: 'none' };
+
+/**
+ * The next step of the rotation (R-HA-027) that the state allows: make the rings equal first;
+ * then re-encrypt values still sealed under an old key; then remove a key file that seals nothing.
+ */
+export function rotationStep(status: EncryptionStatus): RotationStep {
+  if (!status.ringsCompatible) return { kind: 'incompatible' };
+  const pending = status.keys
+    .filter((k) => keyStatus(k) === 're-encryption-pending')
+    .map((k) => k.id);
+  if (pending.length > 0) return { kind: 'reencrypt', keyIds: pending };
+  const unused = status.keys.filter((k) => keyStatus(k) === 'unused').map((k) => k.id);
+  return unused.length > 0 ? { kind: 'remove', keyIds: unused } : { kind: 'none' };
+}
+// <<< M1 ui-a

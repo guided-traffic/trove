@@ -1,0 +1,69 @@
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-3);
+  margin: 0 0 var(--trove-space-4);
+  padding: 0;
+  list-style: none;
+
+  li[aria-current='step'] {
+    font-weight: 700;
+  }
+}
+
+.step-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mat-sys-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-2);
+  max-inline-size: 36rem;
+  margin: 0 0 var(--trove-space-4);
+  padding: 0;
+  border: 0;
+
+  legend {
+    margin-block-end: var(--trove-space-2);
+    font: var(--mat-sys-title-small);
+  }
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--trove-space-2);
+  padding: var(--trove-space-3);
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: var(--mat-sys-corner-medium);
+
+  input {
+    grid-row: 1 / span 2;
+  }
+
+  .hint {
+    grid-column: 2;
+    margin: 0;
+  }
+}
+
+.choice-title {
+  font-weight: 600;
+}
+
+.nav-buttons {
+  display: flex;
+  gap: var(--trove-space-3);
+  margin-block-start: var(--trove-space-4);
+}
+
+.api-request {
+  margin-block: var(--trove-space-4);
+}

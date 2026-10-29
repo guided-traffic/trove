@@ -1,0 +1,195 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@ep.detail.heading">Endpoint</h1>
+  <a mat-button routerLink="/admin/endpoints" i18n="@@ep.detail.back">All endpoints</a>
+  @if (canWrite() && !inert()) {
+    <a
+      mat-flat-button
+      [routerLink]="['/admin/endpoints', endpoint(), 'rules', 'new']"
+      i18n="@@ep.rule.new"
+      >New rule</a
+    >
+  }
+</header>
+
+@if (failure(); as f) {
+  <trove-error-notice [error]="f" (retry)="detail.reload()" />
+} @else if (detail.isLoading() && !valueOf(detail)) {
+  <p role="status" i18n="@@repo.loading">Loading.</p>
+} @else if (valueOf(detail); as e) {
+  <p class="subject" translate="no">
+    <strong>{{ e.name }}</strong>
+  </p>
+
+  @if (modeAll()) {
+    <p class="banner-warning" role="note">
+      <span class="material-icons inline warn" aria-hidden="true">warning</span>
+      <span i18n="@@ep.banner.all">
+        This endpoint is in mode "all": it exposes everything the caller may read, so its exposure
+        rules have no effect here.
+      </span>
+    </p>
+  }
+  @if (e.inert) {
+    <p class="banner-warning" role="note">
+      <span class="material-icons inline warn" aria-hidden="true">warning</span>
+      <span i18n="@@ep.banner.inert">
+        This endpoint is no longer configured. Its rules have no effect; they can be read and
+        deleted.
+      </span>
+    </p>
+  }
+
+  @if (e.configuration; as c) {
+    <section class="card" aria-labelledby="ep-config">
+      <h2 id="ep-config" i18n="@@ep.config.heading">Configuration</h2>
+      <p class="hint" i18n="@@ep.config.hint">Read-only: this comes from the configuration file.</p>
+      <dl class="facts">
+        <dt i18n="@@ep.col.base-url">Base URL</dt>
+        <dd translate="no">{{ c.baseUrl }}</dd>
+        <dt i18n="@@ep.col.hosts">Hosts</dt>
+        <dd translate="no">
+          {{ c.hosts.join(', ') }}{{ c.wildcardHost ? ', ' + c.wildcardHost : '' }}
+        </dd>
+        <dt i18n="@@ep.col.port">Port</dt>
+        <dd translate="no">{{ c.port ?? '–' }}</dd>
+        <dt i18n="@@ep.col.surface">Surface</dt>
+        <dd translate="no">{{ c.surface.join(', ') }}</dd>
+        <dt i18n="@@ep.col.mode">Exposure</dt>
+        <dd translate="no">{{ c.exposure }}</dd>
+        <dt i18n="@@ep.col.credentials">Accepted credentials</dt>
+        <dd translate="no">
+          {{ c.auth.tokenTypes.join(', ') }}{{ c.auth.boundTokensOnly ? ' (bound only)' : ''
+          }}{{ c.auth.anonymous ? ', anonymous' : '' }}
+        </dd>
+        <dt i18n="@@ep.col.pool">Pool</dt>
+        <dd translate="no">{{ c.pool ?? '–' }}</dd>
+        <dt i18n="@@ep.col.rate-limit">Rate limit</dt>
+        <dd translate="no">
+          @if (c.rateLimit; as r) {
+            {{ r.class }}: {{ r.requestsPerSecond }}/s, burst {{ r.burst }}, per {{ r.key }}
+          } @else {
+            –
+          }
+        </dd>
+      </dl>
+    </section>
+  }
+
+  <section aria-labelledby="ep-rules">
+    <h2 id="ep-rules" i18n="@@ep.rules.heading">Exposure rules</h2>
+    @if (actionFailure(); as f) {
+      <trove-error-notice [error]="f" />
+    }
+    @if (rulesFailure(); as f) {
+      <trove-error-notice [error]="f" (retry)="rules.reload()" />
+    } @else if (valueOf(rules); as list) {
+      @if (list.length === 0) {
+        <p class="empty" i18n="@@ep.rules.empty">This endpoint has no exposure rule.</p>
+      } @else {
+        <div class="scroll" tabindex="0" role="region" aria-labelledby="rules-caption">
+          <table class="data">
+            <caption id="rules-caption" class="visually-hidden" i18n="@@ep.rules.caption">
+              Exposure rules
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@ep.col.name">Name</th>
+                <th scope="col" i18n="@@ep.rule.col.repository">Repository</th>
+                <th scope="col" i18n="@@ep.rule.col.patterns">Packages and paths</th>
+                <th scope="col" i18n="@@ep.rule.col.versions">Versions</th>
+                <th scope="col" i18n="@@ep.rule.col.prereleases">Pre-releases</th>
+                <th scope="col" i18n="@@ep.rule.col.enabled">Enabled</th>
+                <th scope="col" i18n="@@ep.rule.col.address">Client address</th>
+                <th scope="col" i18n="@@repo.col.actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (rule of list; track rule.name) {
+                <tr>
+                  <th scope="row">
+                    <a
+                      [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]"
+                      translate="no"
+                      >{{ rule.name }}</a
+                    >
+                    @if (rule.description) {
+                      <div class="hint">{{ rule.description }}</div>
+                    }
+                  </th>
+                  <td>
+                    <a [routerLink]="['/admin/repositories', rule.repository]" translate="no">{{
+                      rule.repository
+                    }}</a>
+                  </td>
+                  <td translate="no">{{ summary(rule) || '–' }}</td>
+                  <td translate="no">{{ versions(rule) || '–' }}</td>
+                  <td>
+                    @if (rule.prereleases) {
+                      <ng-container i18n="@@ep.yes">yes</ng-container>
+                    } @else {
+                      <ng-container i18n="@@ep.no">no</ng-container>
+                    }
+                  </td>
+                  <td>
+                    <label class="switch">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        [checked]="rule.enabled"
+                        [disabled]="!canWrite() || e.inert || busy() === rule.name"
+                        [attr.aria-label]="toggleLabel(rule.name)"
+                        (change)="toggle(rule, $any($event.target))"
+                      />
+                      <span>
+                        @if (rule.enabled) {
+                          <ng-container i18n="@@ep.state.enabled">enabled</ng-container>
+                        } @else {
+                          <ng-container i18n="@@ep.state.disabled">disabled</ng-container>
+                        }
+                      </span>
+                    </label>
+                  </td>
+                  <td>
+                    @if (addressOf(rule); as a) {
+                      <code translate="no">{{ a.url }}</code>
+                      <trove-copy-button [value]="a.url" [label]="copyAddress" />
+                      @if (!a.served) {
+                        <div class="hint" i18n="@@ep.address.not-served">
+                          This endpoint does not serve this address.
+                        </div>
+                      }
+                    } @else {
+                      –
+                    }
+                  </td>
+                  <td>
+                    <div class="row-actions">
+                      <a
+                        mat-button
+                        [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]"
+                        i18n="@@repo.action.edit"
+                        >Edit</a
+                      >
+                      @if (canWrite()) {
+                        <button
+                          mat-button
+                          type="button"
+                          (click)="remove(rule)"
+                          i18n="@@repo.action.delete"
+                        >
+                          Delete
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    } @else {
+      <p role="status" i18n="@@repo.loading">Loading.</p>
+    }
+  </section>
+}

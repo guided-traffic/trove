@@ -2,7 +2,7 @@ import { RolesApi } from '../../api/authz-api';
 import { FakeRolesApi, problem } from '../../api/testing/access-fakes';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
-import { buttonByText, renderScreen, settle, textOf, typeInto } from '../../shared/access/testing';
+import { buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { RoleBindings } from './role-bindings';
 
@@ -13,10 +13,10 @@ describe('System roles (R-UI-024)', () => {
     const { root } = await renderScreen(RoleBindings);
     const sections = root.querySelectorAll('section.card');
     expect(sections).toHaveLength(5);
-    expect(textOf(sections[0]!)).toContain('admin');
-    expect(textOf(sections[0]!)).toContain('group:platform');
-    expect(textOf(sections[2]!)).toContain('user:bob');
-    expect(textOf(sections[3]!)).toContain('Nobody holds this role');
+    expect(text(sections[0]!)).toContain('admin');
+    expect(text(sections[0]!)).toContain('group:platform');
+    expect(text(sections[2]!)).toContain('user:bob');
+    expect(text(sections[3]!)).toContain('Nobody holds this role');
     expect(await seriousViolations(root)).toEqual([]);
   });
 
@@ -26,7 +26,7 @@ describe('System roles (R-UI-024)', () => {
     const unbind = adminRow.querySelector('button') as HTMLButtonElement;
     expect(unbind.disabled).toBe(true);
     expect(unbind.getAttribute('aria-describedby')).toBe('last-admin-guard');
-    expect(textOf(root.querySelector('#last-admin-guard')!)).toContain('last administrator binding cannot be removed');
+    expect(text(root.querySelector('#last-admin-guard')!)).toContain('last administrator binding cannot be removed');
   });
 
   it('R-AUTHZ-022 binds a role, reads the lists again and refreshes the caller\'s capabilities', async () => {
@@ -44,7 +44,7 @@ describe('System roles (R-UI-024)', () => {
     buttonByText(auditor, 'Bind').click();
     await settle(fixture);
     expect((get(RolesApi) as FakeRolesApi).calls).toContain('bind auditor group:security');
-    expect(textOf(root.querySelectorAll('section.card')[2]!)).toContain('group:security');
+    expect(text(root.querySelectorAll('section.card')[2]!)).toContain('group:security');
     expect(refreshed).toBe(1);
   });
 
@@ -54,7 +54,7 @@ describe('System roles (R-UI-024)', () => {
     auditor.querySelector('tbody button')!.dispatchEvent(new Event('click'));
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Unbind').click();
-    await settle(fixture, 300);
+    await sleep(fixture, 300);
     expect((get(RolesApi) as FakeRolesApi).calls).toContain('unbind auditor user:bob');
   });
 
@@ -66,7 +66,7 @@ describe('System roles (R-UI-024)', () => {
     await settle(fixture);
     buttonByText(admin, 'Bind').click();
     await settle(fixture);
-    expect(textOf(root)).toContain('An auto-join group cannot hold the administrator role');
+    expect(text(root)).toContain('An auto-join group cannot hold the administrator role');
   });
 
   it('R-UI-005 without roles:write there is no bind or unbind', async () => {

@@ -4539,6 +4539,109 @@ re-encryption gate when `authz/me` also reports roles.
 
 **Applied in the spec:** R-UI-038 and R-UI-002 are unchanged; this block records the interpretation.
 
+<!-- >>> M1 ui-a -->
+### Q-UI-14 · Forms of the repository and endpoint screens: signals and native controls
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Signal Forms with validators derived from the OpenAPI constraints | The plan of `docs/developer/web-ui.md` | One mechanism for every form | The package is new in Angular 22, and the OpenAPI constraints that matter here (key pattern, rule-name pattern) are one regular expression each; the real validation is the server's and arrives as `errors[].pointer` |
+| (b) Plain signals and native controls (chosen) | One `signal` per form, `<input>`, `<textarea>`, `<select>` and checkboxes styled by the tokens, labels with `for`, `aria-invalid` and `aria-describedby` set from the server's field problems | Matches the sign-in form; every control is a labelled native element, which axe and screen readers handle without a layer; field errors, the error summary and the dirty check are small helpers (`shared/field-errors.ts`, `shared/unsaved-guard.ts`) | Each form wires its own `(input)` handlers |
+| (c) Material form fields everywhere | `mat-form-field` around each control | The look of the sign-in form | Density `-2` and long forms with textareas and repeated fields get heavy; no gain in behaviour |
+
+**Choice:** (b). Server field errors (`ApiError.fieldErrors`) are shown at the control and in an alert summary whose entries focus the control (R-UI-044, WCAG 3.3.1, 3.3.3); an editor with unsaved changes asks before it is left (`unsavedChangesGuard`); a form that meets `reauthentication_required` keeps its non-secret draft in session storage by route and takes it back once (`shared/drafts.ts`, R-UI-042).
+
+**Rationale:** The forms of this work package are a handful of text fields and switches; a form library would add a concept without removing a line of the server-error mapping, which is the part that matters. The development agent would revisit this when a screen needs cross-field validation on the client (the policy editor) and would then move all forms at once.
+
+**Applied in the spec:** R-UI-021, R-UI-042 and R-UI-044 are unchanged. `docs/developer/web-ui.md` no longer announces Signal Forms for the first form.
+
+### Q-UI-15 · Settings of `ui.*` that the browser cannot read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-010 names `ui.browser.page_size` (200) and R-UI-012 names `ui.deploy.max_upload_bytes` (100 MiB). No management API member returns the configuration, so the screens cannot read them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add the two values to `GET /api/v1/system/info` | The UI reads them | The configured value wins | Backend work in the UI wave |
+| (b) Constants with the documented defaults (chosen) | `BROWSER_PAGE_SIZE = 200`, `UPLOAD_LIMIT_BYTES = 100 MiB` | Works today; the server still decides (its own upload limit answers `413`, the cursor accepts any page size up to 10,000) | A changed `ui.*` value does not reach the screen |
+| (c) A build-time value | Baked into the bundle | Single source | The same bundle serves every installation |
+
+**Choice:** (b). The constants sit next to their use (`features/browse/browse.ts`, `api/files-api.ts`). The upload dialog refuses a larger file before any request, as R-UI-012 requires.
+
+**Rationale:** The defaults are the proposed ones, and a mismatch costs a refused request, never a wrong write. The development agent would revisit this when the first operator sets `ui.deploy.max_upload_bytes`; the likely fix is (a), as two more members of `system/info`.
+
+**Applied in the spec:** none. Listed as a gap in the report of this work package.
+
+### Q-UI-16 · Upload: an XHR client of its own, create-only unless "Replace" is ticked
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| How progress is reported | `fetch` upload streams; a second `HttpClient` on XHR (`withXhr()`) | A second `HttpClient`, created once from the root environment injector in `api/files-api.ts`, with XSRF protection and without the trove interceptors (they cover `/api/v1/` and `/auth/` only). It maps a failure to `ApiError` and ends the session on a 401. It is the only XHR use and it only writes (R-UI-001, R-UI-012) |
+| What a path that already exists does | Always replace; replace only when asked | The request carries `If-None-Match: *` unless the user ticks "Replace files that already exist", offered only to a caller who holds `overwrite` there (one batched `authz/check`). Without the tick a duplicate is a `412` with a sentence that names the switch |
+| Hashing | Never; always; up to 256 MiB | Up to 256 MiB the browser computes SHA-256 and sends `Repr-Digest` (R-UI-012). A file that cannot be read for hashing is still sent |
+| A cut upload | Fail; retry once | One retry from the start with the `File` in hand after a request that got no answer. If the retry answers `412` (the first attempt did commit), the dialog reads the item and counts the upload as done when the stored SHA-256 equals the one it computed |
+
+**Rationale:** Each choice is the literal reading of R-UI-012 and R-ARCH-014; the create-only default makes an accidental overwrite impossible without the permission and the switch. The development agent would revisit the second client when `fetch` upload streaming reports progress in all supported browsers.
+
+**Applied in the spec:** R-UI-012 is unchanged (the dialog is P1; the file tree offers it because the API has the operation).
+
+### Q-UI-17 · File tree: `@angular/aria` tree, actions in a toolbar
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| The tree widget | Own implementation; `@angular/aria` tree (R-UI-010, Q-UI-1) | `ngTree`, `ngTreeItem` and `ngTreeItemGroup` with explicit selection: Enter or a click selects and navigates; the arrow keys, Home, End and type-ahead are the pattern's. The group of a folder is created lazily by the pattern and filled when the folder is first expanded |
+| "Load more" | A button below the tree; a tree item | A tree item at the end of the group of a folder (reachable by keyboard); activating it loads the next page and leaves the selection where it was. Pages are `BROWSER_PAGE_SIZE` entries |
+| Where the actions live | A button on every node; a toolbar above the details | A toolbar above the details of the selection (R-UI-011 asks for an actions button and the keyboard, "never right-click alone"); the context-menu key and Shift+F10 on the tree move focus to the toolbar. A button inside a tree item would nest interactive content in a `treeitem` |
+| Deleting a folder | Count by listing; a count endpoint | `children?recursive=true` walked until more than 100 entries are seen; above 100 the dialog asks for the folder name, and `202` shows the job's progress |
+| Filters and the open tab | Component state; query parameters | Key text, class, format, sort and the details tab are query parameters (R-UI-003) |
+
+**Rationale:** The tree pattern gives roles and keyboard handling that an own widget would have to re-prove against R-UI-044. The development agent would revisit the toolbar when the tree grows per-node actions that a toolbar cannot reach (P1 copy and move).
+
+**Applied in the spec:** R-UI-010 and R-UI-011 are unchanged. A virtual repository's members and the cache label of a remote repository are not shown: no such repository exists in M1.
+
+### Q-UI-18 · Repository screens: summary view, settings of the generic format, delete
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| Columns of the list | The spec's "created"; what the summary view carries | `GET /api/v1/repositories` answers the summary view with `lastActivityAt` and the client addresses but no creation time, and `view=full` has no addresses. The list shows **last activity** instead of "created" and sorts by key only; the detail page shows creation and last change. The two missing members (creation time on the summary, sort by creation) are reported to the backend |
+| Settings forms | Rendered from a JSON Schema per format (R-UI-021); hand-built | The format descriptor of `GET /api/v1/formats` carries no settings schema, so the forms are hand-built for the members that apply to the generic format (R-REPO-004, R-GENERIC-008): description, notes, include and exclude patterns, disabled, require authentication, hide existence. Members of other formats and the remote and virtual sections arrive with those formats |
+| Classes in the wizard | A list in the UI; derived | The union of the `classes` of all formats; the format step offers the formats that contain the chosen class. Today that is `local` and the generic format |
+| Edit | `PUT`; `PATCH` | A JSON merge patch of the changed members only (`shared/merge-patch.ts`) with the loaded `ETag`; no change disables "Save". A `412` re-reads the repository: equal to the draft after a retried write is a success, otherwise the conflict dialog; "Overwrite" sends the draft's difference against the newly stored version with the new `ETag` |
+| Delete | Immediate; type the key | The key is typed; `202` is followed by the job progress component until the job ends, and the row disappears when it succeeded. A `repository_referenced` answer repeats the dialog with the "detach" choice |
+| Key availability | `GET` of the key | A `404` after a 400 ms pause means free; any other answer says the check was inconclusive and the server decides at the create |
+
+**Rationale:** The list cannot show what the API does not give, and a request per row would defeat the paging. The development agent would revisit the columns once the summary view has `createdAt`.
+
+**Applied in the spec:** R-UI-020 reads "created" and "sort by creation"; this block records why the list shows last activity until the API changes.
+
+### Q-UI-19 · Endpoint screens, audit log and the completed status screen
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Options | Choice |
+|---|---|---|
+| Dimensions of the rule editor | One form for all formats; by the format's pattern subject | By `patternSubject` of the repository's format: `path` shows path patterns, `name` shows package names, versions (range, include, exclude, pre-releases) and tags. The descriptor has no "has tags" flag, so tags appear for every name format and the server answers `dimension_not_supported` at the pointer where a format has none |
+| The save of an existing rule | Save at once; diff first | A diff dialog (stored against draft, field by field) precedes `PUT` with `If-Match` (R-EP-017); a create sends the `Idempotency-Key` generated when the page opened |
+| Preview | On every change; debounced | `check-exposure` 500 ms after the last change with the draft as `rule` (`draft` as the name when none is typed yet), the test paths or the package and versions as input. A stale answer is dropped |
+| Client address of a rule | Always shown; only when served | `baseUrl` plus the format's `protocolBasePath`; flagged "This endpoint does not serve this address" when the endpoint's surface lacks the family of the address (`files` or `packages`) |
+| Mode `all` | Silent; a banner | A banner on the endpoint, the editor and the preview (R-EP-017) |
+| Audit action labels | The event name; a label | A translated label for each event name of the registry, the name in code next to it; an unknown name is shown as sent. Filters, the open event and the time zone are query parameters; the export links carry the filter and, when the range is a preset, its resolved bounds |
+| Job progress | Poll fast; poll with an announcement limit | A shared component polls every 2 s and gives assistive technology a new text at most every 10 s and on the final state (R-UI-042) |
+| Status screen | Cards without endpoints; all cards | This work package completes the cards of Q-UI-13's first row: the key card shows the replicas' key rings, the replica that lacks a key ID, the canary with the replica that reported it, the last re-encryption and the next rotation step; the scheduled tasks card runs a task with an `Idempotency-Key`; recent jobs offer "Cancel" for queued and running jobs; `/admin/system/jobs` filters by kind and state and refreshes with a pause control. Backups stay a placeholder (R-UI-048) |
+
+**Rationale:** Each row is the literal requirement where the API allows it and the narrowest reading where it does not. The development agent would revisit the tag handling when the descriptor reports its dimensions.
+
+**Applied in the spec:** R-EP-017, R-UI-037 and R-UI-038 are unchanged; this block supersedes the first row of Q-UI-13.
+<!-- <<< M1 ui-a -->
+
 <!-- >>> M1 ui-b -->
 ### Q-UI-20 · Forms of the identity, token, settings and policy screens
 
