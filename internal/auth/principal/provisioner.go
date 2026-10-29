@@ -174,6 +174,17 @@ func (p *PGProvisioner) resolveUser(ctx context.Context, tx meta.Tx, qs *q.Queri
 		return "", false, err
 	}
 	if len(taken) > 0 {
+		// Under READ COMMITTED every statement has its own snapshot: a concurrent first
+		// login of this very identity may have committed between the identity lookup above
+		// and this one, which then sees its user without having seen its link. Looking the
+		// identity up again tells that login from a genuinely taken name (R-AUTH-007).
+		again, err := qs.IdentityUserByIdentity(ctx, q.IdentityUserByIdentityParams{Issuer: c.Issuer, Subject: c.Subject})
+		if err != nil {
+			return "", false, err
+		}
+		if len(again) > 0 {
+			return again[0], false, nil
+		}
 		return "", false, ErrUsernameTaken
 	}
 	if !c.JIT {
