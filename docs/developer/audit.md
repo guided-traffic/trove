@@ -24,6 +24,7 @@ its event types here.
 | [logcopy.go](../../internal/audit/logcopy.go) | the `log: audit` record |
 | [store.go](../../internal/audit/store.go) | `Store`: `Query`, `Get`, `Maintain`, `PartitionsReady`, `Prepare`, `SyncRetention`, `CheckExportRange` |
 | [uuid.go](../../internal/audit/uuid.go) | UUIDv7 for event IDs and the time they carry |
+| [../api/v1/audit_api.go](../../internal/api/v1/audit_api.go), [../api/v1/audit_source.go](../../internal/api/v1/audit_source.go) | The three management operations; the recorder wrapper that adds the request's source |
 | [../meta/postgres/queries/audit.sql](../../internal/meta/postgres/queries/audit.sql) | every statement; generated code in `q/audit.sql.go` |
 | [../meta/postgres/audit.go](../../internal/meta/postgres/audit.go) | `IsDataError`, `IsPrivilegeError`, and the migrate runner's retention write |
 | [../app/wire_audit.go](../../internal/app/wire_audit.go) | start-up step 4 and the shutdown flush |
@@ -113,8 +114,40 @@ transaction held between pages, which is what the export needs (R-OPS-017). Defa
 at most 1000. `Filter.Action` is an exact name or a prefix ending in `.*` (the prefix is matched on the whole dotted name, so `a.b.*`
 does not match `a.bc.d`). `Filter.Actor` is an ID or a name. `Get(ctx, id)` reads only the partitions around the time the UUIDv7
 carries. `CheckExportRange(from, to)` is the export's range check (both bounds, at most 400 days, code `invalid_audit_range`). The
-handler of wave 2 is a thin layer: parse the filter and the cursor, declare `x-trove-permission` for `audit.read`, call `Query`, and for
-the export record `audit.exported` with `RecordTx` before the first batch.
+handlers are a thin layer ([below](#management-operations)).
+
+## Management operations
+
+[audit_api.go](../../internal/api/v1/audit_api.go) serves the store. The three operations declare `permission: audit:read`
+(R-AUTHZ-010; the R-OPS-017 text calls it `audit.read`), which the authorization step enforces before the handler; the store has
+no check of its own ([H-123](../security/audit.md) is closed by that, and by `TestR_OPS_017_PermissionAndFilters`).
+
+| operationId | Method and path | Permission | Notes |
+|---|---|---|---|
+| `listAuditEvents` | `GET /api/v1/audit/events` | `audit:read` | newest first; filters `from`, `to`, `action` (exact or `prefix.*`), `category`, `outcome`, `actor`, `repository`, `resourceType`, `resourceId`, `traceId`; `limit` 1 to 1,000, default 100; cursor over `(occurredAt, id)` with the fingerprint of the filters |
+| `getAuditEvent` | `GET /api/v1/audit/events/{id}` | `audit:read` | `404` for an unknown ID and for a string that is not an event ID |
+| `exportAuditEvents` | `GET /api/v1/audit/events/export` | `audit:read` | `from` and `to` required (`400 invalid_audit_range`), at most 400 days; `format=jsonl` (default) or `csv`; oldest first |
+
+How the pieces fit:
+
+- The page limits are the audit ones (`audit.DefaultLimit`, `audit.MaxLimit`), passed to `ParseList` through a copy of the API
+  configuration; `Store.Query` does its own `limit + 1` read, so the handler builds `Page` itself and encodes the cursor with
+  `ListQuery.EncodeCursor([occurredAt, id])`. A cursor issued for other filters is `400 invalid_cursor`.
+- The export first commits `audit.exported` through `Server.recorder().RecordTx` in a transaction of its own (`recordExport`), then
+  loops `Store.Query(..., Oldest: true)` in batches of 1,000 and writes each batch with a flush. No transaction is open between
+  batches. A failing batch panics with `http.ErrAbortHandler`, which the chain re-raises, so the chunked answer ends without its
+  terminating chunk and the client sees a cut export. The document gives the streamed media types no schema (a line-delimited stream
+  is not one JSON document); the JSON Lines line is `AuditEvent`.
+- `from` and `to` of the export are declared optional in the document although required, so the generated wrapper does not answer
+  its generic 400 before `audit.CheckExportRange` answers `invalid_audit_range`.
+- The CSV encoder prefixes a cell that would open as a formula with an apostrophe (`csvSafe`).
+
+### The source of an event
+
+[audit_source.go](../../internal/api/v1/audit_source.go) (`WithRequestSource`) wraps the recorder at the composition root
+(`startAudit` sets `a.m1.recorder` to the wrapper). An event recorded with a request context gets the client address, the trace
+ID and the endpoint when its producer left them empty, so a domain package never passes the request down (Q-OPS-49). The deduplication
+of an anonymous refusal keys on that address, and the filter `traceId` finds an event by the `X-Request-Id` the client received.
 
 ## Partitions and retention
 
@@ -150,12 +183,14 @@ The composition root holds the recorder as `a.m1.recorder` (set at step 4) and t
 |---|---|
 | [internal/audit](../../internal/audit) `*_test.go` | registry rules, row mapping, the writer against a fake sink (batching, backoff, drop on a full buffer, a refused row, flush at a deadline), deduplication, the switches |
 | [test/integration/audit](../../test/integration/audit) | `tx_test.go` rollback, journal row, fault injection, ties; `async_test.go` batching, the locked table, the lost connection, a refused row, dedup over replicas; `partitions_test.go` start-up, retention, migrate; `query_test.go` ordering, keyset, filters, `Get`; `privileges_test.go` the runtime role |
+| [test/integration/audit/api_test.go](../../test/integration/audit/api_test.go) on [test/integration/stack](../../test/integration/stack) | E1.5 through HTTP on three replicas (policy changes and a denied deploy found by the query and present in the log stream), the permission on all three operations, the filter validation, a limit=1 walk across replicas with a write between pages, the correct count and `repeat_of` of denial summaries and the anonymous key by address, the export (2,300 events over three batches in both formats, `audit.exported` first, a slow reader holding no transaction, bad ranges, an export that cannot be recorded), and `authz.settings.changed` from a real repository update |
+| [internal/api/v1/audit_api_test.go](../../internal/api/v1/audit_api_test.go) | the filter and cursor parsing, the representation, the CSV encoder, `WithRequestSource` |
 
 Run: `set -a; . .dev/integration/env; set +a; go test -count=1 -tags integration ./test/integration/audit/...` (see [build-and-test.md](build-and-test.md)).
 
 ## Not built here
 
-The HTTP operations `GET /api/v1/audit/events`, `/{id}` and `/export` (wave 2); the `audit-retention` task registration (jobs area); the
-journal writer that ships `revocation_outbox` (M5); the registration of the catalog events other than `audit.exported` (each area, R-OPS-016);
+The `audit-retention` task registration (jobs area); resuming an export on the server side (the client resumes with an inclusive `from`);
+the journal writer that ships `revocation_outbox` (M5); the registration of the catalog events other than `audit.exported` (each area, R-OPS-016);
 the check that every event listed in R-HA-054 is registered, flagged and required, which needs every area's registry file and therefore runs
 after the merge.

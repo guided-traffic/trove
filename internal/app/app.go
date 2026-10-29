@@ -452,6 +452,12 @@ func (a *App) startClient() error {
 			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
 			API: a.apiServices(),
+			// >>> M1 audit
+			AuditStore: a.auditStoreForAPI(),
+			// <<< M1 audit
+			// >>> M1 authz
+			Authz: a.authzServices(),
+			// <<< M1 authz
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

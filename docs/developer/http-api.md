@@ -117,6 +117,9 @@ transaction of its own. With it:
    like any outcome); any other error rolls everything back and stores nothing.
 6. A response with a secret sets `Outcome.SecretID`: the body is sent to this client and never stored; a replay calls
    `IdempotentOp.SecretReplay` (the identity area answers 409 `token_already_issued` with `tokenId`).
+7. A value that exists only after the commit hooks ran, such as the epoch of a write (`Trove-Authz-Epoch`, raised by the change
+   log just before `COMMIT`), is set by `Outcome.Finish`. `Do` registers it as a `Before` hook after the ones `Run` registered, so
+   it sees their results, and the stored outcome, and with it every replay, carries the value.
 
 The task `idempotency-cleanup` ([cleanup.go](../../internal/api/v1/cleanup.go), hourly `13 * * * *`) deletes expired rows.
 
@@ -140,7 +143,8 @@ create, update (merge patch and PUT) and delete. Follow its shape. The steps:
      answer 429 anywhere; `TestEveryOperationCanBeRateLimited` fails otherwise);
    - lists: parameters `$ref: "#/components/parameters/Limit"` and `Cursor`, the filters and `sort`, response header `Link`,
      and a list schema `{items: [...], nextCursor: [string, "null"]}` (copy `JobList`);
-   - `PUT`/`PATCH`: `x-trove-if-match: required`, parameter `IfMatch`, responses 412 and 428; the `GET` and the write
+   - `PUT`/`PATCH`: `x-trove-if-match: required`, parameter `IfMatch`, responses 412 and 428 (a missing header is answered 428 by
+     `bindError`, because the generated wrapper rejects a missing required header before the handler runs); the `GET` and the write
      answer the `ETag` header (`#/components/headers/ETag`); `PATCH` takes `application/merge-patch+json`;
    - creating `POST` and `DELETE` with 202: `x-trove-idempotency-key: optional`, parameter `IdempotencyKey`, response header
      `Idempotency-Replayed`, and `Location` on 201/202;
@@ -199,6 +203,7 @@ create, update (merge patch and PUT) and delete. Follow its shape. The steps:
 | `New(t, spec)`, `Validator.Handler(t, next)` | Wraps a handler; every answer is matched to its operation by method and path, and status (an undeclared status fails), headers and body are validated against the response definition. |
 | `Validator.Check`, `Recorder` | Validate one answer. |
 | `Validator.Uncovered(ids...)` | The operations no answer reached; a test that owns operations asserts it is empty. |
+| `Resource.RevisionMember` | The member that grows with every write (default `revision`); the suite does not count it as a change when it checks that a PUT or a patch left the other members alone. |
 | `ReservedNameProblems(spec)` | The R-API-004 check on `x-trove-reserved-names`. |
 | `RunContract(t, Resource)` | The convention tests on any collection (E1.6): create/Location, strict members, `limit=1` traversal, cursors, ETag/304, `If-Match` 428/412/200/`*`, merge patch, PUT round trip, idempotency replay. |
 

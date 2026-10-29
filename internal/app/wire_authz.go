@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
@@ -59,5 +61,26 @@ func (a *App) wireAuthz(ctx context.Context) error {
 		return err
 	}
 	a.m1.authorizer, a.m1.authzEngine = eng, eng
+	if a.m1.principals != nil && a.m1.repositories != nil {
+		// The recorder is the one of step 4; a shell without infrastructure has none.
+		var rec audit.Recorder = audit.Nop{}
+		if a.m1.recorder != nil {
+			rec = a.m1.recorder
+		}
+		svc := authz.NewService(authz.ServiceOptions{
+			DB: db, Changes: a.changes, Principals: a.m1.principals, Repositories: a.m1.repositories, Recorder: rec,
+		})
+		a.mu.Lock()
+		a.m1.authzService = svc
+		a.mu.Unlock()
+	}
 	return nil
+}
+
+// authzServices are the services the permission operations of the management API
+// use; a member is nil while the authz wiring has not run.
+func (a *App) authzServices() v1.AuthzServices {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return v1.AuthzServices{Policies: a.m1.authzService, Engine: a.m1.authzEngine}
 }

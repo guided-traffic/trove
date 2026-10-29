@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats"
 	_ "github.com/guided-traffic/trove/internal/formats/all" // registers every format (R-ARCH-010)
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -64,6 +65,8 @@ func (a *App) wireRepository() error {
 	opts := repository.Options{
 		Runner: db, Catalog: formatCatalog{}, Recorder: rec, Notifier: changes,
 		DeleteBatch: a.cfg.Storage.Delete.BatchSize, Log: log,
+		// The authorization area records authz.settings.changed in the transaction of an update (R-AUTHZ-031).
+		Hooks: authz.NewSettingsHook(rec),
 	}
 	if queue != nil { // a nil *jobs.Queue in the interface would not be nil
 		opts.Jobs = queue

@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
@@ -31,13 +29,13 @@ func actorOf(sub Subject) audit.Actor {
 	case sub.Anonymous:
 		return audit.Actor{Kind: "anonymous"}
 	case sub.Kind == principal.KindBreakGlass:
-		return audit.Actor{Kind: "break_glass", ID: sub.ID, Name: sub.Name}
+		return audit.Actor{Kind: "break_glass", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
 	case sub.Kind == principal.KindServiceAccount:
-		return audit.Actor{Kind: "service_account", ID: sub.ID, Name: sub.Name}
+		return audit.Actor{Kind: "service_account", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
 	case sub.Kind == principal.KindCI:
-		return audit.Actor{Kind: "ci", ID: sub.ID, Name: sub.Name}
+		return audit.Actor{Kind: "ci", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
 	}
-	return audit.Actor{Kind: "user", ID: sub.ID, Name: sub.Name}
+	return audit.Actor{Kind: "user", ID: sub.ID, Name: sub.Name, TokenID: sub.TokenID}
 }
 
 func credentialKind(sub Subject) string {
@@ -84,26 +82,14 @@ func (e *Engine) audit(ctx context.Context, sub Subject, c Coordinate, d Decisio
 	if sub.Anonymous && !e.o.Audit.RecordAnonymousDenials {
 		return
 	}
-	ev := e.decisionEvent(EventDenied, sub, c, d)
-	e.dedup.record(ctx, e.denialKey(sub, c), ev)
-}
-
-// denialKey is the deduplication key of R-OPS-015: principal, action,
-// repository and path. An anonymous caller has no principal; the address that
-// R-AUTHZ-029 keys it by is not part of the subject, so anonymous denials are
-// keyed by repository and path.
-func (e *Engine) denialKey(sub Subject, c Coordinate) string {
-	who := sub.ID
-	if sub.Anonymous {
-		who = "anonymous"
-	}
-	return strings.Join([]string{who, strings.Join(actionStrings(c), ","), c.Repository, c.Package, c.Path}, "\x00")
+	e.rec.Record(ctx, e.decisionEvent(EventDenied, sub, c, d))
 }
 
 func (e *Engine) decisionEvent(name string, sub Subject, c Coordinate, d Decision) audit.Event {
 	details := map[string]any{
 		"reason": d.Reason, "status": d.Status(), "actions": actionStrings(c), "repository": c.Repository,
-		"credential": credentialKind(sub), "replica": e.o.Replica, "epoch": d.Epoch,
+		"required_action": strings.Join(actionStrings(c), ","),
+		"credential":      credentialKind(sub), "replica": e.o.Replica, "epoch": d.Epoch,
 	}
 	if c.Class != "" {
 		details["class"] = string(c.Class)
@@ -124,9 +110,13 @@ func (e *Engine) decisionEvent(name string, sub Subject, c Coordinate, d Decisio
 		details["sources"] = d.Sources
 	}
 	raw, _ := json.Marshal(details)
+	// Repository and Path are the columns the writer's deduplication keys on
+	// (R-OPS-015); a package operation has a package name and no path.
 	out := audit.Event{
-		Type: name, Actor: actorOf(sub), Outcome: audit.Failure, Reason: d.Reason,
-		Subject: audit.Subject{Kind: "repository", Name: c.Repository}, Details: raw,
+		Type: name, Actor: actorOf(sub), Outcome: audit.Denied, Reason: d.Reason,
+		Subject:    audit.Subject{Kind: "repository", Name: c.Repository},
+		Repository: c.Repository, Path: firstNonEmpty(c.Path, c.Package), Endpoint: c.Endpoint,
+		Details: raw,
 	}
 	if d.Outcome == Allow {
 		out.Outcome = audit.Success
@@ -140,21 +130,22 @@ func (e *Engine) auditCapability(ctx context.Context, sub Subject, permission st
 		return
 	}
 	raw, _ := json.Marshal(map[string]any{
-		"reason": d.Reason, "status": d.Status(), "permission": permission,
+		"reason": d.Reason, "status": d.Status(), "permission": permission, "required_action": permission,
 		"credential": credentialKind(sub), "replica": e.o.Replica, "epoch": d.Epoch,
 	})
-	ev := audit.Event{
-		Type: EventDenied, Actor: actorOf(sub), Outcome: audit.Failure, Reason: d.Reason,
+	e.rec.Record(ctx, audit.Event{
+		Type: EventDenied, Actor: actorOf(sub), Outcome: audit.Denied, Reason: d.Reason,
 		Subject: audit.Subject{Kind: "permission", Name: permission}, Details: raw,
-	}
-	e.dedup.record(ctx, strings.Join([]string{subjectKey(sub), "permission", permission}, "\x00"), ev)
+	})
 }
 
-func subjectKey(sub Subject) string {
-	if sub.Anonymous {
-		return "anonymous"
+func firstNonEmpty(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
 	}
-	return sub.ID
+	return ""
 }
 
 // RecordAllowed records an allowed write or populate in the transaction of the
@@ -162,93 +153,4 @@ func subjectKey(sub Subject) string {
 // The writer (files, formats) calls it with the decision it acted on.
 func (e *Engine) RecordAllowed(ctx context.Context, tx meta.Tx, sub Subject, c Coordinate, d Decision) error {
 	return e.rec.RecordTx(ctx, tx, e.decisionEvent(EventWriteAllowed, sub, c, d))
-}
-
-// denialDedup collapses repeated refusals (R-OPS-015 "Deduplication without
-// updates"): the first occurrence of a key is written at once; repeats within
-// the window are counted in memory and written as one summary when the window
-// closes. The state is the replica's memory; it never lives in Valkey.
-type denialDedup struct {
-	window time.Duration
-	rec    audit.Recorder
-
-	mu   sync.Mutex
-	open map[string]*dedupEntry
-}
-
-type dedupEntry struct {
-	event   audit.Event
-	repeats int
-	timer   *time.Timer
-}
-
-// maxOpenDenials bounds the memory of the deduplication; past it a refusal is
-// written without being collapsed.
-const maxOpenDenials = 10000
-
-func newDenialDedup(window time.Duration, rec audit.Recorder) *denialDedup {
-	return &denialDedup{window: window, rec: rec, open: map[string]*dedupEntry{}}
-}
-
-func (d *denialDedup) record(ctx context.Context, key string, ev audit.Event) {
-	if d.window <= 0 {
-		d.rec.Record(ctx, withCount(ev, 1))
-		return
-	}
-	d.mu.Lock()
-	if en, ok := d.open[key]; ok {
-		en.repeats++
-		d.mu.Unlock()
-		return
-	}
-	if len(d.open) >= maxOpenDenials {
-		d.mu.Unlock()
-		d.rec.Record(ctx, withCount(ev, 1))
-		return
-	}
-	en := &dedupEntry{event: ev}
-	en.timer = time.AfterFunc(d.window, func() { d.close(key) })
-	d.open[key] = en
-	d.mu.Unlock()
-	d.rec.Record(ctx, withCount(ev, 1))
-}
-
-// close ends the window of a key and writes the summary of its repeats.
-func (d *denialDedup) close(key string) {
-	d.mu.Lock()
-	en, ok := d.open[key]
-	delete(d.open, key)
-	d.mu.Unlock()
-	if !ok || en.repeats == 0 {
-		return
-	}
-	d.rec.Record(context.Background(), withCount(en.event, en.repeats))
-}
-
-// flushAll writes every open summary; a replica that drains calls it before it
-// exits (R-OPS-015).
-func (d *denialDedup) flushAll(ctx context.Context) {
-	d.mu.Lock()
-	open := d.open
-	d.open = map[string]*dedupEntry{}
-	d.mu.Unlock()
-	for _, en := range open {
-		if en.timer != nil {
-			en.timer.Stop()
-		}
-		if en.repeats > 0 {
-			d.rec.Record(ctx, withCount(en.event, en.repeats))
-		}
-	}
-}
-
-// withCount sets details.count of an event.
-func withCount(ev audit.Event, n int) audit.Event {
-	var m map[string]any
-	if err := json.Unmarshal(ev.Details, &m); err != nil || m == nil {
-		m = map[string]any{}
-	}
-	m["count"] = n
-	ev.Details, _ = json.Marshal(m)
-	return ev
 }

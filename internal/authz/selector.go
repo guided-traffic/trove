@@ -35,7 +35,7 @@ type selector struct {
 	key    string
 	// pattern is the original text of a key pattern; glob its compiled form.
 	pattern string
-	glob    *regexp.Regexp
+	glob    *repository.Pattern
 	// class is "local", "remote", "virtual" or "any".
 	class string
 	// format is the optional ':<format>' filter of a pattern or class selector.
@@ -139,7 +139,7 @@ func (s selector) matches(r repoView) bool {
 		}
 		return s.key == r.Key
 	case selPattern:
-		return s.glob.MatchString(r.Key)
+		return s.glob.Match(r.Key)
 	case selClass:
 		return s.class == classAny || s.class == string(r.Class)
 	}

@@ -262,3 +262,28 @@ form of the `x-trove-permission` of each operation (R-API-008).
   (R-EP-015), plugs into the same stage.
 - **Audit.** `system.task_triggered` and `system.job.cancelled` are registered in `internal/audit/events_api.go`;
   `wire_api.go` passes the recorder of step 4 (`auditRecorder`), a discarding one in a shell without PostgreSQL.
+
+## As built by the authz and audit areas, wave 2 (WP1.3, WP1.7)
+
+- **Handlers.** `v1.Options` gained `AuditStore *audit.Store` (marker `audit`) and `Authz v1.AuthzServices{Policies *authz.Service,
+  Engine *authz.Engine}` (marker `authz`); a nil member answers the operations that need it with 503. The composition root fills
+  them in `startClient` (`auditStoreForAPI`, `authzServices`). `a.m1.authzService` is the new field of the `authz` marker.
+- **Contract changes.**
+
+  | Contract | Change |
+  |---|---|
+  | `v1.Outcome` | `Finish func(ctx, tx, *Outcome) error`: completes status, headers and body after the commit hooks of the operation ran and before the outcome is stored; the epoch of a write exists only then ([http-api.md](http-api.md#idempotency-in-detail)) |
+  | `v1.bindError` | a missing required `If-Match` is the 428 `precondition_required`, not 400 |
+  | `apitest.Resource` | `RevisionMember`: the member that grows with every write, `revision` by default (a policy calls it `version`) |
+  | `audit.Categories()` | the list of the categories of R-OPS-014, for the filter of the query |
+  | `audit.Event` of `authz.denied` | `Repository`, `Path`, `Endpoint`, `Actor.TokenID` and `details.required_action` are filled, the outcome is `denied` (Q-AUTHZ-24); `authz.Engine` no longer deduplicates |
+  | `a.m1.recorder` | the audit writer wrapped by `v1.WithRequestSource`: an event recorded with a request context gets the client address, trace ID and endpoint (Q-OPS-49) |
+  | `authz` patterns | `internal/authz` compiles patterns with `repository.CompilePattern` (Q-AUTHZ-25) |
+  | `authz.Service` | `CreateIn` (on the caller's transaction), `Select` and `Annotate` (the list), `*Service` is the `principal.AdminBinder`; `authz.SettingsHook` is the `repository.Hooks` |
+  | error codes | `already_exists` (not `conflict`) for a policy name that exists |
+
+- **Operations.** The operationIds, methods, paths and permissions are the tables of [authorization.md](authorization.md#management-operations)
+  and [audit.md](audit.md#management-operations); the UI wave builds on them.
+- **Test support.** [test/integration/stack](../../test/integration/stack) builds a migrated database and in-process web replicas with
+  the real chain, handlers, engine, audit writer and store, for tests that cross the authorization and audit APIs; authentication is a
+  header (`X-Test-Person`) and Valkey is not part of it.

@@ -629,9 +629,10 @@ Priority: **MVP** · Covers: ADMAPI-007, ADMAPI-016, ADMAPI-024
   whole. JSON Patch (RFC 6902) is not offered.
 - Collections edited member by member have their own endpoints instead of array patches (group
   members and user group memberships take `{"add": [...], "remove": [...]}`, R-API-031).
-- A permission policy is changed by PUT of the whole document with `If-Match`
-  ([authorization.md](authorization.md)); together with the ETag this covers "change one part of a
-  policy without silently losing the rest" (ADMAPI-024) without per-section endpoints.
+- A permission policy is changed by PUT of the whole document or by PATCH with `If-Match`
+  ([authorization.md](authorization.md), Q-AUTHZ-26); together with the ETag this covers "change
+  one part of a policy without silently losing the rest" (ADMAPI-024) without per-section
+  endpoints.
 - Immutable fields (`key`, `format`, `class`, names the owner declares immutable) in a patch answer
   422 when they differ from the stored value and are ignored when equal.
 - The answer is the full updated resource with its new ETag.
@@ -4665,6 +4666,22 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** Job IDs are time-ordered UUIDs; existence is not a secret worth a leak. The development agent would revisit this if job IDs become guessable.
 
 **Applied in the spec:** R-API-015 and R-OPS-019 say "or the caller started the job"; the answer for others is as above.
+
+### Q-API-28 · A missing `If-Match` is 428, and a write keeps its epoch through an idempotent replay
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Two behaviors of the shared conventions showed when the first resource with a version header and an epoch used them.
+
+| Question | Options | Choice |
+|---|---|---|
+| The document marks `If-Match` required on `PUT` and `PATCH`, and the generated wrapper answers a missing required header with 400 before any handler runs. R-API-012 says 428 | (a) Mark the header optional in the document and let each handler answer 428. (b) Keep it required and map the wrapper's missing-`If-Match` error to the 428 problem in `bindError` | (b): the document keeps saying the header is needed, one place answers it for every resource, and the problem is the 428 of `Precondition.Require` |
+| `Trove-Authz-Epoch` is raised by the change log in a hook just before `COMMIT`, after the operation returned its outcome, yet an idempotent create stores its outcome (R-API-014) and a replay must carry the epoch of the first answer | (a) Leave the header out of a replay. (b) Read the epoch in the operation by locking the epoch row early. (c) Let an outcome complete itself after the commit hooks: `Outcome.Finish` runs in a hook registered after the operation's own, before the outcome is stored | (c): (a) loses what a client that lost the first response needs; (b) takes the epoch row before the policy rows and can deadlock with a writer that takes them in the other order |
+
+**Rationale:** both keep the convention in the shared package and add nothing a resource has to remember. The development agent would revisit (c) if a second use shows that a resource needs to change the status after the hooks, which `Finish` allows but no one needs.
+
+**Applied in the spec:** none; [http-api.md](../developer/http-api.md) lists both.
+
 
 ## What this does not cover
 

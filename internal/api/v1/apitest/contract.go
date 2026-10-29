@@ -49,6 +49,11 @@ type Resource struct {
 	OtherQuery string
 	// Put is true when the resource offers PUT of the whole representation.
 	Put bool
+	// RevisionMember is the member that grows with every write: "revision" unless
+	// the resource names it otherwise (a policy calls it "version"). A write does
+	// not count as changing the other members when only it and the update time
+	// differ.
+	RevisionMember string
 }
 
 type answer struct {
@@ -325,7 +330,7 @@ func (s *suite) testMergePatch(t *testing.T) {
 			t.Fatalf("clearing %s: %d %v\n%s", res.ClearMember, a.status, a.json(t)[res.ClearMember], a.body)
 		}
 		etag = a.header.Get("ETag")
-		assertUnchanged(t, before, a.json(t), res.ClearMember)
+		assertUnchanged(t, before, a.json(t), res.ClearMember, res.RevisionMember)
 	}
 	wantProblem(t, patch(map[string]any{"upsteamUrl": 1}, etag), 400, "malformed_request")
 	if res.ImmutableMember == "" {
@@ -343,10 +348,10 @@ func (s *suite) testMergePatch(t *testing.T) {
 }
 
 // assertUnchanged fails when a member the patch did not mention changed.
-func assertUnchanged(t *testing.T, before, after map[string]any, except string) {
+func assertUnchanged(t *testing.T, before, after map[string]any, except, revision string) {
 	t.Helper()
 	for k, v := range before {
-		if k == except || k == "revision" || k == "updatedAt" || k == "etag" {
+		if k == except || k == "revision" || k == revision || k == "updatedAt" || k == "etag" {
 			continue
 		}
 		if !equalJSON(after[k], v) {
@@ -363,7 +368,7 @@ func (s *suite) testPut(t *testing.T) {
 	if p := res.call(t, "PUT", url, g.body, "If-Match", etag); p.status != 200 {
 		t.Fatalf("PUT answered %d\n%s", p.status, p.body)
 	}
-	assertUnchanged(t, g.json(t), res.call(t, "GET", url, nil).json(t), "")
+	assertUnchanged(t, g.json(t), res.call(t, "GET", url, nil).json(t), "", res.RevisionMember)
 }
 
 func (s *suite) testIdempotency(t *testing.T) {

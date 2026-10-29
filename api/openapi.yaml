@@ -24,6 +24,8 @@ tags:
   - name: meta
     description: This document and the problem catalog.
   # >>> M1 audit
+  - name: audit
+    description: Query and export of the audit trail.
   # <<< M1 audit
   #
   # >>> M1 api
@@ -38,6 +40,8 @@ tags:
   # <<< M1 login
   #
   # >>> M1 authz
+  - name: permissions
+    description: Permission policies, system roles and role bindings, and the permission checks of the caller.
   # <<< M1 authz
   #
   # >>> M1 repository
@@ -266,6 +270,254 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
   # >>> M1 audit
+  /api/v1/audit/events:
+    get:
+      operationId: listAuditEvents
+      tags: [audit]
+      summary: Query the audit trail
+      description: |
+        Audit events, newest first, with keyset pagination over `(occurredAt, id)` (R-OPS-017): the
+        cursor is valid on every replica and no page holds a transaction. Without `from` the range is
+        the last 24 hours; `to` is exclusive. `action` is an exact name or a prefix ending in `.*`
+        (`authz.*`). `actor` is a principal ID or a name. `limit` is at most 1000 (default 100).
+      x-trove-permission:
+        permission: audit:read
+      parameters:
+        - name: from
+          in: query
+          description: Start of the range, inclusive (RFC 3339); default the last 24 hours.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: End of the range, exclusive (RFC 3339); default open.
+          schema:
+            type: string
+            format: date-time
+        - name: action
+          in: query
+          description: An event name, or a prefix ending in `.*` such as `authz.*`.
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: "One of auth, token, identity, authz, repository, content, system, config, webhook."
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          description: "success, failure or denied."
+          schema:
+            type: string
+        - name: actor
+          in: query
+          description: A principal ID or a name.
+          schema:
+            type: string
+        - name: repository
+          in: query
+          schema:
+            type: string
+        - name: resourceType
+          in: query
+          schema:
+            type: string
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+        - name: traceId
+          in: query
+          description: The trace ID the client received as `X-Request-Id`.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Page size, 1 to 1000 (default 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of events.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+              example:
+                items:
+                  - id: 01933b1e-7c2a-7f4e-9d1b-6a2f0c9e8b11
+                    occurredAt: "2026-10-28T11:58:02.417Z"
+                    action: authz.policy.created
+                    category: authz
+                    outcome: success
+                    actor: {type: user, id: 5f0e6c3a-6b1d-4c1e-8f43-0d7c3d1c9a10, name: sec-alice, tokenId: null, authMethod: null}
+                    source: {ip: 10.12.4.7, userAgent: curl/8.7.1}
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+                    replica: trove-web-6f9c7d8b5-x2v4q
+                    endpoint: default
+                    resource: {type: permission_policy, id: 8c0d2f4e-1f64-4b7a-9d0e-3b5c7a9e1f20}
+                    repository: null
+                    path: null
+                    reason: null
+                    details: {epoch: 1842, version: 1}
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/audit/events/export:
+    get:
+      operationId: exportAuditEvents
+      tags: [audit]
+      summary: Export the audit trail
+      description: |
+        Streams the events of a range, oldest first, as JSON Lines (`application/x-ndjson`, default) or
+        CSV (R-OPS-017). `from` and `to` are both required and cover at most 400 days
+        (`400 invalid_audit_range`). The export reads keyset batches of short queries and holds no
+        transaction while the client reads, so a cut export is resumed on any replica with an inclusive
+        `from` set to the `occurredAt` of the last complete line, dropping the IDs already received.
+        The event `audit.exported` is written before the first byte; if it cannot be written nothing is
+        streamed.
+      x-trove-permission:
+        permission: audit:read
+      parameters:
+        - name: from
+          in: query
+          description: Start of the range, inclusive (RFC 3339). Required; a missing value answers `400 invalid_audit_range`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: End of the range, exclusive (RFC 3339). Required; a missing value answers `400 invalid_audit_range`.
+          schema:
+            type: string
+            format: date-time
+        - name: action
+          in: query
+          description: An event name, or a prefix ending in `.*` such as `authz.*`.
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: "One of auth, token, identity, authz, repository, content, system, config, webhook."
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          description: "success, failure or denied."
+          schema:
+            type: string
+        - name: actor
+          in: query
+          description: A principal ID or a name.
+          schema:
+            type: string
+        - name: repository
+          in: query
+          schema:
+            type: string
+        - name: resourceType
+          in: query
+          schema:
+            type: string
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+        - name: traceId
+          in: query
+          description: The trace ID the client received as `X-Request-Id`.
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: "`jsonl` (default) or `csv`."
+          schema:
+            type: string
+            enum: [jsonl, csv]
+            default: jsonl
+      responses:
+        "200":
+          description: |
+            The events of the range, oldest first. `application/x-ndjson`: one `AuditEvent` per line, each
+            line a complete JSON object. `text/csv`: a header row, then one row per event with the columns
+            `id`, `occurredAt`, `action`, `category`, `outcome`, `actorType`, `actorId`, `actorName`,
+            `tokenId`, `authMethod`, `sourceIp`, `userAgent`, `traceId`, `replica`, `endpoint`,
+            `resourceType`, `resourceId`, `repository`, `path`, `reason` and `details` (the JSON text); a
+            cell that would open as a formula in a spreadsheet starts with an apostrophe. The streamed
+            bodies have no schema here because a line-delimited stream is not one JSON document.
+          content:
+            application/x-ndjson: {}
+            text/csv: {}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/audit/events/{id}:
+    get:
+      operationId: getAuditEvent
+      tags: [audit]
+      summary: Read one audit event
+      description: One event by its ID (a UUIDv7). An ID that does not exist, or is not an event ID, answers `404`.
+      x-trove-permission:
+        permission: audit:read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            x-trove-reserved-names: [export]
+      responses:
+        "200":
+          description: The event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEvent"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 audit
   #
   # >>> M1 api
@@ -560,6 +812,715 @@ paths:
   # <<< M1 login
   #
   # >>> M1 authz
+  /api/v1/permission-policies:
+    get:
+      operationId: listPermissionPolicies
+      tags: [permissions]
+      summary: List permission policies
+      description: |
+        Every permission policy, ordered by name, with cursor pagination (R-API-010). Filters:
+        `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`, `anonymous`, `authenticated`)
+        keeps the policies with an entry for that principal and, while `expandGroups` is `true` (the
+        default), also those with an entry for a group the principal belongs to; `repository=<key>`
+        keeps the policies whose selectors cover that repository. A principal or repository that does
+        not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052).
+      x-trove-permission:
+        permission: policies:read
+      parameters:
+        - name: principal
+          in: query
+          description: A principal reference.
+          schema:
+            type: string
+        - name: expandGroups
+          in: query
+          description: Include the policies of the principal's groups (default `true`); only with `principal`.
+          schema:
+            type: boolean
+            default: true
+        - name: repository
+          in: query
+          description: A repository key.
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: "`name` (default) or `-name`."
+          schema:
+            type: string
+            enum: [name, "-name"]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of policies.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicyList"
+              example:
+                items:
+                  - name: team-web-publish
+                    description: Team web publishes and tags its own npm scope
+                    resourceType: repository
+                    resources:
+                      repositories: [npm-internal]
+                      packages: {include: ["@web/*"], exclude: []}
+                      paths: {include: [], exclude: []}
+                    entries:
+                      - {principal: "group:team-web", actions: [annotate, deploy, read]}
+                      - {principal: "user:lead-web", actions: [deploy, manage, read]}
+                    inert: false
+                    warnings: []
+                    version: 4
+                    createdAt: "2026-10-28T09:12:44Z"
+                    createdBy: "user:root"
+                    updatedAt: "2026-10-28T10:01:02Z"
+                    updatedBy: "user:sec-alice"
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createPermissionPolicy
+      tags: [permissions]
+      summary: Create a permission policy
+      description: |
+        Validates the policy (R-AUTHZ-021), stores it and notifies the `authz` change area in one
+        transaction with the audit event `authz.policy.created`. The answer carries the epoch the write
+        produced in `Trove-Authz-Epoch` and the policy's `ETag`. Warnings do not block saving. A name
+        that exists answers `409 already_exists`; a rule that fails answers `422` with the code of the
+        first problem and every problem in `errors` (`unknown_principal`, `unknown_repository`,
+        `unknown_format`, `invalid_pattern`, `invalid_action`, `duplicate_principal`,
+        `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
+        `virtual_action_not_applicable`, `action_not_allowed`).
+      x-trove-permission:
+        permission: policies:write
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+            example:
+              name: team-web-publish
+              description: Team web publishes and tags its own npm scope
+              resources:
+                repositories: [npm-internal]
+                packages: {include: ["@web/*"], exclude: []}
+              entries:
+                - {principal: "group:team-web", actions: [annotate, deploy, read]}
+      responses:
+        "201":
+          description: The policy was created.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/permission-policies/{name}:
+    parameters:
+        - name: name
+          in: path
+          required: true
+          description: The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable.
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{0,127}$"
+    get:
+      operationId: getPermissionPolicy
+      tags: [permissions]
+      summary: Read a permission policy
+      description: Answers the policy with its warnings and its `ETag` (the version, R-API-012).
+      x-trove-permission:
+        permission: policies:read
+      responses:
+        "200":
+          description: The policy.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "304":
+          description: The `If-None-Match` tag is the current one.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: replacePermissionPolicy
+      tags: [permissions]
+      summary: Replace a permission policy
+      description: |
+        Replaces the whole policy (R-AUTHZ-021); the name is immutable. `If-Match` is required: a
+        missing header answers `428`, a version that is not current `412` with `currentEtag`, and
+        `If-Match: *` is the deliberate blind write. The read-only members of a body obtained by GET
+        are ignored. The answer carries the new `ETag` and `Trove-Authz-Epoch`. The audit event
+        `authz.policy.updated` records the access-bearing state before and after and is journaled
+        (R-AUTHZ-031).
+      x-trove-permission:
+        permission: policies:write
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+      responses:
+        "200":
+          description: The policy after the replacement.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: patchPermissionPolicy
+      tags: [permissions]
+      summary: Change members of a permission policy
+      description: |
+        A JSON merge patch (RFC 7396, R-API-013) applied to the current policy; an array such as
+        `entries` is replaced as a whole. The result is validated and written exactly like a
+        replacement, so the rules, `If-Match` and the epoch header of `PUT` apply. `null` resets
+        `description` to the empty string. `name` is immutable: a different value answers `422`.
+      x-trove-permission:
+        permission: policies:write
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+            example:
+              description: Team web publishes its own npm scope
+      responses:
+        "200":
+          description: The policy after the patch.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deletePermissionPolicy
+      tags: [permissions]
+      summary: Delete a permission policy
+      description: |
+        Removes the policy with its selectors, patterns and entries. `If-Match` is optional here; when
+        sent, a version that is not current answers `412`. The answer carries `Trove-Authz-Epoch`. The
+        audit event `authz.policy.deleted` is journaled (R-AUTHZ-031).
+      x-trove-permission:
+        permission: policies:write
+      parameters:
+        - name: If-Match
+          in: header
+          description: The `ETag` of the policy, or `*`.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The policy was deleted.
+          headers:
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/authz/validate-policy:
+    post:
+      operationId: validatePermissionPolicy
+      tags: [permissions]
+      summary: Validate a permission policy without storing it
+      description: |
+        Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the
+        keys of the repositories the selectors currently cover. A policy with problems is still a `200`
+        answer with `valid: false`; the editor shows the list. The name need not be unused.
+      x-trove-permission:
+        permission: policies:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+      responses:
+        "200":
+          description: The result of the validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyValidation"
+              example:
+                valid: true
+                errors: []
+                warnings: [selector_matches_nothing]
+                covers: [npm-internal]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/roles:
+    get:
+      operationId: listRoles
+      tags: [permissions]
+      summary: List the system roles
+      description: |
+        The fixed set of system roles and the capabilities each bundles (R-AUTHZ-010). Trove has no
+        custom roles, so the list is not paginated and `nextCursor` is always `null`.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The roles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleList"
+              example:
+                items:
+                  - {name: auditor, capabilities: ["audit:read", "policies:read", "roles:read"]}
+                nextCursor: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+  /api/v1/role-bindings:
+    get:
+      operationId: listRoleBindings
+      tags: [permissions]
+      summary: List role bindings
+      description: |
+        The system roles bound to users, groups and service accounts (R-AUTHZ-022), ordered by role and
+        principal, with cursor pagination. Filters: `role` and `principal` (a reference such as
+        `group:platform-admins`).
+      x-trove-permission:
+        permission: roles:read
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: "#/components/schemas/RoleName"
+        - name: principal
+          in: query
+          description: A principal reference.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of bindings.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleBindingList"
+              example:
+                items:
+                  - role: admin
+                    principal: "group:platform-admins"
+                    grantedAt: "2026-10-28T09:00:00Z"
+                    grantedBy: "user:root"
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/role-bindings/{role}/{principalRef}:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/RoleName"
+      - name: principalRef
+        in: path
+        required: true
+        description: The percent-encoded principal reference, for example `group%3Aplatform-admins`.
+        schema:
+          type: string
+    put:
+      operationId: bindRole
+      tags: [permissions]
+      summary: Bind a role to a principal
+      description: |
+        Idempotent (R-AUTHZ-022): `201` for a new binding, `200` for one that exists. Roles bind to users,
+        groups and service accounts only (`422 role_not_allowed`); a role on an auto-join group is
+        `409 auto_join_admin_conflict`. A new binding writes `authz.role.bound` and carries
+        `Trove-Authz-Epoch`; for an existing one the header is the current epoch.
+      x-trove-permission:
+        permission: roles:write
+      responses:
+        "200":
+          description: The binding existed.
+          headers:
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleBinding"
+        "201":
+          description: The binding was created.
+          headers:
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleBinding"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: unbindRole
+      tags: [permissions]
+      summary: Remove a role binding
+      description: |
+        Removes the binding (`authz.role.unbound`, journaled). Removing the last `admin` binding while
+        the break-glass administrator is disabled answers `409 last_admin`; a binding that does not
+        exist answers `404`.
+      x-trove-permission:
+        permission: roles:write
+      responses:
+        "204":
+          description: The binding was removed.
+          headers:
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/authz/me:
+    get:
+      operationId: getAuthzMe
+      tags: [permissions]
+      summary: What the caller may do
+      description: |
+        The system roles and capabilities the caller's credential exercises, the principals the caller
+        acts as (the user, its groups, `authenticated`) and a summary of the credential's scope, which
+        is a ceiling (R-AUTHZ-013). The answer says nothing about other principals. `epoch` is the
+        epoch of the index that answered.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The caller's rights.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthzMe"
+              example:
+                roles: [auditor]
+                capabilities: ["audit:read", "policies:read", "roles:read"]
+                principals: ["user:alice", "group:team-web", authenticated]
+                scope: null
+                epoch: 1842
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/authz/check:
+    post:
+      operationId: checkPermissions
+      tags: [permissions]
+      summary: Check repository actions for the caller
+      description: |
+        Evaluates up to 100 checks for the caller's own credential, scope included (R-AUTHZ-023); all
+        checks are decided on one index. A repository the caller cannot see answers `allowed: false`,
+        exactly as a missing one. Nothing is audited. The UI hides controls whose check fails; the
+        server enforces every operation regardless.
+      x-trove-permission:
+        authenticated: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionCheckRequest"
+            example:
+              checks:
+                - {repository: npm-internal, package: "@web/button", action: deploy}
+                - {repository: npm-all, action: read}
+      responses:
+        "200":
+          description: One result per check, in order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionCheckResponse"
+              example:
+                results: [{allowed: true}, {allowed: false}]
+                epoch: 1842
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 authz
   #
   # >>> M1 repository
@@ -1154,6 +2115,93 @@ components:
           type: [string, "null"]
           format: date-time
     # >>> M1 audit
+    AuditActor:
+      type: object
+      additionalProperties: false
+      required: [type, id, name, tokenId, authMethod]
+      properties:
+        type:
+          type: string
+          description: "`user`, `service_account`, `ci`, `breakglass`, `anonymous`, `admin-cli` or `system`."
+        id:
+          type: [string, "null"]
+        name:
+          type: [string, "null"]
+        tokenId:
+          type: [string, "null"]
+        authMethod:
+          type: [string, "null"]
+          description: "`bearer`, `basic`, `session`, `api_key`, or null."
+    AuditSource:
+      type: object
+      additionalProperties: false
+      required: [ip, userAgent]
+      properties:
+        ip:
+          type: [string, "null"]
+        userAgent:
+          type: [string, "null"]
+    AuditResource:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          type: [string, "null"]
+        id:
+          type: [string, "null"]
+    AuditEvent:
+      type: object
+      description: One audit event (R-OPS-017). The event names, categories and the shape of `details` per name are R-OPS-016; `details` never holds a secret.
+      additionalProperties: false
+      required: [id, occurredAt, action, category, outcome, actor, source, traceId, replica, endpoint, resource, repository, path, reason, details]
+      properties:
+        id:
+          type: string
+          description: A UUIDv7 the producer made; the time it carries is close to `occurredAt`.
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+          examples: [authz.policy.created]
+        category:
+          type: string
+        outcome:
+          type: string
+          enum: [success, failure, denied]
+        actor:
+          $ref: "#/components/schemas/AuditActor"
+        source:
+          $ref: "#/components/schemas/AuditSource"
+        traceId:
+          type: [string, "null"]
+        replica:
+          type: [string, "null"]
+        endpoint:
+          type: [string, "null"]
+        resource:
+          $ref: "#/components/schemas/AuditResource"
+        repository:
+          type: [string, "null"]
+        path:
+          type: [string, "null"]
+        reason:
+          type: [string, "null"]
+        details:
+          type: object
+          additionalProperties: true
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        nextCursor:
+          type: [string, "null"]
     # <<< M1 audit
     #
     # >>> M1 api
@@ -1392,6 +2440,327 @@ components:
     # <<< M1 login
     #
     # >>> M1 authz
+    PatternLists:
+      type: object
+      description: The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted.
+      additionalProperties: false
+      properties:
+        include:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+        exclude:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+    PolicyResources:
+      type: object
+      description: The resource set of a policy (R-AUTHZ-004, R-AUTHZ-005).
+      additionalProperties: false
+      properties:
+        repositories:
+          type: array
+          description: Repository selectors, a key (`npm-internal`), a key pattern (`npm-team-*`) or a class (`@any-local`, `@any-remote`, `@any-virtual`, `@any`), each optionally restricted to a format (`@any-local:npm`).
+          maxItems: 256
+          items:
+            type: string
+        packages:
+          $ref: "#/components/schemas/PatternLists"
+        paths:
+          $ref: "#/components/schemas/PatternLists"
+    PolicyEntry:
+      type: object
+      description: Actions given to one principal. A policy holds at most one entry per principal.
+      additionalProperties: false
+      required: [principal, actions]
+      properties:
+        principal:
+          type: string
+          description: "`user:<name>`, `group:<name>`, `sa:<name>`, `anonymous` or `authenticated`."
+          examples: ["group:team-web"]
+        actions:
+          type: array
+          description: Actions or presets (`read`, `write`, `maintain`, `full`) on input; the expanded, alphabetical list of actions on output.
+          items:
+            type: string
+    PermissionPolicyInput:
+      type: object
+      description: What a client writes. The read-only members of the representation (`inert`, `warnings`, `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`) are accepted and ignored, so a body obtained by GET can be sent back.
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{0,127}$"
+        description:
+          type: string
+          maxLength: 1024
+        resourceType:
+          type: string
+          enum: [repository]
+          default: repository
+        resources:
+          $ref: "#/components/schemas/PolicyResources"
+        entries:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/PolicyEntry"
+        inert:
+          type: boolean
+          readOnly: true
+        warnings:
+          type: array
+          readOnly: true
+          items:
+            type: string
+        version:
+          type: integer
+          format: int64
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        createdBy:
+          type: string
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedBy:
+          type: string
+          readOnly: true
+    PermissionPolicy:
+      type: object
+      description: A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`. `version` is the ETag source.
+      additionalProperties: false
+      required: [name, description, resourceType, resources, entries, inert, warnings, version, createdAt, createdBy, updatedAt, updatedBy]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        resourceType:
+          type: string
+          enum: [repository]
+        resources:
+          $ref: "#/components/schemas/PolicyResources"
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyEntry"
+        inert:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          description: A principal reference; empty when the creator no longer exists.
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+    PermissionPolicyList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionPolicy"
+        nextCursor:
+          type: [string, "null"]
+    PolicyValidation:
+      type: object
+      description: The result of a validation without storing (R-AUTHZ-021).
+      additionalProperties: false
+      required: [valid, errors, warnings, covers]
+      properties:
+        valid:
+          type: boolean
+          description: True when `errors` is empty.
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyProblem"
+        warnings:
+          type: array
+          items:
+            type: string
+        covers:
+          type: array
+          description: The keys of the repositories the selectors currently cover, sorted. Empty while the policy has errors.
+          items:
+            type: string
+    PolicyProblem:
+      type: object
+      additionalProperties: false
+      required: [pointer, code, detail]
+      properties:
+        pointer:
+          type: string
+          description: A JSON pointer into the policy.
+        code:
+          type: string
+        detail:
+          type: string
+    RoleName:
+      type: string
+      enum: [admin, security-admin, auditor, repository-admin, webhook-admin]
+    Role:
+      type: object
+      additionalProperties: false
+      required: [name, capabilities]
+      properties:
+        name:
+          $ref: "#/components/schemas/RoleName"
+        capabilities:
+          type: array
+          description: The capabilities the role bundles (R-AUTHZ-010).
+          items:
+            type: string
+    RoleList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        nextCursor:
+          type: "null"
+    RoleBinding:
+      type: object
+      additionalProperties: false
+      required: [role, principal, grantedAt, grantedBy]
+      properties:
+        role:
+          $ref: "#/components/schemas/RoleName"
+        principal:
+          type: string
+          description: A principal reference.
+        grantedAt:
+          type: string
+          format: date-time
+        grantedBy:
+          type: string
+          description: A principal reference; empty for a binding made by a command or whose granter was deleted.
+    RoleBindingList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleBinding"
+        nextCursor:
+          type: [string, "null"]
+    ScopeSummary:
+      type: object
+      description: The ceiling of the caller's credential (R-AUTHZ-013).
+      additionalProperties: false
+      required: [inherit, admin, system, grants]
+      properties:
+        inherit:
+          type: boolean
+          description: The credential has no repository ceiling.
+        admin:
+          type: boolean
+          description: The credential exercises the caller's system roles.
+        system:
+          type: array
+          items:
+            type: string
+        grants:
+          type: integer
+          description: The number of repository grants in the scope.
+    AuthzMe:
+      type: object
+      additionalProperties: false
+      required: [roles, capabilities, principals, scope, epoch]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleName"
+        capabilities:
+          type: array
+          description: The system capabilities the credential exercises (R-AUTHZ-010), for example `settings:read`.
+          items:
+            type: string
+        principals:
+          type: array
+          description: The references the caller acts as; it never lists other principals.
+          items:
+            type: string
+        scope:
+          oneOf:
+            - $ref: "#/components/schemas/ScopeSummary"
+            - type: "null"
+        epoch:
+          type: integer
+          format: int64
+    PermissionCheckItem:
+      type: object
+      additionalProperties: false
+      required: [repository, action]
+      properties:
+        repository:
+          type: string
+        package:
+          type: string
+          description: The package name of an item, as the format spells it.
+        path:
+          type: string
+          description: The canonical path of an item inside the repository.
+        action:
+          type: string
+          enum: [read, annotate, deploy, overwrite, delete, manage]
+    PermissionCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [checks]
+      properties:
+        checks:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/PermissionCheckItem"
+    PermissionCheckResult:
+      type: object
+      additionalProperties: false
+      required: [allowed]
+      properties:
+        allowed:
+          type: boolean
+    PermissionCheckResponse:
+      type: object
+      additionalProperties: false
+      required: [results, epoch]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionCheckResult"
+        epoch:
+          type: integer
+          format: int64
+          description: The epoch of the index that decided every check.
     # <<< M1 authz
     #
     # >>> M1 repository

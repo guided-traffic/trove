@@ -1,9 +1,11 @@
 # Authorization
 
 Status: implemented in M1 (WP1.3): the decision engine, the compiled grant index with its invalidation, the policy and
-role-binding store, the token-scope ceiling, the epochs of `Trove-Authz-Min-Epoch` and the decision audit. Not built yet:
-the HTTP operations of policies and role bindings (wave 2 of M1), the endpoint exposure ceiling (WP1.9; the hook is there),
-CI inline grants, package ownership and the shadowing check, projects and delegated management.
+role-binding store, the token-scope ceiling, the epochs of `Trove-Authz-Min-Epoch` and the decision audit, and the
+management operations over them (policies, role bindings, the checks of the caller; [below](#management-operations)). Not
+built yet: the endpoint exposure ceiling (WP1.9; the hook is there), CI inline grants, package ownership and the shadowing
+check, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024, which are P1
+(Q-AUTHZ-27).
 
 The specification is [authorization.md](../spec/authorization.md); this page says where each rule lives in the code. The
 security view is [permissions.md](../security/permissions.md).
@@ -33,15 +35,18 @@ security view is [permissions.md](../security/permissions.md).
 | [source.go](../../internal/authz/source.go) | `Source` and its PostgreSQL implementation: the `REPEATABLE READ READ ONLY` build and the epoch read |
 | [roles.go](../../internal/authz/roles.go) | The five system roles and the capability table of R-AUTHZ-010 |
 | [action.go](../../internal/authz/action.go), [ref.go](../../internal/authz/ref.go) | Action sets and presets; principal references and the IDs of the built-in principals |
-| [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | Package-name and path globs (R-AUTHZ-005), repository selectors (R-AUTHZ-004) |
+| [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the NuGet case folding and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); repository selectors (R-AUTHZ-004) |
 | [errors.go](../../internal/authz/errors.go) | `Decision.Err` (the table of R-AUTHZ-016), `NotFound`, `ParseMinEpoch`, the reason codes |
 | [ceiling.go](../../internal/authz/ceiling.go) | `Ceiling`, the hook for the endpoint exposure of R-EP-013 |
-| [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create, update, delete and read policies; bind and unbind roles |
-| [audit.go](../../internal/authz/audit.go), [events_authz.go](../../internal/audit/events_authz.go) | The decision audit, the denial deduplication, the event registry entries |
+| [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
+| [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
+| [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
+| [audit.go](../../internal/authz/audit.go), [events_authz.go](../../internal/audit/events_authz.go) | The decision audit, the event registry entries |
 | [metrics.go](../../internal/authz/metrics.go) | The `trove_authz_*` families |
 | [authz.sql](../../internal/meta/postgres/queries/authz.sql) | Every statement (sqlc); identifiers travel as text, instants as microseconds |
 | [wire_authz.go](../../internal/app/wire_authz.go), [access.go](../../internal/app/access.go) | The composition root: the engine at step 8, the header wrapper, the dev-profile bridge |
 | [authorize.go](../../internal/api/v1/authorize.go), [subject.go](../../internal/api/v1/subject.go) | The declaration forms of `x-trove-permission` and the conversion `Principal` to `Subject` |
+| [authz_api.go](../../internal/api/v1/authz_api.go) | The handlers of the permission operations, thin over `Service` and `Engine` |
 
 ## The model
 
@@ -216,14 +221,18 @@ The existing operations of M0 declare `settings:read` (formerly `system.read`).
 
 | Event | Delivery | When |
 |---|---|---|
-| `authz.denied` | async, deduplicated | a refusal: writes and management operations always, reads with `authz.audit.reads` `denied` or `all`, anonymous only with `audit.record_anonymous_denials`; `deny.stale` included |
+| `authz.denied` | async | a refusal (outcome `denied`): writes and management operations always, reads with `authz.audit.reads` `denied` or `all`, anonymous only with `audit.record_anonymous_denials`; `deny.stale` included |
 | `authz.read.allowed` | async | an allowed read with `authz.audit.reads: all` |
 | `authz.write.allowed` | transactional | the writer calls `Engine.RecordAllowed(ctx, tx, sub, coordinate, decision)` in the transaction of the change |
 | `authz.policy.created`, `.updated`, `.deleted`; `authz.role.bound`, `.unbound` | transactional | the writes of `Service`; updated, deleted and unbound are journaled |
-| `authz.settings.changed` | transactional, journaled | registered here for the repository update (R-AUTHZ-031) |
+| `authz.settings.changed` | transactional, journaled | `SettingsHook`, called by the repository update when `requireAuthentication`, `hideExistence`, `cacheFillAction` or `packageOwnership` changed; the event and its journal entry name the changed settings, before and after |
 
-The deduplication (`denialDedup`) writes the first occurrence of a key at once with `details.count` 1 and one summary per
-window with the exact number of repeats; `Engine.Stop` writes the open summaries. It lives in the replica's memory only.
+**The engine does not deduplicate** (Q-AUTHZ-24). It records every refusal with `Repository`, `Path` (the path, else the package
+name), `details.required_action` (the actions joined by a comma, or the capability of a management operation) and the actor's
+token ID, and the audit writer collapses them by the key of R-OPS-015: the first occurrence at once with `details.count` 1, one
+summary per window with the exact number of repeats and `repeat_of`. The client address of an anonymous refusal and the trace ID of
+every event come from the request context through `v1.WithRequestSource` (Q-OPS-49). Do not add a second stage: a producer-side
+summary arrives inside the writer's window and is counted as one repeat.
 
 ## Metrics
 
@@ -241,8 +250,38 @@ step; nil means anonymous access is off. A replica without PostgreSQL wires noth
 `App.access()` returns `bridgeAccess`: the engine behind the dev-profile bridge of `system.bootstrap_anonymous_read`
 (Q-AUTHZ-16).
 
-The `authz.Service` is not wired yet: it needs `principal.Store` (identity) and `repository.Reader` (repository), which those
-areas set, and it is used by the handlers of wave 2.
+`wireAuthz` also builds the `authz.Service` when the identity and repository wiring ran (`a.m1.principals`,
+`a.m1.repositories`) and sets `a.m1.authzService`; `startClient` hands it and the engine to the handlers as `v1.AuthzServices`.
+`*authz.Service` is the `principal.AdminBinder` of `service-account create --admin` (R-AUTH-015, `BindAdmin`): the command that
+creates a service account with `--admin` builds its own manager and passes the service. The repository service is built with
+`authz.NewSettingsHook` in `wireRepository`.
+
+## Management operations
+
+The document declares every operation with its `x-trove-permission`; the table is generated from it. All are under `/api/v1`.
+Writes answer `Trove-Authz-Epoch` (R-AUTHZ-032); an existing role binding answers the current epoch, and a replay of an
+idempotent policy create answers the epoch of the first answer (`Outcome.Finish`, see [http-api.md](http-api.md)).
+
+| operationId | Method and path | Permission | Notes |
+|---|---|---|---|
+| `listPermissionPolicies` | `GET /permission-policies` | `policies:read` | filters `principal`, `expandGroups` (default true), `repository`; `sort=name\|-name`; cursor paging |
+| `createPermissionPolicy` | `POST /permission-policies` | `policies:write` | `Idempotency-Key` optional; `201` with `Location`, `ETag`, epoch; `409 already_exists`; `422` with the code of the first problem |
+| `getPermissionPolicy` | `GET /permission-policies/{name}` | `policies:read` | `ETag` is the version; `304` |
+| `replacePermissionPolicy` | `PUT /permission-policies/{name}` | `policies:write` | `If-Match` required (`428`), `412` with `currentEtag`, `*` is a blind write |
+| `patchPermissionPolicy` | `PATCH /permission-policies/{name}` | `policies:write` | merge patch (Q-AUTHZ-26); computed on one version and written conditional on it |
+| `deletePermissionPolicy` | `DELETE /permission-policies/{name}` | `policies:write` | `If-Match` optional; `204` with the epoch |
+| `validatePermissionPolicy` | `POST /authz/validate-policy` | `policies:read` | `200` with `valid`, `errors`, `warnings`, `covers` |
+| `listRoles` | `GET /roles` | any authenticated caller | the five roles and their capabilities |
+| `listRoleBindings` | `GET /role-bindings` | `roles:read` | filters `role`, `principal`; cursor paging |
+| `bindRole` | `PUT /role-bindings/{role}/{principalRef}` | `roles:write` | `201` new, `200` existing; `409 auto_join_admin_conflict`; `422 role_not_allowed` |
+| `unbindRole` | `DELETE /role-bindings/{role}/{principalRef}` | `roles:write` | `204`; `404`; `409 last_admin` |
+| `getAuthzMe` | `GET /authz/me` | any authenticated caller | roles, capabilities, principals, scope summary, epoch |
+| `checkPermissions` | `POST /authz/check` | any authenticated caller | up to 100 checks, one index; nothing is audited |
+
+The handlers ([authz_api.go](../../internal/api/v1/authz_api.go)) do only what the conventions need: strict decoding into
+`authz.Policy` (so a body obtained by GET can be sent back), `If-Match` into an expected version, the cursor over a sorted list,
+the headers. `Service.List` and `Select` read PostgreSQL on every call (R-API-052); the page assembles the warnings of its own
+items. The list is not a keyset query (Q-AUTHZ-28).
 
 ## How to
 
@@ -271,6 +310,7 @@ asks it first for every action of every coordinate.
 | Unit | [internal/authz](../../internal/authz) | `TestE1_3_AuthorizationCases` (284 cases against the compiled engine), patterns and selectors, the engine's change-log behaviour on fakes, the 422 rules, the audit, `Decision.Err`; names carry the requirement IDs |
 | Unit | [internal/api/v1/authorize_test.go](../../internal/api/v1/authorize_test.go), [internal/config/authz_test.go](../../internal/config/authz_test.go) | the declaration forms, the staleness floor |
 | Integration | [test/integration/authz](../../test/integration/authz) | E1.3 against PostgreSQL, the policy and role store, the reused epoch, the consistent build, E1.12 with three replicas, Valkey stopped and propagation slowed to 30 s |
+| Integration, HTTP | [api_test.go](../../test/integration/authz/api_test.go) on the stack of [test/integration/stack](../../test/integration/stack) | the policy lifecycle with `ETag` and `If-Match`, merge patch, idempotent create with the epoch replayed, the 422 codes, `validate-policy`, the filters of the list, `apitest.RunContract` on `/permission-policies` over three replicas, roles and bindings with `last_admin` and a limit=1 walk, `authz/check` and `authz/me` including the `authenticated` cases of E1.3, E1.12 through HTTP (twenty parallel requests with `Trove-Authz-Min-Epoch` on two replicas, a grant and its removal, Valkey stopped), and a validator that checks every answer of every operation against the document |
 
 Run the integration area with the shared stack:
 `set -a; . .dev/integration/env; set +a; go test -count=1 -tags integration ./test/integration/authz/...`.

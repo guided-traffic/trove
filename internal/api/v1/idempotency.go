@@ -57,6 +57,13 @@ type Outcome struct {
 	// it is sent to this client and never stored. A replay answers
 	// IdempotentOp.SecretReplay instead of the body.
 	SecretID string
+	// Finish, when set, completes Status, Header and Body after the commit hooks
+	// of the operation ran and before the outcome is stored, for a value that
+	// exists only then: the epoch a write produced is raised by the change log
+	// in a hook that runs just before COMMIT (R-AUTHZ-032). Run cannot know it,
+	// and a replay must still carry it. Finish may change out and returns an
+	// error to roll the transaction back.
+	Finish func(ctx context.Context, tx meta.Tx, out *Outcome) error
 }
 
 // IdempotentOp is one operation behind an Idempotency-Key.
@@ -69,6 +76,17 @@ type IdempotentOp struct {
 	// secret, for example 409 token_already_issued with the token ID. Nil means
 	// a plain 409 conflict that names the secret ID.
 	SecretReplay func(secretID string) error
+}
+
+// finish completes an outcome whose Finish is set, on the transaction, after
+// every commit hook the operation registered ran.
+func finish(ctx context.Context, tx meta.Tx, out *Outcome) error {
+	if out.Finish == nil {
+		return nil
+	}
+	f := out.Finish
+	out.Finish = nil
+	return f(ctx, tx, out)
 }
 
 // Idempotency executes IdempotentOps.
@@ -132,6 +150,10 @@ func (i *Idempotency) Do(w http.ResponseWriter, r *http.Request, body []byte, op
 		var out Outcome
 		if err := i.db.InTx(r.Context(), func(tx meta.Tx) (err error) {
 			out, err = op.Run(r.Context(), tx)
+			if err == nil && out.Finish != nil {
+				// A hook of the operation's own transaction: it runs after the ones Run registered.
+				tx.Before(func(ctx context.Context, tx meta.Tx) error { return finish(ctx, tx, &out) })
+			}
 			return err
 		}); err != nil {
 			return err
@@ -206,15 +228,25 @@ func (i *Idempotency) run(w http.ResponseWriter, r *http.Request, req idemReques
 			}
 			return err
 		}
-		hdr, body, err := encodeOutcome(out)
-		if err != nil {
+		complete := func(ctx context.Context, tx meta.Tx) error {
+			if err := finish(ctx, tx, &out); err != nil {
+				return err
+			}
+			hdr, body, err := encodeOutcome(out)
+			if err != nil {
+				return err
+			}
+			bodyText, err = qs.CompleteIdempotencyKey(ctx, q.CompleteIdempotencyKeyParams{
+				PrincipalID: req.principal, IdemKey: req.key, Status: int16(out.Status), //nolint:gosec // 200..204
+				Headers: hdr, Body: storedBody(body, out.SecretID), SecretID: out.SecretID,
+			})
 			return err
 		}
-		bodyText, err = qs.CompleteIdempotencyKey(ctx, q.CompleteIdempotencyKeyParams{
-			PrincipalID: req.principal, IdemKey: req.key, Status: int16(out.Status), //nolint:gosec // 200..204
-			Headers: hdr, Body: storedBody(body, out.SecretID), SecretID: out.SecretID,
-		})
-		return err
+		if out.Finish == nil {
+			return complete(ctx, tx)
+		}
+		tx.Before(complete)
+		return nil
 	})
 	var ref refused
 	switch {

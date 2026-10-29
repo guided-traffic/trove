@@ -76,7 +76,8 @@ Errors are `*errs.Error`: `invalid_document` (400), the codes of R-REPO-008 (422
 version for `currentEtag`). An update that changes nothing writes nothing: same version, no event, no change row.
 `Hooks.OnUpdated` runs in the update's transaction with the repository before and after; the authorization area uses it
 to record `authz.settings.changed` for `cacheFillAction`, `packageOwnership`, `requireAuthentication` and `hideExistence`
-(R-AUTHZ-031).
+(R-AUTHZ-031): `authz.SettingsHook` ([settings.go](../../internal/authz/settings.go)), which `wireRepository` sets as `Options.Hooks`.
+It records only the settings that changed, before and after, with a journal entry, and nothing for another change.
 
 ### Delete
 

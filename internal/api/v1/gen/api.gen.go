@@ -15,6 +15,27 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AuditEventOutcome.
+const (
+	Denied  AuditEventOutcome = "denied"
+	Failure AuditEventOutcome = "failure"
+	Success AuditEventOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the AuditEventOutcome enum.
+func (e AuditEventOutcome) Valid() bool {
+	switch e {
+	case Denied:
+		return true
+	case Failure:
+		return true
+	case Success:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CheckResultStatus.
 const (
 	CheckResultStatusDegraded CheckResultStatus = "degraded"
@@ -108,6 +129,66 @@ func (e JobState) Valid() bool {
 	}
 }
 
+// Defines values for PermissionCheckItemAction.
+const (
+	Annotate  PermissionCheckItemAction = "annotate"
+	Delete    PermissionCheckItemAction = "delete"
+	Deploy    PermissionCheckItemAction = "deploy"
+	Manage    PermissionCheckItemAction = "manage"
+	Overwrite PermissionCheckItemAction = "overwrite"
+	Read      PermissionCheckItemAction = "read"
+)
+
+// Valid indicates whether the value is a known member of the PermissionCheckItemAction enum.
+func (e PermissionCheckItemAction) Valid() bool {
+	switch e {
+	case Annotate:
+		return true
+	case Delete:
+		return true
+	case Deploy:
+		return true
+	case Manage:
+		return true
+	case Overwrite:
+		return true
+	case Read:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PermissionPolicyResourceType.
+const (
+	PermissionPolicyResourceTypeRepository PermissionPolicyResourceType = "repository"
+)
+
+// Valid indicates whether the value is a known member of the PermissionPolicyResourceType enum.
+func (e PermissionPolicyResourceType) Valid() bool {
+	switch e {
+	case PermissionPolicyResourceTypeRepository:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PermissionPolicyInputResourceType.
+const (
+	PermissionPolicyInputResourceTypeRepository PermissionPolicyInputResourceType = "repository"
+)
+
+// Valid indicates whether the value is a known member of the PermissionPolicyInputResourceType enum.
+func (e PermissionPolicyInputResourceType) Valid() bool {
+	switch e {
+	case PermissionPolicyInputResourceTypeRepository:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReplicaRoles.
 const (
 	ReplicaRolesAll    ReplicaRoles = "all"
@@ -147,6 +228,33 @@ func (e ReplicaState) Valid() bool {
 	case Starting:
 		return true
 	case Unready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoleName.
+const (
+	Admin           RoleName = "admin"
+	Auditor         RoleName = "auditor"
+	RepositoryAdmin RoleName = "repository-admin"
+	SecurityAdmin   RoleName = "security-admin"
+	WebhookAdmin    RoleName = "webhook-admin"
+)
+
+// Valid indicates whether the value is a known member of the RoleName enum.
+func (e RoleName) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Auditor:
+		return true
+	case RepositoryAdmin:
+		return true
+	case SecurityAdmin:
+		return true
+	case WebhookAdmin:
 		return true
 	default:
 		return false
@@ -228,6 +336,42 @@ func (e ValkeyViewState) Valid() bool {
 	}
 }
 
+// Defines values for ExportAuditEventsParamsFormat.
+const (
+	Csv   ExportAuditEventsParamsFormat = "csv"
+	Jsonl ExportAuditEventsParamsFormat = "jsonl"
+)
+
+// Valid indicates whether the value is a known member of the ExportAuditEventsParamsFormat enum.
+func (e ExportAuditEventsParamsFormat) Valid() bool {
+	switch e {
+	case Csv:
+		return true
+	case Jsonl:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPermissionPoliciesParamsSort.
+const (
+	MinusName ListPermissionPoliciesParamsSort = "-name"
+	Name      ListPermissionPoliciesParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListPermissionPoliciesParamsSort enum.
+func (e ListPermissionPoliciesParamsSort) Valid() bool {
+	switch e {
+	case MinusName:
+		return true
+	case Name:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListJobsParamsSort.
 const (
 	EnqueuedAt      ListJobsParamsSort = "enqueuedAt"
@@ -244,6 +388,73 @@ func (e ListJobsParamsSort) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AuditActor defines model for AuditActor.
+type AuditActor struct {
+	// AuthMethod `bearer`, `basic`, `session`, `api_key`, or null.
+	AuthMethod *string `json:"authMethod"`
+	Id         *string `json:"id"`
+	Name       *string `json:"name"`
+	TokenId    *string `json:"tokenId"`
+
+	// Type `user`, `service_account`, `ci`, `breakglass`, `anonymous`, `admin-cli` or `system`.
+	Type string `json:"type"`
+}
+
+// AuditEvent One audit event (R-OPS-017). The event names, categories and the shape of `details` per name are R-OPS-016; `details` never holds a secret.
+type AuditEvent struct {
+	// Action Examples: authz.policy.created
+	Action   string                 `json:"action"`
+	Actor    AuditActor             `json:"actor"`
+	Category string                 `json:"category"`
+	Details  map[string]interface{} `json:"details"`
+	Endpoint *string                `json:"endpoint"`
+
+	// Id A UUIDv7 the producer made; the time it carries is close to `occurredAt`.
+	Id         string            `json:"id"`
+	OccurredAt time.Time         `json:"occurredAt"`
+	Outcome    AuditEventOutcome `json:"outcome"`
+	Path       *string           `json:"path"`
+	Reason     *string           `json:"reason"`
+	Replica    *string           `json:"replica"`
+	Repository *string           `json:"repository"`
+	Resource   AuditResource     `json:"resource"`
+	Source     AuditSource       `json:"source"`
+	TraceId    *string           `json:"traceId"`
+}
+
+// AuditEventOutcome defines model for AuditEvent.Outcome.
+type AuditEventOutcome string
+
+// AuditEventList defines model for AuditEventList.
+type AuditEventList struct {
+	Items      []AuditEvent `json:"items"`
+	NextCursor *string      `json:"nextCursor"`
+}
+
+// AuditResource defines model for AuditResource.
+type AuditResource struct {
+	Id   *string `json:"id"`
+	Type *string `json:"type"`
+}
+
+// AuditSource defines model for AuditSource.
+type AuditSource struct {
+	Ip        *string `json:"ip"`
+	UserAgent *string `json:"userAgent"`
+}
+
+// AuthzMe defines model for AuthzMe.
+type AuthzMe struct {
+	// Capabilities The system capabilities the credential exercises (R-AUTHZ-010), for example `settings:read`.
+	Capabilities []string `json:"capabilities"`
+	Epoch        int64    `json:"epoch"`
+
+	// Principals The references the caller acts as; it never lists other principals.
+	Principals []string      `json:"principals"`
+	Roles      []RoleName    `json:"roles"`
+	Scope      *ScopeSummary `json:"scope"`
 }
 
 // CheckResult defines model for CheckResult.
@@ -403,6 +614,137 @@ type ObjectStoreFacts struct {
 	Prefix           string `json:"prefix"`
 }
 
+// PatternLists The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted.
+type PatternLists struct {
+	Exclude *[]string `json:"exclude,omitempty"`
+	Include *[]string `json:"include,omitempty"`
+}
+
+// PermissionCheckItem defines model for PermissionCheckItem.
+type PermissionCheckItem struct {
+	Action PermissionCheckItemAction `json:"action"`
+
+	// Package The package name of an item, as the format spells it.
+	Package *string `json:"package,omitempty"`
+
+	// Path The canonical path of an item inside the repository.
+	Path       *string `json:"path,omitempty"`
+	Repository string  `json:"repository"`
+}
+
+// PermissionCheckItemAction defines model for PermissionCheckItem.Action.
+type PermissionCheckItemAction string
+
+// PermissionCheckRequest defines model for PermissionCheckRequest.
+type PermissionCheckRequest struct {
+	Checks []PermissionCheckItem `json:"checks"`
+}
+
+// PermissionCheckResponse defines model for PermissionCheckResponse.
+type PermissionCheckResponse struct {
+	// Epoch The epoch of the index that decided every check.
+	Epoch   int64                   `json:"epoch"`
+	Results []PermissionCheckResult `json:"results"`
+}
+
+// PermissionCheckResult defines model for PermissionCheckResult.
+type PermissionCheckResult struct {
+	Allowed bool `json:"allowed"`
+}
+
+// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`. `version` is the ETag source.
+type PermissionPolicy struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy A principal reference; empty when the creator no longer exists.
+	CreatedBy    string                       `json:"createdBy"`
+	Description  string                       `json:"description"`
+	Entries      []PolicyEntry                `json:"entries"`
+	Inert        bool                         `json:"inert"`
+	Name         string                       `json:"name"`
+	ResourceType PermissionPolicyResourceType `json:"resourceType"`
+
+	// Resources The resource set of a policy (R-AUTHZ-004, R-AUTHZ-005).
+	Resources PolicyResources `json:"resources"`
+	UpdatedAt time.Time       `json:"updatedAt"`
+	UpdatedBy string          `json:"updatedBy"`
+	Version   int64           `json:"version"`
+	Warnings  []string        `json:"warnings"`
+}
+
+// PermissionPolicyResourceType defines model for PermissionPolicy.ResourceType.
+type PermissionPolicyResourceType string
+
+// PermissionPolicyInput What a client writes. The read-only members of the representation (`inert`, `warnings`, `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`) are accepted and ignored, so a body obtained by GET can be sent back.
+type PermissionPolicyInput struct {
+	CreatedAt    *time.Time                         `json:"createdAt,omitempty"`
+	CreatedBy    *string                            `json:"createdBy,omitempty"`
+	Description  *string                            `json:"description,omitempty"`
+	Entries      *[]PolicyEntry                     `json:"entries,omitempty"`
+	Inert        *bool                              `json:"inert,omitempty"`
+	Name         *string                            `json:"name,omitempty"`
+	ResourceType *PermissionPolicyInputResourceType `json:"resourceType,omitempty"`
+
+	// Resources The resource set of a policy (R-AUTHZ-004, R-AUTHZ-005).
+	Resources *PolicyResources `json:"resources,omitempty"`
+	UpdatedAt *time.Time       `json:"updatedAt,omitempty"`
+	UpdatedBy *string          `json:"updatedBy,omitempty"`
+	Version   *int64           `json:"version,omitempty"`
+	Warnings  *[]string        `json:"warnings,omitempty"`
+}
+
+// PermissionPolicyInputResourceType defines model for PermissionPolicyInput.ResourceType.
+type PermissionPolicyInputResourceType string
+
+// PermissionPolicyList defines model for PermissionPolicyList.
+type PermissionPolicyList struct {
+	Items      []PermissionPolicy `json:"items"`
+	NextCursor *string            `json:"nextCursor"`
+}
+
+// PolicyEntry Actions given to one principal. A policy holds at most one entry per principal.
+type PolicyEntry struct {
+	// Actions Actions or presets (`read`, `write`, `maintain`, `full`) on input; the expanded, alphabetical list of actions on output.
+	Actions []string `json:"actions"`
+
+	// Principal `user:<name>`, `group:<name>`, `sa:<name>`, `anonymous` or `authenticated`.
+	//
+	// Examples: group:team-web
+	Principal string `json:"principal"`
+}
+
+// PolicyProblem defines model for PolicyProblem.
+type PolicyProblem struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+
+	// Pointer A JSON pointer into the policy.
+	Pointer string `json:"pointer"`
+}
+
+// PolicyResources The resource set of a policy (R-AUTHZ-004, R-AUTHZ-005).
+type PolicyResources struct {
+	// Packages The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted.
+	Packages *PatternLists `json:"packages,omitempty"`
+
+	// Paths The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted.
+	Paths *PatternLists `json:"paths,omitempty"`
+
+	// Repositories Repository selectors, a key (`npm-internal`), a key pattern (`npm-team-*`) or a class (`@any-local`, `@any-remote`, `@any-virtual`, `@any`), each optionally restricted to a format (`@any-local:npm`).
+	Repositories *[]string `json:"repositories,omitempty"`
+}
+
+// PolicyValidation The result of a validation without storing (R-AUTHZ-021).
+type PolicyValidation struct {
+	// Covers The keys of the repositories the selectors currently cover, sorted. Empty while the policy has errors.
+	Covers []string        `json:"covers"`
+	Errors []PolicyProblem `json:"errors"`
+
+	// Valid True when `errors` is empty.
+	Valid    bool     `json:"valid"`
+	Warnings []string `json:"warnings"`
+}
+
 // PoolFacts defines model for PoolFacts.
 type PoolFacts struct {
 	Idle  int `json:"idle"`
@@ -496,6 +838,40 @@ type ReplicaSummary struct {
 	Versions map[string]int `json:"versions"`
 }
 
+// Role defines model for Role.
+type Role struct {
+	// Capabilities The capabilities the role bundles (R-AUTHZ-010).
+	Capabilities []string `json:"capabilities"`
+	Name         RoleName `json:"name"`
+}
+
+// RoleBinding defines model for RoleBinding.
+type RoleBinding struct {
+	GrantedAt time.Time `json:"grantedAt"`
+
+	// GrantedBy A principal reference; empty for a binding made by a command or whose granter was deleted.
+	GrantedBy string `json:"grantedBy"`
+
+	// Principal A principal reference.
+	Principal string   `json:"principal"`
+	Role      RoleName `json:"role"`
+}
+
+// RoleBindingList defines model for RoleBindingList.
+type RoleBindingList struct {
+	Items      []RoleBinding `json:"items"`
+	NextCursor *string       `json:"nextCursor"`
+}
+
+// RoleList defines model for RoleList.
+type RoleList struct {
+	Items      []Role `json:"items"`
+	NextCursor any    `json:"nextCursor"`
+}
+
+// RoleName defines model for RoleName.
+type RoleName string
+
 // RoleSummary defines model for RoleSummary.
 type RoleSummary struct {
 	Degraded int `json:"degraded"`
@@ -504,6 +880,19 @@ type RoleSummary struct {
 	// Nodes Distinct nodes the live replicas of the role run on.
 	Nodes int `json:"nodes"`
 	Ready int `json:"ready"`
+}
+
+// ScopeSummary The ceiling of the caller's credential (R-AUTHZ-013).
+type ScopeSummary struct {
+	// Admin The credential exercises the caller's system roles.
+	Admin bool `json:"admin"`
+
+	// Grants The number of repository grants in the scope.
+	Grants int `json:"grants"`
+
+	// Inherit The credential has no repository ceiling.
+	Inherit bool     `json:"inherit"`
+	System  []string `json:"system"`
 }
 
 // SystemInfo defines model for SystemInfo.
@@ -712,6 +1101,134 @@ type Unprocessable = Problem
 // UnsupportedMediaType RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type UnsupportedMediaType = Problem
 
+// ListAuditEventsParams defines parameters for ListAuditEvents.
+type ListAuditEventsParams struct {
+	// From Start of the range, inclusive (RFC 3339); default the last 24 hours.
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End of the range, exclusive (RFC 3339); default open.
+	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
+
+	// Action An event name, or a prefix ending in `.*` such as `authz.*`.
+	Action *string `form:"action,omitempty" json:"action,omitempty"`
+
+	// Category One of auth, token, identity, authz, repository, content, system, config, webhook.
+	Category *string `form:"category,omitempty" json:"category,omitempty"`
+
+	// Outcome success, failure or denied.
+	Outcome *string `form:"outcome,omitempty" json:"outcome,omitempty"`
+
+	// Actor A principal ID or a name.
+	Actor        *string `form:"actor,omitempty" json:"actor,omitempty"`
+	Repository   *string `form:"repository,omitempty" json:"repository,omitempty"`
+	ResourceType *string `form:"resourceType,omitempty" json:"resourceType,omitempty"`
+	ResourceId   *string `form:"resourceId,omitempty" json:"resourceId,omitempty"`
+
+	// TraceId The trace ID the client received as `X-Request-Id`.
+	TraceId *string `form:"traceId,omitempty" json:"traceId,omitempty"`
+
+	// Limit Page size, 1 to 1000 (default 100).
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ExportAuditEventsParams defines parameters for ExportAuditEvents.
+type ExportAuditEventsParams struct {
+	// From Start of the range, inclusive (RFC 3339). Required; a missing value answers `400 invalid_audit_range`.
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End of the range, exclusive (RFC 3339). Required; a missing value answers `400 invalid_audit_range`.
+	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
+
+	// Action An event name, or a prefix ending in `.*` such as `authz.*`.
+	Action *string `form:"action,omitempty" json:"action,omitempty"`
+
+	// Category One of auth, token, identity, authz, repository, content, system, config, webhook.
+	Category *string `form:"category,omitempty" json:"category,omitempty"`
+
+	// Outcome success, failure or denied.
+	Outcome *string `form:"outcome,omitempty" json:"outcome,omitempty"`
+
+	// Actor A principal ID or a name.
+	Actor        *string `form:"actor,omitempty" json:"actor,omitempty"`
+	Repository   *string `form:"repository,omitempty" json:"repository,omitempty"`
+	ResourceType *string `form:"resourceType,omitempty" json:"resourceType,omitempty"`
+	ResourceId   *string `form:"resourceId,omitempty" json:"resourceId,omitempty"`
+
+	// TraceId The trace ID the client received as `X-Request-Id`.
+	TraceId *string `form:"traceId,omitempty" json:"traceId,omitempty"`
+
+	// Format `jsonl` (default) or `csv`.
+	Format *ExportAuditEventsParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
+type ExportAuditEventsParamsFormat string
+
+// ListPermissionPoliciesParams defines parameters for ListPermissionPolicies.
+type ListPermissionPoliciesParams struct {
+	// Principal A principal reference.
+	Principal *string `form:"principal,omitempty" json:"principal,omitempty"`
+
+	// ExpandGroups Include the policies of the principal's groups (default `true`); only with `principal`.
+	ExpandGroups *bool `form:"expandGroups,omitempty" json:"expandGroups,omitempty"`
+
+	// Repository A repository key.
+	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Sort `name` (default) or `-name`.
+	Sort *ListPermissionPoliciesParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListPermissionPoliciesParamsSort defines parameters for ListPermissionPolicies.
+type ListPermissionPoliciesParamsSort string
+
+// CreatePermissionPolicyParams defines parameters for CreatePermissionPolicy.
+type CreatePermissionPolicyParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DeletePermissionPolicyParams defines parameters for DeletePermissionPolicy.
+type DeletePermissionPolicyParams struct {
+	// IfMatch The `ETag` of the policy, or `*`.
+	IfMatch *string `json:"If-Match,omitempty"`
+}
+
+// PatchPermissionPolicyParams defines parameters for PatchPermissionPolicy.
+type PatchPermissionPolicyParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ReplacePermissionPolicyParams defines parameters for ReplacePermissionPolicy.
+type ReplacePermissionPolicyParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ListRoleBindingsParams defines parameters for ListRoleBindings.
+type ListRoleBindingsParams struct {
+	Role *RoleName `form:"role,omitempty" json:"role,omitempty"`
+
+	// Principal A principal reference.
+	Principal *string `form:"principal,omitempty" json:"principal,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListJobsParams defines parameters for ListJobs.
 type ListJobsParams struct {
 	// Kind Repeat the parameter to select several kinds.
@@ -748,20 +1265,83 @@ type RunTaskParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// CheckPermissionsJSONRequestBody defines body for CheckPermissions for application/json ContentType.
+type CheckPermissionsJSONRequestBody = PermissionCheckRequest
+
+// ValidatePermissionPolicyJSONRequestBody defines body for ValidatePermissionPolicy for application/json ContentType.
+type ValidatePermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// CreatePermissionPolicyJSONRequestBody defines body for CreatePermissionPolicy for application/json ContentType.
+type CreatePermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// PatchPermissionPolicyApplicationMergePatchPlusJSONRequestBody defines body for PatchPermissionPolicy for application/merge-patch+json ContentType.
+type PatchPermissionPolicyApplicationMergePatchPlusJSONRequestBody = PermissionPolicyInput
+
+// ReplacePermissionPolicyJSONRequestBody defines body for ReplacePermissionPolicy for application/json ContentType.
+type ReplacePermissionPolicyJSONRequestBody = PermissionPolicyInput
+
 // RunTaskJSONRequestBody defines body for RunTask for application/json ContentType.
 type RunTaskJSONRequestBody = TaskRunRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListAuditEvents Query the audit trail
+	// (GET /api/v1/audit/events)
+	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
+	// ExportAuditEvents Export the audit trail
+	// (GET /api/v1/audit/events/export)
+	ExportAuditEvents(w http.ResponseWriter, r *http.Request, params ExportAuditEventsParams)
+	// GetAuditEvent Read one audit event
+	// (GET /api/v1/audit/events/{id})
+	GetAuditEvent(w http.ResponseWriter, r *http.Request, id string)
+	// CheckPermissions Check repository actions for the caller
+	// (POST /api/v1/authz/check)
+	CheckPermissions(w http.ResponseWriter, r *http.Request)
+	// GetAuthzMe What the caller may do
+	// (GET /api/v1/authz/me)
+	GetAuthzMe(w http.ResponseWriter, r *http.Request)
+	// ValidatePermissionPolicy Validate a permission policy without storing it
+	// (POST /api/v1/authz/validate-policy)
+	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
 	// GetOpenApiJson This document as JSON
 	// (GET /api/v1/openapi.json)
 	GetOpenApiJson(w http.ResponseWriter, r *http.Request)
 	// GetOpenApiYaml This document as YAML
 	// (GET /api/v1/openapi.yaml)
 	GetOpenApiYaml(w http.ResponseWriter, r *http.Request)
+	// ListPermissionPolicies List permission policies
+	// (GET /api/v1/permission-policies)
+	ListPermissionPolicies(w http.ResponseWriter, r *http.Request, params ListPermissionPoliciesParams)
+	// CreatePermissionPolicy Create a permission policy
+	// (POST /api/v1/permission-policies)
+	CreatePermissionPolicy(w http.ResponseWriter, r *http.Request, params CreatePermissionPolicyParams)
+	// DeletePermissionPolicy Delete a permission policy
+	// (DELETE /api/v1/permission-policies/{name})
+	DeletePermissionPolicy(w http.ResponseWriter, r *http.Request, name string, params DeletePermissionPolicyParams)
+	// GetPermissionPolicy Read a permission policy
+	// (GET /api/v1/permission-policies/{name})
+	GetPermissionPolicy(w http.ResponseWriter, r *http.Request, name string)
+	// PatchPermissionPolicy Change members of a permission policy
+	// (PATCH /api/v1/permission-policies/{name})
+	PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, name string, params PatchPermissionPolicyParams)
+	// ReplacePermissionPolicy Replace a permission policy
+	// (PUT /api/v1/permission-policies/{name})
+	ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request, name string, params ReplacePermissionPolicyParams)
 	// GetProblemType Describe a problem code
 	// (GET /api/v1/problems/{code})
 	GetProblemType(w http.ResponseWriter, r *http.Request, code string)
+	// ListRoleBindings List role bindings
+	// (GET /api/v1/role-bindings)
+	ListRoleBindings(w http.ResponseWriter, r *http.Request, params ListRoleBindingsParams)
+	// UnbindRole Remove a role binding
+	// (DELETE /api/v1/role-bindings/{role}/{principalRef})
+	UnbindRole(w http.ResponseWriter, r *http.Request, role RoleName, principalRef string)
+	// BindRole Bind a role to a principal
+	// (PUT /api/v1/role-bindings/{role}/{principalRef})
+	BindRole(w http.ResponseWriter, r *http.Request, role RoleName, principalRef string)
+	// ListRoles List the system roles
+	// (GET /api/v1/roles)
+	ListRoles(w http.ResponseWriter, r *http.Request)
 	// GetEncryptionStatus Status of the stored-secret key ring
 	// (GET /api/v1/system/encryption)
 	GetEncryptionStatus(w http.ResponseWriter, r *http.Request)
@@ -803,6 +1383,413 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// ListAuditEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditEventsParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "category" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "category", r.URL.Query(), &params.Category, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "outcome" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "outcome", r.URL.Query(), &params.Outcome, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "outcome"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor", r.URL.Query(), &params.Actor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "resourceType" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "resourceType", r.URL.Query(), &params.ResourceType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resourceType"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resourceType", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "resourceId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "resourceId", r.URL.Query(), &params.ResourceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resourceId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resourceId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "traceId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "traceId", r.URL.Query(), &params.TraceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "traceId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "traceId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportAuditEvents operation middleware
+func (siw *ServerInterfaceWrapper) ExportAuditEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportAuditEventsParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "category" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "category", r.URL.Query(), &params.Category, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "outcome" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "outcome", r.URL.Query(), &params.Outcome, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "outcome"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor", r.URL.Query(), &params.Actor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "resourceType" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "resourceType", r.URL.Query(), &params.ResourceType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resourceType"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resourceType", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "resourceId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "resourceId", r.URL.Query(), &params.ResourceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "resourceId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "resourceId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "traceId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "traceId", r.URL.Query(), &params.TraceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "traceId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "traceId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAuditEvent operation middleware
+func (siw *ServerInterfaceWrapper) GetAuditEvent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAuditEvent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CheckPermissions operation middleware
+func (siw *ServerInterfaceWrapper) CheckPermissions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckPermissions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAuthzMe operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthzMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAuthzMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ValidatePermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ValidatePermissionPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetOpenApiJson operation middleware
 func (siw *ServerInterfaceWrapper) GetOpenApiJson(w http.ResponseWriter, r *http.Request) {
 
@@ -831,6 +1818,329 @@ func (siw *ServerInterfaceWrapper) GetOpenApiYaml(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListPermissionPolicies operation middleware
+func (siw *ServerInterfaceWrapper) ListPermissionPolicies(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPermissionPoliciesParams
+
+	// ------------- Optional query parameter "principal" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "principal", r.URL.Query(), &params.Principal, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "principal"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principal", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "expandGroups" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "expandGroups", r.URL.Query(), &params.ExpandGroups, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "expandGroups"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expandGroups", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPermissionPolicies(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) CreatePermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePermissionPolicy(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) DeletePermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeletePermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePermissionPolicy(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPermissionPolicy(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PatchPermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchPermissionPolicy(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplacePermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplacePermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplacePermissionPolicy(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetProblemType operation middleware
 func (siw *ServerInterfaceWrapper) GetProblemType(w http.ResponseWriter, r *http.Request) {
 
@@ -848,6 +2158,162 @@ func (siw *ServerInterfaceWrapper) GetProblemType(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProblemType(w, r, code)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRoleBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListRoleBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRoleBindingsParams
+
+	// ------------- Optional query parameter "role" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "role", r.URL.Query(), &params.Role, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "role"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "role", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "principal" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "principal", r.URL.Query(), &params.Principal, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "principal"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principal", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRoleBindings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnbindRole operation middleware
+func (siw *ServerInterfaceWrapper) UnbindRole(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "role" -------------
+	var role RoleName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "role", r.PathValue("role"), &role, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "role", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "principalRef" -------------
+	var principalRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalRef", r.PathValue("principalRef"), &principalRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principalRef", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnbindRole(w, r, role, principalRef)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BindRole operation middleware
+func (siw *ServerInterfaceWrapper) BindRole(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "role" -------------
+	var role RoleName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "role", r.PathValue("role"), &role, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "role", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "principalRef" -------------
+	var principalRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalRef", r.PathValue("principalRef"), &principalRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principalRef", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BindRole(w, r, role, principalRef)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRoles operation middleware
+func (siw *ServerInterfaceWrapper) ListRoles(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRoles(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1287,12 +2753,28 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.json", wrapper.GetOpenApiJson)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.yaml", wrapper.GetOpenApiYaml)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/problems/{code}", wrapper.GetProblemType)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/audit/events", wrapper.ListAuditEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/audit/events/export", wrapper.ExportAuditEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/audit/events/{id}", wrapper.GetAuditEvent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/jobs", wrapper.ListJobs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/jobs/{id}", wrapper.GetJob)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/jobs/{id}/cancel", wrapper.CancelJob)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/tasks", wrapper.ListTasks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/tasks/{name}/run", wrapper.RunTask)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/encryption", wrapper.GetEncryptionStatus)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/permission-policies", wrapper.ListPermissionPolicies)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/permission-policies", wrapper.CreatePermissionPolicy)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.DeletePermissionPolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.GetPermissionPolicy)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.PatchPermissionPolicy)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.ReplacePermissionPolicy)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/authz/validate-policy", wrapper.ValidatePermissionPolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles", wrapper.ListRoles)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/role-bindings", wrapper.ListRoleBindings)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/role-bindings/{role}/{principalRef}", wrapper.UnbindRole)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/role-bindings/{role}/{principalRef}", wrapper.BindRole)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/authz/me", wrapper.GetAuthzMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/authz/check", wrapper.CheckPermissions)
 
 	return m
 }

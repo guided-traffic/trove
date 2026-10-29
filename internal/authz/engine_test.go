@@ -382,13 +382,6 @@ func (r *recorder) list() []audit.Event {
 	return append([]audit.Event(nil), r.events...)
 }
 
-func count(ev audit.Event) int {
-	var d map[string]any
-	_ = json.Unmarshal(ev.Details, &d)
-	n, _ := d["count"].(float64)
-	return int(n)
-}
-
 func TestR_AUTHZ_029_DecisionAudit(t *testing.T) {
 	f := newFixture().repo("npm-internal", "local", "npm", "")
 	f.policy(policyDef{name: "p", selectors: []string{"npm-internal"}, entries: map[string][]string{idDevs: {"read"}}})
@@ -449,34 +442,38 @@ func TestR_AUTHZ_029_DecisionAudit(t *testing.T) {
 			t.Fatal("not recorded")
 		}
 	})
-	t.Run("R-AUTHZ-029 R-OPS-015 repeated denials collapse into one event and a summary with the exact count", func(t *testing.T) {
-		e, rec := engine(func(o *Options) { o.Audit.DenialDedupWindow = 80 * time.Millisecond })
-		for i := 0; i < 6; i++ {
-			e.Decide(t.Context(), carolSub, read("npm-internal", "x", ""))
+	// The producer does not deduplicate (Q-AUTHZ-24): every refusal reaches the
+	// recorder, with the columns and the detail the writer's deduplication keys
+	// on (R-OPS-015), so the writer's summary carries the right count.
+	t.Run("R-AUTHZ-029 R-OPS-015 every refusal reaches the recorder with the deduplication key", func(t *testing.T) {
+		e, rec := engine(func(o *Options) { o.Audit.DenialDedupWindow = time.Hour })
+		for range 3 {
+			e.Decide(t.Context(), carolSub, write("npm-internal", "x", "", Deploy, Overwrite))
 		}
-		if evs := rec.list(); len(evs) != 1 || count(evs[0]) != 1 {
-			t.Fatalf("first: %+v", evs)
+		evs := rec.list()
+		if len(evs) != 3 {
+			t.Fatalf("%d events, want 3 (no producer-side collapse)", len(evs))
 		}
-		waitFor(t, "the summary", func() bool { return len(rec.list()) == 2 })
-		if evs := rec.list(); count(evs[1]) != 5 {
-			t.Fatalf("summary count = %d", count(evs[1]))
+		ev := evs[0]
+		var d map[string]any
+		_ = json.Unmarshal(ev.Details, &d)
+		if ev.Outcome != audit.Denied || ev.Repository != "npm-internal" || ev.Path != "x" || d["required_action"] != "deploy,overwrite" {
+			t.Fatalf("%+v %v", ev, d)
 		}
-		// another path is another key
-		e.Decide(t.Context(), carolSub, read("npm-internal", "y", ""))
-		e.Decide(t.Context(), carolSub, read("npm-internal", "z", ""))
-		if evs := rec.list(); len(evs) != 4 {
-			t.Fatalf("%d events", len(evs))
+		if _, ok := d["count"]; ok {
+			t.Fatal("the producer must not set details.count; the writer does")
 		}
 	})
-	t.Run("R-AUTHZ-029 a draining replica writes its open summaries", func(t *testing.T) {
-		e, rec := engine(func(o *Options) { o.Audit.DenialDedupWindow = time.Hour })
-		for i := 0; i < 4; i++ {
-			e.Decide(t.Context(), carolSub, read("npm-internal", "x", ""))
-		}
-		_ = e.Stop(t.Context())
+	t.Run("R-AUTHZ-029 a refused management operation carries the permission as its key", func(t *testing.T) {
+		e, rec := engine(nil)
+		_ = e.Require(t.Context(), bobSub, "policies:write")
 		evs := rec.list()
-		if len(evs) != 2 || count(evs[1]) != 3 {
-			t.Fatalf("%+v", evs)
+		var d map[string]any
+		if len(evs) == 1 {
+			_ = json.Unmarshal(evs[0].Details, &d)
+		}
+		if len(evs) != 1 || evs[0].Outcome != audit.Denied || d["required_action"] != "policies:write" {
+			t.Fatalf("%+v %v", evs, d)
 		}
 	})
 	t.Run("R-AUTHZ-029 a stale refusal carries deny.stale", func(t *testing.T) {

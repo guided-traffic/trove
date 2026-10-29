@@ -1779,7 +1779,7 @@ finds exactly one matching event, with `actor_type`, `outcome` and the listed ke
 ### R-OPS-017 · Audit query, export and retention
 Priority: **MVP** · Covers: OPS-023
 
-API (requires `audit.read`; a system administrator holds it implicitly):
+API (requires `audit:read`, the capability of R-AUTHZ-010; a system administrator holds it implicitly):
 
 | Method and path | Parameters | Response |
 |---|---|---|
@@ -1847,7 +1847,7 @@ audit:
   held for longer than one batch query.
 - With `retention_days: 30` and a test clock advanced by 62 days, the oldest month's partition is
   gone after the task runs.
-- A token without `audit.read` gets `403`.
+- A token without `audit:read` gets `403`.
 
 ## Tracing
 
@@ -5232,6 +5232,45 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** One rule for lists. The development agent would revisit this if the registry grows large.
 
 **Applied in the spec:** R-OPS-019: `GET /api/v1/system/tasks` takes `limit` and `cursor` and answers the envelope.
+
+### Q-OPS-49 · Events carry the source of the request they were made in
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A domain package below the edge cannot read the request, so the events of authorization, identity and repositories had an actor and no source: no client address, no trace ID. R-OPS-015 keys the deduplication of an anonymous refusal on the client address, and R-OPS-017 filters on `traceId` (the `X-Request-Id` the client received).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every producer fills it | Each package gets the address and the trace ID passed down | Explicit | Every signature in every domain package grows, and one forgotten call leaves an event without a source |
+| (b) The recorder completes it | The composition root wraps the recorder (`v1.WithRequestSource`): an event recorded with a request context gets the client address, the trace ID and the endpoint when the producer left them empty | One place; a field the producer set stays; nothing is added outside a request | The context must reach the recorder call, which `Record(ctx, ev)` and `RecordTx(ctx, tx, ev)` already take |
+| (c) Leave it | Events carry no source | No change | Anonymous refusals are keyed without an address; `traceId` finds only the events whose producer was the API layer |
+
+**Choice:** (b).
+
+**Rationale:** the events exist to answer "who, from where"; the answer must not depend on each author remembering. The development agent would revisit this if a producer runs on a goroutine that outlives the request, whose context would be cancelled but still carries the values (it does).
+
+**Applied in the spec:** none.
+
+### Q-OPS-50 · The shape of the audit operations
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Choice |
+|---|---|
+| Page size of the query | `limit` 1 to 1,000, default 100 (R-OPS-017), not the general `api.page_size_max`; the cursor holds `(occurredAt, id)` and the fingerprint of the filters |
+| The permission | `audit:read` (R-AUTHZ-010; the auditor and security administrator roles and the administrator hold it) |
+| A malformed `from` or `to`, an unknown `category` or `outcome`, a repeated single-valued parameter, an unknown parameter | `400`; a range that ends before it starts is `400 invalid_audit_range` |
+| The export range | Both bounds are required but declared optional in the document, so that a missing bound answers `400 invalid_audit_range` (R-OPS-017) and not the generic 400 of the generated wrapper |
+| Order of the export | `audit.exported` is committed in a transaction of its own before the first byte; if it cannot be written nothing is streamed. Then keyset batches of 1,000, oldest first, each one query on a connection that is back in the pool before the batch is written |
+| A batch that fails while streaming | The handler aborts the response (`http.ErrAbortHandler`), so the chunked answer ends without its terminating chunk and the client sees a cut export; the client resumes with an inclusive `from` as R-OPS-017 describes |
+| CSV | One header row, 21 columns, `details` as JSON text; a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading apostrophe, because user agents and paths are client input and an export is opened in spreadsheets |
+| The outcome of `authz.denied` | `denied` (it was `failure`); the filter `outcome=denied` finds refusals (Q-OPS-40) |
+| Reading the trail | A query or a read of one event is not itself an event; only the export is (R-OPS-017). That is [H-144](../security/audit.md#h-144--reading-the-audit-trail-leaves-no-event-except-for-the-export) |
+
+**Rationale:** each follows R-OPS-017 where it is explicit and keeps a long export from holding a transaction. The development agent would revisit the cut export if a client library cannot tell an aborted chunked answer from a complete one.
+
+**Applied in the spec:** R-OPS-017: the capability is written `audit:read`.
+
 
 ## What this does not cover
 

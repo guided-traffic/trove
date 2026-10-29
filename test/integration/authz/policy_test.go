@@ -67,7 +67,7 @@ func TestR_AUTHZ_021_PolicyLifecycle(t *testing.T) {
 	t.Run("R-AUTHZ-021 a name that exists answers 409 and stores nothing", func(t *testing.T) {
 		n := e.authzEpoch()
 		_, _, err := a.svc.Create(ctx, admin, in)
-		problem(t, err, 409, errs.CodeConflict)
+		problem(t, err, 409, errs.CodeAlreadyExists)
 		if e.authzEpoch() != n {
 			t.Error("a refused create advanced the epoch")
 		}

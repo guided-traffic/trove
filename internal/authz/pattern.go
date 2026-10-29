@@ -1,14 +1,21 @@
 package authz
 
 import (
-	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
-// Limits of R-AUTHZ-005.
+// The pattern syntax of R-AUTHZ-005 is the one of R-REPO-005, and one compiler
+// implements it: [repository.CompilePattern] (Q-AUTHZ-25). Package-name patterns
+// use the subject "name", path patterns "path"; this file adds only what a grant
+// needs on top: the limits, the NuGet case folding and the include and exclude
+// semantics of a resource set.
+
+// Limits of R-AUTHZ-005. The length is counted in characters; the compiler
+// counts bytes and is the stricter of the two.
 const (
 	maxPatternLen   = 1024
 	maxPatternCount = 256
@@ -21,147 +28,23 @@ const FormatNuGet = "nuget"
 // foldFor reports whether package names of the format compare case-insensitively.
 func foldFor(format string) bool { return format == FormatNuGet }
 
-// compileName compiles a package-name glob (R-AUTHZ-005): `*` any run of
-// characters except `/`, `**` any run including `/`, `?` one character except
-// `/`, `\` makes the next character literal whatever it is.
-func compileName(pattern string, fold bool) (*regexp.Regexp, error) {
+// compileName compiles a package-name glob (R-AUTHZ-005).
+func compileName(pattern string, fold bool) (*repository.Pattern, error) {
 	if err := checkLength(pattern); err != nil {
 		return nil, err
 	}
 	if fold {
 		pattern = strings.ToLower(pattern)
 	}
-	var b strings.Builder
-	b.WriteString(`^`)
-	rs := []rune(pattern)
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
-		case '\\':
-			if i+1 >= len(rs) {
-				return nil, errors.New("a backslash at the end of the pattern escapes nothing")
-			}
-			i++
-			b.WriteString(regexp.QuoteMeta(string(rs[i])))
-		case '*':
-			if i+1 < len(rs) && rs[i+1] == '*' {
-				i++
-				b.WriteString(`.*`)
-			} else {
-				b.WriteString(`[^/]*`)
-			}
-		case '?':
-			b.WriteString(`[^/]`)
-		default:
-			b.WriteString(regexp.QuoteMeta(string(rs[i])))
-		}
-	}
-	b.WriteString(`$`)
-	return regexp.Compile("(?s)" + b.String())
+	return repository.CompilePattern(repository.SubjectName, pattern)
 }
 
-// pathToken is one element of a path pattern segment.
-type pathSegment struct {
-	// doubleStar marks the segment `**`.
-	doubleStar bool
-	expr       string
-}
-
-// compilePath compiles a path pattern (R-AUTHZ-005): `*` any run within one
-// segment, `**` as a whole segment any number of segments (also none), `?` one
-// character within a segment, `\` as for names.
-func compilePath(pattern string) (*regexp.Regexp, error) {
+// compilePath compiles a path pattern (R-AUTHZ-005).
+func compilePath(pattern string) (*repository.Pattern, error) {
 	if err := checkLength(pattern); err != nil {
 		return nil, err
 	}
-	segs, err := splitPath(pattern)
-	if err != nil {
-		return nil, err
-	}
-	var b strings.Builder
-	b.WriteString(`^`)
-	needSlash := false
-	for i, s := range segs {
-		switch {
-		case s.doubleStar && i == 0 && len(segs) == 1:
-			b.WriteString(`.*`)
-		case s.doubleStar && i == 0:
-			b.WriteString(`(?:[^/]+/)*`)
-		case s.doubleStar:
-			b.WriteString(`(?:/[^/]+)*`)
-		default:
-			if needSlash {
-				b.WriteString(`/`)
-			}
-			b.WriteString(s.expr)
-			needSlash = true
-		}
-	}
-	b.WriteString(`$`)
-	return regexp.Compile("(?s)" + b.String())
-}
-
-// splitPath splits a path pattern at its unescaped slashes and translates every
-// segment.
-func splitPath(pattern string) ([]pathSegment, error) {
-	rs := []rune(pattern)
-	var segs []pathSegment
-	var raw []rune
-	flush := func() error {
-		if len(raw) == 0 {
-			return errors.New("a path pattern has no empty segments")
-		}
-		s, err := translateSegment(raw)
-		if err != nil {
-			return err
-		}
-		segs = append(segs, s)
-		raw = raw[:0]
-		return nil
-	}
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
-		case '\\':
-			if i+1 >= len(rs) {
-				return nil, errors.New("a backslash at the end of the pattern escapes nothing")
-			}
-			raw = append(raw, rs[i], rs[i+1])
-			i++
-		case '/':
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		default:
-			raw = append(raw, rs[i])
-		}
-	}
-	if err := flush(); err != nil {
-		return nil, err
-	}
-	return segs, nil
-}
-
-func translateSegment(raw []rune) (pathSegment, error) {
-	if string(raw) == "**" {
-		return pathSegment{doubleStar: true}, nil
-	}
-	var b strings.Builder
-	for i := 0; i < len(raw); i++ {
-		switch raw[i] {
-		case '\\':
-			i++
-			b.WriteString(regexp.QuoteMeta(string(raw[i])))
-		case '*':
-			if i+1 < len(raw) && raw[i+1] == '*' {
-				return pathSegment{}, errors.New("`**` is a whole segment of a path pattern")
-			}
-			b.WriteString(`[^/]*`)
-		case '?':
-			b.WriteString(`[^/]`)
-		default:
-			b.WriteString(regexp.QuoteMeta(string(raw[i])))
-		}
-	}
-	return pathSegment{expr: b.String()}, nil
+	return repository.CompilePattern(repository.SubjectPath, pattern)
 }
 
 func checkLength(p string) error {
@@ -198,15 +81,15 @@ const (
 // globSet is one dimension of a resource set: include and exclude lists
 // (R-AUTHZ-005).
 type globSet struct {
-	include []*regexp.Regexp
-	exclude []*regexp.Regexp
+	include []*repository.Pattern
+	exclude []*repository.Pattern
 	fold    bool
 }
 
 // compileSet compiles an include and an exclude list of one dimension.
 func compileSet(dim dimension, include, exclude []string, fold bool) (globSet, error) {
 	g := globSet{fold: fold && dim == dimPackage}
-	compile := func(p string) (*regexp.Regexp, error) {
+	compile := func(p string) (*repository.Pattern, error) {
 		if dim == dimPackage {
 			return compileName(p, g.fold)
 		}
@@ -245,7 +128,7 @@ func (g globSet) match(v string, present bool) bool {
 
 func (g globSet) included(v string) bool {
 	for _, re := range g.include {
-		if re.MatchString(v) {
+		if re.Match(v) {
 			return true
 		}
 	}
@@ -254,7 +137,7 @@ func (g globSet) included(v string) bool {
 
 func (g globSet) excluded(v string) bool {
 	for _, re := range g.exclude {
-		if re.MatchString(v) {
+		if re.Match(v) {
 			return true
 		}
 	}

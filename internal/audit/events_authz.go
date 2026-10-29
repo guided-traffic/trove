@@ -6,8 +6,9 @@ package audit
 // (R-AUTHZ-031, R-OPS-014).
 func init() {
 	// A refused decision: read, write or management operation. Asynchronous and
-	// deduplicated per replica, principal, action, repository and path
-	// (R-OPS-015). Reads are written only with authz.audit.reads denied or all.
+	// deduplicated by the audit writer per replica, principal, required_action,
+	// repository and path (R-OPS-015, Q-AUTHZ-24): the producer sends every
+	// refusal. Reads are written only with authz.audit.reads denied or all.
 	Register(EventType{
 		Name: "authz.denied", Category: CategoryAuthz, Mode: Async,
 		Schema: `{"type":"object","properties":{` +
@@ -16,7 +17,8 @@ func init() {
 			`"repository":{"type":"string"},"class":{"type":"string"},"format":{"type":"string"},` +
 			`"package":{"type":"string"},"path":{"type":"string"},"permission":{"type":"string"},` +
 			`"credential":{"type":"string"},"endpoint":{"type":"string"},"replica":{"type":"string"},` +
-			`"epoch":{"type":"integer"},"count":{"type":"integer"}}}`,
+			`"epoch":{"type":"integer"},"required_action":{"type":"string"},` +
+			`"count":{"type":"integer"},"repeat_of":{"type":"string"}}}`,
 	})
 	// An allowed read, written only with authz.audit.reads all (Q-AUTHZ-5).
 	Register(EventType{
@@ -50,7 +52,7 @@ func init() {
 	// repository update next to the repository's own event (R-AUTHZ-031).
 	Register(EventType{
 		Name: "authz.settings.changed", Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation,
-		Schema: `{"type":"object","properties":{"repository":{"type":"string"},"repositoryId":{"type":"integer"},` +
+		Schema: `{"type":"object","properties":{"repository":{"type":"string"},"repositoryId":{"type":"string"},` +
 			`"before":{"type":"object"},"after":{"type":"object"},"epoch":{"type":"integer"}}}`,
 	})
 }

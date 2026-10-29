@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -42,7 +43,16 @@ func notFoundPolicy(name string) error {
 
 func staleVersion(name string, current int64) error {
 	return errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed,
-		fmt.Sprintf("The permission policy %q is at version %d.", name, current))
+		fmt.Sprintf("The permission policy %q is at version %d.", name, current),
+		errs.WithExtension("currentEtag", fmt.Sprintf("%q", strconv.FormatInt(current, 10))))
+}
+
+// nonNilStrings makes "no warnings" an empty list on the wire, not null.
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func actorID(sub Subject) string {
@@ -80,49 +90,62 @@ func afterEpoch(tx meta.Tx, epoch *int64, fn func(ctx context.Context, tx meta.T
 // Create stores a new policy (R-AUTHZ-021). The answer carries the epoch the
 // write produced, for the header Trove-Authz-Epoch (R-AUTHZ-032).
 func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput) (Policy, int64, error) {
-	rp, problems, err := s.resolve(ctx, in)
-	if err != nil {
-		return Policy{}, 0, err
-	}
-	if len(problems) > 0 {
-		return Policy{}, 0, problemError(problems)
-	}
 	var out Policy
 	var epoch int64
-	err = s.o.DB.InTx(ctx, func(tx meta.Tx) error {
-		qs, err := queriesOf(tx)
-		if err != nil {
-			return err
-		}
-		id := newID()
-		rows, err := qs.AuthzInsertPolicy(ctx, q.AuthzInsertPolicyParams{
-			ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, Actor: actorID(actor),
-		})
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeConflict, fmt.Sprintf("A permission policy named %q exists.", in.Name))
-		}
-		if err := writeChildren(ctx, qs, id, rp); err != nil {
-			return err
-		}
-		if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "policy", ID: id}); err != nil {
-			return err
-		}
-		if out, err = s.load(ctx, qs, in.Name); err != nil {
-			return err
-		}
-		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-			return s.o.Recorder.RecordTx(ctx, tx, policyEvent(EventPolicyCreated, actor, out, nil, stateOf(rp), epoch, false))
-		})
-		return nil
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) (err error) {
+		out, err = s.CreateIn(ctx, tx, actor, in, &epoch)
+		return err
 	})
 	if err != nil {
 		return Policy{}, 0, err
 	}
-	out.Warnings = rp.warnings
 	return out, epoch, nil
+}
+
+// CreateIn is Create on the caller's transaction, for an operation that carries
+// more state in the same transaction (the idempotency row of R-API-014). The
+// epoch is not known before the transaction commits: *epoch is set by a hook that
+// runs after the change log raised it, so a caller that needs the value in its
+// answer registers its own hook after this call returns (meta.Tx.Before runs the
+// hooks in registration order). The returned policy is complete, with the
+// warnings of the validation.
+func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in PolicyInput, epoch *int64) (Policy, error) {
+	rp, problems, err := s.resolve(ctx, in)
+	if err != nil {
+		return Policy{}, err
+	}
+	if len(problems) > 0 {
+		return Policy{}, problemError(problems)
+	}
+	qs, err := queriesOf(tx)
+	if err != nil {
+		return Policy{}, err
+	}
+	id := newID()
+	rows, err := qs.AuthzInsertPolicy(ctx, q.AuthzInsertPolicyParams{
+		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, Actor: actorID(actor),
+	})
+	if err != nil {
+		return Policy{}, err
+	}
+	if len(rows) == 0 {
+		return Policy{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A permission policy named %q exists.", in.Name))
+	}
+	if err := writeChildren(ctx, qs, id, rp); err != nil {
+		return Policy{}, err
+	}
+	if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "policy", ID: id}); err != nil {
+		return Policy{}, err
+	}
+	out, err := s.load(ctx, qs, in.Name)
+	if err != nil {
+		return Policy{}, err
+	}
+	afterEpoch(tx, epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
+		return s.o.Recorder.RecordTx(ctx, tx, policyEvent(EventPolicyCreated, actor, out, nil, stateOf(rp), epoch, false))
+	})
+	out.Warnings = nonNilStrings(rp.warnings)
+	return out, nil
 }
 
 // Update replaces a policy as a whole (R-AUTHZ-021: full replacements). expected
@@ -189,7 +212,7 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 	if err != nil {
 		return Policy{}, 0, err
 	}
-	out.Warnings = rp.warnings
+	out.Warnings = nonNilStrings(rp.warnings)
 	return out, epoch, nil
 }
 
@@ -253,7 +276,7 @@ func (s *Service) Get(ctx context.Context, name string) (Policy, error) {
 		return Policy{}, err
 	}
 	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput); rerr == nil && len(problems) == 0 {
-		p.Warnings = rp.warnings
+		p.Warnings = nonNilStrings(rp.warnings)
 	}
 	return p, nil
 }

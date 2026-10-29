@@ -39,8 +39,8 @@ type Options struct {
 	Source Source
 	// Changes is the change log of this replica.
 	Changes Changes
-	// Config is the authz section; Audit the audit section (the denial
-	// deduplication and the anonymous-denial switch of R-AUTHZ-029).
+	// Config is the authz section; Audit the audit section (the
+	// anonymous-denial switch of R-AUTHZ-029).
 	Config config.Authz
 	Audit  config.Audit
 	// EpochPollInterval is cluster.epoch_poll_interval; New refuses an
@@ -89,7 +89,6 @@ type Engine struct {
 	hint   chan struct{}
 
 	compile *patternCache
-	dedup   *denialDedup
 
 	lctx   context.Context
 	cancel context.CancelFunc
@@ -141,7 +140,6 @@ func New(o Options) (*Engine, error) {
 		compile: newPatternCache(),
 	}
 	e.epochs = newEpochReader(o.Source, epochReadGap, o.RetryBudget)
-	e.dedup = newDenialDedup(o.Audit.DenialDedupWindow, o.Recorder)
 	m, err := newMetrics(o.Metrics, e.stalenessSeconds)
 	if err != nil {
 		return nil, err
@@ -174,16 +172,15 @@ func (e *Engine) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop ends the loops and writes the open denial summaries. The change-log poll
+// Stop ends the loops. The change-log poll
 // is the cluster's and runs on until its own stop (R-AUTHZ-028 "Drain").
-func (e *Engine) Stop(ctx context.Context) error {
+func (e *Engine) Stop(_ context.Context) error {
 	e.once.Do(func() {
 		if e.cancel != nil {
 			e.cancel()
 		}
 	})
 	e.wg.Wait()
-	e.dedup.flushAll(ctx)
 	return nil
 }
 

@@ -90,10 +90,23 @@ exposure it causes is the one recorded as
 
 ## Audit
 
-Refusals are recorded as `authz.denied` (asynchronous, deduplicated per replica, principal, action, repository and path);
-policy and role changes are recorded in the transaction of the change, so no change exists without its audit record, and the
-events that remove access (`authz.policy.updated`, `authz.policy.deleted`, `authz.role.unbound`) carry the journal entry that
-a restore replays (R-AUTHZ-031). Token values, hashes and claims are never part of an event.
+Refusals are recorded as `authz.denied` with the outcome `denied`: asynchronous, sent by the engine without any collapsing and
+deduplicated by the audit writer per replica, principal, required action, repository and path, and for an anonymous caller per
+client address (R-OPS-015, Q-AUTHZ-24); the address and the trace ID are added to the event by the recorder wrapper of the
+composition root from the request context. Policy and role changes are recorded in the transaction of the change, so no change
+exists without its audit record, and the events that remove access (`authz.policy.updated`, `authz.policy.deleted`,
+`authz.role.unbound`, and `authz.settings.changed` when a repository update tightens or loosens an authorization setting) carry
+the journal entry that a restore replays (R-AUTHZ-031). Token values, hashes and claims are never part of an event.
+
+## The policy and role operations
+
+Reading policies and bindings needs `policies:read` and `roles:read`, writing them `policies:write` and `roles:write` (the
+auditor holds the reads, the administrator all four). Every write answers `Trove-Authz-Epoch`, and an authenticated caller may name
+that epoch in `Trove-Authz-Min-Epoch` on its next request to see the change on whichever replica answers (R-AUTHZ-032;
+`TestR_AUTHZ_032_MinEpochOverHTTP` shows it with Valkey stopped and a 30 s poll). `POST /api/v1/authz/check` and `GET
+/api/v1/authz/me` tell a caller about its own credential only; a repository the caller cannot see answers `allowed: false`, the
+same as one that does not exist. A role is bound to users, groups and service accounts only, a group that takes members
+automatically takes no role, and the last administrator binding stays while the break-glass administrator is disabled.
 
 ## Database footprint
 
@@ -103,15 +116,6 @@ as a read-only transaction on the request pool, never on the control connection,
 heartbeats. See [privilege-footprint.md](privilege-footprint.md) for the grants of the runtime role.
 
 ## What this does not cover
-
-### H-101 · Anonymous denials are deduplicated by repository and path, not by client address
-
-`audit.record_anonymous_denials` is off by default. When it is on, the denial deduplication of
-[spec R-AUTHZ-029](../spec/authorization.md) keys an anonymous refusal by repository and path, because the client address is
-not part of `authz.Subject`. A scanner that probes many paths therefore produces one first event per path and replica and
-window instead of one per address. Live only with that switch on; its effect is bounded by the audit buffer
-(`audit.async_buffer`), which drops events and counts them when full. The deduplication state is 10,000 keys per replica;
-past it a refusal is written without being collapsed.
 
 ### H-102 · A caller that decides several coordinates without `Begin` can straddle an index swap
 

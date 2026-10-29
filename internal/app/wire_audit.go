@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/observability"
@@ -43,7 +44,7 @@ func (a *App) startAudit(ctx context.Context) error {
 		return err
 	}
 	a.mu.Lock()
-	a.m1.recorder, a.m1.auditStore = w, store
+	a.m1.recorder, a.m1.auditStore = v1.WithRequestSource(w), store
 	a.mu.Unlock()
 	return nil
 }
@@ -110,4 +111,12 @@ func (a *App) registerAuditJobs(r *jobs.Registry) {
 		spec.Schedule, spec.Disabled = c.Schedule, !c.Enabled
 	}
 	r.RegisterTask(taskAuditRetention, spec)
+}
+
+// auditStoreForAPI is the store the query and export operations read; nil on a
+// replica without a main pool.
+func (a *App) auditStoreForAPI() *audit.Store {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.m1.auditStore
 }

@@ -79,6 +79,11 @@ type m1Wiring struct {
 	// authzEngine is the same component with the methods beyond the contract
 	// (Check, Effective, RecordAllowed); the policy service of wave 2 reads it.
 	authzEngine *authz.Engine
+	// authzService is the policy and role-binding service behind the permission
+	// operations (R-AUTHZ-021 to R-AUTHZ-023). It is also the principal.AdminBinder
+	// of `service-account create --admin`. Nil until the authz wiring ran, and on a
+	// replica without PostgreSQL or without the identity wiring.
+	authzService *authz.Service
 	// anonymousAccess is the runtime switch of R-AUTH-037 (YAML ceiling and
 	// auth_settings.anonymous_access); the identity area sets it before the authz
 	// wiring runs. Nil means anonymous access is off.

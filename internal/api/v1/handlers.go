@@ -3,11 +3,13 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"runtime"
 	"sort"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -76,6 +78,18 @@ type Options struct {
 	// Formats is the list of served package formats; empty in M0.
 	Formats []string
 
+	// >>> M1 audit
+	// AuditStore reads the audit trail for the query and export operations
+	// (R-OPS-017); nil answers them with 503.
+	AuditStore *audit.Store
+	// <<< M1 audit
+
+	// >>> M1 authz
+	// Authz holds the services behind the permission operations
+	// (R-AUTHZ-021 to R-AUTHZ-023); a nil member answers 503.
+	Authz AuthzServices
+	// <<< M1 authz
+
 	// >>> M1 api
 	// API holds the services of the conventions and the system operations of
 	// M1: store, job queue, key ring, audit (services.go).
@@ -111,8 +125,16 @@ func (s *Server) Register(r *httpserver.Router) {
 	})
 }
 
-// bindError renders a parameter binding failure of the generated wrapper.
+// bindError renders a parameter binding failure of the generated wrapper. A
+// missing If-Match is not a malformed request but the 428 of R-API-012: the
+// document marks the header required on PUT and PATCH, and the wrapper checks
+// that before any handler runs.
 func bindError(w http.ResponseWriter, r *http.Request, err error) {
+	var missing *gen.RequiredHeaderError
+	if errors.As(err, &missing) && missing.ParamName == "If-Match" {
+		httpserver.Problem(w, r, Precondition{}.Require())
+		return
+	}
 	httpserver.Problem(w, r, errs.E(errs.Invalid, errs.CodeInvalid, "A request parameter is malformed.", errs.WithCause(err)))
 }
 

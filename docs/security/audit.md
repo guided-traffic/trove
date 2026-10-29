@@ -1,8 +1,8 @@
 # Audit trail
 
-Status: implemented in M1 for the writer, the append-only grants, the partition and retention maintenance, the revocation
-journal row and the store-side query. The management API operations that expose the query and the export are wave-2 work and are
-not built yet; the permission check `audit.read` belongs to them (see [H-123](#h-123--the-store-has-no-permission-check-of-its-own)).
+Status: implemented in M1: the writer, the append-only grants, the partition and retention maintenance, the revocation journal
+row, the store-side query and the three management operations that expose it (`GET /api/v1/audit/events`, `/{id}` and
+`/export`), each behind the capability `audit:read`.
 
 This page says who can write audit events, who can change or delete them, where else a copy lives, and what the journal row of
 the revocation journal contains. The mechanism is described for contributors in [developer/audit.md](../developer/audit.md);
@@ -16,6 +16,28 @@ the requirements are R-OPS-014 to R-OPS-017 in [operations-and-observability.md]
 | The migration Job (schema owner) | no | yes | yes (it owns the table) | yes: it writes `audit.retention_days` on every run |
 | A replica in single-role mode | yes | yes | yes: it owns the schema ([H-71](privilege-footprint.md#h-71--single-role-mode-gives-the-runtime-login-ddl-rights)) | yes: it writes the row itself at start-up |
 | A superuser | yes | yes | yes | yes |
+
+## Who may read the trail through the API
+
+Reading is a capability, `audit:read` (R-AUTHZ-010), declared as the `x-trove-permission` of the three operations and enforced by the
+authorization step of the management API before any handler runs ([authorize.go](../../internal/api/v1/authorize.go)). The roles
+that hold it are `admin`, `security-admin` and `auditor`; a token holds it only if its scope names it as a system item and the
+subject holds the role. An anonymous caller is refused with 401, an authenticated caller without the capability with 403, and the
+refusal is itself an `authz.denied` event of that caller. The store has no check of its own: the handlers in
+[audit_api.go](../../internal/api/v1/audit_api.go) are the only callers and the document is the list of the operations
+(`TestR_OPS_017_PermissionAndFilters` in [api_test.go](../../test/integration/audit/api_test.go) refuses a caller without the
+capability on each of the three).
+
+The export is the one read that is audited: `audit.exported` is committed in its own transaction before the first byte, with the
+range, the filters and the format, so an export that cannot be recorded does not run. It reads keyset batches of 1,000 events, each
+one short query on a connection that is back in the pool before the batch is written, so a slow or hostile reader holds neither a
+connection nor a transaction and partition maintenance never waits behind it (checked against `pg_stat_activity` while a client
+reads slowly). A CSV cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading apostrophe: the user agent
+and the path of an event are client input, and an exported file is opened in spreadsheets.
+
+Events made in a request carry its client address, trace ID and endpoint, added by the recorder wrapper of the composition root
+([audit_source.go](../../internal/api/v1/audit_source.go)); the address is the one after the trusted-proxy rule of R-OPS-005, so
+its value is as trustworthy as that configuration.
 
 The revokes are in [00006_audit.sql](../../internal/meta/postgres/migrations/00006_audit.sql); the runtime role keeps `INSERT` and
 `SELECT` on `audit_event`, `SELECT` on `audit_policy` and `EXECUTE` on `audit_maintain_partitions()`. The integration test
@@ -109,13 +131,12 @@ events that reached the table or were dropped, so a killed replica leaves no log
 
 What makes it real: an OOM kill or node loss during a burst of denials. Transactional events are not affected.
 
-### H-123 · The store has no permission check of its own
+### H-144 · Reading the audit trail leaves no event, except for the export
 
-Stage: `Store.Query` and `Store.Get` ([store.go](../../internal/audit/store.go)).
+Stage: `GET /api/v1/audit/events` and `GET /api/v1/audit/events/{id}` ([audit_api.go](../../internal/api/v1/audit_api.go)).
 
-Dormant until the management API operations of the audit area exist (wave 2). The store reads every event for whoever calls it; the
-`audit.read` permission of R-OPS-017 and the audit of a single-event read are the handler's to enforce. The only read that the
-requirement audits, the export, is recorded by the handler through the registered `audit.exported` type.
-
-What makes it live: a handler that calls the store without the operation declaring `x-trove-permission` for `audit.read`. Every
-management operation carries that declaration by convention ([http-api.md](../developer/http-api.md)); nothing in the store enforces it.
+Live today. R-OPS-017 audits the export and nothing else, so a holder of `audit:read` can read the trail event by event, with the
+filters, and leave no trace of what they looked for; a compromised credential with the capability reads the whole history this way as
+well. The refusal of a caller without the capability is recorded (`authz.denied`), and the request log (`log: request`) has the access, but the
+audit trail does not say who read which events. What makes it real: an `audit:read` credential in the wrong hands. Mitigations
+outside trove: grant the capability to few principals, and ship the `log: request` stream, which records every access, to the same place as the audit stream.

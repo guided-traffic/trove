@@ -23,6 +23,14 @@ const (
 	CategoryWebhook    Category = "webhook"
 )
 
+// Categories lists the categories of R-OPS-014, for the filter of the query API.
+func Categories() []Category {
+	return []Category{
+		CategoryAuth, CategoryToken, CategoryIdentity, CategoryAuthz, CategoryRepository,
+		CategoryContent, CategorySystem, CategoryConfig, CategoryWebhook,
+	}
+}
+
 // Mode is how an event is written (R-OPS-015).
 type Mode string
 

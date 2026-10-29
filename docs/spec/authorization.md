@@ -1358,12 +1358,14 @@ Representation:
   (ADMAPI-024) are ordinary operations on a policy. Per-repository patterns are separate policies.
 - CI mappings reference policies by name (R-CI-013); the binding is the policy entry of the mapping,
   so editing either side changes the same row.
-- Updates are full replacements guarded by optimistic concurrency: `GET` returns
-  `ETag: "<version>"`, and `PUT` requires `If-Match`
+- Updates are guarded by optimistic concurrency: `GET` returns
+  `ETag: "<version>"`, and `PUT` and `PATCH` require `If-Match`
   ([RFC 9110 §13.1.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.1.1)), answering 428
   `precondition_required` without it ([RFC 6585 §3](https://www.rfc-editor.org/rfc/rfc6585#section-3))
   and 412 `precondition_failed` on a version mismatch. `If-Match: *` is the deliberate blind write
-  ([api-and-ui.md](api-and-ui.md) R-API-012, Q-API-2).
+  ([api-and-ui.md](api-and-ui.md) R-API-012, Q-API-2). A `PATCH` is applied to the current
+  representation and written like a `PUT` conditional on the version it was computed from, so
+  even `If-Match: *` never merges over a concurrent change (it answers 412 and the client retries).
 - Every successful write notifies the `authz` change area in its transaction, which increments the
   authorization epoch (R-AUTHZ-028). It also emits an audit event with before and after
   (R-AUTHZ-029). The response carries the new epoch in the header `Trove-Authz-Epoch`. A later
@@ -1385,6 +1387,7 @@ Representation:
 | `POST /api/v1/permission-policies` | Create | 201 with `Location`; 400; 409 name exists; 422 | `policies:write`; P1: project administrators for project policies |
 | `GET /api/v1/permission-policies/{name}` | Read | 200 with `ETag`; 404 | as for list |
 | `PUT /api/v1/permission-policies/{name}` | Replace (the name is immutable) | 200; 400; 404; 412; 422; 428 | as for create; P1: delegated managers per R-AUTHZ-025 |
+| `PATCH /api/v1/permission-policies/{name}` | Change members by JSON merge patch (R-API-013); an array such as `entries` is replaced as a whole (Q-AUTHZ-26) | as for `PUT` | as for `PUT` |
 | `DELETE /api/v1/permission-policies/{name}` | Delete (`If-Match` optional) | 204; 404; 412 | as for create |
 | `POST /api/v1/authz/validate-policy` | Validate without storing; returns errors, warnings and the repositories the selectors currently cover | 200 | `policies:read` |
 
@@ -2948,7 +2951,7 @@ R-OPS-015 deduplicates `authz.denied` per replica, principal, action, repository
 
 **Choice:** (b), at most 10,000 open keys per replica (past that a refusal is written without being collapsed). The window is `audit.denial_dedup_window`; zero turns it off. An anonymous refusal is keyed by repository and path, because the client address is not part of the subject.
 
-**Rationale:** Nothing in the audit contract says the recorder deduplicates, and R-AUTHZ-029 puts the obligation on authorization. The development agent would revisit this when the audit area exposes a deduplicating recorder: the producer then passes the key and deletes its own state. The two gaps that follow are [H-101](../security/permissions.md#h-101--anonymous-denials-are-deduplicated-by-repository-and-path-not-by-client-address) and the missing `repeat_of`.
+**Rationale:** Nothing in the audit contract says the recorder deduplicates, and R-AUTHZ-029 puts the obligation on authorization. The development agent would revisit this when the audit area exposes a deduplicating recorder: the producer then passes the key and deletes its own state. The two gaps that follow are [H-101](../security/permissions.md#h-101--anonymous-denials-are-deduplicated-by-repository-and-path-not-by-client-address) and the missing `repeat_of`. **Superseded by [Q-AUTHZ-24](#q-authz-24--the-denial-deduplication-lives-in-the-audit-writer-only):** the audit writer deduplicates alone, and both gaps are closed.
 
 **Applied in the spec:** none.
 
@@ -3015,6 +3018,96 @@ R-AUTHZ-017 is P1, but the 404 row of R-AUTHZ-016, the repository members `hideE
 **Rationale:** the decision point is where the status is made. The development agent would revisit this if the walkthrough prefers the switch to appear with P1.
 
 **Applied in the spec:** none.
+
+### Q-AUTHZ-24 · The denial deduplication lives in the audit writer only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-AUTHZ-19 put the deduplication of `authz.denied` in the producer and said it would be revisited when the audit area deduplicates in its recorder. It does (R-OPS-015, `internal/audit/dedup.go`), so two stages ran on the same events. Checked with the code, the second stage corrupted the first: the producer sent no `repository`, `path` or `details.required_action`, so the writer's key reduced to the actor and collapsed every refusal of one principal into one; and the producer's own summary (count n, no `repeat_of`) arrived inside the writer's window and was counted as one repeat, so the stored summary said 1 instead of n.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep both stages | The producer collapses, the writer collapses again | No change | The stored count is wrong and different refusals share a key, as found |
+| (b) The writer alone | The producer sends every refusal and fills the columns and the detail the writer keys on; the producer's deduplication state and its flush at shutdown go | One mechanism for `authz.denied` and `token.rejected`; the summary carries the first event's ID as `repeat_of` (Q-AUTHZ-19 could not); an anonymous refusal is keyed by the client address, which the request source gives it (Q-OPS-49) | Every refusal crosses the recorder call, which is cheap and never blocks |
+| (c) The producer alone | Switch the writer's rule for `authz.denied` off | Key known where the event is made | A second implementation next to a recorder that deduplicates; no `repeat_of` |
+
+**Choice:** (b). An `authz.denied` event carries `Repository`, `Path` (the path, else the package name), the outcome `denied` (it was `failure`, which `outcome=denied` could not find, Q-OPS-40) and `details.required_action` (the actions joined by a comma, or the capability for a management operation). The count of a summary is exact: the first event has `count` 1 and `repeat_of` unset, the summary has the repeats and the first event's ID. The integration test `TestR_OPS_017_DenialSummariesStayCorrect` shows it over a window.
+
+**Rationale:** one deduplication per type means one place where the sum of the counts can be wrong. The development agent would revisit this if a producer other than authorization needs a key the writer cannot derive from the event's columns and details.
+
+**Applied in the spec:** Q-AUTHZ-19 is superseded by this block; R-AUTHZ-029 already requires the key replica and client address, which now holds; H-101 is closed in [security/permissions.md](../security/permissions.md).
+
+### Q-AUTHZ-25 · One pattern compiler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-005 and R-REPO-005 specify one syntax. Wave 1 built it twice: `repository.CompilePattern` (a segment matcher) and, in `internal/authz`, a translation to regular expressions.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two compilers | Each package keeps its own | No change | Two implementations of one syntax drift; a pattern valid in a repository's include list could be invalid in a policy |
+| (b) `repository.CompilePattern` | `internal/authz` compiles and matches with it; it keeps the limits of R-AUTHZ-005 (1,024 characters, 256 patterns), the case folding of NuGet names and the include and exclude semantics of a resource set | One syntax; the 284 cases of E1.3 and the pattern table pass unchanged; the matcher has no regular expression, so no pattern can make it slow | `authz` imports one more function of `repository`, which it imports already |
+
+**Choice:** (b).
+
+**Rationale:** Q-STOR-9 decided that permissions and retention share one syntax; this makes the code say so. The development agent would revisit this if a format defines a pattern subject the repository package cannot express.
+
+**Applied in the spec:** none.
+
+### Q-AUTHZ-26 · A policy also accepts a merge patch
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-021 offers `PUT` only, and R-API-013 says a policy is changed by `PUT` of the whole document. The policy editor changes one member at a time (the description, one entry), and the convention suite of E1.6 (`apitest.RunContract`) tests merge patch on every collection.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `PUT` only | As written | No change | The editor and scripts send the whole document to change one member, and the suite's merge-patch tests do not apply |
+| (b) `PUT` and `PATCH` | `PATCH` takes `application/merge-patch+json`, is applied to the current representation and written like a `PUT` conditional on the version it was computed from | The same rules, validation, epoch and audit event; no second code path in the service | One more operation |
+
+**Choice:** (b). `PATCH` needs `If-Match` (428 without it); `If-Match: *` is accepted but the write is still conditional on the version the patch was computed from, because merging over a change the client never saw would be the lost update that `If-Match` exists to prevent.
+
+**Rationale:** R-API-013 itself says a resource that offers `PATCH` takes a merge patch; the sentence about policies was written before the editor's needs were known. The development agent would revisit this if clients start to rely on `PATCH` for arrays, which merge patch cannot edit member by member.
+
+**Applied in the spec:** R-AUTHZ-021: the `PATCH` row and the concurrency bullet; R-API-013: the sentence on policies.
+
+### Q-AUTHZ-27 · The effective-permissions views and the explainer are not in M1
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The beta plan lists "Permission policy editor with 'why can X do Y' explainer" under phase 2. The roadmap's M1 scope names R-AUTHZ-021 to R-AUTHZ-023 and not R-AUTHZ-024 (`GET /api/v1/authz/effective`, `POST /api/v1/authz/explain`, P1); E1.7 lists the policy editor and no explainer; R-UI-028 is P1.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not built in M1 | The two operations arrive with R-AUTHZ-024 | The M1 scope as written; the trace of R-AUTHZ-024 includes ownership and CI template steps that do not exist yet | The editor has no "why" |
+| (b) A reduced explain | `POST /authz/explain` for a user, group or service account on a coordinate, from `Decision.Reason` and `Decision.Sources` | A visible "why" earlier | A second shape of an answer that R-AUTHZ-024 will replace; a trace without the steps its acceptance criteria name |
+
+**Choice:** (a). The policy editor of M1 gets its preview from `POST /authz/validate-policy` (errors, warnings and the repositories the selectors cover) and the caller's own view from `POST /authz/check`; the engine already returns the reason code and the granting policies of a decision, which is what the explainer will render. The sentence in the beta plan needs the owner's decision at the walkthrough: either the explainer moves to M1 (a contained addition on `Engine`, no schema change) or the plan line is split.
+
+**Rationale:** building to a P1 requirement with a partial trace would be rewritten when ownership and CI templates arrive. The development agent would revisit this at the walkthrough.
+
+**Applied in the spec:** none.
+
+### Q-AUTHZ-28 · The shapes the requirements leave open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Question | Choice |
+|---|---|
+| The code of 409 for a policy name that exists | `already_exists`, the code of every create (R-API-004); Wave 1 answered `conflict` |
+| `project` in a policy and as a list filter | Absent until P1 (R-AUTHZ-026). An unknown query parameter is 400, so a client that sends `project` learns it |
+| What `POST /authz/validate-policy` answers for a policy with problems | `200` with `valid: false`, `errors` (pointer, code, detail), `warnings` and `covers`; the editor shows the list. Malformed JSON is `400`. `create` answers `422` for the same problems |
+| The shape of `GET /roles` | The five fixed roles with their capabilities in the list envelope; `nextCursor` is always `null` and no `limit` or `cursor` is accepted |
+| The body of `PUT /role-bindings/{role}/{principalRef}` | None. The answer is the binding (`role`, `principal`, `grantedAt`, `grantedBy`); `201` new, `200` existing |
+| How the lists are paged | Policies by name and bindings by role and principal, in memory over a read of PostgreSQL per call; the cursor holds the sort key of the last item. A page assembles the warnings of its policies only. The cost grows with the number of policies (a few hundred are expected); a keyset query joins the list if an installation outgrows it |
+| `GET /authz/me` | `roles`, `capabilities`, `principals`, `scope` (`null` for a credential without a ceiling, else `inherit`, `admin`, `system`, `grants`) and `epoch`; the members the shell reads (`capabilities`, `principals`) keep their names |
+| `POST /authz/check` | At most 100 checks (`422 validation_failed` beyond), an unknown action `422 invalid_action`, no credential `401`; the answer carries the epoch of the index that decided all of them |
+| Which operations carry `Trove-Authz-Epoch` | Policy create, replace, patch and delete, role bind and unbind (an existing binding answers the current epoch). A replay of an idempotent create answers the epoch of the first answer |
+
+**Rationale:** each is the reading that keeps the answer identical on every replica and the representation the one the requirement shows. The development agent would revisit the paging of the policy list when a policy count above a thousand is seen.
+
+**Applied in the spec:** none.
+
 
 ## What this does not cover
 
