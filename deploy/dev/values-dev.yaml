@@ -53,6 +53,15 @@ config:
     replica_header: always                 # X-Trove-Replica on every response: the scatter profile (E0.11) counts replicas per request, also anonymous ones
   log:
     level: debug
+  api:
+    rate_limits:
+      # The load scripts and probes of the e2e suite (k6, E0.4 to E0.16) poll /api/v1/system/ping and
+      # /system/replicas anonymously from one address, far above the default anonymous class of
+      # R-API-016 (5/s, burst 20). The limiter stays on with a budget the load never reaches; the
+      # default itself is covered by test/integration/api.
+      anonymous:
+        requests_per_second: 1000
+        burst: 10000
   system:
     bootstrap_anonymous_read: true         # until authentication ships nobody holds system.read; the E0.13 load reads /system/replicas
   database:

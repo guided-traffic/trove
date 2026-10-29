@@ -210,6 +210,16 @@ therefore deviates from R-HA-056 and R-ARCH-031, in the dev profile only:
 This is an owner decision pending (operator feature or another route); until then E0.12 on this profile proves the
 connection names, TLS only, the start-up cases and the failovers, not the ACL.
 
+### The anonymous rate limit
+
+The management API limits requests without a credential per client address (R-API-016, `api.rate_limits.anonymous`, default
+5 requests per second, burst 20). The e2e suite's load scripts (k6) and probes poll `/api/v1/system/ping` and
+`/api/v1/system/replicas` anonymously, all from the one address of the host behind the edge, with hundreds of requests per
+second. `values-dev.yaml` therefore sets `config.api.rate_limits.anonymous` to 1000 requests per second and a burst of 10000:
+the limiter stays on, with a budget the load never reaches. The production default is unchanged; the limits themselves are
+tested in `test/integration/api`. The integration environments that start the binary and poll anonymously
+(`test/integration/server`, `test/integration/tls`) set the same budget through `TROVE_API_RATE_LIMITS_ANONYMOUS_*`.
+
 ## Reaching things
 
 ```shell

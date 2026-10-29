@@ -220,10 +220,12 @@ edge pod (25 connection errors in the first measured run, with the previous cont
 - Through the edge (`TLS` to the published port, name resolution bypassed, verified against the dev CA for the real
   name): `packages.trove.localhost` and a host under the wildcard get the endpoint's edge certificate by SNI, and
   `localhost` the default one; `/ui/`, `/`, `/files/…`, `/api/v1/system/ping`, `/api/v1/system/replicas` and an unknown
-  `/api/v1/` path answer `404` on both hosts; the default endpoint's ping still answers `200`.
+  `/api/v1/` path answer, on both hosts, one identical `401` `credentials_required` (an endpoint admits no anonymous
+  request, R-EP-010, Q-EP-10; the authentication stage runs before the routing, so the surface is not visible without a
+  credential); the default endpoint's ping still answers `200`.
 - On the endpoint's Service, from a pod in `default` (no trusted proxy): `Host: localhost` answers `421`, also with
   `X-Forwarded-Host: packages.trove.localhost`, and an IP literal as host answers `421`; the endpoint's own hosts
-  answer the `404` of an unknown path; the TLS listener of the pod hands out the exact pair for the exact host and the
+  answer the same `401` `credentials_required` with identical bodies on `/ui/` and a management API path; the TLS listener of the pod hands out the exact pair for the exact host and the
   wildcard pair for a host under the wildcard (serials compared with the two Secrets).
   The `421` is tested here and not through the Ingress because HAProxy Ingress routes by `Host`: a request with the
   default endpoint's host goes to the default backend.

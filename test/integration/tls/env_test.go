@@ -143,6 +143,10 @@ func newInstall(t *testing.T) *install {
 		"TROVE_HEALTH_CHECK_INTERVAL=300ms", "TROVE_HEALTH_CHECK_TIMEOUT=200ms", "TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY=500ms",
 		"TROVE_SERVER_SHUTDOWN_TIMEOUT=5s", "TROVE_STORAGE_SPOOL_DIR="+filepath.Join(dir, "spool"),
 		"TROVE_LOG_REQUEST_ENABLED=false",
+		// The rotation tests poll /api/v1/system/ping anonymously from one address, far above
+		// the default anonymous class (R-API-016); the limiter stays on with a budget the polling
+		// never reaches. The limits themselves are tested in test/integration/api.
+		"TROVE_API_RATE_LIMITS_ANONYMOUS_REQUESTS_PER_SECOND=1000", "TROVE_API_RATE_LIMITS_ANONYMOUS_BURST=10000",
 		"TROVE_CONFIG_FILE="+write(t, dir, "trove.yaml", ""),
 	)
 	return &install{env: env, dir: dir}

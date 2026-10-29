@@ -99,6 +99,11 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	st := getStack(t)
+	// The migrations grant the schema to trove_app only if the role exists when they run
+	// (two-role mode creates it first, 00001_foundation.sql). On a fresh cluster the first
+	// test of the package would otherwise migrate without the grant and the runtime role
+	// would not see the schema (the missing USAGE reads as "relation does not exist").
+	ensureRuntimeRole(t, st)
 	name := "trove_audit_" + randHex(5)
 	maint := st.admin(t, "postgres")
 	if _, err := maint.Exec(context.Background(), "CREATE DATABASE "+name+" ENCODING 'UTF8' TEMPLATE template0"); err != nil {

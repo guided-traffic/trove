@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +27,29 @@ const (
 	endpointWildcard = "a.packages.trove.localhost" // under *.packages.trove.localhost
 	endpointService  = "trove-ep-customers"
 )
+
+// credentialsRequired is the answer of an endpoint that admits no anonymous request (R-EP-010 item 4,
+// Q-EP-10) to every request without a credential, whatever the path: the authentication stage runs
+// before the routing, so a path outside the endpoint's surface is not told apart from any other.
+const credentialsRequired = 401
+
+// refusedProblem checks a body as the one identical problem+json of credentialsRequired and returns it
+// without the two per-request members (instance, requestId), so the bodies of different paths compare.
+func refusedProblem(t testing.TB, what, body string) string {
+	t.Helper()
+	var pr map[string]any
+	if err := json.Unmarshal([]byte(body), &pr); err != nil {
+		t.Errorf("%s: the body is no JSON object: %q", what, body)
+		return ""
+	}
+	if pr["code"] != "credentials_required" {
+		t.Errorf("%s: code %v, want credentials_required (%s)", what, pr["code"], body)
+	}
+	delete(pr, "instance")
+	delete(pr, "requestId")
+	b, _ := json.Marshal(pr)
+	return string(b)
+}
 
 // edgeClient reaches the edge on the host's published port whatever the host name in the URL is, and
 // verifies the certificate against the dev CA for exactly that name (no resolver involved).
@@ -93,18 +118,27 @@ func TestE16Endpoint(t *testing.T) {
 		}
 	})
 
-	t.Run("R-EP-004 R-EP-005 E0.16 through the endpoint's Ingress /ui/, /api/v1/system/* and /files/ answer the 404 of an unknown path", func(t *testing.T) {
+	t.Run("R-EP-004 R-EP-005 R-EP-010 E0.16 through the endpoint's Ingress every path, /ui/, /api/v1/system/* and /files/ included, gets the one 401 credentials_required of an endpoint without anonymous access", func(t *testing.T) {
 		c, port := edgeClient(t)
+		var want, wantFrom string
 		for _, host := range []string{endpointHost, endpointWildcard} {
 			for _, path := range []string{"/ui/", "/", "/api/v1/system/ping", "/api/v1/system/replicas", "/files/x", "/api/v1/nothing"} {
+				what := "GET https://" + host + path
 				req, _ := http.NewRequest(http.MethodGet, "https://"+net.JoinHostPort(host, port)+path, nil)
 				resp, err := c.Do(req)
 				if err != nil {
 					t.Fatalf("%s %s: %v", host, path, err)
 				}
+				body, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()
-				if resp.StatusCode != 404 {
-					t.Errorf("GET https://%s%s = %d, want 404", host, path, resp.StatusCode)
+				if resp.StatusCode != credentialsRequired {
+					t.Errorf("%s = %d, want %d (%s)", what, resp.StatusCode, credentialsRequired, body)
+				}
+				got := refusedProblem(t, what, string(body))
+				if want == "" {
+					want, wantFrom = got, what
+				} else if got != want {
+					t.Errorf("%s: body %s differs from the body of %s: %s", what, got, wantFrom, want)
 				}
 			}
 		}
@@ -124,7 +158,7 @@ func TestE16Endpoint(t *testing.T) {
 		// endpoint through its Ingress. The misdirected request is made where the endpoint is reachable
 		// with any Host: its Service, from a pod that is no trusted proxy.
 		svc := fmt.Sprintf("%s.%s.svc:8443", endpointService, cfg.namespace)
-		script := fmt.Sprintf(`req() { printf "GET $3 HTTP/1.1\r\nHost: $1\r\n${2}Connection: close\r\n\r\n" | timeout 8 openssl s_client -quiet -connect %[1]s -servername %[2]s 2>/dev/null | head -1; }
+		script := fmt.Sprintf(`req() { printf "GET $3 HTTP/1.1\r\nHost: $1\r\n${2}Connection: close\r\n\r\n" | timeout 8 openssl s_client -quiet -connect %[1]s -servername %[2]s 2>/dev/null | tr '\r\n' '  '; }
 sni() { echo | timeout 8 openssl s_client -connect %[1]s -servername "$1" 2>/dev/null | openssl x509 -noout -serial 2>/dev/null | cut -d= -f2; }
 echo "A $(req localhost '' /api/v1/system/ping)"
 echo "B $(req localhost 'X-Forwarded-Host: %[2]s\r\n' /ui/)"
@@ -141,10 +175,25 @@ echo "S2 $(sni %[3]s)"
 			k, v, _ := strings.Cut(l, " ")
 			got[k] = strings.TrimSpace(v)
 		}
-		for k, status := range map[string]string{"A": " 421", "B": " 421", "C": " 421", "D": " 404", "E": " 404"} {
-			if !strings.Contains(got[k], status) {
-				t.Errorf("probe %s: %q, want status%s", k, got[k], status)
+		// A foreign host is refused before the authentication stage (421); a host of the endpoint
+		// without a credential gets the one 401 credentials_required on any path, the unknown one of
+		// the endpoint's surface (D, /ui/) and (E, a management API path) alike.
+		for k, status := range map[string]string{"A": "421", "B": "421", "C": "421", "D": "401", "E": "401"} {
+			if !strings.HasPrefix(got[k], "HTTP/1.1 "+status+" ") {
+				t.Errorf("probe %s: %q, want status %s", k, got[k], status)
 			}
+		}
+		var bodies []string
+		for _, k := range []string{"D", "E"} {
+			i, j := strings.Index(got[k], "{"), strings.LastIndex(got[k], "}")
+			if i < 0 || j < i {
+				t.Errorf("probe %s: no JSON body in %q", k, got[k])
+				continue
+			}
+			bodies = append(bodies, refusedProblem(t, "probe "+k, got[k][i:j+1]))
+		}
+		if len(bodies) == 2 && bodies[0] != bodies[1] {
+			t.Errorf("probe D body %s differs from probe E body %s", bodies[0], bodies[1])
 		}
 		if want := secretSerial(t, "trove-customers-tls"); strings.TrimLeft(got["S1"], "0") != want {
 			t.Errorf("SNI %s on the endpoint listener: serial %s, want the exact pair %s", endpointHost, got["S1"], want)
