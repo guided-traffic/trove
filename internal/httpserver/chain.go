@@ -255,7 +255,7 @@ func (c Chain) addrStage(next http.Handler) http.Handler {
 // authStage is step 6.
 func (c Chain) authStage(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := Principal{Anonymous: true}
+		p := AnonymousPrincipal()
 		if c.Authenticate != nil {
 			var err error
 			if p, err = c.Authenticate(r); err != nil {

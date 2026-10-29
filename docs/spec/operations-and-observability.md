@@ -1495,7 +1495,7 @@ Audit events are stored in PostgreSQL and copied to the log stream (INV-16).
   copy, not the record.
 - **Deduplication without updates.** Audit rows are never updated (Q-OPS-4). `authz.denied` is
   deduplicated per replica, principal, action, repository and path within
-  `audit.denial_dedup_window`. `auth.token_rejected` is deduplicated per replica and token ID within
+  `audit.denial_dedup_window`. `token.rejected` is deduplicated per replica and token ID within
   `audit.token_rejection_dedup_window`.
   - The first occurrence is written at once, with `details.count` = 1.
   - Further occurrences within the window are counted in memory. When the window closes they are
@@ -1627,6 +1627,10 @@ audit events, but it can neither change nor delete them, and it cannot shorten t
   for the current and the next month exist. The `audit-retention` task calls it daily
   (R-OPS-019). An insert therefore never finds a missing partition, even when the scheduler has
   not run for weeks.
+- **First migration.** The migration that creates the table seeds `audit_policy` with the default of
+  `audit.retention_days` (365) and calls `audit_maintain_partitions()` once, so the table accepts
+  inserts from the first migration on (Q-OPS-38). The shared attach procedure is a third function,
+  `audit_attach_partition(instant)`, executable by the owner only.
 - **Single-role mode.** In the database-role setup of [ha-and-helm.md](ha-and-helm.md) R-HA-014
   that uses one login for everything (not a process role of INV-2), the runtime role owns the
   schema, so these protections do not apply, and the replica writes `audit_policy` itself at
@@ -1714,14 +1718,14 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 
 | Event | Mode | Hook | Recorded when | Key fields in `details` |
 |---|---|---|---|---|
-| `auth.login_succeeded` | A | — | Browser OIDC login or break-glass login succeeded (INV-7) | `method` (`oidc`, `breakglass`), `issuer`, `session_id` |
-| `auth.login_failed` | A | — | Login failed | `reason` (`oidc_error`, `state_mismatch`, `user_disabled`, `breakglass_disabled`, `bad_credentials`) |
+| `auth.login.succeeded` | A | — | Browser OIDC login or break-glass login succeeded (INV-7) | `method` (`oidc`, `breakglass`), `issuer`, `session_id` |
+| `auth.login.failed` | A | — | Login failed | `reason` (`oidc_error`, `state_mismatch`, `user_disabled`, `breakglass_disabled`, `bad_credentials`) |
 | `auth.logout` | A | — | Session ended by the user | `session_id` |
 | `auth.ci_exchange_denied` | A | — | A CI OIDC exchange was refused (INV-10) | `issuer`, `reason` (`signature`, `audience`, `expired`, `no_mapping`), selected claims (`project_path`, `ref`, `pipeline_id`) |
-| `auth.token_rejected` | A | — | A well-formed trove token (valid checksum) was unknown, revoked or expired | `token_id` if known, `token_type`, `reason`, `count`, `repeat_of` (summaries only) |
+| `token.rejected` | A | — | A well-formed trove token (valid checksum) was unknown, revoked or expired | `token_id` if known, `token_type`, `reason`, `count`, `repeat_of` (summaries only) |
 | `token.created` | T | — | Any trove token was issued, including CI exchanges | `token_type`, `scope`, `expires_at`, `ci_mapping`, `ci_claims` |
 | `token.revoked` | T | — | A token was revoked | `token_type`, `revoked_by` |
-| `session.revoked` | T | — | An administrator ended another user's session | `session_id` |
+| `auth.session.ended` | T | — | An administrator ended another user's session (`details.reason` `admin`) | `session_id`, `reason` |
 | `user.created` | T | — | A user was created (just in time from ID-token claims, or by an administrator) | `source` (`jit`, `api`) |
 | `user.updated` | T | — | Profile or group membership changed, including changes from claims at login | `changes` |
 | `user.disabled`, `user.enabled`, `user.deleted` | T | — | User state change | — |
@@ -4413,7 +4417,7 @@ ServiceMonitor's relabelings for `role` and `pool`).
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-R-OPS-015 deduplicates `authz.denied` and `auth.token_rejected` per replica. Requests now reach
+R-OPS-015 deduplicates `authz.denied` and `token.rejected` per replica. Requests now reach
 replicas at random (INV-12), so one burst is spread over all of them.
 
 | Option | What it means | For | Against |
@@ -4982,6 +4986,58 @@ Status: **Decided by the development agent** — selected from the options below
 `.localhost` counts as loopback (RFC 6761 reserves the name space), as `localhost`, `127.0.0.1` and `::1` do.
 
 **Applied in the spec:** R-OPS-002 (the `system.bootstrap_anonymous_read` paragraph).
+
+### Q-OPS-37 · Spelling of the authentication event names
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-041 registers `auth.login.succeeded`, `auth.login.failed`, `token.rejected` and
+`auth.session.ended`. The R-OPS-016 catalog listed the same events as `auth.login_succeeded`,
+`auth.login_failed`, `auth.token_rejected` and `session.revoked`. R-OPS-014 makes a name permanent
+once it ships, so the registry takes one spelling.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The R-AUTH-041 names | `<domain>.<object>.<event>` with the past-tense verb as the last segment; the page that owns the events names them | One rule across the registry (`authz.policy.created`, `endpoint.exposure.created`, `user.groups.synced`); the owning page is the one that carries the reason codes and the journal entries | R-OPS-016 and the dedup text of R-OPS-015 change |
+| (b) The R-OPS-016 names | Underscored verbs (`auth.login_succeeded`) | No edit on this page | Two spellings of the same shape (`user.groups.synced` beside `auth.login_succeeded`); the journal table of R-AUTH-041 would change instead |
+
+**Choice:** (a) — the names of R-AUTH-041. `session.revoked` becomes `auth.session.ended` with
+`details.reason` `admin`.
+
+**Rationale:** the owning page defines the event, its reasons and its journal entry, and the
+registry rule of R-OPS-014 already allows three segments. The development agent would revisit this
+if a SIEM integration ships against the other spelling before the registry freezes.
+
+**Applied in the spec:** R-OPS-015 (`token.rejected` in the deduplication bullet) and the R-OPS-016
+rows for the login, logout, token-rejection and session events.
+
+### Q-OPS-38 · The first audit partitions and the retention row come from the migration
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-OPS-015 has `trove migrate` write `audit.retention_days` into `audit_policy` and call
+`audit_maintain_partitions()`. The migration runner takes the database section of the configuration
+only (`postgres.Migrate`), not the `audit` section, and an insert into `audit_event` fails without a
+partition for its month.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Create the table, leave the row and the partitions to the runner | The migration is DDL only | The migration holds no data | Between the migration and the runner's follow-up step, and for as long as the follow-up step does not exist, every audit insert fails |
+| (b) The migration seeds the row and creates the first partitions (chosen) | `00006_audit.sql` inserts `audit_policy` with the default of `audit.retention_days` (365) and calls `audit_maintain_partitions()` | The table is usable from the first migration on, with or without the runner step; the runner step becomes an update of one row | The default is stated in two places (the migration and the configuration default) |
+
+**Choice:** (b). The runner's per-run write of the configured value and its call of the function stay
+with the audit work (WP1.7); the audit-retention task and every replica's start-up call the function
+as R-OPS-015 specifies. The function body needs a fixed `search_path` that names the configured
+schema, which a `CREATE FUNCTION` cannot take from a variable, so the migration sets it with
+`ALTER FUNCTION ... SET search_path` in a block. A third function, `audit_attach_partition(instant)`,
+holds the attach procedure that `audit_maintain_partitions()` and `audit_create_partitions()` share;
+nobody but the owner can execute it.
+
+**Rationale:** the property that matters is that no insert meets a missing partition (R-OPS-015); (b)
+gives it from the first migration. A runtime role that is not the owner (two-role mode) calls the
+`SECURITY DEFINER` function and still cannot change a row or the retention.
+
+**Applied in the spec:** R-OPS-015 (a paragraph under "When it runs").
 
 ## What this does not cover
 

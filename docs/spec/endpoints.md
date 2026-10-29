@@ -633,7 +633,7 @@ Priority: **MVP** · Covers: OPS-012, OPS-019
   every client-listener record.
 - **Audit** (R-OPS-015): every event recorded during a request carries `endpoint`; events of jobs
   carry `null`. A read refused by exposure is `authz.denied` with reason `deny.exposure`, a refused
-  write reason `deny.endpoint_read_only`; a refused credential is the `auth.token_rejected` event of
+  write reason `deny.endpoint_read_only`; a refused credential is the `token.rejected` event of
   R-OPS-016 and R-AUTH-041 with reason `endpoint_not_accepted`.
 - **Traces** (R-OPS-018): every server span carries `trove.endpoint`.
 - **Identification headers** (R-OPS-002): `replica_header` applies per endpoint, `never` by default

@@ -95,6 +95,17 @@ func Areas(class AreaClass) []Area {
 func init() {
 	RegisterArea(Area{Name: AreaJobs, Owner: "R-ARCH-016", Class: SignalArea})
 	RegisterArea(Area{Name: AreaCache, Owner: "R-ARCH-018", Class: ChangeArea, PayloadVersion: 1})
+
+	// The areas of M1: auth (identity), authz and repo_config. A change area also
+	// needs its cluster_epoch row from the migration that ships it.
+	// >>> M1 identity
+	// <<< M1 identity
+	//
+	// >>> M1 authz
+	// <<< M1 authz
+	//
+	// >>> M1 repository
+	// <<< M1 repository
 }
 
 // Names of the areas of this package.
@@ -104,3 +115,15 @@ const (
 	// AreaCache carries system settings and flush requests.
 	AreaCache = "cache"
 )
+
+// Names of the areas of the M1 packages, declared next to their registration (constants
+// between the markers).
+
+// >>> M1 identity
+// <<< M1 identity
+//
+// >>> M1 authz
+// <<< M1 authz
+//
+// >>> M1 repository
+// <<< M1 repository

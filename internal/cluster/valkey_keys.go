@@ -241,3 +241,14 @@ func (v *Valkey) channel(f *ChannelFamily, parts ...string) (Channel, error) {
 	}
 	return Channel{name: join(p, f.mechanism, f.version, parts)}, nil
 }
+
+// Key families of the M1 areas. A mechanism lives in its own valkey_<mechanism>.go
+// file of this package (Q-ARCH-16); the family variable is declared here, inside
+// the marker of the area that owns the mechanism, so that parallel work does not
+// edit the same lines. Reserved names are in docs/developer/m1-contracts.md.
+
+// >>> M1 api
+// <<< M1 api
+//
+// >>> M1 identity
+// <<< M1 identity

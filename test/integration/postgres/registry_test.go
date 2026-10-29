@@ -63,7 +63,7 @@ func TestTableRegistry(t *testing.T) {
 
 	t.Run("R-BAK-004 the migration test fails on a test migration that adds an unregistered table", func(t *testing.T) {
 		cfg, _, admin := migrated(t, st)
-		extra := stepsWith(t, map[string]string{"00006_unregistered.sql": "-- trove:phase expand\nCREATE TABLE x_new (id bigint PRIMARY KEY);\n"})
+		extra := stepsWith(t, map[string]string{nextStep(1, "unregistered"): "-- trove:phase expand\nCREATE TABLE x_new (id bigint PRIMARY KEY);\n"})
 		if _, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(extra)); err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func TestTableRegistry(t *testing.T) {
 		}
 	})
 
-	cycle := map[string]string{"00006_cycle.sql": `-- trove:phase expand
+	cycle := map[string]string{nextStep(1, "cycle"): `-- trove:phase expand
 CREATE TABLE cyc_a (id bigint PRIMARY KEY, b_id bigint);
 CREATE TABLE cyc_b (id bigint PRIMARY KEY, a_id bigint REFERENCES cyc_a (id));
 ALTER TABLE cyc_a ADD FOREIGN KEY (b_id) REFERENCES cyc_b (id);
@@ -114,7 +114,7 @@ func TestRevisionColumns(t *testing.T) {
 	})
 	t.Run("the revision-column check finds a test migration that adds an unregistered revision column", func(t *testing.T) {
 		cfg, _, admin := migrated(t, st)
-		extra := stepsWith(t, map[string]string{"00006_rev.sql": "-- trove:phase expand\nALTER TABLE repositories ADD COLUMN revision bigint NOT NULL DEFAULT 1;\n"})
+		extra := stepsWith(t, map[string]string{nextStep(1, "rev"): "-- trove:phase expand\nALTER TABLE repositories ADD COLUMN revision bigint NOT NULL DEFAULT 1;\n"})
 		if _, err := postgres.Migrate(ctxT(t, 30*time.Second), cfg, opts(extra)); err != nil {
 			t.Fatal(err)
 		}

@@ -1878,6 +1878,9 @@ CREATE TABLE authz_policy_entry (
 );
 ```
 
+M1 creates these tables without `project_id` and without the `project` tables; the project work adds the
+column in its own migration (Q-AUTHZ-14).
+
 Configuration:
 
 ```yaml
@@ -2838,6 +2841,27 @@ request that needed authorization and reported not ready. The revised frame sets
   `Retry-After`. The security note on removed grants and the decision table.
 - Cross-page: [ha-and-helm.md](ha-and-helm.md) R-HA-007 (the row "PostgreSQL unavailable beyond
   the retry budget"); ADR-057 in [docs/decisions.md](../decisions.md).
+
+### Q-AUTHZ-14 · Policy tables in M1 without the project column
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The sketch in R-AUTHZ-028 gives `authz_policy` a column `project_id` that references `project`, a P1
+table (R-AUTHZ-026). M1 has no projects.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Create `project` and `project_admin` in M1 | The sketch as written | One migration | Two tables without a requirement or an API in M1, and a backup class and tests for them |
+| (b) Leave the column out until the projects arrive (chosen) | `authz_policy` has no `project_id` in M1; the project work adds the column with `ADD COLUMN ... REFERENCES project (id)` in its own expand step | M1 holds only what it uses | One more migration in the P1 work |
+
+**Choice:** (b). `resource_type` allows `'repository'` and `'build'`, and `authz_policy_pattern.dimension`
+allows `'package'`, `'path'` and `'build'` from the start, because an expand step cannot widen a `CHECK`
+(it would need `DROP CONSTRAINT`). `authz_policy_pattern.pattern` is limited to 2000 octets next to the
+1024 characters of the sketch, so a pattern of multi-byte characters fails with a `CHECK` violation
+instead of exceeding the size limit of a btree entry. `authz_policy_selector` rejects a format filter on a
+key selector, as R-AUTHZ-004 allows the filter on patterns and classes only.
+
+**Applied in the spec:** R-AUTHZ-028 data model (a note under the sketch).
 
 ## What this does not cover
 

@@ -1,0 +1,69 @@
+package auth
+
+import (
+	"net/http"
+
+	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/token"
+)
+
+// Method is the credential source that proved the principal (R-AUTH-001). The
+// values match httpserver.AuthMethod. The stage evaluates only the first source
+// present, in this order: [MethodAPIKey], then the Authorization header
+// ([MethodBearer] or [MethodBasic]), then [MethodSession], then none.
+type Method string
+
+// The credential sources.
+const (
+	MethodNone    Method = ""
+	MethodAPIKey  Method = "api_key"
+	MethodBearer  Method = "bearer"
+	MethodBasic   Method = "basic"
+	MethodSession Method = "session"
+)
+
+// Credential is what proved the principal: IDs and states only.
+type Credential struct {
+	Method        Method
+	SessionID     string
+	TokenID       string
+	TokenType     token.Type
+	Scope         *token.Scope // nil: no ceiling (sessions)
+	BasicUsername string
+}
+
+// Result is what the stage yields for an authenticated or anonymous request. A
+// rejection is the error return of [Authenticator.Authenticate].
+type Result struct {
+	// Anonymous is true when the request carries no credential and the endpoint
+	// and R-AUTH-037 allow anonymous access.
+	Anonymous  bool
+	Principal  principal.Principal
+	Groups     []principal.GroupRef
+	Credential Credential
+}
+
+// EndpointRules is what the stage needs to know about the endpoint of the
+// request (R-EP-010). The composition root builds it from the endpoint of the
+// request context; the defaults are those of the default endpoint.
+type EndpointRules struct {
+	// Name is the endpoint name; "default" for the default endpoint.
+	Name string
+	// AcceptsSession is true when the endpoint's surface holds ui.
+	AcceptsSession bool
+	// TokenTypes are the accepted token types (auth.token_types).
+	TokenTypes []token.Type
+	// BoundTokensOnly refuses unbound tokens (auth.bound_tokens_only).
+	BoundTokensOnly bool
+	// Anonymous is true when the endpoint allows anonymous requests
+	// (auth.anonymous), subject to R-AUTH-037.
+	Anonymous bool
+}
+
+// Authenticator is the authentication stage. An error it returns is an
+// *errs.Error of kind Unauthenticated (401 with the challenge of R-AUTH-002,
+// code unauthenticated or invalid_token); a credential that is present but
+// invalid never falls through to a lower-ranked source or to anonymous.
+type Authenticator interface {
+	Authenticate(r *http.Request, ep EndpointRules) (Result, error)
+}

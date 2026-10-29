@@ -23,6 +23,29 @@ tags:
     description: Liveness of the API, build facts, installation facts and the replica registry.
   - name: meta
     description: This document and the problem catalog.
+  # >>> M1 audit
+  # <<< M1 audit
+  #
+  # >>> M1 api
+  # <<< M1 api
+  #
+  # >>> M1 identity
+  # <<< M1 identity
+  #
+  # >>> M1 login
+  # <<< M1 login
+  #
+  # >>> M1 authz
+  # <<< M1 authz
+  #
+  # >>> M1 repository
+  # <<< M1 repository
+  #
+  # >>> M1 files
+  # <<< M1 files
+  #
+  # >>> M1 endpoints
+  # <<< M1 endpoints
 security:
   - bearerAuth: []
 paths:
@@ -225,6 +248,29 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/Internal"
+  # >>> M1 audit
+  # <<< M1 audit
+  #
+  # >>> M1 api
+  # <<< M1 api
+  #
+  # >>> M1 identity
+  # <<< M1 identity
+  #
+  # >>> M1 login
+  # <<< M1 login
+  #
+  # >>> M1 authz
+  # <<< M1 authz
+  #
+  # >>> M1 repository
+  # <<< M1 repository
+  #
+  # >>> M1 files
+  # <<< M1 files
+  #
+  # >>> M1 endpoints
+  # <<< M1 endpoints
 components:
   securitySchemes:
     bearerAuth:
@@ -666,3 +712,26 @@ components:
         lastPrimaryChangeAt:
           type: [string, "null"]
           format: date-time
+    # >>> M1 audit
+    # <<< M1 audit
+    #
+    # >>> M1 api
+    # <<< M1 api
+    #
+    # >>> M1 identity
+    # <<< M1 identity
+    #
+    # >>> M1 login
+    # <<< M1 login
+    #
+    # >>> M1 authz
+    # <<< M1 authz
+    #
+    # >>> M1 repository
+    # <<< M1 repository
+    #
+    # >>> M1 files
+    # <<< M1 files
+    #
+    # >>> M1 endpoints
+    # <<< M1 endpoints

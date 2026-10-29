@@ -52,6 +52,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
 | [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
+| [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
 ## Core flows
@@ -95,6 +96,9 @@ trove/
 │   ├── app/                  # composition root: components per role, start and stop order
 │   ├── api/v1/               # system API handlers; gen/ is generated (oapi-codegen)
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
+│   ├── audit/                # event registry (journal flag) and the recorder interface; implementation in M1 (WP1.7)
+│   ├── auth/                 # authentication stage contract; principal/ (principal table), token/, session/, oidc/ (M1)
+│   ├── authz/                # decision point contract: Subject, Coordinate, Decision, Authorizer (M1, WP1.3)
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
 │   ├── buildinfo/            # version, commit and build date from -ldflags
@@ -109,6 +113,7 @@ trove/
 │   ├── meta/postgres/        # pools, connect, retry, migrations/ (embedded), queries/ (sqlc input), q/ (sqlc output)
 │   ├── observability/        # logs, metrics, tracing and OTLP export, health checks
 │   ├── outbound/             # the one HTTP client factory and the egress address policy
+│   ├── repository/           # repository model and the Reader interface (M1, WP1.4)
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
 │   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder
@@ -130,9 +135,13 @@ trove/
 └── docs/                     # README.md, decisions.md, developer/, spec/, security/, coverage/, features/
 ```
 
-Planned, from [R-ARCH-003](../spec/architecture.md): the format packages (`internal/formats/`), the identity
-and authorization packages (`internal/auth/`, `internal/authz/`), the repository model (`internal/repository/`),
-the remote fetch engine (`internal/proxy/`) and the audit package (`internal/audit/`) do not exist yet.
+M1 contract skeletons ([m1-contracts.md](m1-contracts.md)): `internal/audit/` (event registry, recorder interface),
+`internal/auth/` with `principal/`, `token/`, `session/` and `oidc/`, `internal/authz/` and `internal/repository/`
+hold the shared types and interfaces; their implementations arrive with the M1 work packages. The `Principal` the
+chain stores is in [internal/httpserver/principal.go](../../internal/httpserver/principal.go).
+
+Planned, from [R-ARCH-003](../spec/architecture.md): the format packages (`internal/formats/`) and the remote
+fetch engine (`internal/proxy/`) do not exist yet.
 
 ## Test tiers
 

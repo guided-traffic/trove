@@ -1309,6 +1309,13 @@ CREATE TABLE app_user (
 CREATE UNIQUE INDEX app_user_one_break_glass ON app_user (is_break_glass) WHERE is_break_glass;
 ```
 
+The migration adds the integrity rules of Q-AUTH-16 to this sketch: a `CHECK` on `principal.name` by kind
+(the name rules of R-AUTH-007, R-AUTH-018 and R-AUTH-020, the reserved user names, `<issuer>/<mapping>`
+for `ci_mapping`), a unique index on the built-in kinds, the two built-in rows with the fixed
+identifiers `00000000-0000-0000-0000-000000000001` (`anonymous`) and
+`00000000-0000-0000-0000-000000000002` (`authenticated`), and triggers that refuse a change of those
+rows and a subtype, membership, token or session row that points at a principal of the wrong kind.
+
 API (administrator unless stated; read operations also accept the system scope
 `identities:read`, R-AUTH-025):
 
@@ -1792,8 +1799,8 @@ CREATE TABLE api_token (
   revocation_reason  text CHECK (revocation_reason IN ('owner', 'admin', 'rotated', 'npm-logout', 'leaked',
                                                        'principal_disabled', 'scim', 'mapping_deleted',
                                                        'parent_revoked')),
-  rotated_from       uuid        REFERENCES api_token (id) ON DELETE SET NULL,
-  derived_from       uuid        REFERENCES api_token (id) ON DELETE SET NULL,  -- R-AUTH-027 derivation rule
+  rotated_from       uuid,                                           -- no foreign key (Q-AUTH-15)
+  derived_from       uuid,                                           -- R-AUTH-027 derivation rule; no foreign key (Q-AUTH-15)
   last_used_at       timestamptz,
   last_used_addr     inet,
   rejection_logged_at timestamptz,                                   -- step 4: token.rejected once per hour, cluster-wide
@@ -3985,6 +3992,78 @@ rejection of break-glass sessions when the account is disabled, and the Argon2id
 slots); R-AUTH-015 (`status` shows the hold); R-AUTH-038 (`password_changed_at` in
 `auth_lockout`); R-AUTH-042; H-52. Cross-page: [architecture.md](architecture.md) R-ARCH-030
 lists the rotation hold with the break-glass lockout in PostgreSQL.
+
+### Q-AUTH-15 · Token lineage pointers without a foreign key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`api_token` names two other tokens: `rotated_from` (the predecessor of a rotation, R-AUTH-030) and
+`derived_from` (the parent of a token created under the derivation rule, R-AUTH-027). The sketch in
+R-AUTH-023 declared both as `REFERENCES api_token (id) ON DELETE SET NULL`. The table registry of
+[backup-and-restore.md](backup-and-restore.md) R-BAK-004 allows one cycle-breaking column per table,
+and a self-referencing foreign key is a cycle.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Foreign key on one column, plain `uuid` on the other | One `CycleBreak` column, the other lineage pointer has no integrity | Integrity for one pointer | Two pointers of one kind treated differently for no reason; a restore must fill one column afterwards |
+| (b) Both are plain `uuid` columns (chosen) | A pointer may name a row that the retention task has deleted | No restore ordering, no cycle; the lineage cascades of R-AUTH-029 read the pointers with a partial index and never need the parent row to exist | A pointer to a deleted token stays instead of turning `NULL` |
+| (c) Extend the registry to several cycle-breaking columns | `CycleBreak` names a list | Keeps both foreign keys | A change of R-BAK-004 and of the restore algorithm for two pointers that need no integrity |
+
+**Choice:** (b).
+
+**Rationale:** `token-cleanup` deletes rows after `retention_after_end`, oldest first, so a lineage
+pointer to a deleted parent is the normal end state of a long chain, and `SET NULL` would only erase
+the evidence that there was a parent. The cascades of revocation walk from a parent to its children by
+the pointer, never from a child to a parent that must exist. The development agent would revisit it if
+a requirement needs to read a deleted parent's fields through the child.
+
+**Applied in the spec:** R-AUTH-023 data model (`rotated_from`, `derived_from` are plain `uuid`);
+migration `00007_identity.sql` indexes both columns where they are set.
+
+### Q-AUTH-16 · Principal integrity enforced in the database
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-016 to R-AUTH-020 and R-AUTHZ-010 state rules that a foreign key cannot express: the
+built-in principals `anonymous` and `authenticated` exist once and cannot be deleted or renamed;
+only users and service accounts are group members; only users hold sessions; a role is bound to a
+user, a group or a service account only; each name follows the rule of its kind.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Application checks only | Every writer validates | Nothing in the schema | `trove admin`, journal replay, SCIM and the API are separate writers; one forgotten check is a built-in principal deleted or a role bound to `authenticated` |
+| (b) `CHECK` per kind and guard triggers (chosen) | `CHECK` on `principal.name` by kind, a unique index on the built-in kinds, a trigger that refuses changes to the two built-in rows, and one generic trigger `principal_kind_guard` that names the kinds a principal column may reference (SQLSTATE `AI001`) | Every writer, present and future, meets the same rules; the cost is one primary-key lookup per insert of a membership, a token, a session or a binding | The rules are in two places (API validation answers with the specified 4xx before it gets there) |
+| (c) A `kind` column in every subtype table with a composite foreign key | Declarative | No triggers | Changes the sketched tables of R-AUTH-016 to R-AUTH-020, and PostgreSQL does not allow the generated column the pattern needs |
+
+**Choice:** (b). The built-in principals have the fixed identifiers
+`00000000-0000-0000-0000-000000000001` (`anonymous`) and `00000000-0000-0000-0000-000000000002`
+(`authenticated`), seeded by the migration, so code and the revocation journal name them without a
+lookup.
+
+**Rationale:** these are authorization-relevant invariants; a violation is a privilege error, not a
+cosmetic one. The triggers fire on row writes only: the `TRUNCATE` of a restore (R-BAK-021) is not
+blocked, and the seeded built-in rows are loaded back from the backup.
+
+**Applied in the spec:** R-AUTH-016 data model (a paragraph under the sketch: name rule per kind, the
+built-in rows with their identifiers, the guard triggers).
+
+### Q-AUTH-17 · The command-line login table ships with the login state
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`cli_login` belongs to the P1 command-line logins (R-AUTH-034, R-AUTH-036). Two MVP rules read it
+before those requirements exist: `max_pending_flows` counts the unexpired rows of `oidc_login_flow`
+and `cli_login` together (R-AUTH-038), and `session-cleanup` deletes the expired rows of both
+(R-AUTH-043). R-AUTH-015 and R-BAK-004 already assign the table its export class `transient`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Create it with the P1 work | The MVP count and the cleanup have no table to read | Nothing unused in M1 | The MVP queries need a special case for a table that does not exist, or a migration in the middle of the P1 work changes the pending-flow count |
+| (b) Create it with the login state of M1 (chosen) | The table exists empty until R-AUTH-034 ships | The count and the cleanup are written once; the sketch of the specification is the schema | An empty table in M1 |
+
+**Choice:** (b), in `00008_login.sql`, with the columns of R-AUTH-034 unchanged.
+
+**Applied in the spec:** none; the sketch of R-AUTH-034 is the schema, created by `00008_login.sql`.
 
 ## What this does not cover
 

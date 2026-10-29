@@ -138,7 +138,7 @@ func (a *App) startEndpoint(rt *endpointRuntime, router *httpserver.Router) erro
 		Router: router, Log: a.log, Endpoint: rt.ep, Events: endpointEvents{m: a.tele.metrics},
 		Trace: trace, TraceID: observabilityRequestID, AccessLog: reqLog,
 		OnRequest: label, MaxInFlight: rt.ep.MaxInFlight(), Resolver: resolver, Annotate: annotate,
-		Authenticate: bootstrapAuthenticate, Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
+		Authenticate: a.authenticate(rt), RateLimit: a.m1.rateLimit, Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
 		Draining: a.health.Draining,
 	}.Handler()
 

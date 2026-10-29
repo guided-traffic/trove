@@ -399,7 +399,8 @@ Acceptance criteria:
   `sync.Map` type outside `internal/cache`, `internal/cluster`, `internal/observability` and the
   registries that are frozen at start-up: `internal/formats`, `internal/jobs`, `internal/errs`,
   `internal/secrets`, `internal/meta` (the revision-column registry, R-ARCH-009) and
-  `internal/backup/tables` (the table registry). A package-level `*regexp.Regexp` is exempt; generated
+  `internal/backup/tables` (the table registry) and `internal/audit` (the event registry, R-OPS-014).
+  A package-level `*regexp.Regexp` is exempt; generated
   files, variables with a `//go:embed` directive and variables of interface type are not checked
   (Q-ARCH-19).
 
@@ -435,7 +436,7 @@ trove/
 │   ├── httpserver/              # listeners, ServeMux, middleware, client address
 │   ├── api/v1/                  # management API handlers
 │   │   └── gen/                 # oapi-codegen output: models, std-http-server interface (generated, committed)
-│   ├── auth/{oidc,session,token,ciexchange}/
+│   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
 │   ├── authz/
 │   ├── repository/              # model, snapshot, CleanPath, classification, virtual resolver
 │   ├── formats/                 # contract (Format, Host), registry

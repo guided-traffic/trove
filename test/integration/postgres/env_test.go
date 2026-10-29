@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -180,6 +181,13 @@ func stepsWith(t testing.TB, extra map[string]string) fs.FS {
 		out[name] = &fstest.MapFile{Data: []byte(content)}
 	}
 	return out
+}
+
+// nextStep names the file of the n-th test migration after the embedded ones
+// (n = 1 is the first number no embedded migration uses), so that the tests that
+// add a step of their own need no edit when a milestone embeds more migrations.
+func nextStep(n int, name string) string {
+	return fmt.Sprintf("%05d_%s.sql", postgres.RequiredSchema()+n, name)
 }
 
 // migrated returns a database with the embedded migrations applied.

@@ -30,6 +30,12 @@ type Config struct {
 	Audit       Audit       `yaml:"audit"`
 	Maintenance Maintenance `yaml:"maintenance"`
 	Proxy       Proxy       `yaml:"proxy"`
+
+	// The M1 sections are declared in m1.go; their owners fill them there.
+	Auth         Auth         `yaml:"auth"`
+	Authz        Authz        `yaml:"authz"`
+	API          API          `yaml:"api"`
+	Repositories Repositories `yaml:"repositories"`
 }
 
 //go:generate go run ./schemagen -out schema.json

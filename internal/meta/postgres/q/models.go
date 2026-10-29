@@ -5,10 +5,157 @@
 package q
 
 import (
+	"net/netip"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type ApiIdempotencyKey struct {
+	PrincipalID     pgtype.UUID
+	IdemKey         string
+	Method          string
+	Route           string
+	RequestSha256   []byte
+	ResponseStatus  int16
+	ResponseHeaders []byte
+	ResponseBody    []byte
+	SecretIssuedID  pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+	ExpiresAt       pgtype.Timestamptz
+}
+
+type ApiToken struct {
+	ID                pgtype.UUID
+	Type              string
+	SecretSha256      []byte
+	Hint              string
+	PrincipalID       pgtype.UUID
+	Description       string
+	Scope             []byte
+	SelfRotatable     bool
+	CreatedAt         pgtype.Timestamptz
+	CreatedBy         pgtype.UUID
+	CreatedVia        string
+	ExpiresAt         pgtype.Timestamptz
+	RevokedAt         pgtype.Timestamptz
+	RevokedBy         pgtype.UUID
+	RevocationReason  pgtype.Text
+	RotatedFrom       pgtype.UUID
+	DerivedFrom       pgtype.UUID
+	LastUsedAt        pgtype.Timestamptz
+	LastUsedAddr      *netip.Addr
+	RejectionLoggedAt pgtype.Timestamptz
+	ExpiryNotifiedAt  pgtype.Timestamptz
+	CiContext         []byte
+}
+
+type AppUser struct {
+	PrincipalID           pgtype.UUID
+	Email                 pgtype.Text
+	EmailVerified         bool
+	DisplayName           pgtype.Text
+	Origin                string
+	IsBreakGlass          bool
+	ScimExternalID        pgtype.Text
+	LastLoginAt           pgtype.Timestamptz
+	LastInteractiveAuthAt pgtype.Timestamptz
+	DisabledReason        pgtype.Text
+	DisabledAt            pgtype.Timestamptz
+	DormancyWarnedAt      pgtype.Timestamptz
+}
+
+type AuditEvent struct {
+	ID           pgtype.UUID
+	OccurredAt   pgtype.Timestamptz
+	Action       string
+	Category     string
+	Outcome      string
+	ActorType    string
+	ActorID      pgtype.UUID
+	ActorName    pgtype.Text
+	TokenID      pgtype.UUID
+	AuthMethod   pgtype.Text
+	SourceIp     *netip.Addr
+	UserAgent    pgtype.Text
+	TraceID      pgtype.Text
+	Replica      pgtype.Text
+	Endpoint     pgtype.Text
+	ResourceType pgtype.Text
+	ResourceID   pgtype.Text
+	Repository   pgtype.Text
+	Path         pgtype.Text
+	Reason       pgtype.Text
+	Details      []byte
+}
+
+type AuditPolicy struct {
+	ID            int16
+	RetentionDays int32
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type AuthLockout struct {
+	AccountKey        string
+	Failures          int32
+	WindowStartedAt   pgtype.Timestamptz
+	LockedUntil       pgtype.Timestamptz
+	PasswordChangedAt pgtype.Timestamptz
+}
+
+type AuthSetting struct {
+	Singleton       bool
+	AnonymousAccess bool
+	PatDefaultTtl   pgtype.Interval
+	PatMaxTtl       pgtype.Interval
+	SatDefaultTtl   pgtype.Interval
+	SatMaxTtl       pgtype.Interval
+	ExpiryNotice    pgtype.Interval
+	UpdatedAt       pgtype.Timestamptz
+	UpdatedBy       pgtype.UUID
+}
+
+type AuthzPolicy struct {
+	ID           pgtype.UUID
+	Name         string
+	Description  string
+	ResourceType string
+	Version      int64
+	CreatedAt    pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	UpdatedAt    pgtype.Timestamptz
+	UpdatedBy    pgtype.UUID
+}
+
+type AuthzPolicyEntry struct {
+	PolicyID    pgtype.UUID
+	PrincipalID pgtype.UUID
+	Actions     []string
+}
+
+type AuthzPolicyPattern struct {
+	PolicyID  pgtype.UUID
+	Dimension string
+	Mode      string
+	Pattern   string
+}
+
+type AuthzPolicySelector struct {
+	PolicyID     pgtype.UUID
+	Ordinal      int16
+	Kind         string
+	RepositoryID pgtype.Int8
+	KeyPattern   pgtype.Text
+	RepoClass    pgtype.Text
+	Format       pgtype.Text
+}
+
+type AuthzRoleBinding struct {
+	Role        string
+	PrincipalID pgtype.UUID
+	GrantedBy   pgtype.UUID
+	GrantedAt   pgtype.Timestamptz
+}
 
 type Blob struct {
 	Sha256          []byte
@@ -30,6 +177,29 @@ type BlobGcQueue struct {
 	EnqueuedAt time.Time
 }
 
+type CliLogin struct {
+	ID                 pgtype.UUID
+	PublicIDSha256     []byte
+	PollSecretSha256   []byte
+	ClientKind         string
+	ClientName         pgtype.Text
+	RepositoryKey      pgtype.Text
+	UserCode           pgtype.Text
+	RequestedAddr      *netip.Addr
+	RequestedUa        pgtype.Text
+	Status             string
+	DecidedBy          pgtype.UUID
+	TokenScope         []byte
+	TokenTtl           pgtype.Interval
+	TokenSelfRotatable bool
+	RefusedPollCount   int32
+	LastRefusedAddr    *netip.Addr
+	LastRefusedAt      pgtype.Timestamptz
+	LastPolledAt       pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	ExpiresAt          pgtype.Timestamptz
+}
+
 type ClusterChange struct {
 	Area      string
 	Epoch     int64
@@ -41,6 +211,32 @@ type ClusterEpoch struct {
 	Area      string
 	Epoch     int64
 	ChangedAt pgtype.Timestamptz
+}
+
+type EndpointExposureRule struct {
+	ID          pgtype.UUID
+	Endpoint    string
+	Name        string
+	Description string
+	RepoID      int64
+	Enabled     bool
+	Packages    []byte
+	Paths       []byte
+	Versions    []byte
+	Prereleases bool
+	DistTags    []byte
+	Revision    int64
+	CreatedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedAt   pgtype.Timestamptz
+	UpdatedBy   pgtype.UUID
+}
+
+type GroupMembership struct {
+	GroupID  pgtype.UUID
+	MemberID pgtype.UUID
+	Source   string
+	AddedAt  pgtype.Timestamptz
 }
 
 type Item struct {
@@ -116,6 +312,19 @@ type Job struct {
 	FinishedAt    pgtype.Timestamptz
 }
 
+type OidcLoginFlow struct {
+	StateSha256          []byte
+	ProviderID           string
+	BrowserBindingSha256 []byte
+	CodeVerifier         string
+	NonceSha256          []byte
+	Purpose              string
+	ReauthSessionID      pgtype.UUID
+	ReturnTo             string
+	CreatedAt            pgtype.Timestamptz
+	ExpiresAt            pgtype.Timestamptz
+}
+
 type Package struct {
 	ID          int64
 	RepoID      int64
@@ -138,6 +347,15 @@ type PackageVersion struct {
 	TrashedAt      pgtype.Timestamptz
 }
 
+type Principal struct {
+	ID        pgtype.UUID
+	Kind      string
+	Name      string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+}
+
 type Replica struct {
 	InstanceUid       pgtype.UUID
 	Name              string
@@ -157,13 +375,18 @@ type Replica struct {
 }
 
 type Repository struct {
-	ID        int64
-	Key       string
-	Format    string
-	Class     string
-	Config    []byte
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID             int64
+	Key            string
+	Format         string
+	Class          string
+	Config         []byte
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	Lifecycle      string
+	ConfigVersion  int64
+	CreatedBy      pgtype.UUID
+	UpdatedBy      pgtype.UUID
+	LastActivityAt pgtype.Timestamptz
 }
 
 type RepositoryUsage struct {
@@ -172,6 +395,13 @@ type RepositoryUsage struct {
 	Files        int64
 	Folders      int64
 	UpdatedAt    pgtype.Timestamptz
+}
+
+type RevocationOutbox struct {
+	ID    pgtype.UUID
+	At    pgtype.Timestamptz
+	Event string
+	Entry []byte
 }
 
 type SchemaMigration struct {
@@ -190,6 +420,17 @@ type SchemaState struct {
 	ID          bool
 	Applied     int32
 	CompatFloor string
+}
+
+type SecretKeyCanary struct {
+	KeyID      string
+	Ciphertext string
+	CreatedAt  pgtype.Timestamptz
+}
+
+type ServiceAccount struct {
+	PrincipalID pgtype.UUID
+	Description string
 }
 
 type StorageUsageDelta struct {
@@ -214,4 +455,52 @@ type SystemState struct {
 	Value     []byte
 	UpdatedAt pgtype.Timestamptz
 	UpdatedBy pgtype.UUID
+}
+
+type UiSession struct {
+	ID                pgtype.UUID
+	SecretSha256      []byte
+	CsrfSha256        []byte
+	PrincipalID       pgtype.UUID
+	AuthMethod        string
+	ProviderID        pgtype.Text
+	IdpSid            pgtype.Text
+	IDToken           pgtype.Text
+	AuthenticatedAt   pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	LastSeenAt        pgtype.Timestamptz
+	IdleTimeout       pgtype.Interval
+	AbsoluteExpiresAt pgtype.Timestamptz
+	CreatedAddr       *netip.Addr
+	UserAgent         pgtype.Text
+	EndedAt           pgtype.Timestamptz
+	EndReason         pgtype.Text
+}
+
+type UserGroup struct {
+	PrincipalID    pgtype.UUID
+	Description    string
+	AutoJoin       bool
+	Origin         string
+	ScimExternalID pgtype.Text
+}
+
+type UserIdentity struct {
+	ID         int64
+	UserID     pgtype.UUID
+	ProviderID string
+	Issuer     string
+	Subject    pgtype.Text
+	LinkedAt   pgtype.Timestamptz
+	LastClaims []byte
+}
+
+type UserPreference struct {
+	UserID            pgtype.UUID
+	Locale            pgtype.Text
+	Theme             pgtype.Text
+	KeyboardShortcuts bool
+	ProjectFilter     pgtype.Text
+	Revision          int64
+	UpdatedAt         pgtype.Timestamptz
 }

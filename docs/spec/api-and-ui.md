@@ -1192,7 +1192,7 @@ Data model:
 
 ```sql
 CREATE TABLE user_preferences (
-  user_id            uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  user_id            uuid PRIMARY KEY REFERENCES app_user (principal_id) ON DELETE CASCADE,  -- Q-API-15
   locale             text CHECK (locale IN ('en', 'de')),
   theme              text CHECK (theme IN ('light', 'dark')),
   keyboard_shortcuts boolean NOT NULL DEFAULT false,
@@ -4437,6 +4437,22 @@ the build time that the coverage evidence needs. The development agent would rev
 of M1 lands, which is when the browser tiers and axe start.
 
 **Applied in the spec:** R-UI-047 is unchanged; its table describes the full target, and this block states the M0 subset.
+
+### Q-API-15 · Target of `user_preferences.user_id`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The sketch in R-API-021 declares `user_id uuid PRIMARY KEY REFERENCES users(id)`. No table `users`
+exists: users are the `principal` and `app_user` rows of R-AUTH-016, keyed by `principal_id`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `app_user (principal_id)` (chosen) | The preferences row goes with the user | A user and nothing else can have preferences; deleting a user deletes them | none |
+| (b) `principal (id)` | Any principal | Looser | Service accounts and CI mappings would be allowed rows that R-API-021 answers 403 for |
+
+**Choice:** (a), `ON DELETE CASCADE`.
+
+**Applied in the spec:** R-API-021 data model.
 
 ## What this does not cover
 

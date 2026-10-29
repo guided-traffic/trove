@@ -13,6 +13,7 @@ import (
 	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/cache"
@@ -98,6 +99,9 @@ type App struct {
 	queue   *jobs.Queue
 	blobs   *blob.Store
 	gc      *blob.Collector
+
+	// m1 holds the components of the M1 areas (m1.go).
+	m1 m1Wiring
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of
@@ -297,7 +301,9 @@ func (a *App) bootstrap(ctx context.Context) error {
 			return err
 		}
 		// WIRING POINT (step 4): audit_maintain_partitions() runs here once the
-		// audit package exists.
+		// audit package exists. The audit area builds the recorder here (a.m1.recorder).
+		// >>> M1 audit
+		// <<< M1 audit
 		// Step 6: the object store.
 		if err := a.startBlob(ctx); err != nil {
 			return err
@@ -316,7 +322,30 @@ func (a *App) bootstrap(ctx context.Context) error {
 		}
 	}
 	// WIRING POINT (step 8): load the snapshots of the domain packages and
-	// register their caches on a.caches.
+	// register their caches on a.caches. Each M1 area wires its components inside
+	// its own markers, in this order (audit has its own marker at step 4); an
+	// area that needs another's component reads it from m1Wiring (m1.go).
+	// >>> M1 repository
+	// <<< M1 repository
+	//
+	// >>> M1 identity
+	// <<< M1 identity
+	//
+	// >>> M1 login
+	// <<< M1 login
+	//
+	// >>> M1 authz
+	// <<< M1 authz
+	//
+	// >>> M1 files
+	// <<< M1 files
+	//
+	// >>> M1 endpoints
+	// <<< M1 endpoints
+	//
+	// >>> M1 api
+	// <<< M1 api
+	// Wiring of the M1 areas ends here.
 	a.freezeRegistries()
 	if infra && a.sub.MainPool {
 		a.registerGauges()
@@ -348,6 +377,7 @@ func (a *App) bootstrap(ctx context.Context) error {
 // frozen where it is built.
 func (a *App) freezeRegistries() {
 	secrets.Freeze()
+	audit.Freeze()
 	meta.FreezeRevisionColumns()
 	tables.Freeze()
 }
@@ -382,11 +412,19 @@ func (a *App) startClient() error {
 		api := v1.New(v1.Options{
 			Document: doc, Identity: v1.Identity{Replica: a.id.Instance, Role: a.id.Role},
 			Ready: a.health.Serving, PublicVersion: cfg.System.PublicVersion,
-			Access:   bootstrapAccess{anonymousRead: cfg.System.BootstrapAnonymousRead},
+			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)
+		// Routes outside /api/v1/ that M1 areas own: /auth/ (login) and /files/ (files).
+		// Register them on router within the endpoint surfaces (CheckSurface); the route table
+		// check below stops start-up for a route that breaks a rule.
+		// >>> M1 login
+		// <<< M1 login
+		//
+		// >>> M1 files
+		// <<< M1 files
 		router.Handle(webui.MountPath, ui)
 		if a.o.Extra != nil {
 			a.o.Extra(router)

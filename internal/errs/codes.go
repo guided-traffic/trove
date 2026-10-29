@@ -39,6 +39,35 @@ const (
 	CodeMisdirectedRequest  = "misdirected_request"
 )
 
+// Codes of the M1 areas. Each area adds its constants only inside its own
+// markers and takes its range from docs/developer/m1-contracts.md; a code is
+// never reused or renamed (R-ARCH-025). Write a `const (...)` block or single
+// constants between the markers.
+
+// >>> M1 audit
+// <<< M1 audit
+//
+// >>> M1 api
+// <<< M1 api
+//
+// >>> M1 identity
+// <<< M1 identity
+//
+// >>> M1 login
+// <<< M1 login
+//
+// >>> M1 authz
+// <<< M1 authz
+//
+// >>> M1 repository
+// <<< M1 repository
+//
+// >>> M1 files
+// <<< M1 files
+//
+// >>> M1 endpoints
+// <<< M1 endpoints
+
 // CodeInfo documents one code for the problem catalog.
 type CodeInfo struct {
 	Code   string
@@ -74,6 +103,30 @@ var registry = []CodeInfo{
 	{CodeServerBusy, Unavailable, "Server busy", "The replica is at server.max_in_flight or another concurrency bound; retry after the Retry-After period, the request can succeed on another replica."},
 	{CodeDatabaseTimeout, Unavailable, "Database timeout", "A statement exceeded its time limit (statement_timeout or lock_timeout); retry after the Retry-After period."},
 	{CodeMisdirectedRequest, Misdirected, "Misdirected request", "The host of the request is not one this endpoint answers for. Send the request to the endpoint that serves the host, on a new connection."},
+
+	// >>> M1 audit
+	// <<< M1 audit
+	//
+	// >>> M1 api
+	// <<< M1 api
+	//
+	// >>> M1 identity
+	// <<< M1 identity
+	//
+	// >>> M1 login
+	// <<< M1 login
+	//
+	// >>> M1 authz
+	// <<< M1 authz
+	//
+	// >>> M1 repository
+	// <<< M1 repository
+	//
+	// >>> M1 files
+	// <<< M1 files
+	//
+	// >>> M1 endpoints
+	// <<< M1 endpoints
 }
 
 // Codes returns a copy of the registry in declaration order.

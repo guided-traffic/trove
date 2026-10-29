@@ -18,7 +18,7 @@ func bootstrapAuthenticate(r *http.Request) (httpserver.Principal, error) {
 		return httpserver.Principal{}, errs.E(errs.Unauthenticated, errs.CodeUnauthenticated,
 			"The credential is not valid.", errs.WithChallenge("Bearer"))
 	}
-	return httpserver.Principal{Anonymous: true}, nil
+	return httpserver.AnonymousPrincipal(), nil
 }
 
 // bootstrapAccess decides permissions until authorization exists. Nobody can

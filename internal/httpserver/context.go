@@ -71,22 +71,12 @@ func Logger(ctx context.Context) *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// Principal is the authenticated caller, or the anonymous one. It is the seam
-// between the authentication stage (R-ARCH-005 step 6) and the handlers; the
-// identity packages fill it in a later milestone.
-type Principal struct {
-	// Anonymous is true when the request carried no credentials.
-	Anonymous bool
-	// Name is the user, service-account or CI principal name; empty when anonymous.
-	Name string
-}
-
 // PrincipalFrom returns the caller; anonymous outside the chain.
 func PrincipalFrom(ctx context.Context) Principal {
 	if p, ok := ctx.Value(keyPrincipal).(Principal); ok {
 		return p
 	}
-	return Principal{Anonymous: true}
+	return AnonymousPrincipal()
 }
 
 // WithPrincipal stores the caller; the authentication stage and tests use it.

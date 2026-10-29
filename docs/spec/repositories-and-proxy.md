@@ -98,6 +98,9 @@ ALTER TABLE repositories
   ADD CONSTRAINT repositories_key_dots CHECK (key !~ '\.\.' AND key !~ '\.$');
 ```
 
+The M1 migration adds `lifecycle`, `config_version`, `created_by`, `updated_by`, `last_activity_at` and the key
+constraint; `claims_version` and `project_id` come with the migrations of their requirements (Q-REPO-11).
+
 `config` never contains secret values; they are in `repository_secrets` (R-REPO-033). References
 that need referential integrity (members, deploy targets, pin targets, client certificates,
 outbound proxies) are relational tables on this page.
@@ -3291,6 +3294,25 @@ agent would revisit this when a network uses a different NAT64 prefix in a suppo
 **Applied in the spec:** R-REPO-038 (the zoned and NAT64 rules, the deny list); the default of
 `proxy.outbound.address_policy.deny_cidrs` in [config/outbound.go](../../internal/config/outbound.go) and in
 [security/egress.md](../security/egress.md).
+
+### Q-REPO-11 · Repository columns added in M1
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-001 adds six columns and a constraint to `repositories` in one `ALTER TABLE`. Two of them
+belong to requirements outside M1: `claims_version` (the claims ETag, R-REPO-023, M2) and `project_id`
+(R-AUTHZ-026, P1, a foreign key to a table that does not exist yet).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) All six columns in M1 | One migration as sketched | Matches the sketch | `project_id` cannot be created without the projects table; `claims_version` would be an ETag column no code writes |
+| (b) The M1 columns now, the others with their requirements (chosen) | `lifecycle`, `config_version`, `created_by`, `updated_by`, `last_activity_at` and `repositories_key_dots` in `00010_repositories.sql` | No unused column; each later column is an expand step (`ADD COLUMN` with a default) of the work that needs it | The M2 and P1 work each add a migration |
+
+**Choice:** (b). `created_by` and `updated_by` stay plain `uuid` columns as in the sketch, so a
+repository outlives its creator. `repositories.config_version` is registered with
+`meta.RegisterRevisionColumn`; `claims_version` registers with the migration that adds it.
+
+**Applied in the spec:** R-REPO-001 data model (a note under the `ALTER TABLE`).
 
 ## What this does not cover
 
