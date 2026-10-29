@@ -3,6 +3,7 @@ package token
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -26,6 +27,9 @@ type Settings struct {
 	SATDefaultTTL   *time.Duration
 	SATMaxTTL       *time.Duration
 	ExpiryNotice    *time.Duration
+	// Revision is the ETag number of the row: the microseconds of its last change,
+	// which every update raises by at least one (R-API-012; Q-AUTH-40).
+	Revision int64
 }
 
 // Effective is what the runtime applies: the row's values within the YAML
@@ -47,6 +51,17 @@ type SettingsPatch struct {
 	SATDefaultTTL   *time.Duration
 	SATMaxTTL       *time.Duration
 	ExpiryNotice    *time.Duration
+	// IfRevision, when not zero, is the revision the caller loaded: the update
+	// fails with [SettingsChangedError] when the row has another one (If-Match).
+	IfRevision int64
+}
+
+// SettingsChangedError is the refusal of an update whose IfRevision no longer
+// matches (R-API-012); the API answers it as 412 with the current tag.
+type SettingsChangedError struct{ Revision int64 }
+
+func (e SettingsChangedError) Error() string {
+	return "token: the settings changed since they were loaded"
 }
 
 // SettingsOptions configure [NewSettingsStore].
@@ -98,6 +113,11 @@ func (s *SettingsStore) Get(ctx context.Context) (Settings, error) {
 	return s.flights.Do(ctx, struct{}{}, s.o.Gate.Bound, s.load)
 }
 
+// Read returns the settings row from PostgreSQL, never from the cache: the
+// management API answers a read that shows a write of another replica at once
+// (R-API-052) and derives the ETag from it.
+func (s *SettingsStore) Read(ctx context.Context) (Settings, error) { return s.load(ctx) }
+
 func (s *SettingsStore) load(ctx context.Context) (Settings, error) {
 	var out Settings
 	err := s.o.DB.Read(ctx, func(db q.DBTX) error {
@@ -121,7 +141,7 @@ func readSettings(ctx context.Context, qs *q.Queries) (Settings, error) {
 		AnonymousAccess: r.AnonymousAccess,
 		PATDefaultTTL:   secs(r.PatDefaultSecs), PATMaxTTL: secs(r.PatMaxSecs),
 		SATDefaultTTL: secs(r.SatDefaultSecs), SATMaxTTL: secs(r.SatMaxSecs),
-		ExpiryNotice: secs(r.ExpiryNoticeSecs),
+		ExpiryNotice: secs(r.ExpiryNoticeSecs), Revision: r.Revision,
 	}, nil
 }
 
@@ -150,6 +170,10 @@ func (s *SettingsStore) Effective(ctx context.Context) (Effective, error) {
 	}
 	return s.effective(row), nil
 }
+
+// Resolve combines a settings row with the YAML values, as Effective does for the
+// row it reads.
+func (s *SettingsStore) Resolve(row Settings) Effective { return s.effective(row) }
 
 func (s *SettingsStore) effective(row Settings) Effective {
 	t := s.o.Tokens
@@ -183,6 +207,9 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 		if err != nil {
 			return err
 		}
+		if p.IfRevision != 0 && p.IfRevision != before.Revision {
+			return SettingsChangedError{Revision: before.Revision}
+		}
 		after = before
 		if p.AnonymousAccess != nil {
 			after.AnonymousAccess = *p.AnonymousAccess
@@ -215,6 +242,9 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 		if err := principal.NotifySettings(s.o.Notifier, tx); err != nil {
 			return err
 		}
+		if after, err = readSettings(ctx, qs); err != nil {
+			return err
+		}
 		// The journal entry carries anonymousAccess before and after on every
 		// change, so a producer cannot drop a narrowing (Q-AUTH-18).
 		entry := map[string]any{"anonymousAccess": map[string]bool{"before": before.AnonymousAccess, "after": after.AnonymousAccess}}
@@ -225,6 +255,10 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 			Journal: mustJSON(entry),
 		})
 	})
+	var changed SettingsChangedError
+	if errors.As(err, &changed) {
+		return after, err
+	}
 	return after, principal.DBErr("token.settings.update", err)
 }
 

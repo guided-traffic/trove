@@ -91,13 +91,17 @@ func (a *App) wireIdentity() error {
 	if err != nil {
 		return err
 	}
+	// The manager and the token service join the transaction of an idempotent
+	// create of the management API (principal.Join), so a retry with the same key
+	// finds the change and its stored outcome together.
+	joinable := principal.Joinable{DB: db}
 	tokens := token.NewService(token.ServiceOptions{
-		DB: db, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
+		DB: joinable, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
 		Tokens: cfg.Tokens, Recent: recent, Metrics: metrics, Log: a.log.With("component", "tokens"),
 		Scope: TokenScopeOptions(a.cfg),
 	})
 	breakGlass := cfg.BreakGlass.Username // reserved: no OIDC login and no user can take the name (R-AUTH-007)
-	manager := principal.NewManager(principal.ManagerOptions{DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass})
+	manager := principal.NewManager(principal.ManagerOptions{DB: joinable, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass})
 	provisioner := principal.NewProvisioner(principal.ProvisionerOptions{
 		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Metrics: metrics,
 	})
@@ -230,4 +234,24 @@ func (a *App) registerIdentityJobs(r *jobs.Registry) {
 		}
 		r.RegisterTask(t.name, spec)
 	}
+}
+
+// authServices hands the identity and login components to the management API
+// (internal/api/v1). A component a replica does not have stays nil, and the
+// operations that need it answer 503 unavailable.
+func (a *App) authServices() v1.AuthServices {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	svc := v1.AuthServices{Manager: a.m1.principalManager, Tokens: a.m1.tokens, Settings: a.m1.authSettings, Config: a.cfg.Auth}
+	// A nil *session.Store or *oidc.Service must not become a non-nil interface.
+	if a.m1.sessions != nil {
+		svc.Sessions = a.m1.sessions
+	}
+	if a.m1.login != nil {
+		svc.Login = a.m1.login
+	}
+	if a.m1.flowStarts != nil {
+		svc.FlowStarts = takeLimiter{a.m1.flowStarts}
+	}
+	return svc
 }

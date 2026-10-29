@@ -452,6 +452,9 @@ func (a *App) startClient() error {
 			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
 			API: a.apiServices(),
+			// >>> M1 identity
+			Auth: a.authServices(),
+			// <<< M1 identity
 			// >>> M1 audit
 			AuditStore: a.auditStoreForAPI(),
 			// <<< M1 audit

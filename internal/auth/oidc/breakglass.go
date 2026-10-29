@@ -25,6 +25,31 @@ import (
 // LockoutKey is the auth_lockout row of the break-glass account (R-AUTH-038).
 const LockoutKey = "break-glass"
 
+// Unlock clears a lockout of the break-glass account at once on every replica
+// (R-AUTH-014, R-AUTH-015: every login attempt reads the row) and records
+// auth.breakglass.unlocked with severity high in the same transaction (Q-AUTH-37).
+// It reports whether a lock was in force. `trove admin break-glass unlock` and
+// `POST /api/v1/users/{breakGlassName}/unlock` both call it.
+func Unlock(ctx context.Context, db meta.Runner, rec audit.Recorder, actor audit.Actor, src audit.Source) (bool, error) {
+	var was bool
+	err := db.InTx(ctx, func(tx meta.Tx) error {
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			return errors.New("the transaction does not come from the PostgreSQL store")
+		}
+		rows, err := q.New(ptx).Unlock(ctx, LockoutKey)
+		if err != nil {
+			return err
+		}
+		was = len(rows) == 1 && rows[0]
+		details, _ := json.Marshal(map[string]any{"severity": "high", "was_locked": was})
+		return rec.RecordTx(ctx, tx, audit.Event{
+			Type: audit.EventAuthBreakGlassUnlocked, Actor: actor, Source: src, Outcome: audit.Success, Details: details,
+		})
+	})
+	return was, err
+}
+
 // slotWait is how long a local login waits for a verification slot before it
 // answers 503 server_busy (R-AUTH-014).
 const slotWait = time.Second

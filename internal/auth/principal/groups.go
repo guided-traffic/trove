@@ -21,6 +21,9 @@ type Group struct {
 	Origin      string
 	MemberCount int
 	CreatedAt   time.Time
+	// Roles are the system roles bound to the group, read only (R-AUTH-018);
+	// filled by GetGroup.
+	Roles []string
 }
 
 // NewGroup is the request of CreateGroup.
@@ -114,6 +117,11 @@ func (m *Manager) GetGroup(ctx context.Context, name string) (Group, error) {
 		}
 		r := rows[0]
 		g = groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount)
+		roles, err := q.New(db).IdentityGroupRoles(ctx, r.ID)
+		if err != nil {
+			return err
+		}
+		g.Roles = orEmpty(roles)
 		return nil
 	})
 	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped above
@@ -303,6 +311,45 @@ func (m *Manager) ListMembers(ctx context.Context, group, source, afterKind, aft
 		return nil, NotFound("The group")
 	}
 	return out, DBErr("principal.ListMembers", err)
+}
+
+// MemberPage is one member of a group with all its sources (R-AUTH-018).
+type MemberPage struct {
+	Member  string
+	Kind    Kind
+	Sources []string
+}
+
+// ListMemberPage lists the members of a group ordered by kind and name, each with
+// all its sources, optionally only those that hold source. afterKind and afterName
+// are the last member of the previous page.
+func (m *Manager) ListMemberPage(ctx context.Context, group, source, afterKind, afterName string, limit int) ([]MemberPage, error) {
+	var out []MemberPage
+	err := m.db.Read(ctx, func(db q.DBTX) error {
+		qs := q.New(db)
+		g, err := qs.IdentityGetGroup(ctx, group)
+		if err != nil {
+			return err
+		}
+		if len(g) == 0 {
+			return ErrNotFound
+		}
+		rows, err := qs.IdentityGroupMemberPage(ctx, q.IdentityGroupMemberPageParams{
+			GroupID: g[0].ID, AfterKind: afterKind, AfterName: afterName, Source: source, MaxRows: int32(clampLimit(limit)), //nolint:gosec // bounded
+		})
+		if err != nil {
+			return err
+		}
+		out = out[:0]
+		for _, r := range rows {
+			out = append(out, MemberPage{Member: memberName(r.MemberKind, r.MemberName), Kind: Kind(r.MemberKind), Sources: r.Sources})
+		}
+		return nil
+	})
+	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped above
+		return nil, NotFound("The group")
+	}
+	return out, DBErr("principal.ListMemberPage", err)
 }
 
 // PatchMembers adds and removes memberships of one source (manual by default,

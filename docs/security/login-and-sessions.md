@@ -117,6 +117,20 @@ whose SHA-256 is the session's (constant-time compare) and an `Origin` equal to 
   and [H-18](../spec/identity-and-authentication.md#h-18--authentication-strength-at-the-idp-is-not-checked); a rotation that no
   running replica notices is [H-52](../spec/identity-and-authentication.md#h-52--a-break-glass-rotation-that-no-running-replica-notices).
 
+## Sessions and the break-glass lock through the API
+
+[sessions_api.go](../../internal/api/v1/sessions_api.go), [test/integration/login/api_test.go](../../test/integration/login/api_test.go).
+
+- A user lists and ends its own sessions (`/users/me/sessions`), also with a personal token; a service account and a CI token answer `403`.
+  A session of another user, an ended one and an unknown ID answer `404`, so session IDs are not probed.
+  `current` marks the session that made the request.
+- An administrator reads the sessions of a user with `identities:read` and ends them with `identities:write`
+  (`auth.session.ended`, reason `revoked`). The list shows the source address and user agent of each session: personal data that the
+  capability exposes (Q-AUTH-43).
+- `POST /api/v1/users/{breakGlassName}/unlock` needs the role `admin`, not a capability a token scope can name, clears the lockout in the
+  row every attempt reads (no replica caches it) and writes `auth.breakglass.unlocked` with severity `high`. A call for another username
+  answers `404`. The user record shows `lockedUntil`; `GET /api/v1/users?status=locked` finds the account.
+
 ## What this does not cover
 
 ### H-91 · Provisioning and the session commit in two transactions

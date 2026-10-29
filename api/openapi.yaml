@@ -34,9 +34,25 @@ tags:
   # <<< M1 api
   #
   # >>> M1 identity
+  - name: users
+    description: Users, their groups, disabling, deletion and the break-glass unlock (R-AUTH-016).
+  - name: groups
+    description: Groups and their memberships (R-AUTH-018).
+  - name: service-accounts
+    description: Service accounts for automation (R-AUTH-020).
+  - name: tokens
+    description: Personal and service-account tokens. A token value is returned by the call that creates it and never again (R-AUTH-027 to R-AUTH-030).
+  - name: auth-settings
+    description: The runtime authentication settings (R-AUTH-040).
   # <<< M1 identity
   #
   # >>> M1 login
+  - name: auth
+    description: The sign-in options and the caller's principal and credential (R-AUTH-009, R-API-021).
+  - name: sessions
+    description: The UI sessions of a user (R-AUTH-010).
+  - name: preferences
+    description: The caller's UI preferences (R-API-021).
   # <<< M1 login
   #
   # >>> M1 authz
@@ -806,9 +822,1996 @@ paths:
   # <<< M1 api
   #
   # >>> M1 identity
+  /api/v1/users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      description: |
+        Users ordered by username (R-AUTH-016). `status=locked` lists the break-glass account while its lockout is
+        in force (R-AUTH-038); `admin=true` keeps the users that hold the role `admin` directly or through a group.
+        Cursor pagination (R-API-010) over `username`.
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring of the name or the email.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, disabled, locked]
+        - name: origin
+          in: query
+          schema:
+            type: string
+            enum: [jit, admin, scim, system]
+        - name: group
+          in: query
+          description: Only members of this group (any source).
+          schema:
+            type: string
+        - name: admin
+          in: query
+          schema:
+            type: boolean
+        - name: sort
+          in: query
+          description: "`username` is the default; a leading `-` reverses the order."
+          schema:
+            type: string
+            enum: [username]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of users.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a user
+      description: |
+        Creates a user with origin `admin`. A pending identity link (`subject: null`) is completed by the user's first
+        login at that provider (R-AUTH-007). A username that is reserved, such as `me` or the break-glass account's,
+        answers `422 reserved_name`; an existing one `409`. Optional `Idempotency-Key`.
+      x-trove-permission:
+        permission: identities:write
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewUser"
+      responses:
+        "201":
+          description: The user.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [users]
+      summary: Read the caller's own user record
+      description: |
+        The record of the signed-in user, or of the owner of a personal access token (R-AUTH-016, R-AUTH-017).
+        A service account answers `403`: it has no user record.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The caller's user record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Read a user
+      description: |
+        One user with its identity links, groups and administrator flags (R-AUTH-016).
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Correct a user's profile data
+      description: |
+        An administrator can correct `displayName`, `email` and the pending `identities` until the user's next login
+        overwrites the first two (R-AUTH-016). The body is a JSON merge patch; the read-only members of the user
+        record are accepted and ignored, so a body obtained by `GET` can be sent back.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/UserPatch"
+      responses:
+        "200":
+          description: The user after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user
+      description: |
+        Ends the user's sessions and deletes its tokens, identity links and memberships; role bindings go with it
+        (R-AUTH-016). A later login of the same identity creates a new user with a new `id`. The break-glass account
+        cannot be deleted (`409 break_glass_immutable`).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "204":
+          description: The user is deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/disable:
+    post:
+      operationId: disableUser
+      tags: [users]
+      summary: Disable a user
+      description: |
+        Ends all sessions of the user and makes every token of the user fail with `401 principal_disabled`. With
+        `revokeTokens: true` (the default) the tokens are also revoked with reason `principal_disabled`; enabling the
+        user again does not bring them back (R-AUTH-016). The break-glass account answers `409 break_glass_immutable`.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisableRequest"
+      responses:
+        "204":
+          description: The user is disabled.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/enable:
+    post:
+      operationId: enableUser
+      tags: [users]
+      summary: Enable a user
+      description: |
+        Enables a disabled user. Tokens revoked by the disable stay revoked (R-AUTH-016).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "204":
+          description: The user is enabled.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/groups:
+    patch:
+      operationId: patchUserGroups
+      tags: [users]
+      summary: Add and remove manual group memberships of a user
+      description: |
+        Changes the `manual` memberships only; a membership with another source (`oidc:<provider>`, `auto`, `scim`)
+        is not touched (R-AUTH-016, R-AUTH-018). An unknown user or group answers `404` and nothing is applied. The
+        answer lists the user's memberships afterwards.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipChange"
+      responses:
+        "200":
+          description: The user's memberships after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserGroups"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/unlock:
+    post:
+      operationId: unlockBreakGlass
+      tags: [users]
+      summary: Clear the lockout of the break-glass account
+      description: |
+        Clears a lockout of the break-glass account at once on every replica (R-AUTH-014, R-AUTH-038) and writes
+        `auth.breakglass.unlocked` with severity `high`. Any other username answers `404`. The answer is `204`
+        whether or not a lock was in force.
+      x-trove-permission:
+        role: admin
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "204":
+          description: The account is unlocked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/groups:
+    get:
+      operationId: listGroups
+      tags: [groups]
+      summary: List groups
+      description: |
+        Groups ordered by name, with member counts (R-AUTH-018). Cursor pagination (R-API-010) over `name`.
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring of the name.
+          schema:
+            type: string
+        - name: origin
+          in: query
+          schema:
+            type: string
+            enum: [admin, oidc, scim]
+        - name: sort
+          in: query
+          description: "`name` is the default; a leading `-` reverses the order."
+          schema:
+            type: string
+            enum: [name]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of groups.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createGroup
+      tags: [groups]
+      summary: Create a group
+      description: |
+        Creates a group with origin `admin`. Members are usernames and `sa:<name>`; all get a `manual` membership. An
+        unknown member answers `404` and nothing is created (R-AUTH-018). Optional `Idempotency-Key`.
+      x-trove-permission:
+        permission: identities:write
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewGroup"
+      responses:
+        "201":
+          description: The group.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/groups/{name}:
+    get:
+      operationId: getGroup
+      tags: [groups]
+      summary: Read a group
+      description: |
+        One group with the system roles bound to it, read only (R-AUTH-018).
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateGroup
+      tags: [groups]
+      summary: Change a group
+      description: |
+        `description`, `autoJoin` and `name` (a rename). A group owned by the identity provider's SCIM client answers
+        `409 managed_by_scim`; auto-join on a group with an administration role binding answers
+        `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019). JSON merge patch; read-only members are ignored.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/GroupPatch"
+      responses:
+        "200":
+          description: The group after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteGroup
+      tags: [groups]
+      summary: Delete a group
+      description: |
+        Deletes the group with its memberships and role bindings. A SCIM-owned group answers `409 managed_by_scim` (R-AUTH-018).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The group is deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/groups/{name}/members:
+    get:
+      operationId: listGroupMembers
+      tags: [groups]
+      summary: List the members of a group
+      description: |
+        Users and service accounts, ordered by kind and name, each with all its sources (`manual`, `auto`,
+        `oidc:<provider>`, `scim`). `source` keeps the members that hold that source (R-AUTH-018). Cursor pagination
+        (R-API-010).
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: source
+          in: query
+          description: Only members that hold this source.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of members.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupMemberList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: patchGroupMembers
+      tags: [groups]
+      summary: Add and remove members of a group
+      description: |
+        Adds and removes memberships of one source, `manual` by default (`auto` is the other source the API changes).
+        A removed member that is still a member through another source stays in the group, and the answer shows the
+        remaining sources (R-AUTH-018). An unknown member, or a built-in principal such as `authenticated`, answers
+        `404` and nothing is applied. A SCIM-owned group answers `409 managed_by_scim`. The answer lists the members
+        the request named.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupMembersChange"
+      responses:
+        "200":
+          description: The members the request named, with their remaining sources.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupMemberList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/service-accounts:
+    get:
+      operationId: listServiceAccounts
+      tags: [service-accounts]
+      summary: List service accounts
+      description: |
+        Service accounts ordered by name (R-AUTH-020). Cursor pagination (R-API-010) over `name`.
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring of the name.
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: "`name` is the default; a leading `-` reverses the order."
+          schema:
+            type: string
+            enum: [name]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of service accounts.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createServiceAccount
+      tags: [service-accounts]
+      summary: Create a service account
+      description: |
+        A non-human principal for automation (R-AUTH-020). It has no login, session or UI access. Binding the role
+        `admin` to it is an operation of the authorization API. Optional `Idempotency-Key`.
+      x-trove-permission:
+        permission: identities:write
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewServiceAccount"
+      responses:
+        "201":
+          description: The service account.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/service-accounts/{name}:
+    get:
+      operationId: getServiceAccount
+      tags: [service-accounts]
+      summary: Read a service account
+      description: |
+        One service account (R-AUTH-020).
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The service account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateServiceAccount
+      tags: [service-accounts]
+      summary: Change a service account
+      description: |
+        Changes the description (R-AUTH-020; owners are P1). JSON merge patch; read-only members are ignored.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/ServiceAccountPatch"
+      responses:
+        "200":
+          description: The service account after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteServiceAccount
+      tags: [service-accounts]
+      summary: Delete a service account
+      description: |
+        Deletes the account with its tokens and memberships (R-AUTH-020).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The service account is deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/service-accounts/{name}/disable:
+    post:
+      operationId: disableServiceAccount
+      tags: [service-accounts]
+      summary: Disable a service account
+      description: |
+        Every token of the account fails with `401 principal_disabled` (R-AUTH-020). With `revokeTokens: true` they are
+        also revoked; the default is `false`, so enabling the account again restores its tokens (Q-AUTH-41).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisableRequest"
+      responses:
+        "204":
+          description: The service account is disabled.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/service-accounts/{name}/enable:
+    post:
+      operationId: enableServiceAccount
+      tags: [service-accounts]
+      summary: Enable a service account
+      description: |
+        Enables the account (R-AUTH-020).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The service account is enabled.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/tokens:
+    post:
+      operationId: createToken
+      tags: [tokens]
+      summary: Create a personal access token
+      description: |
+        Creates a PAT for the caller (R-AUTH-027). The caller is a user with a session whose last interactive
+        authentication is recent (`401 reauthentication_required` otherwise), or a PAT under the derivation rule:
+        the new token has the presenting token's type and owner, expires no later than it and carries no broader
+        scope (`403 derivation_exceeds_parent`). A CI token, the break-glass account and an `owner` naming anyone but
+        the caller are refused (`ci_token_restricted`, `break_glass_restricted`, `forbidden`).
+
+        The token value is in this answer only; no other operation returns it. The answer is never cached
+        (`Cache-Control: no-store`). A retry with the same `Idempotency-Key` answers `409 token_already_issued` with
+        the `tokenId`, because the value is not stored.
+      x-trove-permission:
+        authenticated: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: The token with its value.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Cache-Control:
+              description: '`no-store`: the answer holds a secret or must not be reused.'
+              schema:
+                type: string
+                enum: [no-store]
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    get:
+      operationId: listTokens
+      tags: [tokens]
+      summary: List tokens
+      description: |
+        Tokens newest first (R-AUTH-028). A caller without `tokens:read` sees its own tokens only and `owner` is forced
+        to `me`. The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
+        (R-API-010) over the token `id`.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: owner
+          in: query
+          description: "`me`, a username or `sa:<name>`."
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [pat, sat, cit]
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [active, expired, revoked, all]
+            default: active
+        - name: expiresBefore
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: expiresAfter
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: lastUsedBefore
+          in: query
+          description: Finds stale tokens. Last-use tracking is not recorded yet, so a token that was never used has no `lastUsedAt`.
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of tokens.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/tokens/current:
+    get:
+      operationId: getCurrentToken
+      tags: [tokens]
+      summary: Read the token that authenticates the request
+      description: |
+        The token's expiry and scope (R-AUTH-028). A session answers `404 not_a_token`.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: revokeCurrentToken
+      tags: [tokens]
+      summary: Revoke the token that authenticates the request
+      description: |
+        Revokes the presenting token of any type, a CI token included, with reason `owner` (R-AUTH-029). Tokens derived
+        from it are revoked with it. A session answers `404 not_a_token`.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "204":
+          description: The token is revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/tokens/current/rotate:
+    post:
+      operationId: rotateCurrentToken
+      tags: [tokens]
+      summary: Rotate the token that authenticates the request
+      description: |
+        Only a token created with `selfRotatable: true` may do this (`403 forbidden` otherwise). The answer holds the
+        new value and is never cached (R-AUTH-030).
+      x-trove-permission:
+        authenticated: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateRequest"
+      responses:
+        "201":
+          description: The new token with its value.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Cache-Control:
+              description: '`no-store`: the answer holds a secret or must not be reused.'
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/tokens/revoke:
+    post:
+      operationId: revokeTokenByValue
+      tags: [tokens]
+      summary: Revoke a token by its value
+      description: |
+        For finders of a leaked token, secret scanners and holders of a stale value; no authentication is needed
+        (R-AUTH-029, Q-AUTH-6). The reason is recorded as `leaked`, with the caller's address, and the revocation
+        follows `derived_from` and `rotated_from`. The answer does not tell whether the token existed, except to an
+        administrator, who receives `200` with the token's `id` and `owner`. A value that fails the syntax check
+        answers `400`. Rate-limited per R-AUTH-038.
+      x-trove-permission:
+        public: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeByValueRequest"
+      responses:
+        "202":
+          description: Accepted; the token, if it existed, is revoked.
+        "200":
+          description: The token existed and is revoked; shown to an administrator only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokedToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/tokens/{id}:
+    get:
+      operationId: getToken
+      tags: [tokens]
+      summary: Read a token
+      description: |
+        One token (R-AUTH-028). A token the caller may not see answers `404`, like a missing one.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            x-trove-reserved-names: [current, revoke]
+      responses:
+        "200":
+          description: The token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: revokeToken
+      tags: [tokens]
+      summary: Revoke a token
+      description: |
+        The owner, an administrator, a holder of `tokens:revoke` and (P1) an owner of the service account may revoke
+        (R-AUTH-029). Revoking an ended token answers `204` too. A token the caller may not revoke answers `404`.
+        Derived tokens are revoked with it (reason `parent_revoked`).
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            x-trove-reserved-names: [current, revoke]
+      responses:
+        "204":
+          description: The token is revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/tokens/{id}/rotate:
+    post:
+      operationId: rotateToken
+      tags: [tokens]
+      summary: Rotate a token
+      description: |
+        Replaces the secret and keeps description, scope and owner (R-AUTH-030). A PAT only by its owner; a SAT by an
+        administrator or under the derivation rule. Another user's PAT answers `403 forbidden`, even for an
+        administrator. `overlapSeconds` keeps the old value valid for that long (0 revokes it with reason `rotated`).
+        The answer holds the new value and is never cached.
+      x-trove-permission:
+        authenticated: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            x-trove-reserved-names: [current, revoke]
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateRequest"
+      responses:
+        "201":
+          description: The new token with its value.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Cache-Control:
+              description: '`no-store`: the answer holds a secret or must not be reused.'
+              schema:
+                type: string
+                enum: [no-store]
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/me/tokens:
+    delete:
+      operationId: revokeOwnTokens
+      tags: [tokens]
+      summary: Revoke all own tokens
+      description: |
+        Revokes every active token of the caller with reason `owner` (R-AUTH-029).
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "204":
+          description: The tokens are revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/tokens:
+    delete:
+      operationId: revokeUserTokens
+      tags: [tokens]
+      summary: Revoke all tokens of a user
+      description: |
+        Revokes every active token of the user with reason `admin` (R-AUTH-029).
+      x-trove-permission:
+        permission: tokens:revoke
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "204":
+          description: The tokens are revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/service-accounts/{name}/tokens:
+    post:
+      operationId: createServiceAccountToken
+      tags: [tokens]
+      summary: Create a service-account token
+      description: |
+        Creates a SAT (R-AUTH-027). The caller is an administrator (a session with recent authentication, or a token
+        with `admin: true`) or a SAT of the same account under the derivation rule. A non-expiring token
+        (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`. The value is in this
+        answer only and the answer is never cached.
+      x-trove-permission:
+        authenticated: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: The token with its value.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Cache-Control:
+              description: '`no-store`: the answer holds a secret or must not be reused.'
+              schema:
+                type: string
+                enum: [no-store]
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: revokeServiceAccountTokens
+      tags: [tokens]
+      summary: Revoke all tokens of a service account
+      description: |
+        Revokes every active token of the account with reason `admin` (R-AUTH-029).
+      x-trove-permission:
+        permission: tokens:revoke
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The tokens are revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/settings/auth:
+    get:
+      operationId: getAuthSettings
+      tags: [auth-settings]
+      summary: Read the runtime authentication settings
+      description: |
+        The effective runtime values, the YAML ceilings they are bound by, and read-only status: providers with their
+        discovery state, the break-glass account, session timeouts and the client switches (R-AUTH-040). `ETag` is the
+        tag for `PATCH`.
+      x-trove-permission:
+        permission: settings:read
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The settings.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSettings"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateAuthSettings
+      tags: [auth-settings]
+      summary: Change the runtime authentication settings
+      description: |
+        JSON merge patch of `anonymousAccess` and the token lifetimes (R-AUTH-040). Each value must be at most its YAML
+        ceiling (`400 exceeds_ceiling`) and each default at most its maximum (`400 default_above_maximum`); anonymous
+        access while the ceiling forbids it answers `409 anonymous_not_allowed`.  A session needs a recent authentication (`401 reauthentication_required`). The change is in force on
+        every replica within the revocation bound and writes `settings.auth.changed`.
+      x-trove-permission:
+        permission: settings:write
+      x-trove-if-match: required
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/AuthSettingsPatch"
+      responses:
+        "200":
+          description: The settings after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 identity
   #
   # >>> M1 login
+  /api/v1/auth/login-options:
+    get:
+      operationId: getLoginOptions
+      tags: [auth]
+      summary: Read what the sign-in screen offers
+      description: |
+        The sign-in screen renders only from this answer (R-AUTH-009): the providers in configuration order, whether
+        the local break-glass form is offered, whether anonymous access is on, and the provider to redirect to at once.
+        It names no issuer, client ID or error detail.
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The options.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginOptions"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/auth/whoami:
+    get:
+      operationId: getWhoami
+      tags: [auth]
+      summary: Read the caller's principal and credential
+      description: |
+        The principal and the credential that proved it, for any credential (R-AUTH-028, R-API-021). `credential.type`
+        is `pat`, `sat`, `cit` or `session`; `tokenId`, `scope` and `expiresAt` describe a token and are
+        `null` for a session. An anonymous caller answers `401`, so the UI learns whether to start the application or
+        the sign-in.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Whoami"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/me/sessions:
+    get:
+      operationId: listOwnSessions
+      tags: [sessions]
+      summary: List the caller's active sessions
+      description: |
+        The live UI sessions of the caller, newest first, `current` marking the one that made this request
+        (R-AUTH-010). At most `auth.sessions.max_per_user` exist, so the list is one page. A service account or CI
+        token answers `403`.
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "200":
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: endOwnSessions
+      tags: [sessions]
+      summary: End all of the caller's sessions
+      description: |
+        Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010).
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: keepCurrent
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "204":
+          description: The sessions are ended.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/me/sessions/{id}:
+    delete:
+      operationId: endOwnSession
+      tags: [sessions]
+      summary: End one of the caller's sessions
+      description: |
+        Ends a session of the caller; another user's session, an ended one and an unknown ID answer `404` (R-AUTH-010).
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The session is ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/sessions:
+    get:
+      operationId: listUserSessions
+      tags: [sessions]
+      summary: List a user's active sessions
+      description: |
+        The live UI sessions of a user, newest first (R-AUTH-010).
+      x-trove-permission:
+        permission: identities:read
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "200":
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: endUserSessions
+      tags: [sessions]
+      summary: End all sessions of a user
+      description: |
+        Ends every session of the user with reason `revoked` and writes `auth.session.ended` (R-AUTH-010).
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "204":
+          description: The sessions are ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/me/preferences:
+    get:
+      operationId: getPreferences
+      tags: [preferences]
+      summary: Read the caller's UI preferences
+      description: |
+        A user who never saved preferences has the defaults at revision 1 (R-API-021). `ETag` is the revision. Service
+        accounts and CI tokens answer `403`.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The preferences.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preferences"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updatePreferences
+      tags: [preferences]
+      summary: Change the caller's UI preferences
+      description: |
+        JSON merge patch with `If-Match` (R-API-012, R-API-013); `null` resets a member to its default.
+      x-trove-permission:
+        authenticated: true
+      x-trove-if-match: required
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/PreferencesPatch"
+      responses:
+        "200":
+          description: The preferences after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preferences"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M1 login
   #
   # >>> M1 authz
@@ -2434,9 +4437,909 @@ components:
     # <<< M1 api
     #
     # >>> M1 identity
+    UserIdentity:
+      type: object
+      description: The link of a user to an identity provider (R-AUTH-007).
+      required: [provider, linked]
+      properties:
+        provider:
+          type: string
+          description: The provider ID.
+        linked:
+          type: boolean
+          description: "`false` for a pending link that the user's first login at the provider completes."
+    UserGroupMembership:
+      type: object
+      required: [name, source]
+      properties:
+        name:
+          type: string
+        source:
+          type: string
+          description: "`manual`, `auto`, `scim` or `oidc:<providerId>` (R-AUTH-018)."
+          examples: ["oidc:corp"]
+    GroupClaimMissing:
+      type: object
+      description: Set while the user's last login carried no usable group claim (R-AUTH-008).
+      required: [provider, reason]
+      properties:
+        provider:
+          type: string
+        reason:
+          type: string
+          enum: [absent, wrong_type, overage]
+    User:
+      type: object
+      description: A user (R-AUTH-016). `isAdmin`, `adminVia` and `lockedUntil` are derived and read only.
+      required: [id, username, email, emailVerified, displayName, origin, status, disabledReason, isAdmin, adminVia,
+                 identities, groups, groupClaimMissing, lockedUntil, lastLoginAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: [string, "null"]
+        emailVerified:
+          type: boolean
+        displayName:
+          type: [string, "null"]
+        origin:
+          type: string
+          enum: [jit, admin, scim, system]
+        status:
+          type: string
+          enum: [active, disabled]
+        disabledReason:
+          type: [string, "null"]
+          description: "`admin`, `dormant` or `scim` while the user is disabled."
+        isAdmin:
+          type: boolean
+        adminVia:
+          type: array
+          description: "Why the user is an administrator: `direct`, `group:<name>` or `break-glass`."
+          items:
+            type: string
+        identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserIdentity"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserGroupMembership"
+        groupClaimMissing:
+          oneOf:
+            - $ref: "#/components/schemas/GroupClaimMissing"
+            - type: "null"
+        lockedUntil:
+          type: [string, "null"]
+          format: date-time
+          description: The end of the lockout of the break-glass account while it is in force (R-AUTH-038).
+        lastLoginAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      example:
+        id: 0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a10
+        username: alice
+        email: alice@example.com
+        emailVerified: true
+        displayName: Alice Example
+        origin: jit
+        status: active
+        disabledReason: null
+        isAdmin: false
+        adminVia: []
+        identities: [{provider: corp, linked: true}]
+        groups: [{name: team-web, source: "oidc:corp"}]
+        groupClaimMissing: null
+        lockedUntil: null
+        lastLoginAt: "2026-10-28T09:12:00Z"
+        createdAt: "2026-09-01T08:00:00Z"
+    UserList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    PendingIdentity:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          description: A provider ID of `auth.oidc.providers`.
+        subject:
+          type: "null"
+          description: "Always `null`: a pending link is completed by the first login (R-AUTH-007)."
+    NewUser:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+          description: Matches `^[a-z0-9][a-z0-9._@+-]{0,127}$` and is not reserved (R-AUTH-007).
+        email:
+          type: [string, "null"]
+        displayName:
+          type: [string, "null"]
+        identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/PendingIdentity"
+      example:
+        username: bob
+        email: bob@example.com
+        displayName: Bob Example
+        identities: [{provider: corp, subject: null}]
+    UserPatch:
+      type: object
+      description: The members an administrator can correct. The read-only members of `User` are accepted and ignored.
+      properties:
+        email:
+          type: [string, "null"]
+        displayName:
+          type: [string, "null"]
+        identities:
+          type: array
+          description: Replaces the pending links; a linked identity stays.
+          items:
+            $ref: "#/components/schemas/PendingIdentity"
+    DisableRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 1024
+          description: Recorded in the audit event.
+        revokeTokens:
+          type: boolean
+          description: Revoke the principal's tokens with reason `principal_disabled`. Default `true` for a user, `false` for a service account.
+    MembershipChange:
+      type: object
+      properties:
+        add:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        remove:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+      example:
+        add: [team-web]
+        remove: [old]
+    UserGroups:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserGroupMembership"
+    Group:
+      type: object
+      description: A group (R-AUTH-018). `roles` and `memberCount` are read only.
+      required: [id, name, description, autoJoin, origin, memberCount, roles, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        autoJoin:
+          type: boolean
+        origin:
+          type: string
+          enum: [admin, oidc, scim]
+        memberCount:
+          type: integer
+          minimum: 0
+        roles:
+          type: array
+          description: The system roles bound to the group; empty on the list.
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+      example:
+        id: 0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a11
+        name: team-web
+        description: Web team
+        autoJoin: false
+        origin: admin
+        memberCount: 3
+        roles: []
+        createdAt: "2026-09-01T08:00:00Z"
+    GroupList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    NewGroup:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Matches `^[a-z0-9][a-z0-9._-]{0,127}$`.
+        description:
+          type: string
+        autoJoin:
+          type: boolean
+        members:
+          type: array
+          maxItems: 1000
+          description: Usernames and `sa:<name>`.
+          items:
+            type: string
+      example:
+        name: team-web
+        description: Web team
+        autoJoin: false
+        members: [alice, "sa:ci-bot"]
+    GroupPatch:
+      type: object
+      description: "`name` renames the group. The read-only members of `Group` are accepted and ignored."
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        autoJoin:
+          type: boolean
+    GroupMember:
+      type: object
+      required: [principal, kind, sources]
+      properties:
+        principal:
+          type: string
+          description: The username, or `sa:<name>` for a service account.
+        kind:
+          type: string
+          enum: [user, service_account]
+        sources:
+          type: array
+          description: Empty for a member the request removed that holds no other source.
+          items:
+            type: string
+      example:
+        principal: alice
+        kind: user
+        sources: [manual, "oidc:corp"]
+    GroupMemberList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupMember"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    GroupMembersChange:
+      type: object
+      properties:
+        add:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+        remove:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+        source:
+          type: string
+          enum: [manual, auto]
+          default: manual
+      example:
+        add: [bob]
+        remove: ["sa:old-bot"]
+    ServiceAccount:
+      type: object
+      description: A service account (R-AUTH-020).
+      required: [id, name, description, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        createdAt:
+          type: string
+          format: date-time
+      example:
+        id: 0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a12
+        name: ci-bot
+        description: Deploy jobs
+        status: active
+        createdAt: "2026-09-01T08:00:00Z"
+    ServiceAccountList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceAccount"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    NewServiceAccount:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Matches `^[a-z0-9][a-z0-9-]{1,62}$`.
+        description:
+          type: string
+      example:
+        name: ci-bot
+        description: Deploy jobs
+    ServiceAccountPatch:
+      type: object
+      description: The read-only members of `ServiceAccount` are accepted and ignored.
+      properties:
+        description:
+          type: string
+    TokenScopePatterns:
+      type: object
+      properties:
+        include:
+          type: array
+          items:
+            type: string
+        exclude:
+          type: array
+          items:
+            type: string
+    TokenScopeGrant:
+      type: object
+      required: [repositories, actions]
+      properties:
+        repositories:
+          type: array
+          items:
+            type: string
+        packages:
+          $ref: "#/components/schemas/TokenScopePatterns"
+        paths:
+          $ref: "#/components/schemas/TokenScopePatterns"
+        actions:
+          type: array
+          items:
+            type: string
+            enum: [read, annotate, deploy, overwrite, delete, manage]
+    TokenScope:
+      type: object
+      description: The ceiling a token puts on its owner's rights (R-AUTH-024). It never grants anything.
+      properties:
+        inherit:
+          type: boolean
+          description: All repository rights of the owner. Exclusive with `repositories`.
+        admin:
+          type: boolean
+          description: The token exercises the owner's system roles.
+        repositories:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TokenScopeGrant"
+        system:
+          type: array
+          description: System capabilities (R-AUTHZ-010), from the closed list of R-AUTH-025.
+          items:
+            type: string
+        endpoints:
+          type: array
+          description: The endpoint names the token is valid on (R-EP-011); empty is unbound.
+          items:
+            type: string
+      example:
+        inherit: true
+        admin: false
+        repositories: []
+        system: []
+    TokenOwner:
+      type: object
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [user, service_account, ci]
+        name:
+          type: string
+    CreateTokenRequest:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        ttlSeconds:
+          type: integer
+          minimum: 0
+          description: The lifetime. `0` asks for a non-expiring service-account token. Exclusive with `expiresAt`.
+        expiresAt:
+          type: string
+          format: date-time
+        scope:
+          $ref: "#/components/schemas/TokenScope"
+        selfRotatable:
+          type: boolean
+          default: false
+        owner:
+          type: string
+          description: Only the caller's own name is accepted; there is no impersonation (Q-AUTH-7).
+      example:
+        description: laptop npm
+        ttlSeconds: 2592000
+        scope: {inherit: true}
+        selfRotatable: false
+    Token:
+      type: object
+      description: A token as a list or an inspection shows it (R-AUTH-028). Neither the value nor its hash is part of it.
+      required: [id, type, hint, owner, description, scope, createdAt, createdBy, createdVia, expiresAt, lastUsedAt,
+                 lastUsedAddr, state, revokedAt, revokedBy, revocationReason, rotatedFrom, selfRotatable, ciContext]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [pat, sat, cit]
+        hint:
+          type: string
+          description: The prefix and the first characters of the value, for recognising a token.
+        owner:
+          $ref: "#/components/schemas/TokenOwner"
+        description:
+          type: string
+        scope:
+          $ref: "#/components/schemas/TokenScope"
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: [string, "null"]
+          description: The ID of the principal that created the token.
+        createdVia:
+          type: string
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+        lastUsedAddr:
+          type: [string, "null"]
+        state:
+          type: string
+          enum: [active, expired, revoked]
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+        revokedBy:
+          type: [string, "null"]
+          description: The ID of the principal that revoked the token.
+        revocationReason:
+          type: [string, "null"]
+        rotatedFrom:
+          type: [string, "null"]
+          format: uuid
+        selfRotatable:
+          type: boolean
+        ciContext:
+          type: [object, "null"]
+          additionalProperties: true
+    TokenCreated:
+      type: object
+      description: |
+        A token with its value. The value is in this answer only; the answer is sent with `Cache-Control: no-store`.
+      required: [id, type, token, hint, owner, description, scope, createdAt, expiresAt, selfRotatable]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [pat, sat]
+        token:
+          type: string
+          description: The secret. Shown once.
+        hint:
+          type: string
+        owner:
+          $ref: "#/components/schemas/TokenOwner"
+        description:
+          type: string
+        scope:
+          $ref: "#/components/schemas/TokenScope"
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        selfRotatable:
+          type: boolean
+        rotatedFrom:
+          type: [string, "null"]
+          format: uuid
+          description: The predecessor of a rotation; `null` for a new token.
+      example:
+        id: 0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e11
+        type: pat
+        token: trv_pat_3kQ9xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        hint: trv_pat_3kQ9
+        owner: {kind: user, name: alice}
+        description: laptop npm
+        scope: {inherit: true, admin: false, repositories: [], system: []}
+        createdAt: "2026-10-28T10:00:00Z"
+        expiresAt: "2026-11-27T10:00:00Z"
+        selfRotatable: false
+        rotatedFrom: null
+    TokenList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Token"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+    RotateRequest:
+      type: object
+      properties:
+        overlapSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          default: 0
+          description: Keeps the old value valid that long. `0` revokes it with reason `rotated`.
+    RevokeByValueRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: The token value, `trv_…`.
+    RevokedToken:
+      type: object
+      description: What an administrator receives from a revocation by value.
+      required: [id, owner]
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner:
+          type: string
+          description: The username, or `sa:<name>`.
+    AuthSettingsTokens:
+      type: object
+      required: [pat, sat, expiryNoticeSeconds]
+      properties:
+        pat:
+          $ref: "#/components/schemas/AuthSettingsLifetimes"
+        sat:
+          $ref: "#/components/schemas/AuthSettingsLifetimes"
+        expiryNoticeSeconds:
+          type: integer
+          minimum: 60
+    AuthSettingsLifetimes:
+      type: object
+      required: [defaultTTLSeconds, maxTTLSeconds]
+      properties:
+        defaultTTLSeconds:
+          type: integer
+          minimum: 60
+        maxTTLSeconds:
+          type: integer
+          minimum: 60
+    AuthSettingsCeilings:
+      type: object
+      description: The YAML values the runtime values are bound by.
+      required: [anonymousAllowed, tokens]
+      properties:
+        anonymousAllowed:
+          type: boolean
+          description: "`auth.anonymous.allowed`: when false, anonymous access cannot be switched on."
+        tokens:
+          $ref: "#/components/schemas/AuthSettingsTokens"
+    AuthSettingsProvider:
+      type: object
+      required: [id, displayName, available]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        available:
+          type: boolean
+          description: Whether the replica that answers holds the provider's discovery document.
+    AuthSettingsStatus:
+      type: object
+      description: Read-only status (R-AUTH-040). The break-glass password and the issuer details are not part of it.
+      required: [providers, breakGlass, sessions, clients]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthSettingsProvider"
+        breakGlass:
+          type: object
+          required: [enabled, lockedUntil]
+          properties:
+            enabled:
+              type: boolean
+            lockedUntil:
+              type: [string, "null"]
+              format: date-time
+        sessions:
+          type: object
+          required: [idleTimeoutSeconds, absoluteTimeoutSeconds, maxPerUser, recentAuthWindowSeconds]
+          properties:
+            idleTimeoutSeconds:
+              type: integer
+            absoluteTimeoutSeconds:
+              type: integer
+            maxPerUser:
+              type: integer
+            recentAuthWindowSeconds:
+              type: integer
+        clients:
+          type: object
+          required: [basicEnabled]
+          properties:
+            basicEnabled:
+              type: boolean
+    AuthSettings:
+      type: object
+      description: |
+        The runtime authentication settings (R-AUTH-040): the effective runtime values, the YAML ceilings they
+        are bound by, and read-only status. The runtime members have the shape `PATCH` takes, so a body
+        obtained by `GET` can be sent back; `ceilings` and `status` are ignored then.
+      required: [anonymousAccess, tokens, ceilings, status]
+      properties:
+        anonymousAccess:
+          type: boolean
+          description: Whether anonymous access is in force (the runtime switch within the ceiling).
+        tokens:
+          $ref: "#/components/schemas/AuthSettingsTokens"
+        ceilings:
+          $ref: "#/components/schemas/AuthSettingsCeilings"
+        status:
+          $ref: "#/components/schemas/AuthSettingsStatus"
+      example:
+        anonymousAccess: false
+        tokens:
+          pat: {defaultTTLSeconds: 7776000, maxTTLSeconds: 31536000}
+          sat: {defaultTTLSeconds: 7776000, maxTTLSeconds: 31536000}
+          expiryNoticeSeconds: 604800
+        ceilings:
+          anonymousAllowed: true
+          tokens:
+            pat: {defaultTTLSeconds: 7776000, maxTTLSeconds: 31536000}
+            sat: {defaultTTLSeconds: 7776000, maxTTLSeconds: 31536000}
+            expiryNoticeSeconds: 604800
+        status:
+          providers: [{id: corp, displayName: Corporate SSO, available: true}]
+          breakGlass: {enabled: true, lockedUntil: null}
+          sessions: {idleTimeoutSeconds: 3600, absoluteTimeoutSeconds: 43200, maxPerUser: 20, recentAuthWindowSeconds: 3600}
+          clients: {basicEnabled: true}
+    AuthSettingsPatch:
+      type: object
+      description: Only the runtime members are writable; `ceilings` and `status` are accepted and ignored. A lifetime is at least 60 seconds.
+      properties:
+        anonymousAccess:
+          type: boolean
+        tokens:
+          type: object
+          properties:
+            pat:
+              type: object
+              properties:
+                defaultTTLSeconds:
+                  type: integer
+                maxTTLSeconds:
+                  type: integer
+            sat:
+              type: object
+              properties:
+                defaultTTLSeconds:
+                  type: integer
+                maxTTLSeconds:
+                  type: integer
+            expiryNoticeSeconds:
+              type: integer
     # <<< M1 identity
     #
     # >>> M1 login
+    LoginProvider:
+      type: object
+      required: [id, displayName, startUrl, available]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        startUrl:
+          type: string
+          description: Server-relative start URL, `/auth/oidc/{providerId}/start`.
+        available:
+          type: boolean
+          description: Whether the replica that answers holds the provider's discovery document.
+    LoginOptions:
+      type: object
+      description: What the sign-in screen offers (R-AUTH-009). It names no issuer, client ID or error detail.
+      required: [providers, localLogin, anonymousAccess, autoRedirect]
+      properties:
+        providers:
+          type: array
+          description: In configuration order (`order`, then ID).
+          items:
+            $ref: "#/components/schemas/LoginProvider"
+        localLogin:
+          type: boolean
+          description: The break-glass form is offered on the page; it is reachable with `?local=1` regardless.
+        anonymousAccess:
+          type: boolean
+        autoRedirect:
+          type: [string, "null"]
+          description: The provider ID to redirect to at once; `null` shows the buttons.
+      example:
+        providers: [{id: corp, displayName: Corporate SSO, startUrl: /auth/oidc/corp/start, available: true}]
+        localLogin: false
+        anonymousAccess: false
+        autoRedirect: corp
+    WhoamiPrincipal:
+      type: object
+      required: [kind, name, id]
+      properties:
+        kind:
+          type: string
+          enum: [user, service_account, ci, break_glass]
+        name:
+          type: string
+        id:
+          type: string
+          format: uuid
+        groups:
+          type: array
+          description: The names of the groups the principal belongs to, resolved for this request.
+          items:
+            type: string
+    WhoamiCredential:
+      type: object
+      required: [type, tokenId, scope, expiresAt]
+      properties:
+        type:
+          type: string
+          enum: [pat, sat, cit, session]
+        tokenId:
+          type: [string, "null"]
+          format: uuid
+        scope:
+          oneOf:
+            - $ref: "#/components/schemas/TokenScope"
+            - type: "null"
+          description: The token's scope; `null` for a session.
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: The token's expiry; `null` for a session and for a non-expiring token.
+    Whoami:
+      type: object
+      required: [principal, credential]
+      properties:
+        principal:
+          $ref: "#/components/schemas/WhoamiPrincipal"
+        credential:
+          $ref: "#/components/schemas/WhoamiCredential"
+      example:
+        principal: {kind: user, name: alice, id: 0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a10, groups: [team-web]}
+        credential: {type: pat, tokenId: 0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e11, scope: {inherit: true, admin: false, repositories: [], system: []}, expiresAt: "2026-11-27T10:00:00Z"}
+    Session:
+      type: object
+      required: [id, createdAt, lastSeenAt, createdAddr, userAgent, authMethod, providerId, current]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        createdAddr:
+          type: [string, "null"]
+        userAgent:
+          type: [string, "null"]
+        authMethod:
+          type: string
+          enum: [oidc, break_glass]
+        providerId:
+          type: [string, "null"]
+        current:
+          type: boolean
+          description: Whether the session made this request. Always `false` in a list of another user's sessions.
+    SessionList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        nextCursor:
+          type: [string, "null"]
+          description: "Always `null`: a user holds at most `auth.sessions.max_per_user` sessions."
+    Preferences:
+      type: object
+      description: The caller's UI preferences (R-API-021). `revision` is the ETag number.
+      required: [locale, theme, keyboardShortcuts, projectFilter, revision]
+      properties:
+        locale:
+          type: [string, "null"]
+          description: "`en`, `de` or `null` (the browser decides)."
+        theme:
+          type: [string, "null"]
+          description: "`light`, `dark` or `null` (the system decides)."
+        keyboardShortcuts:
+          type: boolean
+        projectFilter:
+          type: [string, "null"]
+        revision:
+          type: integer
+          minimum: 1
+      example: {locale: de, theme: null, keyboardShortcuts: false, projectFilter: null, revision: 2}
+    PreferencesPatch:
+      type: object
+      description: "`null` resets a member to its default. `revision` is accepted and ignored."
+      properties:
+        locale:
+          type: [string, "null"]
+          description: "`en`, `de` or `null`."
+        theme:
+          type: [string, "null"]
+          description: "`light`, `dark` or `null`."
+        keyboardShortcuts:
+          type: [boolean, "null"]
+        projectFilter:
+          type: [string, "null"]
     # <<< M1 login
     #
     # >>> M1 authz

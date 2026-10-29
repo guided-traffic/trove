@@ -95,6 +95,13 @@ type Options struct {
 	// M1: store, job queue, key ring, audit (services.go).
 	API Services
 	// <<< M1 api
+
+	// >>> M1 identity
+	// Auth holds the services of the identity and login operations: users,
+	// groups, service accounts, tokens, sessions, login options, the runtime
+	// authentication settings and the user preferences (auth_services.go).
+	Auth AuthServices
+	// <<< M1 identity
 }
 
 // Server implements gen.ServerInterface.

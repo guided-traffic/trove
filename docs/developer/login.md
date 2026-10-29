@@ -2,7 +2,7 @@
 
 The browser login through OpenID Connect, the server-side UI session, CSRF, logout and the break-glass account (work package
 WP1.1). Requirements: R-AUTH-003 to R-AUTH-015 and R-AUTH-041 to R-AUTH-043 in
-[identity-and-authentication.md](../spec/identity-and-authentication.md); decisions Q-AUTH-30 to Q-AUTH-39 on the same page.
+[identity-and-authentication.md](../spec/identity-and-authentication.md); decisions Q-AUTH-30 to Q-AUTH-40 on the same page (the API operations: Q-AUTH-41 to Q-AUTH-48).
 The security view is [security/login-and-sessions.md](../security/login-and-sessions.md).
 
 What to have in mind first:
@@ -73,6 +73,28 @@ What to have in mind first:
 | `principal.Metrics` | identity provides | One instance per replica (`App.authMetrics`) owns `trove_auth_attempts_total`, `trove_auth_ratelimited_total` and `trove_auth_cache_bypassed_total`; the session store and the login count into it. |
 | `auth.revocation_bound`, `auth.tokens.cache_ttl`, `auth.break_glass.username` | identity's keys | The session store reads the first two; the break-glass username is the reserved name of the provisioner and the manager. |
 
+## Management API
+
+The operations that belong to the login are in [sessions_api.go](../../internal/api/v1/sessions_api.go) and
+[users_api.go](../../internal/api/v1/users_api.go) (`UnlockBreakGlass`); the document holds them between the `login` markers. The other
+operations of [identity.md](identity.md#management-api) apply to the signed-in user too.
+
+| operationId | Method and path | `x-trove-permission` |
+|---|---|---|
+| `getLoginOptions` | `GET /api/v1/auth/login-options` | public; `oidc.Service.LoginOptions` plus `anonymousAccess` from the cached settings |
+| `getWhoami` | `GET /api/v1/auth/whoami` | authenticated; the principal, its groups and the credential (a token's scope and expiry come from its row, a session shows `type: session`) |
+| `listOwnSessions` | `GET /api/v1/users/me/sessions` | authenticated (a user or the break-glass account); `current` is the session of the request |
+| `endOwnSession` | `DELETE /api/v1/users/me/sessions/{id}` | authenticated; `404` for a session of another user |
+| `endOwnSessions` | `DELETE /api/v1/users/me/sessions?keepCurrent=` | authenticated |
+| `listUserSessions` | `GET /api/v1/users/{username}/sessions` | `identities:read` |
+| `endUserSessions` | `DELETE /api/v1/users/{username}/sessions` | `identities:write` (`Store.EndPrincipalSessions`) |
+| `unlockBreakGlass` | `POST /api/v1/users/{username}/unlock` | role `admin` (`oidc.Unlock`, shared with `trove admin break-glass unlock`) |
+| `getPreferences`, `updatePreferences` | `GET`, `PATCH /api/v1/users/me/preferences` | authenticated (a user); `ETag` is `user_preferences.revision`, a user without a row has revision 1 |
+
+`session.Store` gained `EndOne` and `EndExcept` (queries `EndSessionOfPrincipal` and `EndSessionsOfPrincipalExcept` in
+[login.sql](../../internal/meta/postgres/queries/login.sql)); each ends in one transaction with the change message of the area `auth`
+and `auth.session.ended`. `v1.SessionService` and `v1.LoginService` are the narrow interfaces the handlers hold.
+
 ## Configuration
 
 The keys and their defaults are the YAML blocks of R-AUTH-004, R-AUTH-007, R-AUTH-008, R-AUTH-010, R-AUTH-014 and R-AUTH-038,
@@ -107,6 +129,7 @@ so `trove admin config validate` does not report it.
 |---|---|---|
 | Unit | `internal/auth/oidc`, `internal/auth/session`, `internal/config/login_test.go`, `internal/app/wire_login_test.go` | JWS and key confusion, the ID-token table, claim mapping and group rules, `return_to`, Argon2id and the plaintext rule, slots; cookies, CSRF, change payloads; configuration rules; the route table |
 | Integration | [test/integration/login](../../test/integration/login) | A fake OpenID Provider over TLS ([fakeidp_test.go](../../test/integration/login/fakeidp_test.go)) with switches for every failure of R-AUTH-006, and two or three in-process replicas behind a dispatcher that sends every request to the next one, without Valkey; a fake provisioner writes the principal rows (the real one is covered by [test/integration/identity](../../test/integration/identity)); the break-glass and identity-command tests ([admin_test.go](../../test/integration/login/admin_test.go)) run `trove admin` as a binary |
+| Integration, HTTP | [api_test.go](../../test/integration/login/api_test.go), [api_env_test.go](../../test/integration/login/api_env_test.go) | with `env.realAPI` the replicas mount the real management API (the production chain, the real stage with the session validator, the real decision point; [test/integration/idapi](../../test/integration/idapi)) instead of the two stand-in routes: the login journey over HTTP on alternating replicas with no Valkey (login options, sign in, `whoami`, a write with and without the CSRF header, the session list and its ends, recent authentication, logout) and the break-glass unlock through the API; every answer is validated against the document |
 
 Run the integration area with the stack's environment, as [build-and-test.md](build-and-test.md) describes:
 `go test -count=1 -tags integration ./test/integration/login/...`.

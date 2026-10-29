@@ -35,6 +35,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/principal"
@@ -70,6 +71,13 @@ type env struct {
 	idp   *fakeIDP
 	prov  *fakeProvisioner
 	audit *spy
+
+	// realAPI mounts the management API (internal/api/v1) behind the real
+	// authentication stage on /api/v1/ instead of the two stand-in routes; set it
+	// before start (api_test.go).
+	realAPI    bool
+	validator  *apitest.Validator
+	components []apiParts
 
 	secretFile string
 	edge       *httptest.Server
@@ -289,30 +297,34 @@ func (e *env) newReplica(name string, auth config.Auth, wait bool) *replica {
 	rep.mux.HandleFunc(oidc.RouteCallback, login.HandleCallback)
 	rep.mux.HandleFunc(oidc.RouteLogout, login.HandleLogout)
 	rep.mux.HandleFunc(oidc.RouteLocalLogin, login.HandleLocalLogin)
-	// The authentication stage of the identity area resolves the cookie through
-	// session.Validator and applies CheckCSRF; these two routes stand in for it.
-	rep.mux.HandleFunc("GET /api/v1/auth/whoami", func(w http.ResponseWriter, r *http.Request) {
-		si, err := store.Validate(r.Context(), session.CookieValue(r, session.CookieSession))
-		if err != nil {
-			errs.Write(w, r, session.Problem(err), "", quiet)
-			return
-		}
-		writeJSON(w, map[string]any{"id": si.Principal.ID, "name": si.Principal.Name, "kind": si.Principal.Kind, "session": si.ID})
-	})
-	rep.mux.HandleFunc("POST /api/v1/tokens", func(w http.ResponseWriter, r *http.Request) {
-		si, err := store.Validate(r.Context(), session.CookieValue(r, session.CookieSession))
-		if err == nil {
-			err = store.CheckCSRF(r, si)
-		}
-		if err == nil && !si.AuthenticatedWithin(auth.Sessions.RecentAuthWindow) {
-			err = session.ReauthenticationRequired()
-		}
-		if err != nil {
-			errs.Write(w, r, session.Problem(err), "", quiet)
-			return
-		}
-		w.WriteHeader(http.StatusCreated)
-	})
+	if e.realAPI {
+		rep.mux.Handle("/api/v1/", e.apiHandler(name, db, changes, caches, reg, store, login, authMetrics, auth))
+	} else {
+		// The authentication stage of the identity area resolves the cookie through
+		// session.Validator and applies CheckCSRF; these two routes stand in for it.
+		rep.mux.HandleFunc("GET /api/v1/auth/whoami", func(w http.ResponseWriter, r *http.Request) {
+			si, err := store.Validate(r.Context(), session.CookieValue(r, session.CookieSession))
+			if err != nil {
+				errs.Write(w, r, session.Problem(err), "", quiet)
+				return
+			}
+			writeJSON(w, map[string]any{"id": si.Principal.ID, "name": si.Principal.Name, "kind": si.Principal.Kind, "session": si.ID})
+		})
+		rep.mux.HandleFunc("POST /api/v1/tokens", func(w http.ResponseWriter, r *http.Request) {
+			si, err := store.Validate(r.Context(), session.CookieValue(r, session.CookieSession))
+			if err == nil {
+				err = store.CheckCSRF(r, si)
+			}
+			if err == nil && !si.AuthenticatedWithin(auth.Sessions.RecentAuthWindow) {
+				err = session.ReauthenticationRequired()
+			}
+			if err != nil {
+				errs.Write(w, r, session.Problem(err), "", quiet)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+		})
+	}
 	t.Cleanup(func() {
 		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

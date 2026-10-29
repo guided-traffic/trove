@@ -102,6 +102,60 @@ func (s *Store) EndPrincipalSessions(ctx context.Context, principalID string, ac
 	return ids, err
 }
 
+// EndOne ends one live session of a principal (DELETE /users/me/sessions/{id},
+// R-AUTH-010) and reports whether there was one: a session of another principal
+// or an ended one matches nothing. reason is one of the End constants; the event
+// auth.session.ended names the actor.
+func (s *Store) EndOne(ctx context.Context, principalID, sessionID, reason string, actor audit.Actor) (bool, error) {
+	found := false
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.EndSessionOfPrincipal(ctx, q.EndSessionOfPrincipalParams{ID: sessionID, PrincipalID: principalID, Reason: reason})
+		if err != nil || len(rows) == 0 {
+			found = false
+			return err
+		}
+		found = true
+		es := []endedSession{{rows[0].ID, rows[0].SecretSha256Hex}}
+		if err := notifyEnded(s.o.Changes, tx, es); err != nil {
+			return err
+		}
+		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, principalID, []string{rows[0].ID}))
+	})
+	return found, err
+}
+
+// EndExcept ends every open session of a principal but keepID (DELETE
+// /users/me/sessions?keepCurrent=true) and returns the IDs it ended.
+func (s *Store) EndExcept(ctx context.Context, principalID, keepID, reason string, actor audit.Actor) ([]string, error) {
+	var ids []string
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.EndSessionsOfPrincipalExcept(ctx, q.EndSessionsOfPrincipalExceptParams{PrincipalID: principalID, KeepID: keepID, Reason: reason})
+		if err != nil || len(rows) == 0 {
+			ids = nil
+			return err
+		}
+		ids = make([]string, 0, len(rows))
+		es := make([]endedSession, 0, len(rows))
+		for _, r := range rows {
+			ids = append(ids, r.ID)
+			es = append(es, endedSession{r.ID, r.SecretSha256Hex})
+		}
+		if err := notifyEnded(s.o.Changes, tx, es); err != nil {
+			return err
+		}
+		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, principalID, ids))
+	})
+	return ids, err
+}
+
 // EndBreakGlass ends every open break-glass session (R-AUTH-014): a rotated
 // password (password_changed), a disabled account or trove admin break-glass
 // end-sessions (revoked).

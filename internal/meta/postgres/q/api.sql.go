@@ -83,7 +83,7 @@ func (q *Queries) DeleteExpiredIdempotencyKeys(ctx context.Context) (int64, erro
 
 const getIdempotencyKey = `-- name: GetIdempotencyKey :many
 SELECT method, route, request_sha256, response_status, response_headers::text AS response_headers,
-       response_body::text AS response_body, secret_issued_id
+       coalesce(response_body::text, '')::text AS response_body, secret_issued_id
   FROM api_idempotency_keys
  WHERE principal_id = $1::text::uuid AND idem_key = $2::text
    AND expires_at > now()

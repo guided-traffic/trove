@@ -218,6 +218,22 @@ func (c *capture) RecordTx(_ context.Context, _ meta.Tx, ev audit.Event) error {
 
 func (c *capture) Record(ctx context.Context, ev audit.Event) { _ = c.RecordTx(ctx, nil, ev) }
 
+// tee records into the capture and the audit writer.
+type tee struct {
+	capture *capture
+	writer  *audit.Writer
+}
+
+func (t tee) RecordTx(ctx context.Context, tx meta.Tx, ev audit.Event) error {
+	_ = t.capture.RecordTx(ctx, tx, ev)
+	return t.writer.RecordTx(ctx, tx, ev)
+}
+
+func (t tee) Record(ctx context.Context, ev audit.Event) {
+	t.capture.Record(ctx, ev)
+	t.writer.Record(ctx, ev)
+}
+
 func (c *capture) all() []audit.Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -251,6 +267,17 @@ type replicaOpts struct {
 	limiter auth.FailureLimiter
 	// noRecent leaves out the throttle-exemption markers.
 	noRecent bool
+	// failureBudget, when positive, gives the stage the cluster limiter
+	// auth.credential_failures of the composition root (R-AUTH-038) with that many
+	// rejected credentials per minute and address, among liveReplicas replicas.
+	failureBudget int
+	liveReplicas  int
+	// flowStarts, when positive, gives the API the cluster limiter auth.flow_starts
+	// with that many requests per minute and address.
+	flowStarts int
+	// auditDB also writes the events to the audit_event table (the real writer),
+	// next to the in-memory capture.
+	auditDB bool
 }
 
 // replica is one in-process replica: pools, change log, caches and the identity
@@ -266,6 +293,11 @@ type replica struct {
 	caches  *cache.Registry
 	fresh   *stale
 	rec     *capture
+	// recorder is what the components record into: the capture, and with
+	// replicaOpts.auditDB the audit writer as well.
+	recorder   audit.Recorder
+	writer     *audit.Writer
+	flowStarts *cluster.Limiter
 
 	principals  *principal.PGStore
 	manager     *principal.Manager
@@ -305,6 +337,19 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		t.Fatalf("Open(%s): %v", name, err)
 	}
 	t.Cleanup(r.stop)
+	r.recorder = r.rec
+	if o.auditDB {
+		store := audit.NewStore(r.db)
+		if err := store.Prepare(ctx, 365, quiet); err != nil {
+			t.Fatalf("audit partitions: %v", err)
+		}
+		r.writer, err = audit.New(audit.Options{DB: r.db, Replica: name, Config: config.Audit{AsyncBuffer: 1000}, Log: quiet, AppLog: quiet})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.writer.Start()
+		r.recorder = tee{r.rec, r.writer}
+	}
 
 	vcfg := e.vcfg
 	if o.valkey == vkDead {
@@ -341,7 +386,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	gate := principal.Gate{Fresh: r.fresh, Bound: revocationBound, Metrics: metrics}
 	r.principals = principal.NewStore(principal.StoreOptions{DB: r.db, Cache: r.caches, Gate: gate, SafetyTTL: r.tokenCfg.CacheTTL})
 	r.settings = token.NewSettingsStore(token.SettingsOptions{
-		DB: r.db, Notifier: r.changes, Recorder: r.rec, Cache: r.caches, Gate: gate, Tokens: r.tokenCfg, Anonymous: config.AuthAnonymous{Allowed: true},
+		DB: r.db, Notifier: r.changes, Recorder: r.recorder, Cache: r.caches, Gate: gate, Tokens: r.tokenCfg, Anonymous: config.AuthAnonymous{Allowed: true},
 	})
 	var recent token.RecentTokens
 	if !o.noRecent {
@@ -352,15 +397,30 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		recent = seen
 	}
 	r.tokens = token.NewService(token.ServiceOptions{
-		DB: r.db, Notifier: r.changes, Recorder: r.rec, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
+		DB: principal.Joinable{DB: r.db}, Notifier: r.changes, Recorder: r.recorder, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
 		Tokens: r.tokenCfg, Recent: recent, Metrics: metrics, Log: quiet,
 		Scope: token.ScopeOptions{SystemItem: func(s string) bool { return s == "identities:read" }},
 	})
-	r.manager = principal.NewManager(principal.ManagerOptions{DB: r.db, Notifier: r.changes, Recorder: r.rec, BreakGlassName: "breakglass"})
+	r.manager = principal.NewManager(principal.ManagerOptions{DB: principal.Joinable{DB: r.db}, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass"})
 	r.provisioner = principal.NewProvisioner(principal.ProvisionerOptions{
-		DB: r.db, Notifier: r.changes, Recorder: r.rec, BreakGlassName: "breakglass", Metrics: metrics,
+		DB: r.db, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass", Metrics: metrics,
 	})
+	if o.flowStarts > 0 {
+		ls, err := cluster.NewLimiterSet(cluster.LimiterOptions{Valkey: r.vk, Registry: prometheus.NewRegistry(), LiveReplicas: func() int { return max(1, o.liveReplicas) }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.flowStarts = ls.NewLimiter("auth.flow_starts", cluster.ScopeCluster, float64(o.flowStarts)/60, o.flowStarts)
+	}
 	limiter := o.limiter
+	if o.failureBudget > 0 {
+		live := max(1, o.liveReplicas)
+		ls, err := cluster.NewLimiterSet(cluster.LimiterOptions{Valkey: r.vk, Registry: r.reg, LiveReplicas: func() int { return live }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		limiter = ls.NewLimiter("auth.credential_failures", cluster.ScopeCluster, float64(o.failureBudget)/60, o.failureBudget)
+	}
 	if limiter == nil {
 		limiter = auth.NewLocalLimiter(300, time.Minute, nil, nil)
 	}
@@ -375,6 +435,9 @@ func (r *replica) stop() {
 	r.stopOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
+		if r.writer != nil {
+			_ = r.writer.Flush(ctx)
+		}
 		if r.changes != nil {
 			_ = r.changes.Stop(ctx)
 		}

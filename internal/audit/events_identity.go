@@ -70,7 +70,7 @@ func init() {
 	ident(EventUserRenamed, NoJournal, `{"type":"object","properties":{`+userSource+`,"from":{"type":"string"},"to":{"type":"string"}}}`)
 	ident(EventUserRenameConflict, NoJournal, `{"type":"object","properties":{`+userSource+`,"wanted":{"type":"string"}}}`)
 	ident(EventUserDisabled, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+
-		`"reason":{"type":"string"},"tokensRevoked":{"type":"integer"},"sessionsEnded":{"type":"integer"}}}`)
+		`"reason":{"type":"string"},"note":{"type":"string","maxLength":1024},"tokensRevoked":{"type":"integer"},"sessionsEnded":{"type":"integer"}}}`)
 	ident(EventUserEnabled, NoJournal, `{"type":"object","properties":{`+userSource+`}}`)
 	ident(EventUserDeleted, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+
 		`"tokensDeleted":{"type":"integer"},"sessionsEnded":{"type":"integer"},"membershipsDeleted":{"type":"integer"},"identitiesDeleted":{"type":"integer"}}}`)

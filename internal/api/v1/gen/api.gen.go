@@ -99,6 +99,84 @@ func (e EncryptionReplicaRole) Valid() bool {
 	}
 }
 
+// Defines values for GroupOrigin.
+const (
+	GroupOriginAdmin GroupOrigin = "admin"
+	GroupOriginOidc  GroupOrigin = "oidc"
+	GroupOriginScim  GroupOrigin = "scim"
+)
+
+// Valid indicates whether the value is a known member of the GroupOrigin enum.
+func (e GroupOrigin) Valid() bool {
+	switch e {
+	case GroupOriginAdmin:
+		return true
+	case GroupOriginOidc:
+		return true
+	case GroupOriginScim:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupClaimMissingReason.
+const (
+	GroupClaimMissingReasonAbsent    GroupClaimMissingReason = "absent"
+	GroupClaimMissingReasonOverage   GroupClaimMissingReason = "overage"
+	GroupClaimMissingReasonWrongType GroupClaimMissingReason = "wrong_type"
+)
+
+// Valid indicates whether the value is a known member of the GroupClaimMissingReason enum.
+func (e GroupClaimMissingReason) Valid() bool {
+	switch e {
+	case GroupClaimMissingReasonAbsent:
+		return true
+	case GroupClaimMissingReasonOverage:
+		return true
+	case GroupClaimMissingReasonWrongType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupMemberKind.
+const (
+	GroupMemberKindServiceAccount GroupMemberKind = "service_account"
+	GroupMemberKindUser           GroupMemberKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the GroupMemberKind enum.
+func (e GroupMemberKind) Valid() bool {
+	switch e {
+	case GroupMemberKindServiceAccount:
+		return true
+	case GroupMemberKindUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GroupMembersChangeSource.
+const (
+	Auto   GroupMembersChangeSource = "auto"
+	Manual GroupMembersChangeSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the GroupMembersChangeSource enum.
+func (e GroupMembersChangeSource) Valid() bool {
+	switch e {
+	case Auto:
+		return true
+	case Manual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for JobState.
 const (
 	JobStateCancelled  JobState = "cancelled"
@@ -131,28 +209,28 @@ func (e JobState) Valid() bool {
 
 // Defines values for PermissionCheckItemAction.
 const (
-	Annotate  PermissionCheckItemAction = "annotate"
-	Delete    PermissionCheckItemAction = "delete"
-	Deploy    PermissionCheckItemAction = "deploy"
-	Manage    PermissionCheckItemAction = "manage"
-	Overwrite PermissionCheckItemAction = "overwrite"
-	Read      PermissionCheckItemAction = "read"
+	PermissionCheckItemActionAnnotate  PermissionCheckItemAction = "annotate"
+	PermissionCheckItemActionDelete    PermissionCheckItemAction = "delete"
+	PermissionCheckItemActionDeploy    PermissionCheckItemAction = "deploy"
+	PermissionCheckItemActionManage    PermissionCheckItemAction = "manage"
+	PermissionCheckItemActionOverwrite PermissionCheckItemAction = "overwrite"
+	PermissionCheckItemActionRead      PermissionCheckItemAction = "read"
 )
 
 // Valid indicates whether the value is a known member of the PermissionCheckItemAction enum.
 func (e PermissionCheckItemAction) Valid() bool {
 	switch e {
-	case Annotate:
+	case PermissionCheckItemActionAnnotate:
 		return true
-	case Delete:
+	case PermissionCheckItemActionDelete:
 		return true
-	case Deploy:
+	case PermissionCheckItemActionDeploy:
 		return true
-	case Manage:
+	case PermissionCheckItemActionManage:
 		return true
-	case Overwrite:
+	case PermissionCheckItemActionOverwrite:
 		return true
-	case Read:
+	case PermissionCheckItemActionRead:
 		return true
 	default:
 		return false
@@ -236,25 +314,61 @@ func (e ReplicaState) Valid() bool {
 
 // Defines values for RoleName.
 const (
-	Admin           RoleName = "admin"
-	Auditor         RoleName = "auditor"
-	RepositoryAdmin RoleName = "repository-admin"
-	SecurityAdmin   RoleName = "security-admin"
-	WebhookAdmin    RoleName = "webhook-admin"
+	RoleNameAdmin           RoleName = "admin"
+	RoleNameAuditor         RoleName = "auditor"
+	RoleNameRepositoryAdmin RoleName = "repository-admin"
+	RoleNameSecurityAdmin   RoleName = "security-admin"
+	RoleNameWebhookAdmin    RoleName = "webhook-admin"
 )
 
 // Valid indicates whether the value is a known member of the RoleName enum.
 func (e RoleName) Valid() bool {
 	switch e {
-	case Admin:
+	case RoleNameAdmin:
 		return true
-	case Auditor:
+	case RoleNameAuditor:
 		return true
-	case RepositoryAdmin:
+	case RoleNameRepositoryAdmin:
 		return true
-	case SecurityAdmin:
+	case RoleNameSecurityAdmin:
 		return true
-	case WebhookAdmin:
+	case RoleNameWebhookAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ServiceAccountStatus.
+const (
+	ServiceAccountStatusActive   ServiceAccountStatus = "active"
+	ServiceAccountStatusDisabled ServiceAccountStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the ServiceAccountStatus enum.
+func (e ServiceAccountStatus) Valid() bool {
+	switch e {
+	case ServiceAccountStatusActive:
+		return true
+	case ServiceAccountStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SessionAuthMethod.
+const (
+	SessionAuthMethodBreakGlass SessionAuthMethod = "break_glass"
+	SessionAuthMethodOidc       SessionAuthMethod = "oidc"
+)
+
+// Valid indicates whether the value is a known member of the SessionAuthMethod enum.
+func (e SessionAuthMethod) Valid() bool {
+	switch e {
+	case SessionAuthMethodBreakGlass:
+		return true
+	case SessionAuthMethodOidc:
 		return true
 	default:
 		return false
@@ -300,6 +414,159 @@ func (e SystemInfoBaseUrlSource) Valid() bool {
 	}
 }
 
+// Defines values for TokenState.
+const (
+	TokenStateActive  TokenState = "active"
+	TokenStateExpired TokenState = "expired"
+	TokenStateRevoked TokenState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the TokenState enum.
+func (e TokenState) Valid() bool {
+	switch e {
+	case TokenStateActive:
+		return true
+	case TokenStateExpired:
+		return true
+	case TokenStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenType.
+const (
+	TokenTypeCit TokenType = "cit"
+	TokenTypePat TokenType = "pat"
+	TokenTypeSat TokenType = "sat"
+)
+
+// Valid indicates whether the value is a known member of the TokenType enum.
+func (e TokenType) Valid() bool {
+	switch e {
+	case TokenTypeCit:
+		return true
+	case TokenTypePat:
+		return true
+	case TokenTypeSat:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenCreatedType.
+const (
+	TokenCreatedTypePat TokenCreatedType = "pat"
+	TokenCreatedTypeSat TokenCreatedType = "sat"
+)
+
+// Valid indicates whether the value is a known member of the TokenCreatedType enum.
+func (e TokenCreatedType) Valid() bool {
+	switch e {
+	case TokenCreatedTypePat:
+		return true
+	case TokenCreatedTypeSat:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenOwnerKind.
+const (
+	TokenOwnerKindCi             TokenOwnerKind = "ci"
+	TokenOwnerKindServiceAccount TokenOwnerKind = "service_account"
+	TokenOwnerKindUser           TokenOwnerKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the TokenOwnerKind enum.
+func (e TokenOwnerKind) Valid() bool {
+	switch e {
+	case TokenOwnerKindCi:
+		return true
+	case TokenOwnerKindServiceAccount:
+		return true
+	case TokenOwnerKindUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenScopeGrantActions.
+const (
+	TokenScopeGrantActionsAnnotate  TokenScopeGrantActions = "annotate"
+	TokenScopeGrantActionsDelete    TokenScopeGrantActions = "delete"
+	TokenScopeGrantActionsDeploy    TokenScopeGrantActions = "deploy"
+	TokenScopeGrantActionsManage    TokenScopeGrantActions = "manage"
+	TokenScopeGrantActionsOverwrite TokenScopeGrantActions = "overwrite"
+	TokenScopeGrantActionsRead      TokenScopeGrantActions = "read"
+)
+
+// Valid indicates whether the value is a known member of the TokenScopeGrantActions enum.
+func (e TokenScopeGrantActions) Valid() bool {
+	switch e {
+	case TokenScopeGrantActionsAnnotate:
+		return true
+	case TokenScopeGrantActionsDelete:
+		return true
+	case TokenScopeGrantActionsDeploy:
+		return true
+	case TokenScopeGrantActionsManage:
+		return true
+	case TokenScopeGrantActionsOverwrite:
+		return true
+	case TokenScopeGrantActionsRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UserOrigin.
+const (
+	UserOriginAdmin  UserOrigin = "admin"
+	UserOriginJit    UserOrigin = "jit"
+	UserOriginScim   UserOrigin = "scim"
+	UserOriginSystem UserOrigin = "system"
+)
+
+// Valid indicates whether the value is a known member of the UserOrigin enum.
+func (e UserOrigin) Valid() bool {
+	switch e {
+	case UserOriginAdmin:
+		return true
+	case UserOriginJit:
+		return true
+	case UserOriginScim:
+		return true
+	case UserOriginSystem:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UserStatus.
+const (
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the UserStatus enum.
+func (e UserStatus) Valid() bool {
+	switch e {
+	case UserStatusActive:
+		return true
+	case UserStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ValkeyFactsMode.
 const (
 	Sentinel   ValkeyFactsMode = "sentinel"
@@ -336,6 +603,54 @@ func (e ValkeyViewState) Valid() bool {
 	}
 }
 
+// Defines values for WhoamiCredentialType.
+const (
+	WhoamiCredentialTypeCit     WhoamiCredentialType = "cit"
+	WhoamiCredentialTypePat     WhoamiCredentialType = "pat"
+	WhoamiCredentialTypeSat     WhoamiCredentialType = "sat"
+	WhoamiCredentialTypeSession WhoamiCredentialType = "session"
+)
+
+// Valid indicates whether the value is a known member of the WhoamiCredentialType enum.
+func (e WhoamiCredentialType) Valid() bool {
+	switch e {
+	case WhoamiCredentialTypeCit:
+		return true
+	case WhoamiCredentialTypePat:
+		return true
+	case WhoamiCredentialTypeSat:
+		return true
+	case WhoamiCredentialTypeSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WhoamiPrincipalKind.
+const (
+	WhoamiPrincipalKindBreakGlass     WhoamiPrincipalKind = "break_glass"
+	WhoamiPrincipalKindCi             WhoamiPrincipalKind = "ci"
+	WhoamiPrincipalKindServiceAccount WhoamiPrincipalKind = "service_account"
+	WhoamiPrincipalKindUser           WhoamiPrincipalKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the WhoamiPrincipalKind enum.
+func (e WhoamiPrincipalKind) Valid() bool {
+	switch e {
+	case WhoamiPrincipalKindBreakGlass:
+		return true
+	case WhoamiPrincipalKindCi:
+		return true
+	case WhoamiPrincipalKindServiceAccount:
+		return true
+	case WhoamiPrincipalKindUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExportAuditEventsParamsFormat.
 const (
 	Csv   ExportAuditEventsParamsFormat = "csv"
@@ -354,18 +669,69 @@ func (e ExportAuditEventsParamsFormat) Valid() bool {
 	}
 }
 
+// Defines values for ListGroupsParamsOrigin.
+const (
+	ListGroupsParamsOriginAdmin ListGroupsParamsOrigin = "admin"
+	ListGroupsParamsOriginOidc  ListGroupsParamsOrigin = "oidc"
+	ListGroupsParamsOriginScim  ListGroupsParamsOrigin = "scim"
+)
+
+// Valid indicates whether the value is a known member of the ListGroupsParamsOrigin enum.
+func (e ListGroupsParamsOrigin) Valid() bool {
+	switch e {
+	case ListGroupsParamsOriginAdmin:
+		return true
+	case ListGroupsParamsOriginOidc:
+		return true
+	case ListGroupsParamsOriginScim:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListGroupsParamsSort.
+const (
+	ListGroupsParamsSortName ListGroupsParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListGroupsParamsSort enum.
+func (e ListGroupsParamsSort) Valid() bool {
+	switch e {
+	case ListGroupsParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListPermissionPoliciesParamsSort.
 const (
-	MinusName ListPermissionPoliciesParamsSort = "-name"
-	Name      ListPermissionPoliciesParamsSort = "name"
+	ListPermissionPoliciesParamsSortMinusName ListPermissionPoliciesParamsSort = "-name"
+	ListPermissionPoliciesParamsSortName      ListPermissionPoliciesParamsSort = "name"
 )
 
 // Valid indicates whether the value is a known member of the ListPermissionPoliciesParamsSort enum.
 func (e ListPermissionPoliciesParamsSort) Valid() bool {
 	switch e {
-	case MinusName:
+	case ListPermissionPoliciesParamsSortMinusName:
 		return true
-	case Name:
+	case ListPermissionPoliciesParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListServiceAccountsParamsSort.
+const (
+	ListServiceAccountsParamsSortName ListServiceAccountsParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListServiceAccountsParamsSort enum.
+func (e ListServiceAccountsParamsSort) Valid() bool {
+	switch e {
+	case ListServiceAccountsParamsSortName:
 		return true
 	default:
 		return false
@@ -384,6 +750,111 @@ func (e ListJobsParamsSort) Valid() bool {
 	case EnqueuedAt:
 		return true
 	case MinusEnqueuedAt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListTokensParamsType.
+const (
+	ListTokensParamsTypeCit ListTokensParamsType = "cit"
+	ListTokensParamsTypePat ListTokensParamsType = "pat"
+	ListTokensParamsTypeSat ListTokensParamsType = "sat"
+)
+
+// Valid indicates whether the value is a known member of the ListTokensParamsType enum.
+func (e ListTokensParamsType) Valid() bool {
+	switch e {
+	case ListTokensParamsTypeCit:
+		return true
+	case ListTokensParamsTypePat:
+		return true
+	case ListTokensParamsTypeSat:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListTokensParamsState.
+const (
+	ListTokensParamsStateActive  ListTokensParamsState = "active"
+	ListTokensParamsStateAll     ListTokensParamsState = "all"
+	ListTokensParamsStateExpired ListTokensParamsState = "expired"
+	ListTokensParamsStateRevoked ListTokensParamsState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ListTokensParamsState enum.
+func (e ListTokensParamsState) Valid() bool {
+	switch e {
+	case ListTokensParamsStateActive:
+		return true
+	case ListTokensParamsStateAll:
+		return true
+	case ListTokensParamsStateExpired:
+		return true
+	case ListTokensParamsStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListUsersParamsStatus.
+const (
+	ListUsersParamsStatusActive   ListUsersParamsStatus = "active"
+	ListUsersParamsStatusDisabled ListUsersParamsStatus = "disabled"
+	ListUsersParamsStatusLocked   ListUsersParamsStatus = "locked"
+)
+
+// Valid indicates whether the value is a known member of the ListUsersParamsStatus enum.
+func (e ListUsersParamsStatus) Valid() bool {
+	switch e {
+	case ListUsersParamsStatusActive:
+		return true
+	case ListUsersParamsStatusDisabled:
+		return true
+	case ListUsersParamsStatusLocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListUsersParamsOrigin.
+const (
+	ListUsersParamsOriginAdmin  ListUsersParamsOrigin = "admin"
+	ListUsersParamsOriginJit    ListUsersParamsOrigin = "jit"
+	ListUsersParamsOriginScim   ListUsersParamsOrigin = "scim"
+	ListUsersParamsOriginSystem ListUsersParamsOrigin = "system"
+)
+
+// Valid indicates whether the value is a known member of the ListUsersParamsOrigin enum.
+func (e ListUsersParamsOrigin) Valid() bool {
+	switch e {
+	case ListUsersParamsOriginAdmin:
+		return true
+	case ListUsersParamsOriginJit:
+		return true
+	case ListUsersParamsOriginScim:
+		return true
+	case ListUsersParamsOriginSystem:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListUsersParamsSort.
+const (
+	Username ListUsersParamsSort = "username"
+)
+
+// Valid indicates whether the value is a known member of the ListUsersParamsSort enum.
+func (e ListUsersParamsSort) Valid() bool {
+	switch e {
+	case Username:
 		return true
 	default:
 		return false
@@ -445,6 +916,83 @@ type AuditSource struct {
 	UserAgent *string `json:"userAgent"`
 }
 
+// AuthSettings The runtime authentication settings (R-AUTH-040): the effective runtime values, the YAML ceilings they
+// are bound by, and read-only status. The runtime members have the shape `PATCH` takes, so a body
+// obtained by `GET` can be sent back; `ceilings` and `status` are ignored then.
+type AuthSettings struct {
+	// AnonymousAccess Whether anonymous access is in force (the runtime switch within the ceiling).
+	AnonymousAccess bool `json:"anonymousAccess"`
+
+	// Ceilings The YAML values the runtime values are bound by.
+	Ceilings AuthSettingsCeilings `json:"ceilings"`
+
+	// Status Read-only status (R-AUTH-040). The break-glass password and the issuer details are not part of it.
+	Status AuthSettingsStatus `json:"status"`
+	Tokens AuthSettingsTokens `json:"tokens"`
+}
+
+// AuthSettingsCeilings The YAML values the runtime values are bound by.
+type AuthSettingsCeilings struct {
+	// AnonymousAllowed `auth.anonymous.allowed`: when false, anonymous access cannot be switched on.
+	AnonymousAllowed bool               `json:"anonymousAllowed"`
+	Tokens           AuthSettingsTokens `json:"tokens"`
+}
+
+// AuthSettingsLifetimes defines model for AuthSettingsLifetimes.
+type AuthSettingsLifetimes struct {
+	DefaultTTLSeconds int `json:"defaultTTLSeconds"`
+	MaxTTLSeconds     int `json:"maxTTLSeconds"`
+}
+
+// AuthSettingsPatch Only the runtime members are writable; `ceilings` and `status` are accepted and ignored. A lifetime is at least 60 seconds.
+type AuthSettingsPatch struct {
+	AnonymousAccess *bool `json:"anonymousAccess,omitempty"`
+	Tokens          *struct {
+		ExpiryNoticeSeconds *int `json:"expiryNoticeSeconds,omitempty"`
+		Pat                 *struct {
+			DefaultTTLSeconds *int `json:"defaultTTLSeconds,omitempty"`
+			MaxTTLSeconds     *int `json:"maxTTLSeconds,omitempty"`
+		} `json:"pat,omitempty"`
+		Sat *struct {
+			DefaultTTLSeconds *int `json:"defaultTTLSeconds,omitempty"`
+			MaxTTLSeconds     *int `json:"maxTTLSeconds,omitempty"`
+		} `json:"sat,omitempty"`
+	} `json:"tokens,omitempty"`
+}
+
+// AuthSettingsProvider defines model for AuthSettingsProvider.
+type AuthSettingsProvider struct {
+	// Available Whether the replica that answers holds the provider's discovery document.
+	Available   bool   `json:"available"`
+	DisplayName string `json:"displayName"`
+	Id          string `json:"id"`
+}
+
+// AuthSettingsStatus Read-only status (R-AUTH-040). The break-glass password and the issuer details are not part of it.
+type AuthSettingsStatus struct {
+	BreakGlass struct {
+		Enabled     bool       `json:"enabled"`
+		LockedUntil *time.Time `json:"lockedUntil"`
+	} `json:"breakGlass"`
+	Clients struct {
+		BasicEnabled bool `json:"basicEnabled"`
+	} `json:"clients"`
+	Providers []AuthSettingsProvider `json:"providers"`
+	Sessions  struct {
+		AbsoluteTimeoutSeconds  int `json:"absoluteTimeoutSeconds"`
+		IdleTimeoutSeconds      int `json:"idleTimeoutSeconds"`
+		MaxPerUser              int `json:"maxPerUser"`
+		RecentAuthWindowSeconds int `json:"recentAuthWindowSeconds"`
+	} `json:"sessions"`
+}
+
+// AuthSettingsTokens defines model for AuthSettingsTokens.
+type AuthSettingsTokens struct {
+	ExpiryNoticeSeconds int                   `json:"expiryNoticeSeconds"`
+	Pat                 AuthSettingsLifetimes `json:"pat"`
+	Sat                 AuthSettingsLifetimes `json:"sat"`
+}
+
 // AuthzMe defines model for AuthzMe.
 type AuthzMe struct {
 	// Capabilities The system capabilities the credential exercises (R-AUTHZ-010), for example `settings:read`.
@@ -469,6 +1017,22 @@ type CheckResult struct {
 // CheckResultStatus defines model for CheckResult.Status.
 type CheckResultStatus string
 
+// CreateTokenRequest defines model for CreateTokenRequest.
+type CreateTokenRequest struct {
+	Description string     `json:"description"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+
+	// Owner Only the caller's own name is accepted; there is no impersonation (Q-AUTH-7).
+	Owner *string `json:"owner,omitempty"`
+
+	// Scope The ceiling a token puts on its owner's rights (R-AUTH-024). It never grants anything.
+	Scope         *TokenScope `json:"scope,omitempty"`
+	SelfRotatable *bool       `json:"selfRotatable,omitempty"`
+
+	// TtlSeconds The lifetime. `0` asks for a non-expiring service-account token. Exclusive with `expiresAt`.
+	TtlSeconds *int `json:"ttlSeconds,omitempty"`
+}
+
 // DatabaseFacts defines model for DatabaseFacts.
 type DatabaseFacts struct {
 	// PoolerMode Open enum; `none` or `transaction`.
@@ -479,6 +1043,15 @@ type DatabaseFacts struct {
 	SchemaVersion           int                  `json:"schemaVersion"`
 	ServerVersion           string               `json:"serverVersion"`
 	SupportedSchemaVersions []int                `json:"supportedSchemaVersions"`
+}
+
+// DisableRequest defines model for DisableRequest.
+type DisableRequest struct {
+	// Reason Recorded in the audit event.
+	Reason *string `json:"reason,omitempty"`
+
+	// RevokeTokens Revoke the principal's tokens with reason `principal_disabled`. Default `true` for a user, `false` for a service account.
+	RevokeTokens *bool `json:"revokeTokens,omitempty"`
 }
 
 // EncryptionKey defines model for EncryptionKey.
@@ -529,6 +1102,79 @@ type FieldError struct {
 
 	// Pointer RFC 6901 JSON pointer into the request body.
 	Pointer string `json:"pointer"`
+}
+
+// Group A group (R-AUTH-018). `roles` and `memberCount` are read only.
+type Group struct {
+	AutoJoin    bool               `json:"autoJoin"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	Description string             `json:"description"`
+	Id          openapi_types.UUID `json:"id"`
+	MemberCount int                `json:"memberCount"`
+	Name        string             `json:"name"`
+	Origin      GroupOrigin        `json:"origin"`
+
+	// Roles The system roles bound to the group; empty on the list.
+	Roles []string `json:"roles"`
+}
+
+// GroupOrigin defines model for Group.Origin.
+type GroupOrigin string
+
+// GroupClaimMissing Set while the user's last login carried no usable group claim (R-AUTH-008).
+type GroupClaimMissing struct {
+	Provider string                  `json:"provider"`
+	Reason   GroupClaimMissingReason `json:"reason"`
+}
+
+// GroupClaimMissingReason defines model for GroupClaimMissing.Reason.
+type GroupClaimMissingReason string
+
+// GroupList defines model for GroupList.
+type GroupList struct {
+	Items []Group `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// GroupMember defines model for GroupMember.
+type GroupMember struct {
+	Kind GroupMemberKind `json:"kind"`
+
+	// Principal The username, or `sa:<name>` for a service account.
+	Principal string `json:"principal"`
+
+	// Sources Empty for a member the request removed that holds no other source.
+	Sources []string `json:"sources"`
+}
+
+// GroupMemberKind defines model for GroupMember.Kind.
+type GroupMemberKind string
+
+// GroupMemberList defines model for GroupMemberList.
+type GroupMemberList struct {
+	Items []GroupMember `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// GroupMembersChange defines model for GroupMembersChange.
+type GroupMembersChange struct {
+	Add    *[]string                 `json:"add,omitempty"`
+	Remove *[]string                 `json:"remove,omitempty"`
+	Source *GroupMembersChangeSource `json:"source,omitempty"`
+}
+
+// GroupMembersChangeSource defines model for GroupMembersChange.Source.
+type GroupMembersChangeSource string
+
+// GroupPatch `name` renames the group. The read-only members of `Group` are accepted and ignored.
+type GroupPatch struct {
+	AutoJoin    *bool   `json:"autoJoin,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Name        *string `json:"name,omitempty"`
 }
 
 // Job defines model for Job.
@@ -604,6 +1250,67 @@ type LastReencryption struct {
 	State      JobState           `json:"state"`
 }
 
+// LoginOptions What the sign-in screen offers (R-AUTH-009). It names no issuer, client ID or error detail.
+type LoginOptions struct {
+	AnonymousAccess bool `json:"anonymousAccess"`
+
+	// AutoRedirect The provider ID to redirect to at once; `null` shows the buttons.
+	AutoRedirect *string `json:"autoRedirect"`
+
+	// LocalLogin The break-glass form is offered on the page; it is reachable with `?local=1` regardless.
+	LocalLogin bool `json:"localLogin"`
+
+	// Providers In configuration order (`order`, then ID).
+	Providers []LoginProvider `json:"providers"`
+}
+
+// LoginProvider defines model for LoginProvider.
+type LoginProvider struct {
+	// Available Whether the replica that answers holds the provider's discovery document.
+	Available   bool   `json:"available"`
+	DisplayName string `json:"displayName"`
+	Id          string `json:"id"`
+
+	// StartUrl Server-relative start URL, `/auth/oidc/{providerId}/start`.
+	StartUrl string `json:"startUrl"`
+}
+
+// MembershipChange defines model for MembershipChange.
+type MembershipChange struct {
+	Add    *[]string `json:"add,omitempty"`
+	Remove *[]string `json:"remove,omitempty"`
+}
+
+// NewGroup defines model for NewGroup.
+type NewGroup struct {
+	AutoJoin    *bool   `json:"autoJoin,omitempty"`
+	Description *string `json:"description,omitempty"`
+
+	// Members Usernames and `sa:<name>`.
+	Members *[]string `json:"members,omitempty"`
+
+	// Name Matches `^[a-z0-9][a-z0-9._-]{0,127}$`.
+	Name string `json:"name"`
+}
+
+// NewServiceAccount defines model for NewServiceAccount.
+type NewServiceAccount struct {
+	Description *string `json:"description,omitempty"`
+
+	// Name Matches `^[a-z0-9][a-z0-9-]{1,62}$`.
+	Name string `json:"name"`
+}
+
+// NewUser defines model for NewUser.
+type NewUser struct {
+	DisplayName *string            `json:"displayName,omitempty"`
+	Email       *string            `json:"email,omitempty"`
+	Identities  *[]PendingIdentity `json:"identities,omitempty"`
+
+	// Username Matches `^[a-z0-9][a-z0-9._@+-]{0,127}$` and is not reserved (R-AUTH-007).
+	Username string `json:"username"`
+}
+
 // ObjectStoreFacts defines model for ObjectStoreFacts.
 type ObjectStoreFacts struct {
 	Bucket string `json:"bucket"`
@@ -618,6 +1325,15 @@ type ObjectStoreFacts struct {
 type PatternLists struct {
 	Exclude *[]string `json:"exclude,omitempty"`
 	Include *[]string `json:"include,omitempty"`
+}
+
+// PendingIdentity defines model for PendingIdentity.
+type PendingIdentity struct {
+	// Provider A provider ID of `auth.oidc.providers`.
+	Provider string `json:"provider"`
+
+	// Subject Always `null`: a pending link is completed by the first login (R-AUTH-007).
+	Subject any `json:"subject,omitempty"`
 }
 
 // PermissionCheckItem defines model for PermissionCheckItem.
@@ -752,6 +1468,31 @@ type PoolFacts struct {
 	Max   int `json:"max"`
 }
 
+// Preferences The caller's UI preferences (R-API-021). `revision` is the ETag number.
+type Preferences struct {
+	KeyboardShortcuts bool `json:"keyboardShortcuts"`
+
+	// Locale `en`, `de` or `null` (the browser decides).
+	Locale        *string `json:"locale"`
+	ProjectFilter *string `json:"projectFilter"`
+	Revision      int     `json:"revision"`
+
+	// Theme `light`, `dark` or `null` (the system decides).
+	Theme *string `json:"theme"`
+}
+
+// PreferencesPatch `null` resets a member to its default. `revision` is accepted and ignored.
+type PreferencesPatch struct {
+	KeyboardShortcuts *bool `json:"keyboardShortcuts,omitempty"`
+
+	// Locale `en`, `de` or `null`.
+	Locale        *string `json:"locale,omitempty"`
+	ProjectFilter *string `json:"projectFilter,omitempty"`
+
+	// Theme `light`, `dark` or `null`.
+	Theme *string `json:"theme,omitempty"`
+}
+
 // Problem RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type Problem struct {
 	// Code Stable snake_case identifier; clients match on it.
@@ -838,6 +1579,20 @@ type ReplicaSummary struct {
 	Versions map[string]int `json:"versions"`
 }
 
+// RevokeByValueRequest defines model for RevokeByValueRequest.
+type RevokeByValueRequest struct {
+	// Token The token value, `trv_…`.
+	Token string `json:"token"`
+}
+
+// RevokedToken What an administrator receives from a revocation by value.
+type RevokedToken struct {
+	Id openapi_types.UUID `json:"id"`
+
+	// Owner The username, or `sa:<name>`.
+	Owner string `json:"owner"`
+}
+
 // Role defines model for Role.
 type Role struct {
 	// Capabilities The capabilities the role bundles (R-AUTHZ-010).
@@ -882,6 +1637,12 @@ type RoleSummary struct {
 	Ready int `json:"ready"`
 }
 
+// RotateRequest defines model for RotateRequest.
+type RotateRequest struct {
+	// OverlapSeconds Keeps the old value valid that long. `0` revokes it with reason `rotated`.
+	OverlapSeconds *int `json:"overlapSeconds,omitempty"`
+}
+
 // ScopeSummary The ceiling of the caller's credential (R-AUTHZ-013).
 type ScopeSummary struct {
 	// Admin The credential exercises the caller's system roles.
@@ -893,6 +1654,56 @@ type ScopeSummary struct {
 	// Inherit The credential has no repository ceiling.
 	Inherit bool     `json:"inherit"`
 	System  []string `json:"system"`
+}
+
+// ServiceAccount A service account (R-AUTH-020).
+type ServiceAccount struct {
+	CreatedAt   time.Time            `json:"createdAt"`
+	Description string               `json:"description"`
+	Id          openapi_types.UUID   `json:"id"`
+	Name        string               `json:"name"`
+	Status      ServiceAccountStatus `json:"status"`
+}
+
+// ServiceAccountStatus defines model for ServiceAccount.Status.
+type ServiceAccountStatus string
+
+// ServiceAccountList defines model for ServiceAccountList.
+type ServiceAccountList struct {
+	Items []ServiceAccount `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// ServiceAccountPatch The read-only members of `ServiceAccount` are accepted and ignored.
+type ServiceAccountPatch struct {
+	Description *string `json:"description,omitempty"`
+}
+
+// Session defines model for Session.
+type Session struct {
+	AuthMethod  SessionAuthMethod `json:"authMethod"`
+	CreatedAddr *string           `json:"createdAddr"`
+	CreatedAt   time.Time         `json:"createdAt"`
+
+	// Current Whether the session made this request. Always `false` in a list of another user's sessions.
+	Current    bool               `json:"current"`
+	Id         openapi_types.UUID `json:"id"`
+	LastSeenAt time.Time          `json:"lastSeenAt"`
+	ProviderId *string            `json:"providerId"`
+	UserAgent  *string            `json:"userAgent"`
+}
+
+// SessionAuthMethod defines model for Session.AuthMethod.
+type SessionAuthMethod string
+
+// SessionList defines model for SessionList.
+type SessionList struct {
+	Items []Session `json:"items"`
+
+	// NextCursor Always `null`: a user holds at most `auth.sessions.max_per_user` sessions.
+	NextCursor *string `json:"nextCursor"`
 }
 
 // SystemInfo defines model for SystemInfo.
@@ -987,6 +1798,189 @@ type TaskName = string
 // TaskRunRequest The parameters of the task; each task defines its own (garbage collection takes `dryRun`).
 type TaskRunRequest map[string]interface{}
 
+// Token A token as a list or an inspection shows it (R-AUTH-028). Neither the value nor its hash is part of it.
+type Token struct {
+	CiContext *map[string]interface{} `json:"ciContext"`
+	CreatedAt time.Time               `json:"createdAt"`
+
+	// CreatedBy The ID of the principal that created the token.
+	CreatedBy   *string    `json:"createdBy"`
+	CreatedVia  string     `json:"createdVia"`
+	Description string     `json:"description"`
+	ExpiresAt   *time.Time `json:"expiresAt"`
+
+	// Hint The prefix and the first characters of the value, for recognising a token.
+	Hint             string             `json:"hint"`
+	Id               openapi_types.UUID `json:"id"`
+	LastUsedAddr     *string            `json:"lastUsedAddr"`
+	LastUsedAt       *time.Time         `json:"lastUsedAt"`
+	Owner            TokenOwner         `json:"owner"`
+	RevocationReason *string            `json:"revocationReason"`
+	RevokedAt        *time.Time         `json:"revokedAt"`
+
+	// RevokedBy The ID of the principal that revoked the token.
+	RevokedBy   *string             `json:"revokedBy"`
+	RotatedFrom *openapi_types.UUID `json:"rotatedFrom"`
+
+	// Scope The ceiling a token puts on its owner's rights (R-AUTH-024). It never grants anything.
+	Scope         TokenScope `json:"scope"`
+	SelfRotatable bool       `json:"selfRotatable"`
+	State         TokenState `json:"state"`
+	Type          TokenType  `json:"type"`
+}
+
+// TokenState defines model for Token.State.
+type TokenState string
+
+// TokenType defines model for Token.Type.
+type TokenType string
+
+// TokenCreated A token with its value. The value is in this answer only; the answer is sent with `Cache-Control: no-store`.
+type TokenCreated struct {
+	CreatedAt   time.Time          `json:"createdAt"`
+	Description string             `json:"description"`
+	ExpiresAt   *time.Time         `json:"expiresAt"`
+	Hint        string             `json:"hint"`
+	Id          openapi_types.UUID `json:"id"`
+	Owner       TokenOwner         `json:"owner"`
+
+	// RotatedFrom The predecessor of a rotation; `null` for a new token.
+	RotatedFrom *openapi_types.UUID `json:"rotatedFrom,omitempty"`
+
+	// Scope The ceiling a token puts on its owner's rights (R-AUTH-024). It never grants anything.
+	Scope         TokenScope `json:"scope"`
+	SelfRotatable bool       `json:"selfRotatable"`
+
+	// Token The secret. Shown once.
+	Token string           `json:"token"`
+	Type  TokenCreatedType `json:"type"`
+}
+
+// TokenCreatedType defines model for TokenCreated.Type.
+type TokenCreatedType string
+
+// TokenList defines model for TokenList.
+type TokenList struct {
+	Items []Token `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// TokenOwner defines model for TokenOwner.
+type TokenOwner struct {
+	Kind TokenOwnerKind `json:"kind"`
+	Name string         `json:"name"`
+}
+
+// TokenOwnerKind defines model for TokenOwner.Kind.
+type TokenOwnerKind string
+
+// TokenScope The ceiling a token puts on its owner's rights (R-AUTH-024). It never grants anything.
+type TokenScope struct {
+	// Admin The token exercises the owner's system roles.
+	Admin *bool `json:"admin,omitempty"`
+
+	// Endpoints The endpoint names the token is valid on (R-EP-011); empty is unbound.
+	Endpoints *[]string `json:"endpoints,omitempty"`
+
+	// Inherit All repository rights of the owner. Exclusive with `repositories`.
+	Inherit      *bool              `json:"inherit,omitempty"`
+	Repositories *[]TokenScopeGrant `json:"repositories,omitempty"`
+
+	// System System capabilities (R-AUTHZ-010), from the closed list of R-AUTH-025.
+	System *[]string `json:"system,omitempty"`
+}
+
+// TokenScopeGrant defines model for TokenScopeGrant.
+type TokenScopeGrant struct {
+	Actions      []TokenScopeGrantActions `json:"actions"`
+	Packages     *TokenScopePatterns      `json:"packages,omitempty"`
+	Paths        *TokenScopePatterns      `json:"paths,omitempty"`
+	Repositories []string                 `json:"repositories"`
+}
+
+// TokenScopeGrantActions defines model for TokenScopeGrant.Actions.
+type TokenScopeGrantActions string
+
+// TokenScopePatterns defines model for TokenScopePatterns.
+type TokenScopePatterns struct {
+	Exclude *[]string `json:"exclude,omitempty"`
+	Include *[]string `json:"include,omitempty"`
+}
+
+// User A user (R-AUTH-016). `isAdmin`, `adminVia` and `lockedUntil` are derived and read only.
+type User struct {
+	// AdminVia Why the user is an administrator: `direct`, `group:<name>` or `break-glass`.
+	AdminVia  []string  `json:"adminVia"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// DisabledReason `admin`, `dormant` or `scim` while the user is disabled.
+	DisabledReason    *string               `json:"disabledReason"`
+	DisplayName       *string               `json:"displayName"`
+	Email             *string               `json:"email"`
+	EmailVerified     bool                  `json:"emailVerified"`
+	GroupClaimMissing *GroupClaimMissing    `json:"groupClaimMissing"`
+	Groups            []UserGroupMembership `json:"groups"`
+	Id                openapi_types.UUID    `json:"id"`
+	Identities        []UserIdentity        `json:"identities"`
+	IsAdmin           bool                  `json:"isAdmin"`
+	LastLoginAt       *time.Time            `json:"lastLoginAt"`
+
+	// LockedUntil The end of the lockout of the break-glass account while it is in force (R-AUTH-038).
+	LockedUntil *time.Time `json:"lockedUntil"`
+	Origin      UserOrigin `json:"origin"`
+	Status      UserStatus `json:"status"`
+	Username    string     `json:"username"`
+}
+
+// UserOrigin defines model for User.Origin.
+type UserOrigin string
+
+// UserStatus defines model for User.Status.
+type UserStatus string
+
+// UserGroupMembership defines model for UserGroupMembership.
+type UserGroupMembership struct {
+	Name string `json:"name"`
+
+	// Source `manual`, `auto`, `scim` or `oidc:<providerId>` (R-AUTH-018).
+	//
+	// Examples: oidc:corp
+	Source string `json:"source"`
+}
+
+// UserGroups defines model for UserGroups.
+type UserGroups struct {
+	Groups []UserGroupMembership `json:"groups"`
+}
+
+// UserIdentity The link of a user to an identity provider (R-AUTH-007).
+type UserIdentity struct {
+	// Linked `false` for a pending link that the user's first login at the provider completes.
+	Linked bool `json:"linked"`
+
+	// Provider The provider ID.
+	Provider string `json:"provider"`
+}
+
+// UserList defines model for UserList.
+type UserList struct {
+	Items []User `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+}
+
+// UserPatch The members an administrator can correct. The read-only members of `User` are accepted and ignored.
+type UserPatch struct {
+	DisplayName *string `json:"displayName,omitempty"`
+	Email       *string `json:"email,omitempty"`
+
+	// Identities Replaces the pending links; a linked identity stays.
+	Identities *[]PendingIdentity `json:"identities,omitempty"`
+}
+
 // ValkeyFacts Installation facts only; each replica's view is in the replica registry. No Sentinel address appears.
 type ValkeyFacts struct {
 	// DegradedReplicas Live replicas whose Valkey check is degraded; `null` until the replica registry exists.
@@ -1043,6 +2037,38 @@ type Version struct {
 	// Version The trove version, or `dev` for a build without a release version.
 	Version string `json:"version"`
 }
+
+// Whoami defines model for Whoami.
+type Whoami struct {
+	Credential WhoamiCredential `json:"credential"`
+	Principal  WhoamiPrincipal  `json:"principal"`
+}
+
+// WhoamiCredential defines model for WhoamiCredential.
+type WhoamiCredential struct {
+	// ExpiresAt The token's expiry; `null` for a session and for a non-expiring token.
+	ExpiresAt *time.Time `json:"expiresAt"`
+
+	// Scope The token's scope; `null` for a session.
+	Scope   *TokenScope          `json:"scope"`
+	TokenId *openapi_types.UUID  `json:"tokenId"`
+	Type    WhoamiCredentialType `json:"type"`
+}
+
+// WhoamiCredentialType defines model for WhoamiCredential.Type.
+type WhoamiCredentialType string
+
+// WhoamiPrincipal defines model for WhoamiPrincipal.
+type WhoamiPrincipal struct {
+	// Groups The names of the groups the principal belongs to, resolved for this request.
+	Groups *[]string           `json:"groups,omitempty"`
+	Id     openapi_types.UUID  `json:"id"`
+	Kind   WhoamiPrincipalKind `json:"kind"`
+	Name   string              `json:"name"`
+}
+
+// WhoamiPrincipalKind defines model for WhoamiPrincipal.Kind.
+type WhoamiPrincipalKind string
 
 // Cursor defines model for Cursor.
 type Cursor = string
@@ -1167,6 +2193,46 @@ type ExportAuditEventsParams struct {
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
 type ExportAuditEventsParamsFormat string
 
+// ListGroupsParams defines parameters for ListGroups.
+type ListGroupsParams struct {
+	// Q Case-insensitive substring of the name.
+	Q      *string                 `form:"q,omitempty" json:"q,omitempty"`
+	Origin *ListGroupsParamsOrigin `form:"origin,omitempty" json:"origin,omitempty"`
+
+	// Sort `name` is the default; a leading `-` reverses the order.
+	Sort *ListGroupsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListGroupsParamsOrigin defines parameters for ListGroups.
+type ListGroupsParamsOrigin string
+
+// ListGroupsParamsSort defines parameters for ListGroups.
+type ListGroupsParamsSort string
+
+// CreateGroupParams defines parameters for CreateGroup.
+type CreateGroupParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListGroupMembersParams defines parameters for ListGroupMembers.
+type ListGroupMembersParams struct {
+	// Source Only members that hold this source.
+	Source *string `form:"source,omitempty" json:"source,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListPermissionPoliciesParams defines parameters for ListPermissionPolicies.
 type ListPermissionPoliciesParams struct {
 	// Principal A principal reference.
@@ -1229,6 +2295,48 @@ type ListRoleBindingsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListServiceAccountsParams defines parameters for ListServiceAccounts.
+type ListServiceAccountsParams struct {
+	// Q Case-insensitive substring of the name.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort `name` is the default; a leading `-` reverses the order.
+	Sort *ListServiceAccountsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListServiceAccountsParamsSort defines parameters for ListServiceAccounts.
+type ListServiceAccountsParamsSort string
+
+// CreateServiceAccountParams defines parameters for CreateServiceAccount.
+type CreateServiceAccountParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// CreateServiceAccountTokenParams defines parameters for CreateServiceAccountToken.
+type CreateServiceAccountTokenParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetAuthSettingsParams defines parameters for GetAuthSettings.
+type GetAuthSettingsParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateAuthSettingsParams defines parameters for UpdateAuthSettings.
+type UpdateAuthSettingsParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
+	IfMatch *string `json:"If-Match,omitempty"`
+}
+
 // ListJobsParams defines parameters for ListJobs.
 type ListJobsParams struct {
 	// Kind Repeat the parameter to select several kinds.
@@ -1265,11 +2373,110 @@ type RunTaskParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// ListTokensParams defines parameters for ListTokens.
+type ListTokensParams struct {
+	// Owner `me`, a username or `sa:<name>`.
+	Owner         *string                `form:"owner,omitempty" json:"owner,omitempty"`
+	Type          *ListTokensParamsType  `form:"type,omitempty" json:"type,omitempty"`
+	State         *ListTokensParamsState `form:"state,omitempty" json:"state,omitempty"`
+	ExpiresBefore *time.Time             `form:"expiresBefore,omitempty" json:"expiresBefore,omitempty"`
+	ExpiresAfter  *time.Time             `form:"expiresAfter,omitempty" json:"expiresAfter,omitempty"`
+
+	// LastUsedBefore Finds stale tokens. Last-use tracking is not recorded yet, so a token that was never used has no `lastUsedAt`.
+	LastUsedBefore *time.Time `form:"lastUsedBefore,omitempty" json:"lastUsedBefore,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListTokensParamsType defines parameters for ListTokens.
+type ListTokensParamsType string
+
+// ListTokensParamsState defines parameters for ListTokens.
+type ListTokensParamsState string
+
+// CreateTokenParams defines parameters for CreateToken.
+type CreateTokenParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// RotateTokenParams defines parameters for RotateToken.
+type RotateTokenParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListUsersParams defines parameters for ListUsers.
+type ListUsersParams struct {
+	// Q Case-insensitive substring of the name or the email.
+	Q      *string                `form:"q,omitempty" json:"q,omitempty"`
+	Status *ListUsersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Origin *ListUsersParamsOrigin `form:"origin,omitempty" json:"origin,omitempty"`
+
+	// Group Only members of this group (any source).
+	Group *string `form:"group,omitempty" json:"group,omitempty"`
+	Admin *bool   `form:"admin,omitempty" json:"admin,omitempty"`
+
+	// Sort `username` is the default; a leading `-` reverses the order.
+	Sort *ListUsersParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListUsersParamsStatus defines parameters for ListUsers.
+type ListUsersParamsStatus string
+
+// ListUsersParamsOrigin defines parameters for ListUsers.
+type ListUsersParamsOrigin string
+
+// ListUsersParamsSort defines parameters for ListUsers.
+type ListUsersParamsSort string
+
+// CreateUserParams defines parameters for CreateUser.
+type CreateUserParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetPreferencesParams defines parameters for GetPreferences.
+type GetPreferencesParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdatePreferencesParams defines parameters for UpdatePreferences.
+type UpdatePreferencesParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`.
+	IfMatch *string `json:"If-Match,omitempty"`
+}
+
+// EndOwnSessionsParams defines parameters for EndOwnSessions.
+type EndOwnSessionsParams struct {
+	KeepCurrent *bool `form:"keepCurrent,omitempty" json:"keepCurrent,omitempty"`
+}
+
 // CheckPermissionsJSONRequestBody defines body for CheckPermissions for application/json ContentType.
 type CheckPermissionsJSONRequestBody = PermissionCheckRequest
 
 // ValidatePermissionPolicyJSONRequestBody defines body for ValidatePermissionPolicy for application/json ContentType.
 type ValidatePermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
+type CreateGroupJSONRequestBody = NewGroup
+
+// UpdateGroupApplicationMergePatchPlusJSONRequestBody defines body for UpdateGroup for application/merge-patch+json ContentType.
+type UpdateGroupApplicationMergePatchPlusJSONRequestBody = GroupPatch
+
+// PatchGroupMembersJSONRequestBody defines body for PatchGroupMembers for application/json ContentType.
+type PatchGroupMembersJSONRequestBody = GroupMembersChange
 
 // CreatePermissionPolicyJSONRequestBody defines body for CreatePermissionPolicy for application/json ContentType.
 type CreatePermissionPolicyJSONRequestBody = PermissionPolicyInput
@@ -1280,8 +2487,50 @@ type PatchPermissionPolicyApplicationMergePatchPlusJSONRequestBody = PermissionP
 // ReplacePermissionPolicyJSONRequestBody defines body for ReplacePermissionPolicy for application/json ContentType.
 type ReplacePermissionPolicyJSONRequestBody = PermissionPolicyInput
 
+// CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
+type CreateServiceAccountJSONRequestBody = NewServiceAccount
+
+// UpdateServiceAccountApplicationMergePatchPlusJSONRequestBody defines body for UpdateServiceAccount for application/merge-patch+json ContentType.
+type UpdateServiceAccountApplicationMergePatchPlusJSONRequestBody = ServiceAccountPatch
+
+// DisableServiceAccountJSONRequestBody defines body for DisableServiceAccount for application/json ContentType.
+type DisableServiceAccountJSONRequestBody = DisableRequest
+
+// CreateServiceAccountTokenJSONRequestBody defines body for CreateServiceAccountToken for application/json ContentType.
+type CreateServiceAccountTokenJSONRequestBody = CreateTokenRequest
+
+// UpdateAuthSettingsApplicationMergePatchPlusJSONRequestBody defines body for UpdateAuthSettings for application/merge-patch+json ContentType.
+type UpdateAuthSettingsApplicationMergePatchPlusJSONRequestBody = AuthSettingsPatch
+
 // RunTaskJSONRequestBody defines body for RunTask for application/json ContentType.
 type RunTaskJSONRequestBody = TaskRunRequest
+
+// CreateTokenJSONRequestBody defines body for CreateToken for application/json ContentType.
+type CreateTokenJSONRequestBody = CreateTokenRequest
+
+// RotateCurrentTokenJSONRequestBody defines body for RotateCurrentToken for application/json ContentType.
+type RotateCurrentTokenJSONRequestBody = RotateRequest
+
+// RevokeTokenByValueJSONRequestBody defines body for RevokeTokenByValue for application/json ContentType.
+type RevokeTokenByValueJSONRequestBody = RevokeByValueRequest
+
+// RotateTokenJSONRequestBody defines body for RotateToken for application/json ContentType.
+type RotateTokenJSONRequestBody = RotateRequest
+
+// CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
+type CreateUserJSONRequestBody = NewUser
+
+// UpdatePreferencesApplicationMergePatchPlusJSONRequestBody defines body for UpdatePreferences for application/merge-patch+json ContentType.
+type UpdatePreferencesApplicationMergePatchPlusJSONRequestBody = PreferencesPatch
+
+// UpdateUserApplicationMergePatchPlusJSONRequestBody defines body for UpdateUser for application/merge-patch+json ContentType.
+type UpdateUserApplicationMergePatchPlusJSONRequestBody = UserPatch
+
+// DisableUserJSONRequestBody defines body for DisableUser for application/json ContentType.
+type DisableUserJSONRequestBody = DisableRequest
+
+// PatchUserGroupsJSONRequestBody defines body for PatchUserGroups for application/json ContentType.
+type PatchUserGroupsJSONRequestBody = MembershipChange
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -1294,6 +2543,12 @@ type ServerInterface interface {
 	// GetAuditEvent Read one audit event
 	// (GET /api/v1/audit/events/{id})
 	GetAuditEvent(w http.ResponseWriter, r *http.Request, id string)
+	// GetLoginOptions Read what the sign-in screen offers
+	// (GET /api/v1/auth/login-options)
+	GetLoginOptions(w http.ResponseWriter, r *http.Request)
+	// GetWhoami Read the caller's principal and credential
+	// (GET /api/v1/auth/whoami)
+	GetWhoami(w http.ResponseWriter, r *http.Request)
 	// CheckPermissions Check repository actions for the caller
 	// (POST /api/v1/authz/check)
 	CheckPermissions(w http.ResponseWriter, r *http.Request)
@@ -1303,6 +2558,27 @@ type ServerInterface interface {
 	// ValidatePermissionPolicy Validate a permission policy without storing it
 	// (POST /api/v1/authz/validate-policy)
 	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
+	// ListGroups List groups
+	// (GET /api/v1/groups)
+	ListGroups(w http.ResponseWriter, r *http.Request, params ListGroupsParams)
+	// CreateGroup Create a group
+	// (POST /api/v1/groups)
+	CreateGroup(w http.ResponseWriter, r *http.Request, params CreateGroupParams)
+	// DeleteGroup Delete a group
+	// (DELETE /api/v1/groups/{name})
+	DeleteGroup(w http.ResponseWriter, r *http.Request, name string)
+	// GetGroup Read a group
+	// (GET /api/v1/groups/{name})
+	GetGroup(w http.ResponseWriter, r *http.Request, name string)
+	// UpdateGroup Change a group
+	// (PATCH /api/v1/groups/{name})
+	UpdateGroup(w http.ResponseWriter, r *http.Request, name string)
+	// ListGroupMembers List the members of a group
+	// (GET /api/v1/groups/{name}/members)
+	ListGroupMembers(w http.ResponseWriter, r *http.Request, name string, params ListGroupMembersParams)
+	// PatchGroupMembers Add and remove members of a group
+	// (PATCH /api/v1/groups/{name}/members)
+	PatchGroupMembers(w http.ResponseWriter, r *http.Request, name string)
 	// GetOpenApiJson This document as JSON
 	// (GET /api/v1/openapi.json)
 	GetOpenApiJson(w http.ResponseWriter, r *http.Request)
@@ -1342,6 +2618,39 @@ type ServerInterface interface {
 	// ListRoles List the system roles
 	// (GET /api/v1/roles)
 	ListRoles(w http.ResponseWriter, r *http.Request)
+	// ListServiceAccounts List service accounts
+	// (GET /api/v1/service-accounts)
+	ListServiceAccounts(w http.ResponseWriter, r *http.Request, params ListServiceAccountsParams)
+	// CreateServiceAccount Create a service account
+	// (POST /api/v1/service-accounts)
+	CreateServiceAccount(w http.ResponseWriter, r *http.Request, params CreateServiceAccountParams)
+	// DeleteServiceAccount Delete a service account
+	// (DELETE /api/v1/service-accounts/{name})
+	DeleteServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	// GetServiceAccount Read a service account
+	// (GET /api/v1/service-accounts/{name})
+	GetServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	// UpdateServiceAccount Change a service account
+	// (PATCH /api/v1/service-accounts/{name})
+	UpdateServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	// DisableServiceAccount Disable a service account
+	// (POST /api/v1/service-accounts/{name}/disable)
+	DisableServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	// EnableServiceAccount Enable a service account
+	// (POST /api/v1/service-accounts/{name}/enable)
+	EnableServiceAccount(w http.ResponseWriter, r *http.Request, name string)
+	// RevokeServiceAccountTokens Revoke all tokens of a service account
+	// (DELETE /api/v1/service-accounts/{name}/tokens)
+	RevokeServiceAccountTokens(w http.ResponseWriter, r *http.Request, name string)
+	// CreateServiceAccountToken Create a service-account token
+	// (POST /api/v1/service-accounts/{name}/tokens)
+	CreateServiceAccountToken(w http.ResponseWriter, r *http.Request, name string, params CreateServiceAccountTokenParams)
+	// GetAuthSettings Read the runtime authentication settings
+	// (GET /api/v1/settings/auth)
+	GetAuthSettings(w http.ResponseWriter, r *http.Request, params GetAuthSettingsParams)
+	// UpdateAuthSettings Change the runtime authentication settings
+	// (PATCH /api/v1/settings/auth)
+	UpdateAuthSettings(w http.ResponseWriter, r *http.Request, params UpdateAuthSettingsParams)
 	// GetEncryptionStatus Status of the stored-secret key ring
 	// (GET /api/v1/system/encryption)
 	GetEncryptionStatus(w http.ResponseWriter, r *http.Request)
@@ -1372,6 +2681,90 @@ type ServerInterface interface {
 	// GetVersion Build facts of this replica
 	// (GET /api/v1/system/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
+	// ListTokens List tokens
+	// (GET /api/v1/tokens)
+	ListTokens(w http.ResponseWriter, r *http.Request, params ListTokensParams)
+	// CreateToken Create a personal access token
+	// (POST /api/v1/tokens)
+	CreateToken(w http.ResponseWriter, r *http.Request, params CreateTokenParams)
+	// RevokeCurrentToken Revoke the token that authenticates the request
+	// (DELETE /api/v1/tokens/current)
+	RevokeCurrentToken(w http.ResponseWriter, r *http.Request)
+	// GetCurrentToken Read the token that authenticates the request
+	// (GET /api/v1/tokens/current)
+	GetCurrentToken(w http.ResponseWriter, r *http.Request)
+	// RotateCurrentToken Rotate the token that authenticates the request
+	// (POST /api/v1/tokens/current/rotate)
+	RotateCurrentToken(w http.ResponseWriter, r *http.Request)
+	// RevokeTokenByValue Revoke a token by its value
+	// (POST /api/v1/tokens/revoke)
+	RevokeTokenByValue(w http.ResponseWriter, r *http.Request)
+	// RevokeToken Revoke a token
+	// (DELETE /api/v1/tokens/{id})
+	RevokeToken(w http.ResponseWriter, r *http.Request, id string)
+	// GetToken Read a token
+	// (GET /api/v1/tokens/{id})
+	GetToken(w http.ResponseWriter, r *http.Request, id string)
+	// RotateToken Rotate a token
+	// (POST /api/v1/tokens/{id}/rotate)
+	RotateToken(w http.ResponseWriter, r *http.Request, id string, params RotateTokenParams)
+	// ListUsers List users
+	// (GET /api/v1/users)
+	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
+	// CreateUser Create a user
+	// (POST /api/v1/users)
+	CreateUser(w http.ResponseWriter, r *http.Request, params CreateUserParams)
+	// GetCurrentUser Read the caller's own user record
+	// (GET /api/v1/users/me)
+	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// GetPreferences Read the caller's UI preferences
+	// (GET /api/v1/users/me/preferences)
+	GetPreferences(w http.ResponseWriter, r *http.Request, params GetPreferencesParams)
+	// UpdatePreferences Change the caller's UI preferences
+	// (PATCH /api/v1/users/me/preferences)
+	UpdatePreferences(w http.ResponseWriter, r *http.Request, params UpdatePreferencesParams)
+	// EndOwnSessions End all of the caller's sessions
+	// (DELETE /api/v1/users/me/sessions)
+	EndOwnSessions(w http.ResponseWriter, r *http.Request, params EndOwnSessionsParams)
+	// ListOwnSessions List the caller's active sessions
+	// (GET /api/v1/users/me/sessions)
+	ListOwnSessions(w http.ResponseWriter, r *http.Request)
+	// EndOwnSession End one of the caller's sessions
+	// (DELETE /api/v1/users/me/sessions/{id})
+	EndOwnSession(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// RevokeOwnTokens Revoke all own tokens
+	// (DELETE /api/v1/users/me/tokens)
+	RevokeOwnTokens(w http.ResponseWriter, r *http.Request)
+	// DeleteUser Delete a user
+	// (DELETE /api/v1/users/{username})
+	DeleteUser(w http.ResponseWriter, r *http.Request, username string)
+	// GetUser Read a user
+	// (GET /api/v1/users/{username})
+	GetUser(w http.ResponseWriter, r *http.Request, username string)
+	// UpdateUser Correct a user's profile data
+	// (PATCH /api/v1/users/{username})
+	UpdateUser(w http.ResponseWriter, r *http.Request, username string)
+	// DisableUser Disable a user
+	// (POST /api/v1/users/{username}/disable)
+	DisableUser(w http.ResponseWriter, r *http.Request, username string)
+	// EnableUser Enable a user
+	// (POST /api/v1/users/{username}/enable)
+	EnableUser(w http.ResponseWriter, r *http.Request, username string)
+	// PatchUserGroups Add and remove manual group memberships of a user
+	// (PATCH /api/v1/users/{username}/groups)
+	PatchUserGroups(w http.ResponseWriter, r *http.Request, username string)
+	// EndUserSessions End all sessions of a user
+	// (DELETE /api/v1/users/{username}/sessions)
+	EndUserSessions(w http.ResponseWriter, r *http.Request, username string)
+	// ListUserSessions List a user's active sessions
+	// (GET /api/v1/users/{username}/sessions)
+	ListUserSessions(w http.ResponseWriter, r *http.Request, username string)
+	// RevokeUserTokens Revoke all tokens of a user
+	// (DELETE /api/v1/users/{username}/tokens)
+	RevokeUserTokens(w http.ResponseWriter, r *http.Request, username string)
+	// UnlockBreakGlass Clear the lockout of the break-glass account
+	// (POST /api/v1/users/{username}/unlock)
+	UnlockBreakGlass(w http.ResponseWriter, r *http.Request, username string)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1748,6 +3141,34 @@ func (siw *ServerInterfaceWrapper) GetAuditEvent(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetLoginOptions operation middleware
+func (siw *ServerInterfaceWrapper) GetLoginOptions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLoginOptions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWhoami operation middleware
+func (siw *ServerInterfaceWrapper) GetWhoami(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWhoami(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CheckPermissions operation middleware
 func (siw *ServerInterfaceWrapper) CheckPermissions(w http.ResponseWriter, r *http.Request) {
 
@@ -1781,6 +3202,304 @@ func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ValidatePermissionPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListGroupsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "origin" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "origin", r.URL.Query(), &params.Origin, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "origin"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "origin", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGroups(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateGroup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteGroup(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGroup operation middleware
+func (siw *ServerInterfaceWrapper) GetGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGroup(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateGroup(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListGroupMembers operation middleware
+func (siw *ServerInterfaceWrapper) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListGroupMembersParams
+
+	// ------------- Optional query parameter "source" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "source", r.URL.Query(), &params.Source, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "source"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGroupMembers(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchGroupMembers operation middleware
+func (siw *ServerInterfaceWrapper) PatchGroupMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchGroupMembers(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2323,6 +4042,407 @@ func (siw *ServerInterfaceWrapper) ListRoles(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// ListServiceAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ListServiceAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListServiceAccountsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListServiceAccounts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) CreateServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateServiceAccountParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateServiceAccount(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) DeleteServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteServiceAccount(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) GetServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetServiceAccount(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) UpdateServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateServiceAccount(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) DisableServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableServiceAccount(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) EnableServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableServiceAccount(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeServiceAccountTokens operation middleware
+func (siw *ServerInterfaceWrapper) RevokeServiceAccountTokens(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeServiceAccountTokens(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateServiceAccountToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateServiceAccountToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateServiceAccountTokenParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateServiceAccountToken(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAuthSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAuthSettingsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAuthSettings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAuthSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAuthSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateAuthSettingsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAuthSettings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetEncryptionStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetEncryptionStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -2626,6 +4746,937 @@ func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListTokens(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTokensParams
+
+	// ------------- Optional query parameter "owner" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "owner", r.URL.Query(), &params.Owner, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "owner"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "type", r.URL.Query(), &params.Type, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "expiresBefore" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "expiresBefore", r.URL.Query(), &params.ExpiresBefore, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "expiresBefore"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expiresBefore", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "expiresAfter" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "expiresAfter", r.URL.Query(), &params.ExpiresAfter, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "expiresAfter"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expiresAfter", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "lastUsedBefore" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "lastUsedBefore", r.URL.Query(), &params.LastUsedBefore, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "lastUsedBefore"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "lastUsedBefore", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTokens(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateTokenParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateToken(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeCurrentToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeCurrentToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeCurrentToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentToken operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateCurrentToken operation middleware
+func (siw *ServerInterfaceWrapper) RotateCurrentToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateCurrentToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeTokenByValue operation middleware
+func (siw *ServerInterfaceWrapper) RevokeTokenByValue(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeTokenByValue(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeToken(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetToken operation middleware
+func (siw *ServerInterfaceWrapper) GetToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetToken(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateToken operation middleware
+func (siw *ServerInterfaceWrapper) RotateToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RotateTokenParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateToken(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListUsersParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "origin" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "origin", r.URL.Query(), &params.Origin, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "origin"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "origin", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "group" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "group", r.URL.Query(), &params.Group, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "group"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "admin" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "admin", r.URL.Query(), &params.Admin, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "admin"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "admin", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUsers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateUser operation middleware
+func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateUserParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUser(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentUser operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPreferences operation middleware
+func (siw *ServerInterfaceWrapper) GetPreferences(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPreferencesParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPreferences(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePreferences operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdatePreferencesParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePreferences(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EndOwnSessions operation middleware
+func (siw *ServerInterfaceWrapper) EndOwnSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EndOwnSessionsParams
+
+	// ------------- Optional query parameter "keepCurrent" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "keepCurrent", r.URL.Query(), &params.KeepCurrent, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "keepCurrent"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keepCurrent", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EndOwnSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOwnSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListOwnSessions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOwnSessions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EndOwnSession operation middleware
+func (siw *ServerInterfaceWrapper) EndOwnSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EndOwnSession(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeOwnTokens operation middleware
+func (siw *ServerInterfaceWrapper) RevokeOwnTokens(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeOwnTokens(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteUser operation middleware
+func (siw *ServerInterfaceWrapper) DeleteUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteUser(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUser operation middleware
+func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUser(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateUser operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateUser(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableUser operation middleware
+func (siw *ServerInterfaceWrapper) DisableUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableUser(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableUser operation middleware
+func (siw *ServerInterfaceWrapper) EnableUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableUser(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchUserGroups operation middleware
+func (siw *ServerInterfaceWrapper) PatchUserGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchUserGroups(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EndUserSessions operation middleware
+func (siw *ServerInterfaceWrapper) EndUserSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EndUserSessions(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUserSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListUserSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserSessions(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeUserTokens operation middleware
+func (siw *ServerInterfaceWrapper) RevokeUserTokens(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeUserTokens(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnlockBreakGlass operation middleware
+func (siw *ServerInterfaceWrapper) UnlockBreakGlass(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnlockBreakGlass(w, r, username)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2762,6 +5813,54 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/tasks", wrapper.ListTasks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/tasks/{name}/run", wrapper.RunTask)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/encryption", wrapper.GetEncryptionStatus)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users", wrapper.ListUsers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users", wrapper.CreateUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/me", wrapper.GetCurrentUser)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{username}", wrapper.DeleteUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/{username}", wrapper.GetUser)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/users/{username}", wrapper.UpdateUser)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{username}/disable", wrapper.DisableUser)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{username}/enable", wrapper.EnableUser)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/users/{username}/groups", wrapper.PatchUserGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{username}/unlock", wrapper.UnlockBreakGlass)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/groups", wrapper.ListGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/groups", wrapper.CreateGroup)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/groups/{name}", wrapper.DeleteGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/groups/{name}", wrapper.GetGroup)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/groups/{name}", wrapper.UpdateGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/groups/{name}/members", wrapper.ListGroupMembers)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/groups/{name}/members", wrapper.PatchGroupMembers)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/service-accounts", wrapper.ListServiceAccounts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts", wrapper.CreateServiceAccount)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/service-accounts/{name}", wrapper.DeleteServiceAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/service-accounts/{name}", wrapper.GetServiceAccount)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/service-accounts/{name}", wrapper.UpdateServiceAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts/{name}/disable", wrapper.DisableServiceAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts/{name}/enable", wrapper.EnableServiceAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/tokens", wrapper.ListTokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/tokens", wrapper.CreateToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/tokens/current", wrapper.RevokeCurrentToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/tokens/current", wrapper.GetCurrentToken)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/tokens/current/rotate", wrapper.RotateCurrentToken)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/tokens/revoke", wrapper.RevokeTokenByValue)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/tokens/{id}", wrapper.RevokeToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/tokens/{id}", wrapper.GetToken)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/tokens/{id}/rotate", wrapper.RotateToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/me/tokens", wrapper.RevokeOwnTokens)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{username}/tokens", wrapper.RevokeUserTokens)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/service-accounts/{name}/tokens", wrapper.RevokeServiceAccountTokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts/{name}/tokens", wrapper.CreateServiceAccountToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.GetAuthSettings)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.UpdateAuthSettings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/login-options", wrapper.GetLoginOptions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/whoami", wrapper.GetWhoami)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/me/sessions", wrapper.EndOwnSessions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/me/sessions", wrapper.ListOwnSessions)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/me/sessions/{id}", wrapper.EndOwnSession)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{username}/sessions", wrapper.EndUserSessions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/{username}/sessions", wrapper.ListUserSessions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/me/preferences", wrapper.GetPreferences)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/users/me/preferences", wrapper.UpdatePreferences)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/permission-policies", wrapper.ListPermissionPolicies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/permission-policies", wrapper.CreatePermissionPolicy)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.DeletePermissionPolicy)

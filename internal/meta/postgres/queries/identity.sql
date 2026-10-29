@@ -66,7 +66,10 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at,
  WHERE p.kind = 'user' AND p.name = sqlc.arg(name)::text;
 
 -- name: IdentityListUsers :many
--- Keyset order by name. status is active, disabled or ''; origin and group are '' for any.
+-- Keyset order by name. status is active, disabled, locked (the break-glass account
+-- while its lockout is in force, R-AUTH-038) or ''; origin and group are '' for any;
+-- admin is 'true', 'false' or '' (the user holds the role admin directly or through
+-- a group, or is the break-glass account).
 SELECT p.id::text AS id, p.name, p.status, p.created_at,
        coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
        u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
@@ -75,13 +78,46 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at,
  WHERE p.kind = 'user'
    AND p.name > sqlc.arg(after)::text
    AND (sqlc.arg(query)::text = '' OR p.name ILIKE '%' || sqlc.arg(query)::text || '%' OR u.email ILIKE '%' || sqlc.arg(query)::text || '%')
-   AND (sqlc.arg(status)::text = '' OR p.status = sqlc.arg(status)::text)
+   AND (sqlc.arg(status)::text = ''
+        OR (sqlc.arg(status)::text = 'locked' AND u.is_break_glass
+            AND EXISTS (SELECT 1 FROM auth_lockout l WHERE l.account_key = 'break-glass' AND l.locked_until > now()))
+        OR (sqlc.arg(status)::text <> 'locked' AND p.status = sqlc.arg(status)::text))
    AND (sqlc.arg(origin)::text = '' OR u.origin = sqlc.arg(origin)::text)
    AND (sqlc.arg(group_name)::text = '' OR EXISTS (
           SELECT 1 FROM group_membership m JOIN principal g ON g.id = m.group_id
            WHERE m.member_id = p.id AND g.name = sqlc.arg(group_name)::text))
+   AND (sqlc.arg(admin)::text = '' OR (sqlc.arg(admin)::text = 'true') = (
+          u.is_break_glass OR EXISTS (
+            SELECT 1 FROM authz_role_binding b
+             WHERE b.role = 'admin'
+               AND (b.principal_id = p.id
+                    OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = p.id)))))
  ORDER BY p.name
  LIMIT sqlc.arg(max_rows)::int;
+
+-- name: IdentityAdminVia :many
+-- Why the given users hold the role admin (R-AUTH-016 isAdmin and adminVia): "direct"
+-- for a binding on the user, "group:<name>" for a binding on a group the user is a
+-- member of.
+SELECT b.principal_id::text AS user_id, 'direct'::text AS via
+  FROM authz_role_binding b
+ WHERE b.role = 'admin' AND b.principal_id = ANY(sqlc.arg(ids)::text[]::uuid[])
+UNION
+SELECT m.member_id::text AS user_id, 'group:' || g.name AS via
+  FROM authz_role_binding b
+  JOIN group_membership m ON m.group_id = b.principal_id
+  JOIN principal g ON g.id = b.principal_id
+ WHERE b.role = 'admin' AND m.member_id = ANY(sqlc.arg(ids)::text[]::uuid[])
+ ORDER BY user_id, via;
+
+-- name: IdentityGroupRoles :many
+-- The system roles bound to a group, read only on the group record (R-AUTH-018).
+SELECT role FROM authz_role_binding WHERE principal_id = sqlc.arg(group_id)::text::uuid ORDER BY role;
+
+-- name: IdentityBreakGlassLockedUntil :many
+-- The end of the lockout of the break-glass account while it is in force (R-AUTH-038);
+-- no row when it is not locked.
+SELECT locked_until FROM auth_lockout WHERE account_key = 'break-glass' AND locked_until > now();
 
 -- name: IdentityUserIdentities :many
 SELECT provider_id, issuer, (subject IS NOT NULL)::boolean AS linked FROM user_identity
@@ -391,7 +427,8 @@ SELECT anonymous_access,
        coalesce(extract(epoch FROM pat_max_ttl), -1)::float8 AS pat_max_secs,
        coalesce(extract(epoch FROM sat_default_ttl), -1)::float8 AS sat_default_secs,
        coalesce(extract(epoch FROM sat_max_ttl), -1)::float8 AS sat_max_secs,
-       coalesce(extract(epoch FROM expiry_notice), -1)::float8 AS expiry_notice_secs
+       coalesce(extract(epoch FROM expiry_notice), -1)::float8 AS expiry_notice_secs,
+       (extract(epoch FROM updated_at) * 1000000)::bigint AS revision
   FROM auth_settings;
 
 -- name: IdentityUpdateSettings :exec
@@ -402,5 +439,41 @@ UPDATE auth_settings
        sat_default_ttl = CASE WHEN sqlc.arg(sat_default_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(sat_default_secs)::float8) END,
        sat_max_ttl = CASE WHEN sqlc.arg(sat_max_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(sat_max_secs)::float8) END,
        expiry_notice = CASE WHEN sqlc.arg(expiry_notice_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(expiry_notice_secs)::float8) END,
-       updated_at = now(), updated_by = NULLIF(sqlc.arg(updated_by)::text, '')::uuid
+       updated_at = greatest(now(), updated_at + interval '1 microsecond'), updated_by = NULLIF(sqlc.arg(updated_by)::text, '')::uuid
  WHERE singleton;
+
+-- Group members, one row per member (R-AUTH-018) --------------------------------
+
+-- name: IdentityGroupMemberPage :many
+-- The members of a group ordered by kind and name, each with all its sources; the
+-- optional source keeps the members that hold it. after_kind and after_name are the
+-- last member of the previous page ('' on the first).
+SELECT mp.kind AS member_kind, mp.name AS member_name, array_agg(m.source ORDER BY m.source)::text[] AS sources
+  FROM group_membership m JOIN principal mp ON mp.id = m.member_id
+ WHERE m.group_id = sqlc.arg(group_id)::text::uuid
+ GROUP BY mp.kind, mp.name
+HAVING (mp.kind, mp.name) > (sqlc.arg(after_kind)::text, sqlc.arg(after_name)::text)
+   AND (sqlc.arg(source)::text = '' OR sqlc.arg(source)::text = ANY(array_agg(m.source)))
+ ORDER BY mp.kind, mp.name
+ LIMIT sqlc.arg(max_rows)::int;
+
+-- User preferences (R-API-021) ----------------------------------------------------
+
+-- name: PreferencesGet :many
+SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts,
+       coalesce(project_filter, '')::text AS project_filter, revision
+  FROM user_preferences WHERE user_id = sqlc.arg(user_id)::text::uuid;
+
+-- name: PreferencesUpsert :many
+-- A user without a row has the defaults at revision 1; the first write inserts
+-- revision 2. if_revision is 0 for "no condition" (If-Match: *); a row that exists
+-- is updated only when its revision matches, so a concurrent write is a 412.
+INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, project_filter, revision)
+VALUES (sqlc.arg(user_id)::text::uuid, NULLIF(sqlc.arg(locale)::text, ''), NULLIF(sqlc.arg(theme)::text, ''),
+        sqlc.arg(keyboard_shortcuts)::boolean, NULLIF(sqlc.arg(project_filter)::text, ''), 2)
+ON CONFLICT (user_id) DO UPDATE
+   SET locale = EXCLUDED.locale, theme = EXCLUDED.theme, keyboard_shortcuts = EXCLUDED.keyboard_shortcuts,
+       project_filter = EXCLUDED.project_filter, revision = p.revision + 1, updated_at = now()
+ WHERE sqlc.arg(if_revision)::bigint = 0 OR p.revision = sqlc.arg(if_revision)::bigint
+RETURNING coalesce(p.locale, '')::text AS locale, coalesce(p.theme, '')::text AS theme, p.keyboard_shortcuts,
+          coalesce(p.project_filter, '')::text AS project_filter, p.revision;

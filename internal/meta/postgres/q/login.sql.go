@@ -297,6 +297,45 @@ func (q *Queries) EndSessionIfIdle(ctx context.Context, id string) ([]string, er
 	return items, nil
 }
 
+const endSessionOfPrincipal = `-- name: EndSessionOfPrincipal :many
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text
+ WHERE id = $2::text::uuid AND principal_id = $3::text::uuid AND ended_at IS NULL
+RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
+`
+
+type EndSessionOfPrincipalParams struct {
+	Reason      string
+	ID          string
+	PrincipalID string
+}
+
+type EndSessionOfPrincipalRow struct {
+	ID              string
+	SecretSha256Hex string
+}
+
+// One live session of a principal (DELETE /users/me/sessions/{id}, R-AUTH-010); a
+// session of another principal or an ended one matches nothing.
+func (q *Queries) EndSessionOfPrincipal(ctx context.Context, arg EndSessionOfPrincipalParams) ([]EndSessionOfPrincipalRow, error) {
+	rows, err := q.db.Query(ctx, endSessionOfPrincipal, arg.Reason, arg.ID, arg.PrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EndSessionOfPrincipalRow{}
+	for rows.Next() {
+		var i EndSessionOfPrincipalRow
+		if err := rows.Scan(&i.ID, &i.SecretSha256Hex); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const endSessionsByID = `-- name: EndSessionsByID :many
 UPDATE ui_session SET ended_at = now(), end_reason = $1::text
  WHERE id = ANY($2::text[]::uuid[]) AND ended_at IS NULL
@@ -358,6 +397,45 @@ func (q *Queries) EndSessionsOfPrincipal(ctx context.Context, arg EndSessionsOfP
 	items := []EndSessionsOfPrincipalRow{}
 	for rows.Next() {
 		var i EndSessionsOfPrincipalRow
+		if err := rows.Scan(&i.ID, &i.SecretSha256Hex); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const endSessionsOfPrincipalExcept = `-- name: EndSessionsOfPrincipalExcept :many
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text
+ WHERE principal_id = $2::text::uuid AND ended_at IS NULL
+   AND id <> $3::text::uuid
+RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
+`
+
+type EndSessionsOfPrincipalExceptParams struct {
+	Reason      string
+	PrincipalID string
+	KeepID      string
+}
+
+type EndSessionsOfPrincipalExceptRow struct {
+	ID              string
+	SecretSha256Hex string
+}
+
+// Every open session of a principal but one (DELETE /users/me/sessions?keepCurrent=true).
+func (q *Queries) EndSessionsOfPrincipalExcept(ctx context.Context, arg EndSessionsOfPrincipalExceptParams) ([]EndSessionsOfPrincipalExceptRow, error) {
+	rows, err := q.db.Query(ctx, endSessionsOfPrincipalExcept, arg.Reason, arg.PrincipalID, arg.KeepID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EndSessionsOfPrincipalExceptRow{}
+	for rows.Next() {
+		var i EndSessionsOfPrincipalExceptRow
 		if err := rows.Scan(&i.ID, &i.SecretSha256Hex); err != nil {
 			return nil, err
 		}

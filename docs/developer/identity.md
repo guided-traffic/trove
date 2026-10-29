@@ -2,9 +2,9 @@
 
 Work package WP1.2 (area `identity`) of milestone M1. The requirements are R-AUTH-016 to R-AUTH-032, R-AUTH-033,
 R-AUTH-037, R-AUTH-038, R-AUTH-040 to R-AUTH-043 in [identity-and-authentication.md](../spec/identity-and-authentication.md);
-the decisions of this area are Q-AUTH-18 to Q-AUTH-22 on that page. The security view is
-[security/tokens-and-credentials.md](../security/tokens-and-credentials.md). The management API operations of the area are
-not built yet: every function below is shaped so that a handler is a thin call.
+the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48 on that page. The security view is
+[security/tokens-and-credentials.md](../security/tokens-and-credentials.md). The management API operations are described in
+[the section below](#management-api); every handler is a thin call of the functions of this page.
 
 ## What to hold in your head
 
@@ -159,6 +159,7 @@ unchanged), so a fill that raced a revocation serves one request and is not cach
 | Unit | `internal/auth/token/*_test.go` | the format test vector, scope validation, the derivation rule, lifetime table, the closed gate with an unreachable database (503), throttle consultation, cache eviction by payload kind |
 | Unit | `internal/auth/principal/principal_test.go` | name rules, UUIDv7, payload helpers, shared lookups |
 | Integration | `test/integration/identity/` | two or three in-process replicas against the shared stack, each with Valkey running or stopped: E1.2 (database text scan finds no token value; revocation within 2 s), the provisioner and group sync, concurrent first logins, memberships, disable/enable/delete, service accounts, creation limits under concurrency, derivation, rotation, revocation by value, settings and the anonymous switch across replicas, throttle markers, the scheduled tasks |
+| Integration, HTTP | `test/integration/identity/api_*_test.go` | the same replicas serving the real handlers ([test/integration/idapi](../../test/integration/idapi): the production chain, the real stage and decision point), every answer validated against the document: `TestAPIOperations` reaches every identity operation and asserts `Uncovered` is empty; E1.2 over HTTP with Valkey running and stopped; concurrent idempotent creates on three replicas; E1.8 for Bearer and Basic across three replicas (cluster limiter, and the per-replica share without Valkey); the flow-start budget of the revocation by value; `audit_event` rows for token creation and revocation (E1.5) |
 
 Run the integration area from the checkout root with the stack up (see [build-and-test.md](build-and-test.md)):
 `set -a; . /Users/hfi/repos/trove/.dev/integration/env; set +a; go test -count=1 -tags integration ./test/integration/identity/...`
@@ -176,7 +177,71 @@ Run the integration area from the checkout root with the stack up (see [build-an
 | `BreakGlassName` | `wire_identity.go` | `auth.break_glass.username`, the reserved username of the provisioner and the manager |
 | `Provisioner` | `a.m1.provisioner` | login: `wireLogin` hands it to the OIDC service, whose callback calls `SignIn` |
 | `principal.Metrics` | `wire_identity.go` `authMetrics` | one instance per replica; the session store and the login count into the same families |
-| `principal.AdminBinder` | `authz.Service.BindAdmin` | only `trove admin service-account create --admin` ([admin_identity.go](../../cmd/trove/admin_identity.go)); the running manager has none, no API operation binds a role on creation |
+| `principal.AdminBinder` | `authz.Service.BindAdmin` | only `trove admin service-account create --admin` ([admin_identity.go](../../cmd/trove/admin_identity.go)); the running manager has none, no API operation binds a role on creation (Q-AUTH-47) |
+| `v1.AuthServices` | `App.authServices` ([wire_identity.go](../../internal/app/wire_identity.go)) | the manager, the token service, the settings store, the session store, the login and the limiter `auth.flow_starts` that `startClient` passes to every endpoint's `v1.Options.Auth`; a component the replica lacks stays nil and its operations answer 503 |
+
+## Management API
+
+The handlers are in [internal/api/v1](../../internal/api/v1): `users_api.go`, `groups_api.go` (groups and service accounts),
+`tokens_api.go`, `sessions_api.go` (login options, `whoami`, sessions), `authsettings_api.go`, `preferences_api.go`; the services they
+need are `v1.AuthServices` ([auth_services.go](../../internal/api/v1/auth_services.go)) and the helpers of merge patches
+([auth_patch.go](../../internal/api/v1/auth_patch.go)). The document is `api/openapi.yaml` between the `identity` and `login` markers.
+
+| operationId | Method and path | `x-trove-permission` |
+|---|---|---|
+| `listUsers` | `GET /api/v1/users` | `identities:read` |
+| `createUser` | `POST /api/v1/users` | `identities:write`, idempotent |
+| `getCurrentUser` | `GET /api/v1/users/me` | authenticated (a user or the break-glass account) |
+| `getUser` | `GET /api/v1/users/{username}` | `identities:read` |
+| `updateUser` | `PATCH /api/v1/users/{username}` | `identities:write` |
+| `deleteUser` | `DELETE /api/v1/users/{username}` | `identities:write` |
+| `disableUser`, `enableUser` | `POST /api/v1/users/{username}/disable`, `/enable` | `identities:write` |
+| `patchUserGroups` | `PATCH /api/v1/users/{username}/groups` | `identities:write` |
+| `unlockBreakGlass` | `POST /api/v1/users/{username}/unlock` | role `admin` |
+| `listGroups`, `getGroup` | `GET /api/v1/groups`, `/groups/{name}` | `identities:read` |
+| `createGroup` | `POST /api/v1/groups` | `identities:write`, idempotent |
+| `updateGroup`, `deleteGroup` | `PATCH`, `DELETE /api/v1/groups/{name}` | `identities:write` |
+| `listGroupMembers` | `GET /api/v1/groups/{name}/members` | `identities:read` |
+| `patchGroupMembers` | `PATCH /api/v1/groups/{name}/members` | `identities:write` |
+| `listServiceAccounts`, `getServiceAccount` | `GET /api/v1/service-accounts`, `/service-accounts/{name}` | `identities:read` |
+| `createServiceAccount` | `POST /api/v1/service-accounts` | `identities:write`, idempotent |
+| `updateServiceAccount`, `deleteServiceAccount` | `PATCH`, `DELETE /api/v1/service-accounts/{name}` | `identities:write` |
+| `disableServiceAccount`, `enableServiceAccount` | `POST /api/v1/service-accounts/{name}/disable`, `/enable` | `identities:write` |
+| `createToken` | `POST /api/v1/tokens` | authenticated (handler: a user with a recent session, or a PAT under the derivation rule), idempotent |
+| `listTokens` | `GET /api/v1/tokens` | authenticated (own tokens; all with `tokens:read`) |
+| `getToken` | `GET /api/v1/tokens/{id}` | authenticated (404 for a token the caller may not see) |
+| `getCurrentToken`, `revokeCurrentToken`, `rotateCurrentToken` | `GET`, `DELETE /api/v1/tokens/current`, `POST /api/v1/tokens/current/rotate` | authenticated (404 `not_a_token` for a session) |
+| `revokeToken` | `DELETE /api/v1/tokens/{id}` | authenticated (owner, or `tokens:revoke`) |
+| `rotateToken` | `POST /api/v1/tokens/{id}/rotate` | authenticated (owner of a PAT; administrator or the account itself for a SAT), idempotent |
+| `revokeTokenByValue` | `POST /api/v1/tokens/revoke` | public, counted in `auth.flow_starts` |
+| `revokeOwnTokens` | `DELETE /api/v1/users/me/tokens` | authenticated (a user) |
+| `revokeUserTokens`, `revokeServiceAccountTokens` | `DELETE /api/v1/users/{username}/tokens`, `/service-accounts/{name}/tokens` | `tokens:revoke` |
+| `createServiceAccountToken` | `POST /api/v1/service-accounts/{name}/tokens` | authenticated (an administrator, or a token of the account), idempotent |
+| `getAuthSettings`, `updateAuthSettings` | `GET`, `PATCH /api/v1/settings/auth` | `settings:read`, `settings:write` |
+
+How the pieces fit:
+
+- **Idempotent creates are one transaction with the idempotency row.** `Idempotency.Do` hands the operation a transaction; the handler passes
+  `principal.Join(ctx, tx)` to the manager or the token service, whose database is a `principal.Joinable`, so their `InTx` and `Read`
+  use that transaction (Q-AUTH-46). A token create sets `Outcome.SecretID`: the stored outcome has no body, and a replay is
+  `409 token_already_issued` with the token ID.
+- **The caller's rights that depend on the data are decided in the handler.** The authorization step has checked the declaration; the
+  handlers add the rules of the specification that need the record: the owner of a token, the derivation rule (`presenting` builds the
+  parent `token.Info` from the token row), the recent sign-in of a session (`requireRecentAuth`, R-AUTH-011), no impersonation, and
+  `404` for what the caller may not see. A capability check is never repeated here.
+- **Every management `GET` reads PostgreSQL.** The handlers call `Manager.Get*`, `Tokens.Get`, `Settings.Read` and the preference query,
+  which read the database, never the replica's cache of the authentication stage (R-API-052).
+- **Merge patches** of users, groups and service accounts are decoded into structs of `json.RawMessage` members (`userPatchBody` and the
+  like), so an absent member, a `null` and a value are told apart; the read-only members of the record are listed in the struct and
+  ignored, so a body obtained by `GET` can be sent back (R-API-013). The settings and preferences patches take `If-Match`
+  (Q-AUTH-41, Q-API-24, Q-API-26).
+- **The settings revision** is the change time of the row in microseconds (`token.Settings.Revision`); `SettingsStore.Update` compares
+  `SettingsPatch.IfRevision` inside the updating transaction and returns `SettingsChangedError`, which the handler answers as 412.
+
+Extension checklist, **a new identity operation**: add the path and schemas between the markers of `api/openapi.yaml` (the permission, the
+`429`, the problem responses, `x-trove-reserved-names` for a literal next to a key), run `make generate`, write the handler on `*Server`
+with `s.identityReady`, call the domain function, answer with `failIdentity`, add it to `identityOperations` in
+[api_test.go](../../test/integration/identity/api_test.go) so that `Uncovered` fails until a test reaches it.
 
 ## Bootstrap commands
 

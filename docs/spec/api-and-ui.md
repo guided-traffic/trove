@@ -4682,6 +4682,61 @@ Two behaviors of the shared conventions showed when the first resource with a ve
 
 **Applied in the spec:** none; [http-api.md](../developer/http-api.md) lists both.
 
+### Q-API-24 · `If-Match` is an optional header in the document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The shared parameter `IfMatch` is `required: true`. The generated binding refuses a missing required header with `400 malformed_request`
+before the handler runs, while R-API-012 answers `428 precondition_required`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the shared parameter | A missing header is a 400 | No new text | Contradicts R-API-012 |
+| (b) Declare the header inline as optional (chosen) | The operations of the identity area (`PATCH /settings/auth`, `PATCH /users/me/preferences`) carry their own `If-Match` parameter, `required: false`, and the handler answers 428 | The document and the behaviour agree | Two spellings of one header in the document |
+
+**Choice:** (b). The shared component is not edited, since it belongs to no area; a later change of the generator binding (a required header
+answering 428) would let every operation use the shared parameter again.
+
+**Rationale:** the document describes what the server does. The development agent would revisit this when the api area changes the binding.
+
+**Applied in the spec:** none.
+
+### Q-API-25 · The identity resources have no revision
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-012 gives `ETag` and `If-Match` to resources that carry a revision column. Users, groups and service accounts carry none, and R-AUTH-016,
+R-AUTH-018 and R-AUTH-020 do not ask for one.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add revision columns | Three columns, three registrations | Same as the rest | Three migrations in parallel with other areas; the pages do not ask |
+| (b) A merge patch changes the members it names (chosen) | `PATCH` takes `application/merge-patch+json`, needs no `If-Match`, and writes the members the patch names; an absent member stays, `null` resets, a read-only member is ignored | Matches the pages | Two administrators patching one member race, the last write wins |
+
+**Choice:** (b); recorded as the gap H-135 on [the token and credential page](../security/tokens-and-credentials.md).
+
+**Rationale:** the members are descriptive (display name, e-mail, description, flags) and the audit event names the changed members. The
+development agent would revisit this when an identity member becomes security-relevant to concurrent edits.
+
+**Applied in the spec:** none.
+
+### Q-API-26 · Preferences without a row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-021 gives `user_preferences.revision` as the ETag, and a user who never saved preferences has no row.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Create the row at the first sign-in | The provisioner writes it | `GET` always finds a row | The login area writes a table it does not own |
+| (b) Defaults at revision 1, the first write inserts revision 2 (chosen) | `GET` without a row answers the defaults and `ETag: "1"`; a `PATCH` with `If-Match: "1"` or `*` inserts the row | No write on the sign-in path; the `If-Match` is checked in the writing transaction | A revision 1 without a row |
+
+**Choice:** (b).
+
+**Rationale:** most users never change a preference. The development agent would revisit this if the preferences grow a column that a
+reader must not see as a default.
+
+**Applied in the spec:** none.
 
 ## What this does not cover
 

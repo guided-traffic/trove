@@ -44,6 +44,47 @@ func (q *Queries) IdentityAddMembership(ctx context.Context, arg IdentityAddMemb
 	return items, nil
 }
 
+const identityAdminVia = `-- name: IdentityAdminVia :many
+SELECT b.principal_id::text AS user_id, 'direct'::text AS via
+  FROM authz_role_binding b
+ WHERE b.role = 'admin' AND b.principal_id = ANY($1::text[]::uuid[])
+UNION
+SELECT m.member_id::text AS user_id, 'group:' || g.name AS via
+  FROM authz_role_binding b
+  JOIN group_membership m ON m.group_id = b.principal_id
+  JOIN principal g ON g.id = b.principal_id
+ WHERE b.role = 'admin' AND m.member_id = ANY($1::text[]::uuid[])
+ ORDER BY user_id, via
+`
+
+type IdentityAdminViaRow struct {
+	UserID string
+	Via    string
+}
+
+// Why the given users hold the role admin (R-AUTH-016 isAdmin and adminVia): "direct"
+// for a binding on the user, "group:<name>" for a binding on a group the user is a
+// member of.
+func (q *Queries) IdentityAdminVia(ctx context.Context, ids []string) ([]IdentityAdminViaRow, error) {
+	rows, err := q.db.Query(ctx, identityAdminVia, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityAdminViaRow{}
+	for rows.Next() {
+		var i IdentityAdminViaRow
+		if err := rows.Scan(&i.UserID, &i.Via); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityAutoJoinGroups = `-- name: IdentityAutoJoinGroups :many
 SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE g.auto_join ORDER BY p.name
@@ -67,6 +108,32 @@ func (q *Queries) IdentityAutoJoinGroups(ctx context.Context) ([]IdentityAutoJoi
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityBreakGlassLockedUntil = `-- name: IdentityBreakGlassLockedUntil :many
+SELECT locked_until FROM auth_lockout WHERE account_key = 'break-glass' AND locked_until > now()
+`
+
+// The end of the lockout of the break-glass account while it is in force (R-AUTH-038);
+// no row when it is not locked.
+func (q *Queries) IdentityBreakGlassLockedUntil(ctx context.Context) ([]pgtype.Timestamptz, error) {
+	rows, err := q.db.Query(ctx, identityBreakGlassLockedUntil)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.Timestamptz{}
+	for rows.Next() {
+		var locked_until pgtype.Timestamptz
+		if err := rows.Scan(&locked_until); err != nil {
+			return nil, err
+		}
+		items = append(items, locked_until)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -359,7 +426,8 @@ SELECT anonymous_access,
        coalesce(extract(epoch FROM pat_max_ttl), -1)::float8 AS pat_max_secs,
        coalesce(extract(epoch FROM sat_default_ttl), -1)::float8 AS sat_default_secs,
        coalesce(extract(epoch FROM sat_max_ttl), -1)::float8 AS sat_max_secs,
-       coalesce(extract(epoch FROM expiry_notice), -1)::float8 AS expiry_notice_secs
+       coalesce(extract(epoch FROM expiry_notice), -1)::float8 AS expiry_notice_secs,
+       (extract(epoch FROM updated_at) * 1000000)::bigint AS revision
   FROM auth_settings
 `
 
@@ -370,6 +438,7 @@ type IdentityGetSettingsRow struct {
 	SatDefaultSecs   float64
 	SatMaxSecs       float64
 	ExpiryNoticeSecs float64
+	Revision         int64
 }
 
 // Runtime settings -----------------------------------------------------------
@@ -390,6 +459,7 @@ func (q *Queries) IdentityGetSettings(ctx context.Context) ([]IdentityGetSetting
 			&i.SatDefaultSecs,
 			&i.SatMaxSecs,
 			&i.ExpiryNoticeSecs,
+			&i.Revision,
 		); err != nil {
 			return nil, err
 		}
@@ -474,6 +544,62 @@ func (q *Queries) IdentityGroupHasAdminRole(ctx context.Context, id string) (boo
 	return exists, err
 }
 
+const identityGroupMemberPage = `-- name: IdentityGroupMemberPage :many
+
+SELECT mp.kind AS member_kind, mp.name AS member_name, array_agg(m.source ORDER BY m.source)::text[] AS sources
+  FROM group_membership m JOIN principal mp ON mp.id = m.member_id
+ WHERE m.group_id = $1::text::uuid
+ GROUP BY mp.kind, mp.name
+HAVING (mp.kind, mp.name) > ($2::text, $3::text)
+   AND ($4::text = '' OR $4::text = ANY(array_agg(m.source)))
+ ORDER BY mp.kind, mp.name
+ LIMIT $5::int
+`
+
+type IdentityGroupMemberPageParams struct {
+	GroupID   string
+	AfterKind string
+	AfterName string
+	Source    string
+	MaxRows   int32
+}
+
+type IdentityGroupMemberPageRow struct {
+	MemberKind string
+	MemberName string
+	Sources    []string
+}
+
+// Group members, one row per member (R-AUTH-018) --------------------------------
+// The members of a group ordered by kind and name, each with all its sources; the
+// optional source keeps the members that hold it. after_kind and after_name are the
+// last member of the previous page (” on the first).
+func (q *Queries) IdentityGroupMemberPage(ctx context.Context, arg IdentityGroupMemberPageParams) ([]IdentityGroupMemberPageRow, error) {
+	rows, err := q.db.Query(ctx, identityGroupMemberPage,
+		arg.GroupID,
+		arg.AfterKind,
+		arg.AfterName,
+		arg.Source,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityGroupMemberPageRow{}
+	for rows.Next() {
+		var i IdentityGroupMemberPageRow
+		if err := rows.Scan(&i.MemberKind, &i.MemberName, &i.Sources); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityGroupMembers = `-- name: IdentityGroupMembers :many
 SELECT mp.kind AS member_kind, mp.name AS member_name, m.source
   FROM group_membership m JOIN principal mp ON mp.id = m.member_id
@@ -517,6 +643,31 @@ func (q *Queries) IdentityGroupMembers(ctx context.Context, arg IdentityGroupMem
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityGroupRoles = `-- name: IdentityGroupRoles :many
+SELECT role FROM authz_role_binding WHERE principal_id = $1::text::uuid ORDER BY role
+`
+
+// The system roles bound to a group, read only on the group record (R-AUTH-018).
+func (q *Queries) IdentityGroupRoles(ctx context.Context, groupID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityGroupRoles, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		items = append(items, role)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1026,13 +1177,22 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at,
  WHERE p.kind = 'user'
    AND p.name > $1::text
    AND ($2::text = '' OR p.name ILIKE '%' || $2::text || '%' OR u.email ILIKE '%' || $2::text || '%')
-   AND ($3::text = '' OR p.status = $3::text)
+   AND ($3::text = ''
+        OR ($3::text = 'locked' AND u.is_break_glass
+            AND EXISTS (SELECT 1 FROM auth_lockout l WHERE l.account_key = 'break-glass' AND l.locked_until > now()))
+        OR ($3::text <> 'locked' AND p.status = $3::text))
    AND ($4::text = '' OR u.origin = $4::text)
    AND ($5::text = '' OR EXISTS (
           SELECT 1 FROM group_membership m JOIN principal g ON g.id = m.group_id
            WHERE m.member_id = p.id AND g.name = $5::text))
+   AND ($6::text = '' OR ($6::text = 'true') = (
+          u.is_break_glass OR EXISTS (
+            SELECT 1 FROM authz_role_binding b
+             WHERE b.role = 'admin'
+               AND (b.principal_id = p.id
+                    OR b.principal_id IN (SELECT m.group_id FROM group_membership m WHERE m.member_id = p.id)))))
  ORDER BY p.name
- LIMIT $6::int
+ LIMIT $7::int
 `
 
 type IdentityListUsersParams struct {
@@ -1041,6 +1201,7 @@ type IdentityListUsersParams struct {
 	Status    string
 	Origin    string
 	GroupName string
+	Admin     string
 	MaxRows   int32
 }
 
@@ -1060,7 +1221,10 @@ type IdentityListUsersRow struct {
 	GroupClaimMissing string
 }
 
-// Keyset order by name. status is active, disabled or ”; origin and group are ” for any.
+// Keyset order by name. status is active, disabled, locked (the break-glass account
+// while its lockout is in force, R-AUTH-038) or ”; origin and group are ” for any;
+// admin is 'true', 'false' or ” (the user holds the role admin directly or through
+// a group, or is the break-glass account).
 func (q *Queries) IdentityListUsers(ctx context.Context, arg IdentityListUsersParams) ([]IdentityListUsersRow, error) {
 	rows, err := q.db.Query(ctx, identityListUsers,
 		arg.After,
@@ -1068,6 +1232,7 @@ func (q *Queries) IdentityListUsers(ctx context.Context, arg IdentityListUsersPa
 		arg.Status,
 		arg.Origin,
 		arg.GroupName,
+		arg.Admin,
 		arg.MaxRows,
 	)
 	if err != nil {
@@ -1932,7 +2097,7 @@ UPDATE auth_settings
        sat_default_ttl = CASE WHEN $4::float8 < 0 THEN NULL ELSE make_interval(secs => $4::float8) END,
        sat_max_ttl = CASE WHEN $5::float8 < 0 THEN NULL ELSE make_interval(secs => $5::float8) END,
        expiry_notice = CASE WHEN $6::float8 < 0 THEN NULL ELSE make_interval(secs => $6::float8) END,
-       updated_at = now(), updated_by = NULLIF($7::text, '')::uuid
+       updated_at = greatest(now(), updated_at + interval '1 microsecond'), updated_by = NULLIF($7::text, '')::uuid
  WHERE singleton
 `
 
@@ -2096,6 +2261,113 @@ func (q *Queries) IdentityUserMemberships(ctx context.Context, memberID string) 
 	for rows.Next() {
 		var i IdentityUserMembershipsRow
 		if err := rows.Scan(&i.GroupName, &i.Source); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const preferencesGet = `-- name: PreferencesGet :many
+
+SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts,
+       coalesce(project_filter, '')::text AS project_filter, revision
+  FROM user_preferences WHERE user_id = $1::text::uuid
+`
+
+type PreferencesGetRow struct {
+	Locale            string
+	Theme             string
+	KeyboardShortcuts bool
+	ProjectFilter     string
+	Revision          int64
+}
+
+// User preferences (R-API-021) ----------------------------------------------------
+func (q *Queries) PreferencesGet(ctx context.Context, userID string) ([]PreferencesGetRow, error) {
+	rows, err := q.db.Query(ctx, preferencesGet, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PreferencesGetRow{}
+	for rows.Next() {
+		var i PreferencesGetRow
+		if err := rows.Scan(
+			&i.Locale,
+			&i.Theme,
+			&i.KeyboardShortcuts,
+			&i.ProjectFilter,
+			&i.Revision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const preferencesUpsert = `-- name: PreferencesUpsert :many
+INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, project_filter, revision)
+VALUES ($1::text::uuid, NULLIF($2::text, ''), NULLIF($3::text, ''),
+        $4::boolean, NULLIF($5::text, ''), 2)
+ON CONFLICT (user_id) DO UPDATE
+   SET locale = EXCLUDED.locale, theme = EXCLUDED.theme, keyboard_shortcuts = EXCLUDED.keyboard_shortcuts,
+       project_filter = EXCLUDED.project_filter, revision = p.revision + 1, updated_at = now()
+ WHERE $6::bigint = 0 OR p.revision = $6::bigint
+RETURNING coalesce(p.locale, '')::text AS locale, coalesce(p.theme, '')::text AS theme, p.keyboard_shortcuts,
+          coalesce(p.project_filter, '')::text AS project_filter, p.revision
+`
+
+type PreferencesUpsertParams struct {
+	UserID            string
+	Locale            string
+	Theme             string
+	KeyboardShortcuts bool
+	ProjectFilter     string
+	IfRevision        int64
+}
+
+type PreferencesUpsertRow struct {
+	Locale            string
+	Theme             string
+	KeyboardShortcuts bool
+	ProjectFilter     string
+	Revision          int64
+}
+
+// A user without a row has the defaults at revision 1; the first write inserts
+// revision 2. if_revision is 0 for "no condition" (If-Match: *); a row that exists
+// is updated only when its revision matches, so a concurrent write is a 412.
+func (q *Queries) PreferencesUpsert(ctx context.Context, arg PreferencesUpsertParams) ([]PreferencesUpsertRow, error) {
+	rows, err := q.db.Query(ctx, preferencesUpsert,
+		arg.UserID,
+		arg.Locale,
+		arg.Theme,
+		arg.KeyboardShortcuts,
+		arg.ProjectFilter,
+		arg.IfRevision,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PreferencesUpsertRow{}
+	for rows.Next() {
+		var i PreferencesUpsertRow
+		if err := rows.Scan(
+			&i.Locale,
+			&i.Theme,
+			&i.KeyboardShortcuts,
+			&i.ProjectFilter,
+			&i.Revision,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

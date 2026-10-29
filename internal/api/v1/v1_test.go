@@ -93,7 +93,7 @@ func (s setup) get(path string) *httptest.ResponseRecorder {
 }
 
 func authed(*http.Request) (httpserver.Principal, error) {
-	return httpserver.Principal{Name: "alice"}, nil
+	return httpserver.Principal{Kind: httpserver.KindUser, ID: "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a10", Name: "alice"}, nil
 }
 
 func TestPing(t *testing.T) {

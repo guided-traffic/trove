@@ -148,6 +148,1175 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query the audit trail
+         * @description Audit events, newest first, with keyset pagination over `(occurredAt, id)` (R-OPS-017): the
+         *     cursor is valid on every replica and no page holds a transaction. Without `from` the range is
+         *     the last 24 hours; `to` is exclusive. `action` is an exact name or a prefix ending in `.*`
+         *     (`authz.*`). `actor` is a principal ID or a name. `limit` is at most 1000 (default 100).
+         */
+        get: operations["listAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit/events/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export the audit trail
+         * @description Streams the events of a range, oldest first, as JSON Lines (`application/x-ndjson`, default) or
+         *     CSV (R-OPS-017). `from` and `to` are both required and cover at most 400 days
+         *     (`400 invalid_audit_range`). The export reads keyset batches of short queries and holds no
+         *     transaction while the client reads, so a cut export is resumed on any replica with an inclusive
+         *     `from` set to the `occurredAt` of the last complete line, dropping the IDs already received.
+         *     The event `audit.exported` is written before the first byte; if it cannot be written nothing is
+         *     streamed.
+         */
+        get: operations["exportAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit/events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one audit event
+         * @description One event by its ID (a UUIDv7). An ID that does not exist, or is not an event ID, answers `404`.
+         */
+        get: operations["getAuditEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List jobs
+         * @description The durable background jobs of every kind (R-OPS-019, R-API-015), newest first. A caller who
+         *     holds `settings:read` sees all jobs; any other authenticated caller sees only the jobs it
+         *     started. A garbage-collection run is `?kind=gc` or `?kind=gc-full`. Cursor pagination
+         *     (R-API-010) over `(enqueuedAt, id)`: the cursor is valid on every replica.
+         */
+        get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a job
+         * @description One job with its progress and result summary. A caller without `settings:read` reads only the
+         *     jobs it started; any other job answers `404`, like a missing one. While the job is queued,
+         *     running or cancelling, the answer carries `Retry-After` with a suggested polling interval
+         *     (R-API-015).
+         */
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a job
+         * @description A queued job ends `cancelled` at once; a running job turns `cancelling` and stops at its next
+         *     checkpoint. Allowed for a caller with `settings:write` and for the caller who started the job
+         *     (R-API-015); for anyone else the job does not exist. A finished job answers `409`.
+         */
+        post: operations["cancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the maintenance tasks
+         * @description The registered maintenance tasks with their schedule (from `maintenance.tasks`, read only),
+         *     the next scheduled run, whether a run is going on, and the last run (R-OPS-019). A manual-only
+         *     task such as `secrets-reencrypt` has `schedule` and `nextRunAt` `null`. Ordered by name; cursor
+         *     pagination as everywhere (R-API-010).
+         */
+        get: operations["listTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/tasks/{name}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a maintenance task now
+         * @description Enqueues a run of the task and answers `202` with the job and its `Location`. The `web`
+         *     replica that answers only enqueues; a `worker` replica executes the run (R-ARCH-001). While a
+         *     run of the task, or of a task that shares its exclusive key (`gc` and `gc-full`), is queued or
+         *     running, the answer is `409` with that job. A task with a precondition that fails answers
+         *     `409` with the code of the precondition (`key_ring_incompatible` for `secrets-reencrypt`) and
+         *     enqueues nothing. The optional body holds the task's parameters, for example
+         *     `{"dryRun": true}` for garbage collection. Starting a run is audited as `system.task_triggered`.
+         */
+        post: operations["runTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/encryption": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status of the stored-secret key ring
+         * @description Key IDs, the number of sealed values per key ID, the canary state, the key IDs every live
+         *     replica holds, and the last re-encryption (R-API-049). `activeKeyId` and `keys[].canary` are
+         *     the answering replica's view, named by `answeredBy`; the other replicas are in `replicas`.
+         *     The answer carries key IDs only, never key material, fingerprints, ciphertext or plaintext.
+         */
+        get: operations["getEncryptionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List users
+         * @description Users ordered by username (R-AUTH-016). `status=locked` lists the break-glass account while its lockout is
+         *     in force (R-AUTH-038); `admin=true` keeps the users that hold the role `admin` directly or through a group.
+         *     Cursor pagination (R-API-010) over `username`.
+         */
+        get: operations["listUsers"];
+        put?: never;
+        /**
+         * Create a user
+         * @description Creates a user with origin `admin`. A pending identity link (`subject: null`) is completed by the user's first
+         *     login at that provider (R-AUTH-007). A username that is reserved, such as `me` or the break-glass account's,
+         *     answers `422 reserved_name`; an existing one `409`. Optional `Idempotency-Key`.
+         */
+        post: operations["createUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the caller's own user record
+         * @description The record of the signed-in user, or of the owner of a personal access token (R-AUTH-016, R-AUTH-017).
+         *     A service account answers `403`: it has no user record.
+         */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a user
+         * @description One user with its identity links, groups and administrator flags (R-AUTH-016).
+         */
+        get: operations["getUser"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a user
+         * @description Ends the user's sessions and deletes its tokens, identity links and memberships; role bindings go with it
+         *     (R-AUTH-016). A later login of the same identity creates a new user with a new `id`. The break-glass account
+         *     cannot be deleted (`409 break_glass_immutable`).
+         */
+        delete: operations["deleteUser"];
+        options?: never;
+        head?: never;
+        /**
+         * Correct a user's profile data
+         * @description An administrator can correct `displayName`, `email` and the pending `identities` until the user's next login
+         *     overwrites the first two (R-AUTH-016). The body is a JSON merge patch; the read-only members of the user
+         *     record are accepted and ignored, so a body obtained by `GET` can be sent back.
+         */
+        patch: operations["updateUser"];
+        trace?: never;
+    };
+    "/api/v1/users/{username}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable a user
+         * @description Ends all sessions of the user and makes every token of the user fail with `401 principal_disabled`. With
+         *     `revokeTokens: true` (the default) the tokens are also revoked with reason `principal_disabled`; enabling the
+         *     user again does not bring them back (R-AUTH-016). The break-glass account answers `409 break_glass_immutable`.
+         */
+        post: operations["disableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{username}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable a user
+         * @description Enables a disabled user. Tokens revoked by the disable stay revoked (R-AUTH-016).
+         */
+        post: operations["enableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{username}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Add and remove manual group memberships of a user
+         * @description Changes the `manual` memberships only; a membership with another source (`oidc:<provider>`, `auto`, `scim`)
+         *     is not touched (R-AUTH-016, R-AUTH-018). An unknown user or group answers `404` and nothing is applied. The
+         *     answer lists the user's memberships afterwards.
+         */
+        patch: operations["patchUserGroups"];
+        trace?: never;
+    };
+    "/api/v1/users/{username}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear the lockout of the break-glass account
+         * @description Clears a lockout of the break-glass account at once on every replica (R-AUTH-014, R-AUTH-038) and writes
+         *     `auth.breakglass.unlocked` with severity `high`. Any other username answers `404`. The answer is `204`
+         *     whether or not a lock was in force.
+         */
+        post: operations["unlockBreakGlass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List groups
+         * @description Groups ordered by name, with member counts (R-AUTH-018). Cursor pagination (R-API-010) over `name`.
+         */
+        get: operations["listGroups"];
+        put?: never;
+        /**
+         * Create a group
+         * @description Creates a group with origin `admin`. Members are usernames and `sa:<name>`; all get a `manual` membership. An
+         *     unknown member answers `404` and nothing is created (R-AUTH-018). Optional `Idempotency-Key`.
+         */
+        post: operations["createGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/groups/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a group
+         * @description One group with the system roles bound to it, read only (R-AUTH-018).
+         */
+        get: operations["getGroup"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a group
+         * @description Deletes the group with its memberships and role bindings. A SCIM-owned group answers `409 managed_by_scim` (R-AUTH-018).
+         */
+        delete: operations["deleteGroup"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a group
+         * @description `description`, `autoJoin` and `name` (a rename). A group owned by the identity provider's SCIM client answers
+         *     `409 managed_by_scim`; auto-join on a group with an administration role binding answers
+         *     `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019). JSON merge patch; read-only members are ignored.
+         */
+        patch: operations["updateGroup"];
+        trace?: never;
+    };
+    "/api/v1/groups/{name}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the members of a group
+         * @description Users and service accounts, ordered by kind and name, each with all its sources (`manual`, `auto`,
+         *     `oidc:<provider>`, `scim`). `source` keeps the members that hold that source (R-AUTH-018). Cursor pagination
+         *     (R-API-010).
+         */
+        get: operations["listGroupMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Add and remove members of a group
+         * @description Adds and removes memberships of one source, `manual` by default (`auto` is the other source the API changes).
+         *     A removed member that is still a member through another source stays in the group, and the answer shows the
+         *     remaining sources (R-AUTH-018). An unknown member, or a built-in principal such as `authenticated`, answers
+         *     `404` and nothing is applied. A SCIM-owned group answers `409 managed_by_scim`. The answer lists the members
+         *     the request named.
+         */
+        patch: operations["patchGroupMembers"];
+        trace?: never;
+    };
+    "/api/v1/service-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List service accounts
+         * @description Service accounts ordered by name (R-AUTH-020). Cursor pagination (R-API-010) over `name`.
+         */
+        get: operations["listServiceAccounts"];
+        put?: never;
+        /**
+         * Create a service account
+         * @description A non-human principal for automation (R-AUTH-020). It has no login, session or UI access. Binding the role
+         *     `admin` to it is an operation of the authorization API. Optional `Idempotency-Key`.
+         */
+        post: operations["createServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/service-accounts/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a service account
+         * @description One service account (R-AUTH-020).
+         */
+        get: operations["getServiceAccount"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a service account
+         * @description Deletes the account with its tokens and memberships (R-AUTH-020).
+         */
+        delete: operations["deleteServiceAccount"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a service account
+         * @description Changes the description (R-AUTH-020; owners are P1). JSON merge patch; read-only members are ignored.
+         */
+        patch: operations["updateServiceAccount"];
+        trace?: never;
+    };
+    "/api/v1/service-accounts/{name}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable a service account
+         * @description Every token of the account fails with `401 principal_disabled` (R-AUTH-020). With `revokeTokens: true` they are
+         *     also revoked; the default is `false`, so enabling the account again restores its tokens (Q-AUTH-41).
+         */
+        post: operations["disableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/service-accounts/{name}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable a service account
+         * @description Enables the account (R-AUTH-020).
+         */
+        post: operations["enableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tokens
+         * @description Tokens newest first (R-AUTH-028). A caller without `tokens:read` sees its own tokens only and `owner` is forced
+         *     to `me`. The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
+         *     (R-API-010) over the token `id`.
+         */
+        get: operations["listTokens"];
+        put?: never;
+        /**
+         * Create a personal access token
+         * @description Creates a PAT for the caller (R-AUTH-027). The caller is a user with a session whose last interactive
+         *     authentication is recent (`401 reauthentication_required` otherwise), or a PAT under the derivation rule:
+         *     the new token has the presenting token's type and owner, expires no later than it and carries no broader
+         *     scope (`403 derivation_exceeds_parent`). A CI token, the break-glass account and an `owner` naming anyone but
+         *     the caller are refused (`ci_token_restricted`, `break_glass_restricted`, `forbidden`).
+         *
+         *     The token value is in this answer only; no other operation returns it. The answer is never cached
+         *     (`Cache-Control: no-store`). A retry with the same `Idempotency-Key` answers `409 token_already_issued` with
+         *     the `tokenId`, because the value is not stored.
+         */
+        post: operations["createToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the token that authenticates the request
+         * @description The token's expiry and scope (R-AUTH-028). A session answers `404 not_a_token`.
+         */
+        get: operations["getCurrentToken"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke the token that authenticates the request
+         * @description Revokes the presenting token of any type, a CI token included, with reason `owner` (R-AUTH-029). Tokens derived
+         *     from it are revoked with it. A session answers `404 not_a_token`.
+         */
+        delete: operations["revokeCurrentToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/current/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the token that authenticates the request
+         * @description Only a token created with `selfRotatable: true` may do this (`403 forbidden` otherwise). The answer holds the
+         *     new value and is never cached (R-AUTH-030).
+         */
+        post: operations["rotateCurrentToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a token by its value
+         * @description For finders of a leaked token, secret scanners and holders of a stale value; no authentication is needed
+         *     (R-AUTH-029, Q-AUTH-6). The reason is recorded as `leaked`, with the caller's address, and the revocation
+         *     follows `derived_from` and `rotated_from`. The answer does not tell whether the token existed, except to an
+         *     administrator, who receives `200` with the token's `id` and `owner`. A value that fails the syntax check
+         *     answers `400`. Rate-limited per R-AUTH-038.
+         */
+        post: operations["revokeTokenByValue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a token
+         * @description One token (R-AUTH-028). A token the caller may not see answers `404`, like a missing one.
+         */
+        get: operations["getToken"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a token
+         * @description The owner, an administrator, a holder of `tokens:revoke` and (P1) an owner of the service account may revoke
+         *     (R-AUTH-029). Revoking an ended token answers `204` too. A token the caller may not revoke answers `404`.
+         *     Derived tokens are revoked with it (reason `parent_revoked`).
+         */
+        delete: operations["revokeToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/{id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate a token
+         * @description Replaces the secret and keeps description, scope and owner (R-AUTH-030). A PAT only by its owner; a SAT by an
+         *     administrator or under the derivation rule. Another user's PAT answers `403 forbidden`, even for an
+         *     administrator. `overlapSeconds` keeps the old value valid for that long (0 revokes it with reason `rotated`).
+         *     The answer holds the new value and is never cached.
+         */
+        post: operations["rotateToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke all own tokens
+         * @description Revokes every active token of the caller with reason `owner` (R-AUTH-029).
+         */
+        delete: operations["revokeOwnTokens"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{username}/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke all tokens of a user
+         * @description Revokes every active token of the user with reason `admin` (R-AUTH-029).
+         */
+        delete: operations["revokeUserTokens"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/service-accounts/{name}/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a service-account token
+         * @description Creates a SAT (R-AUTH-027). The caller is an administrator (a session with recent authentication, or a token
+         *     with `admin: true`) or a SAT of the same account under the derivation rule. A non-expiring token
+         *     (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`. The value is in this
+         *     answer only and the answer is never cached.
+         */
+        post: operations["createServiceAccountToken"];
+        /**
+         * Revoke all tokens of a service account
+         * @description Revokes every active token of the account with reason `admin` (R-AUTH-029).
+         */
+        delete: operations["revokeServiceAccountTokens"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the runtime authentication settings
+         * @description The effective runtime values, the YAML ceilings they are bound by, and read-only status: providers with their
+         *     discovery state, the break-glass account, session timeouts and the client switches (R-AUTH-040). `ETag` is the
+         *     tag for `PATCH`.
+         */
+        get: operations["getAuthSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the runtime authentication settings
+         * @description JSON merge patch of `anonymousAccess` and the token lifetimes (R-AUTH-040). Each value must be at most its YAML
+         *     ceiling (`400 exceeds_ceiling`) and each default at most its maximum (`400 default_above_maximum`); anonymous
+         *     access while the ceiling forbids it answers `409 anonymous_not_allowed`.  A session needs a recent authentication (`401 reauthentication_required`). The change is in force on
+         *     every replica within the revocation bound and writes `settings.auth.changed`.
+         */
+        patch: operations["updateAuthSettings"];
+        trace?: never;
+    };
+    "/api/v1/auth/login-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read what the sign-in screen offers
+         * @description The sign-in screen renders only from this answer (R-AUTH-009): the providers in configuration order, whether
+         *     the local break-glass form is offered, whether anonymous access is on, and the provider to redirect to at once.
+         *     It names no issuer, client ID or error detail.
+         */
+        get: operations["getLoginOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/whoami": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the caller's principal and credential
+         * @description The principal and the credential that proved it, for any credential (R-AUTH-028, R-API-021). `credential.type`
+         *     is `pat`, `sat`, `cit` or `session`; `tokenId`, `scope` and `expiresAt` describe a token and are
+         *     `null` for a session. An anonymous caller answers `401`, so the UI learns whether to start the application or
+         *     the sign-in.
+         */
+        get: operations["getWhoami"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's active sessions
+         * @description The live UI sessions of the caller, newest first, `current` marking the one that made this request
+         *     (R-AUTH-010). At most `auth.sessions.max_per_user` exist, so the list is one page. A service account or CI
+         *     token answers `403`.
+         */
+        get: operations["listOwnSessions"];
+        put?: never;
+        post?: never;
+        /**
+         * End all of the caller's sessions
+         * @description Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010).
+         */
+        delete: operations["endOwnSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * End one of the caller's sessions
+         * @description Ends a session of the caller; another user's session, an ended one and an unknown ID answer `404` (R-AUTH-010).
+         */
+        delete: operations["endOwnSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{username}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a user's active sessions
+         * @description The live UI sessions of a user, newest first (R-AUTH-010).
+         */
+        get: operations["listUserSessions"];
+        put?: never;
+        post?: never;
+        /**
+         * End all sessions of a user
+         * @description Ends every session of the user with reason `revoked` and writes `auth.session.ended` (R-AUTH-010).
+         */
+        delete: operations["endUserSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the caller's UI preferences
+         * @description A user who never saved preferences has the defaults at revision 1 (R-API-021). `ETag` is the revision. Service
+         *     accounts and CI tokens answer `403`.
+         */
+        get: operations["getPreferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the caller's UI preferences
+         * @description JSON merge patch with `If-Match` (R-API-012, R-API-013); `null` resets a member to its default.
+         */
+        patch: operations["updatePreferences"];
+        trace?: never;
+    };
+    "/api/v1/permission-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List permission policies
+         * @description Every permission policy, ordered by name, with cursor pagination (R-API-010). Filters:
+         *     `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`, `anonymous`, `authenticated`)
+         *     keeps the policies with an entry for that principal and, while `expandGroups` is `true` (the
+         *     default), also those with an entry for a group the principal belongs to; `repository=<key>`
+         *     keeps the policies whose selectors cover that repository. A principal or repository that does
+         *     not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052).
+         */
+        get: operations["listPermissionPolicies"];
+        put?: never;
+        /**
+         * Create a permission policy
+         * @description Validates the policy (R-AUTHZ-021), stores it and notifies the `authz` change area in one
+         *     transaction with the audit event `authz.policy.created`. The answer carries the epoch the write
+         *     produced in `Trove-Authz-Epoch` and the policy's `ETag`. Warnings do not block saving. A name
+         *     that exists answers `409 already_exists`; a rule that fails answers `422` with the code of the
+         *     first problem and every problem in `errors` (`unknown_principal`, `unknown_repository`,
+         *     `unknown_format`, `invalid_pattern`, `invalid_action`, `duplicate_principal`,
+         *     `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
+         *     `virtual_action_not_applicable`, `action_not_allowed`).
+         */
+        post: operations["createPermissionPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/permission-policies/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a permission policy
+         * @description Answers the policy with its warnings and its `ETag` (the version, R-API-012).
+         */
+        get: operations["getPermissionPolicy"];
+        /**
+         * Replace a permission policy
+         * @description Replaces the whole policy (R-AUTHZ-021); the name is immutable. `If-Match` is required: a
+         *     missing header answers `428`, a version that is not current `412` with `currentEtag`, and
+         *     `If-Match: *` is the deliberate blind write. The read-only members of a body obtained by GET
+         *     are ignored. The answer carries the new `ETag` and `Trove-Authz-Epoch`. The audit event
+         *     `authz.policy.updated` records the access-bearing state before and after and is journaled
+         *     (R-AUTHZ-031).
+         */
+        put: operations["replacePermissionPolicy"];
+        post?: never;
+        /**
+         * Delete a permission policy
+         * @description Removes the policy with its selectors, patterns and entries. `If-Match` is optional here; when
+         *     sent, a version that is not current answers `412`. The answer carries `Trove-Authz-Epoch`. The
+         *     audit event `authz.policy.deleted` is journaled (R-AUTHZ-031).
+         */
+        delete: operations["deletePermissionPolicy"];
+        options?: never;
+        head?: never;
+        /**
+         * Change members of a permission policy
+         * @description A JSON merge patch (RFC 7396, R-API-013) applied to the current policy; an array such as
+         *     `entries` is replaced as a whole. The result is validated and written exactly like a
+         *     replacement, so the rules, `If-Match` and the epoch header of `PUT` apply. `null` resets
+         *     `description` to the empty string. `name` is immutable: a different value answers `422`.
+         */
+        patch: operations["patchPermissionPolicy"];
+        trace?: never;
+    };
+    "/api/v1/authz/validate-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate a permission policy without storing it
+         * @description Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the
+         *     keys of the repositories the selectors currently cover. A policy with problems is still a `200`
+         *     answer with `valid: false`; the editor shows the list. The name need not be unused.
+         */
+        post: operations["validatePermissionPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the system roles
+         * @description The fixed set of system roles and the capabilities each bundles (R-AUTHZ-010). Trove has no
+         *     custom roles, so the list is not paginated and `nextCursor` is always `null`.
+         */
+        get: operations["listRoles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/role-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List role bindings
+         * @description The system roles bound to users, groups and service accounts (R-AUTHZ-022), ordered by role and
+         *     principal, with cursor pagination. Filters: `role` and `principal` (a reference such as
+         *     `group:platform-admins`).
+         */
+        get: operations["listRoleBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/role-bindings/{role}/{principalRef}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: components["schemas"]["RoleName"];
+                /** @description The percent-encoded principal reference, for example `group%3Aplatform-admins`. */
+                principalRef: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Bind a role to a principal
+         * @description Idempotent (R-AUTHZ-022): `201` for a new binding, `200` for one that exists. Roles bind to users,
+         *     groups and service accounts only (`422 role_not_allowed`); a role on an auto-join group is
+         *     `409 auto_join_admin_conflict`. A new binding writes `authz.role.bound` and carries
+         *     `Trove-Authz-Epoch`; for an existing one the header is the current epoch.
+         */
+        put: operations["bindRole"];
+        post?: never;
+        /**
+         * Remove a role binding
+         * @description Removes the binding (`authz.role.unbound`, journaled). Removing the last `admin` binding while
+         *     the break-glass administrator is disabled answers `409 last_admin`; a binding that does not
+         *     exist answers `404`.
+         */
+        delete: operations["unbindRole"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/authz/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the caller may do
+         * @description The system roles and capabilities the caller's credential exercises, the principals the caller
+         *     acts as (the user, its groups, `authenticated`) and a summary of the credential's scope, which
+         *     is a ceiling (R-AUTHZ-013). The answer says nothing about other principals. `epoch` is the
+         *     epoch of the index that answered.
+         */
+        get: operations["getAuthzMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/authz/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check repository actions for the caller
+         * @description Evaluates up to 100 checks for the caller's own credential, scope included (R-AUTHZ-023); all
+         *     checks are decided on one index. A repository the caller cannot see answers `allowed: false`,
+         *     exactly as a missing one. Nothing is audited. The UI hides controls whose check fails; the
+         *     server enforces every operation regardless.
+         */
+        post: operations["checkPermissions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -172,6 +1341,9 @@ export interface components {
             /** @description Equals the `X-Request-Id` response header. */
             requestId?: string;
             errors?: components["schemas"]["FieldError"][];
+            /** @description Extension of `precondition_failed`: the current ETag of the resource (R-API-012). */
+            currentEtag?: string;
+            job?: components["schemas"]["JobReference"];
         };
         FieldError: {
             /** @description RFC 6901 JSON pointer into the request body. */
@@ -360,6 +1532,1017 @@ export interface components {
             /** Format: date-time */
             lastPrimaryChangeAt: string | null;
         };
+        AuditActor: {
+            /** @description `user`, `service_account`, `ci`, `breakglass`, `anonymous`, `admin-cli` or `system`. */
+            type: string;
+            id: string | null;
+            name: string | null;
+            tokenId: string | null;
+            /** @description `bearer`, `basic`, `session`, `api_key`, or null. */
+            authMethod: string | null;
+        };
+        AuditSource: {
+            ip: string | null;
+            userAgent: string | null;
+        };
+        AuditResource: {
+            type: string | null;
+            id: string | null;
+        };
+        /** @description One audit event (R-OPS-017). The event names, categories and the shape of `details` per name are R-OPS-016; `details` never holds a secret. */
+        AuditEvent: {
+            /** @description A UUIDv7 the producer made; the time it carries is close to `occurredAt`. */
+            id: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /** @example authz.policy.created */
+            action: string;
+            category: string;
+            /** @enum {string} */
+            outcome: "success" | "failure" | "denied";
+            actor: components["schemas"]["AuditActor"];
+            source: components["schemas"]["AuditSource"];
+            traceId: string | null;
+            replica: string | null;
+            endpoint: string | null;
+            resource: components["schemas"]["AuditResource"];
+            repository: string | null;
+            path: string | null;
+            reason: string | null;
+            details: {
+                [key: string]: unknown;
+            };
+        };
+        AuditEventList: {
+            items: components["schemas"]["AuditEvent"][];
+            nextCursor: string | null;
+        };
+        /** @enum {string} */
+        JobState: "queued" | "running" | "succeeded" | "failed" | "cancelling" | "cancelled";
+        TaskName: string;
+        /** @description The parameters of the task; each task defines its own (garbage collection takes `dryRun`). */
+        TaskRunRequest: {
+            [key: string]: unknown;
+        };
+        JobProgress: {
+            /** Format: int64 */
+            done: number;
+            /** Format: int64 */
+            total: number | null;
+            unit: string | null;
+        };
+        JobTarget: {
+            kind: string;
+            key: string;
+        };
+        Job: {
+            /** Format: uuid */
+            id: string;
+            /** @example gc */
+            kind: string;
+            state: components["schemas"]["JobState"];
+            /** @description The name of the replica that ran or runs the job; `null` while it is queued. */
+            replica: string | null;
+            /** Format: date-time */
+            enqueuedAt: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            finishedAt: string | null;
+            attempt: number;
+            maxAttempts: number;
+            progress: components["schemas"]["JobProgress"] | null;
+            /** @description The result summary the kind defines; `null` until the job succeeded. */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** @description A stable `code` and a sanitised message; `null` unless the job failed or was cancelled. */
+            error: {
+                [key: string]: unknown;
+            } | null;
+            /** @description The ID of the principal that started the job; `null` for scheduled and system runs. */
+            triggeredBy: string | null;
+            target: components["schemas"]["JobTarget"] | null;
+            /** @description The path to poll. */
+            href: string;
+        };
+        JobList: {
+            items: components["schemas"]["Job"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        JobReference: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            state: components["schemas"]["JobState"];
+            href: string;
+        };
+        JobReferenceEnvelope: {
+            job: components["schemas"]["JobReference"];
+        };
+        TaskLastRun: {
+            /** Format: uuid */
+            jobId: string;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            finishedAt: string | null;
+            outcome: components["schemas"]["JobState"];
+            replica: string | null;
+        };
+        Task: {
+            name: components["schemas"]["TaskName"];
+            /** @description Five-field cron expression in UTC; `null` for a manual-only task. */
+            schedule: string | null;
+            enabled: boolean;
+            /**
+             * Format: date-time
+             * @description `null` for a manual-only or disabled task.
+             */
+            nextRunAt: string | null;
+            running: boolean;
+            lastRun: components["schemas"]["TaskLastRun"] | null;
+        };
+        TaskList: {
+            items: components["schemas"]["Task"][];
+            nextCursor: string | null;
+        };
+        EncryptionKey: {
+            id: string;
+            /** @description The answering replica seals with this key. */
+            active: boolean;
+            /**
+             * Format: int64
+             * @description Sealed values under this key ID over every registered sealed column.
+             */
+            sealedValues: number;
+            /** @enum {string} */
+            canary: "ok" | "failed" | "absent";
+        };
+        EncryptionReplica: {
+            name: string;
+            /** @enum {string} */
+            role: "web" | "worker" | "all";
+            activeKeyId: string;
+            keyIds: string[];
+        };
+        LastReencryption: {
+            /** Format: uuid */
+            jobId: string;
+            state: components["schemas"]["JobState"];
+            /** Format: date-time */
+            finishedAt: string | null;
+        };
+        EncryptionStatus: {
+            /** @description The replica whose ring `activeKeyId` and `keys[].canary` describe. */
+            answeredBy: string;
+            activeKeyId: string;
+            keys: components["schemas"]["EncryptionKey"][];
+            /** @description The live `web` and `worker` replicas, from the replica registry. */
+            replicas: components["schemas"]["EncryptionReplica"][];
+            /** @description Every live replica's ring holds every key ID that is active on any live replica or referenced by a sealed value. */
+            ringsCompatible: boolean;
+            lastReencryption: components["schemas"]["LastReencryption"] | null;
+        };
+        /** @description The link of a user to an identity provider (R-AUTH-007). */
+        UserIdentity: {
+            /** @description The provider ID. */
+            provider: string;
+            /** @description `false` for a pending link that the user's first login at the provider completes. */
+            linked: boolean;
+        };
+        UserGroupMembership: {
+            name: string;
+            /**
+             * @description `manual`, `auto`, `scim` or `oidc:<providerId>` (R-AUTH-018).
+             * @example oidc:corp
+             */
+            source: string;
+        };
+        /** @description Set while the user's last login carried no usable group claim (R-AUTH-008). */
+        GroupClaimMissing: {
+            provider: string;
+            /** @enum {string} */
+            reason: "absent" | "wrong_type" | "overage";
+        };
+        /**
+         * @description A user (R-AUTH-016). `isAdmin`, `adminVia` and `lockedUntil` are derived and read only.
+         * @example {
+         *       "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a10",
+         *       "username": "alice",
+         *       "email": "alice@example.com",
+         *       "emailVerified": true,
+         *       "displayName": "Alice Example",
+         *       "origin": "jit",
+         *       "status": "active",
+         *       "disabledReason": null,
+         *       "isAdmin": false,
+         *       "adminVia": [],
+         *       "identities": [
+         *         {
+         *           "provider": "corp",
+         *           "linked": true
+         *         }
+         *       ],
+         *       "groups": [
+         *         {
+         *           "name": "team-web",
+         *           "source": "oidc:corp"
+         *         }
+         *       ],
+         *       "groupClaimMissing": null,
+         *       "lockedUntil": null,
+         *       "lastLoginAt": "2026-10-28T09:12:00Z",
+         *       "createdAt": "2026-09-01T08:00:00Z"
+         *     }
+         */
+        User: {
+            /** Format: uuid */
+            id: string;
+            username: string;
+            email: string | null;
+            emailVerified: boolean;
+            displayName: string | null;
+            /** @enum {string} */
+            origin: "jit" | "admin" | "scim" | "system";
+            /** @enum {string} */
+            status: "active" | "disabled";
+            /** @description `admin`, `dormant` or `scim` while the user is disabled. */
+            disabledReason: string | null;
+            isAdmin: boolean;
+            /** @description Why the user is an administrator: `direct`, `group:<name>` or `break-glass`. */
+            adminVia: string[];
+            identities: components["schemas"]["UserIdentity"][];
+            groups: components["schemas"]["UserGroupMembership"][];
+            groupClaimMissing: components["schemas"]["GroupClaimMissing"] | null;
+            /**
+             * Format: date-time
+             * @description The end of the lockout of the break-glass account while it is in force (R-AUTH-038).
+             */
+            lockedUntil: string | null;
+            /** Format: date-time */
+            lastLoginAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        UserList: {
+            items: components["schemas"]["User"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        PendingIdentity: {
+            /** @description A provider ID of `auth.oidc.providers`. */
+            provider: string;
+            /** @description Always `null`: a pending link is completed by the first login (R-AUTH-007). */
+            subject?: null;
+        };
+        /**
+         * @example {
+         *       "username": "bob",
+         *       "email": "bob@example.com",
+         *       "displayName": "Bob Example",
+         *       "identities": [
+         *         {
+         *           "provider": "corp",
+         *           "subject": null
+         *         }
+         *       ]
+         *     }
+         */
+        NewUser: {
+            /** @description Matches `^[a-z0-9][a-z0-9._@+-]{0,127}$` and is not reserved (R-AUTH-007). */
+            username: string;
+            email?: string | null;
+            displayName?: string | null;
+            identities?: components["schemas"]["PendingIdentity"][];
+        };
+        /** @description The members an administrator can correct. The read-only members of `User` are accepted and ignored. */
+        UserPatch: {
+            email?: string | null;
+            displayName?: string | null;
+            /** @description Replaces the pending links; a linked identity stays. */
+            identities?: components["schemas"]["PendingIdentity"][];
+        };
+        DisableRequest: {
+            /** @description Recorded in the audit event. */
+            reason?: string;
+            /** @description Revoke the principal's tokens with reason `principal_disabled`. Default `true` for a user, `false` for a service account. */
+            revokeTokens?: boolean;
+        };
+        /**
+         * @example {
+         *       "add": [
+         *         "team-web"
+         *       ],
+         *       "remove": [
+         *         "old"
+         *       ]
+         *     }
+         */
+        MembershipChange: {
+            add?: string[];
+            remove?: string[];
+        };
+        UserGroups: {
+            groups: components["schemas"]["UserGroupMembership"][];
+        };
+        /**
+         * @description A group (R-AUTH-018). `roles` and `memberCount` are read only.
+         * @example {
+         *       "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a11",
+         *       "name": "team-web",
+         *       "description": "Web team",
+         *       "autoJoin": false,
+         *       "origin": "admin",
+         *       "memberCount": 3,
+         *       "roles": [],
+         *       "createdAt": "2026-09-01T08:00:00Z"
+         *     }
+         */
+        Group: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string;
+            autoJoin: boolean;
+            /** @enum {string} */
+            origin: "admin" | "oidc" | "scim";
+            memberCount: number;
+            /** @description The system roles bound to the group; empty on the list. */
+            roles: string[];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        GroupList: {
+            items: components["schemas"]["Group"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        /**
+         * @example {
+         *       "name": "team-web",
+         *       "description": "Web team",
+         *       "autoJoin": false,
+         *       "members": [
+         *         "alice",
+         *         "sa:ci-bot"
+         *       ]
+         *     }
+         */
+        NewGroup: {
+            /** @description Matches `^[a-z0-9][a-z0-9._-]{0,127}$`. */
+            name: string;
+            description?: string;
+            autoJoin?: boolean;
+            /** @description Usernames and `sa:<name>`. */
+            members?: string[];
+        };
+        /** @description `name` renames the group. The read-only members of `Group` are accepted and ignored. */
+        GroupPatch: {
+            name?: string;
+            description?: string;
+            autoJoin?: boolean;
+        };
+        /**
+         * @example {
+         *       "principal": "alice",
+         *       "kind": "user",
+         *       "sources": [
+         *         "manual",
+         *         "oidc:corp"
+         *       ]
+         *     }
+         */
+        GroupMember: {
+            /** @description The username, or `sa:<name>` for a service account. */
+            principal: string;
+            /** @enum {string} */
+            kind: "user" | "service_account";
+            /** @description Empty for a member the request removed that holds no other source. */
+            sources: string[];
+        };
+        GroupMemberList: {
+            items: components["schemas"]["GroupMember"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        /**
+         * @example {
+         *       "add": [
+         *         "bob"
+         *       ],
+         *       "remove": [
+         *         "sa:old-bot"
+         *       ]
+         *     }
+         */
+        GroupMembersChange: {
+            add?: string[];
+            remove?: string[];
+            /**
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "auto";
+        };
+        /**
+         * @description A service account (R-AUTH-020).
+         * @example {
+         *       "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a12",
+         *       "name": "ci-bot",
+         *       "description": "Deploy jobs",
+         *       "status": "active",
+         *       "createdAt": "2026-09-01T08:00:00Z"
+         *     }
+         */
+        ServiceAccount: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string;
+            /** @enum {string} */
+            status: "active" | "disabled";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ServiceAccountList: {
+            items: components["schemas"]["ServiceAccount"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        /**
+         * @example {
+         *       "name": "ci-bot",
+         *       "description": "Deploy jobs"
+         *     }
+         */
+        NewServiceAccount: {
+            /** @description Matches `^[a-z0-9][a-z0-9-]{1,62}$`. */
+            name: string;
+            description?: string;
+        };
+        /** @description The read-only members of `ServiceAccount` are accepted and ignored. */
+        ServiceAccountPatch: {
+            description?: string;
+        };
+        TokenScopePatterns: {
+            include?: string[];
+            exclude?: string[];
+        };
+        TokenScopeGrant: {
+            repositories: string[];
+            packages?: components["schemas"]["TokenScopePatterns"];
+            paths?: components["schemas"]["TokenScopePatterns"];
+            actions: ("read" | "annotate" | "deploy" | "overwrite" | "delete" | "manage")[];
+        };
+        /**
+         * @description The ceiling a token puts on its owner's rights (R-AUTH-024). It never grants anything.
+         * @example {
+         *       "inherit": true,
+         *       "admin": false,
+         *       "repositories": [],
+         *       "system": []
+         *     }
+         */
+        TokenScope: {
+            /** @description All repository rights of the owner. Exclusive with `repositories`. */
+            inherit?: boolean;
+            /** @description The token exercises the owner's system roles. */
+            admin?: boolean;
+            repositories?: components["schemas"]["TokenScopeGrant"][];
+            /** @description System capabilities (R-AUTHZ-010), from the closed list of R-AUTH-025. */
+            system?: string[];
+            /** @description The endpoint names the token is valid on (R-EP-011); empty is unbound. */
+            endpoints?: string[];
+        };
+        TokenOwner: {
+            /** @enum {string} */
+            kind: "user" | "service_account" | "ci";
+            name: string;
+        };
+        /**
+         * @example {
+         *       "description": "laptop npm",
+         *       "ttlSeconds": 2592000,
+         *       "scope": {
+         *         "inherit": true
+         *       },
+         *       "selfRotatable": false
+         *     }
+         */
+        CreateTokenRequest: {
+            description: string;
+            /** @description The lifetime. `0` asks for a non-expiring service-account token. Exclusive with `expiresAt`. */
+            ttlSeconds?: number;
+            /** Format: date-time */
+            expiresAt?: string;
+            scope?: components["schemas"]["TokenScope"];
+            /** @default false */
+            selfRotatable: boolean;
+            /** @description Only the caller's own name is accepted; there is no impersonation (Q-AUTH-7). */
+            owner?: string;
+        };
+        /** @description A token as a list or an inspection shows it (R-AUTH-028). Neither the value nor its hash is part of it. */
+        Token: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "pat" | "sat" | "cit";
+            /** @description The prefix and the first characters of the value, for recognising a token. */
+            hint: string;
+            owner: components["schemas"]["TokenOwner"];
+            description: string;
+            scope: components["schemas"]["TokenScope"];
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The ID of the principal that created the token. */
+            createdBy: string | null;
+            createdVia: string;
+            /** Format: date-time */
+            expiresAt: string | null;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            lastUsedAddr: string | null;
+            /** @enum {string} */
+            state: "active" | "expired" | "revoked";
+            /** Format: date-time */
+            revokedAt: string | null;
+            /** @description The ID of the principal that revoked the token. */
+            revokedBy: string | null;
+            revocationReason: string | null;
+            /** Format: uuid */
+            rotatedFrom: string | null;
+            selfRotatable: boolean;
+            ciContext: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * @description A token with its value. The value is in this answer only; the answer is sent with `Cache-Control: no-store`.
+         * @example {
+         *       "id": "0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e11",
+         *       "type": "pat",
+         *       "token": "trv_pat_3kQ9xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+         *       "hint": "trv_pat_3kQ9",
+         *       "owner": {
+         *         "kind": "user",
+         *         "name": "alice"
+         *       },
+         *       "description": "laptop npm",
+         *       "scope": {
+         *         "inherit": true,
+         *         "admin": false,
+         *         "repositories": [],
+         *         "system": []
+         *       },
+         *       "createdAt": "2026-10-28T10:00:00Z",
+         *       "expiresAt": "2026-11-27T10:00:00Z",
+         *       "selfRotatable": false,
+         *       "rotatedFrom": null
+         *     }
+         */
+        TokenCreated: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "pat" | "sat";
+            /** @description The secret. Shown once. */
+            token: string;
+            hint: string;
+            owner: components["schemas"]["TokenOwner"];
+            description: string;
+            scope: components["schemas"]["TokenScope"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string | null;
+            selfRotatable: boolean;
+            /**
+             * Format: uuid
+             * @description The predecessor of a rotation; `null` for a new token.
+             */
+            rotatedFrom?: string | null;
+        };
+        TokenList: {
+            items: components["schemas"]["Token"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+        };
+        RotateRequest: {
+            /**
+             * @description Keeps the old value valid that long. `0` revokes it with reason `rotated`.
+             * @default 0
+             */
+            overlapSeconds: number;
+        };
+        RevokeByValueRequest: {
+            /** @description The token value, `trv_…`. */
+            token: string;
+        };
+        /** @description What an administrator receives from a revocation by value. */
+        RevokedToken: {
+            /** Format: uuid */
+            id: string;
+            /** @description The username, or `sa:<name>`. */
+            owner: string;
+        };
+        AuthSettingsTokens: {
+            pat: components["schemas"]["AuthSettingsLifetimes"];
+            sat: components["schemas"]["AuthSettingsLifetimes"];
+            expiryNoticeSeconds: number;
+        };
+        AuthSettingsLifetimes: {
+            defaultTTLSeconds: number;
+            maxTTLSeconds: number;
+        };
+        /** @description The YAML values the runtime values are bound by. */
+        AuthSettingsCeilings: {
+            /** @description `auth.anonymous.allowed`: when false, anonymous access cannot be switched on. */
+            anonymousAllowed: boolean;
+            tokens: components["schemas"]["AuthSettingsTokens"];
+        };
+        AuthSettingsProvider: {
+            id: string;
+            displayName: string;
+            /** @description Whether the replica that answers holds the provider's discovery document. */
+            available: boolean;
+        };
+        /** @description Read-only status (R-AUTH-040). The break-glass password and the issuer details are not part of it. */
+        AuthSettingsStatus: {
+            providers: components["schemas"]["AuthSettingsProvider"][];
+            breakGlass: {
+                enabled: boolean;
+                /** Format: date-time */
+                lockedUntil: string | null;
+            };
+            sessions: {
+                idleTimeoutSeconds: number;
+                absoluteTimeoutSeconds: number;
+                maxPerUser: number;
+                recentAuthWindowSeconds: number;
+            };
+            clients: {
+                basicEnabled: boolean;
+            };
+        };
+        /**
+         * @description The runtime authentication settings (R-AUTH-040): the effective runtime values, the YAML ceilings they
+         *     are bound by, and read-only status. The runtime members have the shape `PATCH` takes, so a body
+         *     obtained by `GET` can be sent back; `ceilings` and `status` are ignored then.
+         * @example {
+         *       "anonymousAccess": false,
+         *       "tokens": {
+         *         "pat": {
+         *           "defaultTTLSeconds": 7776000,
+         *           "maxTTLSeconds": 31536000
+         *         },
+         *         "sat": {
+         *           "defaultTTLSeconds": 7776000,
+         *           "maxTTLSeconds": 31536000
+         *         },
+         *         "expiryNoticeSeconds": 604800
+         *       },
+         *       "ceilings": {
+         *         "anonymousAllowed": true,
+         *         "tokens": {
+         *           "pat": {
+         *             "defaultTTLSeconds": 7776000,
+         *             "maxTTLSeconds": 31536000
+         *           },
+         *           "sat": {
+         *             "defaultTTLSeconds": 7776000,
+         *             "maxTTLSeconds": 31536000
+         *           },
+         *           "expiryNoticeSeconds": 604800
+         *         }
+         *       },
+         *       "status": {
+         *         "providers": [
+         *           {
+         *             "id": "corp",
+         *             "displayName": "Corporate SSO",
+         *             "available": true
+         *           }
+         *         ],
+         *         "breakGlass": {
+         *           "enabled": true,
+         *           "lockedUntil": null
+         *         },
+         *         "sessions": {
+         *           "idleTimeoutSeconds": 3600,
+         *           "absoluteTimeoutSeconds": 43200,
+         *           "maxPerUser": 20,
+         *           "recentAuthWindowSeconds": 3600
+         *         },
+         *         "clients": {
+         *           "basicEnabled": true
+         *         }
+         *       }
+         *     }
+         */
+        AuthSettings: {
+            /** @description Whether anonymous access is in force (the runtime switch within the ceiling). */
+            anonymousAccess: boolean;
+            tokens: components["schemas"]["AuthSettingsTokens"];
+            ceilings: components["schemas"]["AuthSettingsCeilings"];
+            status: components["schemas"]["AuthSettingsStatus"];
+        };
+        /** @description Only the runtime members are writable; `ceilings` and `status` are accepted and ignored. A lifetime is at least 60 seconds. */
+        AuthSettingsPatch: {
+            anonymousAccess?: boolean;
+            tokens?: {
+                pat?: {
+                    defaultTTLSeconds?: number;
+                    maxTTLSeconds?: number;
+                };
+                sat?: {
+                    defaultTTLSeconds?: number;
+                    maxTTLSeconds?: number;
+                };
+                expiryNoticeSeconds?: number;
+            };
+        };
+        LoginProvider: {
+            id: string;
+            displayName: string;
+            /** @description Server-relative start URL, `/auth/oidc/{providerId}/start`. */
+            startUrl: string;
+            /** @description Whether the replica that answers holds the provider's discovery document. */
+            available: boolean;
+        };
+        /**
+         * @description What the sign-in screen offers (R-AUTH-009). It names no issuer, client ID or error detail.
+         * @example {
+         *       "providers": [
+         *         {
+         *           "id": "corp",
+         *           "displayName": "Corporate SSO",
+         *           "startUrl": "/auth/oidc/corp/start",
+         *           "available": true
+         *         }
+         *       ],
+         *       "localLogin": false,
+         *       "anonymousAccess": false,
+         *       "autoRedirect": "corp"
+         *     }
+         */
+        LoginOptions: {
+            /** @description In configuration order (`order`, then ID). */
+            providers: components["schemas"]["LoginProvider"][];
+            /** @description The break-glass form is offered on the page; it is reachable with `?local=1` regardless. */
+            localLogin: boolean;
+            anonymousAccess: boolean;
+            /** @description The provider ID to redirect to at once; `null` shows the buttons. */
+            autoRedirect: string | null;
+        };
+        WhoamiPrincipal: {
+            /** @enum {string} */
+            kind: "user" | "service_account" | "ci" | "break_glass";
+            name: string;
+            /** Format: uuid */
+            id: string;
+            /** @description The names of the groups the principal belongs to, resolved for this request. */
+            groups?: string[];
+        };
+        WhoamiCredential: {
+            /** @enum {string} */
+            type: "pat" | "sat" | "cit" | "session";
+            /** Format: uuid */
+            tokenId: string | null;
+            /** @description The token's scope; `null` for a session. */
+            scope: components["schemas"]["TokenScope"] | null;
+            /**
+             * Format: date-time
+             * @description The token's expiry; `null` for a session and for a non-expiring token.
+             */
+            expiresAt: string | null;
+        };
+        /**
+         * @example {
+         *       "principal": {
+         *         "kind": "user",
+         *         "name": "alice",
+         *         "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a10",
+         *         "groups": [
+         *           "team-web"
+         *         ]
+         *       },
+         *       "credential": {
+         *         "type": "pat",
+         *         "tokenId": "0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e11",
+         *         "scope": {
+         *           "inherit": true,
+         *           "admin": false,
+         *           "repositories": [],
+         *           "system": []
+         *         },
+         *         "expiresAt": "2026-11-27T10:00:00Z"
+         *       }
+         *     }
+         */
+        Whoami: {
+            principal: components["schemas"]["WhoamiPrincipal"];
+            credential: components["schemas"]["WhoamiCredential"];
+        };
+        Session: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            createdAddr: string | null;
+            userAgent: string | null;
+            /** @enum {string} */
+            authMethod: "oidc" | "break_glass";
+            providerId: string | null;
+            /** @description Whether the session made this request. Always `false` in a list of another user's sessions. */
+            current: boolean;
+        };
+        SessionList: {
+            items: components["schemas"]["Session"][];
+            /** @description Always `null`: a user holds at most `auth.sessions.max_per_user` sessions. */
+            nextCursor: string | null;
+        };
+        /**
+         * @description The caller's UI preferences (R-API-021). `revision` is the ETag number.
+         * @example {
+         *       "locale": "de",
+         *       "theme": null,
+         *       "keyboardShortcuts": false,
+         *       "projectFilter": null,
+         *       "revision": 2
+         *     }
+         */
+        Preferences: {
+            /** @description `en`, `de` or `null` (the browser decides). */
+            locale: string | null;
+            /** @description `light`, `dark` or `null` (the system decides). */
+            theme: string | null;
+            keyboardShortcuts: boolean;
+            projectFilter: string | null;
+            revision: number;
+        };
+        /** @description `null` resets a member to its default. `revision` is accepted and ignored. */
+        PreferencesPatch: {
+            /** @description `en`, `de` or `null`. */
+            locale?: string | null;
+            /** @description `light`, `dark` or `null`. */
+            theme?: string | null;
+            keyboardShortcuts?: boolean | null;
+            projectFilter?: string | null;
+        };
+        /** @description The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted. */
+        PatternLists: {
+            include?: string[];
+            exclude?: string[];
+        };
+        /** @description The resource set of a policy (R-AUTHZ-004, R-AUTHZ-005). */
+        PolicyResources: {
+            /** @description Repository selectors, a key (`npm-internal`), a key pattern (`npm-team-*`) or a class (`@any-local`, `@any-remote`, `@any-virtual`, `@any`), each optionally restricted to a format (`@any-local:npm`). */
+            repositories?: string[];
+            packages?: components["schemas"]["PatternLists"];
+            paths?: components["schemas"]["PatternLists"];
+        };
+        /** @description Actions given to one principal. A policy holds at most one entry per principal. */
+        PolicyEntry: {
+            /**
+             * @description `user:<name>`, `group:<name>`, `sa:<name>`, `anonymous` or `authenticated`.
+             * @example group:team-web
+             */
+            principal: string;
+            /** @description Actions or presets (`read`, `write`, `maintain`, `full`) on input; the expanded, alphabetical list of actions on output. */
+            actions: string[];
+        };
+        /** @description What a client writes. The read-only members of the representation (`inert`, `warnings`, `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`) are accepted and ignored, so a body obtained by GET can be sent back. */
+        PermissionPolicyInput: {
+            name?: string;
+            description?: string;
+            /**
+             * @default repository
+             * @enum {string}
+             */
+            resourceType: "repository";
+            resources?: components["schemas"]["PolicyResources"];
+            entries?: components["schemas"]["PolicyEntry"][];
+            readonly inert?: boolean;
+            readonly warnings?: string[];
+            /** Format: int64 */
+            readonly version?: number;
+            /** Format: date-time */
+            readonly createdAt?: string;
+            readonly createdBy?: string;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+            readonly updatedBy?: string;
+        };
+        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`. `version` is the ETag source. */
+        PermissionPolicy: {
+            name: string;
+            description: string;
+            /** @enum {string} */
+            resourceType: "repository";
+            resources: components["schemas"]["PolicyResources"];
+            entries: components["schemas"]["PolicyEntry"][];
+            inert: boolean;
+            warnings: string[];
+            /** Format: int64 */
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description A principal reference; empty when the creator no longer exists. */
+            createdBy: string;
+            /** Format: date-time */
+            updatedAt: string;
+            updatedBy: string;
+        };
+        PermissionPolicyList: {
+            items: components["schemas"]["PermissionPolicy"][];
+            nextCursor: string | null;
+        };
+        /** @description The result of a validation without storing (R-AUTHZ-021). */
+        PolicyValidation: {
+            /** @description True when `errors` is empty. */
+            valid: boolean;
+            errors: components["schemas"]["PolicyProblem"][];
+            warnings: string[];
+            /** @description The keys of the repositories the selectors currently cover, sorted. Empty while the policy has errors. */
+            covers: string[];
+        };
+        PolicyProblem: {
+            /** @description A JSON pointer into the policy. */
+            pointer: string;
+            code: string;
+            detail: string;
+        };
+        /** @enum {string} */
+        RoleName: "admin" | "security-admin" | "auditor" | "repository-admin" | "webhook-admin";
+        Role: {
+            name: components["schemas"]["RoleName"];
+            /** @description The capabilities the role bundles (R-AUTHZ-010). */
+            capabilities: string[];
+        };
+        RoleList: {
+            items: components["schemas"]["Role"][];
+            nextCursor: null;
+        };
+        RoleBinding: {
+            role: components["schemas"]["RoleName"];
+            /** @description A principal reference. */
+            principal: string;
+            /** Format: date-time */
+            grantedAt: string;
+            /** @description A principal reference; empty for a binding made by a command or whose granter was deleted. */
+            grantedBy: string;
+        };
+        RoleBindingList: {
+            items: components["schemas"]["RoleBinding"][];
+            nextCursor: string | null;
+        };
+        /** @description The ceiling of the caller's credential (R-AUTHZ-013). */
+        ScopeSummary: {
+            /** @description The credential has no repository ceiling. */
+            inherit: boolean;
+            /** @description The credential exercises the caller's system roles. */
+            admin: boolean;
+            system: string[];
+            /** @description The number of repository grants in the scope. */
+            grants: number;
+        };
+        AuthzMe: {
+            roles: components["schemas"]["RoleName"][];
+            /** @description The system capabilities the credential exercises (R-AUTHZ-010), for example `settings:read`. */
+            capabilities: string[];
+            /** @description The references the caller acts as; it never lists other principals. */
+            principals: string[];
+            scope: components["schemas"]["ScopeSummary"] | null;
+            /** Format: int64 */
+            epoch: number;
+        };
+        PermissionCheckItem: {
+            repository: string;
+            /** @description The package name of an item, as the format spells it. */
+            package?: string;
+            /** @description The canonical path of an item inside the repository. */
+            path?: string;
+            /** @enum {string} */
+            action: "read" | "annotate" | "deploy" | "overwrite" | "delete" | "manage";
+        };
+        PermissionCheckRequest: {
+            checks: components["schemas"]["PermissionCheckItem"][];
+        };
+        PermissionCheckResult: {
+            allowed: boolean;
+        };
+        PermissionCheckResponse: {
+            results: components["schemas"]["PermissionCheckResult"][];
+            /**
+             * Format: int64
+             * @description The epoch of the index that decided every check.
+             */
+            epoch: number;
+        };
     };
     responses: {
         /** @description The request carries no valid credential. */
@@ -409,12 +2592,120 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description The request cannot be read, or a parameter, header, cursor or sort field is not valid (`malformed_request`, `invalid_cursor`, `invalid_header`). */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The request conflicts with the current state, or an idempotent request is still in progress (`Retry-After` is set then). */
+        Conflict: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `If-Match` does not match; the extension `currentEtag` holds the current tag (R-API-012). */
+        PreconditionFailed: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The operation needs `If-Match` (R-API-012). */
+        PreconditionRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The body exceeds `api.max_request_body_bytes`. */
+        PayloadTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The body is not of the media type the operation takes. */
+        UnsupportedMediaType: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The body is well-formed but a value is invalid, or an `Idempotency-Key` was reused for another request. */
+        Unprocessable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The rate limit of the caller's class is used up (R-API-016). `Retry-After` is set. */
+        TooManyRequests: {
+            headers: {
+                "Retry-After"?: number;
+                "RateLimit-Policy": components["headers"]["RateLimitPolicy"];
+                RateLimit: components["headers"]["RateLimit"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The ETag matches `If-None-Match`; no body. */
+        NotModified: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
     };
-    parameters: never;
+    parameters: {
+        /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+        Limit: number;
+        /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+        Cursor: string;
+        /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+        IfMatch: string;
+        /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+        IfNoneMatch: string;
+        /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+        IdempotencyKey: string;
+        JobId: string;
+    };
     requestBodies: never;
     headers: {
         /** @description The trace ID of the request (W3C Trace Context); quote it when reporting a problem. */
         RequestId: string;
+        /** @description Strong entity tag of the representation, the quoted revision (R-API-012). */
+        ETag: string;
+        /** @description The URL of the created resource, or of the job to poll (R-API-004, R-API-015). */
+        Location: string;
+        /** @description RFC 8288 link to the next page, `rel="next"`, present while more items exist (R-API-010). */
+        Link: string;
+        /** @description The limit class of the route, `"read";q=200;w=4` (R-API-016). */
+        RateLimitPolicy: string;
+        /** @description The remaining budget, `"read";r=199;t=3` (R-API-016). */
+        RateLimit: string;
+        /** @description `true` when the answer is the stored outcome of an earlier request with the same Idempotency-Key (R-API-014). */
+        IdempotencyReplayed: "true";
     };
     pathItems: never;
 }
@@ -441,6 +2732,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             /** @description The replica is not ready (starting, unready or draining). */
             503: {
@@ -483,6 +2775,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
         };
     };
@@ -506,6 +2799,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
         };
@@ -530,6 +2824,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
         };
@@ -555,6 +2850,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
         };
     };
@@ -573,10 +2869,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/yaml": string;
+                    "application/yaml": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
         };
     };
@@ -602,7 +2901,2592 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
+        };
+    };
+    listAuditEvents: {
+        parameters: {
+            query?: {
+                /** @description Start of the range, inclusive (RFC 3339); default the last 24 hours. */
+                from?: string;
+                /** @description End of the range, exclusive (RFC 3339); default open. */
+                to?: string;
+                /** @description An event name, or a prefix ending in `.*` such as `authz.*`. */
+                action?: string;
+                /** @description One of auth, token, identity, authz, repository, content, system, config, webhook. */
+                category?: string;
+                /** @description success, failure or denied. */
+                outcome?: string;
+                /** @description A principal ID or a name. */
+                actor?: string;
+                repository?: string;
+                resourceType?: string;
+                resourceId?: string;
+                /** @description The trace ID the client received as `X-Request-Id`. */
+                traceId?: string;
+                /** @description Page size, 1 to 1000 (default 100). */
+                limit?: number;
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of events. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "01933b1e-7c2a-7f4e-9d1b-6a2f0c9e8b11",
+                     *           "occurredAt": "2026-10-28T11:58:02.417Z",
+                     *           "action": "authz.policy.created",
+                     *           "category": "authz",
+                     *           "outcome": "success",
+                     *           "actor": {
+                     *             "type": "user",
+                     *             "id": "5f0e6c3a-6b1d-4c1e-8f43-0d7c3d1c9a10",
+                     *             "name": "sec-alice",
+                     *             "tokenId": null,
+                     *             "authMethod": null
+                     *           },
+                     *           "source": {
+                     *             "ip": "10.12.4.7",
+                     *             "userAgent": "curl/8.7.1"
+                     *           },
+                     *           "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                     *           "replica": "trove-web-6f9c7d8b5-x2v4q",
+                     *           "endpoint": "default",
+                     *           "resource": {
+                     *             "type": "permission_policy",
+                     *             "id": "8c0d2f4e-1f64-4b7a-9d0e-3b5c7a9e1f20"
+                     *           },
+                     *           "repository": null,
+                     *           "path": null,
+                     *           "reason": null,
+                     *           "details": {
+                     *             "epoch": 1842,
+                     *             "version": 1
+                     *           }
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AuditEventList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    exportAuditEvents: {
+        parameters: {
+            query?: {
+                /** @description Start of the range, inclusive (RFC 3339). Required; a missing value answers `400 invalid_audit_range`. */
+                from?: string;
+                /** @description End of the range, exclusive (RFC 3339). Required; a missing value answers `400 invalid_audit_range`. */
+                to?: string;
+                /** @description An event name, or a prefix ending in `.*` such as `authz.*`. */
+                action?: string;
+                /** @description One of auth, token, identity, authz, repository, content, system, config, webhook. */
+                category?: string;
+                /** @description success, failure or denied. */
+                outcome?: string;
+                /** @description A principal ID or a name. */
+                actor?: string;
+                repository?: string;
+                resourceType?: string;
+                resourceId?: string;
+                /** @description The trace ID the client received as `X-Request-Id`. */
+                traceId?: string;
+                /** @description `jsonl` (default) or `csv`. */
+                format?: "jsonl" | "csv";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /**
+             * @description The events of the range, oldest first. `application/x-ndjson`: one `AuditEvent` per line, each
+             *     line a complete JSON object. `text/csv`: a header row, then one row per event with the columns
+             *     `id`, `occurredAt`, `action`, `category`, `outcome`, `actorType`, `actorId`, `actorName`,
+             *     `tokenId`, `authMethod`, `sourceIp`, `userAgent`, `traceId`, `replica`, `endpoint`,
+             *     `resourceType`, `resourceId`, `repository`, `path`, `reason` and `details` (the JSON text); a
+             *     cell that would open as a formula in a spreadsheet starts with an apostrophe. The streamed
+             *     bodies have no schema here because a line-delimited stream is not one JSON document.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-ndjson": unknown;
+                    "text/csv": unknown;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getAuditEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEvent"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listJobs: {
+        parameters: {
+            query?: {
+                /** @description Repeat the parameter to select several kinds. */
+                kind?: string[];
+                /** @description Repeat the parameter to select several states. */
+                state?: components["schemas"]["JobState"][];
+                /** @description `enqueuedAt` or `-enqueuedAt` (default). */
+                sort?: "enqueuedAt" | "-enqueuedAt";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of jobs. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "01933b2a-7c41-7d1e-9a52-3f0e4b8c2d11",
+                     *           "kind": "gc",
+                     *           "state": "succeeded",
+                     *           "replica": "trove-worker-7d4b9c6f8-q8n2m",
+                     *           "enqueuedAt": "2026-10-28T12:40:00.000Z",
+                     *           "startedAt": "2026-10-28T12:40:01.200Z",
+                     *           "finishedAt": "2026-10-28T12:40:02.118Z",
+                     *           "attempt": 1,
+                     *           "maxAttempts": 10,
+                     *           "progress": null,
+                     *           "result": {
+                     *             "dryRun": false,
+                     *             "candidates": 3,
+                     *             "kept": 1,
+                     *             "deleted": 2,
+                     *             "bytesReclaimed": 4096,
+                     *             "errors": 0
+                     *           },
+                     *           "error": null,
+                     *           "triggeredBy": null,
+                     *           "target": null,
+                     *           "href": "/api/v1/system/jobs/01933b2a-7c41-7d1e-9a52-3f0e4b8c2d11"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["JobList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The job. */
+            200: {
+                headers: {
+                    /** @description Suggested polling interval in seconds, present while the job has not ended. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    cancelJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The job is cancelled or cancelling. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listTasks: {
+        parameters: {
+            query?: {
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of tasks. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    runTask: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                name: components["schemas"]["TaskName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                /**
+                 * @example {
+                 *       "dryRun": true
+                 *     }
+                 */
+                "application/json": components["schemas"]["TaskRunRequest"];
+            };
+        };
+        responses: {
+            /** @description The run is queued. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReferenceEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getEncryptionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key-ring status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EncryptionStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listUsers: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive substring of the name or the email. */
+                q?: string;
+                status?: "active" | "disabled" | "locked";
+                origin?: "jit" | "admin" | "scim" | "system";
+                /** @description Only members of this group (any source). */
+                group?: string;
+                admin?: boolean;
+                /** @description `username` is the default; a leading `-` reverses the order. */
+                sort?: "username";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of users. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createUser: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewUser"];
+            };
+        };
+        responses: {
+            /** @description The user. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's user record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["UserPatch"];
+            };
+        };
+        responses: {
+            /** @description The user after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    disableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DisableRequest"];
+            };
+        };
+        responses: {
+            /** @description The user is disabled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    enableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user is enabled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    patchUserGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipChange"];
+            };
+        };
+        responses: {
+            /** @description The user's memberships after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserGroups"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    unlockBreakGlass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account is unlocked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listGroups: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive substring of the name. */
+                q?: string;
+                origin?: "admin" | "oidc" | "scim";
+                /** @description `name` is the default; a leading `-` reverses the order. */
+                sort?: "name";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of groups. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createGroup: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewGroup"];
+            };
+        };
+        responses: {
+            /** @description The group. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The group. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The group is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["GroupPatch"];
+            };
+        };
+        responses: {
+            /** @description The group after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listGroupMembers: {
+        parameters: {
+            query?: {
+                /** @description Only members that hold this source. */
+                source?: string;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of members. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupMemberList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    patchGroupMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupMembersChange"];
+            };
+        };
+        responses: {
+            /** @description The members the request named, with their remaining sources. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupMemberList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listServiceAccounts: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive substring of the name. */
+                q?: string;
+                /** @description `name` is the default; a leading `-` reverses the order. */
+                sort?: "name";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of service accounts. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccountList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewServiceAccount"];
+            };
+        };
+        responses: {
+            /** @description The service account. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The service account. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The service account is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["ServiceAccountPatch"];
+            };
+        };
+        responses: {
+            /** @description The service account after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    disableServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DisableRequest"];
+            };
+        };
+        responses: {
+            /** @description The service account is disabled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    enableServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The service account is enabled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listTokens: {
+        parameters: {
+            query?: {
+                /** @description `me`, a username or `sa:<name>`. */
+                owner?: string;
+                type?: "pat" | "sat" | "cit";
+                state?: "active" | "expired" | "revoked" | "all";
+                expiresBefore?: string;
+                expiresAfter?: string;
+                /** @description Finds stale tokens. Last-use tracking is not recorded yet, so a token that was never used has no `lastUsedAt`. */
+                lastUsedBefore?: string;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of tokens. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The token with its value. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the answer holds a secret or must not be reused. */
+                    "Cache-Control"?: "no-store";
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCurrentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Token"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeCurrentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token is revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    rotateCurrentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RotateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new token with its value. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the answer holds a secret or must not be reused. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeTokenByValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeByValueRequest"];
+            };
+        };
+        responses: {
+            /** @description The token existed and is revoked; shown to an administrator only. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokedToken"];
+                };
+            };
+            /** @description Accepted; the token, if it existed, is revoked. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Token"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token is revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    rotateToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RotateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new token with its value. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the answer holds a secret or must not be reused. */
+                    "Cache-Control"?: "no-store";
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeOwnTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tokens are revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeUserTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tokens are revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createServiceAccountToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The token with its value. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the answer holds a secret or must not be reused. */
+                    "Cache-Control"?: "no-store";
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeServiceAccountTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tokens are revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getAuthSettings: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateAuthSettings: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`. */
+                "If-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["AuthSettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description The settings after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getLoginOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The options. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginOptions"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getWhoami: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Whoami"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listOwnSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sessions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    endOwnSessions: {
+        parameters: {
+            query?: {
+                keepCurrent?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sessions are ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    endOwnSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listUserSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sessions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    endUserSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sessions are ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPreferences: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The preferences. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preferences"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updatePreferences: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). Without it the answer is `428`. */
+                "If-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["PreferencesPatch"];
+            };
+        };
+        responses: {
+            /** @description The preferences after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preferences"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listPermissionPolicies: {
+        parameters: {
+            query?: {
+                /** @description A principal reference. */
+                principal?: string;
+                /** @description Include the policies of the principal's groups (default `true`); only with `principal`. */
+                expandGroups?: boolean;
+                /** @description A repository key. */
+                repository?: string;
+                /** @description `name` (default) or `-name`. */
+                sort?: "name" | "-name";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of policies. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "name": "team-web-publish",
+                     *           "description": "Team web publishes and tags its own npm scope",
+                     *           "resourceType": "repository",
+                     *           "resources": {
+                     *             "repositories": [
+                     *               "npm-internal"
+                     *             ],
+                     *             "packages": {
+                     *               "include": [
+                     *                 "@web/*"
+                     *               ],
+                     *               "exclude": []
+                     *             },
+                     *             "paths": {
+                     *               "include": [],
+                     *               "exclude": []
+                     *             }
+                     *           },
+                     *           "entries": [
+                     *             {
+                     *               "principal": "group:team-web",
+                     *               "actions": [
+                     *                 "annotate",
+                     *                 "deploy",
+                     *                 "read"
+                     *               ]
+                     *             },
+                     *             {
+                     *               "principal": "user:lead-web",
+                     *               "actions": [
+                     *                 "deploy",
+                     *                 "manage",
+                     *                 "read"
+                     *               ]
+                     *             }
+                     *           ],
+                     *           "inert": false,
+                     *           "warnings": [],
+                     *           "version": 4,
+                     *           "createdAt": "2026-10-28T09:12:44Z",
+                     *           "createdBy": "user:root",
+                     *           "updatedAt": "2026-10-28T10:01:02Z",
+                     *           "updatedBy": "user:sec-alice"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PermissionPolicyList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "team-web-publish",
+                 *       "description": "Team web publishes and tags its own npm scope",
+                 *       "resources": {
+                 *         "repositories": [
+                 *           "npm-internal"
+                 *         ],
+                 *         "packages": {
+                 *           "include": [
+                 *             "@web/*"
+                 *           ],
+                 *           "exclude": []
+                 *         }
+                 *       },
+                 *       "entries": [
+                 *         {
+                 *           "principal": "group:team-web",
+                 *           "actions": [
+                 *             "annotate",
+                 *             "deploy",
+                 *             "read"
+                 *           ]
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The policy was created. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The policy. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replacePermissionPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The policy after the replacement. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deletePermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The `ETag` of the policy, or `*`. */
+                "If-Match"?: string;
+            };
+            path: {
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The policy was deleted. */
+            204: {
+                headers: {
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    patchPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "description": "Team web publishes its own npm scope"
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The policy after the patch. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    validatePermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The result of the validation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "valid": true,
+                     *       "errors": [],
+                     *       "warnings": [
+                     *         "selector_matches_nothing"
+                     *       ],
+                     *       "covers": [
+                     *         "npm-internal"
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PolicyValidation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The roles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "name": "auditor",
+                     *           "capabilities": [
+                     *             "audit:read",
+                     *             "policies:read",
+                     *             "roles:read"
+                     *           ]
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RoleList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    listRoleBindings: {
+        parameters: {
+            query?: {
+                role?: components["schemas"]["RoleName"];
+                /** @description A principal reference. */
+                principal?: string;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of bindings. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "role": "admin",
+                     *           "principal": "group:platform-admins",
+                     *           "grantedAt": "2026-10-28T09:00:00Z",
+                     *           "grantedBy": "user:root"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RoleBindingList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    bindRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: components["schemas"]["RoleName"];
+                /** @description The percent-encoded principal reference, for example `group%3Aplatform-admins`. */
+                principalRef: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The binding existed. */
+            200: {
+                headers: {
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleBinding"];
+                };
+            };
+            /** @description The binding was created. */
+            201: {
+                headers: {
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleBinding"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    unbindRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: components["schemas"]["RoleName"];
+                /** @description The percent-encoded principal reference, for example `group%3Aplatform-admins`. */
+                principalRef: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The binding was removed. */
+            204: {
+                headers: {
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getAuthzMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's rights. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "roles": [
+                     *         "auditor"
+                     *       ],
+                     *       "capabilities": [
+                     *         "audit:read",
+                     *         "policies:read",
+                     *         "roles:read"
+                     *       ],
+                     *       "principals": [
+                     *         "user:alice",
+                     *         "group:team-web",
+                     *         "authenticated"
+                     *       ],
+                     *       "scope": null,
+                     *       "epoch": 1842
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AuthzMe"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    checkPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "checks": [
+                 *         {
+                 *           "repository": "npm-internal",
+                 *           "package": "@web/button",
+                 *           "action": "deploy"
+                 *         },
+                 *         {
+                 *           "repository": "npm-all",
+                 *           "action": "read"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["PermissionCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description One result per check, in order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "results": [
+                     *         {
+                     *           "allowed": true
+                     *         },
+                     *         {
+                     *           "allowed": false
+                     *         }
+                     *       ],
+                     *       "epoch": 1842
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PermissionCheckResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
         };
     };
 }

@@ -117,6 +117,15 @@ type User struct {
 	Groups         []Membership
 	// GroupClaimMissing is set while the last login carried no usable group claim.
 	GroupClaimMissing *ClaimMissing
+	// IsAdmin and AdminVia are derived from the role bindings, never stored
+	// (R-AUTH-016): the break-glass account is an administrator without a binding
+	// ("break-glass"), any other user through a binding on itself ("direct") or on
+	// one of its groups ("group:<name>").
+	IsAdmin  bool
+	AdminVia []string
+	// LockedUntil is the end of the lockout of the break-glass account while it is
+	// in force (R-AUTH-038); the zero time otherwise.
+	LockedUntil time.Time
 }
 
 func (m *Manager) record(ctx context.Context, tx meta.Tx, ev audit.Event) error {
@@ -254,7 +263,53 @@ func loadUser(ctx context.Context, qs *q.Queries, name string) (User, error) {
 	r := rows[0]
 	u := userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
 		r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.GroupClaimMissing)
-	return u, fillUser(ctx, qs, &u)
+	if err := fillUser(ctx, qs, &u); err != nil {
+		return u, err
+	}
+	one := []User{u}
+	err = fillAdmin(ctx, qs, one)
+	return one[0], err
+}
+
+// fillAdmin derives isAdmin, adminVia and the lockout of a batch of users from the
+// role bindings and the lockout row (R-AUTH-016, R-AUTH-038): two queries however
+// many users there are.
+func fillAdmin(ctx context.Context, qs *q.Queries, users []User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(users))
+	index := make(map[string]int, len(users))
+	for i := range users {
+		ids = append(ids, users[i].ID)
+		index[users[i].ID] = i
+	}
+	rows, err := qs.IdentityAdminVia(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		u := &users[index[r.UserID]]
+		u.AdminVia = append(u.AdminVia, r.Via)
+	}
+	for i := range users {
+		u := &users[i]
+		if u.BreakGlass {
+			u.AdminVia = append(u.AdminVia, "break-glass")
+			locked, err := qs.IdentityBreakGlassLockedUntil(ctx)
+			if err != nil {
+				return err
+			}
+			if len(locked) == 1 && locked[0].Valid {
+				u.LockedUntil = locked[0].Time.UTC()
+			}
+		}
+		u.IsAdmin = len(u.AdminVia) > 0
+		if u.AdminVia == nil {
+			u.AdminVia = []string{}
+		}
+	}
+	return nil
 }
 
 func fillUser(ctx context.Context, qs *q.Queries, u *User) error {
@@ -277,10 +332,15 @@ func fillUser(ctx context.Context, qs *q.Queries, u *User) error {
 
 // UserFilter filters ListUsers (R-AUTH-016). Empty fields match everything.
 type UserFilter struct {
-	Query  string
+	Query string
+	// Status is active, disabled or locked (the break-glass account while its
+	// lockout is in force).
 	Status string
 	Origin string
 	Group  string
+	// Admin is "true" or "false" to keep the users that hold the role admin or do
+	// not.
+	Admin string
 	// After is the name of the last user of the previous page.
 	After string
 	// Limit is the number of users to return at most; the caller asks for one
@@ -294,7 +354,7 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 	err := m.db.Read(ctx, func(db q.DBTX) error {
 		qs := q.New(db)
 		rows, err := qs.IdentityListUsers(ctx, q.IdentityListUsersParams{
-			After: f.After, Query: f.Query, Status: f.Status, Origin: f.Origin, GroupName: f.Group, MaxRows: int32(clampLimit(f.Limit)), //nolint:gosec // bounded
+			After: f.After, Query: f.Query, Status: f.Status, Origin: f.Origin, GroupName: f.Group, Admin: f.Admin, MaxRows: int32(clampLimit(f.Limit)), //nolint:gosec // bounded
 		})
 		if err != nil {
 			return err
@@ -308,7 +368,7 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 			}
 			out = append(out, u)
 		}
-		return nil
+		return fillAdmin(ctx, qs, out)
 	})
 	return out, DBErr("principal.ListUsers", err)
 }
@@ -391,6 +451,9 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 type DisableOptions struct {
 	// Reason is admin (default), dormant or scim.
 	Reason string
+	// Note is the free text of the administrator who disables (R-AUTH-016
+	// `reason`); it goes into the audit event only.
+	Note string
 	// RevokeTokens revokes the principal's tokens with reason principal_disabled
 	// (R-AUTH-016 default true for the API; the caller decides).
 	RevokeTokens bool
@@ -442,7 +505,7 @@ func (m *Manager) DisableUser(ctx context.Context, c Caller, name string, o Disa
 		return m.record(ctx, tx, audit.Event{
 			Type: audit.EventUserDisabled, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
 			Subject: audit.Subject{Kind: "user", ID: id, Name: name}, Reason: o.Reason,
-			Details: details(map[string]any{"source": sourceOf(c), "reason": o.Reason, "tokensRevoked": revoked, "sessionsEnded": len(ended)}),
+			Details: details(map[string]any{"source": sourceOf(c), "reason": o.Reason, "note": o.Note, "tokensRevoked": revoked, "sessionsEnded": len(ended)}),
 			Journal: details(map[string]string{"principalId": id, "username": name, "disabledReason": o.Reason}),
 		})
 	})

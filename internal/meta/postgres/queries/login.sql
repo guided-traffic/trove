@@ -258,3 +258,17 @@ UPDATE principal SET name = sqlc.arg(name)::text WHERE id = sqlc.arg(id)::text::
 SELECT p.id::text AS id, coalesce(u.is_break_glass, false)::bool AS is_break_glass
   FROM principal p LEFT JOIN app_user u ON u.principal_id = p.id
  WHERE p.kind = 'user' AND p.name = sqlc.arg(name)::text;
+
+-- name: EndSessionOfPrincipal :many
+-- One live session of a principal (DELETE /users/me/sessions/{id}, R-AUTH-010); a
+-- session of another principal or an ended one matches nothing.
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+ WHERE id = sqlc.arg(id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL
+RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
+
+-- name: EndSessionsOfPrincipalExcept :many
+-- Every open session of a principal but one (DELETE /users/me/sessions?keepCurrent=true).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+ WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL
+   AND id <> sqlc.arg(keep_id)::text::uuid
+RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;

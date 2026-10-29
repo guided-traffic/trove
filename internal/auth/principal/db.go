@@ -32,3 +32,40 @@ func Queries(tx meta.Tx) *q.Queries {
 	}
 	return q.New(ptx)
 }
+
+type joinKey struct{}
+
+// Join returns a context in which a [Joinable] database runs its transactions and
+// reads inside tx instead of opening its own. The management API uses it to make
+// an idempotent create one transaction with its idempotency row (R-API-014): the
+// domain call keeps its code, and its change, its audit event and the row commit
+// or roll back together. A call that the outer transaction retries runs again
+// from the start.
+func Join(ctx context.Context, tx meta.Tx) context.Context {
+	return context.WithValue(ctx, joinKey{}, tx)
+}
+
+// Joinable wraps a [DB] so that [Join] takes effect. Without a joined
+// transaction in the context it is the wrapped database.
+type Joinable struct{ DB }
+
+// InTx runs fn in the joined transaction, or in a new one of the wrapped database.
+func (j Joinable) InTx(ctx context.Context, fn func(tx meta.Tx) error) error {
+	if tx, ok := ctx.Value(joinKey{}).(meta.Tx); ok {
+		return fn(tx)
+	}
+	return j.DB.InTx(ctx, fn)
+}
+
+// Read runs fn on the joined transaction, so that a read after a write of the same
+// call sees the write, or on a pooled connection of the wrapped database.
+func (j Joinable) Read(ctx context.Context, fn func(q.DBTX) error) error {
+	if tx, ok := ctx.Value(joinKey{}).(meta.Tx); ok {
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			panic("principal: the joined transaction does not come from the PostgreSQL store")
+		}
+		return fn(ptx)
+	}
+	return j.DB.Read(ctx, fn)
+}

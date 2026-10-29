@@ -81,6 +81,28 @@ by a conditional update, two first logins on two replicas end with one user. A u
 refused; deleting a user ends sessions and deletes tokens and memberships, and a later login of the same identity is a new
 principal. Group membership is resolved when a request is authenticated, not when a token was issued.
 
+## The management API over tokens
+
+The operations are in [tokens_api.go](../../internal/api/v1/tokens_api.go) and [users_api.go](../../internal/api/v1/users_api.go);
+the declarations are in `api/openapi.yaml` (Q-AUTH-43).
+
+- **A token value leaves the server once.** `POST /api/v1/tokens`, `POST /api/v1/service-accounts/{name}/tokens` and the two rotations
+  answer `201` with `Cache-Control: no-store`. The outcome of such a create carries `Outcome.SecretID`, so the idempotency row stores the
+  status and the token ID but no body, and a retry with the same key answers `409 token_already_issued`. No read operation returns the value
+  or its hash. [api_flows_test.go](../../test/integration/identity/api_flows_test.go) scans every table and the audit trail for the value
+  of a token created through the API.
+- **No impersonation.** A PAT is created for the caller (an `owner` naming anyone else is `403 forbidden`, administrators included), and
+  another user's PAT is never rotated, only revoked. A service-account token is created by an administrator, or by a token of that account
+  under the derivation rule; the answer for anyone else is the same `403` whether the account exists or not.
+- **A session that mints a credential proves a recent sign-in.** Creating a PAT or SAT, rotating through a session and changing the
+  authentication settings answer `401 reauthentication_required` when `authenticated_at` is older than `auth.sessions.recent_auth_window`
+  (R-AUTH-011). A token caller is not asked: its limits are the derivation rule's.
+- **Hidden existence.** A token the caller may neither see nor revoke answers `404`, so token IDs cannot be enumerated; a list shows the
+  caller's own tokens unless it holds `tokens:read`.
+- **Revocation by value is open.** `POST /api/v1/tokens/revoke` takes no credential (Q-AUTH-6). It answers `202` for a live token, a dead one and
+  an unknown well-formed value alike; only an administrator learns the owner (`200`). Each call counts in the limiter `auth.flow_starts`
+  of the client address, cluster-wide.
+
 ## What this does not cover
 
 ### H-82 · Rejected credentials of one address are counted together
@@ -120,3 +142,21 @@ carries an administrator role binding therefore gives that role to whoever the i
 group, as [H-16](../spec/identity-and-authentication.md#h-16--idp-side-deactivation-without-scim) and the security notes of
 the specification describe. What makes it real: a provider whose users can create or name groups themselves, with a rule
 that maps such names onto a bound group.
+
+### H-134 · Revocation by value and the login routes share one budget per address
+
+Component: the limiter `auth.flow_starts` (R-AUTH-038). Subject: the sign-in of everyone behind one client address. Live in the MVP
+whenever the address is shared (a NAT, a proxy that is not trusted). `POST /api/v1/tokens/revoke` is open to unauthenticated callers and
+counts in the same per-address budget as `/auth/oidc/*/start` and the local login. Someone who sends well-formed values from the
+address of a company's egress fills the budget, and the sign-ins from that address get `429` until the minute ends. The attacker needs
+no token and gains nothing but the denial. A trusted-proxy list with the real client address, and `starts_per_address` sized for the
+largest office, are the mitigations; a separate budget for the revocation would remove the coupling.
+
+### H-135 · Two administrators patching one identity record: the last write wins
+
+Component: `PATCH /api/v1/users/{username}`, `/groups/{name}` and `/service-accounts/{name}` (Q-API-25). Subject: display name,
+e-mail, description, the auto-join flag, the pending identity links. Live in the MVP. These resources have no revision, so a patch
+does not carry `If-Match` and two administrators who change the same member concurrently overwrite each other. Each change is audited
+with the changed member names (`user.updated`, `group.updated`, `serviceaccount.updated`), which shows that an overwrite happened and
+not the value that was lost. What makes it real: two administrators editing the same group or user at the same time; the
+auto-join check of R-AUTH-019 runs in the updating transaction, so the race does not skip it.

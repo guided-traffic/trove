@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os/signal"
@@ -179,20 +177,7 @@ func breakGlassStatus(ctx context.Context, env *adminEnv, s streams) error {
 // breakGlassUnlock clears a lockout at once on every replica: every login
 // attempt reads the row (R-AUTH-038).
 func breakGlassUnlock(ctx context.Context, env *adminEnv, s streams) error {
-	var was bool
-	err := env.db.InTx(ctx, func(tx meta.Tx) error {
-		ptx, ok := postgres.Unwrap(tx)
-		if !ok {
-			return errors.New("the transaction does not come from the PostgreSQL store")
-		}
-		rows, err := q.New(ptx).Unlock(ctx, oidc.LockoutKey)
-		if err != nil {
-			return err
-		}
-		was = len(rows) == 1 && rows[0]
-		details, _ := json.Marshal(map[string]any{"severity": "high", "was_locked": was})
-		return env.recorder.RecordTx(ctx, tx, audit.Event{Type: audit.EventAuthBreakGlassUnlocked, Actor: env.actor, Outcome: audit.Success, Details: details})
-	})
+	was, err := oidc.Unlock(ctx, env.db, env.recorder, env.actor, audit.Source{})
 	if err != nil {
 		return err
 	}

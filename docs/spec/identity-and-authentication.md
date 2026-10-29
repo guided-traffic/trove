@@ -2187,8 +2187,9 @@ Priority: **MVP** · Covers: TOK-026, TOK-027, TOK-028, ADMAPI-043, ADMAPI-044
 - `GET /api/v1/tokens/{id}` returns one token.
 - `GET /api/v1/tokens/current` returns the token that authenticates the request (404
   `not_a_token` for sessions).
-- `GET /api/v1/auth/whoami` returns `{"principal": {"kind", "name", "id"}, "credential":
-  {"type", "tokenId", "scope", "expiresAt"}}` for any credential.
+- `GET /api/v1/auth/whoami` returns `{"principal": {"kind", "name", "id", "groups"}, "credential":
+  {"type", "tokenId", "scope", "expiresAt"}}` for any credential; a session shows `type: "session"`
+  and `null` for the other three (Q-AUTH-44).
 
 **Record fields:** `id`, `type`, `hint`, `owner`, `description`, `scope`, `createdAt`,
 `createdBy`, `createdVia`, `expiresAt`, `lastUsedAt`, `lastUsedAddr`, `state`, `revokedAt`,
@@ -3072,7 +3073,8 @@ YAML (INV-15).
 
 **Read:** `GET /api/v1/settings/auth` (administrator or `settings:read`) returns three groups:
 
-- the effective runtime values;
+- the effective runtime values, at the top level of the answer and in the shape `PATCH` takes, so
+  that a body obtained by `GET` can be sent back (Q-AUTH-45);
 - the YAML ceilings they are bound by;
 - read-only status: providers with discovery state, break-glass enabled and locked, session
   timeouts, the client switches, the command-line login poll binding mode (R-AUTH-034, with a
@@ -3080,7 +3082,7 @@ YAML (INV-15).
   empty), and the SCIM state.
 
 **Change:** `PATCH /api/v1/settings/auth` (administrator, session with recent authentication or
-token with `admin: true`) accepts:
+token with `admin: true`; `If-Match` with the `ETag` of the `GET`, Q-AUTH-41) accepts:
 
 ```json
 {
@@ -4464,6 +4466,159 @@ a component of the login before the identity area is wired.
 
 **Applied in the spec:** none; [login.md](../developer/login.md#seams-to-the-other-areas) and
 [m1-contracts.md](../developer/m1-contracts.md#wiring-order).
+
+### Q-AUTH-41 · The ETag of the runtime authentication settings
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-040 and R-API-012 want `GET /api/v1/settings/auth` to answer an `ETag` and `PATCH` to take `If-Match`, but `auth_settings`
+has no revision column (migration 00007 is wave 1's and the table is a singleton).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `revision` column | A new migration adds it and registers it with `meta.RegisterRevisionColumn` | Same as every other resource | A migration for one row; the other area agents number their migrations in parallel |
+| (b) The change time in microseconds (chosen) | The tag is `extract(epoch from updated_at)` in microseconds; every update sets `updated_at = greatest(now(), updated_at + 1 µs)`, so it grows with every change | No schema change; strictly increasing; the check runs in the updating transaction | A restore sets the tag back to the time of the restored row, and the restore rule of R-BAK-022 (raise revision columns by 2^32) does not reach it |
+| (c) A hash of the content | The tag is a hash of the row's values | No column | A change back to an earlier value restores the earlier tag, so an `If-Match` taken before both changes passes |
+
+**Choice:** (b), implemented as `token.Settings.Revision` and `SettingsStore.Update` with `SettingsPatch.IfRevision`.
+
+**Rationale:** the row is changed rarely by administrators and its tag only has to tell "changed since I loaded it". The development agent
+would revisit this when a restore of the table matters for a client that holds a tag across it (then (a), with the column registered), or
+when a second singleton settings row needs the same.
+
+**Applied in the spec:** R-AUTH-040 (the `GET` representation and its `ETag`).
+
+### Q-AUTH-42 · A disabled service account keeps its tokens
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-016 revokes the tokens of a disabled user by default. R-AUTH-020 says disabling a service account "makes all its tokens fail with
+`principal_disabled`" and names no revocation.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Revoke by default, like a user | `revokeTokens` defaults to `true` | One rule for both | Re-enabling a bot means creating and distributing its tokens again |
+| (b) Fail, do not revoke (chosen) | `revokeTokens` defaults to `false`; `true` revokes them | Matches the page: a pause that a pipeline survives | A disabled account's tokens stay valid for the day it is enabled |
+
+**Choice:** (b): `POST /api/v1/service-accounts/{name}/disable` takes the optional body `{"revokeTokens": false}`.
+
+**Rationale:** a user comes back with a login; a service account comes back with its tokens. The development agent would revisit this if
+the owner wants disabling to be the incident response (then the default turns to `true`).
+
+**Applied in the spec:** none; the operation's description in `api/openapi.yaml`.
+
+### Q-AUTH-43 · The permission of each identity operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-016 to R-AUTH-040 say "administrator" for most operations and name the system scope items of R-AUTH-025 for some. R-API-008 needs one
+declaration per operation.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `role: admin` everywhere | Every administration operation needs the role | Simple | A narrow token (`identities:read`) could not read; the acceptance criterion of R-AUTH-025 (`GET /users` with a read-only SAT) fails |
+| (b) The capability of R-AUTHZ-010 (chosen) | Reads `identities:read`, changes `identities:write`, revoking all tokens of a principal `tokens:revoke`, the settings read `settings:read` and write `settings:write`; the break-glass unlock `role: admin` | A role like `auditor` (R-AUTHZ-011) works without a change; system scopes narrow any of them | More declarations to keep right |
+
+**Choice:** (b). Operations of the caller on itself (`/users/me…`, `/tokens/current…`, `POST /tokens`, `whoami`) are `authenticated` and
+decide in the handler: the owner of a token revokes it, anyone with `tokens:read` sees it, otherwise it answers 404 (R-AUTH-028);
+`POST /service-accounts/{name}/tokens` and `POST /tokens/{id}/rotate` are `authenticated` because a token of the account itself may call
+them under the derivation rule. The session list of another user is `identities:read`, ending its sessions `identities:write`.
+
+**Rationale:** the declarations follow the table of R-AUTHZ-010. The development agent would revisit the session list (a source address
+and a user agent are personal data) if the owner wants it behind `identities:write`.
+
+**Applied in the spec:** none; the `x-trove-permission` of each operation in `api/openapi.yaml`.
+
+### Q-AUTH-44 · The shape of `whoami`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-028 gives `{"principal": {"kind", "name", "id"}, "credential": {"type", "tokenId", "scope", "expiresAt"}}` and does not say what a
+session shows; the UI shell shows the groups of the principal (R-API-021).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The page's shape only | `credential.type` has no value for a session | Exactly the page | The UI cannot tell a session from a token, and a session has no groups to show |
+| (b) The page's shape plus `principal.groups` and `credential.type: session` (chosen) | A session shows `type: "session"` and `null` for `tokenId`, `scope` and `expiresAt`; the principal lists its group names | The UI reads one answer | One member beyond the page |
+
+**Choice:** (b); `principal.kind` is `user`, `service_account`, `ci` or `break_glass`.
+
+**Rationale:** the member is additive. The development agent would revisit it if `GET /api/v1/authz/me` carries the groups.
+
+**Applied in the spec:** R-AUTH-028 (the `whoami` sentence).
+
+### Q-AUTH-45 · The settings document can be sent back
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-040 lists three groups for `GET` and a flat body for `PATCH`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `{runtime, ceilings, status}` | The read nests the runtime values | Mirrors the three groups | A `GET` body cannot be sent back |
+| (b) The runtime values at the top, `ceilings` and `status` next to them (chosen) | `{anonymousAccess, tokens, ceilings, status}` | A `GET` body is a valid `PATCH` body (the two groups are ignored), as R-API-013 asks | The groups are not symmetrical |
+
+**Choice:** (b).
+
+**Rationale:** R-API-013 wants a body obtained by `GET` to be patchable. The development agent would revisit this when a settings
+resource of another area picks a different shape.
+
+**Applied in the spec:** R-AUTH-040 (the `GET` description).
+
+### Q-AUTH-46 · An idempotent create is one transaction with its idempotency row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`Idempotency.Do` (R-API-014) gives the operation a transaction in which it inserts the idempotency row, and the identity services open
+their own transactions: the audit event, the change message and the limit check of a token create have to commit with the change.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every service method takes the transaction | `CreateUser(ctx, tx, …)` and so on | Explicit | The callers of the CLI, the provisioner and the tests change; two signatures per method |
+| (b) The context joins the transaction (chosen) | `principal.Join(ctx, tx)`; the manager and the token service run on `principal.Joinable`, whose `InTx` and `Read` use the joined transaction | The domain code is untouched; a read after a write of the same call sees it | A context value changes what a database call means; only the API sets it |
+| (c) Two transactions | The change commits, then the row | No change | A crash between them repeats the change on the retry, and a token would be created twice |
+
+**Choice:** (b). A replay of a create that issued a token value answers `409 token_already_issued` with the token ID, because the value is
+stored nowhere (`Outcome.SecretID`).
+
+**Rationale:** the change, its event and its idempotency row commit or roll back together, with the retry of the outer transaction around
+the whole call. The development agent would revisit this if a second area needs the same and a shared form in `meta` is better.
+
+**Applied in the spec:** none; [identity.md](../developer/identity.md).
+
+### Q-AUTH-47 · Creating a service account does not bind a role
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`principal.AdminBinder` lets `trove admin service-account create --admin` bind the role in the creating transaction. R-AUTH-020 offers no
+such member on `POST /api/v1/service-accounts`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An `admin` flag on the create | The API binds the role | One call | The request of R-AUTH-020 has no such member; `identities:write` would imply `roles:write` |
+| (b) No flag (chosen) | The role is bound through the role-binding API of the authorization area, which checks `role_not_allowed` and `last_admin` | The binding has one door | Two calls |
+
+**Choice:** (b). The manager of the running replica has no `AdminBinder`.
+
+**Rationale:** `identities:write` must not imply `roles:write`. The development agent would revisit this if the owner wants a single call.
+
+**Applied in the spec:** none.
+
+### Q-AUTH-48 · A session list is one page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Cursor paging as every list | `limit` and `cursor` | Uniform | A user holds at most `auth.sessions.max_per_user` (20 by default) |
+| (b) `{items, nextCursor: null}` (chosen) | The envelope of a page, without parameters | The shape is the same; no cursor code for 20 rows | The bound is the setting's, not the API's |
+
+**Choice:** (b).
+
+**Rationale:** the setting bounds the list and a cursor on a short list is noise. The development agent would revisit this if
+`max_per_user` may be raised into the hundreds.
+
+**Applied in the spec:** none; the operation's description.
 
 ## What this does not cover
 
