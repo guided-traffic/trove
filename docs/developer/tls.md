@@ -78,7 +78,7 @@ Registered once per process (`tlsfiles.NewMetrics`, in `internal/app` telemetry)
 |---|---|
 | `trove_tls_certificate_expiry_timestamp_seconds` | notAfter of the served leaf of a pair; the earliest notAfter of a bundle |
 | `trove_tls_reloads_total` | changed content that was loaded and swapped in (the first load is not counted) |
-| `trove_tls_reload_errors_total` | content that did not load, once per distinct content or read error; exported at 0 from the start |
+| `trove_tls_reload_errors_total` | content that did not load, once per distinct content or read error; exported at 0 from the start. An empty file read from a piece that has loaded before waits one pass, because a writer that truncates and then writes can be read in between; an empty file that stays empty is counted on the next pass |
 
 An expiry alert is `trove_tls_certificate_expiry_timestamp_seconds - time() < 14 * 86400`; a failed rotation is
 `increase(trove_tls_reload_errors_total[15m]) > 0`.

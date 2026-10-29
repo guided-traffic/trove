@@ -106,7 +106,12 @@ type piece struct {
 	// yet. Such an error is counted once per distinct text and does not stand for
 	// the content, so the last bad content stays remembered across it (CR2-7).
 	retryErr bool
-	err      error // problem of the last pass; nil when the current content is served
+	// emptySeen is set when a pass of a piece that has loaded before read an empty
+	// file: a writer that truncates and then writes (an in-place rewrite) can be
+	// read in between. The next pass decides; an empty file that stays empty is
+	// refused and counted then.
+	emptySeen bool
+	err       error // problem of the last pass; nil when the current content is served
 
 	cert  *tls.Certificate    // pair
 	certs []*x509.Certificate // bundle
@@ -331,6 +336,11 @@ func (r *Reloader) passPiece(p *piece) bool {
 		r.fail(p, err, nil)
 		return false
 	}
+	if p.good && hasEmpty(parts) && !p.emptySeen {
+		p.emptySeen = true
+		return false // a rewrite in progress, most likely; the next pass reads it again
+	}
+	p.emptySeen = false
 	sum := digest(parts)
 	if p.good && sum == p.goodSum {
 		p.err, p.badSet = nil, false
@@ -377,6 +387,16 @@ func (p *piece) read() ([][]byte, error) {
 		out[i] = b
 	}
 	return out, nil
+}
+
+// hasEmpty reports whether one of the files read was empty.
+func hasEmpty(parts [][]byte) bool {
+	for _, b := range parts {
+		if len(b) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // digest hashes the parts with their lengths, so moving bytes from one file to

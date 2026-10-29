@@ -213,6 +213,35 @@ func TestReloader(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-035 an empty file read during an in-place rewrite is not counted; one that stays empty is", func(t *testing.T) {
+		dir := t.TempDir()
+		good := ca.Issue(t, tlstest.Options{Serial: big.NewInt(451)})
+		certFile, keyFile := good.Files(t, dir, "tls")
+		r, reg := listener(t, tlsfiles.Spec{Pairs: []tlsfiles.Pair{{CertFile: certFile, KeyFile: keyFile}}})
+		// A writer that truncates and then writes is read in between.
+		tlstest.WriteFile(t, certFile, nil)
+		_ = r.Reload()
+		if v, _ := metric(t, reg, tlsfiles.FamilyReloadErrors, certFile); v != 0 {
+			t.Fatalf("trove_tls_reload_errors_total = %v after one empty read, want 0", v)
+		}
+		tlstest.WriteFile(t, certFile, []byte("not a certificate"))
+		_ = r.Reload()
+		if v, _ := metric(t, reg, tlsfiles.FamilyReloadErrors, certFile); v != 1 {
+			t.Fatalf("trove_tls_reload_errors_total = %v for the broken content, want 1", v)
+		}
+		// An empty file that stays empty is refused on the second pass and counted once.
+		tlstest.WriteFile(t, certFile, nil)
+		for range 3 {
+			_ = r.Reload()
+		}
+		if v, _ := metric(t, reg, tlsfiles.FamilyReloadErrors, certFile); v != 2 {
+			t.Errorf("trove_tls_reload_errors_total = %v with a file that stays empty, want 2", v)
+		}
+		if got := serialOf(t, r, "localhost").Int64(); got != 451 {
+			t.Errorf("serving %d, want the old 451", got)
+		}
+	})
+
 	t.Run("R-ARCH-035 an expired certificate is refused", func(t *testing.T) {
 		dir := t.TempDir()
 		good := ca.Issue(t, tlstest.Options{Serial: big.NewInt(501)})
