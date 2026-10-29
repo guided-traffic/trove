@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 89 of 577 spec requirements are implemented: a passing test names them and no
+**Status.** 97 of 577 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 665 specified (52 of them implemented), 1,574 open.
+**Totals.** 2,239 catalog features on 60 pages: 665 specified (58 of them implemented), 1,574 open.
 577 spec requirements: 483 cover catalog features, 94 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -29,7 +29,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Repositories](#repositories-repo) | `REPO` | 68 | 23 of 23 | 40 | 28 | 0 |
 | [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 0 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
-| [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 0 |
+| [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 1 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
 | [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 34 | 35 | 0 |
@@ -38,8 +38,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 11 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 23 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 44 | 56 | 13 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 26 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 44 | 56 | 15 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 1 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 | 0 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 | 0 |
@@ -319,7 +319,7 @@ Catalog page: [replication-and-federation.md](../features/replication-and-federa
 Catalog page: [artifacts.md](../features/artifacts.md) · specified by priority: MVP 10 of 10 · P1 20 of 20 · P2 2 of 22 · Out of scope 0 of 1
 
 <details>
-<summary>53 features: 32 specified, 21 open, 0 implemented</summary>
+<summary>53 features: 32 specified, 21 open, 1 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -365,7 +365,7 @@ Catalog page: [artifacts.md](../features/artifacts.md) · specified by priority:
 | ART-040 | File tree browser | MVP | specified | [R-UI-010](../spec/api-and-ui.md) |
 | ART-041 | Item details pane | MVP | specified | [R-UI-010](../spec/api-and-ui.md) |
 | ART-042 | HTML directory-listing browser | P1 | specified | [R-STOR-017](../spec/storage.md) |
-| ART-043 | Public repository view under a path prefix | P2 | specified | [R-EP-005](../spec/endpoints.md) |
+| ART-043 | Public repository view under a path prefix | P2 | implemented | [R-EP-005](../spec/endpoints.md) (implemented) |
 | ART-044 | Browsing uncached remote content | P2 | open | – |
 | ART-045 | Content browsing of files and archives | P2 | open | – |
 | ART-046 | Followers (change notifications) | P2 | open | – |
@@ -877,7 +877,7 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 23 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 26 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -901,11 +901,11 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-018 | Internal TLS with a built-in certificate authority | P2 | implemented | [R-ARCH-035](../spec/architecture.md) (implemented), [R-HA-063](../spec/ha-and-helm.md) (implemented) |
 | HA-019 | Trust store for outbound TLS connections | MVP | specified | [R-ARCH-022](../spec/architecture.md) (implemented), [R-HA-043](../spec/ha-and-helm.md) |
 | HA-020 | IPv6 and dual-stack networking | P1 | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-044](../spec/ha-and-helm.md) |
-| HA-021 | Network ports and listener layout | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-EP-001](../spec/endpoints.md), [R-HA-028](../spec/ha-and-helm.md) (implemented) |
+| HA-021 | Network ports and listener layout | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-EP-001](../spec/endpoints.md) (implemented), [R-HA-028](../spec/ha-and-helm.md) (implemented) |
 | HA-022 | Load balancer in front of the cluster | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-023 | Health endpoints for load balancers and probes | MVP | specified | [R-HA-008](../spec/ha-and-helm.md), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
 | HA-024 | Proxy requirements for large and long transfers | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-039](../spec/ha-and-helm.md) |
-| HA-025 | Forwarded headers and the public base URL | MVP | specified | [R-ARCH-006](../spec/architecture.md) (implemented), [R-EP-003](../spec/endpoints.md), [R-HA-040](../spec/ha-and-helm.md) |
+| HA-025 | Forwarded headers and the public base URL | MVP | specified | [R-ARCH-006](../spec/architecture.md) (implemented), [R-EP-003](../spec/endpoints.md) (implemented), [R-HA-040](../spec/ha-and-helm.md) |
 | HA-026 | Reverse-proxy configuration generator | P2 | open | – |
 | HA-027 | Container-registry routing at the edge | P1 | specified | [R-EP-007](../spec/endpoints.md), [R-HA-041](../spec/ha-and-helm.md) (implemented) |
 | HA-028 | Client-certificate forwarding from the reverse proxy | P2 | open | – |
@@ -918,9 +918,9 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-035 | Secrets handling in the chart | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented) |
 | HA-036 | Configuration rendering and override precedence | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented), [R-OPS-028](../spec/operations-and-observability.md) (implemented) |
 | HA-037 | First-start bootstrap | MVP | specified | [R-HA-030](../spec/ha-and-helm.md) (implemented), [R-OPS-031](../spec/operations-and-observability.md) |
-| HA-038 | Kubernetes Service exposure | MVP | specified | [R-EP-008](../spec/endpoints.md), [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
-| HA-039 | Ingress exposure | MVP | specified | [R-EP-008](../spec/endpoints.md), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
-| HA-040 | Gateway API exposure | P1 | specified | [R-EP-008](../spec/endpoints.md), [R-HA-038](../spec/ha-and-helm.md), [R-HA-053](../spec/ha-and-helm.md) |
+| HA-038 | Kubernetes Service exposure | MVP | implemented | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
+| HA-039 | Ingress exposure | MVP | implemented | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
+| HA-040 | Gateway API exposure | P1 | specified | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-038](../spec/ha-and-helm.md), [R-HA-053](../spec/ha-and-helm.md) |
 | HA-041 | Bundled edge reverse proxy | P2 | open | – |
 | HA-042 | TLS termination topology in Kubernetes | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-043 | Horizontal pod autoscaling | MVP | implemented | [R-HA-032](../spec/ha-and-helm.md) (implemented) |
@@ -968,7 +968,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 20 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 44 specified, 56 open, 13 implemented</summary>
+<summary>100 features: 44 specified, 56 open, 15 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -983,14 +983,14 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-009 | Cluster lock diagnostics | P2 | specified | [R-OPS-026](../spec/operations-and-observability.md) |
 | OPS-010 | Outbound connection test | P2 | open | – |
 | OPS-011 | Metrics endpoint | MVP | implemented | [R-OPS-006](../spec/operations-and-observability.md) (implemented) |
-| OPS-012 | Core metric families | MVP | specified | [R-BAK-014](../spec/backup-and-restore.md), [R-EP-009](../spec/endpoints.md), [R-OPS-007](../spec/operations-and-observability.md) (implemented), [R-OPS-008](../spec/operations-and-observability.md) |
+| OPS-012 | Core metric families | MVP | specified | [R-BAK-014](../spec/backup-and-restore.md), [R-EP-009](../spec/endpoints.md) (implemented), [R-OPS-007](../spec/operations-and-observability.md) (implemented), [R-OPS-008](../spec/operations-and-observability.md) |
 | OPS-013 | Auxiliary service metric families | P1 | specified | [R-OPS-008](../spec/operations-and-observability.md) |
 | OPS-014 | Federation metric families | Later | open | – |
 | OPS-015 | Metrics log output | P2 | open | – |
 | OPS-016 | Runtime management beans | Out of scope | open | – |
 | OPS-017 | Log set and file naming | MVP | implemented | [R-OPS-009](../spec/operations-and-observability.md) (implemented) |
 | OPS-018 | Service log record format | MVP | implemented | [R-OPS-009](../spec/operations-and-observability.md) (implemented) |
-| OPS-019 | Request log | MVP | specified | [R-EP-009](../spec/endpoints.md), [R-OPS-010](../spec/operations-and-observability.md) (implemented) |
+| OPS-019 | Request log | MVP | implemented | [R-EP-009](../spec/endpoints.md) (implemented), [R-OPS-010](../spec/operations-and-observability.md) (implemented) |
 | OPS-020 | Outbound request log | MVP | specified | [R-OPS-011](../spec/operations-and-observability.md) |
 | OPS-021 | Front router access log | P2 | open | – |
 | OPS-022 | Security access log | MVP | specified | [R-AUTH-041](../spec/identity-and-authentication.md), [R-OPS-015](../spec/operations-and-observability.md), [R-OPS-016](../spec/operations-and-observability.md) |
@@ -1022,8 +1022,8 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-048 | Identity-service configuration documents | P2 | open | – |
 | OPS-049 | Application integrations | P2 | open | – |
 | OPS-050 | MIME type mapping | P1 | specified | [R-OPS-034](../spec/operations-and-observability.md) |
-| OPS-051 | External base URL | MVP | specified | [R-EP-003](../spec/endpoints.md), [R-AUTH-003](../spec/identity-and-authentication.md), [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
-| OPS-052 | Per-request base URL override | P1 | specified | [R-EP-003](../spec/endpoints.md), [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
+| OPS-051 | External base URL | MVP | specified | [R-EP-003](../spec/endpoints.md) (implemented), [R-AUTH-003](../spec/identity-and-authentication.md), [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
+| OPS-052 | Per-request base URL override | P1 | implemented | [R-EP-003](../spec/endpoints.md) (implemented), [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
 | OPS-053 | Server name, date format and help | P2 | open | – |
 | OPS-054 | Logo | P2 | open | – |
 | OPS-055 | System banner message | P1 | specified | [R-OPS-025](../spec/operations-and-observability.md) |
@@ -3014,9 +3014,9 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-BAK-022 | State a restore rebuilds or invalidates | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-024 | Revocation journal replay after a restore | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-027 | Client-side encryption of the database files | P1 | [backup-and-restore.md](../spec/backup-and-restore.md) |
-| R-EP-002 | Endpoint identity comes from the listener | MVP | [endpoints.md](../spec/endpoints.md) |
-| R-EP-004 | TLS on endpoint listeners: certificates by SNI, wildcard certificates, reload | MVP | [endpoints.md](../spec/endpoints.md) |
-| R-EP-006 | Host-root binding: the reserved mechanism | MVP | [endpoints.md](../spec/endpoints.md) |
+| R-EP-002 (implemented) | Endpoint identity comes from the listener | MVP | [endpoints.md](../spec/endpoints.md) |
+| R-EP-004 (implemented) | TLS on endpoint listeners: certificates by SNI, wildcard certificates, reload | MVP | [endpoints.md](../spec/endpoints.md) |
+| R-EP-006 (implemented) | Host-root binding: the reserved mechanism | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-010 | Accepted credentials per endpoint | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-012 | Exposure rules: model, validation and storage | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-014 | Exposure on raw files, listings and the management API | MVP | [endpoints.md](../spec/endpoints.md) |

@@ -198,13 +198,19 @@ func (q *queueProcessor) run() {
 		return true
 	}
 	drain := func() {
-		for export() {
+		for {
+			if !export() {
+				return
+			}
 		}
 	}
 	for {
 		select {
 		case <-q.kick:
-			for len(q.ch) >= q.batch && export() {
+			for len(q.ch) >= q.batch {
+				if !export() {
+					break
+				}
 			}
 		case <-tick.C:
 			drain()
