@@ -1,0 +1,3 @@
+# example/pkg
+./x.go:3:1: build chatter
+{"Action":"pass","Package":"a","Test":"TestA/R-WID-001_passes"}

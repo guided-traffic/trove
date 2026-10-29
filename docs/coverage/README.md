@@ -17,7 +17,7 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **0%** (0 of 2,239 catalog features) | fact, not computed: the repository holds no code yet |
+| **Implemented** | **0%** (0 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 54.9% (286 of 521) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 30.5% (662 of 2,167) | measured from `Covers:` lines |
@@ -38,7 +38,7 @@ Against the previous generation of 2026-10-28:
 - catalog features listed in a `Covers:` line: 662, up from 658. The four new ones are P2 backup
   and migration entries (OPS-032, OPS-034, OPS-035 and OPS-039);
 - features covered by an MVP requirement: 55 P1 and 10 P2, up from 48 and 6;
-- unchanged: MVP 359 of 359, P1 286 of 508, implemented 0.
+- unchanged: MVP 359 of 359, P1 286 of 521, implemented 0.
 
 In short: nothing is built yet, every MVP catalog entry is claimed by a requirement, and little
 beyond P1 is designed. All 359 MVP features are covered by at least one requirement. For each of
@@ -265,33 +265,38 @@ What the open entries are, on 2026-10-29:
    - A feature is implemented only when every requirement that lists it in its `Covers:` line is
      implemented. A feature that is partly built stays *specified*.
 
-   On 2026-10-29 the generator reports 0, because the repository holds documentation and no code.
+   The generator reads the evidence from test reports (`-tests`) and records the result in
+   [implemented.txt](implemented.txt), one requirement ID per line. A failing test that names a
+   requirement vetoes it. On 2026-10-29 the list is empty, because the repository holds no test
+   that names a requirement.
 4. **Shares.** Plain counts: each feature counts once, whatever its size. The in-scope share
    leaves out *Out of scope* entries.
 5. **Audiences.** For each audience: the MVP and P1 entries of the pages in its row of the
    audience table. The page lists are fixed in the generator, and the table above shows them.
 6. **Checks that stop generation** (exit code 1):
-   - a duplicate catalog ID or requirement ID;
+   - a duplicate catalog ID, requirement ID, `Q-` ID or `H-` number;
    - a `Covers:` ID that is not in the catalog;
    - a `Covers:` token that is neither an ID nor `trove-only`, or `trove-only` mixed with IDs;
-   - an entry or requirement heading without its priority line directly below;
+   - an entry or requirement heading without its priority line directly below, or with a
+     priority outside the five rubric values;
    - an unclosed code fence;
    - a missing marker pair in this file;
-   - an audience page without entries.
+   - an audience page without entries;
+   - a test name that carries a requirement ID no spec page defines, or an ID in
+     `implemented.txt` that no spec page defines.
 
    When it runs, the generator prints the counts per priority for the catalog and the spec, the
-   number of `Covers:` references, and every heading it skipped inside a code fence.
-7. **Output.** It writes all of [checklist.md](checklist.md), and only the four marked blocks of
-   this file.
+   number of `Covers:` references, the implemented counts and every heading it skipped inside a
+   code fence.
+7. **Output.** It writes all of [checklist.md](checklist.md), [implemented.txt](implemented.txt),
+   and only the four marked blocks of this file.
 
-**Gap: the generator is an interim script, not yet in CI.** Until M0, the generator is the
-standard-library Python script [tools/coverage/coverage_gen.py](../../tools/coverage/coverage_gen.py)
-(`python3 -I tools/coverage/coverage_gen.py --repo .`, add `--check` to compare only), next to two
-link checkers ([check_links.py](../../tools/coverage/check_links.py) for file links,
-[check_anchors.py](../../tools/coverage/check_anchors.py) for heading anchors). No CI job runs them
-yet, so nothing keeps [checklist.md](checklist.md) and the tables above current when a catalog or
-spec heading changes unless the script is run by hand. The rules above are its specification. The
-roadmap replaces the scripts with a Go tool that CI runs in M0 (WP0.9, exit criterion E0.8).
+**The generator.** It is the Go program `internal/tools/coverage`, run with
+`go run ./internal/tools/coverage`. `-check` compares without writing and exits
+2 when a committed file is stale, `-tests <report>` learns the implementation status, and `-links`
+checks the relative links and anchors of every Markdown file. The modes, the test naming rule
+and the report formats are in
+[docs/developer/coverage.md](../developer/coverage.md).
 
 ## Honesty notes
 

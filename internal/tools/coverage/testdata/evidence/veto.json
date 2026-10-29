@@ -1,0 +1,4 @@
+{"Action":"pass","Package":"a","Test":"TestA/R-WID-001_passes"}
+{"Action":"fail","Package":"b","Test":"TestB/R-WID-001_fails_elsewhere"}
+{"Action":"pass","Package":"a","Test":"TestC/R-WID-002_passes"}
+{"Action":"skip","Package":"a","Test":"TestD/R-WID-003_skipped"}

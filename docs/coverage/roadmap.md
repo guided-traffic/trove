@@ -61,8 +61,8 @@ from the pages as committed before the constraints.
 | Catalog priority | Catalog entries | Listed in a requirement's `Covers:` line | Not listed yet |
 |---|---|---|---|
 | MVP | 359 | 359 | 0 |
-| P1 | 508 | 286 | 222 |
-| P2 | 909 | 17 | 892 |
+| P1 | 521 | 286 | 235 |
+| P2 | 896 | 17 | 879 |
 | Later | 391 | 0 | 391 |
 | Out of scope | 72 | 0 | 72 |
 | **Total** | **2,239** | **662** | **1,577** |

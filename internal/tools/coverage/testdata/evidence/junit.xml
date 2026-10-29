@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<testsuites>
+  <testsuite name="e2e" tests="3">
+    <testcase classname="npm publish" name="R-WID-001 publishes a package" time="1"/>
+    <testcase classname="npm install" name="R-WID-002 installs" time="1"><failure message="boom"/></testcase>
+    <testcase classname="npm ping" name="R-WID-003 pings" time="1"><skipped/></testcase>
+  </testsuite>
+</testsuites>

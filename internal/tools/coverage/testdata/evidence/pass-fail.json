@@ -1,0 +1,9 @@
+{"Action":"start","Package":"example/pkg"}
+{"Action":"run","Package":"example/pkg","Test":"TestWidgets"}
+{"Action":"run","Package":"example/pkg","Test":"TestWidgets/R-WID-001_makes_widgets"}
+{"Action":"output","Package":"example/pkg","Test":"TestWidgets/R-WID-001_makes_widgets","Output":"ok\n"}
+{"Action":"pass","Package":"example/pkg","Test":"TestWidgets/R-WID-001_makes_widgets","Elapsed":0}
+{"Action":"run","Package":"example/pkg","Test":"TestWidgets/R-WID-002_owns_the_design"}
+{"Action":"fail","Package":"example/pkg","Test":"TestWidgets/R-WID-002_owns_the_design","Elapsed":0}
+{"Action":"fail","Package":"example/pkg","Test":"TestWidgets","Elapsed":0}
+{"Action":"fail","Package":"example/pkg","Elapsed":0}
