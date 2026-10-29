@@ -42,8 +42,8 @@ Every page links its gaps; the spec pages keep the gaps whose mechanism they des
 
 ## Gaps
 
-The spec pages record `H-1` to `H-61`. Each item's text lives in the `What this does not cover` section of the spec page that has
-its mechanism, and this list only links to it. The perspective pages record `H-62` to `H-78`, each under the heading of the page
+The spec pages record `H-1` to `H-61`, and `H-79` and `H-80` in [ha-and-helm.md](../spec/ha-and-helm.md). Each item's text lives in
+the `What this does not cover` section of the spec page that has its mechanism, and this list only links to it. The perspective pages record `H-62` to `H-78`, each under the heading of the page
 that describes its mechanism.
 
 | Where | Items (linked to their current home) |

@@ -131,7 +131,7 @@ func CheckTLS() error { return checkTLS(os.Getenv) }
 //
 // TROVE_TEST_SCOPE selects what the environment must provide. Unset (or "stack") is the
 // integration stack of make integration-up: every endpoint must be set and TLS-verified. "s3" is
-// the nightly conformance leg against another store (MinIO, AWS S3), which runs only the
+// the S3 conformance leg of Test and Release against another store (MinIO; AWS S3 once an account exists), which runs only the
 // Conformance tests and provides only the TROVE_TEST_S3_* variables: the S3 endpoint must be https,
 // and a CA file, when set, must be readable; without one the system roots verify the store.
 func checkTLS(get func(string) string) error {

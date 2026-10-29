@@ -2412,8 +2412,10 @@ inside the process.
   is switched off (`DisableCache`), because trove's caches are its own (R-ARCH-018). trove uses no
   blocking command, so the client opens no blocking-pool connection. Only `internal/cluster` imports
   it (R-ARCH-002).
-- **Servers.** Valkey 9.0 and every later minor line (Q-ARCH-13). The integration tier tests the
-  newest patch of each supported line: 9.0 and 9.1 today, 9.2 from its release. At connect, trove
+- **Servers.** Valkey 9.0 and every later minor line (Q-ARCH-13). While trove is in development,
+  the integration tier tests the newest patch of the newest line only (9.1 today) and no older
+  line is guaranteed (owner, 2026-10-29); the version check below still refuses every server
+  older than 9.0, because trove needs `DELIFEQ`. At connect, trove
   reads the server version from the `HELLO` reply. Below 9.0 it logs
   `valkey <version> is not supported; trove requires 9.0 or later` and treats Valkey as
   unavailable. Valkey cluster mode and other servers are not supported.
@@ -3344,13 +3346,13 @@ answer (the failure count or the marker refresh;
 the replica's cache answers costs none.
 
 Measurement:
-- `perf/` holds k6 scripts and a Go driver for P-12. A nightly job runs them on a staging cluster
+- `perf/` holds k6 scripts and a Go driver for P-12. The full run of Test and Release on the commit that closes the phase runs them on a staging cluster
   sized like the reference, and runs P-16 with the `web` Deployment scaled from 3 to 6 replicas.
 - Pull requests run Go micro-benchmarks for `Match`, `Rewrite`, `Merge` and `authz.Decide`. A
   `benchstat` regression above 10 % produces a warning.
 
 Acceptance criteria:
-- The nightly report shows P-1 to P-17. Two consecutive misses of a target open a regression issue.
+- The report of that run shows P-1 to P-17. A miss of a target in that run opens a regression issue.
 
 ### R-ARCH-028 · Resource limits for untrusted package content
 Priority: **MVP** · Covers: trove-only

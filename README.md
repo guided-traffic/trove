@@ -1,16 +1,17 @@
 # trove
 
 [![Build Status](https://github.com/guided-traffic/trove/actions/workflows/release.yml/badge.svg)](https://github.com/guided-traffic/trove/actions)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/guided-traffic/trove/main/.github/badges/coverage.json)](https://github.com/guided-traffic/trove)
 [![Go Report Card](https://goreportcard.com/badge/github.com/guided-traffic/trove)](https://goreportcard.com/report/github.com/guided-traffic/trove)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 > **Status: pre-release, foundation milestone (M0): platform only, no package format yet.** The binary, its configuration,
 > the PostgreSQL and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the endpoints,
 > the system API, the ops endpoints and the Helm chart are built and tested. There is no login, no repository, no package
-> protocol and no backup yet. Everything else is the target design in [docs/spec/](docs/spec/README.md). The first release,
-> `v0.1.0`, is published as the image `ghcr.io/guided-traffic/trove:0.1.0` (linux/amd64, linux/arm64) and the chart
-> `oci://ghcr.io/guided-traffic/charts/trove` at version `0.1.0`, both signed; the [release workflow](.github/workflows/release.yml)
-> publishes the release versions that follow.
+> protocol and no backup yet. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
+> last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
+> from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
+> repository ([releasing](docs/developer/releasing.md)).
 
 trove is a self-hosted, highly available binary repository manager. Its target: host your own packages, proxy and cache public
 registries on demand (pull-through), and put both behind one URL per ecosystem. People sign in through your OpenID Connect
@@ -234,6 +235,16 @@ parts are in place today and which are pending.
 **Prerequisites.** The pins are in [tools/versions.env](tools/versions.env) (kind, kubectl, Helm, golangci-lint and more), in
 `go.mod` (Go 1.27.3) and in `web/.nvmrc` (Node.js 26.5.0). Install Docker, Go, Node.js and GNU Make 3.81 or later, plus the pinned
 kind, kubectl and Helm for the dev profile. `make versions-check` reports any installed tool that differs from its pin.
+
+**Install a release.** The image is `docker.io/guidedtraffic/trove` on Docker Hub, and the chart is in its own repository.
+The chart needs its values and the existing Secrets of [the Helm values](#helm-values):
+
+```shell
+helm repo add trove https://guided-traffic.github.io/trove/
+helm repo update trove
+helm install trove trove/trove -n trove -f values.yaml --version <v>   # example: <v> from helm search repo trove --versions
+helm status trove -n trove                                             # example: STATUS: deployed
+```
 
 **1. Start the local profile** (a kind cluster, CloudNativePG PostgreSQL with a standby, Valkey with a replica and three
 Sentinels over TLS, SeaweedFS, the Ingress controller and the chart with `web` and `worker`):
@@ -792,8 +803,8 @@ The chart never creates a Secret; every Secret named below must exist before the
 
 ```yaml
 image:
-  registry: ghcr.io                     # default
-  repository: guided-traffic/trove      # default
+  registry: docker.io                   # default: Docker Hub (build.yml publishes there)
+  repository: guidedtraffic/trove       # default: the image of the release pipeline
   tag: ""                               # default: empty = the chart's appVersion
   digest: ""                            # default; example: sha256:<64 hex>; wins over tag
 highAvailability:
@@ -1074,7 +1085,13 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 | `make web` | Angular build into `internal/webui/dist/` (needs Node.js 26.5.0) |
 | `make generate`, `make generate-check` | Every `go:generate` directive; the check fails on any diff |
 | `make lint`, `make fmt` | `golangci-lint` and `go vet`; the formatters of `.golangci.yml` |
+| `make gosec` | gosec through the pinned golangci-lint, with the settings of `.golangci.yml` |
+| `make vuln` | `govulncheck` (pinned) over the module |
+| `make cyclo`, `make cyclo-report` | gocyclo (pinned): fails above `CYCLO_THRESHOLD`; the 20 most complex functions |
+| `make malware-scan` | ClamAV over the source tree; needs `clamscan` on the `PATH` |
 | `make test` | Unit tests with the race detector |
+| `make coverage-report` | Merges the unit and integration profiles into `.out/coverage` (`coverage.txt`, `summary.md`, `coverage.json`) |
+| `make test-release-tooling` | `npm ci`, `npm audit signatures`, and the release-notes check of `hack/verify-release-tooling.mjs` |
 | `make chart-lint`, `make chart-test` | Helm lint over every value set; render assertions (`chart` build tag) |
 | `make integration-up`, `make test-integration`, `make integration-down` | Integration stack and tests (`integration` build tag, `test/integration/<area>`) |
 | `make coverage` | Regenerates the requirement checklist in `docs/coverage/` |
@@ -1085,6 +1102,9 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 Run `make help` for the list of targets. Before a change, run `make generate-check`, `make lint` and `make test`. Contributors
 start at [docs/developer/README.md](docs/developer/README.md), which describes the repository layout, the test tiers and the
 conventions. The security architecture is in [docs/security/](docs/security/README.md).
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Semantic Release reads them on
+`main` and cuts the version and the release, so nobody tags a release by hand ([releasing](docs/developer/releasing.md)).
 
 ## License
 

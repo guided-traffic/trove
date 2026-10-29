@@ -4043,7 +4043,7 @@ MVP and P1 features of the catalog pages above that this page does not specify:
 | OPS-066 | Storage quota | [storage.md](storage.md) |
 | OPS-067 | Prune unreferenced data | [storage.md](storage.md) |
 | OPS-072, OPS-073, OPS-074 | Upgrade policy, rolling upgrade, schema migrations | [ha-and-helm.md](ha-and-helm.md) (INV-3); this page contributes the `schema` readiness check and the replica list |
-| OPS-076 | Signed release artifacts (container image and chart signatures) | [ha-and-helm.md](ha-and-helm.md) and the release process in [docs/developer/](../developer/) |
+| OPS-076 | Signed release artifacts (container image and chart signatures) | Open: no signature is delivered (owner decision of 2026-10-29); the release delivers provenance and SBOM attestations, see [H-79](ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin) and the release process in [docs/developer/](../developer/) |
 | EVT-034 | Webhook management UI | [api-and-ui.md](api-and-ui.md), on top of R-OPS-037 to R-OPS-044 |
 | EVT-070 | Machine-readable API description | [api-and-ui.md](api-and-ui.md) (INV-6) |
 | RET-001 to RET-038 (MVP/P1) | Retention and cleanup policies, runs, reports | [storage.md](storage.md); runs appear in the job list (R-OPS-019), and policies can be declared in configuration documents (R-OPS-029) |
@@ -4462,7 +4462,7 @@ failover ([Sentinel](https://valkey.io/topics/sentinel/)), and a replica that wr
 primary loses its flight locks and counters for as long as it stays there. Both are invisible in
 (a) and drowned in (b). (d) duplicates the server-side exporter. The thresholds keep R-HA-059's
 drain test and R-HA-057's planned failover silent. The development agent would revisit this if the
-disagreement alert fires during normal failovers in the nightly runs, which would mean the
+disagreement alert fires during normal failovers in the runs of Test and Release, which would mean the
 reconciliation of R-ARCH-031 takes longer than its bound.
 
 **Applied in the spec:** R-OPS-003: the replica's view of Valkey in the registry, including its primary.

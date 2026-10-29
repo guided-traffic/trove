@@ -56,7 +56,7 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	// The roadmap's "Starting point" table.
 	want := map[string][2]int{
 		prioMVP:   {359, 359},
-		prioP1:    {521, 286},
+		prioP1:    {521, 285},
 		prioP2:    {896, 20},
 		prioLater: {391, 0},
 		prioOut:   {72, 0},
@@ -79,11 +79,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 665 {
-			t.Errorf("listed entries: got %d, want 665", got)
+		if got := m.countSpecified(m.Features); got != 664 {
+			t.Errorf("listed entries: got %d, want 664", got)
 		}
-		if got := m.countOpen(m.Features); got != 1574 {
-			t.Errorf("not listed entries: got %d, want 1574", got)
+		if got := m.countOpen(m.Features); got != 1575 {
+			t.Errorf("not listed entries: got %d, want 1575", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {

@@ -52,6 +52,11 @@ Given by the project owner; not up for redesign in these pages:
   written and the gap is recorded on the page of its mechanism: the Valkey gaps in [ha-and-helm.md](ha-and-helm.md) Q-HA-15,
   the edge in Q-HA-24, and the security consequences in [../security/](../security/README.md). The record is
   [ADR-129](../decisions.md#adr-129--the-owners-kubernetes-operators-are-the-standard-stack).
+- **The organisation's CI and release standard (2026-10-29).** Together with the toolstack of ADR-129, trove follows the
+  CI and release standard of the organisation: Test and Release on every push and pull request, Semantic Release from
+  conventional commits, Release Docker & Helm on a published release (the image on Docker Hub, the chart on GitHub Pages),
+  and Renovate. No ghcr.io, no keyless signatures, no nightly workflow, and no AWS S3 leg until an AWS account exists. The
+  record is [ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard).
 
 ## Design invariants
 

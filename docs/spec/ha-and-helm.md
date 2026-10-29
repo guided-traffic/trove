@@ -977,7 +977,7 @@ what "sized for it" means.
    `Range` request; uploads are repeated by the client. Installations that cannot accept it raise
    `terminationGracePeriodSeconds` to their p99 transfer duration (R-HA-050).
 
-**Acceptance test.** Nightly in CI on the kind profile of R-HA-051 with three worker nodes; `web`
+**Acceptance test.** In a green full run of Test and Release on the commit that closes the phase, on the kind profile of R-HA-051 with three worker nodes; `web`
 runs 3 replicas, the chart default, set with `--set web.replicaCount=3` on top of
 `values-dev.yaml`, and `worker` 2. PostgreSQL and Valkey run on nodes other than the drained one,
 except where a variant says otherwise. The load starts 5 minutes before the drain and runs until
@@ -1010,11 +1010,11 @@ Variants, with the same load and pass conditions:
 
 | Variant | The drained node also hosts | Additional pass condition | Runs |
 |---|---|---|---|
-| A | nothing else | — | every change to `main` (2 minutes of load before and 3 after) and nightly |
-| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | nightly |
-| C | the PostgreSQL primary | CloudNativePG switches over before the eviction | nightly |
-| D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | nightly |
-| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | nightly |
+| A | nothing else | — | every change to `main` (2 minutes of load before and 3 after) |
+| B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | a green full run of Test and Release on the commit that closes the phase |
+| C | the PostgreSQL primary | CloudNativePG switches over before the eviction | a green full run of Test and Release on the commit that closes the phase |
+| D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | a green full run of Test and Release on the commit that closes the phase |
+| E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | a green full run of Test and Release on the commit that closes the phase |
 
 ## PostgreSQL
 
@@ -1642,7 +1642,7 @@ database:
     max_conn_lifetime_jitter: 1m                # example
 ```
 
-Acceptance criteria (pooler profile of R-HA-051, nightly):
+Acceptance criteria (pooler profile of R-HA-051, a green full run of Test and Release on the commit that closes the phase):
 
 - The full R-HA-052 suite passes.
 - R-HA-016's growth criterion holds: 10 more `web` replicas add no server connection.
@@ -2384,13 +2384,16 @@ renders the Job `<fullname>-restore` and changes two other things while the valu
 The operator's sequence (R-BAK-021):
 
 ```shell
-helm install trove oci://ghcr.io/guided-traffic/charts/trove -n trove -f values.yaml \
+helm repo add trove https://guided-traffic.github.io/trove/
+# <v>: the chart version to install; example 0.1.0
+helm install trove trove/trove -n trove -f values.yaml --version <v> \
   --set web.replicaCount=0 --set web.autoscaling.enabled=false \
   --set worker.replicaCount=0 --set worker.autoscaling.enabled=false \
   --set highAvailability.enforce=false \
   --set restore.enabled=true --set restore.backupId=20261028T020000Z-7f3a   # example ID
 kubectl -n trove wait --for=condition=complete job/trove-restore --timeout=24h
-helm upgrade trove oci://ghcr.io/guided-traffic/charts/trove -n trove -f values.yaml   # normal values
+helm repo update trove
+helm upgrade trove trove/trove -n trove -f values.yaml --version <v>   # normal values
 ```
 
 The final `helm upgrade` renders the migration Job again, which finds nothing to apply, and starts
@@ -3137,8 +3140,8 @@ commonLabels: {}                        # default (proposed)
 commonAnnotations: {}                   # default (proposed)
 
 image:
-  registry: ghcr.io                     # default (proposed) (Q-HA-11)
-  repository: guided-traffic/trove      # default (proposed)
+  registry: docker.io                   # default: Docker Hub (build.yml publishes there)
+  repository: guidedtraffic/trove       # default: the image of the release pipeline
   tag: ""                               # default (proposed): empty = chart appVersion
   digest: ""                            # default (proposed); example: sha256:<64 hex>; wins over tag
   pullPolicy: IfNotPresent              # default (proposed)
@@ -4503,47 +4506,59 @@ Priority: **P1** · Covers: HA-048, HA-049, HA-050, HA-051
 Acceptance criteria: a CI value set with one of each renders, passes kubeconform, and the pod starts
 in kind with an init container that writes a file the sidecar reads.
 
-### R-HA-047 · Images, private registries, air-gapped installation and signatures
-Priority: **P1** · Covers: HA-056, OPS-076
+### R-HA-047 · Images, private registries, air-gapped installation and attestations
+Priority: **P1** · Covers: HA-056
 
 - Images are referenced as `<global.imageRegistry or image.registry>/<image.repository>` with
   `@<digest>` when set, otherwise `:<tag or appVersion>`. `global.imagePullSecrets` and
   `imagePullSecrets` apply to all pods, including the hook Jobs and the backup CronJob.
 - Images are multi-architecture (`linux/amd64`, `linux/arm64`).
-- **Publishing location (Q-HA-11).** The repository is hosted on GitHub (`origin` is
-  `github.com/guided-traffic/trove`), so the release workflow publishes to the GitHub Container
-  Registry of that organization and nowhere else:
-  - image `ghcr.io/guided-traffic/trove`;
-  - chart `oci://ghcr.io/guided-traffic/charts/trove`
-    ([Helm OCI registries](https://helm.sh/docs/topics/registries/)):
-    `helm upgrade --install trove oci://ghcr.io/guided-traffic/charts/trove --version 0.4.0`
-    (version is an example).
+- **Publishing location (Q-HA-11, owner decision of 2026-10-29).** The release pipeline,
+  [build.yml](../../.github/workflows/build.yml) ("Release Docker & Helm"), runs on every published
+  release and publishes to two places:
+  - image `docker.io/guidedtraffic/trove` on Docker Hub, with the tags `<version>`, `<major>.<minor>`,
+    `<major>` and the commit's `sha` tag of the release (`latest` belongs to pushes to `main`);
+  - chart in the chart repository `https://guided-traffic.github.io/trove/`, served from the
+    `gh-pages` branch: the release adds its package `trove-<version>.tgz` and the merged `index.yaml`.
 
-  Both packages are public, so anonymous pulls work. Mirrors are the operator's (air-gapped,
-  below).
-- **Signatures and provenance.** Every image and every chart artifact is signed with Sigstore cosign
-  in keyless mode from the release workflow's GitHub Actions OIDC identity
-  ([Sigstore](https://docs.sigstore.dev/)). Each carries an SPDX SBOM and a SLSA provenance
-  attestation ([SLSA](https://slsa.dev/)). Verification:
+  Install the chart from its repository (`<v>` is the chart version):
 
   ```shell
-  cosign verify ghcr.io/guided-traffic/trove@sha256:<digest> \
-    --certificate-identity-regexp '^https://github\.com/guided-traffic/trove/\.github/workflows/release\.yml@refs/tags/v' \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  helm repo add trove https://guided-traffic.github.io/trove/
+  helm install trove trove/trove -n trove -f values.yaml --version <v>   # <v>: example 0.1.0
   ```
 
-  A cluster policy engine (for example a Kyverno image verification policy) can enforce this at
-  pod creation.
-- **Air-gapped.** Mirror the chart (`helm pull oci://… --version`) and the image by digest
+  The chart's defaults are `image.registry: docker.io` and `image.repository: guidedtraffic/trove`
+  ([values.yaml](../../deploy/helm/trove/values.yaml)). In the packaged chart the release job sets
+  `image.tag` to the release version. Anonymous pulls from Docker Hub are subject to its rate limits
+  (Q-HA-11, option (d)). Mirrors are the operator's (air-gapped, below).
+- **Attestations, no signatures (owner decision of 2026-10-29).** The image index of each release
+  carries a BuildKit SLSA provenance attestation and an SBOM attestation (`provenance: true` and
+  `sbom: true` in build.yml). The release also carries the image's SPDX SBOM as an asset,
+  `guidedtraffic-trove_*.spdx.json`. Docker Scout scans the image; its report goes to the job summary
+  and to `scout-report.sarif`. The workflow sets no `exit-code` input; the action's default for it is not
+  verified here.
+  The chart has neither a signature nor an attestation: `helm package` runs without `--sign`, and the
+  pipeline makes no chart SBOM or provenance. Nothing is signed, and nothing in the cluster checks an
+  attestation. To read the provenance of a release:
+
+  ```shell
+  docker buildx imagetools inspect guidedtraffic/trove:<v> --format '{{ json .Provenance }}'   # <v>: example 0.1.0
+  ```
+
+  An attestation states what the build claims. It is not a signature, so it does not show who made the
+  claim. See [H-79](#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin).
+- **Air-gapped.** Mirror the chart (`helm pull trove/trove --version <v>`) and the image by digest
   (`crane copy`, `skopeo copy --all`) into the internal registry, then set `global.imageRegistry`.
   The chart pulls no other image. No init container image, no bundled database or Valkey, no proxy
-  image.
-  Signatures and attestations are copied with `cosign copy`.
+  image. Copy the image index as a whole, so that its attestation manifests come along. Whether a
+  given mirror keeps them is not verified here.
 
 Acceptance criteria:
 
 - `helm template … | grep -E 'image:' | sort -u` lists exactly one image.
-- `cosign verify` of a release image succeeds with the documented identity.
+- The image index of a release carries a provenance and an SBOM attestation, and the release has its
+  SPDX file `guidedtraffic-trove_*.spdx.json` attached.
 - An installation from a mirror with `global.imageRegistry: registry.internal.example` pulls
   nothing from the public registry (verified with a deny-all egress policy on the nodes' public
   registry access in the test).
@@ -4752,11 +4767,15 @@ kubectl -n trove port-forward svc/trove 8080:8080
 - **MinIO.** The MinIO community repository was archived on 2026-04-25 and is distributed as
   source only, without prebuilt binaries or images ([repository](https://github.com/minio/minio)).
   MinIO stays a supported production target as long as it passes R-STOR-035's conformance check.
-  The nightly CI matrix keeps a MinIO job, built from that source at a pinned commit and run only
-  in isolated nightly runners, because the build receives no security fixes. AWS S3 is the
-  nightly reference store. Its job needs an AWS account and a CI role that the repository does not
-  have yet; until the owner provides them, the nightly results list the AWS job as skipped, never
-  as passed.
+  The MinIO leg of that check is the job `s3-conformance` of
+  [Test and Release](../../.github/workflows/release.yml). It builds MinIO from that source at the
+  commit `MINIO_COMMIT` of [tools/versions.env](../../tools/versions.env), serves it over TLS only, and
+  runs on every change (owner decision of 2026-10-29; the leg ran nightly before). The build receives
+  no security fixes, and the job runs on the organisation's self-hosted runners like every other job;
+  [H-80](#h-80--self-hosted-runners-build-the-code-of-every-pull-request) records what that means.
+- **AWS S3.** The AWS S3 leg is not in the pipeline. It needs an AWS account and a CI role, which the
+  repository does not have. Until the owner provides them, no job runs R-STOR-035 against AWS S3, and
+  no run reports AWS S3 as passed ([Q-HA-25](#q-ha-25--aws-leg-of-the-nightly-run-when-no-aws-account-is-configured)).
 - The break-glass password is printed once by the target (`kubectl get secret … | base64 -d`).
   OIDC is optional in dev. An optional Dex overlay belongs to
   [identity-and-authentication.md](identity-and-authentication.md).
@@ -4826,7 +4845,8 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
   condition. Results are published as a CI artifact per run.
 - The pod-crash, switchover, rolling-upgrade, object-store and Valkey-primary-loss scenarios and
   variant A of the drain test run on every change to `main`. The full suite, the pooler profile and
-  the trove-backup restore drill run nightly; the point-in-time restore drill runs weekly.
+  the trove-backup restore drill run in a green full run of Test and Release on the commit that closes
+  the phase. The point-in-time restore drill has no run in the pipeline.
 
 Acceptance criteria: the suite exists, runs as described, and is green before any release.
 
@@ -4913,8 +4933,9 @@ management).
   that other pods cannot forge `X-Forwarded-For` (R-HA-040).
 - **Pod hardening.** Restricted Pod Security Standard, read-only root file system, no service
   account token, no RBAC objects, `enableServiceLinks: false` (R-HA-030, R-HA-033).
-- **Supply chain.** Images and chart are signed, with SBOM and provenance, and installed by digest
-  in production (R-HA-047).
+- **Supply chain.** The image carries provenance and SBOM attestations and is not signed; the chart
+  carries neither. Installing by digest (`image.digest`) is the operator's choice in production, because
+  the chart defaults to a tag. Nothing verifies either artifact in the cluster (R-HA-047, H-79).
 - **Restore is a security event.** It reverts revocations (H-37), so post-restore and the restore
   of a trove backup record an audit event, print the warning and re-apply the revocation journal
   (R-HA-025, R-HA-054, R-HA-060). Replay applies removals and only those updates that grant nothing
@@ -5024,8 +5045,8 @@ lists object versioning as not implemented, so the restore drill (R-HA-025) coul
 | (d) RustFS | Apache-2.0 store whose README lists bucket versioning as available; 1.0 line released in September 2026 | Operates much like MinIO | Weeks of release history; versioning in a single-drive dev deployment not verified |
 | (e) SeaweedFS per change, MinIO and AWS S3 nightly | (b) for the profile and per-change CI; the nightly matrix adds a MinIO job built at a pinned commit and an AWS S3 job as the reference | A maintained default for every developer and pull request, plus evidence for the stores installations run | Three stores to keep green |
 
-**Choice:** (e) — SeaweedFS runs in the local profile and per-change CI; MinIO (pinned source build,
-isolated nightly runners) and AWS S3 run nightly.
+**Choice:** (e) — SeaweedFS runs in the local profile and per-change CI; MinIO (pinned source build) runs on
+every change, and AWS S3 once an AWS account exists (owner decision of 2026-10-29, below).
 
 **Rationale:** The profile has to exercise versioning, because the restore drill and
 `restore-versions` depend on it; that rules out Garage and leaves SeaweedFS as the maintained store
@@ -5043,6 +5064,13 @@ into an S3-store bullet and a MinIO bullet that defines the nightly job; the AWS
 as skipped until the owner provides an AWS account and a CI role. R-HA-010, R-HA-043, R-HA-045
 and R-HA-052: criteria refer to the local profile's S3 store instead of MinIO. The page summary
 names SeaweedFS, and the `force_path_style` comment in R-HA-031 lists it.
+
+**Owner decision (2026-10-29).** The MinIO leg runs in [Test and Release](../../.github/workflows/release.yml)
+(job `s3-conformance`) on every change, not nightly, at the commit of `MINIO_COMMIT`. No nightly
+workflow exists. The AWS S3 leg does not run until an AWS account and a CI role exist
+([Q-HA-25](#q-ha-25--aws-leg-of-the-nightly-run-when-no-aws-account-is-configured)). Choice (e) stands
+for the rest: SeaweedFS is the store of the local profile and of the integration tier. The rationale above rests on
+MinIO running on isolated runners, which is no longer the case; see [H-80](#h-80--self-hosted-runners-build-the-code-of-every-pull-request).
 
 ### Q-HA-4 · Reserve `/v2/` on the client listener for OCI
 
@@ -5317,6 +5345,15 @@ if the repository moves to another forge.
 **Applied in the spec:** R-HA-031: `image.registry: ghcr.io` and `image.repository:
 guided-traffic/trove` are now proposed defaults. R-HA-047: publishing location, chart reference and
 the exact certificate identity of the release workflow.
+
+**Owner decision (2026-10-29).** The owner overrides the choice of option (a) above. The image is
+published to Docker Hub as `docker.io/guidedtraffic/trove`, and the chart to its repository
+`https://guided-traffic.github.io/trove/` (GitHub Pages, from the `gh-pages` branch), as the
+organisation's other repositories do ([ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)).
+Keyless cosign signatures are dropped in favour of provenance and SBOM attestations. The option's
+argument that no registry credential is stored no longer holds: the release job logs in to Docker
+Hub with the organisation's access token (secret `DOCKERHUB_PAT`), and the same token pulls the base
+images in CI. R-HA-031 and R-HA-047 carry the new values.
 
 ### Q-HA-12 · Replica registry at MVP
 
@@ -5642,8 +5679,9 @@ Pin file (chosen with (a)): `tools/versions.env`, `KEY=value` lines only. The Ma
 and exports it to the scripts; CI reads it through the `load-pins` action (`.github/actions/load-pins/action.yml`)
 and appends it to `$GITHUB_ENV`. Go is pinned by the `go` line of `go.mod`, sqlc and oapi-codegen by the `tool`
 directives, Angular by `web/package-lock.json`, Node by `web/.nvmrc`. `make versions-check` compares the installed
-tools with the pins. Helm and kubectl in CI come from `azure/setup-*` actions pinned by commit SHA, with their
-versions from the same file.
+tools with the pins. Helm and kubectl in CI come from `azure/setup-helm@v5` and `azure/setup-kubectl@v5`, pinned by
+major version tag as the organisation's other repositories pin their actions, with their versions from the same file.
+Renovate updates the action tags ([renovate.json](../../renovate.json), the `github-actions` manager).
 
 **Choice:** (a) GNU Make, and one pin file for every tool that is not a Go module or an npm package.
 
@@ -5747,6 +5785,12 @@ read secrets. The development agent would revisit this when the owner configures
 **Applied in the spec:** R-HA-051 and E0.5 already keep AWS S3 listed as skipped until the owner provides the
 account; no requirement text changed.
 
+**Owner decision (2026-10-29).** The pipeline has no nightly run and no AWS S3 leg until an AWS account and a
+CI role exist. Option (c) is therefore not built: there is no gate job and no AWS job, and no grey job appears
+in any run. A run therefore never shows AWS S3 as passed, because no run includes it. R-STOR-035 is not checked
+against AWS S3 by any job until the owner provides the account; E0.5 of the [roadmap](../coverage/roadmap.md)
+says the same.
+
 ### Q-HA-26 · Release image: how the binary gets into the image
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5764,6 +5808,13 @@ development agent would revisit this when the release pipeline builds in CI, whi
 job with the same pins.
 
 **Applied in the spec:** R-HA-047 and R-HA-051 describe the image; no requirement text changed.
+
+**Revisited 2026-10-29.** The condition of the rationale is met: the release pipeline builds the image in CI, from
+the same Containerfile and pins ([build.yml](../../.github/workflows/build.yml), and the `image` job of
+[Test and Release](../../.github/workflows/release.yml)). The Containerfile holds the Angular build, the Go build
+and the base image in its own stages, and `make image` is one `docker buildx build` of it
+([Makefile](../../Makefile)). The host no longer runs `make web` for the image. The choice (b) stands; its
+description of the host steps is superseded.
 
 ### Q-HA-27 · Which replicas the contract guard counts as live
 
@@ -5938,3 +5989,46 @@ Anyone who can capture pod-network traffic can read them: a compromised node, a 
 networking, or a CNI-level tap. The mitigation for such an installation is at the platform level: a service
 mesh with mutual TLS, or CNI encryption (WireGuard or IPsec modes of common CNIs). The chart does not enforce
 either.
+
+### H-79 · Artifacts are unsigned and nothing checks their origin
+
+The release pipeline ([build.yml](../../.github/workflows/build.yml)) publishes the image
+`docker.io/guidedtraffic/trove` and the chart at `https://guided-traffic.github.io/trove/`, and no
+consumer receives a signature to check them against. The image carries a provenance and an SBOM
+attestation in its image index. The chart carries none: `helm package` runs without `--sign`, so there is
+no `.prov` file, and the pipeline makes no chart SBOM. The attestations are unsigned, so they name the build
+but not the party that made the claim.
+
+- **Component and subject:** the release pipeline and the two places it writes to. The subject is every
+  consumer that pulls the image or the chart, and any admission policy of the cluster that runs them. The
+  chart renders no admission policy and no signature check.
+- **Live or dormant:** dormant until the first release of the pipeline, because the workflows have not run
+  on GitHub yet ([releasing.md](../developer/releasing.md#not-in-place-yet)). From that release on, live.
+- **What makes it real:** whoever holds the Docker Hub access token of the account `guidedtraffic` (the
+  secret `DOCKERHUB_PAT`) can push a different image under an existing tag. The chart pulls by tag by default,
+  because `image.digest` is empty in [values.yaml](../../deploy/helm/trove/values.yaml). Whoever can write to the
+  `gh-pages` branch can change a published chart, and the release job writes that branch with
+  `git push --force`. Docker Scout reports CVEs without checking origin. The keyless signatures of the earlier
+  pipeline are not part of the design since 2026-10-29 ([Q-HA-11](#q-ha-11--publishing-location-of-images-and-chart)).
+  OPS-076 ("Signed release artifacts", P1) is therefore open: no signature is delivered, and R-HA-047 no longer
+  covers it.
+
+### H-80 · Self-hosted runners build the code of every pull request
+
+[release.yml](../../.github/workflows/release.yml) runs every job with `runs-on: self-hosted`, on every push and
+every pull request to `main`. Its header comment says a repository variable `LINUX_RUNNER` would override that;
+no job reads the variable. The MinIO leg of R-STOR-035 builds MinIO from source on those runners (job `s3-conformance`). R-HA-051
+and Q-HA-3 had described that build on isolated runners, so the isolation those pages describe is not in the
+design.
+
+- **Component and subject:** the self-hosted runners and the pipeline. The subject is the organisation's secrets
+  that the jobs of a pull request receive, and the host and network of a runner while a job runs.
+- **Live or dormant:** live for every pull request from a branch of this repository. Those runs receive the
+  repository's secrets: the jobs `image`, `container-scan`, `integration`, `s3-conformance` and `e2e` log in to
+  Docker Hub with `secrets.DOCKERHUB_PAT`. GitHub passes repository secrets to pull requests from the same
+  repository, not to pull requests from forks. Whether a fork's pull request reaches these runners at all depends
+  on the repository's Actions settings, which are not in the repository and are not verified here.
+- **What makes it real:** a pull request can change the workflow file or the Makefile of its own branch, and the
+  changed file runs with the secrets. Whoever can push a branch to this repository can therefore read
+  `DOCKERHUB_PAT` from a job. The runners are ephemeral pods ([releasing.md](../developer/releasing.md#ci)), which
+  bounds what a build leaves behind. What a running job can reach from the pod's network is not verified here.

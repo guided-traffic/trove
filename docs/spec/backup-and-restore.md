@@ -1311,13 +1311,16 @@ R-HA-060, Q-HA-18):
 
 ```shell
 # new, empty database (R-HA-014 provisioning) and an empty blob prefix; Secrets in place (R-BAK-028)
-helm install trove oci://ghcr.io/guided-traffic/charts/trove -n trove -f values.yaml \
+helm repo add trove https://guided-traffic.github.io/trove/
+# <v>: the chart version to install; example 0.1.0
+helm install trove trove/trove -n trove -f values.yaml --version <v> \
   --set web.replicaCount=0 --set web.autoscaling.enabled=false \
   --set worker.replicaCount=0 --set worker.autoscaling.enabled=false \
   --set highAvailability.enforce=false \
   --set restore.enabled=true --set restore.backupId=20261028T020000Z-7f3a   # example ID
 kubectl -n trove wait --for=condition=complete job/trove-restore --timeout=24h
-helm upgrade trove oci://ghcr.io/guided-traffic/charts/trove -n trove -f values.yaml   # normal values
+helm repo update trove
+helm upgrade trove trove/trove -n trove -f values.yaml --version <v>   # normal values
 ```
 
 - The first command renders the restore Job with both roles at zero, no migration Job and a
@@ -1697,8 +1700,9 @@ Priority: **MVP** · Covers: OPS-032, OPS-035
 
 Go integration tests against PostgreSQL and the per-change S3 store of
 [ha-and-helm.md](ha-and-helm.md) R-HA-051, plus an end-to-end drill in kind. The suite runs on
-every change; the drill runs nightly as the "Restore drill, trove backup" row of
-[ha-and-helm.md](ha-and-helm.md) R-HA-052, next to the weekly point-in-time drill.
+every change; the drill runs in a green full run of Test and Release on the commit that closes the phase,
+as the "Restore drill, trove backup" row of [ha-and-helm.md](ha-and-helm.md) R-HA-052. The point-in-time
+drill has no run in the pipeline.
 
 1. **Consistency under load.** A loop publishes npm and NuGet packages, deletes some, empties the
    trash and runs garbage collection with `storage.gc.grace_period: 0s` every 10 s, while
@@ -1726,7 +1730,7 @@ every change; the drill runs nightly as the "Restore drill, trove backup" row of
 
 Acceptance criteria:
 
-- Every scenario above passes in CI; the nightly drill publishes its timings as a job artifact.
+- Every scenario above passes in CI; the drill publishes its timings as a job artifact of the run that closes the phase.
 
 ## Deferred
 
@@ -2099,8 +2103,9 @@ pod or credential can therefore exfiltrate the installation's data and destroy i
 the MVP in every installation with backups enabled. Mitigation: a dedicated ServiceAccount and
 cloud identity, restricted `get` on Secrets in the namespace, the egress NetworkPolicy of
 [ha-and-helm.md](ha-and-helm.md) R-HA-042 for the backup pod (database, blob store and target
-only), Object Lock on the target so deletions only add delete markers, and image signature
-verification (R-HA-047).
+only) and Object Lock on the target so deletions only add delete markers. The release image is not signed
+(owner decision of 2026-10-29), so no signature check stands behind the backup pod's image; see
+[H-79](ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin).
 
 ### H-48 · Database files are readable to every reader of the target until P1
 

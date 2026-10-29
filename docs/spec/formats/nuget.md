@@ -1217,7 +1217,7 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
   remote. `.nupkg`, `.nuspec`, icons and symbol files are immutable.
 - Push, delete and relist are not offered (405).
 
-Acceptance criteria (against a stub v3 upstream in CI and, in a nightly job, against nuget.org):
+Acceptance criteria (against a stub v3 upstream in CI and, in the full run of Test and Release on the commit that closes the phase, against nuget.org):
 
 - `dotnet restore` of a project referencing `Newtonsoft.Json 13.0.3` through `nuget-org` succeeds;
   the `.nupkg` is cached; a second restore with the upstream unreachable succeeds.
@@ -1629,7 +1629,7 @@ Priority: **P1** · Covers: PKG-NUGET-031, PKG-NUGET-032
 Acceptance criteria:
 
 - `curl` through `nuget-org` for the key and `SymbolChecksum` of a known nuget.org portable PDB
-  returns the file (nightly job against the live symbol server); the second request is served from
+  returns the file (the full run of Test and Release on the commit that closes the phase, against the live symbol server); the second request is served from
   the cache.
 - Through `nuget-all`, a key present in `nuget-local` is served locally without an upstream
   request; an unknown key requested with `SymbolChecksum` answers 404 and is not requested upstream
@@ -1811,10 +1811,10 @@ the Helm chart.
 |---|---|---|
 | Linux | .NET 10 SDK, version pinned in the harness | every MVP criterion of this page |
 | Linux, `scatter` profile ([architecture.md](../architecture.md) R-ARCH-032) | .NET 10 SDK | R-NUGET-030, on every change that touches the NuGet plug-in |
-| Linux, Valkey stopped | .NET 10 SDK | R-NUGET-031, nightly |
-| Linux, pooler overlay (`POOLER=1`, R-HA-051: transaction-mode pooler) | .NET 10 SDK | every MVP criterion, nightly, so no NuGet path depends on session state ([architecture.md](../architecture.md) R-ARCH-019) |
+| Linux, Valkey stopped | .NET 10 SDK | R-NUGET-031, full run of Test and Release on the commit that closes the phase |
+| Linux, pooler overlay (`POOLER=1`, R-HA-051: transaction-mode pooler) | .NET 10 SDK | every MVP criterion, in the same full run, so no NuGet path depends on session state ([architecture.md](../architecture.md) R-ARCH-019) |
 | Windows | nuget.exe, version pinned in the harness, and .NET 10 SDK | push, install, delete, search, `nuget.config` with credentials |
-| Linux, nightly | .NET 10 SDK | remote and symbol criteria against nuget.org and its symbol server |
+| Linux, full run of Test and Release on the commit that closes the phase | .NET 10 SDK | remote and symbol criteria against nuget.org and its symbol server |
 | Manual, per release | Visual Studio 2022 | criteria marked manual |
 
 - The NuGet loads of the node-drain test ([ha-and-helm.md](../ha-and-helm.md) R-HA-059) and the
@@ -1831,7 +1831,7 @@ the Helm chart.
 - The golden vectors of R-NUGET-003 run in the unit test tier.
 
 Acceptance criteria: the suite is green in CI for every change that touches the NuGet plug-in or
-the shared request path, and the nightly job is green before a release.
+the shared request path, and the full run of Test and Release on the commit that closes the phase is green.
 
 ### R-NUGET-028 · Audit events and metrics for NuGet
 Priority: **MVP** · Covers: trove-only
@@ -1891,14 +1891,14 @@ document) at catalog leaves that carry `packageHash` and `packageHashAlgorithm` 
   `upstream_digest_missing`). With this requirement in place,
   `remote.integrity.checksumPolicy: require` is allowed on NuGet remotes.
 - Whether the leaf hash always matches the repository-signed package that nuget.org serves was
-  not verified; the nightly job settles it before the requirement ships.
+  not verified; the full run of Test and Release on the commit that closes the phase settles it before the requirement ships.
 
 Acceptance criteria:
 
 - A stub upstream serving a `.nupkg` whose bytes differ from its leaf's `packageHash`: `dotnet
   restore` fails, no item exists afterwards, and the integrity failure counter of R-REPO-041
   increments.
-- In the nightly job, restoring 50 popular nuget.org packages through a remote with
+- In the full run of Test and Release on the commit that closes the phase, restoring 50 popular nuget.org packages through a remote with
   `remote.integrity.checksumPolicy: require` succeeds.
 
 ### R-NUGET-030 · NuGet on interchangeable replicas (INV-18)

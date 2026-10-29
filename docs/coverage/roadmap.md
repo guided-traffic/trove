@@ -62,11 +62,11 @@ from the pages as committed before the constraints.
 | Catalog priority | Catalog entries | Listed in a requirement's `Covers:` line | Not listed yet |
 |---|---|---|---|
 | MVP | 359 | 359 | 0 |
-| P1 | 521 | 286 | 235 |
+| P1 | 521 | 285 | 236 |
 | P2 | 896 | 20 | 876 |
 | Later | 391 | 0 | 391 |
 | Out of scope | 72 | 0 | 72 |
-| **Total** | **2,239** | **665** | **1,574** |
+| **Total** | **2,239** | **664** | **1,575** |
 
 The spec contains 577 requirements on 13 pages: 431 MVP, 144 P1 and 2 P2 (R-STOR-014 and
 R-CI-022). The owner's input of 2026-10-29 added 22 of them: the constraint "TLS on every
@@ -217,8 +217,8 @@ Rules that hold across all milestones:
 - Every end-to-end test runs in the `scatter` profile of R-ARCH-032 from M0 onward: the chart with
   three `web` and two `worker` replicas on three kind worker nodes, an edge that balances every
   request round robin over the `web` replicas, PostgreSQL with a standby, Valkey with a replica and
-  three Sentinels, and the S3 store. Each format's end-to-end job also runs nightly with Valkey
-  stopped.
+  three Sentinels, and the S3 store. Each format's end-to-end job also runs with Valkey
+  stopped, in the full run of Test and Release on the commit that closes the phase.
 - No change renders a ReadWriteMany volume, a PersistentVolumeClaim, a StatefulSet or session
   affinity, or keeps request state in a package-level variable: R-HA-061's template check and
   R-ARCH-032's architecture test fail CI otherwise.
@@ -341,9 +341,11 @@ end-to-end reports.
   without an export class, and the first migration leaves `system_state` holding
   `installation_id`, `keyspace_id` and `incarnation`.
 - **E0.5** The S3 conformance check of R-STOR-035 passes on every change against SeaweedFS, the
-  CI store chosen in Q-HA-3, and nightly against MinIO (built from source at a pinned commit, on
-  isolated runners) and AWS S3. Until the owner provides an AWS account and a CI role, the nightly
-  results list the AWS S3 job as skipped, never as passed (R-HA-051), and M0 exits without it. The
+  CI store chosen in Q-HA-3 (the integration tier of Test and Release), and against MinIO (built from
+  source at the commit of `MINIO_COMMIT`, served over TLS only; the job `s3-conformance` of Test and
+  Release, on every change, owner decision of 2026-10-29). The AWS S3 check does not run until the owner
+  provides an AWS account and a CI role. No run reports AWS S3 as passed or as skipped, because no run
+  includes it (R-HA-051), and M0 exits without it. The
   race test of R-STOR-005 passes, and so does R-STOR-024's variant with the collector killed at
   random points. When 100 concurrent uploads of identical content are spread across the `web`
   replicas, exactly one object exists under its content address. The blob-store integration tier
@@ -423,7 +425,7 @@ end-to-end reports.
 | WP | Content | Depends on | Runs in parallel with |
 |---|---|---|---|
 | WP0.1 | Repository skeleton: `go.mod` with `tool` pins, `web/` workspace with lockfile, task runner, architecture test of R-ARCH-002, placeholder `dist/` | — | — |
-| WP0.2 | CI: lint, unit tests, generate-diff check, image build, chart lint, integration tier with PostgreSQL, Valkey with Sentinel and the S3 store in containers, version check of E0.2 | WP0.1 | WP0.3 to WP0.10 |
+| WP0.2 | CI in Test and Release ([release.yml](../../.github/workflows/release.yml)): lint, unit tests, generate-diff check, image build, chart lint, integration tier with PostgreSQL, Valkey with Sentinel and the S3 store in containers, version check of E0.2 | WP0.1 | WP0.3 to WP0.10 |
 | WP0.3 | PostgreSQL: connection classes (a transaction-scoped main pool that keeps no session state, the reserved control connection, the lease pool on `worker` only) and the connection budget, migration runner under an advisory lock with the compatibility gate, core schema of R-STOR-003, `system_state`, the table registry of R-BAK-004, roles and TLS | WP0.1 | WP0.4 to WP0.10 |
 | WP0.4 | Blob store: S3 client, spool on `emptyDir`, single-pass hashing, commit protocol, multipart transfer, conformance check, garbage collection as `maintenance` jobs on `worker` | WP0.3 (schema), WP0.5 (job key) | WP0.6 to WP0.10 |
 | WP0.5 | Coordination: job queue claimed by `worker` only, leases with fencing, advisory-lock categories for the locks that stay in PostgreSQL, the change log with per-area epochs, in-process caches, replica registry | WP0.3; WP0.10 for the fast path | WP0.4, WP0.6 to WP0.9 |
@@ -586,7 +588,7 @@ pooler-profile criterion runs from M5 (R-HA-058); R-REPO-049's NuGet criterion r
 **Exit criteria.**
 
 - **E2.1** In the `scatter` profile of R-ARCH-032 (three `web` and two `worker` replicas, Valkey
-  with Sentinel), and nightly with Valkey stopped, every MVP scenario of R-NPM-045 passes for
+  with Sentinel), and with Valkey stopped in the full run of Test and Release on the commit that closes the phase, every MVP scenario of R-NPM-045 passes for
   each of its gate rows: npm 10, 11 and 12, pnpm 10, 11 and 12, Yarn 4 and Yarn 1.22 (Q-NPM-4).
   The rows follow R-NPM-045's rule, which is re-evaluated at every release, so the list can change;
   a scenario a row's client cannot run is marked not applicable with its reason. The P1 scenarios
@@ -608,7 +610,7 @@ pooler-profile criterion runs from M5 (R-HA-058); R-REPO-049's NuGet criterion r
   `shadows_remote_package`, a `manage` holder's succeeds and is audited, and while the upstream
   cannot be asked a `deploy` holder gets `503` `shadow_check_unavailable`. Its NuGet criterion runs
   from M3 on.
-- **E2.6** npm passes checks 1 to 8 of the conformance kit (R-ARCH-010). A nightly Go fuzz run of
+- **E2.6** npm passes checks 1 to 8 of the conformance kit (R-ARCH-010). A Go fuzz run, in the full run of Test and Release on the commit that closes the phase, of
   npm's `Match` and `Inspect`, lasting at least 30 minutes, finds no crash and no breach of the
   R-ARCH-028 limits.
 - **E2.7** `npm ping --registry http://localhost:8080/api/npm/npm-all/` succeeds on the dev profile.
@@ -677,7 +679,7 @@ and then freezes it.
 - **E3.1** R-NUGET-027 is green:
   - the .NET 10 SDK on Linux;
   - nuget.exe and the .NET 10 SDK on a Windows runner;
-  - the nightly run against nuget.org.
+  - the run against nuget.org, in the full run of Test and Release on the commit that closes the phase.
 
   The manual Visual Studio 2022 checklist has been run once against the M3 build.
 - **E3.2** Cold cache, concurrent clients: three clients run `dotnet restore --no-cache` at once
@@ -774,10 +776,10 @@ they produce.
 WP4.5 (mapping API, dry run and UI) follows WP4.3. WP4.6 sets up the two test environments:
 
 - per-change CI uses an issuer double that signs GitLab-shaped tokens with rotating keys;
-- the reference pipeline runs against a real GitLab instance nightly and as the M4 exit.
+- the reference pipeline runs against a real GitLab instance in the full run of Test and Release on the commit that closes the phase, and as the M4 exit.
 
 Not verified: how long a GitLab container takes to become ready on the CI runners. If it exceeds a
-job's time budget, the nightly run moves to a standing test instance.
+job's time budget, that run moves to a standing test instance.
 
 **Not in M4:** delegated mapping management, and GitHub Actions and generic issuers (M10). The
 `CI_JOB_TOKEN` fallback (R-CI-022) is P2 and is built only when a concrete population of pipelines
@@ -812,7 +814,7 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
 
 **Exit criteria.**
 
-- **E5.1** The full R-HA-052 suite is green in two consecutive nightly runs, including its Valkey,
+- **E5.1** The full R-HA-052 suite is green in a full run of Test and Release on the commit that closes the phase, including its Valkey,
   drain, pooler, backup and restore rows. Both restore drills pass: the trove-backup drill into an
   empty namespace (R-HA-060) and the point-in-time drill from a PostgreSQL backup and a versioned
   bucket set up as R-HA-023 specifies, following R-HA-025's steps. In both, `post-restore` or the
@@ -824,7 +826,7 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   through. The same holds for `dotnet restore --no-cache` of the reference solution through
   `nuget-all`. No client iteration fails after the clients' own retries, and
   `trove admin storage verify` reports no item without its object.
-- **E5.3** P-1 to P-17 of R-ARCH-027 are met in two consecutive nightly runs on the reference
+- **E5.3** P-1 to P-17 of R-ARCH-027 are met in a full run of Test and Release on the commit that closes the phase, on the reference
   environment, among them the scale-out from three to six `web` replicas (P-16) and the latency
   with Valkey down (P-17). The reference load test also runs once with Valkey stopped and records
   upstream request rates and PostgreSQL load (R-HA-057).
@@ -843,12 +845,14 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
 - **E5.7** [docs/security/](../security/) describes the the beta mechanisms. Each H-item from the spec
   pages that applies to the beta appears under its H number in the `What this does not cover` section of
   the security page for its mechanism.
-- **E5.8** The release pipeline publishes the beta candidate `v0.6.0`: the image to
-  `ghcr.io/guided-traffic/trove` and the chart to `oci://ghcr.io/guided-traffic/charts/trove`, the
-  GitHub Container Registry chosen in Q-HA-11. `helm install` by digest from there passes E2.1's
-  smoke scenarios. Image signing, SBOM and provenance arrive with R-HA-047 (M11).
+- **E5.8** The release pipeline publishes the beta candidate `v0.6.0` (the version the commits give; see
+  [ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)): the image to
+  `docker.io/guidedtraffic/trove` and the chart to the chart repository `https://guided-traffic.github.io/trove/`,
+  the publishing locations of Q-HA-11 as the owner decided them on 2026-10-29. `helm install` by digest from there
+  passes E2.1's smoke scenarios. The image carries provenance and SBOM attestations from the release; no signature
+  is part of the pipeline (R-HA-047).
 - **E5.9** Node drain with zero failed requests. R-HA-059's acceptance test passes with variants A
-  to E in two consecutive nightly runs, under its full load: eight `npm ci` loops, four
+  to E in a full run of Test and Release on the commit that closes the phase, under its full load: eight `npm ci` loops, four
   `dotnet restore` loops, an npm and a NuGet publish every 10 s, k6 at 150 requests/s, and the
   long-transfer probes. Every `npm` and `dotnet` command exits `0` with the clients' default
   retries; k6 records only `2xx` and `304` and no connection error; every acknowledged publish
@@ -862,7 +866,7 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   criteria pass under R-HA-052's load (planned failover, primary loss, a 5-minute outage with a
   `web` pod replaced, Sentinel quorum loss, `FLUSHALL`, a slow Valkey) with zero failed commands and
   `/readyz` answering `200` throughout, and drain variant B passes. The pooler profile passes
-  R-HA-058's criteria nightly, drain variant D among them.
+  R-HA-058's criteria in the full run of Test and Release on the commit that closes the phase, drain variant D among them.
 - **E5.11** A backup taken during publishing restores into an empty installation. R-BAK-029 passes
   scenario by scenario in CI. In scenario 1, npm and NuGet packages are published, deleted and
   trashed, and garbage collection runs with `grace_period: 0s` every 10 s, while
@@ -870,8 +874,8 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   untrashed and trashed file item then returns bytes whose SHA-256 equals its recorded digest,
   `npm view` lists exactly the versions in the restored database, and `trove backup verify --deep`
   exits `0`. Two overlapping runs yield one success and one exit code 3; a drain during a backup and
-  during a restore ends both Jobs `Complete` without manual steps; the nightly drill publishes its
-  timings.
+  during a restore ends both Jobs `Complete` without manual steps; the drill publishes its
+  timings as a job artifact.
 - **E5.12** What a restore brings back and what it withholds. After the trove-backup restore:
   - a token revoked and a user disabled after the snapshot stay revoked and disabled, and
     hand-written journal objects grant no principal any access (R-BAK-024, R-HA-054, R-AUTHZ-031);
@@ -969,7 +973,7 @@ Every format follows the same path:
 
 1. A spec page `docs/spec/formats/<format>.md` with requirements and `Covers:` lines.
 2. The conformance kit.
-3. A native-client acceptance matrix in the `scatter` profile, and nightly with Valkey stopped.
+3. A native-client acceptance matrix in the `scatter` profile, and with Valkey stopped in the full run of Test and Release on the commit that closes the phase.
 4. A cold-cache install of a reference project through a virtual repository on three `web`
    replicas, with one replica killed mid-run.
 5. One more load loop in R-HA-052 and in the load of R-HA-059's drain test, and a section in the
@@ -1350,8 +1354,16 @@ Status: **Decided by the development agent** — selected from the options below
 scripts need the full load and the time, so they run where a time budget is available. The development agent would revisit
 this when the failover set runs in under the push budget.
 
-**Applied in the roadmap:** E0.4, E0.6, E0.13 and E0.14 (the sets they belong to); the workflow files
-`.github/workflows/ci.yml` (`make e2e SET=push`) and `.github/workflows/nightly.yml` (`make e2e SET=failover`) carry the two sets.
+**Applied in the roadmap:** E0.4, E0.6, E0.13 and E0.14 (the sets they belong to). The workflows that carried the
+sets were `ci.yml` (`make e2e SET=push`) and `nightly.yml` (`make e2e SET=failover`); the owner's standard replaced both.
+
+**Owner decision (2026-10-29), recorded once here for every page.** There is no nightly workflow, and no new
+scheduler is added. Every acceptance criterion or schedule that said "nightly" or "two consecutive nightly runs"
+now says "a green full run of Test and Release on the commit that closes the phase", or "on every change" where
+it is a per-change gate. The job `e2e` of
+[Test and Release](../../.github/workflows/release.yml) runs both sets on every change, as two legs of its matrix:
+`make e2e SET=push` and `make e2e SET=failover`, each with its own cluster name and edge port. Choice (b) is superseded
+in that respect. The AWS S3 leg does not run until an AWS account exists (E0.5).
 
 The ADR log's index
 [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists

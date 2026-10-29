@@ -2278,7 +2278,7 @@ storage:
 Acceptance criteria:
 
 - The CI matrix runs the storage integration suite against SeaweedFS on every change and against
-  MinIO (pinned source build, isolated runners) and AWS S3 nightly, with the documented settings
+  MinIO (pinned source build, on every change since the owner's decision of 2026-10-29) and, once an AWS account exists, AWS S3, with the documented settings
   for each ([ha-and-helm.md](ha-and-helm.md) R-HA-051, Q-HA-3). Ceph RGW and other stores are
   qualified by the conformance check of R-STOR-035, not by a CI job.
 - A prefix of `/` or `a//b` stops startup with a configuration error naming the key.
@@ -2471,7 +2471,7 @@ storage:
 Acceptance criteria:
 
 - `trove admin storage check` passes against SeaweedFS (local profile, every change) and against
-  MinIO and AWS S3 (nightly); against a bucket without `s3:DeleteObject` it reports exactly that
+  MinIO (every change) and AWS S3 (once an AWS account exists); against a bucket without `s3:DeleteObject` it reports exactly that
   failure.
 - A replica started with a wrong bucket name exits with a non-zero status and a log line naming
   the bucket.

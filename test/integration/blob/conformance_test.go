@@ -14,7 +14,7 @@ import (
 
 // TestConformance is the object-store conformance check of R-STOR-035 against the
 // store of the stack. It needs only the TROVE_TEST_S3_* variables, so the
-// nightly legs for other stores run it alone:
+// S3 conformance leg of Test and Release (the MinIO job) runs it alone:
 //
 //	go test -tags integration -run Conformance ./test/integration/blob/...
 func TestConformance(t *testing.T) {

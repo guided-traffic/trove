@@ -2039,8 +2039,8 @@ clients against the Helm chart with its role split (three `web` and two `worker`
 [ha-and-helm.md](../ha-and-helm.md) R-HA-002, Q-HA-16), PostgreSQL, Valkey with Sentinel in the
 reference topology of R-HA-056, an S3-compatible store and a deterministic test upstream registry.
 The edge runs in the `scatter` profile of [architecture.md](../architecture.md) R-ARCH-032, so
-consecutive requests of one client reach different `web` replicas (INV-18). A nightly run repeats
-the scenario list with Valkey stopped (R-NPM-046); the node-drain run of R-HA-059 carries npm load
+consecutive requests of one client reach different `web` replicas (INV-18). A green full run of
+Test and Release on the commit that closes the phase repeats the scenario list with Valkey stopped (R-NPM-046); the node-drain run of R-HA-059 carries npm load
 of its own.
 
 The gate rows follow a rule, so the gate tracks what users run (Q-NPM-4):
@@ -2072,7 +2072,7 @@ maintenance until 2027-04-30, 24 in maintenance, 26 active LTS from 2026-10-28):
   A scheduled job raises the pins within each major and re-evaluates the rule at every release;
   a major that leaves the rule stays as a non-blocking row for one more release, then is removed.
 - The test upstream is a stub registry with recorded documents and tarballs and switches for the
-  failure cases of R-NPM-024 to R-NPM-026 and R-NPM-033; a nightly job runs the read-only subset
+  failure cases of R-NPM-024 to R-NPM-026 and R-NPM-033; the full run of Test and Release on the commit that closes the phase runs the read-only subset
   against `https://registry.npmjs.org`.
 - Scenario list per client: configure from the R-NPM-041 snippets; install scoped and unscoped,
   local and remote packages through `npm-all`; publish; dist-tag add, list, remove; deprecate and
@@ -2087,7 +2087,7 @@ maintenance until 2027-04-30, 24 in maintenance, 26 active LTS from 2026-10-28):
 Acceptance criteria:
 
 - The CI job `e2e-npm` runs the scenario list for every row in the `scatter` profile and fails the
-  build on any failure. Its nightly run with Valkey stopped does the same.
+  build on any failure. Its run with Valkey stopped, in the full run of Test and Release on the commit that closes the phase, does the same.
 
 ## Replicas, Valkey and backups
 
@@ -2542,8 +2542,8 @@ direction: (a) leaves out npm 10 although it is the npm of every `node:22` CI im
 and (b) leaves out the majors new installations get. A rule keeps "conformant with the real clients"
 true over time, and the extra rows are CI minutes, not development effort. Each row still pins one
 exact version (no unpinned tool versions). The development agent would revisit this if the npm
-job's wall time per release becomes the bottleneck; the middle pnpm major would then move to nightly
-first.
+job's wall time per release becomes the bottleneck; the middle pnpm major would then move out of the
+per-change run first.
 
 **Applied in the spec:** R-NPM-045 rewritten with the rule, today's rows and their reasons, pin
 maintenance, and per-row "not applicable" marking. R-NPM-004, R-NPM-007 and R-NPM-040 refer to the

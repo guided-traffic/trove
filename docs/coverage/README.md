@@ -19,8 +19,8 @@ regenerated.
 |---|---|---|
 | **Implemented** | **2.6%** (58 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
-| P1 features covered by spec requirements | 54.9% (286 of 521) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 30.7% (665 of 2,167) | measured from `Covers:` lines |
+| P1 features covered by spec requirements | 54.7% (285 of 521) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 30.6% (664 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
 | Spec requirements | 577 on 13 pages (431 MVP, 144 P1, 2 P2) | measured from spec headings |
 | Requirements covering no catalog feature | 94 (`trove-only`) | measured from `Covers:` lines |
@@ -52,11 +52,11 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 359 | 359 | 0 | 100% | 359 | 45 |
-| **P1** | 521 | 286 | 235 | 54.9% | 55 | 8 |
+| **P1** | 521 | 285 | 236 | 54.7% | 55 | 8 |
 | **P2** | 896 | 20 | 876 | 2.2% | 12 | 5 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 665 | 1,574 | 29.7% | 426 | 58 |
+| **Total** | 2,239 | 664 | 1,575 | 29.7% | 426 | 58 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -87,7 +87,7 @@ Each page name links to that page's section of the checklist.
 | [Storage and blob providers](checklist.md#storage-and-blob-providers-stor) | 41 | 12 | 7 | 20 | 1 | 1 | 21 | 20 |
 | [Retention, cleanup and archiving](checklist.md#retention-cleanup-and-archiving-ret) | 42 | 0 | 26 | 3 | 11 | 2 | 26 | 16 |
 | [High availability and deployment](checklist.md#high-availability-and-deployment-ha) | 79 | 49 | 14 | 10 | 3 | 3 | 61 | 18 |
-| [Operations, monitoring and configuration](checklist.md#operations-monitoring-and-configuration-ops) | 100 | 17 | 23 | 34 | 1 | 25 | 44 | 56 |
+| [Operations, monitoring and configuration](checklist.md#operations-monitoring-and-configuration-ops) | 100 | 17 | 23 | 34 | 1 | 25 | 43 | 57 |
 | [Events and extensibility](checklist.md#events-and-extensibility-evt) | 82 | 1 | 24 | 12 | 43 | 2 | 26 | 56 |
 | [Distribution and release lifecycle](checklist.md#distribution-and-release-lifecycle-dist) | 70 | 0 | 0 | 0 | 69 | 1 | 0 | 70 |
 | [Security scanning and curation](checklist.md#security-scanning-and-curation-sec) | 98 | 0 | 22 | 18 | 56 | 2 | 0 | 98 |
@@ -189,7 +189,7 @@ table.
 |---|---|---|---:|---|
 | **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 1 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 1 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 441 of 460 specified, 19 open (95.9%) | 52 | Repositories 9; High availability and deployment 3; Operation catalog: administration API 3 |
+| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 440 of 460 specified, 20 open (95.7%) | 52 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 

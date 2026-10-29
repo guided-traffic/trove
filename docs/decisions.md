@@ -191,6 +191,7 @@ checked every earlier decision against them:
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
 | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) | Endpoints: one listener each, identified by the listener, with exposure rules as a ceiling (INV-6, INV-9, INV-15) | Decided by the development agent — owner review at the walkthrough |
 | [ADR-129](#adr-129--the-owners-kubernetes-operators-are-the-standard-stack) | The owner's Kubernetes operators are the standard stack (dev profile, chart and production) | Accepted (owner constraint, 2026-10-29) |
+| [ADR-130](#adr-130--the-organisations-ci-and-release-standard) | The organisation's CI and release standard | Accepted (owner constraint, 2026-10-29) |
 
 </details>
 
@@ -267,7 +268,7 @@ not supported ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-
 **Consequences.** [ADR-015](#adr-015--content-addressed-blob-store-on-s3-inv-4) (INV-4) lays the store out by content address. Every supported store
 must pass a conformance check ([R-STOR-035](spec/storage.md#r-stor-035--object-store-consistency-assumptions-and-conformance-check)). Decided: the client library is aws-sdk-go-v2 `service/s3`
 with a trove-owned multipart upload ([Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library)), and the local development profile and per-change CI
-run SeaweedFS, with MinIO and AWS S3 nightly ([Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)). Backups go to an S3 target of their own,
+run SeaweedFS, with the MinIO leg on every change and AWS S3 once an AWS account exists (owner decision of 2026-10-29, [ADR-130](#adr-130--the-organisations-ci-and-release-standard); [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)). Backups go to an S3 target of their own,
 outside the blob prefix ([ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target)), and multi-request uploads keep their
 data in S3 multipart uploads rather than on a replica ([ADR-096](#adr-096--no-state-between-requests-on-a-replica-inv-18)).
 
@@ -306,7 +307,7 @@ shared outage ([Q-STOR-1](spec/storage.md#q-stor-1--readiness-tied-to-object-sto
 **Consequences.** [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) (INV-13) makes the chart the supported deployment and fixes what it
 renders; since 2026-10-28 that is one Deployment per role, the backup CronJob and no ReadWriteMany
 volume ([ADR-093](#adr-093--horizontal-scale-random-distribution-split-roles-drains-without-outage) to [ADR-095](#adr-095--no-readwritemany-storage)). Decided: the HTTPRoute is MVP and a chart-created Gateway P1 ([Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api)), and images and
-chart are published to `ghcr.io/guided-traffic` ([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart)).
+chart are published to Docker Hub and to the GitHub Pages chart repository (owner decision of 2026-10-29, [ADR-130](#adr-130--the-organisations-ci-and-release-standard); [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), which named `ghcr.io` before it).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -1184,10 +1185,10 @@ claims and StatefulSets ([R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothin
   ([R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure)). A Gateway rendered by the chart is P1 ([R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway)).
 - **Egress NetworkPolicy** ([Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), option (a)). Off by default. `NOTES.txt` warns while it is off
   and points to an example values file rendered in CI ([R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies)).
-- **Publishing location** ([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), option (a)). Images and the chart are published to
-  `ghcr.io/guided-traffic/trove` and `oci://ghcr.io/guided-traffic/charts/trove`, and signed by the
-  GitHub Actions release workflow with its own OIDC identity, without a stored registry credential
-  ([R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-signatures)).
+- **Publishing location** ([Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart)). The development agent chose option (a), GitHub Container
+  Registry with keyless signatures. The owner replaced it on 2026-10-29 ([ADR-130](#adr-130--the-organisations-ci-and-release-standard)): the image is published to
+  Docker Hub as `docker.io/guidedtraffic/trove`, the chart to the repository `https://guided-traffic.github.io/trove/`, with provenance and SBOM
+  attestations and no signatures ([R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-attestations)).
 
 **Alternatives considered.** A Kubernetes operator with custom resources: automated upgrades, but a
 controller with cluster-wide permissions to install and secure. Plain manifests or Kustomize: no
@@ -1197,7 +1198,7 @@ nothing needs and which a drain would have to move. A shared spool volume: not a
 ([ADR-095](#adr-095--no-readwritemany-storage)).
 
 **Spec:** [INV-13](spec/README.md#design-invariants), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-web-and-worker-deployments), [R-HA-028](spec/ha-and-helm.md#r-ha-028--chart-scope-rendered-resources-and-naming), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring),
-[R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure), [R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies), [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-signatures), [R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway), [R-HA-060](spec/ha-and-helm.md#r-ha-060--backup-cronjob-and-restore-job),
+[R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure), [R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies), [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-attestations), [R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway), [R-HA-060](spec/ha-and-helm.md#r-ha-060--backup-cronjob-and-restore-job),
 [R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent); decided: [Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api), [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), [Q-HA-15](spec/ha-and-helm.md#q-ha-15--valkey-with-sentinel-in-the-local-profile-and-ci),
 [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart).
 
@@ -4870,6 +4871,65 @@ provisioner; Traefik as the edge (the earlier choice of Q-HA-24).
 **Spec:** [spec/README.md](spec/README.md#owner-constraints) (the dated owner constraint), [Q-HA-15](spec/ha-and-helm.md#q-ha-15--valkey-with-sentinel-in-the-local-profile-and-ci),
 [Q-HA-24](spec/ha-and-helm.md#q-ha-24--edge-controller-failover-mechanism-and-the-scatter-profile-of-the-local-profile).
 
+### ADR-130 · The organisation's CI and release standard
+
+**Status:** Accepted (owner constraint, 2026-10-29)
+
+**Context.** On 2026-10-29 the owner decided that trove follows the organisation's CI and release standard, as in
+[guided-traffic/valkey-operator](https://github.com/guided-traffic/valkey-operator) and guided-traffic/cogpit. Before
+that, trove had its own pipeline: a CI workflow and a nightly workflow (`ci.yml`, `nightly.yml`), and a release workflow
+that published the image and the chart to GitHub Container Registry with keyless cosign signatures. The first release,
+`v0.1.0`, was published by that pipeline to `ghcr.io`. The owner's standard replaces all of it.
+
+**Decision.** trove follows the standard in four workflows:
+
+- **Test and Release** ([release.yml](../.github/workflows/release.yml)) runs on every push and every pull request to
+  `main`. Every check is a job of its own that calls a Makefile target, so a failure reproduces with the same command.
+  Every job runs on the organisation's self-hosted runners (`runs-on: self-hosted`).
+- **Semantic Release** ([.releaserc.json](../.releaserc.json)), in the Test and Release run of a push to `main`, takes the
+  version from the Conventional Commits since the last tag, writes the release notes, commits the coverage badge with
+  `[skip ci]`, and publishes the tag and the GitHub release. A breaking change releases a minor version while trove is on
+  major version 0 ([ADR-124](#adr-124--releases-stay-on-major-version-0)).
+- **Release Docker & Helm** ([build.yml](../.github/workflows/build.yml)) runs on every published release: the image
+  `docker.io/guidedtraffic/trove` with provenance and SBOM attestations, the SPDX SBOM attached to the release and a Docker
+  Scout scan; the Helm chart in the chart repository `https://guided-traffic.github.io/trove/`, served from the `gh-pages`
+  branch.
+- **Renovate** ([renovate.yml](../.github/workflows/renovate.yml), [renovate.json](../renovate.json)) runs every day.
+
+Not part of the standard: ghcr.io, keyless cosign signatures, a nightly workflow, and the AWS S3 conformance leg until an
+AWS account and a CI role exist. The MinIO conformance leg runs in Test and Release on every change.
+
+**Consequences.**
+
+- **Versions come from the commits, not from people.** Commit messages follow Conventional Commits: `feat` makes a minor
+  release, `fix` and `perf` a patch release, and a breaking change a minor release while trove is on major version 0. A
+  tag or a GitHub release made by hand bypasses that rule, and a published release starts the image and chart pipeline
+  with a version the commits do not describe.
+- **A phase is closed by a release run.** The Semantic Release run that publishes the last change of a phase closes the
+  phase, and the roadmap records the version that run published. The version the roadmap names beforehand
+  ([ADR-124](#adr-124--releases-stay-on-major-version-0)) is the expectation; the commits decide the number.
+- **Docker Hub and GitHub Pages replace ghcr.io.** The image needs a stored Docker Hub access token (`DOCKERHUB_PAT`).
+  Semantic Release and Renovate act through a GitHub App whose token the workflows create (`APP_CLIENT_ID`,
+  `APP_PRIVATE_KEY`). No signature is produced, so a consumer has nothing to verify
+  ([H-79](spec/ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin)).
+- **Self-hosted runners.** The runners are ephemeral pods without `make` or a C compiler, so every job installs the tools
+  it calls, pinned in `tools/versions.env` or `go.mod`. The jobs of a pull request receive the repository's secrets
+  ([H-80](spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)).
+- **Actions and Renovate.** Actions are pinned by major version tag, as the organisation's other repositories pin them;
+  Renovate updates the tags. Renovate's merges of minor and patch updates are `fix` commits, so each is a patch release.
+- **Nothing runs nightly.** The end-to-end failover set and the MinIO leg run on every change
+  ([Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly),
+  [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)). The AWS S3 leg waits for
+  an account ([Q-HA-25](spec/ha-and-helm.md#q-ha-25--aws-leg-of-the-nightly-run-when-no-aws-account-is-configured)).
+  The nightly acceptance runs that other pages name are not in the pipeline.
+
+**Alternatives considered.** None; set by the owner. The earlier pipeline (ghcr.io, cosign, nightly workflows) is replaced.
+
+**Spec:** [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-attestations),
+[Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival),
+[Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly),
+[release process](developer/releasing.md).
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5023,7 +5083,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-BAK-12](spec/backup-and-restore.md#q-bak-12--the-backup-command-in-m0) | What does `trove backup` do in M0? | (c) the name is reserved; every subcommand returns "not implemented yet" | — |
 | [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) | Readiness on object-storage failure? | (d) gate only the first readiness; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-OPS-2 | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor) | PostgreSQL version floor? | (b) 16; raised only after a version's community end of life, announced one minor release ahead | [ADR-003](#adr-003--postgresql-as-the-database), [ADR-014](#adr-014--postgresql-is-the-system-of-record-valkey-holds-only-shared-ephemeral-state-inv-3) |
-| [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival) | Which S3 store for the local profile after MinIO's archival? | (e) SeaweedFS in the local profile and per-change CI; MinIO and AWS S3 nightly | [ADR-004](#adr-004--s3-as-binary-storage) |
+| [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival) | Which S3 store for the local profile after MinIO's archival? | (e) SeaweedFS in the local profile and per-change CI; MinIO and AWS S3 nightly. Owner decision of 2026-10-29: the MinIO leg on every change, AWS S3 once an AWS account exists | [ADR-004](#adr-004--s3-as-binary-storage), [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |
 | [Q-HA-4](spec/ha-and-helm.md#q-ha-4--reserve-v2-on-the-client-listener-for-oci) | Reserve `/v2/` on the client listener for OCI? | (a) reserved in INV-6 from the MVP on, answering `404` until the OCI format exists; changes INV-6 | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6) |
 | [Q-HA-5](spec/ha-and-helm.md#q-ha-5--zero-downtime-upgrades-that-skip-minor-releases) | Zero-downtime upgrades that skip minor releases? | (a) adjacent minors only; skips go stepwise or with downtime, enforced by the contract guard | [ADR-033](#adr-033--versioning-promises-per-surface-and-a-schema-compatibility-gate) |
 | [Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-poolers) | Support transaction-mode connection poolers? | (b) supported from the MVP on and optional: the main pool through a transaction-mode pooler, `database.session_host` for the `worker` leases, `trove migrate` and `trove backup`; direct connections stay the default. Revisited 2026-10-28: was (a), not supported, with split connections at P2 | [ADR-101](#adr-101--connection-model-a-transaction-scoped-main-pool-behind-an-optional-pooler-sessions-only-on-workers), [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12), [ADR-077](#adr-077--singleton-work-under-advisory-lock-leases-with-fencing) |
@@ -5031,7 +5091,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key) | Who creates the first encryption key? | (b) the operator; the chart fails without it and prints the command that creates one | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies), [ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets) |
 | [Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37) | Make revocations survive a database restore? | (b) at MVP: a write-once revocation journal in object storage that `post-restore` and the restore of a trove backup replay. Revisited 2026-10-28: was P1, with the manual procedure in the MVP | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy) | Default of the egress NetworkPolicy? | (a) off, with a `NOTES.txt` warning and an example values file | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13), [ADR-039](#adr-039--egress-address-checks-after-dns-resolution-for-every-remote-connection) |
-| [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart) | Where are images and the chart published? | (a) `ghcr.io/guided-traffic`, signed from the GitHub Actions release workflow | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
+| [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart) | Where are images and the chart published? | (a) `ghcr.io/guided-traffic`, signed from the GitHub Actions release workflow. Owner decision of 2026-10-29 (overrides (a)): Docker Hub for the image, the GitHub Pages chart repository for the chart, provenance and SBOM attestations, no signatures | [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13), [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |
 | [Q-HA-12](spec/ha-and-helm.md#q-ha-12--replica-registry-at-mvp) | Replica registry at MVP? | (c) table, heartbeat, pruning and read-only API in the MVP, and the UI status screen (R-UI-038); since 2026-10-28 the registry also records each replica's node and reachable Sentinels (Q-UI-7) | [ADR-013](#adr-013--one-binary-roles-split-from-the-start-identical-replicas-per-role-inv-2) |
 | [Q-HA-13](spec/ha-and-helm.md#q-ha-13--valkey-and-readiness) | Valkey and readiness? | (d) only configuration errors (rejected credential, failed TLS verification, unknown primary name) hold back the first readiness; outages never affect readiness | [ADR-100](#adr-100--valkey-degrades-trove-but-never-gates-readiness-except-for-configuration-errors), [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-HA-14](spec/ha-and-helm.md#q-ha-14--valkey-topologies-trove-supports) | Which Valkey topologies does trove support? | (b) Sentinel only in production at MVP; standalone for development; a primary-endpoint mode at P1; Valkey Cluster deferred | [ADR-099](#adr-099--valkey-client-valkey-go-against-valkey-90-and-later-sentinel-in-production) |
@@ -5045,7 +5105,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-HA-22](spec/ha-and-helm.md#q-ha-22--upload-limit-against-the-spool-of-each-role) | How does the upload limit relate to the spool of each role? | (c) the rule holds for the roles `web` and `all`; the worker spool is 5 GiB | — |
 | [Q-HA-23](spec/ha-and-helm.md#q-ha-23--chart-validation-of-the-config-subtree-until-the-binary-emits-its-schema) | How does the chart validate the `config` subtree? | (b) free-form in `values.schema.json`, the chart-owned keys typed, until the binary emits its schema | — |
 | [Q-HA-24](spec/ha-and-helm.md#q-ha-24--edge-controller-failover-mechanism-and-the-scatter-profile-of-the-local-profile) | Which edge, failover mechanism and load profile does the local profile use? | (a) Traefik as Ingress controller; `TROVE_PROFILE=scatter` without idle backend connections; failover patches `status.targetPrimary`. Revisited 2026-10-29: the edge is the owner's HAProxy Ingress, the failover choice stands | [ADR-129](#adr-129--the-owners-kubernetes-operators-are-the-standard-stack) |
-| [Q-HA-25](spec/ha-and-helm.md#q-ha-25--aws-leg-of-the-nightly-run-when-no-aws-account-is-configured) | What does the nightly AWS leg show without an account? | (c) an explicit SKIPPED summary; the AWS job is grey, never green | — |
+| [Q-HA-25](spec/ha-and-helm.md#q-ha-25--aws-leg-of-the-nightly-run-when-no-aws-account-is-configured) | What does the nightly AWS leg show without an account? | (c) an explicit SKIPPED summary; the AWS job is grey, never green. Owner decision of 2026-10-29: no nightly run, and no AWS leg until an account exists; (c) is not built | [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |
 | [Q-HA-26](spec/ha-and-helm.md#q-ha-26--release-image-how-the-binary-gets-into-the-image) | How does the binary get into the release image? | (b) the host builds the static binary with the embedded UI; the image wraps it in the pinned distroless base | — |
 | [Q-HA-27](spec/ha-and-helm.md#q-ha-27--which-replicas-the-contract-guard-counts-as-live) | Which replicas count as live for the contract guard? | (b) those whose heartbeat is younger than `system.heartbeat_stale_after` | — |
 | [Q-HA-28](spec/ha-and-helm.md#q-ha-28--who-creates-the-database-schema-at-migration) | Who creates the database schema? | (b) `trove migrate` creates `database.schema` when the role may; never roles or databases | — |
@@ -5133,4 +5193,4 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ROAD-4](coverage/roadmap.md#q-road-4--how-the-coverage-generator-learns-implementation-status) | How does the coverage generator learn implementation status? | (a) tests name the requirement IDs they verify, and the generator derives the status from CI results | — |
 | [Q-ROAD-5](coverage/roadmap.md#q-road-5--evidence-rules-of-the-coverage-generator) | Which evidence counts for the coverage generator? | (b) a failing test vetoes its ID; a skip counts as neither; an unknown ID fails the run | — |
 | [Q-ROAD-6](coverage/roadmap.md#q-road-6--how-the-end-to-end-driver-reads-and-drives-the-cluster) | How does the end-to-end driver read and drive the cluster? | (a) a diagnostic job kind `system.probe` in the release image, enqueued through the product's job path | — |
-| [Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly) | Which end-to-end jobs run on each push, and which nightly? | (b) a push set on every push and a nightly failover set | — |
+| [Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly) | Which end-to-end jobs run on each push, and which nightly? | (b) a push set on every push and a nightly failover set. Owner decision of 2026-10-29: no nightly workflow; both sets run on every change | [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |

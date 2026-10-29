@@ -32,7 +32,7 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | chart (E0.7) | `make chart-lint`, `make chart-test` | `helm lint` over every value set, the render assertions of [test/chart](../../test/chart); uploads `.out/test-chart.json` (`test-chart`) |
 | image | `make image IMAGE=trove:ci` | the [Containerfile](../../Containerfile) for the runner's architecture, loaded into Docker; the image must run as `65532:65532` (R-HA-033) |
 | Container Scan (Trivy, built image) | `make image IMAGE=trove:scan`, then Trivy | Trivy (pinned `TRIVY_VERSION`) on the built image: fixed OS and library vulnerabilities of CRITICAL or HIGH, secrets and misconfigurations; SARIF uploaded as `trivy-container-report` |
-| integration (Valkey 9.0, 9.1) | `make integration-up`, `make test-integration`, `make integration-down` | the integration tier against the compose stack on TLS, one job per Valkey line; uploads `test-integration-<line>` and `profile-integration-<line>` |
+| integration (Valkey 9.1) | `make integration-up`, `make test-integration`, `make integration-down` | the integration tier against the compose stack on TLS, on Valkey 9.1 only (no older line is guaranteed while trove is in development); uploads `test-integration` and `profile-integration` |
 | S3 conformance (MinIO) | `make minio-up`, `make s3-conformance`, `make minio-down` | the conformance tests of R-STOR-035 against MinIO, built from source at `MINIO_COMMIT` and served over TLS only; the server log is uploaded on failure |
 | e2e on kind (push, failover) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set: `push` (every change) and `failover` (E0.13, E0.4, E0.6); each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
@@ -198,8 +198,8 @@ docker.io`, `image.repository: guidedtraffic/trove` ([values.yaml](../../deploy/
 checked by [test/chart/image_test.go](../../test/chart/image_test.go). The release job rewrites the line
 `  tag:` of `values.yaml`; the test fails when a second line of that shape appears.
 
-Not in the pipeline: a chart SBOM, and any signature. The chart and the image are attested by
-provenance only, the way valkey-operator's are.
+Not in the pipeline: a chart SBOM, a chart attestation, and any signature. Only the image carries
+attestations: a provenance and an SBOM attestation in its image index.
 
 ## Secrets and settings
 
@@ -218,8 +218,8 @@ Pages serves at `https://guided-traffic.github.io/trove/`.
 - **The e2e legs, the malware scan and the Trivy scan have not run here.** The e2e legs need the amd64
   emulator on an arm64 host, `clamscan` is not installed on the machine that wrote the change, and Trivy
   needs the built image in the local Docker.
-- **No signatures.** The image and the chart carry provenance and an SBOM attestation, not a keyless
-  signature.
+- **No signatures.** The image carries a provenance and an SBOM attestation, not a keyless signature. The
+  chart carries neither a signature nor an attestation.
 - **Docker Buildx of the local machine** is the one of Docker Desktop, not the pinned version, until it
   is replaced ([make versions-check](../../Makefile) reports it).
 - **Dependency updates are patch releases.** Each automerged update is a `fix` commit.

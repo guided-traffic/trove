@@ -15,7 +15,7 @@ that lists the feature in its `Covers:` line is implemented. *specified*: at lea
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 665 specified (58 of them implemented), 1,574 open.
+**Totals.** 2,239 catalog features on 60 pages: 664 specified (58 of them implemented), 1,575 open.
 577 spec requirements: 483 cover catalog features, 94 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -39,7 +39,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 11 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 26 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 44 | 56 | 15 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 15 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 1 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 | 0 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 | 0 |
@@ -965,10 +965,10 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 
 ## Operations, monitoring and configuration (OPS)
 
-Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 20 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
+Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 19 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 44 specified, 56 open, 15 implemented</summary>
+<summary>100 features: 43 specified, 57 open, 15 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1047,7 +1047,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) |
 | OPS-074 | Schema and data migrations on upgrade | MVP | specified | [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-022](../spec/ha-and-helm.md) |
 | OPS-075 | Migration from another repository manager | P2 | open | – |
-| OPS-076 | Signed release artifacts | P1 | specified | [R-HA-047](../spec/ha-and-helm.md) |
+| OPS-076 | Signed release artifacts | P1 | open | – |
 | OPS-077 | License-tier gating | Out of scope | open | – |
 | OPS-078 | License management | Out of scope | open | – |
 | OPS-079 | Portal accounts and sign-in | Out of scope | open | – |

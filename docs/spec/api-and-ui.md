@@ -3665,7 +3665,7 @@ Priority: **MVP** · Covers: trove-only
 | Security | README XSS corpus; any `securitypolicyviolation` event fails an end-to-end test | Renderer, CSP | Every pull request |
 
 - End-to-end tests prepare data through the API, not through the UI (INV-17), and run in Chromium on
-  pull requests and in Chromium, Firefox and WebKit nightly.
+  pull requests and, in the full run of Test and Release on the commit that closes the phase, in Chromium, Firefox and WebKit.
 - Line coverage of services and pure logic at least 80 % (# default (proposed)).
 - Test tool versions are pinned once in the lockfile and used by local runs and CI alike.
 
