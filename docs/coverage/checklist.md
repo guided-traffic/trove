@@ -9,12 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** Nothing is implemented. *specified*: at least one spec requirement lists the feature
-in its `Covers:` line. *open*: no requirement does. For entries with priority *Out of scope*,
-open is the intended end state.
+**Status.** 85 of 553 spec requirements are implemented: a passing test names them and no
+failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
+that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
+requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
+requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 662 specified, 1,577 open. 553 spec requirements:
-472 cover catalog features, 81 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 662 specified (57 of them implemented), 1,577 open.
+553 spec requirements: 472 cover catalog features, 81 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -22,68 +24,68 @@ end](#requirements-that-cover-no-catalog-feature)).
 <details>
 <summary>60 catalog pages</summary>
 
-| Catalog page | Prefix | Features | MVP specified | Specified | Open |
-|---|---|---:|---:|---:|---:|
-| [Repositories](#repositories-repo) | `REPO` | 68 | 23 of 23 | 40 | 28 |
-| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 |
-| [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 |
-| [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 31 | 22 |
-| [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 |
-| [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 34 | 35 |
-| [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 |
-| [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 |
-| [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 |
-| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 |
-| [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 60 | 19 |
-| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 44 | 56 |
-| [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 |
-| [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 |
-| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 |
-| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 |
-| [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 |
-| [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 |
-| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 |
-| [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 |
-| [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 |
-| [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 0 | 52 |
-| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 0 | 20 |
-| [Helm chart format](#helm-chart-format-pkg-helm) | `PKG-HELM` | 25 | – | 0 | 25 |
-| [Maven package format](#maven-package-format-pkg-maven) | `PKG-MAVEN` | 39 | – | 0 | 39 |
-| [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 |
-| [Go modules format](#go-modules-format-pkg-go) | `PKG-GO` | 16 | – | 0 | 16 |
-| [Generic format](#generic-format-pkg-generic) | `PKG-GENERIC` | 11 | – | 0 | 11 |
-| [Ansible collection format](#ansible-collection-format-pkg-ansible) | `PKG-ANSIBLE` | 13 | – | 0 | 13 |
-| [Alpine Linux package format](#alpine-linux-package-format-pkg-apk) | `PKG-APK` | 14 | – | 0 | 14 |
-| [Bazel modules package format](#bazel-modules-package-format-pkg-bazel) | `PKG-BAZEL` | 12 | – | 0 | 12 |
-| [Bower package format](#bower-package-format-pkg-bower) | `PKG-BOWER` | 14 | – | 0 | 14 |
-| [Cargo (Rust crates) format](#cargo-rust-crates-format-pkg-cargo) | `PKG-CARGO` | 14 | – | 0 | 14 |
-| [Chef cookbook format](#chef-cookbook-format-pkg-chef) | `PKG-CHEF` | 10 | – | 0 | 10 |
-| [CocoaPods package format](#cocoapods-package-format-pkg-pods) | `PKG-PODS` | 15 | – | 0 | 15 |
-| [PHP Composer format](#php-composer-format-pkg-composer) | `PKG-COMPOSER` | 11 | – | 0 | 11 |
-| [Conan (C/C++) format](#conan-cc-format-pkg-conan) | `PKG-CONAN` | 14 | – | 0 | 14 |
-| [Conda package format](#conda-package-format-pkg-conda) | `PKG-CONDA` | 15 | – | 0 | 15 |
-| [CRAN package format](#cran-package-format-pkg-cran) | `PKG-CRAN` | 16 | – | 0 | 16 |
-| [Debian package format](#debian-package-format-pkg-deb) | `PKG-DEB` | 28 | – | 0 | 28 |
-| [Git LFS format](#git-lfs-format-pkg-lfs) | `PKG-LFS` | 9 | – | 0 | 9 |
-| [Gradle, Ivy, sbt and Eclipse P2 formats](#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm) | `PKG-JVM` | 24 | – | 0 | 24 |
-| [Hex package format (Elixir and Erlang)](#hex-package-format-elixir-and-erlang-pkg-hex) | `PKG-HEX` | 18 | – | 0 | 18 |
-| [Hugging Face models and datasets](#hugging-face-models-and-datasets-pkg-hf) | `PKG-HF` | 18 | – | 0 | 18 |
-| [LuaRocks package format](#luarocks-package-format-pkg-lua) | `PKG-LUA` | 18 | – | 0 | 18 |
-| [Nix package format](#nix-package-format-pkg-nix) | `PKG-NIX` | 20 | – | 0 | 20 |
-| [Opkg package format](#opkg-package-format-pkg-opkg) | `PKG-OPKG` | 8 | – | 0 | 8 |
-| [pub package format (Dart and Flutter)](#pub-package-format-dart-and-flutter-pkg-pub) | `PKG-PUB` | 19 | – | 0 | 19 |
-| [Puppet module format](#puppet-module-format-pkg-puppet) | `PKG-PUPPET` | 12 | – | 0 | 12 |
-| [RPM package format](#rpm-package-format-pkg-rpm) | `PKG-RPM` | 18 | – | 0 | 18 |
-| [RubyGems format](#rubygems-format-pkg-gems) | `PKG-GEMS` | 18 | – | 0 | 18 |
-| [Swift package format](#swift-package-format-pkg-swift) | `PKG-SWIFT` | 18 | – | 0 | 18 |
-| [Terraform and OpenTofu formats](#terraform-and-opentofu-formats-pkg-tf) | `PKG-TF` | 23 | – | 0 | 23 |
-| [Vagrant box format](#vagrant-box-format-pkg-vagrant) | `PKG-VAGRANT` | 4 | – | 0 | 4 |
-| [VCS archive format](#vcs-archive-format-pkg-vcs) | `PKG-VCS` | 13 | – | 0 | 13 |
-| [Machine-learning models and model-serving containers](#machine-learning-models-and-model-serving-containers-pkg-ml) | `PKG-ML` | 19 | – | 0 | 19 |
-| [AI agent assets and IDE extension formats](#ai-agent-assets-and-ide-extension-formats-pkg-ai) | `PKG-AI` | 37 | – | 0 | 37 |
-| [Beyond the baseline: further formats and capabilities](#beyond-the-baseline-further-formats-and-capabilities-beyond) | `BEYOND` | 34 | – | 2 | 32 |
+| Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
+|---|---|---:|---:|---:|---:|---:|
+| [Repositories](#repositories-repo) | `REPO` | 68 | 23 of 23 | 40 | 28 | 0 |
+| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 0 |
+| [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
+| [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 31 | 22 | 0 |
+| [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
+| [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 34 | 35 | 0 |
+| [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 0 |
+| [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 0 |
+| [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
+| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 11 |
+| [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 60 | 19 | 25 |
+| [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 44 | 56 | 15 |
+| [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 1 |
+| [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 | 0 |
+| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 | 0 |
+| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 | 1 |
+| [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 1 |
+| [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 2 |
+| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 1 |
+| [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 0 |
+| [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 0 |
+| [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 0 | 52 | 0 |
+| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 0 | 20 | 0 |
+| [Helm chart format](#helm-chart-format-pkg-helm) | `PKG-HELM` | 25 | – | 0 | 25 | 0 |
+| [Maven package format](#maven-package-format-pkg-maven) | `PKG-MAVEN` | 39 | – | 0 | 39 | 0 |
+| [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 | 0 |
+| [Go modules format](#go-modules-format-pkg-go) | `PKG-GO` | 16 | – | 0 | 16 | 0 |
+| [Generic format](#generic-format-pkg-generic) | `PKG-GENERIC` | 11 | – | 0 | 11 | 0 |
+| [Ansible collection format](#ansible-collection-format-pkg-ansible) | `PKG-ANSIBLE` | 13 | – | 0 | 13 | 0 |
+| [Alpine Linux package format](#alpine-linux-package-format-pkg-apk) | `PKG-APK` | 14 | – | 0 | 14 | 0 |
+| [Bazel modules package format](#bazel-modules-package-format-pkg-bazel) | `PKG-BAZEL` | 12 | – | 0 | 12 | 0 |
+| [Bower package format](#bower-package-format-pkg-bower) | `PKG-BOWER` | 14 | – | 0 | 14 | 0 |
+| [Cargo (Rust crates) format](#cargo-rust-crates-format-pkg-cargo) | `PKG-CARGO` | 14 | – | 0 | 14 | 0 |
+| [Chef cookbook format](#chef-cookbook-format-pkg-chef) | `PKG-CHEF` | 10 | – | 0 | 10 | 0 |
+| [CocoaPods package format](#cocoapods-package-format-pkg-pods) | `PKG-PODS` | 15 | – | 0 | 15 | 0 |
+| [PHP Composer format](#php-composer-format-pkg-composer) | `PKG-COMPOSER` | 11 | – | 0 | 11 | 0 |
+| [Conan (C/C++) format](#conan-cc-format-pkg-conan) | `PKG-CONAN` | 14 | – | 0 | 14 | 0 |
+| [Conda package format](#conda-package-format-pkg-conda) | `PKG-CONDA` | 15 | – | 0 | 15 | 0 |
+| [CRAN package format](#cran-package-format-pkg-cran) | `PKG-CRAN` | 16 | – | 0 | 16 | 0 |
+| [Debian package format](#debian-package-format-pkg-deb) | `PKG-DEB` | 28 | – | 0 | 28 | 0 |
+| [Git LFS format](#git-lfs-format-pkg-lfs) | `PKG-LFS` | 9 | – | 0 | 9 | 0 |
+| [Gradle, Ivy, sbt and Eclipse P2 formats](#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm) | `PKG-JVM` | 24 | – | 0 | 24 | 0 |
+| [Hex package format (Elixir and Erlang)](#hex-package-format-elixir-and-erlang-pkg-hex) | `PKG-HEX` | 18 | – | 0 | 18 | 0 |
+| [Hugging Face models and datasets](#hugging-face-models-and-datasets-pkg-hf) | `PKG-HF` | 18 | – | 0 | 18 | 0 |
+| [LuaRocks package format](#luarocks-package-format-pkg-lua) | `PKG-LUA` | 18 | – | 0 | 18 | 0 |
+| [Nix package format](#nix-package-format-pkg-nix) | `PKG-NIX` | 20 | – | 0 | 20 | 0 |
+| [Opkg package format](#opkg-package-format-pkg-opkg) | `PKG-OPKG` | 8 | – | 0 | 8 | 0 |
+| [pub package format (Dart and Flutter)](#pub-package-format-dart-and-flutter-pkg-pub) | `PKG-PUB` | 19 | – | 0 | 19 | 0 |
+| [Puppet module format](#puppet-module-format-pkg-puppet) | `PKG-PUPPET` | 12 | – | 0 | 12 | 0 |
+| [RPM package format](#rpm-package-format-pkg-rpm) | `PKG-RPM` | 18 | – | 0 | 18 | 0 |
+| [RubyGems format](#rubygems-format-pkg-gems) | `PKG-GEMS` | 18 | – | 0 | 18 | 0 |
+| [Swift package format](#swift-package-format-pkg-swift) | `PKG-SWIFT` | 18 | – | 0 | 18 | 0 |
+| [Terraform and OpenTofu formats](#terraform-and-opentofu-formats-pkg-tf) | `PKG-TF` | 23 | – | 0 | 23 | 0 |
+| [Vagrant box format](#vagrant-box-format-pkg-vagrant) | `PKG-VAGRANT` | 4 | – | 0 | 4 | 0 |
+| [VCS archive format](#vcs-archive-format-pkg-vcs) | `PKG-VCS` | 13 | – | 0 | 13 | 0 |
+| [Machine-learning models and model-serving containers](#machine-learning-models-and-model-serving-containers-pkg-ml) | `PKG-ML` | 19 | – | 0 | 19 | 0 |
+| [AI agent assets and IDE extension formats](#ai-agent-assets-and-ide-extension-formats-pkg-ai) | `PKG-AI` | 37 | – | 0 | 37 | 0 |
+| [Beyond the baseline: further formats and capabilities](#beyond-the-baseline-further-formats-and-capabilities-beyond) | `BEYOND` | 34 | – | 2 | 32 | 0 |
 
 </details>
 
@@ -92,7 +94,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 23 of 23 · P1 17 of 26 · P2 0 of 16 · Later 0 of 2 · Out of scope 0 of 1
 
 <details>
-<summary>68 features: 40 specified, 28 open</summary>
+<summary>68 features: 40 specified, 28 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -100,7 +102,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-002 | One package format per repository | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-REPO-001](../spec/repositories-and-proxy.md) |
 | REPO-003 | Generic repositories | P1 | open | – |
 | REPO-004 | Repository key naming rules | MVP | specified | [R-REPO-002](../spec/repositories-and-proxy.md) |
-| REPO-005 | Repository addressing | MVP | specified | [R-ARCH-005](../spec/architecture.md), [R-NPM-001](../spec/formats/npm.md), [R-NUGET-001](../spec/formats/nuget.md), [R-REPO-002](../spec/repositories-and-proxy.md) |
+| REPO-005 | Repository addressing | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-NPM-001](../spec/formats/npm.md), [R-NUGET-001](../spec/formats/nuget.md), [R-REPO-002](../spec/repositories-and-proxy.md) |
 | REPO-006 | Format support per repository class | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-REPO-003](../spec/repositories-and-proxy.md) |
 | REPO-007 | Repository administration list | MVP | specified | [R-UI-020](../spec/api-and-ui.md), [R-REPO-012](../spec/repositories-and-proxy.md) |
 | REPO-008 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md), [R-REPO-015](../spec/repositories-and-proxy.md) |
@@ -172,7 +174,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 Catalog page: [remote-repositories.md](../features/remote-repositories.md) · specified by priority: MVP 15 of 15 · P1 13 of 14 · P2 0 of 20
 
 <details>
-<summary>49 features: 28 specified, 21 open</summary>
+<summary>49 features: 28 specified, 21 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -190,7 +192,7 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-012 | Credential forwarding on cross-host redirects | P1 | specified | [R-REPO-039](../spec/repositories-and-proxy.md) |
 | RMT-013 | Cookie management | P2 | open | – |
 | RMT-014 | URL normalization control | P2 | open | – |
-| RMT-015 | Network timeouts and source interface | MVP | specified | [R-ARCH-022](../spec/architecture.md), [R-REPO-024](../spec/repositories-and-proxy.md) |
+| RMT-015 | Network timeouts and source interface | MVP | specified | [R-ARCH-022](../spec/architecture.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) |
 | RMT-016 | Outbound proxy selection per repository | P1 | specified | [R-REPO-037](../spec/repositories-and-proxy.md) |
 | RMT-017 | Store artifacts locally or pass through | P1 | specified | [R-REPO-044](../spec/repositories-and-proxy.md) |
 | RMT-018 | Metadata retrieval cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-027](../spec/repositories-and-proxy.md) |
@@ -201,7 +203,7 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-023 | MIME-type mismatch blocking | MVP | specified | [R-REPO-042](../spec/repositories-and-proxy.md) |
 | RMT-024 | HEAD request bypass | P2 | open | – |
 | RMT-025 | Eager fetching of companion artifacts | P2 | open | – |
-| RMT-026 | Cache invalidation | MVP | specified | [R-ARCH-018](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md), [R-REPO-045](../spec/repositories-and-proxy.md) |
+| RMT-026 | Cache invalidation | MVP | specified | [R-ARCH-018](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md), [R-REPO-045](../spec/repositories-and-proxy.md) |
 | RMT-027 | Cache pre-population without client transfer | P2 | open | – |
 | RMT-028 | Download redirect for cached artifacts | P2 | open | – |
 | RMT-029 | Assumed-offline period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-REPO-029](../spec/repositories-and-proxy.md) |
@@ -233,7 +235,7 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 Catalog page: [replication-and-federation.md](../features/replication-and-federation.md) · specified by priority: P2 0 of 17 · Later 0 of 51 · Out of scope 0 of 4
 
 <details>
-<summary>72 features: 0 specified, 72 open</summary>
+<summary>72 features: 0 specified, 72 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -317,18 +319,18 @@ Catalog page: [replication-and-federation.md](../features/replication-and-federa
 Catalog page: [artifacts.md](../features/artifacts.md) · specified by priority: MVP 10 of 10 · P1 20 of 20 · P2 1 of 22 · Out of scope 0 of 1
 
 <details>
-<summary>53 features: 31 specified, 22 open</summary>
+<summary>53 features: 31 specified, 22 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| ART-001 | Items, artifacts and packages | MVP | specified | [R-STOR-003](../spec/storage.md), [R-STOR-016](../spec/storage.md) |
+| ART-001 | Items, artifacts and packages | MVP | specified | [R-STOR-003](../spec/storage.md) (implemented), [R-STOR-016](../spec/storage.md) |
 | ART-002 | Deploy a single artifact or create a folder | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-007](../spec/storage.md) |
 | ART-003 | Properties attached at deploy time (matrix parameters) | P1 | specified | [R-STOR-009](../spec/storage.md) |
 | ART-004 | Deploy by checksum | P1 | specified | [R-STOR-008](../spec/storage.md) |
 | ART-005 | Deploy an archive and extract it on arrival | P2 | open | – |
 | ART-006 | Deploy dialog in the UI | P1 | specified | [R-NPM-036](../spec/formats/npm.md) |
 | ART-007 | Multi-part upload of large files through object storage | P2 | open | – |
-| ART-008 | Checksum computation and exposure | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-002](../spec/storage.md) |
+| ART-008 | Checksum computation and exposure | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-002](../spec/storage.md) (implemented) |
 | ART-009 | Client checksum verification policy | P1 | specified | [R-STOR-010](../spec/storage.md) |
 | ART-010 | SHA-256 backfill operation | P2 | open | – |
 | ART-011 | Retrieve an artifact | MVP | specified | [R-ARCH-011](../spec/architecture.md), [R-STOR-012](../spec/storage.md) |
@@ -382,7 +384,7 @@ Catalog page: [artifacts.md](../features/artifacts.md) · specified by priority:
 Catalog page: [search-and-query.md](../features/search-and-query.md) · specified by priority: P1 3 of 24 · P2 0 of 35 · Later 0 of 5
 
 <details>
-<summary>64 features: 3 specified, 61 open</summary>
+<summary>64 features: 3 specified, 61 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -458,7 +460,7 @@ Catalog page: [search-and-query.md](../features/search-and-query.md) · specifie
 Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by priority: P1 0 of 15 · P2 0 of 22 · Later 0 of 11 · Out of scope 0 of 1
 
 <details>
-<summary>49 features: 0 specified, 49 open</summary>
+<summary>49 features: 0 specified, 49 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -519,7 +521,7 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 20 of 20 · P1 11 of 11 · P2 3 of 26 · Later 0 of 7 · Out of scope 0 of 5
 
 <details>
-<summary>69 features: 34 specified, 35 open</summary>
+<summary>69 features: 34 specified, 35 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -568,7 +570,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-042 | Temporary login suspension and account lockout | P1 | specified | [R-AUTH-038](../spec/identity-and-authentication.md) |
 | IAM-043 | Inter-service join key | Out of scope | open | – |
 | IAM-044 | Legacy API keys | Out of scope | open | – |
-| IAM-045 | Encryption of stored configuration secrets | MVP | specified | [R-ARCH-021](../spec/architecture.md), [R-REPO-033](../spec/repositories-and-proxy.md) |
+| IAM-045 | Encryption of stored configuration secrets | MVP | specified | [R-ARCH-021](../spec/architecture.md) (implemented), [R-REPO-033](../spec/repositories-and-proxy.md) |
 | IAM-046 | Signing key pairs | P2 | open | – |
 | IAM-047 | External secret-manager connectors (HashiCorp Vault) | P2 | open | – |
 | IAM-048 | JAR signing keystore for virtual repositories | P2 | open | – |
@@ -600,7 +602,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 Catalog page: [authentication-providers.md](../features/authentication-providers.md) · specified by priority: MVP 13 of 13 · P1 5 of 5 · P2 0 of 25 · Out of scope 0 of 1
 
 <details>
-<summary>44 features: 18 specified, 26 open</summary>
+<summary>44 features: 18 specified, 26 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -656,7 +658,7 @@ Catalog page: [authentication-providers.md](../features/authentication-providers
 Catalog page: [access-tokens.md](../features/access-tokens.md) · specified by priority: MVP 24 of 24 · P1 3 of 3 · P2 0 of 12 · Later 0 of 6 · Out of scope 0 of 3
 
 <details>
-<summary>48 features: 27 specified, 21 open</summary>
+<summary>48 features: 27 specified, 21 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -716,7 +718,7 @@ Catalog page: [access-tokens.md](../features/access-tokens.md) · specified by p
 Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · specified by priority: MVP 20 of 20 · P1 9 of 9 · P2 2 of 10 · Later 0 of 1
 
 <details>
-<summary>40 features: 31 specified, 9 open</summary>
+<summary>40 features: 31 specified, 9 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -768,16 +770,16 @@ Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · sp
 Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specified by priority: MVP 12 of 12 · P1 7 of 7 · P2 2 of 20 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>41 features: 21 specified, 20 open</summary>
+<summary>41 features: 21 specified, 20 open, 11 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| STOR-001 | Content-addressed binary storage with deduplication | MVP | specified | [R-ARCH-009](../spec/architecture.md), [R-ARCH-011](../spec/architecture.md), [R-STOR-001](../spec/storage.md), [R-STOR-003](../spec/storage.md), [R-STOR-004](../spec/storage.md), [R-STOR-005](../spec/storage.md) |
-| STOR-002 | Reference-only copy, move and delete | MVP | specified | [R-ARCH-009](../spec/architecture.md), [R-STOR-003](../spec/storage.md), [R-STOR-005](../spec/storage.md), [R-STOR-018](../spec/storage.md), [R-STOR-019](../spec/storage.md) |
+| STOR-001 | Content-addressed binary storage with deduplication | MVP | specified | [R-ARCH-009](../spec/architecture.md) (implemented), [R-ARCH-011](../spec/architecture.md), [R-STOR-001](../spec/storage.md) (implemented), [R-STOR-003](../spec/storage.md) (implemented), [R-STOR-004](../spec/storage.md) (implemented), [R-STOR-005](../spec/storage.md) (implemented) |
+| STOR-002 | Reference-only copy, move and delete | MVP | specified | [R-ARCH-009](../spec/architecture.md) (implemented), [R-STOR-003](../spec/storage.md) (implemented), [R-STOR-005](../spec/storage.md) (implemented), [R-STOR-018](../spec/storage.md), [R-STOR-019](../spec/storage.md) |
 | STOR-003 | Checksum-first transfers | P1 | specified | [R-STOR-008](../spec/storage.md) |
-| STOR-004 | SHA-256 kept as a first-class checksum | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-002](../spec/storage.md) |
+| STOR-004 | SHA-256 kept as a first-class checksum | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-002](../spec/storage.md) (implemented) |
 | STOR-005 | SHA-256 backfill job | P2 | open | – |
-| STOR-006 | Binary store configuration | MVP | specified | [R-STOR-030](../spec/storage.md), [R-STOR-035](../spec/storage.md) |
+| STOR-006 | Binary store configuration | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) (implemented) |
 | STOR-007 | Composable provider chain and built-in templates | P2 | open | – |
 | STOR-008 | Local file-system store | P2 | open | – |
 | STOR-009 | Node-local read cache | P2 | open | – |
@@ -788,27 +790,27 @@ Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specif
 | STOR-014 | Cluster-shared node-local stores | P2 | open | – |
 | STOR-015 | Rebalancing and storage optimization | P2 | open | – |
 | STOR-016 | Asynchronous upload to the persistent store | P2 | open | – |
-| STOR-017 | Retry of store operations | P1 | specified | [R-STOR-033](../spec/storage.md) |
+| STOR-017 | Retry of store operations | P1 | implemented | [R-STOR-033](../spec/storage.md) (implemented) |
 | STOR-018 | Binary fetch workers for federated repositories | Later | open | – |
-| STOR-019 | Direct (synchronous) upload to object storage | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-004](../spec/storage.md), [R-STOR-005](../spec/storage.md) |
-| STOR-020 | Object-store connection and bucket settings | MVP | specified | [R-STOR-030](../spec/storage.md) |
-| STOR-021 | Object-store authentication | MVP | specified | [R-STOR-031](../spec/storage.md) |
+| STOR-019 | Direct (synchronous) upload to object storage | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-STOR-004](../spec/storage.md) (implemented), [R-STOR-005](../spec/storage.md) (implemented) |
+| STOR-020 | Object-store connection and bucket settings | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented) |
+| STOR-021 | Object-store authentication | MVP | implemented | [R-STOR-031](../spec/storage.md) (implemented) |
 | STOR-022 | Object-store encryption | P1 | specified | [R-STOR-032](../spec/storage.md) |
-| STOR-023 | Multipart upload and transfer thresholds | MVP | specified | [R-STOR-006](../spec/storage.md) |
-| STOR-024 | Object-store connection pool, timeouts and transport health | MVP | specified | [R-STOR-033](../spec/storage.md) |
+| STOR-023 | Multipart upload and transfer thresholds | MVP | implemented | [R-STOR-006](../spec/storage.md) (implemented) |
+| STOR-024 | Object-store connection pool, timeouts and transport health | MVP | implemented | [R-STOR-033](../spec/storage.md) (implemented) |
 | STOR-025 | Outbound proxy for object-store traffic | P1 | specified | [R-STOR-034](../spec/storage.md) |
 | STOR-026 | Multi-bucket sharding on object storage | P2 | open | – |
 | STOR-027 | Migration of an existing store into object storage | P2 | open | – |
 | STOR-028 | Storage-class compatibility | P2 | open | – |
-| STOR-029 | Compatibility with S3-compatible object stores | MVP | specified | [R-STOR-030](../spec/storage.md), [R-STOR-035](../spec/storage.md) |
+| STOR-029 | Compatibility with S3-compatible object stores | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) (implemented) |
 | STOR-030 | Google Cloud Storage | P2 | open | – |
 | STOR-031 | Azure Blob Storage | P2 | open | – |
-| STOR-032 | Download redirect to signed object-storage URLs | P2 | specified | [R-STOR-014](../spec/storage.md) |
-| STOR-033 | Minimum size for redirected downloads | P2 | specified | [R-STOR-014](../spec/storage.md) |
+| STOR-032 | Download redirect to signed object-storage URLs | P2 | implemented | [R-STOR-014](../spec/storage.md) (implemented) |
+| STOR-033 | Minimum size for redirected downloads | P2 | implemented | [R-STOR-014](../spec/storage.md) (implemented) |
 | STOR-034 | CDN-signed download URLs | P2 | open | – |
 | STOR-035 | Client choice of the redirect target | P2 | open | – |
-| STOR-036 | Garbage collection of unreferenced binaries | MVP | specified | [R-STOR-024](../spec/storage.md) |
-| STOR-037 | Garbage-collection schedule and manual run | MVP | specified | [R-ARCH-016](../spec/architecture.md), [R-STOR-025](../spec/storage.md) |
+| STOR-036 | Garbage collection of unreferenced binaries | MVP | implemented | [R-STOR-024](../spec/storage.md) (implemented) |
+| STOR-037 | Garbage-collection schedule and manual run | MVP | implemented | [R-ARCH-016](../spec/architecture.md) (implemented), [R-STOR-025](../spec/storage.md) (implemented) |
 | STOR-038 | Pruning unreferenced data in the store | P1 | specified | [R-STOR-026](../spec/storage.md) |
 | STOR-039 | Storage summary | P1 | specified | [R-OPS-023](../spec/operations-and-observability.md), [R-STOR-028](../spec/storage.md) |
 | STOR-040 | Storage quota and disk-space thresholds | P1 | specified | [R-STOR-029](../spec/storage.md) |
@@ -821,7 +823,7 @@ Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specif
 Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) · specified by priority: P1 26 of 26 · P2 0 of 3 · Later 0 of 11 · Out of scope 0 of 2
 
 <details>
-<summary>42 features: 26 specified, 16 open</summary>
+<summary>42 features: 26 specified, 16 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -875,77 +877,77 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 0 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 60 specified, 19 open</summary>
+<summary>79 features: 60 specified, 19 open, 25 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| HA-001 | Active-active cluster of identical nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-ARCH-032](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) |
-| HA-002 | Cluster-wide task execution without a primary node | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-ARCH-016](../spec/architecture.md), [R-ARCH-017](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md), [R-HA-005](../spec/ha-and-helm.md) |
-| HA-003 | Shared metadata database as the cluster backbone | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-HA-007](../spec/ha-and-helm.md), [R-HA-013](../spec/ha-and-helm.md) |
-| HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) |
-| HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md), [R-HA-061](../spec/ha-and-helm.md) |
-| HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md), [R-ARCH-017](../spec/architecture.md), [R-ARCH-018](../spec/architecture.md), [R-ARCH-030](../spec/architecture.md), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) |
-| HA-007 | Distributed locking through the database | MVP | specified | [R-ARCH-017](../spec/architecture.md), [R-ARCH-030](../spec/architecture.md), [R-ARCH-033](../spec/architecture.md), [R-HA-005](../spec/ha-and-helm.md), [R-HA-006](../spec/ha-and-helm.md) |
+| HA-001 | Active-active cluster of identical nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) |
+| HA-002 | Cluster-wide task execution without a primary node | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md), [R-HA-005](../spec/ha-and-helm.md) |
+| HA-003 | Shared metadata database as the cluster backbone | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-013](../spec/ha-and-helm.md) (implemented) |
+| HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) |
+| HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md) (implemented), [R-HA-061](../spec/ha-and-helm.md) (implemented) |
+| HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-018](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) (implemented) |
+| HA-007 | Distributed locking through the database | MVP | specified | [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-ARCH-033](../spec/architecture.md), [R-HA-005](../spec/ha-and-helm.md), [R-HA-006](../spec/ha-and-helm.md) (implemented) |
 | HA-008 | Network locality of cluster components | MVP | specified | [R-HA-049](../spec/ha-and-helm.md) |
-| HA-009 | Horizontal scaling: adding and removing nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-ARCH-032](../spec/architecture.md), [R-HA-003](../spec/ha-and-helm.md), [R-HA-059](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) |
-| HA-010 | Deployment topology: single node or cluster | MVP | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md) |
+| HA-009 | Horizontal scaling: adding and removing nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md), [R-HA-059](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md) (implemented), [R-AUTH-042](../spec/identity-and-authentication.md) |
+| HA-010 | Deployment topology: single node or cluster | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md) |
 | HA-011 | Active-passive warm standby | P2 | open | – |
-| HA-012 | Single client entry point with path-based routing | MVP | specified | [R-ARCH-005](../spec/architecture.md), [R-HA-037](../spec/ha-and-helm.md) |
+| HA-012 | Single client entry point with path-based routing | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-013 | Internal service registry and health-gated routing | Later | open | – |
 | HA-014 | Availability-zone affinity for internal routing | P2 | open | – |
-| HA-015 | Components deployed as separately scaled workloads | P1 | specified | [R-ARCH-001](../spec/architecture.md), [R-HA-002](../spec/ha-and-helm.md), [R-HA-062](../spec/ha-and-helm.md) |
-| HA-016 | Cluster encryption key | MVP | specified | [R-API-049](../spec/api-and-ui.md), [R-ARCH-021](../spec/architecture.md), [R-HA-027](../spec/ha-and-helm.md) |
+| HA-015 | Components deployed as separately scaled workloads | P1 | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-HA-002](../spec/ha-and-helm.md) (implemented), [R-HA-062](../spec/ha-and-helm.md) |
+| HA-016 | Cluster encryption key | MVP | specified | [R-API-049](../spec/api-and-ui.md), [R-ARCH-021](../spec/architecture.md) (implemented), [R-HA-027](../spec/ha-and-helm.md) (implemented) |
 | HA-017 | Service trust key provisioning and rotation | Out of scope | open | – |
 | HA-018 | Internal TLS with a built-in certificate authority | P2 | open | – |
-| HA-019 | Trust store for outbound TLS connections | MVP | specified | [R-ARCH-022](../spec/architecture.md), [R-HA-043](../spec/ha-and-helm.md) |
-| HA-020 | IPv6 and dual-stack networking | P1 | specified | [R-ARCH-005](../spec/architecture.md), [R-HA-044](../spec/ha-and-helm.md) |
-| HA-021 | Network ports and listener layout | MVP | specified | [R-ARCH-005](../spec/architecture.md), [R-HA-028](../spec/ha-and-helm.md) |
-| HA-022 | Load balancer in front of the cluster | MVP | specified | [R-HA-037](../spec/ha-and-helm.md) |
-| HA-023 | Health endpoints for load balancers and probes | MVP | specified | [R-HA-008](../spec/ha-and-helm.md), [R-OPS-001](../spec/operations-and-observability.md) |
-| HA-024 | Proxy requirements for large and long transfers | MVP | specified | [R-ARCH-005](../spec/architecture.md), [R-HA-039](../spec/ha-and-helm.md) |
-| HA-025 | Forwarded headers and the public base URL | MVP | specified | [R-ARCH-006](../spec/architecture.md), [R-HA-040](../spec/ha-and-helm.md) |
+| HA-019 | Trust store for outbound TLS connections | MVP | specified | [R-ARCH-022](../spec/architecture.md) (implemented), [R-HA-043](../spec/ha-and-helm.md) |
+| HA-020 | IPv6 and dual-stack networking | P1 | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-044](../spec/ha-and-helm.md) |
+| HA-021 | Network ports and listener layout | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-028](../spec/ha-and-helm.md) (implemented) |
+| HA-022 | Load balancer in front of the cluster | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
+| HA-023 | Health endpoints for load balancers and probes | MVP | specified | [R-HA-008](../spec/ha-and-helm.md), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
+| HA-024 | Proxy requirements for large and long transfers | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-HA-039](../spec/ha-and-helm.md) |
+| HA-025 | Forwarded headers and the public base URL | MVP | specified | [R-ARCH-006](../spec/architecture.md) (implemented), [R-HA-040](../spec/ha-and-helm.md) |
 | HA-026 | Reverse-proxy configuration generator | P2 | open | – |
-| HA-027 | Container-registry routing at the edge | P1 | specified | [R-HA-041](../spec/ha-and-helm.md) |
+| HA-027 | Container-registry routing at the edge | P1 | implemented | [R-HA-041](../spec/ha-and-helm.md) (implemented) |
 | HA-028 | Client-certificate forwarding from the reverse proxy | P2 | open | – |
-| HA-029 | Helm chart as the Kubernetes deployment | MVP | specified | [R-HA-028](../spec/ha-and-helm.md), [R-HA-031](../spec/ha-and-helm.md) |
-| HA-030 | Fail-fast chart validation | MVP | specified | [R-HA-029](../spec/ha-and-helm.md) |
-| HA-031 | Cluster key provisioning in the chart | MVP | specified | [R-HA-027](../spec/ha-and-helm.md) |
-| HA-032 | Replica count and clustered mode in the chart | MVP | specified | [R-HA-028](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md) |
-| HA-033 | External database configuration in the chart | MVP | specified | [R-HA-030](../spec/ha-and-helm.md) |
+| HA-029 | Helm chart as the Kubernetes deployment | MVP | specified | [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-031](../spec/ha-and-helm.md) |
+| HA-030 | Fail-fast chart validation | MVP | implemented | [R-HA-029](../spec/ha-and-helm.md) (implemented) |
+| HA-031 | Cluster key provisioning in the chart | MVP | implemented | [R-HA-027](../spec/ha-and-helm.md) (implemented) |
+| HA-032 | Replica count and clustered mode in the chart | MVP | implemented | [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-032](../spec/ha-and-helm.md) (implemented) |
+| HA-033 | External database configuration in the chart | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented) |
 | HA-034 | Bundled evaluation database | P2 | open | – |
-| HA-035 | Secrets handling in the chart | MVP | specified | [R-HA-030](../spec/ha-and-helm.md) |
-| HA-036 | Configuration rendering and override precedence | MVP | specified | [R-HA-030](../spec/ha-and-helm.md), [R-OPS-028](../spec/operations-and-observability.md) |
-| HA-037 | First-start bootstrap | MVP | specified | [R-HA-030](../spec/ha-and-helm.md), [R-OPS-031](../spec/operations-and-observability.md) |
-| HA-038 | Kubernetes Service exposure | MVP | specified | [R-HA-028](../spec/ha-and-helm.md), [R-HA-037](../spec/ha-and-helm.md) |
-| HA-039 | Ingress exposure | MVP | specified | [R-HA-037](../spec/ha-and-helm.md) |
+| HA-035 | Secrets handling in the chart | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented) |
+| HA-036 | Configuration rendering and override precedence | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented), [R-OPS-028](../spec/operations-and-observability.md) (implemented) |
+| HA-037 | First-start bootstrap | MVP | specified | [R-HA-030](../spec/ha-and-helm.md) (implemented), [R-OPS-031](../spec/operations-and-observability.md) |
+| HA-038 | Kubernetes Service exposure | MVP | implemented | [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
+| HA-039 | Ingress exposure | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-040 | Gateway API exposure | P1 | specified | [R-HA-038](../spec/ha-and-helm.md), [R-HA-053](../spec/ha-and-helm.md) |
 | HA-041 | Bundled edge reverse proxy | P2 | open | – |
-| HA-042 | TLS termination topology in Kubernetes | MVP | specified | [R-HA-037](../spec/ha-and-helm.md) |
-| HA-043 | Horizontal pod autoscaling | MVP | specified | [R-HA-032](../spec/ha-and-helm.md) |
-| HA-044 | Scheduling and disruption controls | MVP | specified | [R-HA-032](../spec/ha-and-helm.md) |
-| HA-045 | Container security hardening | MVP | specified | [R-HA-033](../spec/ha-and-helm.md) |
-| HA-046 | Health probes in the chart | MVP | specified | [R-HA-034](../spec/ha-and-helm.md) |
-| HA-047 | Graceful termination and connection draining | MVP | specified | [R-ARCH-024](../spec/architecture.md), [R-HA-011](../spec/ha-and-helm.md), [R-HA-059](../spec/ha-and-helm.md) |
+| HA-042 | TLS termination topology in Kubernetes | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
+| HA-043 | Horizontal pod autoscaling | MVP | implemented | [R-HA-032](../spec/ha-and-helm.md) (implemented) |
+| HA-044 | Scheduling and disruption controls | MVP | implemented | [R-HA-032](../spec/ha-and-helm.md) (implemented) |
+| HA-045 | Container security hardening | MVP | implemented | [R-HA-033](../spec/ha-and-helm.md) (implemented) |
+| HA-046 | Health probes in the chart | MVP | implemented | [R-HA-034](../spec/ha-and-helm.md) (implemented) |
+| HA-047 | Graceful termination and connection draining | MVP | specified | [R-ARCH-024](../spec/architecture.md) (implemented), [R-HA-011](../spec/ha-and-helm.md) (implemented), [R-HA-059](../spec/ha-and-helm.md) |
 | HA-048 | Custom volumes and volume mounts | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
 | HA-049 | Custom init containers | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
 | HA-050 | Custom sidecar containers | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
 | HA-051 | Environment variables, lifecycle hooks and ConfigMaps | P1 | specified | [R-HA-046](../spec/ha-and-helm.md) |
-| HA-052 | Resource requests, limits and sizing profiles | MVP | specified | [R-HA-036](../spec/ha-and-helm.md), [R-HA-050](../spec/ha-and-helm.md) |
-| HA-053 | Persistence and storage back-end selection in the chart | MVP | specified | [R-HA-030](../spec/ha-and-helm.md) |
+| HA-052 | Resource requests, limits and sizing profiles | MVP | specified | [R-HA-036](../spec/ha-and-helm.md) (implemented), [R-HA-050](../spec/ha-and-helm.md) |
+| HA-053 | Persistence and storage back-end selection in the chart | MVP | implemented | [R-HA-030](../spec/ha-and-helm.md) (implemented) |
 | HA-054 | Network policies | MVP | specified | [R-HA-042](../spec/ha-and-helm.md) |
 | HA-055 | Log shipping and metrics integration in the chart | P1 | specified | [R-HA-045](../spec/ha-and-helm.md) |
 | HA-056 | Private image registry and air-gapped installation | P1 | specified | [R-HA-047](../spec/ha-and-helm.md) |
 | HA-057 | Server-side extension scripts delivered through the chart | Later | open | – |
 | HA-073 | Message-broker TLS for the scanning component | Later | open | – |
-| HA-058 | Supported database engine and versions | MVP | specified | [R-HA-013](../spec/ha-and-helm.md) |
+| HA-058 | Supported database engine and versions | MVP | implemented | [R-HA-013](../spec/ha-and-helm.md) (implemented) |
 | HA-059 | Non-PostgreSQL database engines | Out of scope | open | – |
-| HA-060 | Database provisioning | MVP | specified | [R-HA-014](../spec/ha-and-helm.md) |
-| HA-061 | Database connection settings | MVP | specified | [R-HA-015](../spec/ha-and-helm.md) |
-| HA-062 | Connection pool sizing and the cluster-wide connection budget | MVP | specified | [R-ARCH-019](../spec/architecture.md), [R-HA-016](../spec/ha-and-helm.md), [R-HA-058](../spec/ha-and-helm.md) |
-| HA-063 | TLS to the database | MVP | specified | [R-HA-015](../spec/ha-and-helm.md) |
+| HA-060 | Database provisioning | MVP | implemented | [R-HA-014](../spec/ha-and-helm.md) (implemented) |
+| HA-061 | Database connection settings | MVP | implemented | [R-HA-015](../spec/ha-and-helm.md) (implemented) |
+| HA-062 | Connection pool sizing and the cluster-wide connection budget | MVP | implemented | [R-ARCH-019](../spec/architecture.md) (implemented), [R-HA-016](../spec/ha-and-helm.md) (implemented), [R-HA-058](../spec/ha-and-helm.md) (implemented) |
+| HA-063 | TLS to the database | MVP | implemented | [R-HA-015](../spec/ha-and-helm.md) (implemented) |
 | HA-064 | PostgreSQL high availability and failover | MVP | specified | [R-HA-009](../spec/ha-and-helm.md) |
-| HA-065 | Database password rotation without downtime | P1 | specified | [R-HA-017](../spec/ha-and-helm.md) |
-| HA-066 | Schema migration on upgrade | MVP | specified | [R-ARCH-026](../spec/architecture.md), [R-HA-018](../spec/ha-and-helm.md), [R-HA-019](../spec/ha-and-helm.md) |
+| HA-065 | Database password rotation without downtime | P1 | implemented | [R-HA-017](../spec/ha-and-helm.md) (implemented) |
+| HA-066 | Schema migration on upgrade | MVP | implemented | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented) |
 | HA-067 | Hardware sizing tiers | MVP | specified | [R-HA-050](../spec/ha-and-helm.md) |
 | HA-068 | Platform prerequisites | MVP | specified | [R-HA-049](../spec/ha-and-helm.md) |
 | HA-074 | Preflight environment check | P2 | open | – |
@@ -954,7 +956,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-077 | Container installation without Kubernetes | P1 | open | – |
 | HA-078 | Host installation from OS packages, archives and playbooks | P2 | open | – |
 | HA-079 | Single-host evaluation installer | P2 | open | – |
-| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md), [R-HA-019](../spec/ha-and-helm.md), [R-HA-020](../spec/ha-and-helm.md) |
+| HA-069 | Rolling upgrade without downtime | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-019](../spec/ha-and-helm.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) |
 | HA-070 | Upgrade preparation | MVP | specified | [R-HA-021](../spec/ha-and-helm.md) |
 | HA-071 | Uninstall and data cleanup | MVP | specified | [R-HA-048](../spec/ha-and-helm.md) |
 | HA-072 | License installation and license gating of clustering | Out of scope | open | – |
@@ -966,36 +968,36 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 Catalog page: [operations-and-monitoring.md](../features/operations-and-monitoring.md) · specified by priority: MVP 17 of 17 · P1 20 of 23 · P2 7 of 34 · Later 0 of 1 · Out of scope 0 of 25
 
 <details>
-<summary>100 features: 44 specified, 56 open</summary>
+<summary>100 features: 44 specified, 56 open, 15 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| OPS-001 | Ping | MVP | specified | [R-OPS-002](../spec/operations-and-observability.md) |
-| OPS-002 | Readiness probe | MVP | specified | [R-ARCH-024](../spec/architecture.md), [R-OPS-001](../spec/operations-and-observability.md) |
-| OPS-003 | Liveness probe | MVP | specified | [R-ARCH-024](../spec/architecture.md), [R-OPS-001](../spec/operations-and-observability.md) |
-| OPS-004 | Health-check tuning | P1 | specified | [R-OPS-001](../spec/operations-and-observability.md) |
-| OPS-005 | Version information | MVP | specified | [R-OPS-002](../spec/operations-and-observability.md) |
-| OPS-006 | Application headers for anonymous callers | P1 | specified | [R-OPS-002](../spec/operations-and-observability.md) |
-| OPS-007 | System information report | P2 | specified | [R-OPS-004](../spec/operations-and-observability.md) |
-| OPS-008 | Service status overview | P1 | specified | [R-API-038](../spec/api-and-ui.md), [R-UI-038](../spec/api-and-ui.md), [R-OPS-003](../spec/operations-and-observability.md) |
+| OPS-001 | Ping | MVP | implemented | [R-OPS-002](../spec/operations-and-observability.md) (implemented) |
+| OPS-002 | Readiness probe | MVP | implemented | [R-ARCH-024](../spec/architecture.md) (implemented), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
+| OPS-003 | Liveness probe | MVP | implemented | [R-ARCH-024](../spec/architecture.md) (implemented), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
+| OPS-004 | Health-check tuning | P1 | implemented | [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
+| OPS-005 | Version information | MVP | implemented | [R-OPS-002](../spec/operations-and-observability.md) (implemented) |
+| OPS-006 | Application headers for anonymous callers | P1 | implemented | [R-OPS-002](../spec/operations-and-observability.md) (implemented) |
+| OPS-007 | System information report | P2 | implemented | [R-OPS-004](../spec/operations-and-observability.md) (implemented) |
+| OPS-008 | Service status overview | P1 | specified | [R-API-038](../spec/api-and-ui.md) (implemented), [R-UI-038](../spec/api-and-ui.md), [R-OPS-003](../spec/operations-and-observability.md) (implemented) |
 | OPS-009 | Cluster lock diagnostics | P2 | specified | [R-OPS-026](../spec/operations-and-observability.md) |
 | OPS-010 | Outbound connection test | P2 | open | – |
-| OPS-011 | Metrics endpoint | MVP | specified | [R-OPS-006](../spec/operations-and-observability.md) |
-| OPS-012 | Core metric families | MVP | specified | [R-BAK-014](../spec/backup-and-restore.md), [R-OPS-007](../spec/operations-and-observability.md), [R-OPS-008](../spec/operations-and-observability.md) |
+| OPS-011 | Metrics endpoint | MVP | implemented | [R-OPS-006](../spec/operations-and-observability.md) (implemented) |
+| OPS-012 | Core metric families | MVP | specified | [R-BAK-014](../spec/backup-and-restore.md), [R-OPS-007](../spec/operations-and-observability.md) (implemented), [R-OPS-008](../spec/operations-and-observability.md) |
 | OPS-013 | Auxiliary service metric families | P1 | specified | [R-OPS-008](../spec/operations-and-observability.md) |
 | OPS-014 | Federation metric families | Later | open | – |
 | OPS-015 | Metrics log output | P2 | open | – |
 | OPS-016 | Runtime management beans | Out of scope | open | – |
-| OPS-017 | Log set and file naming | MVP | specified | [R-OPS-009](../spec/operations-and-observability.md) |
-| OPS-018 | Service log record format | MVP | specified | [R-OPS-009](../spec/operations-and-observability.md) |
-| OPS-019 | Request log | MVP | specified | [R-OPS-010](../spec/operations-and-observability.md) |
+| OPS-017 | Log set and file naming | MVP | implemented | [R-OPS-009](../spec/operations-and-observability.md) (implemented) |
+| OPS-018 | Service log record format | MVP | implemented | [R-OPS-009](../spec/operations-and-observability.md) (implemented) |
+| OPS-019 | Request log | MVP | implemented | [R-OPS-010](../spec/operations-and-observability.md) (implemented) |
 | OPS-020 | Outbound request log | MVP | specified | [R-OPS-011](../spec/operations-and-observability.md) |
 | OPS-021 | Front router access log | P2 | open | – |
 | OPS-022 | Security access log | MVP | specified | [R-AUTH-041](../spec/identity-and-authentication.md), [R-OPS-015](../spec/operations-and-observability.md), [R-OPS-016](../spec/operations-and-observability.md) |
 | OPS-023 | Audit trail of security changes | MVP | specified | [R-API-019](../spec/api-and-ui.md), [R-API-039](../spec/api-and-ui.md), [R-UI-037](../spec/api-and-ui.md), [R-AUTH-041](../spec/identity-and-authentication.md), [R-OPS-015](../spec/operations-and-observability.md), [R-OPS-016](../spec/operations-and-observability.md), [R-OPS-017](../spec/operations-and-observability.md) |
 | OPS-024 | Log rotation and archiving | P2 | open | – |
-| OPS-025 | Log level configuration | P1 | specified | [R-OPS-012](../spec/operations-and-observability.md) |
-| OPS-026 | Temporary logger level override | P1 | specified | [R-OPS-012](../spec/operations-and-observability.md) |
+| OPS-025 | Log level configuration | P1 | implemented | [R-OPS-012](../spec/operations-and-observability.md) (implemented) |
+| OPS-026 | Temporary logger level override | P1 | implemented | [R-OPS-012](../spec/operations-and-observability.md) (implemented) |
 | OPS-027 | System log viewer | P2 | open | – |
 | OPS-028 | Live log API | P2 | open | – |
 | OPS-029 | Syslog forwarding | P2 | open | – |
@@ -1009,7 +1011,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-037 | Repository import | P2 | open | – |
 | OPS-038 | Identity-service configuration export and import | P2 | open | – |
 | OPS-039 | Instance migration by export and import | P2 | specified | [R-BAK-021](../spec/backup-and-restore.md), [R-BAK-023](../spec/backup-and-restore.md), [R-BAK-025](../spec/backup-and-restore.md) |
-| OPS-040 | Node configuration file | MVP | specified | [R-ARCH-020](../spec/architecture.md), [R-OPS-028](../spec/operations-and-observability.md) |
+| OPS-040 | Node configuration file | MVP | implemented | [R-ARCH-020](../spec/architecture.md) (implemented), [R-OPS-028](../spec/operations-and-observability.md) (implemented) |
 | OPS-041 | Advanced runtime properties | P2 | open | – |
 | OPS-042 | Central configuration descriptor | P2 | open | – |
 | OPS-043 | Declarative configuration patch | P1 | specified | [R-OPS-029](../spec/operations-and-observability.md), [R-OPS-030](../spec/operations-and-observability.md) |
@@ -1020,8 +1022,8 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-048 | Identity-service configuration documents | P2 | open | – |
 | OPS-049 | Application integrations | P2 | open | – |
 | OPS-050 | MIME type mapping | P1 | specified | [R-OPS-034](../spec/operations-and-observability.md) |
-| OPS-051 | External base URL | MVP | specified | [R-AUTH-003](../spec/identity-and-authentication.md), [R-OPS-005](../spec/operations-and-observability.md) |
-| OPS-052 | Per-request base URL override | P1 | specified | [R-OPS-005](../spec/operations-and-observability.md) |
+| OPS-051 | External base URL | MVP | specified | [R-AUTH-003](../spec/identity-and-authentication.md), [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
+| OPS-052 | Per-request base URL override | P1 | implemented | [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
 | OPS-053 | Server name, date format and help | P2 | open | – |
 | OPS-054 | Logo | P2 | open | – |
 | OPS-055 | System banner message | P1 | specified | [R-OPS-025](../spec/operations-and-observability.md) |
@@ -1042,8 +1044,8 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 | OPS-070 | Package metadata re-index | P2 | specified | [R-OPS-022](../spec/operations-and-observability.md) |
 | OPS-071 | Maven index calculation | P2 | open | – |
 | OPS-072 | Upgrade compatibility policy | MVP | specified | [R-ARCH-025](../spec/architecture.md), [R-HA-021](../spec/ha-and-helm.md) |
-| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md), [R-HA-020](../spec/ha-and-helm.md) |
-| OPS-074 | Schema and data migrations on upgrade | MVP | specified | [R-ARCH-016](../spec/architecture.md), [R-ARCH-026](../spec/architecture.md), [R-HA-018](../spec/ha-and-helm.md), [R-HA-022](../spec/ha-and-helm.md) |
+| OPS-073 | Rolling upgrade of a cluster | MVP | specified | [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-020](../spec/ha-and-helm.md) |
+| OPS-074 | Schema and data migrations on upgrade | MVP | specified | [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-026](../spec/architecture.md) (implemented), [R-HA-018](../spec/ha-and-helm.md) (implemented), [R-HA-022](../spec/ha-and-helm.md) |
 | OPS-075 | Migration from another repository manager | P2 | open | – |
 | OPS-076 | Signed release artifacts | P1 | specified | [R-HA-047](../spec/ha-and-helm.md) |
 | OPS-077 | License-tier gating | Out of scope | open | – |
@@ -1078,7 +1080,7 @@ Catalog page: [operations-and-monitoring.md](../features/operations-and-monitori
 Catalog page: [events-and-extensibility.md](../features/events-and-extensibility.md) · specified by priority: MVP 1 of 1 · P1 24 of 24 · P2 1 of 12 · Later 0 of 43 · Out of scope 0 of 2
 
 <details>
-<summary>82 features: 26 specified, 56 open</summary>
+<summary>82 features: 26 specified, 56 open, 1 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1152,9 +1154,9 @@ Catalog page: [events-and-extensibility.md](../features/events-and-extensibility
 | EVT-067 | Build promotion and staging strategies | Later | open | – |
 | EVT-068 | Extension authentication realms | Later | open | – |
 | EVT-069 | Extension inventory, source retrieval, logging and UI | Later | open | – |
-| EVT-070 | Machine-readable API description | MVP | specified | [R-API-002](../spec/api-and-ui.md) |
+| EVT-070 | Machine-readable API description | MVP | implemented | [R-API-002](../spec/api-and-ui.md) (implemented) |
 | EVT-071 | Typed JSON configuration documents | P2 | open | – |
-| EVT-072 | API deprecation lifecycle | P2 | specified | [R-API-001](../spec/api-and-ui.md), [R-ARCH-025](../spec/architecture.md) |
+| EVT-072 | API deprecation lifecycle | P2 | specified | [R-API-001](../spec/api-and-ui.md) (implemented), [R-ARCH-025](../spec/architecture.md) |
 | EVT-073 | GraphQL query gateway | P2 | open | – |
 | EVT-074 | Schema introspection and interactive console | P2 | open | – |
 | EVT-075 | Package metadata GraphQL domain | P2 | open | – |
@@ -1172,7 +1174,7 @@ Catalog page: [events-and-extensibility.md](../features/events-and-extensibility
 Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifecycle.md) · specified by priority: Later 0 of 69 · Out of scope 0 of 1
 
 <details>
-<summary>70 features: 0 specified, 70 open</summary>
+<summary>70 features: 0 specified, 70 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1254,7 +1256,7 @@ Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifec
 Catalog page: [security-scanning-and-curation.md](../features/security-scanning-and-curation.md) · specified by priority: P1 0 of 22 · P2 0 of 18 · Later 0 of 56 · Out of scope 0 of 2
 
 <details>
-<summary>98 features: 0 specified, 98 open</summary>
+<summary>98 features: 0 specified, 98 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1364,7 +1366,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by priority: MVP 30 of 30 · P1 17 of 17 · P2 0 of 8 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>61 features: 47 specified, 14 open</summary>
+<summary>61 features: 47 specified, 14 open, 1 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1375,7 +1377,7 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 | UI-005 | Permission-driven rendering | MVP | specified | [R-UI-005](../spec/api-and-ui.md), [R-AUTHZ-023](../spec/authorization.md) |
 | UI-006 | Login screen | MVP | specified | [R-UI-004](../spec/api-and-ui.md) |
 | UI-007 | First-run onboarding wizard | P2 | open | – |
-| UI-058 | Supported browsers | MVP | specified | [R-UI-001](../spec/api-and-ui.md) |
+| UI-058 | Supported browsers | MVP | implemented | [R-UI-001](../spec/api-and-ui.md) (implemented) |
 | UI-008 | Packages list screen | MVP | specified | [R-UI-006](../spec/api-and-ui.md) |
 | UI-009 | Package details screen | MVP | specified | [R-UI-007](../spec/api-and-ui.md), [R-UI-008](../spec/api-and-ui.md) |
 | UI-010 | Install command panel | MVP | specified | [R-UI-009](../spec/api-and-ui.md) |
@@ -1437,11 +1439,11 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 Catalog page: [api-content-operations.md](../features/api-content-operations.md) · specified by priority: MVP 11 of 11 · P1 56 of 56 · P2 0 of 48 · Later 0 of 48 · Out of scope 0 of 3
 
 <details>
-<summary>166 features: 67 specified, 99 open</summary>
+<summary>166 features: 67 specified, 99 open, 1 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| API-001 | Common operation conventions | MVP | specified | [R-API-001](../spec/api-and-ui.md), [R-API-003](../spec/api-and-ui.md), [R-API-004](../spec/api-and-ui.md), [R-API-005](../spec/api-and-ui.md), [R-API-009](../spec/api-and-ui.md), [R-API-011](../spec/api-and-ui.md) |
+| API-001 | Common operation conventions | MVP | specified | [R-API-001](../spec/api-and-ui.md) (implemented), [R-API-003](../spec/api-and-ui.md), [R-API-004](../spec/api-and-ui.md) (implemented), [R-API-005](../spec/api-and-ui.md), [R-API-009](../spec/api-and-ui.md) (implemented), [R-API-011](../spec/api-and-ui.md) |
 | API-002 | Start, monitor and stop unreferenced-binary pruning | P1 | specified | [R-API-040](../spec/api-and-ui.md) |
 | API-003 | Item information (file or folder) | MVP | specified | [R-API-025](../spec/api-and-ui.md) |
 | API-004 | File list | P1 | specified | [R-API-025](../spec/api-and-ui.md) |
@@ -1473,7 +1475,7 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 | API-030 | Rebalance redundant storage | P2 | open | – |
 | API-031 | Storage summary | P1 | specified | [R-API-040](../spec/api-and-ui.md), [R-OPS-023](../spec/operations-and-observability.md) |
 | API-032 | Recalculate the storage summary | P1 | specified | [R-API-040](../spec/api-and-ui.md), [R-OPS-023](../spec/operations-and-observability.md) |
-| API-033 | Application metrics in OpenMetrics format | P1 | specified | [R-API-038](../spec/api-and-ui.md), [R-OPS-006](../spec/operations-and-observability.md) |
+| API-033 | Application metrics in OpenMetrics format | P1 | implemented | [R-API-038](../spec/api-and-ui.md) (implemented), [R-OPS-006](../spec/operations-and-observability.md) (implemented) |
 | API-034 | Puppet module and release listing | P2 | open | – |
 | API-035 | Source-control repository listing (tags, branches, refs) | P2 | open | – |
 | API-036 | Source-control snapshot archives | P2 | open | – |
@@ -1615,12 +1617,12 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · specified by priority: MVP 34 of 34 · P1 20 of 23 · P2 0 of 23 · Later 0 of 28 · Out of scope 0 of 6
 
 <details>
-<summary>114 features: 54 specified, 60 open</summary>
+<summary>114 features: 54 specified, 60 open, 2 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | ADMAPI-001 | Callers and privilege tiers | MVP | specified | [R-API-005](../spec/api-and-ui.md), [R-API-008](../spec/api-and-ui.md), [R-AUTHZ-010](../spec/authorization.md), [R-AUTHZ-022](../spec/authorization.md) |
-| ADMAPI-002 | Status codes and response bodies | MVP | specified | [R-API-001](../spec/api-and-ui.md), [R-API-004](../spec/api-and-ui.md), [R-API-009](../spec/api-and-ui.md), [R-API-015](../spec/api-and-ui.md), [R-AUTHZ-016](../spec/authorization.md) |
+| ADMAPI-002 | Status codes and response bodies | MVP | specified | [R-API-001](../spec/api-and-ui.md) (implemented), [R-API-004](../spec/api-and-ui.md) (implemented), [R-API-009](../spec/api-and-ui.md) (implemented), [R-API-015](../spec/api-and-ui.md), [R-AUTHZ-016](../spec/authorization.md) |
 | ADMAPI-003 | Paging styles | MVP | specified | [R-API-010](../spec/api-and-ui.md) |
 | ADMAPI-004 | Create user | MVP | specified | [R-API-031](../spec/api-and-ui.md), [R-AUTH-016](../spec/identity-and-authentication.md) |
 | ADMAPI-005 | Get user | MVP | specified | [R-API-031](../spec/api-and-ui.md), [R-AUTH-016](../spec/identity-and-authentication.md) |
@@ -1688,9 +1690,9 @@ Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · 
 | ADMAPI-066 | Project role operations | P1 | open | – |
 | ADMAPI-067 | Repository assignment and sharing operations | P1 | specified | [R-API-047](../spec/api-and-ui.md) |
 | ADMAPI-068 | Environment operations | P1 | open | – |
-| ADMAPI-069 | Health probes | MVP | specified | [R-API-038](../spec/api-and-ui.md), [R-OPS-001](../spec/operations-and-observability.md) |
-| ADMAPI-070 | Version and system information | MVP | specified | [R-API-038](../spec/api-and-ui.md), [R-OPS-002](../spec/operations-and-observability.md), [R-OPS-004](../spec/operations-and-observability.md) |
-| ADMAPI-071 | External base URL | MVP | specified | [R-API-037](../spec/api-and-ui.md), [R-OPS-005](../spec/operations-and-observability.md) |
+| ADMAPI-069 | Health probes | MVP | implemented | [R-API-038](../spec/api-and-ui.md) (implemented), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
+| ADMAPI-070 | Version and system information | MVP | implemented | [R-API-038](../spec/api-and-ui.md) (implemented), [R-OPS-002](../spec/operations-and-observability.md) (implemented), [R-OPS-004](../spec/operations-and-observability.md) (implemented) |
+| ADMAPI-071 | External base URL | MVP | specified | [R-API-037](../spec/api-and-ui.md), [R-OPS-005](../spec/operations-and-observability.md) (implemented) |
 | ADMAPI-072 | Read and replace the whole configuration document | P1 | specified | [R-API-044](../spec/api-and-ui.md), [R-OPS-032](../spec/operations-and-observability.md) |
 | ADMAPI-073 | Apply partial configuration changes from YAML | P1 | specified | [R-API-044](../spec/api-and-ui.md), [R-OPS-030](../spec/operations-and-observability.md) |
 | ADMAPI-074 | Verify an outbound connection | P2 | open | – |
@@ -1699,7 +1701,7 @@ Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · 
 | ADMAPI-077 | Re-index paths in the package metadata service | P2 | open | – |
 | ADMAPI-078 | Cluster lock diagnostics | P1 | specified | [R-API-045](../spec/api-and-ui.md), [R-OPS-026](../spec/operations-and-observability.md) |
 | ADMAPI-079 | Upstream curation availability setting | Later | open | – |
-| ADMAPI-080 | Temporary logger levels | P1 | specified | [R-API-045](../spec/api-and-ui.md), [R-OPS-012](../spec/operations-and-observability.md) |
+| ADMAPI-080 | Temporary logger levels | P1 | specified | [R-API-045](../spec/api-and-ui.md), [R-OPS-012](../spec/operations-and-observability.md) (implemented) |
 | ADMAPI-081 | Support bundles | P1 | specified | [R-API-045](../spec/api-and-ui.md), [R-OPS-027](../spec/operations-and-observability.md) |
 | ADMAPI-082 | Support bundles of the distribution service | Later | open | – |
 | ADMAPI-083 | System and repository import and export | P2 | open | – |
@@ -1748,12 +1750,12 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 | FMT-004 | Format eligibility for federation | Later | open | – |
 | FMT-005 | Container-only deployment profile | Out of scope | open | – |
 | FMT-006 | Client setup instructions across formats | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-NPM-041](../spec/formats/npm.md) |
-| FMT-007 | Package view and file view | MVP | specified | [R-ARCH-009](../spec/architecture.md) |
+| FMT-007 | Package view and file view | MVP | implemented | [R-ARCH-009](../spec/architecture.md) (implemented) |
 | FMT-008 | Format property namespaces | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-NPM-006](../spec/formats/npm.md) |
 | FMT-009 | Format-aware deploy coordinates | P2 | open | – |
 | FMT-010 | Default layout per format and layout mapping | P1 | open | – |
-| FMT-011 | Automatic metadata calculation | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-ARCH-012](../spec/architecture.md), [R-ARCH-016](../spec/architecture.md), [R-NPM-010](../spec/formats/npm.md), [R-NUGET-005](../spec/formats/nuget.md) |
-| FMT-012 | Manual metadata recalculation | P1 | specified | [R-ARCH-016](../spec/architecture.md), [R-NPM-035](../spec/formats/npm.md), [R-NUGET-025](../spec/formats/nuget.md) |
+| FMT-011 | Automatic metadata calculation | MVP | specified | [R-ARCH-008](../spec/architecture.md), [R-ARCH-012](../spec/architecture.md), [R-ARCH-016](../spec/architecture.md) (implemented), [R-NPM-010](../spec/formats/npm.md), [R-NUGET-005](../spec/formats/nuget.md) |
+| FMT-012 | Manual metadata recalculation | P1 | specified | [R-ARCH-016](../spec/architecture.md) (implemented), [R-NPM-035](../spec/formats/npm.md), [R-NUGET-025](../spec/formats/nuget.md) |
 | FMT-013 | Client authentication styles and anonymous fallbacks | MVP | specified | [R-AUTH-033](../spec/identity-and-authentication.md) |
 | FMT-014 | Package settings screen | P1 | open | – |
 
@@ -1762,7 +1764,7 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by priority: MVP 37 of 37 · P1 15 of 15 · P2 0 of 8 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>62 features: 52 specified, 10 open</summary>
+<summary>62 features: 52 specified, 10 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1836,7 +1838,7 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by priority: MVP 35 of 35 · P1 7 of 7 · P2 0 of 12 · Later 0 of 2
 
 <details>
-<summary>56 features: 42 specified, 14 open</summary>
+<summary>56 features: 42 specified, 14 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1904,7 +1906,7 @@ Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by p
 Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by priority: P1 0 of 34 · P2 0 of 13 · Later 0 of 3 · Out of scope 0 of 2
 
 <details>
-<summary>52 features: 0 specified, 52 open</summary>
+<summary>52 features: 0 specified, 52 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1968,7 +1970,7 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by priority: P1 0 of 15 · P2 0 of 4 · Later 0 of 1
 
 <details>
-<summary>20 features: 0 specified, 20 open</summary>
+<summary>20 features: 0 specified, 20 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2000,7 +2002,7 @@ Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by prior
 Catalog page: [formats/helm.md](../features/formats/helm.md) · specified by priority: P1 0 of 18 · P2 0 of 6 · Later 0 of 1
 
 <details>
-<summary>25 features: 0 specified, 25 open</summary>
+<summary>25 features: 0 specified, 25 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2037,7 +2039,7 @@ Catalog page: [formats/helm.md](../features/formats/helm.md) · specified by pri
 Catalog page: [formats/maven.md](../features/formats/maven.md) · specified by priority: P1 0 of 23 · P2 0 of 15 · Later 0 of 1
 
 <details>
-<summary>39 features: 0 specified, 39 open</summary>
+<summary>39 features: 0 specified, 39 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2088,7 +2090,7 @@ Catalog page: [formats/maven.md](../features/formats/maven.md) · specified by p
 Catalog page: [formats/pypi.md](../features/formats/pypi.md) · specified by priority: P1 0 of 23 · P2 0 of 6
 
 <details>
-<summary>29 features: 0 specified, 29 open</summary>
+<summary>29 features: 0 specified, 29 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2129,7 +2131,7 @@ Catalog page: [formats/pypi.md](../features/formats/pypi.md) · specified by pri
 Catalog page: [formats/go.md](../features/formats/go.md) · specified by priority: P1 0 of 13 · P2 0 of 3
 
 <details>
-<summary>16 features: 0 specified, 16 open</summary>
+<summary>16 features: 0 specified, 16 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2377,7 +2379,7 @@ Catalog page: [formats/conda.md](../features/formats/conda.md) · specified by p
 Catalog page: [formats/cran.md](../features/formats/cran.md) · specified by priority: P2 0 of 16
 
 <details>
-<summary>16 features: 0 specified, 16 open</summary>
+<summary>16 features: 0 specified, 16 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2405,7 +2407,7 @@ Catalog page: [formats/cran.md](../features/formats/cran.md) · specified by pri
 Catalog page: [formats/debian.md](../features/formats/debian.md) · specified by priority: P2 0 of 27 · Later 0 of 1
 
 <details>
-<summary>28 features: 0 specified, 28 open</summary>
+<summary>28 features: 0 specified, 28 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2461,7 +2463,7 @@ Catalog page: [formats/git-lfs.md](../features/formats/git-lfs.md) · specified 
 Catalog page: [formats/jvm-other.md](../features/formats/jvm-other.md) · specified by priority: P1 0 of 4 · P2 0 of 19 · Later 0 of 1
 
 <details>
-<summary>24 features: 0 specified, 24 open</summary>
+<summary>24 features: 0 specified, 24 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2497,7 +2499,7 @@ Catalog page: [formats/jvm-other.md](../features/formats/jvm-other.md) · specif
 Catalog page: [formats/hex.md](../features/formats/hex.md) · specified by priority: P2 0 of 18
 
 <details>
-<summary>18 features: 0 specified, 18 open</summary>
+<summary>18 features: 0 specified, 18 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2527,7 +2529,7 @@ Catalog page: [formats/hex.md](../features/formats/hex.md) · specified by prior
 Catalog page: [formats/huggingface.md](../features/formats/huggingface.md) · specified by priority: P2 0 of 15 · Later 0 of 3
 
 <details>
-<summary>18 features: 0 specified, 18 open</summary>
+<summary>18 features: 0 specified, 18 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2557,7 +2559,7 @@ Catalog page: [formats/huggingface.md](../features/formats/huggingface.md) · sp
 Catalog page: [formats/luarocks.md](../features/formats/luarocks.md) · specified by priority: P2 0 of 17 · Later 0 of 1
 
 <details>
-<summary>18 features: 0 specified, 18 open</summary>
+<summary>18 features: 0 specified, 18 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2587,7 +2589,7 @@ Catalog page: [formats/luarocks.md](../features/formats/luarocks.md) · specifie
 Catalog page: [formats/nix.md](../features/formats/nix.md) · specified by priority: P2 0 of 19 · Later 0 of 1
 
 <details>
-<summary>20 features: 0 specified, 20 open</summary>
+<summary>20 features: 0 specified, 20 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2634,7 +2636,7 @@ Catalog page: [formats/opkg.md](../features/formats/opkg.md) · specified by pri
 Catalog page: [formats/pub.md](../features/formats/pub.md) · specified by priority: P2 0 of 18 · Later 0 of 1
 
 <details>
-<summary>19 features: 0 specified, 19 open</summary>
+<summary>19 features: 0 specified, 19 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2684,7 +2686,7 @@ Catalog page: [formats/puppet.md](../features/formats/puppet.md) · specified by
 Catalog page: [formats/rpm.md](../features/formats/rpm.md) · specified by priority: P2 0 of 18
 
 <details>
-<summary>18 features: 0 specified, 18 open</summary>
+<summary>18 features: 0 specified, 18 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2714,7 +2716,7 @@ Catalog page: [formats/rpm.md](../features/formats/rpm.md) · specified by prior
 Catalog page: [formats/rubygems.md](../features/formats/rubygems.md) · specified by priority: P2 0 of 18
 
 <details>
-<summary>18 features: 0 specified, 18 open</summary>
+<summary>18 features: 0 specified, 18 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2744,7 +2746,7 @@ Catalog page: [formats/rubygems.md](../features/formats/rubygems.md) · specifie
 Catalog page: [formats/swift.md](../features/formats/swift.md) · specified by priority: P2 0 of 18
 
 <details>
-<summary>18 features: 0 specified, 18 open</summary>
+<summary>18 features: 0 specified, 18 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2774,7 +2776,7 @@ Catalog page: [formats/swift.md](../features/formats/swift.md) · specified by p
 Catalog page: [formats/terraform.md](../features/formats/terraform.md) · specified by priority: P2 0 of 23
 
 <details>
-<summary>23 features: 0 specified, 23 open</summary>
+<summary>23 features: 0 specified, 23 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2840,7 +2842,7 @@ Catalog page: [formats/vcs.md](../features/formats/vcs.md) · specified by prior
 Catalog page: [formats/ml-models.md](../features/formats/ml-models.md) · specified by priority: P2 0 of 15 · Later 0 of 3 · Out of scope 0 of 1
 
 <details>
-<summary>19 features: 0 specified, 19 open</summary>
+<summary>19 features: 0 specified, 19 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2871,7 +2873,7 @@ Catalog page: [formats/ml-models.md](../features/formats/ml-models.md) · specif
 Catalog page: [formats/ai-and-ide.md](../features/formats/ai-and-ide.md) · specified by priority: P2 0 of 18 · Later 0 of 16 · Out of scope 0 of 3
 
 <details>
-<summary>37 features: 0 specified, 37 open</summary>
+<summary>37 features: 0 specified, 37 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2920,7 +2922,7 @@ Catalog page: [formats/ai-and-ide.md](../features/formats/ai-and-ide.md) · spec
 Catalog page: [beyond-baseline.md](../features/beyond-baseline.md) · specified by priority: P1 1 of 5 · P2 1 of 26 · Later 0 of 3
 
 <details>
-<summary>34 features: 2 specified, 32 open</summary>
+<summary>34 features: 2 specified, 32 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -2987,17 +2989,17 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-UI-042 | Errors, conflicts and feedback | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-043 | Secrets in the browser | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-044 | Accessibility | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
-| R-UI-045 | Internationalization | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-045 (implemented) | Internationalization | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-046 | State management with signals | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-047 | Testing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
-| R-ARCH-003 | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
-| R-ARCH-004 | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-003 (implemented) | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-004 (implemented) | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-029 | Optional separate content origin | P1 | [architecture.md](../spec/architecture.md) |
-| R-ARCH-031 | Valkey client, Sentinel discovery, TLS, ACL and degradation | MVP | [architecture.md](../spec/architecture.md) |
-| R-ARCH-034 | Cluster-wide rate-limit counters | MVP | [architecture.md](../spec/architecture.md) |
-| R-ARCH-023 | Error model | MVP | [architecture.md](../spec/architecture.md) |
-| R-ARCH-027 | Performance targets | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-031 (implemented) | Valkey client, Sentinel discovery, TLS, ACL and degradation | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-034 (implemented) | Cluster-wide rate-limit counters | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-023 (implemented) | Error model | MVP | [architecture.md](../spec/architecture.md) |
+| R-ARCH-027 (implemented) | Performance targets | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-028 | Resource limits for untrusted package content | MVP | [architecture.md](../spec/architecture.md) |
 | R-AUTHZ-030 | The `authenticated` principal | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-018 | Package ownership | MVP | [authorization.md](../spec/authorization.md) |
@@ -3007,7 +3009,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-AUTHZ-032 | Seeing one's own permission change on any replica | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-029 | Audit of authorization decisions | MVP | [authorization.md](../spec/authorization.md) |
 | R-AUTHZ-031 | Revocation journal entries and the narrowing comparator | MVP | [authorization.md](../spec/authorization.md) |
-| R-BAK-004 | Table registry and export classes | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
+| R-BAK-004 (implemented) | Table registry and export classes | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-007 | Garbage-collection hold | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-022 | State a restore rebuilds or invalidates | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
 | R-BAK-024 | Revocation journal replay after a restore | MVP | [backup-and-restore.md](../spec/backup-and-restore.md) |
@@ -3024,8 +3026,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-NUGET-033 | NuGet data in backups and restores | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-CI-029 | CI state across replicas, Valkey outages and restores | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
 | R-CI-030 | Background tasks of the CI exchange | MVP | [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) |
-| R-HA-056 | Valkey with Sentinel: connection and supported topologies | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
-| R-HA-057 | Valkey failover, outage and degraded mode | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-056 (implemented) | Valkey with Sentinel: connection and supported topologies | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
+| R-HA-057 (implemented) | Valkey failover, outage and degraded mode | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-054 | Revocation journal in object storage | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-055 | Optional content host at the edge | P1 | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-051 | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
@@ -3035,9 +3037,9 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-AUTH-043 | Scheduled authentication tasks | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-OPS-045 | Valkey and coordination observability | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-046 | Operational signals for availability, horizontal scale and backup | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
-| R-OPS-013 | Secret redaction | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
+| R-OPS-013 (implemented) | Secret redaction | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-014 | Event registry | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
-| R-OPS-018 | Trace context and OpenTelemetry export | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
+| R-OPS-018 (implemented) | Trace context and OpenTelemetry export | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-047 | Installation-wide cache flush | P1 | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-024 | Read-only maintenance mode | P1 | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-REPO-026 | Collapsing concurrent misses (single-flight and Valkey flight lock) | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
@@ -3047,10 +3049,10 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-REPO-049 | Repository and proxy state on n replicas, without Valkey and during a drain | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-047 | Proxy and resolution observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-STOR-011 | Multi-request upload sessions | P1 | [storage.md](../spec/storage.md) |
-| R-STOR-013 | Download integrity verification | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-013 (implemented) | Download integrity verification | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-027 | Integrity scrub | P1 | [storage.md](../spec/storage.md) |
-| R-STOR-036 | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
-| R-STOR-046 | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-036 (implemented) | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-046 (implemented) | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-047 | Storage state in backups and restores | MVP | [storage.md](../spec/storage.md) |
 
 </details>

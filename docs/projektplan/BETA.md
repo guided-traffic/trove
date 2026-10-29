@@ -23,7 +23,7 @@ releases. The beta release is `v0.7.0`.
 | Phase | Result | Version | Status |
 |---|---|---|---|
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
-| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown | `v0.1.0` | ⚪ |
+| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown | `v0.1.0` | 🟡 |
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.2.0` | ⚪ |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | `v0.3.0` | ⚪ |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | `v0.4.0` | ⚪ |
