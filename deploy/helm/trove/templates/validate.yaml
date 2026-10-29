@@ -1,0 +1,2 @@
+{{- /* Renders nothing; fails the release when the values are unusable. */ -}}
+{{- $_ := include "trove.validate" . -}}

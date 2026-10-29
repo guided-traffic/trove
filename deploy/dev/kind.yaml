@@ -1,0 +1,29 @@
+# One control-plane and three worker nodes in three zones (R-HA-051), so spreading, drains and
+# node loss can be exercised with two replicas per role (R-HA-059). The node image is not set
+# here: up.sh passes it with --image from tools/versions.env (DEV_KIND_NODE_IMAGE), the one
+# place that pins it.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: trove
+networking:
+  podSubnet: 10.244.0.0/16        # config.server.trusted_proxies in values-dev.yaml names this range
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # The Traefik Service (NodePort 30080) answers on http://localhost:8080 (base_url of
+      # values-dev.yaml). Loopback only, so the dev ingress is not exposed on the network.
+      # up.sh substitutes DEV_HTTP_PORT (TROVE_DEV_HTTP_PORT, default 8080), for hosts where
+      # 8080 is taken, and then also sets config.server.base_url to match.
+      - containerPort: 30080
+        hostPort: ${DEV_HTTP_PORT}
+        listenAddress: 127.0.0.1
+        protocol: TCP
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: trove-zone-a
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: trove-zone-b
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: trove-zone-c

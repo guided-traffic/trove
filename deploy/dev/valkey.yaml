@@ -1,0 +1,452 @@
+# Valkey with Sentinel for the local profile (R-HA-051, R-HA-056, Q-HA-15): StatefulSet
+# trove-valkey (2 pods; pod 0 starts as primary, pod 1 as its replica) and StatefulSet
+# trove-valkey-sentinel (3 pods), both behind headless Services, spread over the nodes, with
+# emptyDir volumes and no claim. TLS only: the plaintext port is 0.
+#
+# Secrets (created by up.sh before this file is applied):
+#   trove-valkey-ca        ca.crt               the dev CA
+#   trove-valkey-tls       tls.crt, tls.key     certificate for the Valkey and Sentinel host names
+#   trove-valkey           username, password   the ACL user trove (the credential trove uses)
+#   trove-valkey-sentinel  password             clients of the Sentinels (and Sentinel to Sentinel)
+#   trove-valkey-admin     password             the default user: replication and Sentinel to Valkey
+#
+# The image is substituted by lib.sh (render) from DEV_VALKEY_IMAGE.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trove-valkey-config
+  labels:
+    app.kubernetes.io/name: trove-valkey
+    app.kubernetes.io/part-of: trove-dev
+data:
+  # Asks the running Sentinels for the current primary. A restarted pod must not announce pod 0
+  # as primary after a failover. Prints the host name, or nothing when no Sentinel answers.
+  discover-primary.sh: |
+    #!/bin/sh
+    set -u
+    ns="$POD_NAMESPACE"
+    for i in 0 1 2; do
+      host="trove-valkey-sentinel-$i.trove-valkey-sentinel.$ns.svc"
+      out="$(timeout 3 valkey-cli --tls --cacert /tls/ca.crt -h "$host" -p 26379 --no-auth-warning \
+        -a "$(cat /secrets/sentinel/password)" sentinel get-master-addr-by-name trove 2>/dev/null | head -1)"
+      if [ -n "$out" ]; then
+        echo "$out"
+        exit 0
+      fi
+    done
+    exit 0
+
+  init-valkey.sh: |
+    #!/bin/sh
+    set -eu
+    ns="$POD_NAMESPACE"
+    fqdn="$POD_NAME.trove-valkey.$ns.svc"
+    ord="${POD_NAME##*-}"
+    admin="$(cat /secrets/admin/password)"
+    trove_user="$(cat /secrets/trove/username)"
+    trove_pass="$(cat /secrets/trove/password)"
+    primary="$(/scripts/discover-primary.sh)"
+    if [ -z "$primary" ]; then
+      # No Sentinel knows a primary yet: first start, or after a full outage.
+      primary="trove-valkey-0.trove-valkey.$ns.svc"
+    fi
+    {
+      cat /scripts/valkey.conf
+      echo "replica-announce-ip $fqdn"
+      echo "masterauth $admin"
+      echo "user default on >$admin ~* &* +@all"
+      # The example ACL rule of R-ARCH-031: no scripts, no administrative commands.
+      echo "user $trove_user on >$trove_pass resetkeys ~trove:* resetchannels &trove:* -@all +get +set +delifeq +incr +expire +multi +exec +publish +subscribe +unsubscribe +sunsubscribe +punsubscribe +discard +ping +hello +role +client|setname +client|setinfo"
+      if [ "$primary" != "$fqdn" ]; then
+        echo "replicaof $primary 6379"
+      fi
+    } > /conf/valkey.conf
+    echo "pod $POD_NAME (ordinal $ord) starts as $( [ "$primary" = "$fqdn" ] && echo primary || echo "replica of $primary" )"
+
+  valkey.conf: |
+    port 0
+    tls-port 6379
+    tls-cert-file /tls/tls.crt
+    tls-key-file /tls/tls.key
+    tls-ca-cert-file /tls/ca.crt
+    tls-auth-clients optional
+    tls-replication yes
+    dir /data
+    save ""
+    appendonly no
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+    min-replicas-to-write 0
+    replica-serve-stale-data yes
+
+  init-sentinel.sh: |
+    #!/bin/sh
+    set -eu
+    ns="$POD_NAMESPACE"
+    fqdn="$POD_NAME.trove-valkey-sentinel.$ns.svc"
+    admin="$(cat /secrets/admin/password)"
+    sentinel_pass="$(cat /secrets/sentinel/password)"
+    primary="$(/scripts/discover-primary.sh)"
+    if [ -z "$primary" ]; then
+      primary="trove-valkey-0.trove-valkey.$ns.svc"
+    fi
+    {
+      cat /scripts/sentinel.conf
+      echo "requirepass $sentinel_pass"
+      echo "sentinel sentinel-pass $sentinel_pass"
+      echo "sentinel announce-ip $fqdn"
+      echo "sentinel monitor trove $primary 6379 2"
+      echo "sentinel auth-pass trove $admin"
+    } > /conf/sentinel.conf
+    echo "sentinel $POD_NAME monitors $primary"
+
+  sentinel.conf: |
+    port 0
+    tls-port 26379
+    tls-cert-file /tls/tls.crt
+    tls-key-file /tls/tls.key
+    tls-ca-cert-file /tls/ca.crt
+    tls-auth-clients optional
+    tls-replication yes
+    dir /data
+    sentinel resolve-hostnames yes
+    sentinel announce-hostnames yes
+    sentinel down-after-milliseconds trove 5000
+    sentinel failover-timeout trove 60000
+    sentinel parallel-syncs trove 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trove-valkey
+  labels:
+    app.kubernetes.io/name: trove-valkey
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true   # pod host names resolve before the pods are ready
+  selector:
+    app.kubernetes.io/name: trove-valkey
+  ports:
+    - name: valkey-tls
+      port: 6379
+      targetPort: valkey-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trove-valkey-sentinel
+  labels:
+    app.kubernetes.io/name: trove-valkey-sentinel
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: trove-valkey-sentinel
+  ports:
+    - name: sentinel-tls
+      port: 26379
+      targetPort: sentinel-tls
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: trove-valkey
+  labels:
+    app.kubernetes.io/name: trove-valkey
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  serviceName: trove-valkey
+  replicas: 2
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trove-valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-valkey
+        app.kubernetes.io/part-of: trove-dev
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - topologyKey: kubernetes.io/hostname
+          maxSkew: 1
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove-valkey
+      initContainers:
+        - name: init
+          image: ${DEV_VALKEY_IMAGE}
+          command: ["/scripts/init-valkey.sh"]
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: scripts, mountPath: /scripts, readOnly: true}
+            - {name: conf, mountPath: /conf}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: secrets, mountPath: /secrets, readOnly: true}
+      containers:
+        - name: valkey
+          image: ${DEV_VALKEY_IMAGE}
+          command: ["valkey-server", "/conf/valkey.conf"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: valkey-tls, containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'valkey-cli --tls --cacert /tls/ca.crt -h 127.0.0.1 -p 6379 --no-auth-warning -a "$(cat /secrets/admin/password)" ping | grep -q PONG']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", 'valkey-cli --tls --cacert /tls/ca.crt -h 127.0.0.1 -p 6379 --no-auth-warning -a "$(cat /secrets/admin/password)" ping | grep -q PONG']
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 384Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /conf}
+            - {name: data, mountPath: /data}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: secrets, mountPath: /secrets, readOnly: true}
+      volumes:
+        - name: scripts
+          configMap:
+            name: trove-valkey-config
+            defaultMode: 0555
+        - name: conf
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
+        - name: tls
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: trove-valkey-tls
+                  items:
+                    - {key: tls.crt, path: tls.crt}
+                    - {key: tls.key, path: tls.key}
+              - secret:
+                  name: trove-valkey-ca
+                  items:
+                    - {key: ca.crt, path: ca.crt}
+        - name: secrets
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: trove-valkey-admin
+                  items:
+                    - {key: password, path: admin/password}
+              - secret:
+                  name: trove-valkey
+                  items:
+                    - {key: username, path: trove/username}
+                    - {key: password, path: trove/password}
+              - secret:
+                  name: trove-valkey-sentinel
+                  items:
+                    - {key: password, path: sentinel/password}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: trove-valkey-sentinel
+  labels:
+    app.kubernetes.io/name: trove-valkey-sentinel
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  serviceName: trove-valkey-sentinel
+  replicas: 3
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trove-valkey-sentinel
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-valkey-sentinel
+        app.kubernetes.io/part-of: trove-dev
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - topologyKey: kubernetes.io/hostname
+          maxSkew: 1
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove-valkey-sentinel
+      initContainers:
+        - name: init
+          image: ${DEV_VALKEY_IMAGE}
+          command: ["/scripts/init-sentinel.sh"]
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: scripts, mountPath: /scripts, readOnly: true}
+            - {name: conf, mountPath: /conf}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: secrets, mountPath: /secrets, readOnly: true}
+      containers:
+        - name: sentinel
+          image: ${DEV_VALKEY_IMAGE}
+          command: ["valkey-sentinel", "/conf/sentinel.conf"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: sentinel-tls, containerPort: 26379}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'valkey-cli --tls --cacert /tls/ca.crt -h 127.0.0.1 -p 26379 --no-auth-warning -a "$(cat /secrets/sentinel/password)" ping | grep -q PONG']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", 'valkey-cli --tls --cacert /tls/ca.crt -h 127.0.0.1 -p 26379 --no-auth-warning -a "$(cat /secrets/sentinel/password)" ping | grep -q PONG']
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /conf}
+            - {name: data, mountPath: /data}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: secrets, mountPath: /secrets, readOnly: true}
+      volumes:
+        - name: scripts
+          configMap:
+            name: trove-valkey-config
+            defaultMode: 0555
+        - name: conf
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
+        - name: tls
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: trove-valkey-tls
+                  items:
+                    - {key: tls.crt, path: tls.crt}
+                    - {key: tls.key, path: tls.key}
+              - secret:
+                  name: trove-valkey-ca
+                  items:
+                    - {key: ca.crt, path: ca.crt}
+        - name: secrets
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: trove-valkey-admin
+                  items:
+                    - {key: password, path: admin/password}
+              - secret:
+                  name: trove-valkey
+                  items:
+                    - {key: username, path: trove/username}
+                    - {key: password, path: trove/password}
+              - secret:
+                  name: trove-valkey-sentinel
+                  items:
+                    - {key: password, path: sentinel/password}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trove-valkey
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trove-valkey
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trove-valkey-sentinel
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trove-valkey-sentinel
+---
+# Ingress policy (R-HA-042, H-49): only trove's web and worker pods and the Valkey pods
+# themselves reach Valkey and the Sentinels. Probes and `kubectl exec` do not cross it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: trove-valkey
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [trove-valkey, trove-valkey-sentinel]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove
+              trove/serve: "true"
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [trove-valkey, trove-valkey-sentinel]}
+      ports:
+        - {protocol: TCP, port: 6379}
+        - {protocol: TCP, port: 26379}

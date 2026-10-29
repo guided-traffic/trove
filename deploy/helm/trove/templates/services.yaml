@@ -1,0 +1,51 @@
+{{- /*
+Both Services render sessionAffinity: None, fixed and not a value (R-HA-037, R-ARCH-032): any web
+replica can answer any request. The client Service selects only web pods (R-HA-002); the ops
+Service selects every trove pod and carries the operations port only.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "trove.fullname" . }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "web") | nindent 4 }}
+    {{- with .Values.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.service.annotations .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml (merge (dict) .Values.service.annotations .Values.commonAnnotations) | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  sessionAffinity: None
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "trove.selectorLabels" (dict "root" . "component" "web") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "trove.fullname" . }}-ops
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "ops") | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  sessionAffinity: None
+  ports:
+    - name: ops
+      port: {{ .Values.service.opsPort }}
+      targetPort: ops
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "trove.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    trove/serve: "true"

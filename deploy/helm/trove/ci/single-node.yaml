@@ -1,0 +1,45 @@
+# A single-node development cluster: no enforcement, one replica per role, soft host spreading,
+# standalone Valkey without TLS (R-HA-032, R-HA-056).
+highAvailability:
+  enforce: false
+web:
+  replicaCount: 1
+  topologySpread:
+    host:
+      whenUnsatisfiable: ScheduleAnyway
+worker:
+  replicaCount: 1
+  topologySpread:
+    host:
+      whenUnsatisfiable: ScheduleAnyway
+config:
+  server:
+    base_url: http://localhost:8080                # example
+  database:
+    host: postgres.default.svc                     # example
+    ssl_mode: disable
+    allow_insecure: true
+  storage:
+    s3:
+      bucket: trove-blobs                          # example
+      endpoint: http://minio.default.svc:9000      # example
+      allow_insecure_endpoint: true                # plain HTTP inside the cluster (R-STOR-030)
+      force_path_style: true
+    upload:
+      max_size: 1GiB
+  valkey:
+    mode: standalone
+    address: valkey.default.svc:6379               # example
+    tls:
+      mode: disable
+    allow_insecure: true
+secrets:
+  database:
+    existingSecret: postgres                       # example
+  valkey:
+    existingSecret: valkey                         # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [dev.key]                                # example
+spool:
+  sizeLimit: 4Gi

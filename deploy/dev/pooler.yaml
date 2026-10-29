@@ -1,0 +1,33 @@
+# Optional pooler overlay (`TROVE_POOLER=1 deploy/dev/up.sh`, R-HA-051, R-HA-058): two
+# CloudNativePG Pooler resources in transaction mode with two instances each, one for the
+# request pool and one for the control connection. values-pooler.yaml points the chart at them.
+# The transaction-mode profile itself is verified in M5; M0 applies the manifests only.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: trove-db-pooler-rw
+spec:
+  cluster:
+    name: trove-db
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: "20"
+      max_client_conn: "500"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: trove-db-pooler-control
+spec:
+  cluster:
+    name: trove-db
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: "4"
+      max_client_conn: "100"

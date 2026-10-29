@@ -1,0 +1,47 @@
+# PostgreSQL for the local profile (R-HA-051, R-HA-013): the CloudNativePG cluster trove-db with
+# a primary and one standby, synchronous replication with dataDurability preferred (a stopped
+# standby does not pause writes on a laptop), the keepalive settings of R-HA-013 and the
+# database trove owned by the role trove (single-role mode, R-HA-014).
+#
+# CloudNativePG creates the Secrets trove-db-app (username, password) and trove-db-ca (ca.crt),
+# and the Services trove-db-rw, trove-db-ro and trove-db-r. The chart reads the first two
+# directly (secrets.database, secrets.databaseCA), so the profile runs verify-full like
+# production. The image is substituted by lib.sh (render) from DEV_CNPG_POSTGRES_IMAGE.
+#
+# WAL archiving to the bucket trove-pg-archive is not configured: point-in-time recovery
+# (R-HA-023) belongs to the backup milestone.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: trove-db
+spec:
+  instances: 2
+  imageName: ${DEV_CNPG_POSTGRES_IMAGE}
+  primaryUpdateStrategy: unsupervised
+  postgresql:
+    parameters:
+      max_connections: "200"
+      tcp_keepalives_idle: "60"
+      tcp_keepalives_interval: "10"
+      tcp_keepalives_count: "6"
+      client_connection_check_interval: "10s"
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: preferred
+  bootstrap:
+    initdb:
+      database: trove
+      owner: trove
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required

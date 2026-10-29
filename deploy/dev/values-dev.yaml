@@ -1,0 +1,95 @@
+# Chart values of the local development profile (R-HA-051): the real chart with two web and
+# two worker replicas against the dependencies deploy/dev/up.sh installs into the "trove"
+# namespace of the kind cluster "trove". The backup CronJob of R-HA-051 is not part of the chart
+# skeleton yet, so no backup target is configured here.
+image:
+  registry: ghcr.io
+  repository: guided-traffic/trove
+  tag: dev                       # built by `make image`, loaded by up.sh with `kind load docker-image`
+  pullPolicy: IfNotPresent       # the image never leaves the kind nodes
+
+highAvailability:
+  enforce: true
+
+web:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+    limits:
+      memory: 1Gi
+
+worker:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+    limits:
+      memory: 512Mi
+  spool:
+    sizeLimit: 4Gi
+
+spool:
+  sizeLimit: 4Gi
+  headroom: 2GiB
+
+config:
+  server:
+    base_url: http://localhost:8080
+    trusted_proxies: ["10.244.0.0/16"]    # the pod CIDR of kind, where the Ingress controller runs
+  log:
+    level: debug
+  system:
+    bootstrap_anonymous_read: true         # until authentication ships nobody holds system.read; the E0.13 load reads /system/replicas
+  database:
+    host: trove-db-rw.trove.svc           # the read-write Service of the CloudNativePG cluster trove-db
+    name: trove
+    ssl_mode: verify-full
+  valkey:
+    mode: sentinel
+    sentinel:
+      addresses:
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove
+      tls: true
+    tls:
+      mode: verify-full
+  storage:
+    s3:
+      bucket: trove-blobs
+      region: us-east-1
+      endpoint: http://trove-s3.trove.svc:9000
+      allow_insecure_endpoint: true       # the in-cluster SeaweedFS serves plain HTTP (R-STOR-030)
+      force_path_style: true
+      credentials:
+        source: static
+    upload:
+      max_size: 1GiB
+
+secrets:
+  database:
+    existingSecret: trove-db-app          # created by CloudNativePG
+  databaseCA:
+    existingSecret: trove-db-ca           # created by CloudNativePG
+    key: ca.crt
+  s3:
+    existingSecret: trove-s3              # created by up.sh
+  valkey:
+    existingSecret: trove-valkey          # created by up.sh
+  valkeySentinel:
+    existingSecret: trove-valkey-sentinel # created by up.sh
+  valkeyCA:
+    existingSecret: trove-valkey-ca       # created by up.sh from the dev CA
+  encryption:
+    existingSecret: trove-encryption-keys # created by up.sh
+    keys: [dev.key]
+
+ingress:
+  enabled: true
+  className: traefik

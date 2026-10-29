@@ -1,0 +1,4 @@
+# The ci/ value sets are test inputs, not part of the packaged chart.
+ci/
+.git/
+*.swp

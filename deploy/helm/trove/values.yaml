@@ -1,0 +1,305 @@
+# Skeleton values of the trove chart (M0). Every value carries "# default (proposed)" or
+# "# example", as in docs/spec/ha-and-helm.md R-HA-031. Values of later phases (autoscaling,
+# NetworkPolicy, Gateway, monitoring, backup, restore, pools) are not defined yet:
+# values.schema.json refuses unknown keys, so a typo or a value of a later phase fails
+# before anything renders. docs/developer/helm-chart.md lists what is in and what is not.
+
+# ── Global ──────────────────────────────────────────────────────────────────
+global:
+  imageRegistry: ""                     # default (proposed): empty = image.registry
+  imagePullSecrets: []                  # default (proposed); example: [{name: registry-pull}]
+
+nameOverride: ""                        # default (proposed)
+fullnameOverride: ""                    # default (proposed)
+commonLabels: {}                        # default (proposed)
+commonAnnotations: {}                   # default (proposed)
+
+image:
+  registry: ghcr.io                     # default (proposed) (Q-HA-11)
+  repository: guided-traffic/trove      # default (proposed)
+  tag: ""                               # default (proposed): empty = chart appVersion
+  digest: ""                            # default (proposed); example: sha256:<64 hex>; wins over tag
+  pullPolicy: IfNotPresent              # default (proposed)
+
+highAvailability:
+  enforce: true                         # default (proposed): >= 2 replicas, a PDB and DoNotSchedule host spreading per role; Sentinel mode with >= 3 Sentinels (R-HA-029)
+
+# ── web Deployment: trove serve --role web (R-HA-002) ───────────────────────
+web:
+  replicaCount: 3                       # default (proposed) (Q-HA-16)
+  minReadySeconds: 10                   # default (proposed)
+  revisionHistoryLimit: 5               # default (proposed)
+  strategy:
+    type: RollingUpdate                 # default (proposed)
+    rollingUpdate:
+      maxSurge: 1                       # default (proposed)
+      maxUnavailable: 0                 # default (proposed)
+  terminationGracePeriodSeconds: 120    # default (proposed) (R-HA-011)
+  spool:
+    sizeLimit: ""                       # default (proposed): empty = spool.sizeLimit (R-HA-035)
+  resources:
+    requests:
+      cpu: "1"                          # default (proposed)
+      memory: 1Gi                       # default (proposed)
+      ephemeral-storage: 2Gi            # default (proposed)
+    limits:
+      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+  podDisruptionBudget:
+    enabled: true                       # default (proposed)
+    maxUnavailable: 1                   # default (proposed)
+    minAvailable: null                  # default (proposed); mutually exclusive with maxUnavailable
+    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed) (R-HA-008)
+  topologySpread:
+    enabled: true                       # default (proposed): render the two constraints below
+    nodeTaintsPolicy: Honor             # default (proposed): cordoned nodes do not count as domains (R-HA-059)
+    zone:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+    host:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed); required with highAvailability.enforce
+  topologySpreadConstraints: []         # default (proposed); non-empty replaces the generated constraints
+  nodeFailureTolerationSeconds: 60      # default (proposed); not-ready/unreachable tolerations (R-HA-032)
+  affinity: {}                          # default (proposed)
+  nodeSelector: {}                      # default (proposed); example: {kubernetes.io/arch: arm64}
+  tolerations: []                       # default (proposed)
+  priorityClassName: ""                 # default (proposed); example: business-critical
+  schedulerName: ""                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed); appended after the shared extraEnv
+
+# ── worker Deployment: trove serve --role worker (R-HA-002) ─────────────────
+worker:
+  replicaCount: 2                       # default (proposed) (Q-HA-16); at least 1 (R-HA-002)
+  minReadySeconds: 10                   # default (proposed)
+  revisionHistoryLimit: 5               # default (proposed)
+  strategy:
+    type: RollingUpdate                 # default (proposed)
+    rollingUpdate:
+      maxSurge: 1                       # default (proposed)
+      maxUnavailable: 0                 # default (proposed)
+  terminationGracePeriodSeconds: 300    # default (proposed): jobs persist their cursor before exit
+  spool:
+    sizeLimit: 5Gi                      # default (proposed) in storage.md R-HA-035: workers spool only job output (reports, cache fills) and accept no uploads, so config.storage.upload.max_size need not fit (the binary checks that rule on web and all only)
+  resources:
+    requests:
+      cpu: 500m                         # default (proposed)
+      memory: 512Mi                     # default (proposed)
+      ephemeral-storage: 1Gi            # default (proposed)
+    limits:
+      memory: 1Gi                       # default (proposed)
+  podDisruptionBudget:
+    enabled: true                       # default (proposed)
+    maxUnavailable: 1                   # default (proposed)
+    minAvailable: null                  # default (proposed)
+    unhealthyPodEvictionPolicy: AlwaysAllow  # default (proposed)
+  topologySpread:
+    enabled: true                       # default (proposed)
+    nodeTaintsPolicy: Honor             # default (proposed)
+    zone:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: ScheduleAnyway # default (proposed)
+    host:
+      maxSkew: 1                        # default (proposed)
+      whenUnsatisfiable: DoNotSchedule  # default (proposed): workers spread evenly (INV-12)
+  topologySpreadConstraints: []         # default (proposed)
+  nodeFailureTolerationSeconds: 60      # default (proposed)
+  affinity: {}                          # default (proposed)
+  nodeSelector: {}                      # default (proposed)
+  tolerations: []                       # default (proposed)
+  priorityClassName: ""                 # default (proposed)
+  schedulerName: ""                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  podLabels: {}                         # default (proposed)
+  extraEnv: []                          # default (proposed)
+
+# ── trove configuration (rendered to /etc/trove/trove.yaml) ─────────────────
+# Chart-managed keys (secret file paths, storage.spool.dir) must not be set here (R-HA-029).
+# One file serves every Deployment and Job; the role is the container argument --role (R-HA-002).
+# The subtree is free-form until the binary emits its JSON Schema (internal/config/schema.json);
+# the keys below are the ones the chart reads itself or that are required.
+config:
+  server:                               # operations-and-observability.md R-OPS-005
+    base_url: ""                        # required; example: https://trove.example.com
+    trusted_proxies: []                 # default (proposed); example: ["10.244.0.0/16"] (ingress controller pod CIDR)
+  health:                               # operations-and-observability.md R-OPS-001
+    shutdown_drain_delay: 5s            # default (proposed); must exceed the edge's endpoint removal time (R-HA-059)
+  log:
+    level: info                         # default (proposed)
+  database:                             # ha-and-helm.md R-HA-009 to R-HA-016
+    host: ""                            # required; example: trove-db-rw.trove.svc
+    port: 5432                          # default (proposed)
+    name: trove                         # example
+    ssl_mode: verify-full               # default (proposed)
+    session_host: ""                    # default (proposed): empty = host (the migration Job connects there, R-HA-019)
+  valkey:                               # ha-and-helm.md R-HA-056
+    mode: sentinel                      # default (proposed): sentinel | standalone (development only)
+    sentinel:
+      addresses: []                     # required; example: [trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379, trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379]
+      primary_name: ""                  # required; example: trove
+      tls: true                         # default (proposed)
+    address: ""                         # default (proposed); standalone mode only; example: trove-valkey.trove.svc:6379
+    tls:
+      mode: verify-full                 # default (proposed): verify-full | verify-ca | disable
+    allow_insecure: false               # default (proposed)
+  storage:                              # storage.md R-STOR-024 to R-STOR-036
+    s3:
+      bucket: ""                        # required; example: trove-blobs
+      region: ""                        # example: eu-central-1
+      endpoint: ""                      # default (proposed): AWS resolution; example: http://trove-s3.trove.svc:9000
+      force_path_style: false           # default (proposed); true for SeaweedFS, MinIO and Ceph RGW
+      credentials:
+        source: default                 # default (proposed): default | webIdentity | static
+    upload:
+      max_size: 10GiB                   # default (proposed) in storage.md; must fit the spool (R-HA-035)
+  metrics:
+    auth: none                          # default (proposed): none | static (needs secrets.metricsToken)
+
+# ── Existing Secrets (the chart never creates one) ──────────────────────────
+secrets:
+  database:
+    existingSecret: ""                  # required; example: trove-db-app (CloudNativePG application Secret)
+    usernameKey: username               # default (proposed)
+    passwordKey: password               # default (proposed)
+  databaseMigration:
+    existingSecret: ""                  # default (proposed): empty = single-role mode (R-HA-014); example: trove-db-owner
+    usernameKey: username               # default (proposed)
+    passwordKey: password               # default (proposed)
+  databaseCA:
+    existingSecret: ""                  # example: trove-db-ca (only ca.crt is projected)
+    key: ca.crt                         # default (proposed)
+  databaseClientCert:
+    existingSecret: ""                  # default (proposed): no client certificate
+    certKey: tls.crt                    # default (proposed)
+    keyKey: tls.key                     # default (proposed)
+  s3:
+    existingSecret: ""                  # default (proposed); required with credentials.source static
+    accessKeyIdKey: access-key-id       # default (proposed)
+    secretAccessKeyKey: secret-access-key  # default (proposed)
+  valkey:
+    existingSecret: ""                  # required (R-HA-029); example: trove-valkey
+    usernameKey: username               # default (proposed); empty = the "default" user, the file is not mounted
+    passwordKey: password               # default (proposed)
+  valkeySentinel:
+    existingSecret: ""                  # default (proposed): Sentinels without authentication; example: trove-valkey-sentinel
+    usernameKey: ""                     # default (proposed): empty = no Sentinel user, the file is not mounted
+    passwordKey: password               # default (proposed)
+  valkeyCA:
+    existingSecret: ""                  # default (proposed): empty = system roots; example: trove-valkey-ca
+    key: ca.crt                         # default (proposed)
+  valkeyClientCert:
+    existingSecret: ""                  # default (proposed): no client certificate; needed while Valkey keeps tls-auth-clients yes
+    certKey: tls.crt                    # default (proposed)
+    keyKey: tls.key                     # default (proposed)
+  encryption:
+    existingSecret: ""                  # required; example: trove-encryption-keys
+    keys: []                            # required; ordered, first = active; example: [2026-10.key, 2026-04.key]
+  metricsToken:
+    existingSecret: ""                  # default (proposed); needed with config.metrics.auth static
+    key: token                          # default (proposed)
+
+# ── Pod identity and security ──────────────────────────────────────────────
+serviceAccount:
+  create: true                          # default (proposed)
+  name: ""                              # default (proposed): <fullname>
+  annotations: {}                       # default (proposed); example (IRSA): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-s3"}
+  automountServiceAccountToken: false   # default (proposed): trove never calls the Kubernetes API
+
+podSecurityContext:
+  runAsNonRoot: true                    # default (proposed)
+  runAsUser: 65532                      # default (proposed); null on OpenShift (restricted-v2 assigns the UID)
+  runAsGroup: 65532                     # default (proposed); null on OpenShift
+  fsGroup: 65532                        # default (proposed); null on OpenShift
+  fsGroupChangePolicy: OnRootMismatch   # default (proposed)
+  seccompProfile:
+    type: RuntimeDefault                # default (proposed)
+
+securityContext:
+  allowPrivilegeEscalation: false       # default (proposed)
+  privileged: false                     # default (proposed)
+  readOnlyRootFilesystem: true          # default (proposed)
+  runAsNonRoot: true                    # default (proposed)
+  capabilities:
+    drop: [ALL]                         # default (proposed)
+  seccompProfile:
+    type: RuntimeDefault                # default (proposed)
+
+# ── Volumes (R-HA-035, R-HA-061: nothing ReadWriteMany, nothing persistent) ─
+spool:
+  type: emptyDir                        # default (proposed): emptyDir | ephemeral
+  sizeLimit: 20Gi                       # default (proposed) (R-HA-035); web.spool and worker.spool override it
+  headroom: 2GiB                        # default (proposed): sizeLimit - headroom = storage.spool.max_bytes (R-HA-035, R-STOR-004)
+  medium: ""                            # default (proposed): node disk; "Memory" counts against the memory limit
+  ephemeral:
+    storageClassName: ""                # default (proposed): cluster default
+    size: 50Gi                          # default (proposed); used with type ephemeral
+    accessModes: [ReadWriteOnce]        # default (proposed): ReadWriteOnce | ReadWriteOncePod; nothing else validates
+
+tmp:
+  sizeLimit: 1Gi                        # default (proposed); /tmp under readOnlyRootFilesystem
+
+# ── Probes (R-HA-034; paths from R-OPS-001) ────────────────────────────────
+probes:
+  startup:
+    enabled: true                       # default (proposed)
+    path: /healthz                      # default (proposed)
+    periodSeconds: 2                    # default (proposed)
+    timeoutSeconds: 2                   # default (proposed)
+    failureThreshold: 60                # default (proposed): 2 minutes to bind the listeners
+    custom: {}                          # default (proposed); replaces the generated probe
+  liveness:
+    enabled: true                       # default (proposed)
+    path: /healthz                      # default (proposed)
+    periodSeconds: 10                   # default (proposed)
+    timeoutSeconds: 3                   # default (proposed)
+    failureThreshold: 6                 # default (proposed)
+    custom: {}                          # default (proposed)
+  readiness:
+    enabled: true                       # default (proposed)
+    path: /readyz                       # default (proposed)
+    periodSeconds: 5                    # default (proposed)
+    timeoutSeconds: 3                   # default (proposed)
+    failureThreshold: 1                 # default (proposed): debouncing happens in the process (health.failure_threshold)
+    successThreshold: 1                 # default (proposed)
+    custom: {}                          # default (proposed)
+
+# ── Exposure ───────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP                       # default (proposed): ClusterIP | LoadBalancer | NodePort
+  port: 8080                            # default (proposed)
+  opsPort: 8081                         # default (proposed)
+  # No sessionAffinity value: every Service renders sessionAffinity: None (R-HA-037).
+  annotations: {}                       # default (proposed)
+  labels: {}                            # default (proposed)
+
+ingress:
+  enabled: false                        # default (proposed)
+  className: ""                         # default (proposed): cluster default IngressClass; example: traefik
+  annotations: {}                       # default (proposed); controller-specific settings; never cookie affinity (R-HA-037)
+  labels: {}                            # default (proposed)
+  hosts: []                             # default (proposed): empty = host of config.server.base_url
+  # No path value: every host is routed whole, path / with pathType Prefix (R-HA-037).
+  tls: []                               # default (proposed); example: [{secretName: trove-tls, hosts: [trove.example.com]}]
+
+# ── Migrations (R-HA-019) ──────────────────────────────────────────────────
+migrations:
+  mode: hook                            # default (proposed): hook | disabled
+  backoffLimit: 2                       # default (proposed)
+  activeDeadlineSeconds: 1800           # default (proposed)
+  ttlSecondsAfterFinished: 86400        # default (proposed)
+  resources:
+    requests:
+      cpu: 100m                         # default (proposed)
+      memory: 128Mi                     # default (proposed)
+    limits:
+      memory: 512Mi                     # default (proposed)
+  podAnnotations: {}                    # default (proposed)
+  extraEnv: []                          # default (proposed)
+
+# ── Extension points (R-HA-046) ────────────────────────────────────────────
+extraEnv: []                            # default (proposed); example: [{name: TROVE_LOG_LEVEL, value: debug}]
+extraEnvFrom: []                        # default (proposed)
+extraVolumes: []                        # default (proposed); the operator's: R-HA-061 cannot see a claim's access mode
+extraVolumeMounts: []                   # default (proposed)
+extraObjects: []                        # default (proposed); extra manifests rendered with tpl

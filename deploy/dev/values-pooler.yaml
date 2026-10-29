@@ -1,0 +1,11 @@
+# Chart values layered after values-dev.yaml by up.sh when TROVE_POOLER=1 (R-HA-058): the
+# request pool and the control connection go through two poolers, the session-level work
+# (migration lock, leases) keeps the direct read-write Service.
+config:
+  database:
+    host: trove-db-pooler-rw.trove.svc
+    session_host: trove-db-rw.trove.svc
+    control_host: trove-db-pooler-control.trove.svc
+    pooler:
+      mode: transaction
+      server_connections: 24

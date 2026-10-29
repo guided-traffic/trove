@@ -1,0 +1,26 @@
+# Only the values R-HA-031 names as required; everything else keeps its default.
+config:
+  server:
+    base_url: https://trove.example.com            # example
+  database:
+    host: trove-db-rw.trove.svc                    # example
+  storage:
+    s3:
+      bucket: trove-blobs                          # example
+    upload:
+      max_size: 10GiB                              # default (proposed)
+  valkey:
+    sentinel:
+      addresses:                                   # example
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove                          # example
+secrets:
+  database:
+    existingSecret: trove-db-app                   # example
+  valkey:
+    existingSecret: trove-valkey                   # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [2026-10.key]                            # example

@@ -1,0 +1,7 @@
+# The `scatter` e2e profile (R-ARCH-032, E0.11), layered after values-dev.yaml by up.sh when
+# TROVE_PROFILE=scatter: three web replicas, one per worker node. The other half of the profile
+# is the edge: up.sh starts Traefik with --serversTransport.maxIdleConnsPerHost=-1, so every
+# request opens a new connection to a web pod, and Traefik's round robin picks the pod per
+# request. A client therefore meets a different replica on nearly every call.
+web:
+  replicaCount: 3

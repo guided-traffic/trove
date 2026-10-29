@@ -1,0 +1,120 @@
+{{- if eq .Values.migrations.mode "hook" }}
+{{- /*
+The migration Job (R-HA-019). The Job runs before the release's ordinary resources exist on a
+first install, so its ConfigMap and ServiceAccount are hook resources too (weight -10), and the
+Secrets are pre-existing. The binary connects to database.session_host (R-HA-058) because the
+migration lock is a session-level lock; the Job mounts no S3 or Valkey credential and no service-account token, and runs
+with the same security contexts as the replicas.
+*/ -}}
+{{- $fullname := include "trove.fullname" . }}
+{{- $labels := include "trove.labels" (dict "root" . "component" "migrate") }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-migrate
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  trove.yaml: |
+    {{- include "trove.config" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $fullname }}-migrate
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-migrate
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  {{- if .Values.migrations.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  {{- end }}
+  ttlSecondsAfterFinished: {{ .Values.migrations.ttlSecondsAfterFinished }}
+  podFailurePolicy:
+    rules:
+      # A node drain during helm upgrade does not use up the retries.
+      - action: Ignore
+        onPodConditions:
+          - type: DisruptionTarget
+      # A refusal of the contract guard or of a half-restored database does not change on retry.
+      - action: FailJob
+        onExitCodes:
+          containerName: migrate
+          operator: In
+          values: [3]
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+      {{- with .Values.migrations.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $fullname }}-migrate
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- include "trove.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "trove.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - migrate
+            - up
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "trove.podEnv" . | nindent 12 }}
+            - name: TROVE_DATABASE_PREFLIGHT_EXPECTED_WEB_REPLICAS
+              value: {{ .Values.web.replicaCount | quote }}
+            - name: TROVE_DATABASE_PREFLIGHT_EXPECTED_WORKER_REPLICAS
+              value: {{ .Values.worker.replicaCount | quote }}
+            - name: TMPDIR
+              value: /tmp
+            {{- with .Values.migrations.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trove/trove.yaml
+              subPath: trove.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- include "trove.secretVolumeMounts" (dict "root" . "scope" "migrate") | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}-migrate
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmp.sizeLimit }}
+        {{- include "trove.secretVolumes" (dict "root" . "scope" "migrate") | nindent 8 }}
+{{- end }}

@@ -1,0 +1,24 @@
+# Traefik is the Ingress controller of the dev cluster: the edge in front of the web Service.
+# up.sh installs it with the chart version and the image pinned in tools/versions.env
+# (DEV_TRAEFIK_CHART_VERSION, DEV_TRAEFIK_IMAGE; the image is passed with --set because the chart
+# wants registry, repository and digest separately). The chart's own security context already
+# satisfies the restricted Pod Security Standard.
+deployment:
+  replicas: 1
+service:
+  spec:
+    type: NodePort
+ports:
+  web:
+    exposedPort: 8080
+    nodePort: 30080        # kind.yaml maps this node port to localhost:8080
+  websecure:
+    expose:
+      default: false
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+providers:
+  kubernetesGateway:
+    enabled: false

@@ -1,0 +1,81 @@
+# Production-shaped: every optional Secret, the Ingress with TLS, a generic ephemeral spool,
+# static S3 credentials, a bearer token for /metrics and a certificate-authenticated Valkey.
+image:
+  tag: 0.0.0-ci                                    # example
+global:
+  imagePullSecrets:
+    - name: registry-pull                          # example
+config:
+  server:
+    base_url: https://trove.example.com            # example
+    trusted_proxies: ["10.244.0.0/16"]             # example
+  database:
+    host: trove-db-pooler-rw.trove.svc             # example
+    session_host: trove-db-rw.trove.svc            # example
+  storage:
+    s3:
+      bucket: trove-blobs                          # example
+      region: eu-central-1                         # example
+      credentials:
+        source: static
+    upload:
+      max_size: 10GiB                              # default (proposed)
+  valkey:
+    sentinel:
+      addresses:                                   # example
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove                          # example
+  metrics:
+    auth: static
+secrets:
+  database:
+    existingSecret: trove-db-app                   # example
+  databaseMigration:
+    existingSecret: trove-db-owner                 # example
+  databaseCA:
+    existingSecret: trove-db-ca                    # example
+  databaseClientCert:
+    existingSecret: trove-db-client                # example
+  s3:
+    existingSecret: trove-s3                       # example
+  valkey:
+    existingSecret: trove-valkey                   # example
+  valkeySentinel:
+    existingSecret: trove-valkey-sentinel          # example
+  valkeyCA:
+    existingSecret: trove-valkey-ca                # example
+  valkeyClientCert:
+    existingSecret: trove-valkey-client            # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [2026-10.key, 2026-04.key]               # example
+  metricsToken:
+    existingSecret: trove-metrics                  # example
+spool:
+  type: ephemeral
+  sizeLimit: 20Gi
+  ephemeral:
+    storageClassName: standard                     # example
+    size: 50Gi
+    accessModes: [ReadWriteOnce]
+ingress:
+  enabled: true
+  className: traefik                               # example
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt    # example
+  tls:
+    - secretName: trove-tls                        # example
+      hosts: [trove.example.com]
+web:
+  podAnnotations:
+    example.com/note: web                          # example
+  extraEnv:
+    - name: TROVE_LOG_LEVEL                        # example
+      value: debug
+worker:
+  nodeSelector:
+    kubernetes.io/os: linux                        # example
+commonLabels:
+  team: platform                                   # example

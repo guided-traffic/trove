@@ -1,0 +1,193 @@
+# SeaweedFS as the S3 store of the local profile (R-HA-051, Q-HA-3): one `weed server` process
+# (master, volume server, filer and S3 gateway) with an emptyDir, behind Service trove-s3 on
+# port 9000, plus a Job that creates the buckets:
+#   trove-blobs       blob store, versioning enabled
+#   trove-pg-archive  PostgreSQL WAL archive (created; CloudNativePG archiving is wired with PITR in M5)
+#   trove-backups     backup target
+#
+# Secret trove-s3 (created by up.sh): access-key-id, secret-access-key.
+# Images are substituted by lib.sh (render) from DEV_SEAWEEDFS_IMAGE and DEV_AWSCLI_IMAGE.
+apiVersion: v1
+kind: Service
+metadata:
+  name: trove-s3
+  labels:
+    app.kubernetes.io/name: trove-s3
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  selector:
+    app.kubernetes.io/name: trove-s3
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trove-s3
+  labels:
+    app.kubernetes.io/name: trove-s3
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trove-s3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-s3
+        app.kubernetes.io/part-of: trove-dev
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Writes the S3 identity file from the Secret, so no key is in the manifest.
+        - name: config
+          image: ${DEV_SEAWEEDFS_IMAGE}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              cat > /conf/s3.json <<JSON
+              {"identities":[{"name":"trove","credentials":[{"accessKey":"$(cat /secrets/access-key-id)","secretKey":"$(cat /secrets/secret-access-key)"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
+              JSON
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: conf, mountPath: /conf}
+            - {name: s3-secret, mountPath: /secrets, readOnly: true}
+      containers:
+        - name: seaweedfs
+          image: ${DEV_SEAWEEDFS_IMAGE}
+          command: ["weed"]
+          args:
+            - server
+            - -dir=/data
+            - -master.volumeSizeLimitMB=128
+            - -volume.max=100
+            - -filer
+            - -s3
+            - -s3.port=9000
+            - -s3.config=/conf/s3.json
+            - -ip.bind=0.0.0.0
+          env:
+            - {name: HOME, value: /tmp}
+          ports:
+            - {name: s3, containerPort: 9000}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            tcpSocket: {port: s3}
+            periodSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: {port: s3}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: conf, mountPath: /conf, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: conf
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: s3-secret
+          secret:
+            secretName: trove-s3
+            defaultMode: 0440
+            items:
+              - {key: access-key-id, path: access-key-id}
+              - {key: secret-access-key, path: secret-access-key}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trove-s3-buckets
+  labels:
+    app.kubernetes.io/name: trove-s3-buckets
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-s3-buckets
+        app.kubernetes.io/part-of: trove-dev
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: buckets
+          image: ${DEV_AWSCLI_IMAGE}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              export AWS_ACCESS_KEY_ID="$(cat /secrets/access-key-id)"
+              export AWS_SECRET_ACCESS_KEY="$(cat /secrets/secret-access-key)"
+              export AWS_DEFAULT_REGION=us-east-1
+              s3() { aws --endpoint-url http://trove-s3:9000 "$@"; }
+              i=0
+              until s3 s3api list-buckets >/dev/null 2>&1; do
+                i=$((i + 1))
+                [ "$i" -le 60 ] || { echo "the S3 endpoint did not answer"; exit 1; }
+                sleep 2
+              done
+              for b in trove-blobs trove-pg-archive trove-backups; do
+                s3 s3api head-bucket --bucket "$b" 2>/dev/null || s3 s3api create-bucket --bucket "$b"
+              done
+              s3 s3api put-bucket-versioning --bucket trove-blobs --versioning-configuration Status=Enabled
+              echo "buckets:"; s3 s3api list-buckets --query 'Buckets[].Name' --output text
+              echo "trove-blobs versioning: $(s3 s3api get-bucket-versioning --bucket trove-blobs --query Status --output text)"
+          env:
+            - {name: HOME, value: /tmp}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: s3-secret, mountPath: /secrets, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: s3-secret
+          secret:
+            secretName: trove-s3
+            defaultMode: 0440
+            items:
+              - {key: access-key-id, path: access-key-id}
+              - {key: secret-access-key, path: secret-access-key}
