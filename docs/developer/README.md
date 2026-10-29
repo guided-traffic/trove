@@ -53,6 +53,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
 | [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
+| [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
@@ -114,7 +115,8 @@ trove/
 │   ├── meta/postgres/        # pools, connect, retry, migrations/ (embedded), queries/ (sqlc input), q/ (sqlc output)
 │   ├── observability/        # logs, metrics, tracing and OTLP export, health checks
 │   ├── outbound/             # the one HTTP client factory and the egress address policy
-│   ├── repository/           # repository model and the Reader interface (M1, WP1.4)
+│   ├── repository/           # repository model: service, snapshot reader, validation, patterns, deletion job
+│   ├── formats/              # format contract and registry; generic/ (raw files), all/ registers every format
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
 │   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder
@@ -141,8 +143,8 @@ M1 contract skeletons ([m1-contracts.md](m1-contracts.md)): `internal/audit/` (e
 hold the shared types and interfaces; their implementations arrive with the M1 work packages. The `Principal` the
 chain stores is in [internal/httpserver/principal.go](../../internal/httpserver/principal.go).
 
-Planned, from [R-ARCH-003](../spec/architecture.md): the format packages (`internal/formats/`) and the remote
-fetch engine (`internal/proxy/`) do not exist yet.
+Planned, from [R-ARCH-003](../spec/architecture.md): the package formats (`internal/formats/npm`, `nuget`) and the
+remote fetch engine (`internal/proxy/`) do not exist yet.
 
 ## Test tiers
 

@@ -153,6 +153,16 @@ func TestFormatImportAllowlist(t *testing.T) {
 			pkg("internal/proxy", "internal/blob", "internal/jobs", "internal/meta"),
 		}))
 	})
+	t.Run("R-ARCH-010 the registration package imports formats and nothing else", func(t *testing.T) {
+		wantClean(t, CheckModuleImportBans(mod, []Package{
+			pkg("internal/formats/all", "internal/formats", "internal/formats/npm", "internal/formats/nuget", "internal/formats/generic"),
+		}))
+		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats/all", "internal/formats/npm", "internal/blob")})
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/all", "internal/blob")
+		if len(vs) != 1 {
+			t.Fatalf("want exactly the blob edge, got %v", Strings(vs))
+		}
+	})
 	t.Run("R-ARCH-008 the fixture module: infrastructure, object store and sibling imports are named, own subpackage and contract are not", func(t *testing.T) {
 		module, pkgs, err := ListPackages(fixtureDir(t, "layers"))
 		if err != nil {

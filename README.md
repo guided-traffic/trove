@@ -157,6 +157,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 |---|---|---|
 | Schema | `trove` (`database.schema`) | yes |
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
+| Job kinds | `gc`, `gc-full`, `repository-delete` (one job per repository deletion, dedup key per repository) | yes (`internal/jobs`, `internal/repository`) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
 | Roles and `application_name` | `trove_owner`, `trove_app`, `trove:<replica>:<class>` | planned ([R-HA-014](docs/spec/ha-and-helm.md)) for the role names; the `application_name` is built |
 
@@ -642,6 +643,8 @@ cache:
   rendition_bytes: 256MiB               # default: rendered package documents, per replica
   snapshot_safety_ttl: 5m               # default; at least 10s
   unknown_repo_keys: 10000              # default: negative cache of unknown repository keys, per replica
+repositories:
+  lookup_wait: 5s                       # default; at least 100ms: wait for the change-log poll on a key the snapshot does not know yet
 health:
   check_interval: 5s                    # default
   check_timeout: 2s                     # default; not above check_interval

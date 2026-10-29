@@ -65,6 +65,28 @@ const CodeInvalidAuditRange = "invalid_audit_range"
 // <<< M1 authz
 //
 // >>> M1 repository
+// Repository model (R-REPO-001 to R-REPO-013, R-ARCH-005). invalid_pattern,
+// reserved_name and out_of_range are registered by the authz and api areas; the
+// repository package names them as strings.
+const (
+	CodeRepositoryExists     = "repository_exists"
+	CodeRepositoryDisabled   = "repository_disabled"
+	CodeRepositoryReferenced = "repository_referenced"
+	CodeImmutableField       = "immutable_field"
+	CodeInvalidKey           = "invalid_key"
+	CodeInvalidMember        = "invalid_member"
+	CodeInvalidDocument      = "invalid_document"
+	CodeNotApplicable        = "not_applicable"
+	CodeUnknownFormat        = "unknown_format"
+	CodeUnsupportedClass     = "unsupported_class"
+	CodeUnsupportedLayout    = "unsupported_layout"
+	CodeBatchTooLarge        = "batch_too_large"
+	CodeNotAPackage          = "not_a_package"
+	CodeNoDeployTarget       = "no_deploy_target"
+	CodeInvalidPath          = "invalid_path"
+	CodeNotAdmitted          = "not_admitted"
+)
+
 // <<< M1 repository
 //
 // >>> M1 files
@@ -126,6 +148,22 @@ var registry = []CodeInfo{
 	// <<< M1 authz
 	//
 	// >>> M1 repository
+	{CodeRepositoryExists, Conflict, "Repository exists", "A repository with this key exists or is still being deleted; keys stay taken until the deletion job completes."},
+	{CodeRepositoryDisabled, NotFound, "Repository disabled", "The repository is disabled and takes no part in resolution, download or deploy; the management API still works."},
+	{CodeRepositoryReferenced, Conflict, "Repository referenced", "Virtual repositories list this repository as a member or deploy target; delete with detach=true or remove the references first."},
+	{CodeImmutableField, Invalid, "Immutable field", "Key, class and format are fixed at creation; create a new repository instead."},
+	{CodeInvalidKey, Invalid, "Invalid repository key", "A key matches ^[a-z0-9][a-z0-9._-]{1,63}$, contains no \"..\" and does not end in a dot."},
+	{CodeInvalidMember, Invalid, "Invalid member", "A virtual repository member is missing, being deleted, of another format, duplicated or the repository itself."},
+	{CodeInvalidDocument, Invalid, "Invalid document", "The configuration document is not valid JSON of the expected shape, or it names a member that does not exist."},
+	{CodeNotApplicable, Invalid, "Not applicable", "The setting does not apply to the repository's class or format."},
+	{CodeUnknownFormat, Invalid, "Unknown format", "The format is not in the format catalog; GET /api/v1/formats lists the formats."},
+	{CodeUnsupportedClass, Invalid, "Unsupported class", "The class is unknown, or the format does not support it."},
+	{CodeUnsupportedLayout, Invalid, "Unsupported layout", "A repository has the one layout of its format; it cannot be set to another."},
+	{CodeBatchTooLarge, Invalid, "Batch too large", "A batch operation names more repositories than repositories.batch_limit."},
+	{CodeNotAPackage, Invalid, "Not a package", "The format refuses content that is not one of its packages."},
+	{CodeNoDeployTarget, MethodNotAllowed, "No deploy target", "The virtual repository has no default deployment target, so it takes no deploys."},
+	{CodeInvalidPath, Invalid, "Invalid path", "The path has an empty, \".\" or \"..\" segment, a NUL, a backslash or a control character, is not valid UTF-8, or exceeds the length limits."},
+	{CodeNotAdmitted, Forbidden, "Path not admitted", "The path does not match the repository's include patterns, or matches an exclude pattern."},
 	// <<< M1 repository
 	//
 	// >>> M1 files

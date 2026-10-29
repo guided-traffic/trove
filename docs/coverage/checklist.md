@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 99 of 577 spec requirements are implemented: a passing test names them and no
+**Status.** 99 of 592 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 664 specified (58 of them implemented), 1,575 open.
-577 spec requirements: 483 cover catalog features, 94 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 675 specified (58 of them implemented), 1,564 open.
+592 spec requirements: 498 cover catalog features, 94 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -55,7 +55,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Maven package format](#maven-package-format-pkg-maven) | `PKG-MAVEN` | 39 | – | 0 | 39 | 0 |
 | [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 | 0 |
 | [Go modules format](#go-modules-format-pkg-go) | `PKG-GO` | 16 | – | 0 | 16 | 0 |
-| [Generic format](#generic-format-pkg-generic) | `PKG-GENERIC` | 11 | – | 0 | 11 | 0 |
+| [Generic format](#generic-format-pkg-generic) | `PKG-GENERIC` | 11 | – | 11 | 0 | 0 |
 | [Ansible collection format](#ansible-collection-format-pkg-ansible) | `PKG-ANSIBLE` | 13 | – | 0 | 13 | 0 |
 | [Alpine Linux package format](#alpine-linux-package-format-pkg-apk) | `PKG-APK` | 14 | – | 0 | 14 | 0 |
 | [Bazel modules package format](#bazel-modules-package-format-pkg-bazel) | `PKG-BAZEL` | 12 | – | 0 | 12 | 0 |
@@ -2156,21 +2156,21 @@ Catalog page: [formats/go.md](../features/formats/go.md) · specified by priorit
 
 ## Generic format (PKG-GENERIC)
 
-Catalog page: [formats/generic.md](../features/formats/generic.md) · specified by priority: P1 0 of 8 · P2 0 of 3
+Catalog page: [formats/generic.md](../features/formats/generic.md) · specified by priority: P1 8 of 8 · P2 3 of 3
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| PKG-GENERIC-001 | Generic repositories in all three repository classes | P1 | open | – |
-| PKG-GENERIC-002 | Non-conformant content belongs in a generic repository | P1 | open | – |
-| PKG-GENERIC-003 | Free-form paths and the repository layout reference | P1 | open | – |
-| PKG-GENERIC-004 | Deploy any file | P1 | open | – |
-| PKG-GENERIC-005 | Download any file | P1 | open | – |
-| PKG-GENERIC-006 | Generic remote repository for any HTTP source | P1 | open | – |
-| PKG-GENERIC-007 | SHA-256 lookup for uncached items | P2 | open | – |
-| PKG-GENERIC-008 | Generic virtual repository | P1 | open | – |
-| PKG-GENERIC-009 | HTTP build cache on a generic repository | P2 | open | – |
-| PKG-GENERIC-010 | Bulk file operations on generic content | P2 | open | – |
-| PKG-GENERIC-011 | Generic repository as cross-format copy and move target | P1 | open | – |
+| PKG-GENERIC-001 | Generic repositories in all three repository classes | P1 | specified | [R-GENERIC-001](../spec/formats/generic.md), [R-GENERIC-002](../spec/formats/generic.md), [R-GENERIC-003](../spec/formats/generic.md), [R-GENERIC-004](../spec/formats/generic.md), [R-GENERIC-005](../spec/formats/generic.md), [R-GENERIC-006](../spec/formats/generic.md), [R-GENERIC-008](../spec/formats/generic.md) |
+| PKG-GENERIC-002 | Non-conformant content belongs in a generic repository | P1 | specified | [R-GENERIC-011](../spec/formats/generic.md) |
+| PKG-GENERIC-003 | Free-form paths and the repository layout reference | P1 | specified | [R-GENERIC-012](../spec/formats/generic.md) |
+| PKG-GENERIC-004 | Deploy any file | P1 | specified | [R-GENERIC-004](../spec/formats/generic.md), [R-GENERIC-007](../spec/formats/generic.md) |
+| PKG-GENERIC-005 | Download any file | P1 | specified | [R-GENERIC-003](../spec/formats/generic.md), [R-GENERIC-005](../spec/formats/generic.md) |
+| PKG-GENERIC-006 | Generic remote repository for any HTTP source | P1 | specified | [R-GENERIC-009](../spec/formats/generic.md) |
+| PKG-GENERIC-007 | SHA-256 lookup for uncached items | P2 | specified | [R-GENERIC-013](../spec/formats/generic.md) |
+| PKG-GENERIC-008 | Generic virtual repository | P1 | specified | [R-GENERIC-010](../spec/formats/generic.md) |
+| PKG-GENERIC-009 | HTTP build cache on a generic repository | P2 | specified | [R-GENERIC-014](../spec/formats/generic.md) |
+| PKG-GENERIC-010 | Bulk file operations on generic content | P2 | specified | [R-GENERIC-015](../spec/formats/generic.md) |
+| PKG-GENERIC-011 | Generic repository as cross-format copy and move target | P1 | specified | [R-GENERIC-011](../spec/formats/generic.md) |
 
 ## Ansible collection format (PKG-ANSIBLE)
 

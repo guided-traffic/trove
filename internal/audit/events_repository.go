@@ -1,0 +1,33 @@
+package audit
+
+// The repository events (R-OPS-016, R-REPO-009 to R-REPO-013). They are
+// transactional: the producer records them in the transaction of the change. None
+// carries the revocation flag; a repository setting that narrows access is
+// journaled by the authorization area's own authz.settings.changed event in the
+// same transaction (R-AUTHZ-031).
+
+// repositoryEventSchema is the data of the three types. changes lists the
+// top-level members of the document that the write changed (key, class and format
+// on a create); phase tells the two events of a deletion apart.
+const repositoryEventSchema = `{
+  "type": "object",
+  "properties": {
+    "class": {"type": "string", "enum": ["local", "remote", "virtual"]},
+    "format": {"type": "string"},
+    "changes": {"type": "array", "maxItems": 1000, "items": {"type": "string"}},
+    "phase": {"type": "string", "enum": ["started", "completed"]}
+  },
+  "required": ["class", "format", "changes"],
+  "additionalProperties": false
+}`
+
+func init() {
+	for _, name := range []string{"repository.created", "repository.updated", "repository.deleted"} {
+		Register(EventType{
+			Name:     name,
+			Category: CategoryRepository,
+			Mode:     Transactional,
+			Schema:   repositoryEventSchema,
+		})
+	}
+}

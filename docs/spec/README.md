@@ -364,6 +364,7 @@ acceptance criteria.
 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | `R-CI` | GitLab CI OIDC token exchange, identity mappings, `CI_JOB_TOKEN` fallback |
 | [formats/npm.md](formats/npm.md) | `R-NPM` | npm registry protocol, local/remote/virtual behavior |
 | [formats/nuget.md](formats/nuget.md) | `R-NUGET` | NuGet v3 protocol, symbols, local/remote/virtual behavior |
+| [formats/generic.md](formats/generic.md) | `R-GENERIC` | Generic format: raw files at free-form paths; the local class (MVP, M1, Q-ROAD-1) with descriptor, flat layout, request classification, deploy, download, patterns and settings; the remote and virtual classes and cross-format copy (P1) |
 | [backup-and-restore.md](backup-and-restore.md) | `R-BAK` | Backup job, backup format in S3, consistency with garbage collection, restore, retention |
 | [ha-and-helm.md](ha-and-helm.md) | `R-HA` | High availability, failure modes, upgrades, backup CronJob and restore Job (chart side), platform backup (PITR, bucket versioning), disaster recovery, Helm chart values |
 | [operations-and-observability.md](operations-and-observability.md) | `R-OPS` | Health, metrics, logs, audit, Valkey and coordination observability, operational signals and alerts, maintenance operations, webhooks, configuration as code |

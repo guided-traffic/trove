@@ -328,6 +328,11 @@ func (a *App) bootstrap(ctx context.Context) error {
 	// its own markers, in this order (audit has its own marker at step 4); an
 	// area that needs another's component reads it from m1Wiring (m1.go).
 	// >>> M1 repository
+	if infra && a.sub.MainPool {
+		if err := a.wireRepository(); err != nil {
+			return err
+		}
+	}
 	// <<< M1 repository
 	//
 	// >>> M1 identity

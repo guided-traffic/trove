@@ -997,6 +997,20 @@
       },
       "type": "object"
     },
+    "repositories": {
+      "additionalProperties": false,
+      "properties": {
+        "lookup_wait": {
+          "default": "5s",
+          "description": "How long a request for a repository key that PostgreSQL knows and the snapshot does not waits for the change-log poll before it answers 503 (R-ARCH-011 step 2).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_REPOSITORIES_LOOKUP_WAIT",
+          "x-trove-type": "duration"
+        }
+      },
+      "type": "object"
+    },
     "runtime": {
       "additionalProperties": false,
       "properties": {

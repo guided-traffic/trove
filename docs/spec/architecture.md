@@ -442,6 +442,7 @@ trove/
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
 │   │   ├── formattest/          # conformance kit, in-memory Host
+│   │   ├── generic/
 │   │   ├── npm/
 │   │   └── nuget/
 │   ├── proxy/

@@ -59,6 +59,21 @@ type Repository struct {
 	Config    []byte
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// adm is the compiled include and exclude lists of Config. The snapshot and
+	// the store fill it; a Repository built by hand admits everything.
+	adm *Admission
+}
+
+// Admits reports whether a canonical path is admitted by the repository's
+// include and exclude patterns (R-REPO-005). It applies to every caller,
+// administrators included: the patterns are routing rules. A folder (a path that
+// ended in a slash) is admitted when some path below it could be.
+func (r Repository) Admits(path string, folder bool) bool {
+	if folder {
+		return r.adm.AdmitsFolder(path)
+	}
+	return r.adm.Admits(path)
 }
 
 // Reader is the read interface other packages use. It answers from the

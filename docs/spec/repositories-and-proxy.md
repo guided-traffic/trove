@@ -3314,6 +3314,140 @@ repository outlives its creator. `repositories.config_version` is registered wit
 
 **Applied in the spec:** R-REPO-001 data model (a note under the `ALTER TABLE`).
 
+### Q-REPO-12 · The error code of a 422 with one or several violations
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-002 and R-REPO-009 say "returns 422 `invalid_key`"; R-REPO-008 says every violation comes in one
+response; R-API-009 shows a 422 whose `code` is `validation_failed` and whose `errors[]` carry the details.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Always `validation_failed`, the specific code only in `errors[]` | One top-level code | Matches the example of R-API-009 | The acceptance criteria that say "422 `invalid_key`" would need a lookup into `errors[]` |
+| (b) A single violation under its own code, several under `validation_failed` (chosen) | `errors[]` always lists every violation with its code; the top-level `code` is the violation's own when there is exactly one | Both readings hold: a client matching on `invalid_key` or `immutable_field` sees it at the top, a client iterating `errors[]` sees every violation | The top-level code depends on how many violations there are |
+
+**Choice:** (b).
+
+**Rationale:** The acceptance criteria of this page read as top-level codes, and a client that created
+one key wrongly wants exactly that. The development agent would revisit this if the API area settles on
+one rule for every resource; the repository package then follows it in `validation.err`.
+
+**Applied in the spec:** none (the criteria already read this way); `internal/repository/validate.go`.
+
+### Q-REPO-13 · Management reads come from PostgreSQL, the list filters in the domain
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read and list from the replica's snapshot | One source for requests and management | No query per management read | A management read could be stale for the poll interval, against R-API-052 |
+| (b) Read and list from PostgreSQL; filter and page over one read of the table (chosen) | `Service.Get` and `Service.List` query the table; the snapshot serves request paths only | Meets R-API-052 and Q-API-12; the number of repositories of an installation is small, so no dynamic query is needed | A list reads the whole table on every call |
+| (c) A dynamic SQL list query (`listq`, R-ARCH-019) | Filter and keyset in SQL | Scales to very many repositories | Machinery for a table that holds dozens to hundreds of rows |
+
+**Choice:** (b). `List` returns items sorted by key with a keyset `After` and a `Limit`, plus `HasMore`; the cursor
+format is the API layer's (R-API-010).
+
+**Rationale:** (c) would be the answer if installations reached tens of thousands of repositories. The
+development agent would revisit this then.
+
+**Applied in the spec:** none.
+
+### Q-REPO-14 · One snapshot entry, flushed by every `repo_config` change
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One cache entry for the whole table, flushed on any change (chosen) | The change payload names the repository id (R-REPO-008), but the cache ignores it and the next read rebuilds | Trivially correct, including a missed or forged hint; one query rebuilds it | A change anywhere costs one rebuild on every replica |
+| (b) One cache entry per key, evicted by the id in the payload | Finer eviction | Fewer rebuilds | The per-key set must also handle list calls and unknown keys; a payload that does not match a key needs a fallback flush |
+
+**Choice:** (a). The payload is `{"id", "key", "op"}` so that a later consumer can evict by id.
+
+**Rationale:** Repository changes are administrative and rare (R-ARCH-018 keeps change areas for such writes). The
+development agent would revisit this if an installation changed repositories at a rate where rebuilds show in
+the metrics.
+
+**Applied in the spec:** none.
+
+### Q-REPO-15 · A repository deletion records two events and joins a running job
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One `repository.deleted` event when the job removes the row | Past tense matches the fact | One event | The decision (who, when) and the state change of the first transaction would have no event; R-REPO-008 requires an event for every change |
+| (b) `repository.deleted` with `phase: started` in the first transaction and `phase: completed` in the last (chosen) | The first names the caller who asked; the second carries the same actor from the job arguments | Every committed change has its event in its own transaction | Two events per deletion |
+
+**Choice:** (b). A repeated delete while the job runs records nothing and answers with the same job (the job kind is
+exclusive per repository id). `detach` is accepted and has nothing to detach until virtual membership exists
+(R-REPO-017); a virtual repository, which has no content, is removed in the first transaction with the `completed` phase.
+
+**Rationale:** The development agent would revisit this if the audit area wants distinct event names for the two phases.
+
+**Applied in the spec:** R-REPO-013 reads unchanged; `internal/audit/events_repository.go` declares the `phase` property.
+
+### Q-REPO-16 · The shape of the stored document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-004 lists the members; it leaves open how an omitted setting, a `null`, an unknown member and the
+members owned by other pages are stored.
+
+| Question | Choice |
+|---|---|
+| What does `repositories.config` hold? | The settings: every member but `key`, `class`, `format` and the derived `layout`, with defaults filled in, so that what is stored and what is read back are one form |
+| Unknown or duplicate member | 400 `invalid_document` at every level, also on a merge-patch result |
+| `hideExistence` | a string: `"inherit"`, `"true"` or `"false"` (the contract's `Repository.HideExistence`) |
+| `null` in a merge patch | removes the member, which reads back as its default |
+| Members that other pages own (`storage`, `remote`, `virtual`) | carried as JSON objects without looking inside, until the page that owns them is implemented (`storage` for M1: a JSON object; `remote` and `virtual` cannot occur, because the generic format supports only the local class) |
+| An update that changes no stored member | writes nothing: same `config_version`, no event, no change row |
+| `PUT` with an omitted `key`, `class` or `format` | unchanged (a different value is `immutable_field`) |
+| Members that cannot apply to a format | `not_applicable` in the same pass, decided by the format descriptor |
+
+**Rationale:** A misspelt member must never be dropped silently (R-REPO-008). A no-op that moves the ETag would
+make a client that re-sends an unchanged document race with itself. The development agent would revisit the
+treatment of `storage` when R-STOR-003's settings are implemented.
+
+**Applied in the spec:** none.
+
+### Q-REPO-17 · The pattern matcher lives in `internal/repository`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-005 requires the matcher of R-AUTHZ-005. Layers (R-ARCH-002) let `authz` import `repository` but not the
+reverse.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The matcher in `internal/repository`, exported as `CompilePattern`; authz calls it (chosen) | One implementation for both pages | "A pattern copied between them selects the same names" holds by construction | The authorization area depends on a function that lives in another package |
+| (b) A leaf package `internal/pattern` | A neutral home | No dependency on the repository package | One more package; R-ARCH-003 would need a line |
+| (c) Two copies | Each page owns its matcher | No coupling | The two drift apart |
+
+**Choice:** (a), with a test table (path and name subjects) that carries the cases of R-AUTHZ-005.
+
+**Rationale:** The development agent would move the matcher to a leaf package (b) if a third consumer appears, such as
+retention (R-STOR-043).
+
+**Applied in the spec:** none.
+
+### Q-REPO-18 · The wait for an unknown key is `repositories.lookup_wait`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-011 step 2 bounds the wait of a lookup "like a wait for the database (R-HA-009)" and names no key.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A key of its own, default 5 s (chosen) | `repositories.lookup_wait` | Visible and tunable; a poll that cannot finish answers 503 with `Retry-After: 1` | One more key |
+| (b) Reuse the database statement timeout | No new key | Nothing to document | The timeout bounds a statement, not a poll that waits on the control connection |
+
+**Choice:** (a).
+
+**Rationale:** 5 s is two orders above the poll's normal duration and below the client timeouts of npm and dotnet.
+The development agent would revisit it if R-HA-009 gets a named bound.
+
+**Applied in the spec:** R-ARCH-011 reads unchanged; the key is in [docs/developer/repositories.md](../developer/repositories.md).
+
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream

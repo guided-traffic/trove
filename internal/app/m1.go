@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // m1Wiring holds the components the M1 areas build in bootstrap (the WIRING
@@ -43,7 +44,12 @@ type m1Wiring struct {
 	// <<< M1 authz
 
 	// >>> M1 repository
-	// repositories repository.Reader (declare it with the first use)
+	// repositories answers the per-request lookup of a repository from the
+	// replica's snapshot (R-ARCH-011). repositoryService is the write side
+	// (R-REPO-009 to R-REPO-013); it is read by the deletion job under a.mu, because
+	// a job can run while the bootstrap still wires.
+	repositories      repository.Reader
+	repositoryService *repository.Service
 	// <<< M1 repository
 
 	// >>> M1 files

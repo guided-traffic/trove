@@ -81,6 +81,10 @@ func formatAllowed() []string {
 // formatRoot is the tree of the format plug-ins and their contract.
 const formatRoot = "internal/formats"
 
+// formatAll is the package that registers every format at compile time
+// (R-ARCH-010).
+const formatAll = formatRoot + "/all"
+
 // formatSelf returns the tree of the format package rel ("internal/formats/npm"
 // for "internal/formats/npm/parse"), or the contract itself.
 func formatSelf(rel string) string {
@@ -108,6 +112,11 @@ func CheckModuleImportBans(module string, pkgs []Package) []Violation {
 		for _, imp := range p.Imports {
 			target := rel(module, imp)
 			if target == imp { // not a package of this module
+				continue
+			}
+			// The registration package imports every format (R-ARCH-010), and only
+			// formats: its one job is to call formats.Register for each of them.
+			if p.Rel == formatAll && under(target, formatRoot) {
 				continue
 			}
 			// The contract package has no tree of its own to import from.

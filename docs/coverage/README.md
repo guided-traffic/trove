@@ -19,10 +19,10 @@ regenerated.
 |---|---|---|
 | **Implemented** | **2.6%** (58 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
-| P1 features covered by spec requirements | 54.7% (285 of 521) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 30.6% (664 of 2,167) | measured from `Covers:` lines |
+| P1 features covered by spec requirements | 56.2% (293 of 521) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 31.1% (675 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 577 on 13 pages (431 MVP, 144 P1, 2 P2) | measured from spec headings |
+| Spec requirements | 592 on 14 pages (439 MVP, 148 P1, 5 P2) | measured from spec headings |
 | Requirements covering no catalog feature | 94 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
@@ -52,11 +52,11 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 359 | 359 | 0 | 100% | 359 | 45 |
-| **P1** | 521 | 285 | 236 | 54.7% | 55 | 8 |
-| **P2** | 896 | 20 | 876 | 2.2% | 12 | 5 |
+| **P1** | 521 | 293 | 228 | 56.2% | 58 | 8 |
+| **P2** | 896 | 23 | 873 | 2.6% | 12 | 5 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 664 | 1,575 | 29.7% | 426 | 58 |
+| **Total** | 2,239 | 675 | 1,564 | 30.1% | 429 | 58 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -97,7 +97,7 @@ Each page name links to that page's section of the checklist.
 | [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 9 | 5 |
 | [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond) | 34 | 0 | 5 | 26 | 3 | 0 | 2 | 32 |
 
-Per-format pages (38 pages, 782 features, 95 specified):
+Per-format pages (38 pages, 782 features, 106 specified):
 
 <details>
 <summary>38 format pages</summary>
@@ -112,7 +112,7 @@ Per-format pages (38 pages, 782 features, 95 specified):
 | [Maven package format](checklist.md#maven-package-format-pkg-maven) | 39 | 0 | 23 | 15 | 1 | 0 | 0 | 39 |
 | [PyPI package format](checklist.md#pypi-package-format-pkg-pypi) | 29 | 0 | 23 | 6 | 0 | 0 | 0 | 29 |
 | [Go modules format](checklist.md#go-modules-format-pkg-go) | 16 | 0 | 13 | 3 | 0 | 0 | 0 | 16 |
-| [Generic format](checklist.md#generic-format-pkg-generic) | 11 | 0 | 8 | 3 | 0 | 0 | 0 | 11 |
+| [Generic format](checklist.md#generic-format-pkg-generic) | 11 | 0 | 8 | 3 | 0 | 0 | 11 | 0 |
 | [Ansible collection format](checklist.md#ansible-collection-format-pkg-ansible) | 13 | 0 | 13 | 0 | 0 | 0 | 0 | 13 |
 | [Alpine Linux package format](checklist.md#alpine-linux-package-format-pkg-apk) | 14 | 0 | 0 | 14 | 0 | 0 | 0 | 14 |
 | [Bazel modules package format](checklist.md#bazel-modules-package-format-pkg-bazel) | 12 | 0 | 1 | 11 | 0 | 0 | 0 | 12 |

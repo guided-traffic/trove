@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // The sections of the M1 areas (docs/developer/m1-contracts.md). Each struct is
 // empty until its owner fills it inside its own markers; the field of the
 // section in [Config] exists from the start so that parallel work only adds
@@ -39,6 +41,8 @@ type API struct {
 // limits, virtual depth. WP1.4 owns it.
 type Repositories struct {
 	// >>> M1 repository
+
+	LookupWait time.Duration `yaml:"lookup_wait" default:"5s" validate:"min=100ms" doc:"How long a request for a repository key that PostgreSQL knows and the snapshot does not waits for the change-log poll before it answers 503 (R-ARCH-011 step 2)."`
 
 	// <<< M1 repository
 }

@@ -105,6 +105,7 @@ func init() {
 	// <<< M1 authz
 	//
 	// >>> M1 repository
+	RegisterArea(Area{Name: AreaRepoConfig, Owner: "R-REPO-049", Class: ChangeArea, PayloadVersion: 1})
 	// <<< M1 repository
 }
 
@@ -126,4 +127,10 @@ const (
 // <<< M1 authz
 //
 // >>> M1 repository
+
+// AreaRepoConfig carries repository rows and virtual membership: create, update, delete
+// and every change of an input of the grant index (R-REPO-008, R-AUTHZ-028). The payload
+// names the repository id, never a grant. The cluster_epoch row is seeded by migration 00010.
+const AreaRepoConfig = "repo_config"
+
 // <<< M1 repository
