@@ -11,6 +11,8 @@ include tools/versions.env
 export $(shell sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' tools/versions.env)
 
 MODULE      := github.com/guided-traffic/trove
+comma       := ,
+space       := $(subst ,, )
 GOVERSION   := $(shell go env GOVERSION)
 GO_MOD_GO   := $(shell awk '$$1=="go"{print $$2}' go.mod)
 # The binary accepts only major.minor.patch or "dev" as its version: a commit hash would
@@ -57,6 +59,27 @@ image: web ## Build the release image (IMAGE=trove:dev) for linux/IMAGE_ARCH (ho
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o bin/trove-linux-$(IMAGE_ARCH) ./cmd/trove
 	docker buildx build --load --platform linux/$(IMAGE_ARCH) \
 		--build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) -f Dockerfile -t $(IMAGE) bin
+
+# Architectures of the published image; the Dockerfile copies bin/trove-linux-<arch>.
+IMAGE_PLATFORMS ?= amd64 arm64
+
+.PHONY: image-push
+image-push: web ## Build the release image for IMAGE_PLATFORMS and push it with every tag in IMAGE_TAGS (CI: preview.yml)
+	@test -n "$(IMAGE_TAGS)" || { echo "IMAGE_TAGS is empty: name at least one registry/repository:tag"; exit 1; }
+	@mkdir -p .out
+	@for arch in $(IMAGE_PLATFORMS); do \
+	  echo "go build linux/$$arch"; \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o bin/trove-linux-$$arch ./cmd/trove || exit 1; \
+	done
+	docker buildx build --push \
+		--platform $(subst $(space),$(comma),$(addprefix linux/,$(IMAGE_PLATFORMS))) \
+		--build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+		--label org.opencontainers.image.source=https://$(MODULE) \
+		--label org.opencontainers.image.revision=$(COMMIT) \
+		--label org.opencontainers.image.version=$(VERSION) \
+		$(addprefix -t ,$(IMAGE_TAGS)) \
+		--metadata-file .out/image-metadata.json \
+		-f Dockerfile bin
 
 ##@ Code generation
 

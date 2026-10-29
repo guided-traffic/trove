@@ -1,0 +1,155 @@
+# Publishes every commit of main that passed ci.yml as a preview build: a multi-arch image and an
+# OCI Helm chart on ghcr.io, both signed keyless with cosign. A cluster that follows the newest
+# preview chart (an OCIRepository with a semver range over the -main.N prereleases, verifying the
+# signature of this workflow on main) always runs the newest green commit of main.
+#
+#   image  ghcr.io/guided-traffic/trove:main-<sha12>  (and the moving tag main)
+#   chart  oci://ghcr.io/guided-traffic/charts/trove  version <next minor>-main.<run number>
+#
+# The chart pins the image by digest, so a chart version always means the same binary. Release
+# builds (v0.N.0 tags) are a separate pipeline (roadmap M5); this workflow never touches them.
+name: preview
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: preview
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  CHART_REPOSITORY: ghcr.io/${{ github.repository_owner }}/charts
+
+jobs:
+  publish:
+    # Only a green ci run of a push to main publishes; a manual run publishes main's head. Both run
+    # on refs/heads/main, which is the identity the signature carries.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write   # push image and chart to ghcr.io
+      id-token: write   # keyless cosign signatures
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0  # tags: the next minor version
+      - uses: ./.github/actions/load-pins
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - name: Install the pinned helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to ghcr.io (images, cosign)
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to ghcr.io (helm)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Compute the preview version
+        id: version
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          short=${sha:0:12}
+          # The next minor after the newest v0.* release tag; a -main.N prerelease sorts before
+          # that release and after every earlier preview (run numbers only grow).
+          latest=$(git tag --list 'v0.*' --sort=-v:refname | head -1)
+          minor=0
+          if [[ $latest =~ ^v0\.([0-9]+)\.[0-9]+$ ]]; then minor=${BASH_REMATCH[1]}; fi
+          chart_version="0.$((minor + 1)).0-main.${GITHUB_RUN_NUMBER}"
+          {
+            echo "sha=$sha"
+            echo "short=$short"
+            echo "chart_version=$chart_version"
+            echo "app_version=main-$short"
+          } >> "$GITHUB_OUTPUT"
+          echo "Preview $chart_version of $sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build and push the image (linux/amd64, linux/arm64)
+        id: image
+        env:
+          SHORT: ${{ steps.version.outputs.short }}
+        run: |
+          set -euo pipefail
+          make image-push IMAGE_TAGS="$IMAGE:main-$SHORT $IMAGE:main"
+          digest=$(jq -r '."containerimage.digest"' .out/image-metadata.json)
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no image digest in the buildx metadata"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Image: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign the image (keyless)
+        run: cosign sign --yes "$IMAGE@${{ steps.image.outputs.digest }}"
+
+      - name: Package the chart with the image digest
+        env:
+          VERSION: ${{ steps.version.outputs.chart_version }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          chart="$RUNNER_TEMP/chart/trove"
+          mkdir -p "$(dirname "$chart")"
+          cp -R deploy/helm/trove "$chart"
+          # The image block's digest line is the only `  digest: ""` in values.yaml; a missing
+          # match fails here instead of publishing a chart that pulls by tag.
+          grep -c '^  digest: ""' "$chart/values.yaml" | grep -qx 1
+          sed -i "s|^  digest: \"\"|  digest: \"$DIGEST\"|" "$chart/values.yaml"
+          helm lint "$chart" -f deploy/helm/trove/ci/required-only.yaml
+          helm package "$chart" --version "$VERSION" --app-version "$APP_VERSION" --destination "$RUNNER_TEMP/dist"
+
+      - name: Push the chart
+        id: chart
+        env:
+          VERSION: ${{ steps.version.outputs.chart_version }}
+        run: |
+          set -euo pipefail
+          out=$(helm push "$RUNNER_TEMP/dist/trove-$VERSION.tgz" "oci://$CHART_REPOSITORY" 2>&1)
+          echo "$out"
+          digest=$(sed -n 's/^Digest: //p' <<<"$out")
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest in helm push output"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Chart: \`oci://$CHART_REPOSITORY/trove:$VERSION\` (\`$digest\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign the chart (keyless)
+        run: cosign sign --yes "$CHART_REPOSITORY/trove@${{ steps.chart.outputs.digest }}"
+
+      - name: Verify both signatures
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CHART_DIGEST: ${{ steps.chart.outputs.digest }}
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/preview.yml@refs/heads/main"
+          for ref in "$IMAGE@$IMAGE_DIGEST" "$CHART_REPOSITORY/trove@$CHART_DIGEST"; do
+            cosign verify "$ref" --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
+            echo "verified $ref"
+          done

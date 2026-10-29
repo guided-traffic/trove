@@ -195,6 +195,23 @@ failure says so, and it does not read as a pass.
   [test/integration/testenv](../../test/integration/testenv) read a static key pair and have no field
   for a session token. Until they have one, the leg cannot pass.
 
+## Preview publication
+
+[preview.yml](../../.github/workflows/preview.yml) publishes every commit of `main` whose `ci` run
+succeeded (and a manual run of `main`'s head) as a preview build. Release builds of `v0.N.0` tags
+are a separate pipeline (roadmap M5); this workflow never publishes a release version.
+
+| Artifact | Name | Notes |
+|---|---|---|
+| Image | `ghcr.io/guided-traffic/trove:main-<sha12>` and the moving tag `main` | `linux/amd64` and `linux/arm64`, built by `make image-push` (host build of the binaries with the embedded web build, then the distroless wrap) |
+| Chart | `oci://ghcr.io/guided-traffic/charts/trove`, version `0.<next minor>.0-main.<run number>`, appVersion `main-<sha12>` | `image.digest` is set to the pushed image's digest before packaging, so one chart version always means one binary |
+| Signatures | keyless cosign (`COSIGN_VERSION` in [tools/versions.env](../../tools/versions.env)) on the image and the chart | identity `https://github.com/guided-traffic/trove/.github/workflows/preview.yml@refs/heads/main`, issuer `https://token.actions.githubusercontent.com`; the job verifies both before it ends |
+
+A cluster that follows the previews uses a Flux `OCIRepository` on the chart with `ref.semver`
+over the `-main.N` prereleases and a cosign verification of the identity above. The binary of a
+preview build reports the version `dev` unless the commit carries a `v0.*` tag (the binary accepts
+only `major.minor.patch` or `dev`).
+
 ## Not in place yet
 
 - **The first run on a GitHub runner.** Nothing here has run on a runner. Two steps depend on runner
