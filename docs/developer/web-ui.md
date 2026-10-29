@@ -48,7 +48,7 @@ Run in `web/` after `nvm use` (or any Node matching `.nvmrc`).
 | `npm ci` | Install exactly the lockfile |
 | `npm start` | Dev server, English only (the `development` configuration builds one locale) |
 | `npm run lint` | ESLint (including the four R-UI-046 rules) and `scripts/check-rules.mjs` |
-| `npm test` | Vitest through `@angular/build:unit-test`, jsdom, single run, headless |
+| `npm test` | Vitest through `@angular/build:unit-test`, jsdom, single run, headless; `src/test-setup.ts` raises the per-test timeout to 30 s, because the accessibility check of a large screen takes several seconds on a shared CI runner (the default of 5 s guards against hangs, it is no budget) |
 | `npm run test:coverage` | The same with a V8 coverage report (`src/app/**`, generated code excluded) |
 | `npm run extract-i18n` | Rewrites `src/locale/messages.xlf`; then add the `<target>` units to `messages.de.xlf` |
 | `npm run generate:api` | `openapi-typescript ../api/openapi.yaml` into `src/app/api/generated/schema.d.ts`, committed. Rerun it whenever `api/openapi.yaml` changes |

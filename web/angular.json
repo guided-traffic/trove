@@ -105,7 +105,8 @@
             "runner": "vitest",
             "buildTarget": "::development",
             "coverageInclude": ["src/app/**/*.ts"],
-            "coverageExclude": ["src/app/api/generated/**"]
+            "coverageExclude": ["src/app/api/generated/**"],
+            "setupFiles": ["src/test-setup.ts"]
           }
         }
       }
