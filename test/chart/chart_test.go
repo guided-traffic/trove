@@ -104,7 +104,9 @@ func helm(t *testing.T, args ...string) (stdout, stderr string, err error) {
 
 // templateArgs builds `helm template` arguments for value files and --set pairs.
 func templateArgs(release string, files []string, sets []string) []string {
-	args := []string{"template", release, chartDir}
+	// An explicit namespace: without one, helm takes the namespace of the current kube context,
+	// which on a runner pod is the pod's own (in-cluster) and changes every rendered service name.
+	args := []string{"template", release, chartDir, "--namespace", "default"}
 	for _, f := range files {
 		args = append(args, "-f", f)
 	}
