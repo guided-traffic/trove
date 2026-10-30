@@ -353,7 +353,7 @@ parts are in place today and which are pending.
 ## 🚀 TL;DR fast start
 
 **Prerequisites.** The pins are in [tools/versions.env](tools/versions.env) (kind, kubectl, Helm, golangci-lint and more), in
-`go.mod` (Go 1.27.3) and in `web/.nvmrc` (Node.js 26.5.0). Install Docker, Go, Node.js and GNU Make 3.81 or later, plus the pinned
+`go.mod` (Go 1.27.3) and in `web/.nvmrc` (Node.js 26.13.0). Install Docker, Go, Node.js and GNU Make 3.81 or later, plus the pinned
 kind, kubectl and Helm for the dev profile. `make versions-check` reports any installed tool that differs from its pin.
 
 **Install a release.** The image is `docker.io/guidedtraffic/trove` on Docker Hub, and the chart is in its own repository.
@@ -1610,7 +1610,7 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 | Target | What it does |
 |---|---|
 | `make build` | Static binary in `bin/trove` |
-| `make web` | Angular build into `internal/webui/dist/` (needs Node.js 26.5.0) |
+| `make web` | Angular build into `internal/webui/dist/` (needs Node.js 26.13.0) |
 | `make generate`, `make generate-check` | Every `go:generate` directive; the check fails on any diff |
 | `make lint`, `make fmt` | `golangci-lint` and `go vet`; the formatters of `.golangci.yml` |
 | `make gosec` | gosec through the pinned golangci-lint, with the settings of `.golangci.yml` |

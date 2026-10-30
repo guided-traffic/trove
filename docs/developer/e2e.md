@@ -582,14 +582,14 @@ test/e2e/clients/
 - **No second client in the image.** The `npm`, `npx` and `corepack` of the Node image are removed, so a test that
   types `npm` fails instead of running an unpinned npm; Corepack would download clients at run time and is not used.
   Yarn 4 is `@yarnpkg/cli-dist`, the package that carries the Yarn 4 CLI itself, which needs no `yarnPath` and no download.
-- **One Node.js for all rows.** The image runs Node.js 24.22.2. The `engines` ranges (read with `npm view` on
+- **One Node.js for all rows.** The image runs Node.js 26.13.0. The `engines` ranges (read with `npm view` on
   2026-10-30) accept it for every row: npm 12.2.1 needs `^22.22.2 || ^24.15.0 || >=26.0.0`, npm 11.21.1
   `^20.17.0 || >=22.9.0`, npm 10.9.9 `^18.17.0 || >=20.5.0`, pnpm 11.28.9 `>=22.13`, pnpm 10.34.9 `>=18.12`, Yarn 4.18.1
   `>=18.12.0`, Yarn 1.22.22 `>=4.0.0`. pnpm 12.16.1 (`>=18`) does not run on Node.js at all: its install script replaces the
   launcher with the native binary of its platform package, so the Dockerfile runs `npm rebuild pnpm12` (all other scripts
   stay off); with the script skipped the launcher falls back to Node.js and may download a binary at first use.
-  Verified: `<row> --version` prints the pinned version for all eight rows in the built image, and `pnpm12` also runs with
-  no `node` on `PATH`. Not verified yet: the full scenario list of each row on Node.js 24; the matrix tests show it.
+  Verified: `<row> --version` prints the pinned version for all eight rows in the built image (2026-10-30, Node.js 26.13.0),
+  and `pnpm12` also runs with no `node` on `PATH`. Not verified yet: the full scenario list of each row on Node.js 26; the matrix tests show it.
 - **The base URL is the real one.** Each client pod runs `fwd -listen 127.0.0.1:<edge port> -to <target>` as its only
   process. The clients therefore use `https://localhost:<edge port>` exactly as the setup snippets
   ([R-NPM-041](../spec/formats/npm.md#r-npm-041--client-setup-instructions)) print it, and TLS verifies `localhost`

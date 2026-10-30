@@ -34,8 +34,8 @@ make npm-reference-check    # resolves into .out/npm-reference and diffs; fails 
 
 Both need Docker and Go, not a cluster and not the internet: the script starts the stub image on a throwaway Docker
 network with a throwaway CA and runs `npm` from `E2E_CLIENTS_NODE_IMAGE` ([tools/versions.env](../tools/versions.env),
-Node 24.22.2, the version of `web/.nvmrc`; the script refuses an image whose version differs) with the stub as its registry.
-The writer is therefore always that image's npm (11.19.1 at this pin), never a host npm.
+Node 26.13.0, the version of `web/.nvmrc`; the script refuses an image whose version differs) with the stub as its registry.
+The writer is therefore always that image's npm (11.20.0 at this pin), never a host npm.
 
 When to regenerate: after any change of the corpus generator (its digest test fails first), of the Node image pin, or of
 `corpus.ReferenceMinNames`. Commit the files with the change.

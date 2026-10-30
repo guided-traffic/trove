@@ -15,7 +15,7 @@ CHART="$ROOT/deploy/helm/trove"
 got="$(helm version --template '{{.Version}}' 2>/dev/null || true)"
 if [ "$got" != "$HELM_VERSION" ]; then
   echo "error: helm ${got:-<none>} is installed, tools/versions.env pins $HELM_VERSION." >&2
-  echo "  install it with: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION=$HELM_VERSION bash" >&2
+  echo "  install it with: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | DESIRED_VERSION=$HELM_VERSION bash" >&2
   exit 1
 fi
 

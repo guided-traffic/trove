@@ -3322,19 +3322,21 @@ Context: npm, pnpm 10, pnpm 11, Yarn 4 and Yarn 1 run on Node.js; pnpm 12 ships 
 Verified on 2026-10-30 from the packages' `engines`: npm 10.9.9 `^18.17.0 || >=20.5.0`, npm 11.21.1
 `^20.17.0 || >=22.9.0`, npm 12.2.1 `^22.22.2 || ^24.15.0 || >=26.0.0`, pnpm 10.34.9 `>=18.12`,
 pnpm 11.28.9 `>=22.13`, pnpm 12.16.1 `>=18`, Yarn 4.18.1 `>=18.12.0`, Yarn 1.22.22 `>=4.0.0`. The
-repository's Node.js is 24.22.2 (`web/.nvmrc`).
+repository's Node.js is 26.13.0 (`web/.nvmrc`).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) One Node.js, the repository's | One image `FROM node:<web/.nvmrc>-trixie-slim`, pinned by digest in `tools/versions.env`; `make versions-check` compares the tag with `web/.nvmrc` | One Node pin for the repository; every `engines` range accepts 24.22.2; one image, one build; the glibc variant most CI images use | A row runs on a Node it was not bundled with (npm 10 normally meets Node 22) |
+| (a) One Node.js, the repository's | One image `FROM node:<web/.nvmrc>-trixie-slim`, pinned by digest in `tools/versions.env`; `make versions-check` compares the tag with `web/.nvmrc` | One Node pin for the repository; every `engines` range accepts 26.13.0; one image, one build; the glibc variant most CI images use | A row runs on a Node it was not bundled with (npm 10 normally meets Node 22) |
 | (b) The bundled Node per row | Node 22 for npm 10, Node 24 for npm 11, Node 26 for npm 12, and so on | Each npm runs where users run it | Three or more Node pins and images; the version-per-tool rule is broken for Node; the registry-visible behavior of the clients does not depend on the Node minor |
 | (c) Alpine variant | As (a) on musl | Smaller image | pnpm 12 would run its musl binary, which is not the one most users run; the image is a test tool whose size does not matter |
 
-**Choice:** (a), the digest-pinned `node:24.22.2-trixie-slim`. The image removes the `npm`,
+**Choice:** (a), the digest-pinned `node:26.13.0-trixie-slim` (Node.js 26 is the active LTS line since
+2026-10-28; the pin moved from 24.22.2 with the Node.js 26 update). The image removes the `npm`,
 `npx` and `corepack` that come with Node.js, so the only npm in it is the three npm rows.
 
-**Rationale:** No row needs a different Node: all eight `--version` calls ran on 24.22.2 in the
-image, and npm 12 (`^24.15.0`) and pnpm 12 (native, `>=18`) accept it. The development agent would
+**Rationale:** No row needs a different Node: all eight `--version` calls ran on 26.13.0 in the
+image (verified 2026-10-30), and npm 12 (`^22.22.2 || ^24.15.0 || >=26.0.0`) and pnpm 12 (native,
+`>=18`) accept it. The development agent would
 revisit this if a scenario fails on a row only on Node 24 and passes on the Node the row is bundled
 with; that row then gets its own image tag and its own pin.
 

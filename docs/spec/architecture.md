@@ -5595,6 +5595,32 @@ has no binding, allowing costs a hole nobody sees. The development agent would r
 
 **Applied in the spec:** R-ARCH-009 sketch (`Claim`, `AutoClaim`).
 
+### Q-ARCH-218 · Node.js 26 is the one Node.js of the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `web/.nvmrc` and the digest-pinned clients image (`E2E_CLIENTS_NODE_IMAGE`, R-NPM-045) name one Node.js version, and the
+Renovate pull request for Node.js 26 moves both. The spec's npm page records Node.js 26 as the active LTS line from 2026-10-28
+([npm.md](formats/npm.md), the clients table). Checked on 2026-10-30: the `engines` of npm 12.2.1 (`^22.22.2 || ^24.15.0 || >=26.0.0`),
+of Angular 22.2.4 (`^22.22.3 || ^24.15.0 || >=26.0.0`) and of the other six clients accept 26.13.0; the clients image built on
+`node:26.13.0-trixie-slim` runs all eight rows at their pinned versions; `perf/npm/reference` is unchanged under the npm that image
+bundles (11.20.0).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stay on Node.js 24.22.2 | The pins of `web/.nvmrc` and the clients image do not move | No change; every row and the web build already run on it | The repository's one Node.js is the line before the active LTS; the Node.js 26 pull request stays open |
+| (b) Node.js 26.13.0 for both pins (chosen) | `web/.nvmrc` and `E2E_CLIENTS_NODE_IMAGE` move together to 26.13.0 | One pin, the active LTS line; every consumer's `engines` accepts it, verified above; the reference lockfile's writer moves to npm 11.20.0 without a change of the lockfile | The host of a developer on 26.5.0 has to move to 26.13.0; the spec's npm decision (Q-NPM-45) names the Node.js of its time and is updated with it |
+| (c) One Node.js per client row | Node 22 for npm 10, 24 for npm 11, 26 for npm 12, and so on | Each client runs on the Node it is bundled with | Three or more Node pins and images; it breaks the one-version rule for Node.js (the rejected option (b) of Q-NPM-45) |
+
+**Choice:** (b). The repository keeps one Node.js for the web build, the clients and the reference lockfile, and that one is the active LTS line.
+
+**Rationale:** The one-version rule decides between (b) and (c), and the engines of every consumer decide that the active line is usable without
+any code change. The development agent would revisit the pin when a row fails on 26.13.0 only: then that row gets its own image and pin, as
+Q-NPM-45 already states, and the one-version rule is re-decided on the page that owns the row.
+
+**Applied in the spec:** [npm.md](formats/npm.md) (Q-NPM-45 names 26.13.0 and its verification); `web/.nvmrc` and `tools/versions.env`
+hold the pins; [docs/developer/e2e.md](../developer/e2e.md) and [perf/README.md](../../perf/README.md) name the version.
+
 ## What this does not cover
 
 ### H-1 · Format code runs in-process without isolation

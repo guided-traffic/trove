@@ -68,7 +68,7 @@ check_tools() {
 
   got="$(helm version --template '{{.Version}}' 2>/dev/null || true)"
   check_version helm "$HELM_VERSION" "$got" \
-    "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION=${HELM_VERSION} bash" || failed=1
+    "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | DESIRED_VERSION=${HELM_VERSION} bash" || failed=1
 
   # The Valkey operator and the secret generator are published for linux/amd64 only (tools/versions.env).
   # On an arm64 host the Docker VM must be able to run amd64 binaries (qemu-user or Rosetta).
