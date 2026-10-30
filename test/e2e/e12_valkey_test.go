@@ -63,7 +63,27 @@ func clonedReplica(t *testing.T, name string, mutate func(spec map[string]any)) 
 		t.Fatal(err)
 	}
 	kn(t, "apply", "-f", f)
-	t.Cleanup(func() { _, _ = kubectl("-n", cfg.namespace, "delete", "pod", name, "--grace-period=1", "--wait=false") })
+	// The pod ends the way a replica does (SIGTERM, the clean shutdown deletes its row) and the test waits until the
+	// registry no longer lists it. A web-role row that lingers counts towards n, the replicas the fallback share of
+	// every rate limit divides by (R-ARCH-034, Q-ARCH-45): the rows of this file, left to go stale, made n 4 instead of 2
+	// for the test that followed (the transfer loop of E0.14 was refused at q=12 instead of 25 when its drain took the
+	// Valkey primary).
+	t.Cleanup(func() {
+		_, _ = kubectl("-n", cfg.namespace, "delete", "pod", name, "--wait=true", "--timeout=2m")
+		took := waitFor(t, "the registry to drop "+name, 2*time.Minute, 2*time.Second, func() bool {
+			rs, err := replicas()
+			if err != nil {
+				return false
+			}
+			for _, r := range rs {
+				if r.Name == name {
+					return false
+				}
+			}
+			return true
+		})
+		t.Logf("%s is gone from the registry %s after its pod was deleted", name, took.Round(time.Second))
+	})
 }
 
 func addEnv(spec map[string]any, name, value string) {

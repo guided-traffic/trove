@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -29,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -177,7 +179,7 @@ func (r *route) dial(t testing.TB) func(ctx context.Context, network, addr strin
 		default:
 			addr = net.JoinHostPort("127.0.0.1", edgePort(t))
 		}
-		return d.DialContext(ctx, network, addr)
+		return dialForward(ctx, &d, network, addr)
 	}
 }
 
@@ -672,29 +674,53 @@ func webReadyDegraded(t testing.TB, want bool) {
 
 // ── port-forwards ────────────────────────────────────────────────────────────
 
+// A `kubectl port-forward` ends for good on the first connection through it that fails upstream ("lost connection to
+// pod": the kubelet could not reach the port inside the pod) and when its stream to the kubelet breaks, whatever the
+// cause (a pod that went away, a busy node, the API server). The tests hand its local address to clients, so a forward
+// is supervised: when the kubectl process ends on its own it is started again on the same local port, the end and its
+// stderr go to the artifact directory, and a client that finds the port closed meanwhile (connection refused, no byte
+// of its request sent) waits for the new process instead of failing (dialForward).
+
 var (
 	fwdMu    sync.Mutex
-	fwdProcs []*exec.Cmd
+	fwds     []*forward
+	fwdAddrs = map[string]*forward{} // local address -> forward
 	kcOnce   sync.Once
 	kcFwd    string
 )
 
 var forwardingLine = regexp.MustCompile(`127\.0\.0\.1:(\d+) ->`)
 
-// portForward starts `kubectl port-forward <target> :<port>` and returns the local address.
-func portForward(t testing.TB, target string, port int) (string, *exec.Cmd) {
-	t.Helper()
-	cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "port-forward", "--address", "127.0.0.1", target, fmt.Sprintf(":%d", port))
+// forwardRestartWithin is how long a client waits for a forward whose kubectl process ended to listen again.
+const forwardRestartWithin = 30 * time.Second
+
+// forward is a supervised `kubectl port-forward` to one pod or Service port.
+type forward struct {
+	target string
+	port   int
+	addr   string // 127.0.0.1:<local port>, fixed after the first start
+
+	mu       sync.Mutex
+	cmd      *exec.Cmd
+	stopping bool
+	ups      int    // processes started so far
+	lastErr  string // stderr of the last process that ended on its own, or why a restart failed
+}
+
+// start launches one kubectl process on the local port ("" lets kubectl pick one) and returns the address it reports.
+func (f *forward) start(local string) (string, error) {
+	cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "port-forward", "--address", "127.0.0.1", f.target, local+":"+strconv.Itoa(f.port))
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		t.Fatal(err)
+		return "", err
 	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
+		return "", err
 	}
-	fwdMu.Lock()
-	fwdProcs = append(fwdProcs, cmd)
-	fwdMu.Unlock()
+	exited, decided := make(chan struct{}), make(chan struct{})
+	defer close(decided)
 	lines := make(chan string, 1)
 	go func() {
 		buf := make([]byte, 512)
@@ -702,39 +728,148 @@ func portForward(t testing.TB, target string, port int) (string, *exec.Cmd) {
 		lines <- string(buf[:n])
 		_, _ = io.Copy(io.Discard, out)
 	}()
+	go func() {
+		// Wait closes the pipe; the reader above has taken the forwarding line by then or the process never printed it.
+		_ = cmd.Wait()
+		close(exited)
+		<-decided // start has either taken the process as running or given it up
+		f.ended(cmd, stderr.String())
+	}()
 	select {
 	case l := <-lines:
 		m := forwardingLine.FindStringSubmatch(l)
 		if m == nil {
-			t.Fatalf("port-forward %s: unexpected output %q", target, l)
+			_ = cmd.Process.Kill()
+			<-exited
+			return "", fmt.Errorf("unexpected output %q, stderr %q", l, tail(stderr.String(), 400))
 		}
-		return "127.0.0.1:" + m[1], cmd
+		f.mu.Lock()
+		f.cmd = cmd
+		f.ups++
+		f.mu.Unlock()
+		return "127.0.0.1:" + m[1], nil
+	case <-exited:
+		return "", fmt.Errorf("kubectl port-forward ended at start: %s", tail(stderr.String(), 400))
 	case <-time.After(30 * time.Second):
-		t.Fatalf("port-forward %s did not start", target)
+		_ = cmd.Process.Kill()
+		<-exited
+		return "", fmt.Errorf("did not start within 30s")
 	}
-	return "", nil
 }
 
-func stopForward(c *exec.Cmd) {
-	if c != nil && c.Process != nil {
-		_ = c.Process.Kill()
-		_ = c.Wait()
+// ended runs when a kubectl process ended: an end the harness did not ask for is recorded and restarted.
+func (f *forward) ended(cmd *exec.Cmd, stderr string) {
+	f.mu.Lock()
+	if f.cmd != cmd || f.stopping {
+		f.mu.Unlock()
+		return
+	}
+	f.lastErr = strings.TrimSpace(stderr)
+	n := f.ups
+	f.mu.Unlock()
+	name := fmt.Sprintf("portforward-%s-%d.log", strings.NewReplacer("/", "_", ":", "_").Replace(f.target+"-"+f.addr), n)
+	_ = os.WriteFile(filepath.Join(cfg.out, name), []byte(fmt.Sprintf("%s the kubectl port-forward to %s on %s ended (start %d): %s\n", time.Now().Format(time.RFC3339), f.target, f.addr, n, f.lastErr)), 0o644)
+	go f.restart()
+}
+
+// restart starts the process again on the old local port until it listens or the forward is stopped.
+func (f *forward) restart() {
+	_, local, _ := net.SplitHostPort(f.addr)
+	for {
+		f.mu.Lock()
+		stopping := f.stopping
+		f.mu.Unlock()
+		if stopping {
+			return
+		}
+		_, err := f.start(local)
+		if err == nil {
+			return
+		}
+		f.mu.Lock()
+		f.lastErr = err.Error()
+		f.mu.Unlock()
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func (f *forward) stop() {
+	f.mu.Lock()
+	f.stopping = true
+	cmd := f.cmd
+	f.mu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+}
+
+// portForward starts `kubectl port-forward <target> :<port>` and returns the supervised forward, whose addr is the
+// local address.
+func portForward(t testing.TB, target string, port int) *forward {
+	t.Helper()
+	f := &forward{target: target, port: port}
+	addr, err := f.start("")
+	if err != nil {
+		t.Fatalf("port-forward %s: %v", target, err)
+	}
+	f.addr = addr
+	fwdMu.Lock()
+	fwds = append(fwds, f)
+	fwdAddrs[addr] = f
+	fwdMu.Unlock()
+	return f
+}
+
+func stopForward(f *forward) {
+	if f == nil {
+		return
+	}
+	f.stop()
+	fwdMu.Lock()
+	delete(fwdAddrs, f.addr)
+	fwdMu.Unlock()
+}
+
+// dialForward dials addr. When addr is a forward whose kubectl process has ended, a refused connection waits for the
+// restarted process (nothing of the request was sent, so waiting changes no count); when the forward does not come
+// back the error carries the stderr of the process that ended.
+func dialForward(ctx context.Context, d *net.Dialer, network, addr string) (net.Conn, error) {
+	fwdMu.Lock()
+	f := fwdAddrs[addr]
+	fwdMu.Unlock()
+	deadline := time.Now().Add(forwardRestartWithin)
+	for {
+		c, err := d.DialContext(ctx, network, addr)
+		if err == nil || f == nil || !errors.Is(err, syscall.ECONNREFUSED) {
+			return c, err
+		}
+		if time.Now().After(deadline) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return nil, fmt.Errorf("%w; the kubectl port-forward to %s (%d starts) did not come back within %s: %s", err, f.target, f.ups, forwardRestartWithin, f.lastErr)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 }
 
 // keycloakAddr is the local address of a port-forward to the test IdP's Service (kept for the whole run).
 func keycloakAddr(t testing.TB) string {
-	kcOnce.Do(func() { kcFwd, _ = portForward(t, "svc/trove-keycloak", 8443) })
+	kcOnce.Do(func() { kcFwd = portForward(t, "svc/trove-keycloak", 8443).addr })
 	return kcFwd
 }
 
 func stopForwards() {
 	fwdMu.Lock()
-	defer fwdMu.Unlock()
-	for _, c := range fwdProcs {
-		stopForward(c)
+	all := fwds
+	fwds, fwdAddrs = nil, map[string]*forward{}
+	fwdMu.Unlock()
+	for _, f := range all {
+		f.stop()
 	}
-	fwdProcs = nil
 }
 
 // podForwards opens a port-forward to the client listener of every ready web pod and returns the local addresses
@@ -749,18 +884,18 @@ func podForwards(t testing.TB) ([]string, func()) { return podForwardsPort(t, 80
 func podForwardsPort(t testing.TB, port int) ([]string, func()) {
 	t.Helper()
 	var addrs []string
-	var cmds []*exec.Cmd
+	var fs []*forward
 	for _, p := range readyWebPods(t) {
-		a, c := portForward(t, "pod/"+p, port)
-		addrs = append(addrs, a)
-		cmds = append(cmds, c)
+		f := portForward(t, "pod/"+p, port)
+		addrs = append(addrs, f.addr)
+		fs = append(fs, f)
 	}
 	if len(addrs) < 2 {
 		t.Fatalf("only %d ready web pods", len(addrs))
 	}
 	return addrs, func() {
-		for _, c := range cmds {
-			stopForward(c)
+		for _, f := range fs {
+			stopForward(f)
 		}
 	}
 }

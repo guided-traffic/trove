@@ -43,6 +43,11 @@ export const options = {
 function line(op, t0, res, path, note) {
   const replica = res.status === 0 ? `${res.error_code || 0}:${res.error || 'error'}` : (res.headers['X-Trove-Replica'] || '-');
   console.log(`T ${t0} ${op} ${res.status} ${String(replica).replace(/\s+/g, '_')} ${Date.now() - t0} ${path} ${note}`);
+  if (res.status === 429) {
+    // not a transfer line (the prefix is H): what the refusal said, for the reader of the artifact
+    const h = res.headers;
+    console.log(`H ${t0} ${op} 429 RateLimit-Policy=${h['Ratelimit-Policy'] || h['RateLimit-Policy'] || '-'} RateLimit=${h['Ratelimit'] || h['RateLimit'] || '-'} Retry-After=${h['Retry-After'] || '-'} ${String(res.body).slice(0, 160).replace(/\s+/g, ' ')}`);
+  }
 }
 
 export default function () {

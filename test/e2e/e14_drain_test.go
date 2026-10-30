@@ -295,6 +295,14 @@ func TestE14Drain(t *testing.T) {
 			if len(first) > 5 {
 				first = first[:5]
 			}
+			// what the limiters decided on each replica, for the one who reads a refusal (the k6 log has the headers)
+			for _, p := range readyWebPods(t) {
+				for k, v := range metricsOf(t, p) {
+					if strings.HasPrefix(k, "trove_ratelimit_decisions_total{limiter=\"api_write\"") || strings.HasPrefix(k, "trove_ratelimit_fallback{limiter=\"api_write\"") || strings.HasPrefix(k, "trove_api_rate_limited_total") {
+						t.Logf("%s %s = %v", p, k, v)
+					}
+				}
+			}
 			t.Errorf("E1.13 the upload and download loop on generic-local failed during the drain: %d failures, %d wrong checksums, %v dropped iterations; first: %v", len(xres.Failures), xres.Bad, xres.Dropped, first)
 		}
 		if xres.Status["put 201"]+xres.Status["put 200"] < 100 || xres.Status["get 200"] < 100 {
