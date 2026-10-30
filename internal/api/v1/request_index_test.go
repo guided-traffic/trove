@@ -218,14 +218,4 @@ func TestR_AUTHZ_015_AHandlerThatReceivedNoHolderBeginsOneAndPassesItOn(t *testi
 			t.Fatalf("%v %v", nilAcc, err)
 		}
 	})
-	t.Run("an Authorizer that cannot decide per request is no decision point", func(t *testing.T) {
-		if DeciderOf(authorizerOnly{}) != nil {
-			t.Fatal("an Authorizer without the per-request forms was taken for a Decider")
-		}
-		if DeciderOf(nil) != nil {
-			t.Fatal("nil is a decision point")
-		}
-	})
 }
-
-type authorizerOnly struct{ authz.Authorizer }

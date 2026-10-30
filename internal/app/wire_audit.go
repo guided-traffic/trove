@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -12,14 +11,17 @@ import (
 	"github.com/guided-traffic/trove/internal/observability"
 )
 
-// startAudit is step 4 of R-ARCH-024: it reconciles audit.retention_days with
-// the stored policy, calls audit_maintain_partitions() until the partitions of the
-// current and the next month exist, and builds the recorder. An insert therefore
-// never meets a missing partition, and the replica is not ready (the startup
-// check) before this has passed. It retries while PostgreSQL does not answer,
-// like the steps before it.
-func (a *App) startAudit(ctx context.Context) error {
-	db := a.database()
+// wireAudit is the audit area, step 4 of R-ARCH-024: it reconciles
+// audit.retention_days with the stored policy, calls audit_maintain_partitions()
+// until the partitions of the current and the next month exist, and builds the
+// recorder. An insert therefore never meets a missing partition, and the replica
+// is not ready (the startup check) before this has passed. It retries while
+// PostgreSQL does not answer, like the steps before it.
+func (a *App) wireAudit(ctx context.Context, pg postgresArea) (auditArea, error) {
+	if err := requireInputs(AreaAudit, given("database", pg.db)); err != nil {
+		return auditArea{}, err
+	}
+	db := pg.db
 	store := audit.NewStore(db)
 	log := a.log.With("component", "audit")
 	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
@@ -29,7 +31,7 @@ func (a *App) startAudit(ctx context.Context) error {
 		}
 		log.Warn("audit partitions are not ready, retrying", "error", err, "retry_in", delay.String())
 		if !sleep(ctx, delay) {
-			return ctx.Err()
+			return auditArea{}, ctx.Err()
 		}
 	}
 	w, err := audit.New(audit.Options{
@@ -38,15 +40,13 @@ func (a *App) startAudit(ctx context.Context) error {
 		AppLog: log, Metrics: newAuditMetrics(a.tele.metrics),
 	})
 	if err != nil {
-		return err
+		return auditArea{}, err
 	}
 	if err := a.startComponent(ctx, &auditComponent{w: w}); err != nil {
-		return err
+		return auditArea{}, err
 	}
-	a.mu.Lock()
-	a.m1.recorder, a.m1.auditStore = v1.WithRequestSource(w), store
-	a.mu.Unlock()
-	return nil
+	a.auditStore.set(store)
+	return auditArea{rec: v1.WithRequestSource(w), store: store}, nil
 }
 
 // auditComponent runs the asynchronous batch writer and flushes it at shutdown
@@ -92,19 +92,13 @@ func (c counters) Dropped()                                  { c.dropped() }
 const taskAuditRetention = "audit-retention"
 
 // registerAuditJobs registers the audit-retention task (R-OPS-019). Its body runs
-// on a worker; a replica without the audit store fails it permanently.
+// on a worker, which wires the audit store before it claims anything.
 func (a *App) registerAuditJobs(r *jobs.Registry) {
 	r.RegisterKind(taskAuditRetention, jobs.KindSpec{
 		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3,
-		Handler: func(ctx context.Context, _ *jobs.Run) error {
-			a.mu.Lock()
-			store := a.m1.auditStore
-			a.mu.Unlock()
-			if store == nil {
-				return jobs.Permanent(errors.New("this replica has no audit store"))
-			}
+		Handler: a.auditStore.handler("audit store", func(ctx context.Context, store *audit.Store, _ *jobs.Run) error {
 			return store.Maintain(ctx)
-		},
+		}),
 	})
 	spec := jobs.TaskSpec{Schedule: "30 3 * * *"}
 	if c, ok := a.cfg.Maintenance.Tasks[taskAuditRetention]; ok && c.Schedule != "" {
@@ -113,10 +107,9 @@ func (a *App) registerAuditJobs(r *jobs.Registry) {
 	r.RegisterTask(taskAuditRetention, spec)
 }
 
-// auditStoreForAPI is the store the query and export operations read; nil on a
-// replica without a main pool.
+// auditStoreForAPI is the store the query and export operations read; nil in the
+// shell profile, which has no audit area.
 func (a *App) auditStoreForAPI() *audit.Store {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.m1.auditStore
+	store, _ := a.auditStore.get()
+	return store
 }

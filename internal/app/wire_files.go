@@ -7,7 +7,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/rawfiles"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
-	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
@@ -68,113 +67,69 @@ func (c *filesComponent) Stop(context.Context) error {
 }
 
 // Flush writes the pending download statistics and repository activity.
-func (c *filesComponent) Flush(ctx context.Context) error {
+func (c *filesComponent) Flush(ctx context.Context) error { return c.Sync(ctx) }
+
+// Sync is Flush for a running replica: the buffers keep working afterwards
+// (App.Flush).
+func (c *filesComponent) Sync(ctx context.Context) error {
 	return errors.Join(c.stats.Flush(ctx), c.activity.Flush(ctx))
 }
 
-// wireFiles builds the item store and the files service at step 8 of the
-// bootstrap, after the repository snapshot and the decision point. A replica
-// without PostgreSQL or the object store wires nothing, and /files/ answers 503
-// there.
-func (a *App) wireFiles(ctx context.Context, infra bool) error {
-	if !infra || !a.sub.MainPool {
-		return nil
-	}
-	db := a.database()
-	a.mu.Lock()
-	blobs, queue := a.blobs, a.queue
-	a.mu.Unlock()
-	if db == nil || blobs == nil || a.m1.repositories == nil || a.m1.authorizer == nil {
-		return nil
+// wireFiles is the files area: the item store, then the files service over it.
+// The files service names its decision point through the entry points that
+// serve it, so the area takes the authz area: a role that serves /files/ without
+// a decision point is refused at start-up instead of answering 503 on the route.
+func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az authzArea, fm formatsArea) (filesArea, error) {
+	if err := requireInputs(AreaFiles, given("repository reader", repo.reader), given("authorizer", az.engine), given("format hooks", fm.hooks), given("format seam", fm.seam)); err != nil {
+		return filesArea{}, err
 	}
 	log := a.log.With("component", "files")
-	stats := items.NewStats(db, a.cfg.Storage.Stats.FlushInterval, log)
-	activity := repository.NewActivity(db, 0, log)
-	opts := items.Options{
-		Runner: db, Blobs: blobs, Recorder: a.auditRecorder(),
-		Storage: a.cfg.Storage, RecordDownloads: a.cfg.Audit.RecordDownloads, Activity: activity, Stats: stats, Log: log,
-	}
-	if queue != nil { // a nil *jobs.Queue in the interface would not be nil
-		opts.Jobs = queue
-	}
-	hooks, seam, err := a.formatHooks(db)
+	stats := items.NewStats(in.db, a.cfg.Storage.Stats.FlushInterval, log)
+	activity := repository.NewActivity(in.db, 0, log)
+	store, err := items.New(items.Options{
+		Runner: in.db, Blobs: in.blobs, Recorder: in.rec, Jobs: in.queue,
+		Storage: a.cfg.Storage, RecordDownloads: a.cfg.Audit.RecordDownloads, Activity: activity, Stats: stats, Hooks: fm.hooks, Log: log,
+	})
 	if err != nil {
-		return err
+		return filesArea{}, err
 	}
-	opts.Hooks = hooks
-	store, err := items.New(opts)
+	svc, err := files.New(files.Options{Items: store, Repos: repo.reader, Formats: fm.seam, Log: log})
 	if err != nil {
-		return err
-	}
-	svc, err := files.New(files.Options{Items: store, Repos: a.m1.repositories, Formats: seam, Log: log})
-	if err != nil {
-		return err
+		return filesArea{}, err
 	}
 	if err := a.startComponent(ctx, &filesComponent{stats: stats, activity: activity}); err != nil {
-		return err
+		return filesArea{}, err
 	}
-	a.mu.Lock()
-	a.m1.items, a.m1.files = store, svc
-	a.mu.Unlock()
-	return nil
+	a.itemStore.set(store)
+	return filesArea{items: store, service: svc, decider: az.engine}, nil
 }
 
-// itemStore returns the wired item store, nil in a shell without infrastructure.
-func (a *App) itemStore() *items.Store {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.m1.items
-}
-
-// filesDecider returns the decision point the entry points of the files transfer
-// begin their requests' indexes on, nil on a replica without the authz area.
-func (a *App) filesDecider() authz.Decider {
-	if a.m1.authzEngine == nil { // a nil *authz.Engine in the interface would not be nil
-		return nil
-	}
-	return a.m1.authzEngine
-}
-
-// filesService returns the wired service, nil in a shell without infrastructure.
-func (a *App) filesService() *files.Service {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.m1.files
-}
-
-// registerFiles mounts /files/ on a router. The routes exist on every replica
-// that serves the files family; without the service they answer 503.
+// registerFiles mounts /files/ on a router. A replica that serves a client
+// listener has the files area (requireServing); only the shell profile mounts the
+// routes without a service, where they answer 503.
 func (a *App) registerFiles(r *httpserver.Router) {
-	rawfiles.New(rawfiles.Options{Service: a.filesService(), Decider: a.filesDecider(), Download: a.cfg.Storage.Download, API: a.cfg.API}).Register(r)
+	fa := part[filesArea](a.parts)
+	rawfiles.New(rawfiles.Options{Service: fa.service, Decider: fa.decider, Download: a.cfg.Storage.Download, API: a.cfg.API}).Register(r)
 }
 
 // repositoryAPI returns the services of the repository operations of the
 // management API.
 func (a *App) repositoryAPI() v1.RepositoryServices {
-	a.mu.Lock()
-	svc := a.m1.repositoryService
-	a.mu.Unlock()
-	return v1.RepositoryServices{
-		Service: svc, Authz: a.m1.authorizer, Reader: a.m1.repositories,
-		AnonymousAccess: func(ctx context.Context) (bool, error) {
-			if a.m1.anonymousAccess == nil {
-				return false, nil
-			}
-			return a.m1.anonymousAccess(ctx)
-		},
+	repo, id := part[repositoryArea](a.parts), part[identityArea](a.parts)
+	anonymous := id.anonymousAccess
+	if anonymous == nil { // the shell profile: no switch, so anonymous access is off
+		anonymous = func(context.Context) (bool, error) { return false, nil }
 	}
+	return v1.RepositoryServices{Service: repo.service, Authz: a.decider(), Reader: a.Repositories(), AnonymousAccess: anonymous}
 }
 
 // registerFilesJobs registers the job that deletes a large subtree (R-STOR-018).
-// The handler finds the item store at run time, because the registry is built,
-// and frozen, before the files component is wired. The job decides nothing: the
+// The handler finds the item store through a late value, because the registry is
+// built, and frozen, before the files area is wired. The job decides nothing: the
 // request that queued it decided every item (items.Store.RunDeleteJob).
 func (a *App) registerFilesJobs(r *jobs.Registry) {
-	r.RegisterKind(items.DeleteJobKind, items.DeleteJobSpec(func(ctx context.Context, run *jobs.Run) error {
-		store := a.itemStore()
-		if store == nil {
-			return errors.New("items: this replica has not wired the item store yet")
-		}
-		return store.RunDeleteJob(ctx, run)
-	}))
+	r.RegisterKind(items.DeleteJobKind, items.DeleteJobSpec(
+		a.itemStore.handler("item store", func(ctx context.Context, store *items.Store, run *jobs.Run) error {
+			return store.RunDeleteJob(ctx, run)
+		})))
 }

@@ -39,7 +39,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | Page | Content |
 |---|---|
 | [architecture.md](architecture.md) | Components, layers, request path, startup and shutdown, coordination, configuration and secrets |
-| [build-and-test.md](build-and-test.md) | Build, generate, lint and test targets, and the test tiers and their build tags |
+| [build-and-test.md](build-and-test.md) | Build, generate, lint and test targets, the test tiers and their build tags, and the in-process harness (`testenv`: a stack, replicas through `app.New`, seeded principals and real tokens) |
 | [releasing.md](releasing.md) | The CI jobs and their make targets, semantic-release and the release pipeline (Docker Hub and the Helm chart repository), the Renovate policy, the secrets and settings the pipeline needs |
 | [configuration.md](configuration.md) | How `trove.yaml`, environment variables and flags combine, and how a key is added |
 | [coverage.md](coverage.md) | The requirement coverage generator, its rules and its evidence record |

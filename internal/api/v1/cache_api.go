@@ -40,9 +40,8 @@ type CacheRepositories interface {
 type CacheServices struct {
 	Invalidations CacheInvalidations
 	Repositories  CacheRepositories
-	// Authz is the decision point of the entry list; it decides per request through
-	// its [authz.Decider] form ([DeciderOf]).
-	Authz authz.Authorizer
+	// Authz is the decision point of the entry list; it decides per request.
+	Authz authz.Decider
 }
 
 func (s *Server) cacheServices() (CacheServices, error) {

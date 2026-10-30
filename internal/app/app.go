@@ -14,17 +14,22 @@ import (
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/observability/health"
-	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/proxy/invalidation"
+	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
 	"github.com/guided-traffic/trove/internal/webui"
 )
@@ -89,19 +94,33 @@ type App struct {
 	db    *postgres.DB
 	sysf  *postgres.SystemFacts
 	vk    *cluster.Valkey
-	ring  *secrets.KeyRing
-	out   *outbound.Factory
 
+	// The components of the infrastructure areas, mirrored here by wireInfra for
+	// the domain steps that do not take them as typed inputs yet; leases is set by
+	// the worker step for the registry heartbeat.
 	signals *cluster.Signals
 	changes *cluster.Changes
 	caches  *cache.Registry
 	leases  *cluster.Leases
 	queue   *jobs.Queue
 	blobs   *blob.Store
-	gc      *blob.Collector
 
-	// m1 holds the components of the M1 areas (m1.go).
-	m1 m1Wiring
+	// plan is the wiring steps this role runs (steps.go), checked in New.
+	plan []step
+	// parts are the results of the wiring steps by type (steps.go). The bootstrap
+	// goroutine fills it before the listeners open; everything that serves a
+	// request, and the accessors after Started, only reads it.
+	parts *wiring
+	// The services that job handlers use are late values: the job registry is
+	// built, and frozen, before the area that owns the service is wired.
+	auditStore late[*audit.Store]
+	gc         late[*blob.Collector]
+	repoSvc    late[*repository.Service]
+	itemStore  late[*items.Store]
+	tokenSvc   late[*token.Service]
+	folder     late[*invalidation.Folder]
+	reseal     late[resealDeps]
+	host       late[formats.Host]
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of
@@ -140,6 +159,13 @@ func New(o Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	if o.SkipInfrastructure || fixtureBuild {
+		sub = sub.shell()
+	}
+	plan, err := planSteps(wiringSteps(), sub, role)
+	if err != nil {
+		return nil, err
+	}
 	if o.Environ == nil {
 		o.Environ = os.Environ()
 	}
@@ -149,7 +175,7 @@ func New(o Options) (*App, error) {
 		return nil, err
 	}
 	a := &App{
-		o: o, cfg: cfg, id: id, sub: sub, log: tele.log, tele: tele, budget: defaultBudget(),
+		o: o, cfg: cfg, id: id, sub: sub, plan: plan, parts: &wiring{}, log: tele.log, tele: tele, budget: defaultBudget(),
 		startedCh: make(chan struct{}), fatal: make(chan error, 1), bootDone: make(chan struct{}),
 	}
 	a.health = health.New(cfg.Health,
@@ -160,6 +186,12 @@ func New(o Options) (*App, error) {
 
 // Started is closed when the start-up check has passed (R-ARCH-024 step 10).
 func (a *App) Started() <-chan struct{} { return a.startedCh }
+
+// Failed delivers the error that ends a replica whose start-up or run failed
+// after Start returned (a bootstrap error such as a wiring step or a route table
+// that breaks a rule). RunWith watches it; a caller that drives Start itself
+// must too, or it waits for Started forever.
+func (a *App) Failed() <-chan error { return a.fatal }
 
 // Health returns the readiness registry.
 func (a *App) Health() *health.Health { return a.health }
@@ -278,133 +310,24 @@ func (a *App) fail(err error) {
 
 // bootstrap runs steps 3 to 10 of R-ARCH-024.
 func (a *App) bootstrap(ctx context.Context) error {
-	cfg := a.cfg
+	// Steps 3 to 7: the key ring first (a configuration check, R-ARCH-021), then
+	// the infrastructure in the order of docs/developer/coordination.md: the
+	// database, the audit partitions and recorder, the object store, Valkey and
+	// the coordination. They are the first steps of the list (steps.go).
+	if err := a.runSteps(ctx, a.parts); err != nil {
+		return err
+	}
 
-	// Step 5 (key ring) first: it is a pure configuration check and cheap. A
-	// missing or malformed key ring stops the process (R-ARCH-021).
-	ring, err := secrets.Load(cfg.Secrets)
-	if err != nil {
-		return err
-	}
-	a.ring = ring
-	// The outbound factory reports a configuration error through Err; it holds the
-	// first readiness back instead of stopping the process.
-	a.out = outbound.New(cfg.Proxy.Outbound, outbound.WithTracer(a.tele.tracer), outbound.WithMetrics(a.tele.metrics),
-		outbound.WithUpstreamLog(a.log), outbound.WithVersion(a.versionString()),
-		outbound.WithLogger(a.log), outbound.WithTLSMetrics(a.tele.tls))
-	a.health.AddReadiness("outbound", func(context.Context) error { return a.out.Err() }, true)
-
-	// Steps 3 to 9: the infrastructure, in the order of docs/developer/coordination.md.
-	infra := !a.o.SkipInfrastructure && !fixtureBuild
-	if infra && a.sub.MainPool {
-		if err := a.startComponent(ctx, &postgresComponent{a: a}); err != nil {
-			return err
-		}
-		// Step 4: the audit partitions, then the recorder (a.m1.recorder).
-		// >>> M1 audit
-		if err := a.startAudit(ctx); err != nil {
-			return err
-		}
-		// <<< M1 audit
-		// Step 6: the object store.
-		if err := a.startBlob(ctx); err != nil {
-			return err
-		}
-	}
-	// Step 7: Valkey in the background, then signals, the change log, the
-	// replica registry and, on worker and all, the lease manager and the workers.
-	if infra && a.sub.Valkey {
-		if err := a.startComponent(ctx, &valkeyComponent{a: a}); err != nil {
-			return err
-		}
-	}
-	if infra && a.sub.MainPool {
-		if err := a.startCoordination(ctx); err != nil {
-			return err
-		}
-	}
-	// WIRING POINT (step 8): load the snapshots of the domain packages and
-	// register their caches on a.caches. Each M1 area wires its components inside
-	// its own markers, in this order (audit has its own marker at step 4); an
-	// area that needs another's component reads it from m1Wiring (m1.go).
-	// >>> M1 repository
-	if infra && a.sub.MainPool {
-		if err := a.wireRepository(); err != nil {
-			return err
-		}
-	}
-	// <<< M1 repository
-	//
-	// >>> M2 proxy
-	if infra && a.sub.MainPool {
-		if err := a.wireProxy(); err != nil {
-			return err
-		}
-	}
-	// <<< M2 proxy
-	//
-	// >>> M1 login
-	// The session store comes before identity, whose stage validates the session
-	// cookie with it; the OIDC and break-glass login comes after identity, whose
-	// provisioner it calls.
-	if infra && a.sub.MainPool {
-		if err := a.wireSessions(); err != nil {
-			return err
-		}
-	}
-	// <<< M1 login
-	//
-	// >>> M1 identity
-	if err := a.wireFailureLimiter(ctx); err != nil {
-		return err
-	}
-	if err := a.wireIdentity(); err != nil {
-		return err
-	}
-	// <<< M1 identity
-	//
-	// >>> M1 login
-	if infra && a.sub.MainPool {
-		if err := a.wireLogin(ctx); err != nil {
-			return err
-		}
-	}
-	// <<< M1 login
-	//
-	// >>> M1 authz
-	if infra && a.sub.MainPool {
-		if err := a.wireAuthz(ctx); err != nil {
-			return err
-		}
-	}
-	// <<< M1 authz
-	//
-	// >>> M1 files
-	if err := a.wireFiles(ctx, infra); err != nil {
-		return err
-	}
-	// <<< M1 files
-	//
-	// >>> M1 endpoints
-	a.wireEndpoints(ctx)
-	// <<< M1 endpoints
-	//
-	// >>> M1 api
-	if err := a.wireAPI(ctx, infra); err != nil {
-		return err
-	}
-	// <<< M1 api
-	// >>> M2 proxy
-	if err := a.wireInvalidation(ctx, infra); err != nil {
-		return err
-	}
-	// <<< M2 proxy
-	// Wiring of the M1 areas ends here.
+	// Step 8, the domain areas, was part of the list as well. Close the start-up
+	// registries before the replica serves.
 	a.freezeRegistries()
-	a.startGauges(ctx, infra)
+	a.startGauges(ctx)
 
 	// Step 9: the client listener.
 	if a.sub.ClientListener {
+		if err := a.requireServing(); err != nil {
+			return err
+		}
 		if err := a.startClient(); err != nil {
 			return err
 		}
@@ -419,10 +342,9 @@ func (a *App) bootstrap(ctx context.Context) error {
 }
 
 // startGauges registers the gauges that read PostgreSQL and starts the loop that
-// refreshes the database gauges. It is a function of its own to keep bootstrap,
-// which every M1 area adds a step to, below the complexity threshold.
-func (a *App) startGauges(ctx context.Context, infra bool) {
-	if infra && a.sub.MainPool {
+// refreshes the database gauges.
+func (a *App) startGauges(ctx context.Context) {
+	if !a.sub.Shell {
 		a.registerGauges()
 	}
 	a.tele.metrics.DBGauges().SetLogger(a.log)
@@ -431,6 +353,31 @@ func (a *App) startGauges(ctx context.Context, infra bool) {
 		defer a.bg.Done()
 		a.tele.metrics.DBGauges().Run(ctx)
 	}()
+}
+
+// requireServing refuses to open the client listener when the areas it serves
+// are missing: a replica that serves /files/ without the item store, or the
+// management API without the decision point, never becomes ready and answers 503
+// on those routes; it stops here and names what is missing. The shell profile has
+// none of them by design and serves its stand-ins.
+func (a *App) requireServing() error {
+	if a.sub.Shell {
+		return nil
+	}
+	w := a.parts
+	return requireInputs("client listener",
+		given("authentication stage", part[authArea](w).stage),
+		given("decision point", a.decider()),
+		given("repository reader", part[repositoryArea](w).reader),
+		given("files service", part[filesArea](w).service),
+		given("login handler", part[loginArea](w).handler),
+		given("exposure rule service", part[exposureArea](w).rules),
+		given("request limits", part[apiArea](w).rateLimit),
+		given("audit store", a.auditStoreForAPI()),
+		given("invalidation set", part[invalidationArea](w).set),
+		given("format dispatcher", part[formatHostArea](w).disp),
+		given("ownership service", part[ownershipArea](w).service),
+	)
 }
 
 // freezeRegistries closes every start-up registry before the replica serves:
@@ -475,46 +422,25 @@ func (a *App) startClient() error {
 			Ready: a.health.Serving, PublicVersion: cfg.System.PublicVersion, Formats: formatNames(),
 			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
-			API: a.apiServices(),
-			// >>> M1 identity
-			Auth: a.authServices(),
-			// <<< M1 identity
-			// >>> M1 audit
-			AuditStore: a.auditStoreForAPI(),
-			// <<< M1 audit
-			// >>> M1 authz
-			Authz: a.authzServices(),
-			// <<< M1 authz
-			// >>> M1 endpoints
+			API:  a.apiServices(),
+			Auth: a.authServices(), AuditStore: a.auditStoreForAPI(), Authz: a.authzServices(),
 			// The endpoint and exposure-rule operations (R-EP-016, wire_exposure.go).
-			Endpoints: a.endpointServices(),
-			// <<< M1 endpoints
-			// >>> M1 repository
+			Endpoints:    a.endpointServices(),
 			Repositories: a.repositoryAPI(),
-			// <<< M1 repository
-			// >>> M1 files
-			Files:        a.filesService(),
-			FilesDecider: a.filesDecider(),
-			// <<< M1 files
-			// >>> M2 proxy
+			Files:        part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
 			Cache: a.cacheAPI(),
-			// <<< M2 proxy
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)
-		// Routes outside /api/v1/ that M1 areas own: /auth/ (login) and /files/ (files).
+		// Routes outside /api/v1/ that areas own: /auth/ (login) and /files/ (files).
 		// Register them on router within the endpoint surfaces (CheckSurface); the route table
-		// check below stops start-up for a route that breaks a rule.
-		// >>> M1 login
-		if a.m1.login != nil {
+		// check below stops start-up for a route that breaks a rule. The shell profile has
+		// no login; its /files/ routes have no service and answer 503, because the
+		// document lists them.
+		if !a.sub.Shell {
 			a.registerLogin(router)
 		}
-		// <<< M1 login
-		//
-		// >>> M1 files
 		a.registerFiles(router)
-		// <<< M1 files
-		//
 		// The package protocols under /api/<format>/ (wire_formats.go).
 		if err := a.registerFormats(router); err != nil {
 			return err
@@ -743,6 +669,56 @@ func (a *App) Caches() *cache.Registry { a.mu.Lock(); defer a.mu.Unlock(); retur
 
 // Changes returns the change log, for the writers of change areas.
 func (a *App) Changes() *cluster.Changes { a.mu.Lock(); defer a.mu.Unlock(); return a.changes }
+
+// Repositories returns the replica's repository snapshot reader; nil in the shell
+// profile.
+func (a *App) Repositories() repository.Reader {
+	r := part[repositoryArea](a.parts).reader
+	if r == nil { // a nil *SnapshotReader in the interface would not be nil
+		return nil
+	}
+	return r
+}
+
+// RepositoryService returns the repository write side; nil in the shell profile.
+func (a *App) RepositoryService() *repository.Service { return part[repositoryArea](a.parts).service }
+
+// Authorizer returns the decision point for a caller that has no request, nil in
+// the shell profile. The integration tests ask it whether a grant has reached the
+// replica.
+func (a *App) Authorizer() authz.Authorizer {
+	e := part[authzArea](a.parts).engine
+	if e == nil {
+		return nil
+	}
+	return e
+}
+
+// AuthzService returns the policy and role-binding service; nil in the shell
+// profile.
+func (a *App) AuthzService() *authz.Service { return part[authzArea](a.parts).service }
+
+// Flush writes the download statistics and the repository activity now, which
+// Shutdown does at step 6. A test that reads what a replica buffered calls it
+// instead of waiting for the flush interval. The audit buffer is not part of it:
+// its writer flushes on its own short interval and stops for good at shutdown.
+func (a *App) Flush(ctx context.Context) error {
+	a.mu.Lock()
+	comps := append([]Component(nil), a.comps...)
+	a.mu.Unlock()
+	var errsOut []error
+	for _, c := range comps {
+		if s, ok := c.(interface{ Sync(context.Context) error }); ok {
+			if err := s.Sync(ctx); err != nil {
+				errsOut = append(errsOut, fmt.Errorf("flush %s: %w", c.Name(), err))
+			}
+		}
+	}
+	return errors.Join(errsOut...)
+}
+
+// Valkey returns the Valkey client; nil in the shell profile.
+func (a *App) Valkey() *cluster.Valkey { return a.valkey() }
 
 // Signals returns the signal path.
 func (a *App) Signals() *cluster.Signals { a.mu.Lock(); defer a.mu.Unlock(); return a.signals }

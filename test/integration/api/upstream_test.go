@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
-	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/config"
@@ -31,6 +30,7 @@ import (
 	"github.com/guided-traffic/trove/internal/proxy/upstream"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 // The upstream-test operations over HTTP (R-REPO-024), against a migrated
@@ -84,8 +84,7 @@ func upstreamCatalog() *catalog.Registry {
 }
 
 func TestUpstreamTestOperations(t *testing.T) {
-	val := apitest.New(t, v1.EmbeddedYAML())
-	e := newEnv(t)
+	e := newEnv(t, false)
 	stub := newUpstreamStub(t)
 
 	dir := t.TempDir()
@@ -97,7 +96,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 	if err := os.WriteFile(keyFile, []byte(base64.StdEncoding.EncodeToString(key)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ring, err := secrets.Load(secretsConfig("2026-10", keyFile))
+	ring, err := secrets.Load(config.Secrets{EncryptionKeyFiles: []string{keyFile}, ActiveKeyID: "2026-10"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,30 +114,29 @@ func TestUpstreamTestOperations(t *testing.T) {
 	}
 	out.AddressPolicy.AllowCIDRs = []string{"127.0.0.0/8"}
 
-	var svc *repository.Service
-	n := e.newNode("web-1", nodeOpts{limits: relaxed(), val: val, repos: func(n *node) v1.RepositoryServices {
-		caches, err := cache.NewRegistry(nil, prometheus.NewRegistry())
-		if err != nil {
-			t.Fatal(err)
-		}
-		cat := upstreamCatalog()
-		clients, err := upstream.New(upstream.Options{
-			Factory: outbound.New(out), Store: repository.NewSecretStore(n.db), Ring: ring, Caches: caches, Catalog: cat,
-			Proxy: config.Proxy{MaxRedirects: 5}, SecretsDir: dir, SafetyTTL: time.Minute, Log: quiet,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		svc, err = repository.NewService(repository.Options{
-			Runner: n.db, Catalog: cat, Notifier: apiNotifier{}, Recorder: audit.Nop{}, Log: quiet,
-			Remote: repository.RemoteDeps{Ring: ring, Prober: clients},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v1.RepositoryServices{Service: svc}
-	}})
-	c := newWebCluster(n)
+	db := e.openDB("up")
+	caches, err := cache.NewRegistry(nil, prometheus.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := upstreamCatalog()
+	clients, err := upstream.New(upstream.Options{
+		Factory: outbound.New(out), Store: repository.NewSecretStore(db), Ring: ring, Caches: caches, Catalog: cat,
+		Proxy: config.Proxy{MaxRedirects: 5}, SecretsDir: dir, SafetyTTL: time.Minute, Log: testenv.Quiet(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := repository.NewService(repository.Options{
+		Runner: db, Catalog: cat, Notifier: apiNotifier{}, Recorder: audit.Nop{}, Log: testenv.Quiet(),
+		Remote: repository.RemoteDeps{Ring: ring, Prober: clients},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := e.serveComponent(db, v1.RepositoryServices{Service: svc})
+	c := e.cluster(n)
+	c.val = nil // the component server validates its answers itself
 	admin := []string{"X-Test-Principal", uuidV4(), "X-Test-Caps", "repositories:write-config"}
 	reader := []string{"X-Test-Principal", uuidV4(), "X-Test-Caps", "repositories:read-config,settings:read"}
 	caller := repository.Caller{}
@@ -152,10 +150,10 @@ func TestUpstreamTestOperations(t *testing.T) {
 
 	t.Run("R-REPO-024 POST /upstream-tests probes an unsaved section and the answer matches the contract", func(t *testing.T) {
 		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(fmt.Sprintf(`{"url":%q,"authMode":"bearer","password":{"value":"probe-token"}}`, stub.srv.URL)), admin...)
-		if a.status != 200 {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a.Status != 200 {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
-		res := a.json(t)
+		res := a.JSON(t)
 		if res["reachable"] != true || res["httpStatus"] != float64(200) || res["authenticated"] != true || res["error"] != nil {
 			t.Fatalf("result = %v", res)
 		}
@@ -165,8 +163,8 @@ func TestUpstreamTestOperations(t *testing.T) {
 		if got := stub.last(t); got != "Bearer probe-token" {
 			t.Fatalf("Authorization = %q", got)
 		}
-		if strings.Contains(string(a.body), "probe-token") {
-			t.Fatalf("the answer carries the secret: %s", a.body)
+		if strings.Contains(string(a.Body), "probe-token") {
+			t.Fatalf("the answer carries the secret: %s", a.Body)
 		}
 		if n := e.scalar(`SELECT count(*) FROM repository_secrets`); n != 0 {
 			t.Fatalf("the unsaved test stored %d secrets", n)
@@ -175,9 +173,9 @@ func TestUpstreamTestOperations(t *testing.T) {
 
 	t.Run("R-REPO-038 R-REPO-024 an upstream at the metadata address is egress_denied", func(t *testing.T) {
 		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"http://169.254.169.254/latest/"}`), admin...)
-		res := a.json(t)
-		if a.status != 200 || res["reachable"] != false {
-			t.Fatalf("%d %s", a.status, a.body)
+		res := a.JSON(t)
+		if a.Status != 200 || res["reachable"] != false {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		if e, _ := res["error"].(map[string]any); e == nil || e["code"] != "egress_denied" {
 			t.Fatalf("error = %v", res["error"])
@@ -186,38 +184,38 @@ func TestUpstreamTestOperations(t *testing.T) {
 
 	t.Run("R-REPO-024 an unknown host is a DNS error, in a 200", func(t *testing.T) {
 		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://registry.does-not-exist.invalid/"}`), admin...)
-		res := a.json(t)
-		if e, _ := res["error"].(map[string]any); a.status != 200 || res["reachable"] != false || e == nil || e["code"] != "dns_error" {
-			t.Fatalf("%d %s", a.status, a.body)
+		res := a.JSON(t)
+		if e, _ := res["error"].(map[string]any); a.Status != 200 || res["reachable"] != false || e == nil || e["code"] != "dns_error" {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 
 	t.Run("R-REPO-008 R-API-009 an invalid section answers 422 with every violation, and 400 for a misspelt member", func(t *testing.T) {
 		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://u:p@x.example/","connectTimeoutMs":50}`), admin...)
-		if a.status != 422 {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a.Status != 422 {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
-		if n := len(a.json(t)["errors"].([]any)); n != 2 {
-			t.Fatalf("errors = %d: %s", n, a.body)
+		if n := len(a.JSON(t)["errors"].([]any)); n != 2 {
+			t.Fatalf("errors = %d: %s", n, a.Body)
 		}
-		if strings.Contains(string(a.body), "u:p@") {
-			t.Fatalf("the problem repeats the credential: %s", a.body)
+		if strings.Contains(string(a.Body), "u:p@") {
+			t.Fatalf("the problem repeats the credential: %s", a.Body)
 		}
-		if a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://x.example/","connectTimeout":50}`), admin...); a.status != 400 {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://x.example/","connectTimeout":50}`), admin...); a.Status != 400 {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
-		if a := send(t, c, "POST", "/api/v1/upstream-tests", `{"format":"npmlike","remote":{}}`, append(admin, "Content-Type", "text/plain")...); a.status != 415 {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a := send(t, c, "POST", "/api/v1/upstream-tests", `{"format":"npmlike","remote":{}}`, append(admin, "Content-Type", "text/plain")...); a.Status != 415 {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 
 	t.Run("R-REPO-024 both operations need repositories:write-config", func(t *testing.T) {
 		for _, path := range []string{"/api/v1/upstream-tests", "/api/v1/repositories/npm-up/upstream-test"} {
-			if a := send(t, c, "POST", path, unsaved(`{}`)); a.status != 401 {
-				t.Errorf("%s anonymous: %d", path, a.status)
+			if a := send(t, c, "POST", path, unsaved(`{}`)); a.Status != 401 {
+				t.Errorf("%s anonymous: %d", path, a.Status)
 			}
-			if a := send(t, c, "POST", path, unsaved(`{}`), reader...); a.status != 403 {
-				t.Errorf("%s without the capability: %d", path, a.status)
+			if a := send(t, c, "POST", path, unsaved(`{}`), reader...); a.Status != 403 {
+				t.Errorf("%s without the capability: %d", path, a.Status)
 			}
 		}
 	})
@@ -225,8 +223,8 @@ func TestUpstreamTestOperations(t *testing.T) {
 	t.Run("R-REPO-024 POST /repositories/{key}/upstream-test probes the saved configuration", func(t *testing.T) {
 		create(fmt.Sprintf(`{"key":"npm-up","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"basic","username":"ci","password":{"value":"p4ss"}}}`, stub.srv.URL))
 		a := send(t, c, "POST", "/api/v1/repositories/npm-up/upstream-test", nil, admin...)
-		if a.status != 200 || a.json(t)["reachable"] != true {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a.Status != 200 || a.JSON(t)["reachable"] != true {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		if got, want := stub.last(t), "Basic "+base64.StdEncoding.EncodeToString([]byte("ci:p4ss")); got != want {
 			t.Fatalf("Authorization = %q, want %q", got, want)
@@ -234,8 +232,8 @@ func TestUpstreamTestOperations(t *testing.T) {
 
 		create(`{"key":"npm-nx","class":"remote","format":"npmlike","remote":{"url":"https://registry.does-not-exist.invalid/"}}`)
 		a = send(t, c, "POST", "/api/v1/repositories/npm-nx/upstream-test", nil, admin...)
-		if e, _ := a.json(t)["error"].(map[string]any); a.status != 200 || e == nil || e["code"] != "dns_error" {
-			t.Fatalf("%d %s", a.status, a.body)
+		if e, _ := a.JSON(t)["error"].(map[string]any); a.Status != 200 || e == nil || e["code"] != "dns_error" {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		if n := e.scalar(`SELECT count(*) FROM remote_upstream_state`); n != 0 {
 			t.Fatalf("the test wrote %d circuit rows", n)
@@ -247,18 +245,18 @@ func TestUpstreamTestOperations(t *testing.T) {
 		e.exec(`UPDATE repository_secrets SET sealed = (SELECT s.sealed FROM repository_secrets s JOIN repositories r ON r.id = s.repo_id WHERE r.key = 'npm-up')
 		         WHERE repo_id = (SELECT id FROM repositories WHERE key = 'npm-copy')`)
 		a := send(t, c, "POST", "/api/v1/repositories/npm-copy/upstream-test", nil, admin...)
-		if e, _ := a.json(t)["error"].(map[string]any); a.status != 200 || e == nil || e["code"] != "upstream_secret_unavailable" {
-			t.Fatalf("%d %s", a.status, a.body)
+		if e, _ := a.JSON(t)["error"].(map[string]any); a.Status != 200 || e == nil || e["code"] != "upstream_secret_unavailable" {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 
 	t.Run("R-REPO-024 a missing repository is 404 and a local one is 400", func(t *testing.T) {
 		create(`{"key":"npm-local","class":"local","format":"npmlike"}`)
-		if a := send(t, c, "POST", "/api/v1/repositories/npm-local/upstream-test", nil, admin...); a.status != 400 || a.code(t) != "not_applicable" {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a := send(t, c, "POST", "/api/v1/repositories/npm-local/upstream-test", nil, admin...); a.Status != 400 || a.Code(t) != "not_applicable" {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
-		if a := send(t, c, "POST", "/api/v1/repositories/nope-nope/upstream-test", nil, admin...); a.status != 404 {
-			t.Fatalf("%d %s", a.status, a.body)
+		if a := send(t, c, "POST", "/api/v1/repositories/nope-nope/upstream-test", nil, admin...); a.Status != 404 {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 }

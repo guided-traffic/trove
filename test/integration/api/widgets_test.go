@@ -23,8 +23,6 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
-func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
-
 // The widget is the test resource that proves the conventions end to end, and
 // the worked example behind "How to add a management resource" in
 // docs/developer/http-api.md: a keyed collection with list, get, create, update
@@ -84,12 +82,12 @@ func newWidgetAPI(db *postgres.DB, idem *v1.Idempotency, cfg config.API) *widget
 }
 
 func (a *widgetAPI) register(r *httpserver.Router) {
-	r.HandleFunc("GET /api/v1/widgets", a.list)
-	r.HandleFunc("POST /api/v1/widgets", a.create)
-	r.HandleFunc("GET /api/v1/widgets/{name}", a.get)
-	r.HandleFunc("PATCH /api/v1/widgets/{name}", a.patch)
-	r.HandleFunc("PUT /api/v1/widgets/{name}", a.put)
-	r.HandleFunc("DELETE /api/v1/widgets/{name}", a.delete)
+	r.HandleFunc("GET /test/widgets", a.list)
+	r.HandleFunc("POST /test/widgets", a.create)
+	r.HandleFunc("GET /test/widgets/{name}", a.get)
+	r.HandleFunc("PATCH /test/widgets/{name}", a.patch)
+	r.HandleFunc("PUT /test/widgets/{name}", a.put)
+	r.HandleFunc("DELETE /test/widgets/{name}", a.delete)
 }
 
 const widgetColumns = "name, color, labels, revision, created_at, updated_at"
@@ -264,7 +262,7 @@ func (a *widgetAPI) create(w http.ResponseWriter, r *http.Request) {
 		}
 		return v1.Outcome{
 			Status: http.StatusCreated, Body: wd,
-			Header: map[string]string{"Location": httpserver.InfoFrom(ctx).BaseURL + "/api/v1/widgets/" + wd.Name, "ETag": v1.ETag(wd.Revision, "")},
+			Header: map[string]string{"Location": httpserver.InfoFrom(ctx).BaseURL + "/test/widgets/" + wd.Name, "ETag": v1.ETag(wd.Revision, "")},
 		}, nil
 	}})
 	if err != nil {

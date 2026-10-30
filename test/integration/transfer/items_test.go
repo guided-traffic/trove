@@ -1,6 +1,6 @@
 //go:build integration
 
-package files
+package transfer
 
 import (
 	"fmt"
@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/config"
 )
 
+// smallDeletes makes a subtree of more than five items a job, in batches of four.
+var smallDeletes = []string{"TROVE_STORAGE_DELETE_MAX_SYNC_ITEMS=5", "TROVE_STORAGE_DELETE_BATCH_SIZE=4"}
+
 func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	secret := "/files/generic-local/secret/plan.txt"
 	if res := a.put("ci", secret, "the plan"); res.status != 201 {
@@ -27,7 +29,7 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 	}
 
 	t.Run("R-AUTHZ-016 R-GENERIC-005 a caller without read gets a 404 byte-identical to the 404 of a missing file, for GET and HEAD, on both replicas", func(t *testing.T) {
-		for _, r := range []*replica{a, b} {
+		for _, r := range []*webReplica{a, b} {
 			hidden, gone := r.get("nobody", "/files/private/x.txt"), r.get("nobody", "/files/private/nothing.txt")
 			if hidden.status != 404 || gone.status != 404 || normalize(hidden.text()) != normalize(gone.text()) {
 				t.Fatalf("%s hidden %d %s\nmissing %d %s", r.name, hidden.status, hidden.body, gone.status, gone.body)
@@ -81,10 +83,10 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-016 an anonymous caller is answered 401 for reads and writes alike while anonymous access is off", func(t *testing.T) {
-		problemOf(t, a.get("", "/files/private/x.txt"), 401, "unauthenticated")
-		problemOf(t, a.get("", "/files/private/nothing.txt"), 401, "unauthenticated")
-		problemOf(t, a.put("", "/files/private/x.txt", "y"), 401, "unauthenticated")
-		problemOf(t, a.get("", "/api/v1/repositories/private/items?path=x.txt"), 401, "unauthenticated")
+		problemOf(t, a.get("", "/files/private/x.txt"), 401, "credentials_required")
+		problemOf(t, a.get("", "/files/private/nothing.txt"), 401, "credentials_required")
+		problemOf(t, a.put("", "/files/private/x.txt", "y"), 401, "credentials_required")
+		problemOf(t, a.get("", "/api/v1/repositories/private/items?path=x.txt"), 401, "credentials_required")
 		if res := a.get("", "/files/private/x.txt"); res.hdr("WWW-Authenticate") == "" {
 			t.Error("a 401 carries a challenge")
 		}
@@ -107,7 +109,7 @@ func TestR_AUTHZ_016_HiddenExistence(t *testing.T) {
 }
 
 func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	for _, p := range []string{"releases/1.0/a.bin", "releases/1.0/b.bin", "releases/secret/k.bin", "tmp/x.bin", "top.txt"} {
 		if res := a.put("maint", "/files/generic-local/"+p, p); res.status/100 != 2 {
@@ -222,7 +224,7 @@ func TestR_STOR_017_ListingsFilterWhatTheCallerMayRead(t *testing.T) {
 }
 
 func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	base := "/files/generic-local/"
 
@@ -297,10 +299,10 @@ func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 	})
 
 	t.Run("R-STOR-018 a subtree above storage.delete.max_sync_items is removed by a job in batches, after the permission check", func(t *testing.T) {
-		e := newEnv(t)
+		e := newWebEnv(t)
 		e.breakGlass()
-		web := e.newReplica("web", replicaOpts{storage: func(c *config.Storage) { c.Delete.MaxSyncItems, c.Delete.BatchSize = 5, 4 }})
-		worker := e.newReplica("worker", replicaOpts{worker: true, storage: func(c *config.Storage) { c.Delete.MaxSyncItems, c.Delete.BatchSize = 5, 4 }})
+		web := e.newReplica("web", webOpts{env: smallDeletes})
+		worker := e.newReplica("worker", webOpts{worker: true, env: smallDeletes})
 		_ = worker
 		web.createRepository("bulk", nil)
 		for i := range 14 {
@@ -330,7 +332,7 @@ func TestR_GENERIC_006_DeleteAndItems(t *testing.T) {
 }
 
 func TestR_GENERIC_007_Patterns(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	base := "/files/generic-local/"
 	patch := func(body string) {
@@ -401,7 +403,7 @@ func TestR_GENERIC_007_Patterns(t *testing.T) {
 }
 
 func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	p := "/files/generic-local/stats/widget.bin"
 	data := content(2048, 7)
@@ -460,9 +462,7 @@ func TestR_STOR_015_StatisticsActivityAndAudit(t *testing.T) {
 		if ev := a.rec.ofType("artifact.deployed"); len(ev) == 0 || ev[len(ev)-1].Repository != "generic-local" || ev[len(ev)-1].Actor.Name != "ci" {
 			t.Errorf("artifact.deployed = %+v", ev)
 		}
-		if len(a.rec.ofType("artifact.downloaded")) == 0 {
-			t.Error("no artifact.downloaded event")
-		}
+		waitFor(t, "the download event", 5*time.Second, func() bool { return len(a.rec.ofType("artifact.downloaded")) > 0 })
 	})
 	t.Run("R-API-002 the answers of the statistics operation matched the document", func(t *testing.T) {
 		if missing := te.val.Uncovered("getItemStats", "downloadFile", "headFile"); len(missing) > 0 {

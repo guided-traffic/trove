@@ -18,10 +18,15 @@ import (
 // (R-ARCH-011 step 2). Neither replica has a Valkey client, so only the
 // PostgreSQL change log carries a change.
 func TestSnapshotAcrossReplicas(t *testing.T) {
-	e := newEnv(t)
+	e := newStackEnv(t)
 	poll := 300 * time.Millisecond
-	a := e.newReplica("snap-a", replicaOpts{poll: poll})
-	b := e.newReplica("snap-b", replicaOpts{poll: poll})
+	// A is a full replica and the writer. B is the counting reader of probe_test.go,
+	// which holds the snapshot and the change-log poll of a replica without its
+	// service: the subtests count the transactions it starts. B2 is a second full
+	// replica, to show the same convergence on the reader a deployment runs.
+	a := e.newReplica("snap-a", stackOpts{poll: poll})
+	b := e.newProbe("snap-b", poll)
+	b2 := e.newReplica("snap-b2", stackOpts{poll: poll})
 	ctx := context.Background()
 	within := 3 * poll
 
@@ -104,6 +109,10 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 			r, err := b.reader.ByKey(ctx, "unknown-key")
 			return err == nil && !r.Admits("tmp/x.bin", false) && r.Admits("releases/1.0/x.bin", false)
 		})
+		waitFor(t, "the second replica to honour the include pattern", within, func() bool {
+			r, err := b2.reader.ByKey(ctx, "unknown-key")
+			return err == nil && !r.Admits("tmp/x.bin", false) && r.Admits("releases/1.0/x.bin", false)
+		})
 		waitFor(t, "A to honour the include pattern", within, func() bool {
 			r, err := a.reader.ByKey(ctx, "unknown-key")
 			return err == nil && !r.Admits("tmp/x.bin", false)
@@ -124,10 +133,12 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		if _, err := a.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "second-one"))); err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, "B to list both repositories", within, func() bool {
-			l, err := b.reader.List(ctx)
-			return err == nil && len(l) == 3 && l[0].Key == "fresh-key" && l[1].Key == "second-one" && l[2].Key == "unknown-key"
-		})
+		for name, reader := range map[string]repository.Reader{"B": b.reader, "the second replica": b2.reader} {
+			waitFor(t, name+" to list both repositories", within, func() bool {
+				l, err := reader.List(ctx)
+				return err == nil && len(l) == 3 && l[0].Key == "fresh-key" && l[1].Key == "second-one" && l[2].Key == "unknown-key"
+			})
+		}
 	})
 
 	t.Run("R-ARCH-018 a change committed after the snapshot was loaded is not lost to a late fill", func(t *testing.T) {

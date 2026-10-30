@@ -20,78 +20,59 @@ import (
 // (R-EP-015), and the counting and audit of credentials an endpoint refuses
 // (R-EP-009, R-EP-010).
 
-// exposureCeiling returns the endpoint exposure, built once from the configured
-// endpoints and their exposure modes. The authz wiring calls it at step 8 before
-// the endpoints marker; the value is set before the client listener starts.
-func (a *App) exposureCeiling() *authz.ExposureCeiling {
-	if a.m1.exposureCeiling == nil {
-		modes := map[string]string{}
-		for _, e := range a.cfg.Server.ResolveEndpoints() {
-			modes[e.Name] = e.Exposure
-		}
-		a.m1.exposureCeiling = authz.NewExposureCeiling(modes, catalog.Default())
+// wireExposure is the exposure area: the ceiling built once from the configured
+// endpoints and their exposure modes, and the rule service on it. The decision
+// point applies the ceiling, and the repository's delete hook records the rules a
+// deletion takes with it (H-164), so both come before them.
+func (a *App) wireExposure(_ context.Context, in infra) (exposureArea, error) {
+	modes := map[string]string{}
+	for _, e := range a.cfg.Server.ResolveEndpoints() {
+		modes[e.Name] = e.Exposure
 	}
-	return a.m1.exposureCeiling
+	ceiling := authz.NewExposureCeiling(modes, catalog.Default())
+	rules := authz.NewExposureService(authz.ExposureServiceOptions{
+		DB: in.db, Changes: in.changes, Recorder: in.rec, Ceiling: ceiling,
+	})
+	return exposureArea{ceiling: ceiling, rules: rules}, nil
 }
 
-// exposureService returns the rule service, built once on a replica with
-// PostgreSQL and the change log, nil otherwise. The repository wiring needs it
-// before the endpoints marker, for the delete hook that records the rules a
-// repository takes with it (H-164).
-func (a *App) exposureService() *authz.ExposureService {
-	if a.m1.exposure == nil {
-		db, changes := a.database(), a.changesOrNil()
-		if db == nil || changes == nil {
-			return nil
-		}
-		a.m1.exposure = authz.NewExposureService(authz.ExposureServiceOptions{
-			DB: db, Changes: changes, Recorder: a.auditRecorder(), Ceiling: a.exposureCeiling(),
-		})
+// wireEndpoints is the endpoints area: the start-up warning for inert rules
+// (H-58) and the rate-limit classes of the endpoints this process serves. Only
+// a failed count read can go wrong, and that only loses the warning.
+func (a *App) wireEndpoints(ctx context.Context, ex exposureArea, lim limitsArea) (endpointsArea, error) {
+	if err := requireInputs(AreaEndpoints, given("exposure rule service", ex.rules), given("limiter set", lim.set)); err != nil {
+		return endpointsArea{}, err
 	}
-	return a.m1.exposure
-}
-
-// wireEndpoints runs at the endpoints marker of step 8: the rule service on a
-// replica with PostgreSQL, the start-up warning for inert rules (H-58), and the
-// rate-limit classes of the endpoints this process serves. Nothing here can
-// fail: the limiter set exists from the identity step on every process with a
-// client listener (wireFailureLimiter), and a failed count read only loses the
-// warning.
-func (a *App) wireEndpoints(ctx context.Context) {
-	if a.exposureService() != nil {
-		a.warnInertEndpoints(ctx)
-	}
-	if a.sub.ClientListener && a.m1.limiters != nil {
-		a.wireEndpointLimits(a.m1.limiters)
-	}
+	a.warnInertEndpoints(ctx, ex.rules)
+	return endpointsArea{limits: a.endpointLimits(lim.set)}, nil
 }
 
 // warnInertEndpoints logs one warning per endpoint name that holds rules but is
 // not configured: its rules are stored and have no effect, and they would apply
 // at once to an endpoint configured later under that name (R-EP-012, H-58).
-func (a *App) warnInertEndpoints(ctx context.Context) {
-	counts, err := a.m1.exposure.Counts(ctx)
+func (a *App) warnInertEndpoints(ctx context.Context, rules *authz.ExposureService) {
+	counts, err := rules.Counts(ctx)
 	if err != nil {
 		a.log.Warn("exposure rules: the rule counts could not be read at start-up", "err", err)
 		return
 	}
 	for name, c := range counts {
-		if !a.m1.exposure.Configured(name) {
+		if !rules.Configured(name) {
 			a.log.Warn("exposure rules of an endpoint that is not configured are inert; review or delete them before configuring an endpoint of that name",
 				"endpoint", name, "rules", c.Rules)
 		}
 	}
 }
 
-// wireEndpointLimits builds one cluster limiter per rate-limit class that an
+// endpointLimits builds one cluster limiter per rate-limit class that an
 // endpoint of this process names (endpoint_<class>, R-EP-015) and the stage of
 // each such endpoint. While Valkey is unavailable the per-replica share divides
 // by the live replicas that serve this process's endpoints, the replicas of its
 // pool: the count the limiter set holds, shared with every other limiter of the
 // client listener (replicaCount).
-func (a *App) wireEndpointLimits(ls *cluster.LimiterSet) {
+func (a *App) endpointLimits(ls *cluster.LimiterSet) map[string]func(http.Handler) http.Handler {
 	limiters := map[string]*cluster.Limiter{}
-	a.m1.endpointLimits = map[string]func(http.Handler) http.Handler{}
+	out := map[string]func(http.Handler) http.Handler{}
 	for _, rt := range a.eps {
 		class := rt.cfg.RateLimitClass
 		if class == "" {
@@ -106,10 +87,11 @@ func (a *App) wireEndpointLimits(ls *cluster.LimiterSet) {
 			lim = ls.NewLimiter(v1.EndpointLimiterName(class), cluster.ScopeCluster, l.RequestsPerSecond, l.Burst)
 			limiters[class] = lim
 		}
-		a.m1.endpointLimits[rt.cfg.Name] = v1.NewEndpointRateLimit(v1.EndpointRateLimitOptions{
+		out[rt.cfg.Name] = v1.NewEndpointRateLimit(v1.EndpointRateLimitOptions{
 			Endpoint: rt.cfg.Name, Class: class, Limit: l, Limiter: lim,
 		})
 	}
+	return out
 }
 
 // endpointStage is stage 7 of an endpoint's chain (R-ARCH-005): the endpoint's
@@ -119,7 +101,8 @@ func (a *App) wireEndpointLimits(ls *cluster.LimiterSet) {
 // chain stored at step 1 (edge.SubjectFrom, R-EP-013, Q-EP-20). The parts are
 // read when the chain is built, after step 8.
 func (a *App) endpointStage(rt *endpointRuntime) func(http.Handler) http.Handler {
-	api, limit := a.m1.rateLimit, a.m1.endpointLimits[rt.cfg.Name]
+	api := part[apiArea](a.parts).rateLimit
+	limit := part[endpointsArea](a.parts).limits[rt.cfg.Name]
 	return func(next http.Handler) http.Handler {
 		h := next
 		if api != nil {
@@ -158,20 +141,10 @@ func (a *App) credentialRefused(rt *endpointRuntime) func(*http.Request, auth.Re
 	}
 }
 
-// Authorizer returns the decision point of the replica, nil before step 8 or on
-// a replica without PostgreSQL. The content routes of the files and format areas
-// decide through it; the integration tests of the endpoints area use it to stand
-// in for a content route.
-func (a *App) Authorizer() authz.Authorizer {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.m1.authorizer
-}
-
 // endpointServices are the services of the endpoint operations.
 func (a *App) endpointServices() v1.EndpointServices {
 	return v1.EndpointServices{
 		Endpoints: a.cfg.Server.ResolveEndpoints(), RateLimits: a.cfg.Server.EndpointRateLimits,
-		Exposure: a.m1.exposure, Authorizer: a.m1.authorizer,
+		Exposure: part[exposureArea](a.parts).rules, Authorizer: a.decider(),
 	}
 }

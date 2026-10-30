@@ -1,6 +1,6 @@
 //go:build integration
 
-package files
+package transfer
 
 import (
 	"bytes"
@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/authz"
 )
@@ -40,25 +39,24 @@ func reprDigest(b []byte) string {
 	return "sha-256=:" + base64.StdEncoding.EncodeToString(s[:]) + ":"
 }
 
-// transferEnv is a database with two replicas, the repository generic-local and the
+// webTransferEnv is an installation of the harness with two replicas, the repository generic-local and the
 // users of the transfer tests: ci may read and deploy, maint may also overwrite and
 // delete, reader may read.
-type transferEnv struct {
-	*env
-	a, b *replica
-	val  *apitest.Validator
+type webTransferEnv struct {
+	*webEnv
+	a, b *webReplica
+	val  *apitest.Validator // the stack's: it records the operations the answers of the suite reached
 }
 
-func newTransferEnv(t *testing.T, opts ...func(*replicaOpts)) *transferEnv {
+func newWebTransferEnv(t *testing.T, opts ...func(*webOpts)) *webTransferEnv {
 	t.Helper()
-	e := newEnv(t)
+	e := newWebEnv(t)
 	e.breakGlass()
-	val := apitest.New(t, v1.EmbeddedYAML())
-	o := replicaOpts{validate: val}
+	o := webOpts{}
 	for _, f := range opts {
 		f(&o)
 	}
-	te := &transferEnv{env: e, val: val}
+	te := &webTransferEnv{webEnv: e, val: e.stack.Validator()}
 	te.a = e.newReplica("a", o)
 	te.b = e.newReplica("b", o)
 	te.a.createRepository("generic-local", nil)
@@ -68,7 +66,7 @@ func newTransferEnv(t *testing.T, opts ...func(*replicaOpts)) *transferEnv {
 	e.grant(te.a, "ci-deploy", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:ci": {"read", "deploy"}})
 	e.grant(te.a, "maint-all", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:maint": {"read", "deploy", "overwrite", "delete"}})
 	e.grant(te.a, "reader-read", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:reader": {"read"}})
-	te.await("the policies on both replicas", func(r *replica) bool {
+	te.await("the policies on both replicas", func(r *webReplica) bool {
 		return (r.put("ci", "/files/generic-local/.probe-ci", "x").status/100 == 2) && r.get("reader", "/files/generic-local/.probe-ci").status == 200 &&
 			r.get("maint", "/files/generic-local/.probe-ci").status == 200
 	})
@@ -80,9 +78,9 @@ func newTransferEnv(t *testing.T, opts ...func(*replicaOpts)) *transferEnv {
 }
 
 // await waits until cond holds on both replicas.
-func (te *transferEnv) await(what string, cond func(*replica) bool) {
+func (te *webTransferEnv) await(what string, cond func(*webReplica) bool) {
 	te.t.Helper()
-	for _, r := range []*replica{te.a, te.b} {
+	for _, r := range []*webReplica{te.a, te.b} {
 		waitFor(te.t, what, 10*time.Second, func() bool { return cond(r) })
 	}
 }
@@ -91,7 +89,7 @@ func (te *transferEnv) await(what string, cond func(*replica) bool) {
 func (r response) hdr(k string) string { return r.header.Get(k) }
 
 func TestE1_4_RawTransfer(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	data := content(48213, 1)
 	path := "/files/generic-local/tools/widget/2.3/widget-2.3.bin"
@@ -125,7 +123,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 	})
 
 	t.Run("R-STOR-012 E1.4 a range request returns exactly 100 bytes, equal to the first 100 bytes of the file", func(t *testing.T) {
-		for _, r := range []*replica{a, b} {
+		for _, r := range []*webReplica{a, b} {
 			res := r.get("reader", path, "Range", "bytes=0-99")
 			if res.status != 206 || !bytes.Equal(res.body, data[:100]) || res.hdr("Content-Length") != "100" || res.hdr("Content-Range") != fmt.Sprintf("bytes 0-99/%d", len(data)) {
 				t.Fatalf("%s: %d %v (%d bytes)", r.name, res.status, res.header, len(res.body))
@@ -164,7 +162,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 	})
 
 	t.Run("R-STOR-012 HEAD and conditional requests are answered from PostgreSQL without a request to the object store", func(t *testing.T) {
-		before := a.obj.gets.Load()
+		before := a.obj.gets()
 		head := a.do("reader", "HEAD", path, nil)
 		if head.status != 200 || head.hdr("Content-Length") != strconv.Itoa(len(data)) || head.hdr("ETag") != `"`+sum(data)+`"` || head.hdr("Accept-Ranges") != "bytes" || len(head.body) != 0 {
 			t.Fatalf("HEAD: %d %v", head.status, head.header)
@@ -178,7 +176,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 		if res := a.get("reader", path, "If-None-Match", `"other"`); res.status != 200 {
 			t.Fatalf("a stale validator: %d", res.status)
 		}
-		if got := a.obj.gets.Load(); got != before+1 { // only the last, a full 200
+		if got := a.obj.gets(); got != before+1 { // only the last, a full 200
 			t.Fatalf("object store GETs grew by %d, want 1", got-before)
 		}
 		if res := a.get("reader", path, "If-Match", `"other"`); res.status != 412 {
@@ -197,7 +195,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 	})
 
 	t.Run("R-STOR-012 R-ARCH-024 a resumed range with If-Range is answered alike on every replica", func(t *testing.T) {
-		for _, r := range []*replica{a, b} {
+		for _, r := range []*webReplica{a, b} {
 			res := r.get("reader", path, "Range", "bytes=100-", "If-Range", `"`+sum(data)+`"`)
 			if res.status != 206 || !bytes.Equal(res.body, data[100:]) {
 				t.Fatalf("%s: %d (%d bytes)", r.name, res.status, len(res.body))
@@ -233,7 +231,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 		if res := a.put("ci", "/files/generic-local/web/evil.svg", svg, "Content-Type", "image/svg+xml"); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		for _, r := range []*replica{a, b} {
+		for _, r := range []*webReplica{a, b} {
 			res := r.get("reader", "/files/generic-local/web/evil.svg")
 			h := res.header
 			if res.status != 200 || res.text() != svg {
@@ -299,7 +297,7 @@ func TestE1_4_RawTransfer(t *testing.T) {
 }
 
 func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a, b := te.a, te.b
 	p := "/files/generic-local/app/1.0/app.tgz"
 	first, second := content(3000, 3), content(3000, 4)
@@ -308,12 +306,12 @@ func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
 		t.Fatalf("%d %s", res.status, res.body)
 	}
 	t.Run("R-GENERIC-004 R-AUTHZ-006 with deploy but not overwrite, a second PUT of different bytes answers 403 and the first content is still served", func(t *testing.T) {
-		before := a.obj.puts.Load() + b.obj.puts.Load()
+		before := a.obj.puts() + b.obj.puts()
 		res := b.put("ci", p, string(second))
 		if res.status != 403 || !strings.Contains(res.json(t)["detail"].(string), "overwrite") {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
-		if a.obj.puts.Load()+b.obj.puts.Load() != before {
+		if a.obj.puts()+b.obj.puts() != before {
 			t.Error("the refused upload reached the object store")
 		}
 		if got := a.get("reader", p); !bytes.Equal(got.body, first) {
@@ -342,7 +340,7 @@ func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
 		deployed = append(deployed, b.rec.ofType("artifact.deployed")...)
 		var overwritten int
 		for _, ev := range deployed {
-			if ev.Path == "app/1.0/app.tgz" && strings.Contains(string(ev.Details), `"overwritten":true`) {
+			if ev.Path == "app/1.0/app.tgz" && strings.Contains(ev.Details, `"overwritten":true`) {
 				overwritten++
 			}
 		}
@@ -353,20 +351,23 @@ func TestR_AUTHZ_006_OverwriteNeedsItsOwnAction(t *testing.T) {
 	t.Run("R-AUTHZ-006 a caller who only reads cannot deploy", func(t *testing.T) {
 		problemOf(t, a.put("reader", "/files/generic-local/r/x", "x"), 403, "forbidden")
 		problemOf(t, a.put("nobody", "/files/generic-local/r/x", "x"), 403, "forbidden")
-		problemOf(t, a.put("", "/files/generic-local/r/x", "x"), 401, "unauthenticated")
+		problemOf(t, a.put("", "/files/generic-local/r/x", "x"), 401, "credentials_required")
 	})
 }
 
 func TestR_GENERIC_002_Paths(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a := te.a
 	base := "/files/generic-local/"
 
 	t.Run("R-GENERIC-002 invalid paths answer 400 invalid_path before authorization", func(t *testing.T) {
 		for _, p := range []string{"a/%2e%2e/x", "a//b", "a%00b", "a%5Cb", "a/./b", "a/../b", "%2e%2e/x", "a%2F%2Fb"} {
-			for _, user := range []string{"ci", "nobody", ""} { // authorization does not run first
+			for _, user := range []string{"ci", "nobody"} { // authorization does not run first
 				problemOf(t, a.put(user, base+p, "x"), 400, "invalid_path")
 			}
+			// An anonymous caller never reaches the handler while anonymous access is off:
+			// the authentication stage of the chain refuses it first (R-AUTH-037).
+			problemOf(t, a.put("", base+p, "x"), 401, "credentials_required")
 			problemOf(t, a.get("reader", base+p), 400, "invalid_path")
 			problemOf(t, a.do("maint", "DELETE", base+p, nil), 400, "invalid_path")
 		}
@@ -445,7 +446,7 @@ func TestR_GENERIC_002_Paths(t *testing.T) {
 }
 
 func TestR_STOR_017_DirectoryIndex(t *testing.T) {
-	te := newTransferEnv(t)
+	te := newWebTransferEnv(t)
 	a := te.a
 	for _, n := range []string{"<script>.txt", "javascript:alert(1)", "plain.txt"} {
 		if res := a.put("ci", "/files/generic-local/tools/"+escape(n), "x"); res.status != 201 {

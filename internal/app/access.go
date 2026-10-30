@@ -33,12 +33,19 @@ var (
 	_ v1.Beginner     = bridgeAccess{}
 )
 
-func newBridgeAccess(a authz.Authorizer, anonymousRead bool) bridgeAccess {
+func newBridgeAccess(d authz.Decider, anonymousRead bool) bridgeAccess {
 	b := bridgeAccess{anonymousRead: anonymousRead}
-	if d := v1.DeciderOf(a); d != nil {
+	if d != nil {
 		b.inner = v1.NewAccess(d)
 	}
 	return b
+}
+
+// access returns the permission check of the management API: the decision point
+// of the authz area behind the dev-profile bridge of system.bootstrap_anonymous_read.
+// In the shell profile, which has no decision point, nobody holds a permission.
+func (a *App) access() v1.Access {
+	return newBridgeAccess(a.decider(), a.cfg.System.BootstrapAnonymousRead)
 }
 
 // bootstrapPath reports whether path is one of the two operations the bridge

@@ -1,6 +1,6 @@
 //go:build integration
 
-package files
+package transfer
 
 import (
 	"context"
@@ -18,9 +18,9 @@ import (
 // write, for a new file and for an identical re-upload alike, and nothing is
 // stored (R-AUTHZ-015, docs/security/permissions.md H-104).
 func TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits(t *testing.T) {
-	e := newEnv(t)
+	e := newWebEnv(t)
 	e.breakGlass()
-	r := e.newReplica("a", replicaOpts{})
+	r := e.newReplica("a", webOpts{})
 	r.createRepository("generic-up", nil)
 	e.user("uploader")
 	grant := func() {

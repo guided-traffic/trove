@@ -123,7 +123,7 @@ func (d cacheDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subjec
 	return authz.Decision{Outcome: authz.Allow}
 }
 
-func cacheSetup(t *testing.T, val *apitest.Validator, fc *fakeCache, access Access, dec authz.Authorizer) setup {
+func cacheSetup(t *testing.T, val *apitest.Validator, fc *fakeCache, access Access, dec authz.Decider) setup {
 	t.Helper()
 	s := newSetup(t, func(o *Options) {
 		o.Access = access

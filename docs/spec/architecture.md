@@ -116,6 +116,15 @@ is interchangeable with any other replica of that role:
 | Change-log poll and signal subscriber (R-ARCH-018) | yes | yes | no | yes |
 | Replica registry row and heartbeat ([operations-and-observability.md](operations-and-observability.md) R-OPS-003) | yes | yes | no | yes |
 
+- A role also names the **wiring areas** it enables (R-ARCH-024 step 8, Q-ARCH-209): the units of
+  composition that build a typed part of the replica, such as the database, the audit recorder, the
+  object store, the Valkey client and the coordination layer, and the domain areas on top of them.
+  The areas are data of the role, not a consequence of which component happens to be present: a
+  `worker` enables the areas whose jobs it runs, a `web` replica the areas its listener serves. The
+  shell profile (an HTTP shell without PostgreSQL, Valkey and the object store, used by the
+  composition root's own tests and the drain fixture) is a role with the listeners and no
+  infrastructure areas, and it is only reachable through the test options, never through
+  configuration.
 - `process.role` has no default. `trove serve` without a role exits non-zero with
   `process.role must be web, worker or all`. The chart deploys `web` and `worker` as separate
   Deployments from the start, each with its own replica count, autoscaler, disruption budget and
@@ -3202,6 +3211,15 @@ Start-up order:
     audit partitions for the current and the next month exist (R-OPS-001). It does not require a
     reachable Valkey.
 
+Step 8 builds one area at a time, in the order of the list in `internal/app/steps.go`. Each area is a
+step that takes the typed results of earlier steps and returns its own; the list is checked against the
+role's areas when the replica is built (Q-ARCH-210). A replica MUST NOT start with an area missing that
+a step it runs needs: the missing prerequisite stops the start-up with an error that names the area, the
+missing part and the role, instead of a replica that is ready and answers `503` on the routes of the
+area (Q-ARCH-209). Whether a prerequisite is reachable is a different matter: a database or an object
+store that cannot be reached yet is retried as steps 3 to 7 say; a part that the role's wiring does not
+provide at all is a defect and is refused before anything starts.
+
 Shutdown on `SIGTERM`. Kubernetes removes the pod from the EndpointSlices at the same time as it
 sends the signal, and every proxy in front of trove (kube-proxy, the Ingress or Gateway controller)
 learns of the removal with a delay. The steps cover that delay first:
@@ -5485,6 +5503,58 @@ re-check is for the window between the first decision and the commit. The develo
 long body.
 
 **Applied in the spec:** R-AUTHZ-015 reads unchanged.
+### Q-ARCH-209 · What typed wiring makes a start-up error
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the composition root grew its steps as nil-tolerant functions that return without building anything when a part they need is
+absent. A `web` replica whose wiring misses the decision point or the object store therefore starts, turns ready and answers `503` on
+`/files/`, and the shell of the unit tests relies on exactly that nil check. Format engines add more areas, each with prerequisites
+(a data port for a format that stores rows, the proxy's flight lock), and a wrong binding must not be found by the first request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Areas are data of the role; a step takes the typed results of earlier steps; a missing input stops the start-up; the shell is an explicit profile | `SubsystemsFor` lists the areas, `planSteps` refuses a role whose steps cannot be satisfied, a step refuses a nil input by name | A misconfigured replica never becomes ready; the engines' bindings fail at start-up; the unit-test shell stays, as a named profile | A step that used to tolerate a part now needs it; the shell's tests name their profile |
+| (b) Keep the nil-tolerant steps and add a readiness check per area | The replica starts and reports the area as not ready | No change to the steps | The replica stays in the Service only if it is ready, but `503` on one route is a half-working replica; the check is another place that has to know the area's prerequisites |
+| (c) Both: tolerate at start, refuse at the first request | As today with a log line | None | The failure moves to the user |
+
+**Choice:** (a). `Subsystems.Areas` is the set a role enables, `Subsystems.Shell` marks the shell profile, and `planSteps` runs in `New`,
+so a role that cannot satisfy its steps never starts. Each step checks its inputs with `requireInputs`, which names every nil one
+(`files: no authorizer`). A part that is only unreachable stays a retry (steps 3 to 7 of R-ARCH-024); a part the wiring does not provide
+is refused.
+
+**Rationale:** the replica that serves `503` on `/files/` is today's failure mode (the plan of WP2.0-4 names it), and the same shape would
+hide a missing data-port binding of a format. The development agent would revisit this if a role needs a part to be optional on purpose;
+that part then becomes an area of its own that the role enables or not, not a nil check inside a step.
+
+**Applied in the spec:** R-ARCH-001 (the areas of a role and the shell profile) and R-ARCH-024 (step 8).
+
+### Q-ARCH-210 · How the step list binds types
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a step takes the results of earlier steps and returns its own. The list must tell what a step needs without running it, so that
+the role check can run in `New`, and adding an area has to be one file and one line.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Generic constructors by arity (`wire1`, `wire2`, ...) | The compiler checks every input type | Compile-time typing | A constructor per arity, so an area with one more input edits `steps.go`; unused arities fail the linter |
+| (b) Read the types off the method with reflection (`newStep(area, (*App).wireX)`) | The method's signature is the declaration; the shape is checked when the list is built | One line per area, any number of inputs; the method is ordinary typed Go | The call is not checked by the compiler; a wrong shape panics at construction, which every test of the package hits |
+| (c) A struct of all areas that every step reads from | Plain field access | No reflection | Every step sees every area; the dependency order is implicit again |
+
+**Choice:** (b). `newStep` accepts `func(*App, context.Context, In...) (Out, error)`, records the input and output types and panics on any
+other shape. `planSteps` proves, before anything starts, that every input is built by a step of an enabled area listed before the step,
+that each area has one step and each type one builder. Job kinds are registered before the areas are wired, so a handler reads its
+service through `late[T]`, set once by the step: a job claimed before it is retried, in one place instead of one nil check per kind.
+
+**Rationale:** the list is short and read by people adding an area, so one line per area and no edit of the framework matters more than
+a compile-time check of a call that the shape check and the tests cover. The development agent would revisit this if the list grows past
+a dozen areas or a step needs a conditional input; a typed builder would then pay for itself.
+
+The step list also says which roles run a step, so the areas of a role are not a second table to keep in step with it: adding an
+area is its file and one line in the list.
+
+**Applied in the spec:** R-ARCH-024 (step 8) names the list; the mechanism is described in docs/developer/architecture.md.
 
 ### Q-ARCH-211 · The contract's names are made unambiguous, and `Match` stays one line in each format
 

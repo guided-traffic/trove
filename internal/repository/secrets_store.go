@@ -107,8 +107,9 @@ type RemoteDeps struct {
 	// repository's cached answers are evidence of: url, extraHosts, authMode,
 	// username, password, clientCertificate or headers (R-REPO-011). The cache
 	// invalidation of R-REPO-045 binds it to record an invalidation of scope all
-	// and an empty prefix. Nil does nothing.
-	OnUpstreamChanged func(ctx context.Context, tx meta.Tx, repo Repository) error
+	// and an empty prefix. repo is the repository as it was before the update; its
+	// key, class and format cannot change. Nil does nothing.
+	OnUpstreamChanged func(ctx context.Context, tx meta.Tx, c Caller, repo Repository) error
 }
 
 // Bind sets the dependencies of the remote settings. It is called once, before

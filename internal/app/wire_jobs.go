@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -35,14 +34,10 @@ func (a *App) jobRegistry() (*jobs.Registry, error) {
 	jobs.RegisterProbeKind(r)
 	a.registerGC(r)
 	a.registerRepositoryJobs(r)
-	// >>> M1 identity
 	a.registerIdentityJobs(r)
-	// <<< M1 identity
-	registerSecretsReencrypt(r)
+	a.registerSecretsReencrypt(r)
 	a.registerAuditJobs(r)
-	// >>> M2 proxy
 	a.registerInvalidationJobs(r)
-	// <<< M2 proxy
 	if err := jobs.ValidateSchedules(a.cfg.Maintenance); err != nil {
 		return nil, err
 	}
@@ -53,16 +48,13 @@ func (a *App) jobRegistry() (*jobs.Registry, error) {
 // registerGC registers the kinds gc and gc-full and their tasks (R-STOR-025):
 // queue maintenance, exclusive, both tasks under the dedup key "gc", so at most
 // one collection is queued or running whichever task started it. The handlers
-// find the collector at run time; only worker and all build one.
+// find the collector at run time (a.gc); only worker and all build one, and only
+// they claim a job.
 func (a *App) registerGC(r *jobs.Registry) {
 	handler := func(mode blob.GCMode) jobs.Handler {
-		return func(ctx context.Context, run *jobs.Run) error {
-			c := a.collector()
-			if c == nil {
-				return jobs.Permanent(errors.New("this replica has no garbage collector"))
-			}
+		return a.gc.handler("garbage collector", func(ctx context.Context, c *blob.Collector, run *jobs.Run) error {
 			return c.RunJob(ctx, mode, run.Args, run)
-		}
+		})
 	}
 	for _, k := range []struct {
 		kind     string
@@ -77,5 +69,3 @@ func (a *App) registerGC(r *jobs.Registry) {
 		r.RegisterTask(k.kind, spec)
 	}
 }
-
-func (a *App) collector() *blob.Collector { a.mu.Lock(); defer a.mu.Unlock(); return a.gc }

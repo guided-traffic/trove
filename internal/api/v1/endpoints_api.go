@@ -35,8 +35,8 @@ type EndpointServices struct {
 	// Exposure is the rule service; nil answers the operations with 503.
 	Exposure *authz.ExposureService
 	// Authorizer decides read on the repository of check-exposure, through its
-	// [authz.Decider] form ([DeciderOf]); one that has none refuses.
-	Authorizer authz.Authorizer
+	// per-request form; nil refuses.
+	Authorizer authz.Decider
 }
 
 func (s *Server) exposure() (*authz.ExposureService, error) {
@@ -599,7 +599,7 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 // the endpoint the subject carries (R-AUTHZ-015), on the index the request holds;
 // the refusal is that of R-AUTHZ-016.
 func (s *Server) requireRead(ctx context.Context, repo string) error {
-	d := DeciderOf(s.o.Endpoints.Authorizer)
+	d := s.o.Endpoints.Authorizer
 	if d == nil {
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}

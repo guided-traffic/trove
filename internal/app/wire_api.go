@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/listq"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
 )
 
@@ -23,94 +24,72 @@ import (
 // form the chain's stage 7 (R-API-016, R-API-017, R-API-018), and the services
 // of the system operations (jobs, tasks, key-ring status).
 
-// limiterSet returns the replica's cluster limiter set (R-ARCH-034), built on the
-// first call: the identity stage registers its failure throttle on it before the
-// API adds the request limiters.
-func (a *App) limiterSet(ctx context.Context) (*cluster.LimiterSet, error) {
-	if a.m1.limiters != nil {
-		return a.m1.limiters, nil
-	}
-	live, err := a.servingReplicas(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ls, err := cluster.NewLimiterSet(cluster.LimiterOptions{Valkey: a.valkey(), Registry: a.tele.metrics.Registry(), LiveReplicas: live.Get})
-	if err != nil {
-		return nil, err
-	}
-	a.m1.limiters = ls
-	return ls, nil
-}
-
-// wireFailureLimiter registers the cluster-wide limiters of R-AUTH-038: the
-// counter auth.credential_failures in the count-only form (burst =
-// auth.rate_limit.failures_per_address in a one-minute window), which the
+// wireLimits is the limits area: the replica's cluster limiter set (R-ARCH-034)
+// with the live-replica count its fallback divides by, and the two limiters of
+// R-AUTH-038: the counter auth.credential_failures in the count-only form (burst
+// = auth.rate_limit.failures_per_address in a one-minute window), which the
 // authentication stage takes, and auth.flow_starts in the take form (burst =
 // auth.rate_limit.starts_per_address per minute), which the login's start route
-// and local login take.
-func (a *App) wireFailureLimiter(ctx context.Context) error {
-	if !a.sub.ClientListener {
-		return nil
+// and local login take. Only a replica with a client listener has it.
+func (a *App) wireLimits(ctx context.Context, in infra) (limitsArea, error) {
+	count := &replicaCount{a: a}
+	if err := a.startComponent(ctx, count); err != nil {
+		return limitsArea{}, err
 	}
-	ls, err := a.limiterSet(ctx)
+	ls, err := cluster.NewLimiterSet(cluster.LimiterOptions{Valkey: in.vk, Registry: a.tele.metrics.Registry(), LiveReplicas: count.Get})
 	if err != nil {
-		return err
+		return limitsArea{}, err
 	}
 	n := a.cfg.Auth.RateLimit.FailuresPerAddress
-	a.m1.failureLimiter = ls.NewLimiter("auth.credential_failures", cluster.ScopeCluster, float64(n)/60, n)
 	s := a.cfg.Auth.RateLimit.StartsPerAddress
-	a.m1.flowStarts = ls.NewLimiter("auth.flow_starts", cluster.ScopeCluster, float64(s)/60, s)
-	return nil
+	return limitsArea{
+		set: ls, replicas: count,
+		failures:   ls.NewLimiter("auth.credential_failures", cluster.ScopeCluster, float64(n)/60, n),
+		flowStarts: ls.NewLimiter("auth.flow_starts", cluster.ScopeCluster, float64(s)/60, s),
+	}, nil
 }
 
-// wireAPI runs at the api marker of step 8.
-func (a *App) wireAPI(ctx context.Context, infra bool) error {
-	if infra && a.sub.MainPool {
-		if err := a.verifyKeyRingCanaries(ctx); err != nil {
-			return err
-		}
-	}
-	if !a.sub.ClientListener {
-		return nil
+// wireAPI is the api area: the CORS and header stage and the request limits that
+// form the chain's stage 7 (R-API-016, R-API-017, R-API-018).
+func (a *App) wireAPI(_ context.Context, lim limitsArea, az authzArea) (apiArea, error) {
+	if err := requireInputs(AreaAPI, given("limiter set", lim.set), given("authorizer", az.engine)); err != nil {
+		return apiArea{}, err
 	}
 	cfg := a.cfg.API
-	reg := a.tele.metrics.Registry()
-	ls, err := a.limiterSet(ctx)
+	access := newBridgeAccess(az.engine, a.cfg.System.BootstrapAnonymousRead)
+	// A question, not an operation: a request of a caller without the capability
+	// is not a refusal and records no authz.denied (R-AUTHZ-029). It runs in a
+	// chain stage before the shared step, so it asks the decision point on an
+	// index of its own; the operation's decisions use the step's (Q-API-158).
+	isAdmin := func(r *http.Request) bool {
+		ok, err := v1.Holds(r.Context(), access, string(authz.ContentBypass))
+		return err == nil && ok
+	}
+	limit, err := v1.NewRateLimit(v1.RateLimitOptions{Config: cfg.RateLimits, Limiters: lim.set, IsAdmin: isAdmin, Registry: a.tele.metrics.Registry()})
 	if err != nil {
-		return err
+		return apiArea{}, err
 	}
-	var isAdmin func(*http.Request) bool
-	if a.m1.authorizer != nil {
-		access := a.access()
-		// A question, not an operation: a request of a caller without the capability
-		// is not a refusal and records no authz.denied (R-AUTHZ-029). It runs in a
-		// chain stage before the shared step, so it asks the decision point on an
-		// index of its own; the operation's decisions use the step's (Q-API-158).
-		isAdmin = func(r *http.Request) bool {
-			ok, err := v1.Holds(r.Context(), access, string(authz.ContentBypass))
-			return err == nil && ok
-		}
-	}
-	limit, err := v1.NewRateLimit(v1.RateLimitOptions{Config: cfg.RateLimits, Limiters: ls, IsAdmin: isAdmin, Registry: reg})
-	if err != nil {
-		return err
-	}
-	a.m1.rateLimit = v1.EdgeStage(v1.CORS(cfg.CORS.AllowedOrigins), limit)
-	a.m1.preflight = v1.Preflight(cfg.CORS.AllowedOrigins)
-	return nil
+	return apiArea{
+		rateLimit: v1.EdgeStage(v1.CORS(cfg.CORS.AllowedOrigins), limit),
+		preflight: v1.Preflight(cfg.CORS.AllowedOrigins),
+	}, nil
 }
 
-// verifyKeyRingCanaries is the start-up canary of R-ARCH-021. It refuses to start
+// wireKeyRing is the keyring area: the start-up canary of R-ARCH-021. It refuses to start
 // when sealed rows reference a key ID the ring lacks ("key ring does not match
 // database: missing key <id>"), seeds the canary of every key ID of the ring
 // that has none, and refuses to start when the ring cannot open the canary of a
 // key ID it holds (the same ID with other key material).
-func (a *App) verifyKeyRingCanaries(ctx context.Context) error {
-	db := a.database()
-	if db == nil || a.ring == nil {
-		return nil
+func (a *App) wireKeyRing(ctx context.Context, in infra) (keyRingArea, error) {
+	if err := a.verifyKeyRingCanaries(ctx, in.db, in.ring); err != nil {
+		return keyRingArea{}, err
 	}
-	st, err := a.ring.StatusWithCounts(ctx, listq.SealedCounter{DB: db.Main()})
+	a.reseal.set(resealDeps{db: in.db, ring: in.ring})
+	return keyRingArea{}, nil
+}
+
+func (a *App) verifyKeyRingCanaries(ctx context.Context, db *postgres.DB, ring *secrets.KeyRing) error {
+	st, err := ring.StatusWithCounts(ctx, listq.SealedCounter{DB: db.Main()})
 	if err != nil {
 		return fmt.Errorf("key ring: %w", err)
 	}
@@ -120,7 +99,7 @@ func (a *App) verifyKeyRingCanaries(ctx context.Context) error {
 			referenced = append(referenced, k.KeyID)
 		}
 	}
-	if err := a.ring.RequireKeys("database", referenced); err != nil {
+	if err := ring.RequireKeys("database", referenced); err != nil {
 		return err
 	}
 	return db.InTx(ctx, func(tx meta.Tx) error {
@@ -137,14 +116,14 @@ func (a *App) verifyKeyRingCanaries(ctx context.Context) error {
 		for _, r := range rows {
 			have[r.KeyID] = r.Ciphertext
 		}
-		for _, id := range a.ring.KeyIDs() {
+		for _, id := range ring.KeyIDs() {
 			if sealed, ok := have[id]; ok {
-				if err := a.ring.CheckCanary(id, sealed); err != nil {
+				if err := ring.CheckCanary(id, sealed); err != nil {
 					return fmt.Errorf("key ring does not match database: %w", err)
 				}
 				continue
 			}
-			sealed, err := a.ring.SealCanary(id)
+			sealed, err := ring.SealCanary(id)
 			if err != nil {
 				return err
 			}
@@ -159,8 +138,8 @@ func (a *App) verifyKeyRingCanaries(ctx context.Context) error {
 // auditRecorder returns the audit recorder built at step 4, or a discarding one
 // in a shell without infrastructure.
 func (a *App) auditRecorder() audit.Recorder {
-	if a.m1.recorder != nil {
-		return a.m1.recorder
+	if rec := part[infra](a.parts).rec; rec != nil {
+		return rec
 	}
 	return audit.Nop{}
 }
@@ -169,7 +148,7 @@ func (a *App) auditRecorder() audit.Recorder {
 // every endpoint of this replica.
 func (a *App) apiServices() v1.Services {
 	svc := v1.Services{
-		Config: a.cfg.API, Maintenance: a.cfg.Maintenance, KeyRing: a.ring, Audit: a.auditRecorder(),
+		Config: a.cfg.API, Maintenance: a.cfg.Maintenance, KeyRing: part[keysArea](a.parts).ring, Audit: a.auditRecorder(),
 		TaskArgs: map[string]func() any{
 			"gc":      func() any { return &blob.GCJobArgs{} },
 			"gc-full": func() any { return &blob.GCJobArgs{} },
@@ -214,24 +193,44 @@ func (s ringSource) Rings(ctx context.Context) ([]v1.ReplicaRing, error) {
 	return out, nil
 }
 
+// resealDeps are what the task secrets-reencrypt needs: the database and the ring
+// whose active key the values are sealed under. The key-ring area sets them.
+type resealDeps struct {
+	db   *postgres.DB
+	ring *secrets.KeyRing
+}
+
 // registerSecretsReencrypt registers the manual-only task secrets-reencrypt
 // (R-ARCH-021, R-OPS-019): no schedule, and the trigger refuses it while the key
 // rings of the live replicas are incompatible (internal/api/v1). The job reseals
-// every value of the sealed-column registry that is not under the active key.
-// The registry is empty until the first feature that stores a secret registers
-// its column, and an empty registry has nothing to reseal; a run that finds a
-// registered column fails permanently and says so, because the walk over a
-// column is written with the first column (docs/developer/http-api.md).
-func registerSecretsReencrypt(r *jobs.Registry) {
+// every value of the sealed-column registry that is not under the active key. The
+// only sealed column today is the repository secrets: the job walks it in batches
+// of one transaction each and fails when a value could not be opened (a key the
+// ring lacks, a moved or damaged value); a column registered later without a walk
+// of its own fails the job permanently and names it. The handler finds the
+// database and the ring through a late value, because the registry is built before
+// the key-ring area is wired.
+func (a *App) registerSecretsReencrypt(r *jobs.Registry) {
 	r.RegisterKind(v1.KindSecretsReencrypt, jobs.KindSpec{
 		Queue: "maintenance", DedupMode: jobs.Exclusive, MaxAttempts: 3,
-		Handler: func(_ context.Context, run *jobs.Run) error {
-			cols := secrets.Columns()
-			if len(cols) > 0 {
-				return jobs.Permanent(fmt.Errorf("re-encryption of %s is not implemented yet", cols[0]))
+		Handler: a.reseal.handler("key ring", func(ctx context.Context, d resealDeps, run *jobs.Run) error {
+			for _, col := range secrets.Columns() {
+				if col.String() != repository.RepositorySecrets.String() {
+					return jobs.Permanent(fmt.Errorf("re-encryption of %s is not implemented yet", col))
+				}
 			}
-			return run.SetResult(map[string]int64{"columns": 0, "resealed": 0})
-		},
+			res, err := repository.ResealSecrets(ctx, d.db, d.ring, 0)
+			if err != nil {
+				return err
+			}
+			if err := run.SetResult(map[string]int64{"columns": int64(len(secrets.Columns())), "resealed": res.Resealed, "current": res.Current, "failed": res.Failed}); err != nil {
+				return err
+			}
+			if res.Failed > 0 {
+				return jobs.Permanent(fmt.Errorf("%d sealed values could not be opened with the ring of this replica and were left as they are", res.Failed))
+			}
+			return nil
+		}),
 	})
 	r.RegisterTask(v1.KindSecretsReencrypt, jobs.TaskSpec{ManualOnly: true})
 }

@@ -35,9 +35,8 @@ type RepositoryServices struct {
 	// operations with 503.
 	Service *repository.Service
 	// Authz is the decision point for the reads that depend on what the caller may
-	// read: the repository read and the list. It decides per request through its
-	// [authz.Decider] form ([DeciderOf]); one that has none answers 503.
-	Authz authz.Authorizer
+	// read: the repository read and the list. It decides per request; nil answers 503.
+	Authz authz.Decider
 	// Reader is the replica's snapshot of the repositories. The read of a
 	// repository looks an unknown key up before it decides, so that a repository
 	// created through another replica is usable at once (R-ARCH-011 step 2).

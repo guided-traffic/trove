@@ -224,6 +224,48 @@ check them.
 stay. A stack created before the per-service certificates existed is recreated by `make integration-up`
 (`certs.sh` sees the missing files and issues a new set).
 
+## The in-process harness
+
+A suite that exercises more than one component runs the production composition root, `app.New`, in the test
+process through [test/integration/testenv](../../test/integration/testenv). The suite then meets the real chain,
+the real authentication stage with real tokens, the real decision point and the real wiring; nothing in it is a
+test double of production code. A suite of one component keeps its own environment on purpose: the authorization
+engine, coordination, audit, PostgreSQL and the blob store (`test/integration/authz`, `coordination`, `audit`,
+`postgres`, `blob`) test one component against the stack and have no use for a replica.
+
+| Piece | What it is |
+|---|---|
+| `testenv.NewStack(tb, StackOptions{Name, Valkey, Env})` ([stack.go](../../test/integration/testenv/stack.go)) | One installation: a database `trove_<Name>_<random>` created, migrated and dropped with the test, an S3 prefix `it/<database>` in the stack's bucket, the shared environment of every replica (TLS to PostgreSQL, S3 and Valkey; short health and heartbeat timings; the management API's rate limits off) and a validator of the OpenAPI document. `Valkey: false` points the Sentinel at `127.0.0.1:1`, the state "Valkey stopped" (degraded mode). `Env` is appended to every replica's environment. With `TROVE_TEST_PG_POOLED=1` the replicas' main pool goes through PgBouncer |
+| `Stack.Start(tb, ReplicaOptions{Name, Role, Env, Endpoints, Extra})` ([replica.go](../../test/integration/testenv/replica.go)) | `app.New`, `Start`, waits for `Started` (a bootstrap error ends the wait at once with its text, through `App.Failed`), and shuts the replica down in the cleanup of the test, printing the tail of its log when the test failed. `Role` is `web` (default), `worker` or `all`; `Endpoints` is the JSON of `server.endpoints`; `Extra` registers more routes through `app.Options.Extra` (a route below `/api/v1/` must be in the document, so a test resource lives elsewhere) |
+| `Replica.Addr(endpoint)`, `OpsAddr()`, `Metrics(tb)`, `Stop()`, `App` | Listener addresses, the ops listener's `/metrics`, a graceful stop (idempotent; it is how a test removes a replica), and the `*app.App` for the accessors the composition root exposes (`Queue`, `Repositories`, `RepositoryService`, `Valkey`, `Blobs`, `Changes`) |
+| `Stack.Do(replica, method, path, token, body, hdr...)`, `DoAt(addr, host, ...)` | One request with a bearer token and the Host of the endpoint; answers of `/api/v1/` are validated against the document and `Validator().Uncovered(...)` lists the operations a suite did not reach |
+| `Stack.User(name, groups...)`, `ServiceAccount`, `Bind(role, person)`, `Token(person, scope)`, `Repository(key, class, format, cfg)`, `Policy(...)` ([seed.go](../../test/integration/testenv/seed.go)) | Rows written straight into the database **before** the first replica starts, so that every replica builds its first grant index with them. A token is minted the way `token.Service` stores one (the SHA-256 of the value, never the value) and is a real `trv_` token, so the request meets the production authentication stage. A token exercises the capabilities its scope names that the owner's roles grant (R-AUTHZ-013), so a scope that should read settings names `settings:read` |
+| `Stack.Exec`, `Text`, `Number`, `Query` | SQL on the installation's database as its owner, for state a test sets up or asserts. Rows the product writes (audit events, journal rows, the change log) are read here instead of through a recorder double |
+
+The suites on the harness: [transfer](../../test/integration/transfer) (the HTTP surface of the files transfer and the
+repository operations, with the users, grants and anonymous switch of `webenv_test.go`),
+[endpoints](../../test/integration/endpoints) (three replicas behind a dispatcher, Valkey
+running and stopped, requests on the default and the further endpoints), [api](../../test/integration/api) (the
+conventions on a test resource registered through `Extra`, the cluster-wide rate limits, the system operations with a
+web replica that enqueues and a worker replica that executes, key rings that differ between replicas), and
+[repository](../../test/integration/repository) (the service, the snapshot, the deletion job on a worker). The
+repository suite builds one component next to the replicas, the counting reader of `probe_test.go`, because the number
+of transactions a reader starts is visible only on its runner. Suites that need a seam inside a component keep the
+component environment of their package on purpose: the storage hooks, the counting and delaying object store, the
+recorder that fails and the spool of [files](../../test/integration/files) (`commit_test.go`, `races_test.go`, `scan_test.go`, `transfer_test.go`); that
+package also registers a format with a data port of its own, which the composition root refuses to start with because
+only the root binds data ports, so a replica cannot run in it; the suites that need one are in `transfer`,
+the catalog, routing and recorder of the claims and invalidation tests of `repository`, and the upstream-test operations of
+`api`, which serve the management API over an upstream client of their own (`component_test.go`). A new format suite uses
+only the harness.
+
+Three things a suite should know. A replica's start is a real start-up: a principal that is named like the break-glass
+account (`auth.break_glass.username`, default `admin`) is refused (the `files` and `api` stacks move the account
+or name the user otherwise). The audit table can be made to refuse an insert with
+a trigger (`failAudit` in the repository suite), which is how a test shows that a change never exists without its audit
+record without a double of the recorder. The scheduler of a real worker enqueues a task's first run on its own, so a
+test that triggers a task by hand accepts the `409` that names the scheduled run.
+
 ## Known gaps
 
 - The CI workflow [release.yml](../../.github/workflows/release.yml) calls these targets; it has not run on

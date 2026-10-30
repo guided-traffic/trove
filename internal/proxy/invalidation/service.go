@@ -94,34 +94,67 @@ func (s *Service) Invalidate(ctx context.Context, c repository.Caller, repo repo
 	}
 	var count int64
 	err = s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
-		qs, err := queries(tx)
-		if err != nil {
-			return err
-		}
-		ins, err := qs.InvalidationInsert(ctx, q.InvalidationInsertParams{
-			RepoID: id, Prefix: prefix, Scope: scope, CreatedBy: principal.IDOrEmpty(c.Actor.ID),
-		})
-		if err != nil {
-			return err
-		}
-		// Negative entries live in Valkey and are not counted (R-REPO-045).
-		count = 0
-		if scope != ScopeNegative {
-			if count, err = qs.InvalidationCountCovered(ctx, q.InvalidationCountCoveredParams{RepoID: id, Prefix: prefix}); err != nil {
-				return err
-			}
-		}
-		if err := s.o.Notifier.Notify(tx, cluster.AreaCacheInvalidation, PayloadVersion, Payload{
-			Kind: KindAdd, Repo: id, ID: ins.ID, Prefix: EncodePrefix(prefix), Scope: scope, CreatedUs: ins.CreatedUs,
-		}); err != nil {
-			return err
-		}
-		return s.record(ctx, tx, c, repo, prefix, scope, count)
+		var err error
+		count, err = s.add(ctx, tx, c, repo, id, prefix, scope)
+		return err
 	})
 	if err != nil {
 		return 0, err
 	}
 	return count, nil
+}
+
+// InvalidateTx is Invalidate of a remote repository in the transaction of the
+// caller: the update of a remote's upstream settings records its scope-all
+// invalidation with the change itself (R-REPO-011), so the cached answers of the
+// old upstream are never in force with the new settings. The repository must be
+// remote and active; the arguments are those of Invalidate.
+func (s *Service) InvalidateTx(ctx context.Context, tx meta.Tx, c repository.Caller, repo repository.Repository, prefix, scope string) (int64, error) {
+	if scope == "" {
+		scope = ScopeMetadata
+	}
+	if !ValidScope(scope) {
+		return 0, errs.E(errs.Invalid, errs.CodeValidation, `The scope must be "metadata", "negative" or "all".`)
+	}
+	if err := CheckPrefix(prefix); err != nil {
+		return 0, err
+	}
+	if repo.Class != repository.Remote || repo.Lifecycle != repository.Active {
+		return 0, fmt.Errorf("invalidation: %q is not an active remote repository", repo.Key)
+	}
+	id, err := strconv.ParseInt(repo.ID, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalidation: repository id %q: %w", repo.ID, err)
+	}
+	return s.add(ctx, tx, c, repo, id, prefix, scope)
+}
+
+// add inserts the row, counts the covered entries, records the change in the area
+// cache_invalidation and the audit event, in tx.
+func (s *Service) add(ctx context.Context, tx meta.Tx, c repository.Caller, repo repository.Repository, id int64, prefix, scope string) (int64, error) {
+	qs, err := queries(tx)
+	if err != nil {
+		return 0, err
+	}
+	ins, err := qs.InvalidationInsert(ctx, q.InvalidationInsertParams{
+		RepoID: id, Prefix: prefix, Scope: scope, CreatedBy: principal.IDOrEmpty(c.Actor.ID),
+	})
+	if err != nil {
+		return 0, err
+	}
+	// Negative entries live in Valkey and are not counted (R-REPO-045).
+	var count int64
+	if scope != ScopeNegative {
+		if count, err = qs.InvalidationCountCovered(ctx, q.InvalidationCountCoveredParams{RepoID: id, Prefix: prefix}); err != nil {
+			return 0, err
+		}
+	}
+	if err := s.o.Notifier.Notify(tx, cluster.AreaCacheInvalidation, PayloadVersion, Payload{
+		Kind: KindAdd, Repo: id, ID: ins.ID, Prefix: EncodePrefix(prefix), Scope: scope, CreatedUs: ins.CreatedUs,
+	}); err != nil {
+		return 0, err
+	}
+	return count, s.record(ctx, tx, c, repo, prefix, scope, count)
 }
 
 func (s *Service) virtual(ctx context.Context, c repository.Caller, repo repository.Repository, id int64, prefix, scope string) error {

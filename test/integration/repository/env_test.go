@@ -382,6 +382,23 @@ func waitFor(t testing.TB, what string, within time.Duration, cond func() bool) 
 	t.Fatalf("%s did not happen within %s", what, within)
 }
 
+// waitJob waits until the job has ended and returns it.
+func waitJob(t testing.TB, q *jobs.Queue, id string) jobs.Job {
+	t.Helper()
+	var j jobs.Job
+	waitFor(t, "the job to end", 30*time.Second, func() bool {
+		got, ok, err := q.Get(context.Background(), id)
+		if err != nil || !ok {
+			return false
+		}
+		j = got
+		return j.Terminal()
+	})
+	return j
+}
+
+func (e *env) waitJob(q *jobs.Queue, id string) jobs.Job { e.t.Helper(); return waitJob(e.t, q, id) }
+
 var caller = repository.Caller{Actor: audit.Actor{Kind: "user", ID: "0198a000-0000-7000-8000-000000000001", Name: "alice"}}
 
 const genericBody = `{"key":%q,"class":"local","format":"generic"}`

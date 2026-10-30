@@ -14,67 +14,54 @@ import (
 	"github.com/guided-traffic/trove/internal/outbound"
 )
 
-// The login area (WP1.1) is wired in two steps of the bootstrap, both on the
-// replicas that serve the client listener (web and all): a worker builds
-// neither, serves no login and reads no login Secret; its session-cleanup task
-// is a registered job kind.
+// The login area (WP1.1) is two areas, both on the replicas that serve the client
+// listener (web and all): a worker enables neither, serves no login and reads no
+// login Secret; its session-cleanup task is a registered job kind.
 //
-// wireSessions runs before the identity area: the session store is the
+// wireSessions comes before the auth area: the session store is the
 // session.Validator of the authentication stage (R-AUTH-001) and reads
 // auth.revocation_bound and auth.tokens.cache_ttl, which the identity area owns.
-// wireLogin runs after it: the OIDC and break-glass login calls the identity
-// area's provisioner, takes the limiter auth.flow_starts it registered
+// wireLogin comes after the identity area: the OIDC and break-glass login calls
+// its provisioner, takes the limiter auth.flow_starts of the limits area
 // (R-AUTH-038) and starts its background loops (R-AUTH-042).
-func (a *App) wireSessions() error {
-	if !a.sub.ClientListener {
-		return nil
-	}
+func (a *App) wireSessions(_ context.Context, in infra, id identityArea) (sessionsArea, error) {
 	cfg := a.cfg
-	metrics, err := a.authMetrics()
-	if err != nil {
-		return err
-	}
 	store, err := session.New(session.Options{
-		DB: a.database(), Changes: a.Changes(), Fresh: a.Changes(), Caches: a.Caches(), Audit: a.auditRecorder(),
-		Log: a.log, Metrics: a.tele.metrics.Registry(), AuthMetrics: metrics,
+		DB: in.db, Changes: in.changes, Fresh: in.changes, Caches: in.caches, Audit: in.rec,
+		Log: a.log, Metrics: a.tele.metrics.Registry(), AuthMetrics: id.metrics,
 		Sessions: cfg.Auth.Sessions, BreakGlass: cfg.Auth.BreakGlass,
 		RevocationBound: cfg.Auth.RevocationBound, CacheTTL: cfg.Auth.Tokens.CacheTTL,
 		Origin: requestOrigin, Source: eventSource,
 	})
 	if err != nil {
-		return err
+		return sessionsArea{}, err
 	}
-	a.m1.sessions = store
-	return nil
+	return sessionsArea{store: store}, nil
 }
 
-// wireLogin builds the OIDC and break-glass login on the session store.
-func (a *App) wireLogin(ctx context.Context) error {
-	if !a.sub.ClientListener || a.m1.sessions == nil {
-		return nil
+// wireLogin builds the OIDC and break-glass login on the session store and the
+// handler of its browser routes, which every endpoint's router mounts.
+func (a *App) wireLogin(ctx context.Context, in infra, id identityArea, ss sessionsArea, lim limitsArea) (loginArea, error) {
+	if err := requireInputs(AreaLogin, given("provisioner", id.provisioner), given("session store", ss.store), given("flow-start limiter", lim.flowStarts)); err != nil {
+		return loginArea{}, err
 	}
 	cfg := a.cfg
-	var flowStarts oidc.Limiter
-	if a.m1.flowStarts != nil {
-		flowStarts = takeLimiter{a.m1.flowStarts}
-	}
 	svc, err := oidc.New(ctx, oidc.Options{
-		DB: a.database(), Sessions: a.m1.sessions, Provisioner: a.m1.provisioner, Audit: a.auditRecorder(),
+		DB: in.db, Sessions: ss.store, Provisioner: id.provisioner, Audit: in.rec,
 		Clients: func(purpose string) *http.Client {
-			return a.out.Client(purpose, outbound.WithTimeout(10*time.Second))
+			return in.out.Client(purpose, outbound.WithTimeout(10*time.Second))
 		},
-		Log: a.log, Metrics: a.m1.authMetrics,
+		Log: a.log, Metrics: id.metrics,
 		BaseURL: cfg.Server.BaseURL, Auth: cfg.Auth,
-		Limiter: flowStarts, MaxPendingFlows: cfg.Auth.RateLimit.MaxPendingFlows,
+		Limiter: takeLimiter{lim.flowStarts}, MaxPendingFlows: cfg.Auth.RateLimit.MaxPendingFlows,
 	})
 	if err != nil {
-		return err
+		return loginArea{}, err
 	}
 	if err := a.startComponent(ctx, svc); err != nil {
-		return err
+		return loginArea{}, err
 	}
-	a.m1.login = svc
-	return nil
+	return loginArea{service: svc, handler: login.New(svc, ss.store, login.Options{})}, nil
 }
 
 // takeLimiter adapts the cluster limiter in the take form (it counts every
@@ -90,7 +77,7 @@ func (t takeLimiter) Allow(ctx context.Context, bucket string) (bool, time.Durat
 // (R-AUTH-005, R-AUTH-006, R-AUTH-013, R-AUTH-014). They belong to the ui
 // family, so an endpoint whose surface lacks ui drops them (R-EP-005).
 func (a *App) registerLogin(router *httpserver.Router) {
-	login.New(a.m1.login, a.m1.sessions, login.Options{}).Register(router)
+	part[loginArea](a.parts).handler.Register(router)
 }
 
 // requestOrigin is the origin of the base URL the chain resolved for the

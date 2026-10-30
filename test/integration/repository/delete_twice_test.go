@@ -14,8 +14,8 @@ import (
 // TestDeleteTwice has no worker, so the job stays queued and the second delete
 // meets it.
 func TestDeleteTwice(t *testing.T) {
-	e := newEnv(t)
-	web := e.newReplica("twice-web", replicaOpts{})
+	e := newStackEnv(t)
+	web := e.newReplica("twice-web", stackOpts{})
 	ctx := context.Background()
 	if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed"))); err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestDeleteTwice(t *testing.T) {
 		if e.scalar(`SELECT count(*) FROM job WHERE kind = 'repository-delete'`) != 1 {
 			t.Fatal("a second job was queued")
 		}
-		if got := web.rec.types(); len(got) != 2 { // created, deleted(started): the repeats record nothing
+		if got := types(e.events(web.Name)); len(got) != 2 { // created, deleted(started): the repeats record nothing
 			t.Fatalf("events = %v", got)
 		}
 	})

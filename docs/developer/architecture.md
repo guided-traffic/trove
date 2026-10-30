@@ -22,9 +22,11 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | [shutdown.go](../../internal/app/shutdown.go) | `shutdownBudget` and `planShutdown`: the absolute times of every shutdown phase |
 | [warnings.go](../../internal/app/warnings.go) | The standing configuration warnings (unset `server.base_url`, `system.bootstrap_anonymous_read`): at start and every hour |
 | [component.go](../../internal/app/component.go) | `Component` and the optional shutdown phases `Drainer`, `Settler`, `Quiescer`, `Flusher` |
-| [roles.go](../../internal/app/roles.go) | `SubsystemsFor(role)`: the table of R-ARCH-001 as data |
+| [roles.go](../../internal/app/roles.go) | `SubsystemsFor(role)`: the table of R-ARCH-001 as data; a role's wiring `Area`s are the steps of the list that run in it (`areasFor`); the explicit shell profile (`Subsystems.shell`) |
+| [steps.go](../../internal/app/steps.go) | The wiring framework: `step`, `newStep`, `wiringSteps` (the list, in start order, with the roles each step runs in), `planSteps` (checked in `New`), `runSteps`, `part[T]`, `requireInputs`, `late[T]` |
+| [areas.go](../../internal/app/areas.go) | The typed results of the steps: `keysArea`, `postgresArea`, `auditArea`, `blobArea`, `valkeyArea`, `coordArea`, the bundle `infra` that every domain step takes, and the domain areas (`repositoryArea`, `identityArea`, `authzArea`, `filesArea`, ...); an area added later declares its own result type in its own file |
 | [identity.go](../../internal/app/identity.go) | Instance name (`TROVE_POD_NAME`, `POD_NAME`, `HOSTNAME` in Kubernetes, else `hostname-pid`), random instance UID, node name |
-| [wire_observability.go](../../internal/app/wire_observability.go), [wire_postgres.go](../../internal/app/wire_postgres.go), [wire_valkey.go](../../internal/app/wire_valkey.go) | One file per infrastructure client; `WIRING POINT` comments in `bootstrap` mark what later work packages add |
+| [wire_observability.go](../../internal/app/wire_observability.go), [wire_keys.go](../../internal/app/wire_keys.go), [wire_postgres.go](../../internal/app/wire_postgres.go), [wire_audit.go](../../internal/app/wire_audit.go), [wire_blob.go](../../internal/app/wire_blob.go), [wire_valkey.go](../../internal/app/wire_valkey.go), [wire_coordination.go](../../internal/app/wire_coordination.go) | One file per infrastructure area: the step (`wireKeys`, `wirePostgres`, `wireAudit`, `wireBlob`, `wireValkey`, `wireCoordination`, `wireInfra`) and its component |
 | [wire_tls.go](../../internal/app/wire_tls.go) | `startTLS`: one `ListenerTLS` per listener of the role (every endpoint listener included), the `tls` first-readiness check |
 | [wire_endpoints.go](../../internal/app/wire_endpoints.go) | The endpoints this process serves, their TLS, chain and listener; see [endpoints.md](endpoints.md) |
 | [access.go](../../internal/app/access.go) | `bridgeAccess`: the bridge of the M1 decision point. It opens `settings:read` for anonymous callers under `system.bootstrap_anonymous_read` and the two bootstrap operations (Q-AUTHZ-16, Q-AUTHZ-71); every other check asks `internal/authz` |
@@ -37,6 +39,17 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 change poll, registry. `worker`: no client listener, plus the lease pool and the job loops. `all` is both
 and logs a warning. A `worker` has no socket on `:8080`; a test proves it
 (`R-ARCH-001 a worker replica opens no client socket`).
+
+A role also has wiring **areas** (`Subsystems.Areas`), which are the steps of the list that run in it. Every serving
+role has the infrastructure areas (`keys`, `postgres`, `audit`, `blob`, `valkey`, `coordination`, `infra`) and the domain
+areas of its jobs (`keyring`, `exposure`, `repository`, `virtual`, `invalidation`, `proxy`, `identity`, `authz`, `ownership`, `formats`, `files`); a role with a
+client listener (`web`, `all`) has the areas of the listener on top (`limits`, `sessions`, `login`, `auth`, `endpoints`,
+`api`, `formathost`). A `worker` therefore runs the deletion, token and fold jobs on the same services a web replica has, and builds no
+session store, login or limiter. The **shell
+profile** (`Options.SkipInfrastructure`, the `drainfixture` build) is `Subsystems.shell()`: the listeners, the `keys` area and
+the `shell` area (the authentication stage over an empty token store), no PostgreSQL, Valkey or object store. It is a named
+profile, not what is left when a step finds a nil component (Q-ARCH-209). `New` checks the step list against the role (`planSteps`), so a role whose steps cannot be satisfied does
+not start.
 
 A client listener exists per **endpoint** (R-EP-002): the default endpoint on `server.listen` and every entry of
 `server.endpoints` that belongs to the process's pool (`TROVE_POOL_NAME`). `web` opens the endpoints of its pool, a
@@ -129,12 +142,12 @@ reach PostgreSQL stays alive and unready.
 |---|---|
 | 1 configuration | `config.Load` in `serve.go` |
 | 2 logging, metrics (with the TLS families), tracing; the listeners' TLS and the `tls` check (`startTLS`); ops listener; readiness 503, liveness 200 | `Start`, [wire_tls.go](../../internal/app/wire_tls.go) |
-| 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process; the component closes the pools it opened on every error or cancel return, because `startComponent` records a component only after `Start` succeeded) | `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
-| 4 audit: retention check, `audit_maintain_partitions()` until the current and next month exist, the recorder | `App.startAudit` ([wire_audit.go](../../internal/app/wire_audit.go)) |
-| 5 key ring; `outbound.New` with its `Err()` as a first-readiness check | `bootstrap` |
-| 6 object store: wait while `outbound.Err()` reports a problem (a CA file of `proxy.outbound.tls.ca_files` that loads later clears it without a restart), `s3.NewFromFactory` (a `storage.s3.ca_file` that does not load is a configuration error), `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
-| 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `valkeyComponent`, `startCoordination` ([wire_coordination.go](../../internal/app/wire_coordination.go)) |
-| 8 the M1 areas, each inside its own `>>> M1 <area>` marker: the repository snapshot (`wireRepository`), the identity components (`wireIdentity`), the sessions and the login (`wireSessions`, `wireLogin`), the API conventions with the key-ring canary (`wireAPI`, `verifyKeyRingCanaries`), the grant index (`wireAuthz`), the raw files (`wireFiles`) and the endpoints' exposure (`wireEndpoints`); the marker comment at step 8 says the order | [app.go](../../internal/app/app.go), [wire_repository.go](../../internal/app/wire_repository.go), [wire_identity.go](../../internal/app/wire_identity.go), [wire_login.go](../../internal/app/wire_login.go), [wire_api.go](../../internal/app/wire_api.go), [wire_authz.go](../../internal/app/wire_authz.go), [wire_files.go](../../internal/app/wire_files.go), [wire_exposure.go](../../internal/app/wire_exposure.go) |
+| 3 PostgreSQL pools, schema gate, `system_state` facts (an unreachable database or a schema that is behind is retried with backoff, readiness stays 503; a configuration error, a failed preflight or a schema floor above this binary ends the process; the component closes the pools it opened on every error or cancel return, because `startComponent` records a component only after `Start` succeeded) | `wirePostgres`, `postgresComponent` ([wire_postgres.go](../../internal/app/wire_postgres.go)) |
+| 4 audit: retention check, `audit_maintain_partitions()` until the current and next month exist, the recorder | `wireAudit` ([wire_audit.go](../../internal/app/wire_audit.go)) |
+| 5 key ring; `outbound.New` with its `Err()` as a first-readiness check (the first step of the list, a configuration check) | `wireKeys` ([wire_keys.go](../../internal/app/wire_keys.go)) |
+| 6 object store: wait while `outbound.Err()` reports a problem (a CA file of `proxy.outbound.tls.ca_files` that loads later clears it without a restart), `s3.NewFromFactory` (a `storage.s3.ca_file` that does not load is a configuration error), `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` (handed to the `gc` job kinds through `late[*blob.Collector]`) | `wireBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
+| 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `wireValkey`, `wireCoordination` ([wire_valkey.go](../../internal/app/wire_valkey.go), [wire_coordination.go](../../internal/app/wire_coordination.go)); `wireInfra` ([wire_keys.go](../../internal/app/wire_keys.go)) bundles the results into the `infra` value and refuses a nil member by name |
+| 8 the domain areas, in the order of the list: the key-ring canary (`wireKeyRing`), the exposure ceiling and rule service (`wireExposure`), the repository snapshot and service (`wireRepository`), the routing of virtual repositories (`wireVirtual`), the cache invalidation (`wireInvalidation`), the upstream clients with the binding of the remote settings (`wireProxy`), the identity stores (`wireIdentity`), the grant index (`wireAuthz`), package ownership (`wireOwnership`), the format contract (`wireFormats`: data-port bindings, storage hooks and the files seam), the item store and files service (`wireFiles`); on a replica with a client listener the format Host and dispatcher (`wireFormatHost`), the limiter set (`wireLimits`), the sessions (`wireSessions`), the OIDC and break-glass login (`wireLogin`), the authentication stage (`wireAuth`), the endpoints' rate-limit classes (`wireEndpoints`) and the API stage (`wireAPI`); the shell profile has `wireShell` instead. Then `requireServing` refuses to open the client listener when an area it serves is missing | [steps.go](../../internal/app/steps.go) (`wiringSteps`), [wire_repository.go](../../internal/app/wire_repository.go), [wire_virtual.go](../../internal/app/wire_virtual.go), [wire_invalidation.go](../../internal/app/wire_invalidation.go), [wire_proxy.go](../../internal/app/wire_proxy.go), [wire_identity.go](../../internal/app/wire_identity.go), [wire_login.go](../../internal/app/wire_login.go), [wire_api.go](../../internal/app/wire_api.go), [wire_authz.go](../../internal/app/wire_authz.go), [wire_files.go](../../internal/app/wire_files.go), [wire_ownership.go](../../internal/app/wire_ownership.go), [wire_formats.go](../../internal/app/wire_formats.go), [wire_exposure.go](../../internal/app/wire_exposure.go) |
 | 9 client listeners (`web`, `all`): one per endpoint of the process, all bound before the replica can be ready | `startClient`, [wire_endpoints.go](../../internal/app/wire_endpoints.go) |
 | 10 `startup` check passes | `bootstrap` sets the flag and refreshes the checks |
 
@@ -216,10 +229,61 @@ The budget constants (`defaultBudget`: margin 5 s from `config.ShutdownMargin`, 
 1 s, ops reserve 0.5 s) are a struct on the `App` so tests scale them down
 (`R-HA-011 a worker with the derived timeout quiesces its jobs ...`).
 
+## Wiring steps
+
+The wiring of steps 3 to 8 is a list of typed steps (`wiringSteps` in [steps.go](../../internal/app/steps.go)). A step
+is a method of `App` with the shape `func (a *App) wireX(ctx context.Context, in1 T1, in2 T2) (XArea, error)`: its
+inputs are the typed results of earlier steps, its result is the typed result of its area. `newStep(area, roles, method)`
+reads the types off the method, so the list needs no repeated signature, and panics on any other shape; `roles` says which
+roles run the step (`everyRole`, `withListener`, `onShell`). The list is the only place that says which role has which
+area: `SubsystemsFor` asks it (`areasFor`).
+
+- **Checked in `New`.** `planSteps` takes the list and the role's `Areas` and refuses the role, with an error that
+  names the step, the missing type, the area that builds it and the role, when a step the role runs needs a type that no
+  enabled step builds, that is built later in the list, or that two steps build. A web replica without the authz area is
+  refused because the files area needs a decision point (`area files needs authzArea from area authz, which role web does
+  not enable`). The shell profile runs `keys` and `shell` only.
+- **Checked when it runs.** `requireInputs(area, given("database", db), ...)` returns `area: no database, no blob store`
+  for every nil member, so a step that was handed an incomplete bundle stops the start-up by name instead of building a
+  part that answers `503` later (`files: no authorizer`).
+- **Checked before the listener opens.** `requireServing` names the areas a client listener serves (the authentication
+  stage, the decision point, the repository reader, the files service, the login handler, the exposure rule service, the
+  API stage, the audit store, the invalidation set). A role that plans without one of them, because no other step needs
+  its result, stops here with `client listener: no files service`.
+- **Job handlers.** The job registry is built, and frozen, before the areas are wired. A handler therefore reads its service
+  through a `late[T]` that the step sets once (`a.gc`, `a.auditStore`, `a.repoSvc`, `a.itemStore`, `a.tokenSvc`, `a.folder`,
+  `a.reseal`): a job claimed before the step ran fails with a retryable error that names what is missing; one claimed
+  after finds the value.
+- **Reading a result.** Everything that serves a request reads the results through `part[T](a.parts)`; the zero value of
+  an area has nil members, which is how code reads an area the role does not build. A nil pointer must not become a
+  non-nil interface: `decider()`, `Repositories()` and `Authorizer()` answer an untyped nil.
+
+### How to add a wiring step
+
+One new file and one line in the list.
+
+1. Write `wire_foo.go`. In it: the area's name (`const AreaFoo Area = "foo"`), its result type (`type fooArea struct{ ... }`,
+   by value), and the step `func (a *App) wireFoo(ctx context.Context, in infra, ...) (fooArea, error)`. Take `infra` and
+   the areas you build on as inputs, start `Component`s with `a.startComponent`, register readiness checks, and call
+   `requireInputs(AreaFoo, given("...", x), ...)` first so a nil part fails the start-up by name. A part that is
+   only unreachable is retried, as steps 3 to 7 are; a part the wiring does not provide is an error. A binding the
+   area owes another one (the data port of a format, the remote settings of the repository service) is made in the
+   step and fails the step when it cannot be made; a missing or wrong binding is a start-up error, never a nil that a
+   request finds.
+2. Add `newStep(AreaFoo, everyRole, (*App).wireFoo),` to `wiringSteps` after the steps it needs. `everyRole` runs it on
+   `web`, `worker` and `all`; `withListener` on `web` and `all`. That is the only edit outside the new file.
+3. A job kind of the area registers in the job registry before the step runs: keep the service in a `late[*foo.Service]`
+   field of `App`, `set` it in the step, and build the handler with `handler(what, fn)`. Registering the kind is a line
+   in `jobRegistry` ([wire_jobs.go](../../internal/app/wire_jobs.go)).
+4. What the client listener needs of the area (a route, a `v1.Options` member) is read with `part[fooArea](a.parts)` in
+   `startClient`; add the area to `requireServing` when a listener cannot serve without it.
+5. Test it in the style of `TestR_ARCH_024_AMissingPrerequisiteIsAStartupError`: a role without the area it needs is
+   refused by name, and the step refuses its nil inputs.
+
 ## Extending
 
-- A new infrastructure client: add `wire_<name>.go` with a `Component`, call `startComponent` at its
-  step in `bootstrap`, register its checks with `AddReadiness` / `AddReported`.
+- A new infrastructure client: a wiring step, see "How to add a wiring step"; register its checks with `AddReadiness` /
+  `AddReported`.
 - A background loop: `health.Loop`, `Beat` per iteration, a deadline on every call shorter than
   `health.watchdog_timeout`.
 - Work that must finish or be released at shutdown: implement `Drainer`/`Settler`/`Quiescer`/`Flusher`.
@@ -240,8 +304,7 @@ compiles it and sends a real `SIGTERM` while a request is in flight. No release 
 
 ## Known gaps
 
-- The `WIRING POINT` of step 8 in `bootstrap` ([app.go](../../internal/app/app.go)) still names the cache registry; the M1 areas are wired into it, but the
-  registration of each cache on `App.Caches()` is not checked here. The trash purge and the upload-session expiry that
+- The registration of each cache on `App.Caches()` is not checked at step 8. The trash purge and the upload-session expiry that
   R-STOR-025 puts at the start of a collection run are not part of the `gc` handler yet.
 - A shell started without infrastructure (`SkipInfrastructure`, the drain fixture) lists only itself as replica.
 - The UI locales are constants in [misc.go](../../internal/app/misc.go) until a `ui` configuration section exists.

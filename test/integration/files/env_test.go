@@ -718,18 +718,6 @@ func (r *replica) serve(o replicaOpts) {
 	go func() { _ = r.server.Serve() }()
 }
 
-// flush writes the buffers of the replica now (a replica does it at shutdown).
-func (r *replica) flush() {
-	r.t.Helper()
-	ctx := context.Background()
-	if err := r.stats.Flush(ctx); err != nil {
-		r.t.Fatalf("stats flush: %v", err)
-	}
-	if err := r.act.Flush(ctx); err != nil {
-		r.t.Fatalf("activity flush: %v", err)
-	}
-}
-
 func (r *replica) stop() {
 	r.stopped.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

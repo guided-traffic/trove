@@ -1,9 +1,11 @@
 # M1 contracts
 
 The shared Go contracts of milestone M1 (access core, [roadmap](../coverage/roadmap.md)). The work packages
-build in parallel worktrees; this page says which package and which marked section belongs to whom, so that
-they merge without conflicts. Where a contract must change, the owner says so in the report and updates this
-page in the same change.
+built in parallel worktrees; this page is the record of which package and which marked section belonged to whom.
+The `>>> M1` markers in `internal/app` are retired: the composition root is a list of typed wiring steps, one per
+area ([architecture.md](architecture.md#wiring-steps)), and an area is one `wire_<area>.go` and one line in that
+list. The markers of the other shared files (OpenAPI, error codes, cluster areas, configuration) remain. Where a
+contract must change, the owner says so in the report and updates this page in the same change.
 
 The database tables are not on this page: see [database.md](database.md) (migrations `00006` and up).
 
@@ -35,7 +37,7 @@ internal/
 ├── authz/                       domain WP1.3  authz.go: Subject, Coordinate, Decision, Authorizer (contract); the engine
 ├── repository/                  domain WP1.4  repository.go: Repository, Class, Reader (contract); store, snapshot
 ├── api/v1/subject.go            edge   SubjectFrom(ctx), ActorFrom: delegates to api/edge, where the one conversion Principal -> Subject lives (WP2.0)
-├── app/m1.go, m1_convert.go     app    m1Wiring (components by area), authenticate/access selection, Result -> Principal
+├── app/steps.go, areas.go       app    the wiring steps and their typed results; m1_convert.go: Result -> Principal
 └── config/m1.go                 leaf   the empty sections Auth, Authz, API, Repositories with markers
 ```
 
@@ -78,10 +80,10 @@ Rules that follow:
 | `session.Validator`, `Info`, `ErrInvalid`, `ErrCSRF` | [session.go](../../internal/auth/session/session.go) | resolves the session cookie, applies CSRF (R-AUTH-012); `session.Problem` maps both errors to 401 `session_expired` and 403 `csrf_failed`. WP1.1 added `AuthMethod`, `ProviderID`, `AuthenticatedAt` and `AuthenticatedWithin` (R-AUTH-011) to `Info`. `app.m1.sessions` is the `*session.Store` (set by `wireSessions` before `wireIdentity`), whose `EndForPrincipal` ends a user's sessions on a caller's transaction | WP1.1 |
 | `authz.Authorizer` (`Decide`, `Readable`, `Require`), `Subject`, `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`, `RequestKind` | [authz.go](../../internal/authz/authz.go) | the decision point; action constants of R-AUTHZ-006, capability names of R-AUTHZ-010 | WP1.3 |
 | `repository.Repository`, `Class`, `Reader`, `KeyPattern`, `ReservedKeys()` | [repository.go](../../internal/repository/repository.go) | the read model and the lookup by key | WP1.4 |
-| `audit.EventType`, `Register`, `Freeze`, `Lookup`, `Types`; `Event`, `Actor`, `Subject`, `Source`; `Recorder`, `Nop`; `Writer`, `Store` | [registry.go](../../internal/audit/registry.go), [event.go](../../internal/audit/event.go), [recorder.go](../../internal/audit/recorder.go), [store.go](../../internal/audit/store.go) | registry with the journal flag; the recorder interface and its implementation (`a.m1.recorder`); the query and maintenance (`a.m1.auditStore`). `Event` also carries `Repository`, `Path`, `Endpoint`, `Actor.TokenID`, `Actor.AuthMethod` and the outcome `Denied` (Q-OPS-40) | WP1.7; page [audit.md](audit.md) |
+| `audit.EventType`, `Register`, `Freeze`, `Lookup`, `Types`; `Event`, `Actor`, `Subject`, `Source`; `Recorder`, `Nop`; `Writer`, `Store` | [registry.go](../../internal/audit/registry.go), [event.go](../../internal/audit/event.go), [recorder.go](../../internal/audit/recorder.go), [store.go](../../internal/audit/store.go) | registry with the journal flag; the recorder interface and its implementation (the audit area's `rec`); the query and maintenance (its `store`). `Event` also carries `Repository`, `Path`, `Endpoint`, `Actor.TokenID`, `Actor.AuthMethod` and the outcome `Denied` (Q-OPS-40) | WP1.7; page [audit.md](audit.md) |
 | `repository.Service` (`Create`, `Get`, `Replace`, `Patch`, `List`, `Delete`), `Precondition`, `StaleVersion`, `Caller`, `Hooks`; `repository.SnapshotReader` (the `Reader`); `CleanPath`, `CompilePattern`, `Admission`, `Repository.Admits`; `cluster.AreaRepoConfig` | [service.go](../../internal/repository/service.go), [reader.go](../../internal/repository/reader.go), [path.go](../../internal/repository/path.go), [pattern.go](../../internal/repository/pattern.go) | the write side the management API (wave 2) and the files transfer call, and the path and pattern functions authz and files reuse; see [repositories.md](repositories.md) | WP1.4 |
 | `formats.Format` (`Descriptor`, `Describe`), `Descriptor`, `RequestDescriptor`, `RequestKind`, `Register`, `Lookup`, `Descriptors` | [formats.go](../../internal/formats/formats.go) | the skeleton of the format contract and the registry (R-REPO-003); the generic format is the first entry; routes, hooks and adapters of R-ARCH-008 join it with npm | WP1.4 |
-| `v1.Access` (existing), `v1.NewAccess`, `v1.SubjectFrom` | [handlers.go](../../internal/api/v1/handlers.go), [subject.go](../../internal/api/v1/subject.go) | the permission check of the management API | WP1.3 |
+| `v1.Access` (existing), `v1.NewAccess(authz.Decider)`, `v1.SubjectFrom` | [handlers.go](../../internal/api/v1/handlers.go), [subject.go](../../internal/api/v1/subject.go) | the permission check of the management API | WP1.3 |
 
 ### Request flow, principal to decision
 
@@ -92,12 +94,12 @@ request ─► chain stage 6 (httpserver.Chain.Authenticate)
               3. session cookie -> session.Validator (+ CSRF)   4. none -> anonymous if allowed
               a present credential that is invalid -> 401 (never falls through)
             principalFromResult(res) ──► httpserver.Principal ──► WithPrincipal(ctx)
-       ─► stage 7 rate limit (a.m1.rateLimit)
+       ─► stage 7 rate limit (the api area's rateLimit)
        ─► handler
             management API: authorizingMux -> Server.decide -> v1.Access.Require(ctx, permission)
-                              v1.NewAccess -> authz.Authorizer.Require(ctx, SubjectFrom(principal), permission)
+                              v1.NewAccess(decider) -> edge.Access (one index per request).Require(ctx, permission)
             files / formats: sub := edge.SubjectFrom(r)   (carries the listener's endpoint)
-                              authz.Authorizer.Decide(ctx, sub, Coordinate{...}) -> Decision
+                              Decider.DecideOn(ctx, idx, sub, Coordinate{...}) -> Decision   (idx from Decider.Begin)
                               Allow | DenyUnauthenticated 401 | DenyHidden 404 | DenyVisible 403 | DenyStale 503 | DenyEpochUnknown 412 (R-AUTHZ-016)
 ```
 
@@ -119,8 +121,8 @@ Changes WP1.3 made to the contracts above (see [authorization.md](authorization.
 | `authz.Decision` | `Target` (the coordinate as the caller sent it) and `Sources` (policy names or `role:admin`) added; `Err()`, `Status()` and `Allowed()` are in [errors.go](../../internal/authz/errors.go) |
 | `authz.Authorizer` implementation | `*authz.Engine` is also the `authz.Decider` (`Begin` and the `…On` forms: one index per request, Q-AUTHZ-159), and offers `Check`, `Effective` and `RecordAllowed`; `authz.NotFound()` is the one 404 for hidden and missing resources |
 | `httpserver.Principal` | `MinEpoch int64`, the parsed `Trove-Authz-Min-Epoch` of an authenticated request (Q-AUTHZ-17); `edge.SubjectFrom` copies it |
-| `v1.Access` | unchanged; `v1.ActionAccess` (`RequireAction`) is the optional second interface that `v1.NewAccess` implements for the action form |
-| `m1Wiring` | `authzEngine` and `anonymousAccess func() bool` (set by identity before the authz wiring; nil: off) in the authz marker |
+| `v1.Access` | `v1.NewAccess` takes the per-request `authz.Decider` and holds the request's `edge.Access`; `v1.ActionAccess` (`RequireAction`) is the optional second interface it implements for the action form. The services of the composition root (`RepositoryServices.Authz`, `EndpointServices.Authorizer`) are typed `authz.Decider` as well, so there is no conversion from `authz.Authorizer` (`v1.DeciderOf` is gone) |
+| wiring | the authz area (`wireAuthz`) takes the identity area's `anonymousAccess func(ctx) (bool, error)` as an input; it was a field of `m1Wiring` |
 | `permission` strings of `Require` | capability names, and `role:<role>` for the role form |
 
 Changes of the leftover items of the backend (wave 3, [http-api.md](http-api.md), Q-API-40 to Q-API-44, Q-AUTH-50, Q-EP-24 to Q-EP-26):
@@ -137,9 +139,11 @@ Changes of the leftover items of the backend (wave 3, [http-api.md](http-api.md)
 
 ## Marked sections in shared files
 
-Each area edits only between its own `>>> M1 <area>` and `<<< M1 <area>` lines and does not move, reformat or
-remove the markers of others. Pairs are separated by an unchanged line, so concurrent inserts merge. Delete
-nothing outside your markers.
+The `>>> M1 <area>` and `<<< M1 <area>` lines in `internal/app` (`m1Wiring`, `bootstrap`, `startClient`) are retired;
+nothing in `internal/app` is edited between markers any more (see "Wiring steps" in
+[architecture.md](architecture.md#wiring-steps)). The other shared files keep them. An area edits only between its
+own markers and does not move, reformat or remove the markers of others. Pairs are separated by an unchanged line,
+so concurrent inserts merge. Delete nothing outside your markers.
 
 | File | Section | Markers (areas) |
 |---|---|---|
@@ -152,10 +156,6 @@ nothing outside your markers.
 | [internal/cluster/areas.go](../../internal/cluster/areas.go) | `init` (`RegisterArea`) and the area-name constants | identity, authz, repository |
 | [internal/config/m1.go](../../internal/config/m1.go) | fields of `Auth` | identity, login |
 | | `Authz`, `API`, `Repositories` | authz, api, repository |
-| [internal/app/m1.go](../../internal/app/m1.go) | fields of `m1Wiring` | audit, api, identity, login, authz, repository, files, endpoints |
-| [internal/app/app.go](../../internal/app/app.go) `bootstrap` | step 4 (after the PostgreSQL component) | audit |
-| | step 8 (domain snapshots and caches), in this order | repository, login (sessions), identity, login (OIDC), authz, files, endpoints, api |
-| [internal/app/app.go](../../internal/app/app.go) `startClient` | routes outside `/api/v1/` | login (`/auth/`), files (`/files/`) |
 
 After editing a marker in `api/openapi.yaml` run `make generate`; after a config field, `make generate` too
 (`schema.json`). A change area needs its `cluster_epoch` row from the migration that ships it
@@ -165,14 +165,19 @@ The audit event files (`internal/audit/events_<area>.go`) are not shared files: 
 
 ### Wiring order
 
-`bootstrap` builds in this order and each step reads earlier components from `a.m1`: audit recorder (step 4),
-then at step 8 the repository snapshot, the session store (`wireSessions`), the principal store, provisioner and
-authenticator (`wireIdentity`, which takes the session store as its `session.Validator` and `auth.break_glass.username`
-from the configuration), the OIDC and break-glass login (`wireLogin`, which calls the provisioner and takes the limiter
-`auth.flow_starts`), the grant index (authz needs the repository snapshot and the principal store), the files and endpoint components, and
-last the API limiter. Fields are set once before the client listener starts. `app.authenticate` answers 503
-`unavailable` (Retry-After 1 s) while `a.m1.authenticator` is nil, and the API access check grants nobody any permission while
-`a.m1.authorizer` is nil; no M0 stand-in remains. `audit.Freeze()` runs in `freezeRegistries`.
+The order is the order of `wiringSteps()` in [steps.go](../../internal/app/steps.go); `planSteps` proves at `New`
+that each step's inputs are built earlier by a step of an enabled area, and each step takes them as typed values
+instead of reading them from a shared bag. At step 8: the exposure ceiling and rule service, the repository snapshot
+and service, the identity stores and the metrics (`wireIdentity`), the grant index (`wireAuthz`: it needs the
+repository snapshot, the principal store and the anonymous-access switch of the identity area), the item store and
+files service (`wireFiles`: it needs the decision point), and on a replica with a client listener the limiter
+set, the session store (`wireSessions`, the `session.Validator` of the authentication stage), the OIDC and
+break-glass login (`wireLogin`, which calls the provisioner and takes the limiter `auth.flow_starts`), the
+authentication stage (`wireAuth`), the endpoints' rate-limit classes and last the API stage. A replica refuses to
+open its client listener when one of the areas it serves is missing (`requireServing`), and a step refuses a nil
+input by name, so a misconfigured replica stops at start-up instead of answering 503 on a route. The authentication
+stage and the decision point exist before the listener opens; no M0 stand-in remains. `audit.Freeze()` runs in
+`freezeRegistries`.
 
 ## Error codes
 
@@ -252,12 +257,13 @@ form of the `x-trove-permission` of each operation (R-API-008).
 | Decision | Choice | Why |
 |---|---|---|
 | Where the principal lives | `httpserver.Principal` is a plain edge value; `auth.Result` and `authz.Subject` are the domain types; two converters at the seam | the layer rules forbid a domain package from importing `httpserver`; one type in a leaf package would have moved `Principal` out of the edge layer |
-| How `authz` satisfies `v1.Access` | `Authorizer.Require(ctx, Subject, permission)` and the adapter `v1.NewAccess` | the domain package cannot read the edge's context key |
+| How `authz` satisfies `v1.Access` | the adapter `v1.NewAccess(authz.Decider)` over the engine's per-request forms | the domain package cannot read the edge's context key |
 | Groups on the principal | filled by the stage from the principal cache at request time | R-AUTHZ-002: membership is resolved at evaluation, tokens carry no groups |
 | Principal store package | `internal/auth/principal`, added to R-ARCH-003 | the store is below token, session, oidc and authz, which avoids a cycle through package `auth` |
 | Event spelling | R-AUTH-041 names (Q-OPS-37) | the owning page defines the events and their journal entries |
 | State in `audit` | `internal/audit` joins the packages allowed a frozen registry (`archtest/state.go`, R-ARCH-032) | the event registry is filled at initialisation and frozen like the job registry |
 | Empty config sections | `Auth`, `Authz`, `API`, `Repositories` exist as empty structs in `config/m1.go` | owners only add fields in their markers and never edit `Config` |
+| Composition root | typed wiring steps, areas as data of the roles (Q-ARCH-209, Q-ARCH-210) | the `m1Wiring` bag and its markers let a missing component pass as a nil check; a step list makes it a start-up error |
 
 ## As built by the api area (WP1.6)
 
@@ -270,7 +276,7 @@ form of the `x-trove-permission` of each operation (R-API-008).
   `ETag`, `Location`, `Link`, `BadRequest`, `Conflict`, `PreconditionFailed`, `PreconditionRequired`, `Unprocessable`,
   `PayloadTooLarge`, `UnsupportedMediaType`, `TooManyRequests`, `NotModified`; the `Problem` schema gained `currentEtag` and
   `job`. Every operation of the document references `TooManyRequests` (Q-API-22).
-- **Stage 7.** `a.m1.rateLimit` is `v1.EdgeStage(CORS, limiter)`; the endpoints area, which owns the per-endpoint class
+- **Stage 7.** the api area's `rateLimit` is `v1.EdgeStage(CORS, limiter)`; the endpoints area, which owns the per-endpoint class
   (R-EP-015), plugs into the same stage.
 - **Audit.** `system.task_triggered` and `system.job.cancelled` are registered in `internal/audit/events_api.go`;
   `wire_api.go` passes the recorder of step 4 (`auditRecorder`), a discarding one in a shell without PostgreSQL.
@@ -279,7 +285,7 @@ form of the `x-trove-permission` of each operation (R-API-008).
 
 - **Handlers.** `v1.Options` gained `AuditStore *audit.Store` (marker `audit`) and `Authz v1.AuthzServices{Policies *authz.Service,
   Engine *authz.Engine}` (marker `authz`); a nil member answers the operations that need it with 503. The composition root fills
-  them in `startClient` (`auditStoreForAPI`, `authzServices`). `a.m1.authzService` is the new field of the `authz` marker.
+  them in `startClient` (`auditStoreForAPI`, `authzServices`); the policy service is the authz area's `service`.
 - **Contract changes.**
 
   | Contract | Change |
@@ -289,7 +295,7 @@ form of the `x-trove-permission` of each operation (R-API-008).
   | `apitest.Resource` | `RevisionMember`: the member that grows with every write, `revision` by default (a policy calls it `version`) |
   | `audit.Categories()` | the list of the categories of R-OPS-014, for the filter of the query |
   | `audit.Event` of `authz.denied` | `Repository`, `Path`, `Endpoint`, `Actor.TokenID` and `details.required_action` are filled, the outcome is `denied` (Q-AUTHZ-24); `authz.Engine` no longer deduplicates |
-  | `a.m1.recorder` | the audit writer wrapped by `v1.WithRequestSource`: an event recorded with a request context gets the client address, trace ID and endpoint (Q-OPS-49) |
+  | the audit recorder (`infra.rec`) | the audit writer wrapped by `v1.WithRequestSource`: an event recorded with a request context gets the client address, trace ID and endpoint (Q-OPS-49) |
   | `authz` patterns | `internal/authz` compiles patterns with `repository.CompilePattern` (Q-AUTHZ-25) |
   | `authz.Service` | `CreateIn` (on the caller's transaction), `Select` and `Annotate` (the list), `*Service` is the `principal.AdminBinder`; `authz.SettingsHook` is the `repository.Hooks` |
   | error codes | `already_exists` (not `conflict`) for a policy name that exists |
@@ -314,10 +320,10 @@ Changes to the contracts above; the page of the area is [endpoints.md](endpoints
 | `auth.EndpointRules` | `Refused func(*http.Request, Refusal)` and the type `Refusal` (`RefusedTokenType`, `RefusedTokenBinding`, `RefusedAnonymous`); the stage calls it for each endpoint refusal. `endpointRules` in `m1_convert.go` fills every field from the configuration |
 | `token.rejected` | the schema of `events_identity.go` accepts reason `endpoint_not_accepted` and the members `refusal` and `tokenType` |
 | `cluster.LimiterSet` | `NewLimiterShared(name, scope, rate, burst, share)`: a limiter whose fallback share divides by its own count (Q-ARCH-45); `NewLimiter` is it with a nil share |
-| `v1.Options` | `Endpoints EndpointServices` in a marker pair of the endpoints area; `app.startClient` passes `a.endpointServices()` |
+| `v1.Options` | `Endpoints EndpointServices`; `app.startClient` passes `a.endpointServices()` |
 | rate-limit fields | `setRateLimitFields` adds `RateLimit-Policy` and `RateLimit` instead of setting them, so the endpoint class and the API class both appear |
-| `app.App` | `Authorizer()` returns the decision point, for content routes outside `internal/app` and the integration tests |
-| `m1Wiring` | `exposureCeiling`, `exposure`, `endpointLimits` in the endpoints marker; `wireAuthz` passes `Ceiling: a.exposureCeiling()` |
+| `app.App` | `Authorizer()` returns the decision point, for the integration tests that ask whether a grant has reached the replica |
+| wiring | `exposureArea` (ceiling and rule service) and `endpointsArea` (the classes' stages); `wireAuthz` takes the ceiling as an input |
 | error codes | `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached` |
 
 ## As built by the repository and files areas (WP1.4 HTTP, WP1.5)
@@ -334,8 +340,8 @@ The repository API ([repositories.md](repositories.md#http-operations)) and the 
 | `api/v1` | `Options.Repositories` (`RepositoryServices`) and `Options.Files` inside the `repository` and `files` markers of `Options`; `CallerFrom`, `WriteJSON`, `WriteDeleteResult`, `InvalidCursor` for the `/files/` handler; `Document.FileOperations()` and the `/files/` half of `CheckRoutes`; `bindError` answers 428 for a missing `If-Match`; `apitest.Resource.MalformedCode`, `ImmutableCode`, `AltPatch` and the `/files/` route lookup of `apitest.Validator` |
 | `api/v1/gen` | `exclude-tags: [files]` in `cfg.yaml` |
 | `audit` | [events_files.go](../../internal/audit/events_files.go): `artifact.deployed`, `artifact.deleted` (transactional, webhook), `artifact.downloaded` (asynchronous) |
-| `app` | `m1Wiring.files` (inside the `files` marker), [wire_files.go](../../internal/app/wire_files.go), `registerFilesJobs` (called from `registerRepositoryJobs`, so `jobRegistry` is unchanged); the gauge start of `bootstrap` moved into `startGauges` to keep `bootstrap` at the complexity threshold |
+| `app` | `filesArea` (item store, files service, decider), [wire_files.go](../../internal/app/wire_files.go), `registerFilesJobs` (called from `registerRepositoryJobs`, so `jobRegistry` is unchanged; the handler reads the item store through a `late` value) |
 | `internal/archtest` | the layer `internal/files` (domain); `internal/api/rawfiles` is edge by its prefix |
 
-The routes of `/files/` are registered by `App.registerFiles` at the `files` marker of `startClient`; the surface filter of the
+The routes of `/files/` are registered by `App.registerFiles` in `startClient`; the surface filter of the
 endpoint drops them on an endpoint without the `files` family, and `Document.CheckRoutes` counts the dropped ones as present.

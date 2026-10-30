@@ -1,11 +1,13 @@
 //go:build integration
 
-package files
+package transfer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -13,23 +15,35 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
 // across returns a Do function for apitest.RunContract that spreads the requests
 // over the replicas and signs them as the named user.
-func across(user string, reps ...*replica) func(*http.Request) (*http.Response, error) {
+func across(user string, reps ...*webReplica) func(*http.Request) (*http.Response, error) {
 	var n atomic.Int64
 	return func(req *http.Request) (*http.Response, error) {
 		rep := reps[int(n.Add(1))%len(reps)]
 		req.URL.Scheme, req.URL.Host = "http", strings.TrimPrefix(rep.baseURL, "http://")
 		req.Host = req.URL.Host
 		if user != "" {
-			req.Header.Set("Authorization", "Bearer "+user)
+			req.Header.Set("Authorization", "Bearer "+rep.e.token(user))
 		}
-		return client.Do(req) //nolint:bodyclose // the caller of Do closes the body
+		res, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		// Every answer is checked against the document, as the replica's other requests are.
+		b, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		check, _ := http.NewRequestWithContext(req.Context(), req.Method, "http://"+testenv.DefaultHost+req.URL.RequestURI(), nil)
+		if _, verr := rep.e.stack.Validator().Check(check, res.StatusCode, res.Header, b); verr != nil {
+			rep.t.Errorf("response validation: %v\n%s", verr, b)
+		}
+		res.Body = io.NopCloser(bytes.NewReader(b))
+		return res, nil
 	}
 }
 
@@ -61,11 +75,11 @@ func violation(t testing.TB, res response, code string) {
 // the requests spread over two replicas and every answer validated against the
 // document.
 func TestRepositoryResourceContract(t *testing.T) {
-	e := newEnv(t)
+	e := newWebEnv(t)
 	e.breakGlass()
-	val := apitest.New(t, v1.EmbeddedYAML())
-	a := e.newReplica("a", replicaOpts{validate: val})
-	b := e.newReplica("b", replicaOpts{validate: val})
+	val := e.stack.Validator()
+	a := e.newReplica("a", webOpts{})
+	b := e.newReplica("b", webOpts{})
 	run := randHex(3)
 
 	apitest.RunContract(t, apitest.Resource{
@@ -89,9 +103,9 @@ func TestRepositoryResourceContract(t *testing.T) {
 }
 
 func TestR_REPO_003_Formats(t *testing.T) {
-	e := newEnv(t)
+	e := newWebEnv(t)
 	e.user("alice")
-	r := e.newReplica("a", replicaOpts{validate: apitest.New(t, v1.EmbeddedYAML())})
+	r := e.newReplica("a", webOpts{})
 
 	t.Run("R-REPO-003 R-GENERIC-001 the catalog lists generic with the values of its descriptor", func(t *testing.T) {
 		res := r.get("alice", "/api/v1/formats")
@@ -135,13 +149,13 @@ func TestR_REPO_003_Formats(t *testing.T) {
 }
 
 func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
-	e := newEnv(t)
+	e := newWebEnv(t)
 	e.breakGlass()
 	e.user("bob")
 	rita := e.user("rita")
-	val := apitest.New(t, v1.EmbeddedYAML())
-	a := e.newReplica("a", replicaOpts{validate: val})
-	b := e.newReplica("b", replicaOpts{validate: val})
+	val := e.stack.Validator()
+	a := e.newReplica("a", webOpts{})
+	b := e.newReplica("b", webOpts{})
 	if _, _, err := a.policy.BindRole(context.Background(), e.actor(), authz.RoleRepositoryAdmin, "user:"+rita.Name); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +241,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 
 	t.Run("R-REPO-009 a caller without repositories:write-config gets 403 and nothing is created; anonymous gets 401", func(t *testing.T) {
 		problemOf(t, a.postJSON("bob", "/api/v1/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 403, "forbidden")
-		problemOf(t, a.postJSON("", "/api/v1/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 401, "unauthenticated")
+		problemOf(t, a.postJSON("", "/api/v1/repositories", map[string]any{"key": "bobs", "class": "local", "format": "generic"}), 401, "credentials_required")
 		if n := e.number("SELECT count(*) FROM repositories WHERE key = 'bobs'"); n != 0 {
 			t.Fatalf("%d repositories", n)
 		}
@@ -235,7 +249,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 
 	t.Run("R-AUTHZ-012 the repository administrator creates a repository and still cannot read its content", func(t *testing.T) {
 		waitFor(t, "the role binding on replica A", 5*time.Second, func() bool {
-			return a.engine.Require(context.Background(), authz.Subject{Kind: "user", ID: rita.ID, Name: rita.Name}, "repositories:write-config") == nil
+			return a.h.App.Authorizer().Require(context.Background(), authz.Subject{Kind: "user", ID: rita.ID, Name: rita.Name}, "repositories:write-config") == nil
 		})
 		if res := a.postJSON("rita", "/api/v1/repositories", map[string]any{"key": "ritas", "class": "local", "format": "generic"}); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
@@ -285,7 +299,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	})
 
 	t.Run("R-REPO-011 two PATCH calls with one If-Match: the first wins, the second is 412 with currentEtag; without If-Match 428; with * 200", func(t *testing.T) {
-		patch := func(rep *replica, body string, hdr ...string) response {
+		patch := func(rep *webReplica, body string, hdr ...string) response {
 			return rep.do("admin", "PATCH", "/api/v1/repositories/gen-one", strings.NewReader(body),
 				append([]string{"Content-Type", "application/merge-patch+json"}, hdr...)...)
 		}
@@ -385,7 +399,7 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 	})
 
 	t.Run("R-REPO-013 delete answers 202 with the job, a repeat the same job; the repository is gone for readers at once and its key is free when the job is done", func(t *testing.T) {
-		w := e.newReplica("w", replicaOpts{worker: true})
+		w := e.newReplica("w", webOpts{worker: true})
 		a.createRepository("to-delete", nil)
 		for i := range 5 {
 			if res := a.put("admin", fmt.Sprintf("/files/to-delete/d/f%d.txt", i), "content "+fmt.Sprint(i)); res.status != 201 {

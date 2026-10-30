@@ -4,8 +4,10 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,20 +20,13 @@ import (
 // (R-REPO-011, Q-API-157).
 func mergePatch(patch string) repository.Patcher { return apiv1.MergePatcher([]byte(patch)) }
 
-func wantCode(t *testing.T, err error, status int, code string) *errs.Error {
-	t.Helper()
-	e, ok := errs.As(err)
-	if !ok || e.Status() != status || e.Code != code {
-		t.Fatalf("err = %v; want %d %s", err, status, code)
-	}
-	return e
-}
-
 func TestCreateReadUpdate(t *testing.T) {
-	e := newEnv(t)
-	rep := e.newReplica("crud", replicaOpts{})
+	e := newStackEnv(t)
+	rep := e.newReplica("crud", stackOpts{})
 	ctx := context.Background()
 	svc := rep.svc
+	events := func() []event { return e.events(rep.Name) }
+	last := func() event { evs := events(); return evs[len(evs)-1] }
 	epoch := func() int64 { return e.scalar(`SELECT epoch FROM cluster_epoch WHERE area = 'repo_config'`) }
 
 	var v1 repository.Stored
@@ -49,10 +44,10 @@ func TestCreateReadUpdate(t *testing.T) {
 		if st.Document.Layout != "generic" || st.Document.HideExistence != "inherit" || st.Document.IncludePatterns == nil {
 			t.Fatalf("document = %+v", st.Document)
 		}
-		if got := rep.rec.types(); len(got) != 1 || got[0] != repository.EventCreated {
+		if got := types(events()); len(got) != 1 || got[0] != repository.EventCreated {
 			t.Fatalf("events = %v", got)
 		}
-		if ev := rep.rec.last(); ev.Subject.Name != "generic-local" || ev.Actor.Name != "alice" || ev.Subject.Kind != "repository" {
+		if ev := last(); ev.Subject != "generic-local" || ev.Actor != "alice" || ev.Kind != "repository" {
 			t.Fatalf("event = %+v", ev)
 		}
 		if epoch() != before+1 || e.scalar(`SELECT count(*) FROM cluster_change WHERE area = 'repo_config'`) != before+1 {
@@ -67,7 +62,7 @@ func TestCreateReadUpdate(t *testing.T) {
 		before := epoch()
 		_, err := svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "generic-local")))
 		wantCode(t, err, 409, errs.CodeAlreadyExists)
-		if epoch() != before || len(rep.rec.types()) != 1 {
+		if epoch() != before || len(events()) != 1 {
 			t.Fatal("a refused create left an epoch or an event behind")
 		}
 	})
@@ -112,7 +107,14 @@ func TestCreateReadUpdate(t *testing.T) {
 		if !st.Repository.Admits("releases/1.0/x.bin", false) || st.Repository.Admits("tmp/x", false) {
 			t.Fatal("the patterns do not take effect")
 		}
-		if got := rep.rec.last(); got.Type != repository.EventUpdated || !strings.Contains(string(got.Details), `"changes":["description","includePatterns"]`) {
+		var details struct {
+			Changes []string `json:"changes"`
+		}
+		got := last()
+		if err := json.Unmarshal([]byte(got.Details), &details); err != nil {
+			t.Fatal(err)
+		}
+		if got.Type != repository.EventUpdated || !slices.Equal(details.Changes, []string{"description", "includePatterns"}) {
 			t.Fatalf("event = %s %s", got.Type, got.Details)
 		}
 		if epoch() != before+1 {
@@ -159,12 +161,12 @@ func TestCreateReadUpdate(t *testing.T) {
 
 	t.Run("R-REPO-011 an update that changes nothing writes nothing", func(t *testing.T) {
 		cur, _ := svc.Get(ctx, "generic-local")
-		events, before := len(rep.rec.types()), epoch()
+		nEvents, before := len(events()), epoch()
 		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(cur.Repository.Version), mergePatch(`{"description":"blind"}`))
 		if err != nil || st.Repository.Version != cur.Repository.Version {
 			t.Fatalf("no-op: %+v, %v", st, err)
 		}
-		if len(rep.rec.types()) != events || epoch() != before {
+		if len(events()) != nEvents || epoch() != before {
 			t.Fatal("a no-op update wrote an event or a change")
 		}
 	})
@@ -206,8 +208,7 @@ func TestCreateReadUpdate(t *testing.T) {
 	})
 
 	t.Run("R-OPS-015 a change never exists without its audit record", func(t *testing.T) {
-		rep.rec.setFail(true)
-		defer rep.rec.setFail(false)
+		defer e.failAudit("")()
 		before := epoch()
 		_, err := svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "audit-fails")))
 		if err == nil {
@@ -228,8 +229,8 @@ func TestCreateReadUpdate(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	e := newEnv(t)
-	rep := e.newReplica("list", replicaOpts{})
+	e := newStackEnv(t)
+	rep := e.newReplica("list", stackOpts{})
 	ctx := context.Background()
 	for _, body := range []string{
 		`{"key":"files-internal","class":"local","format":"generic","description":"Internal release files"}`,

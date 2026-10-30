@@ -130,8 +130,10 @@ The `remote` section of a remote repository (R-REPO-024) is validated in the sam
   does not load disables the repository, like an undecodable `config`.
 - **Seams.** `Service.Bind(RemoteDeps{Ring, Prober, OnUpstreamChanged})` is called by `wireProxy`. Without `Ring` an inline secret
   answers 503; without `Prober` the upstream test does. `OnUpstreamChanged` runs in the update's transaction when `url`, `extraHosts`,
-  `authMode`, `username`, `clientCertificate`, `headers` or a secret changed (R-REPO-011); the cache invalidation of R-REPO-045 is to
-  bind it to record an invalidation of scope `all`.
+  `authMode`, `username`, `clientCertificate`, `headers` or a secret changed (R-REPO-011), with the caller of the update. `wireProxy` binds it
+  to `invalidation.Service.InvalidateTx`, which records the invalidation of scope `all` and an empty prefix, its change-log row and its audit
+  event in that transaction: the cached answers of the old upstream are never in force with the new settings, and a failure of the
+  invalidation rolls the update back.
 - **Upstream test.** `UpstreamTest(ctx, key)` reads the saved repository from PostgreSQL and hands it to the prober;
   `UpstreamTestUnsaved(ctx, body)` runs the whole validation for `{format, remote}` and hands the result, with the inline password
   apart, to the prober. The prober is `upstream.Clients` ([proxy.md](proxy.md)).

@@ -313,10 +313,12 @@ share one database and one Valkey.
   `secrets-reencrypt` refuses with `409 key_ring_incompatible` while it is false.
   At start-up `verifyKeyRingCanaries` ([wire_api.go](../../internal/app/wire_api.go)) refuses a ring that lacks a key that sealed
   values reference, seeds the canary of every key ID that has none, and refuses a ring that cannot open an existing canary.
-  **Open:** the job body of `secrets-reencrypt` is the walk over the registered sealed columns; the registry is empty
-  until the first feature stores a secret, so the registered job completes with nothing to do and fails permanently,
-  naming the column, once a column is registered. The first feature that registers a column writes the walk (the sealed
-  counter in `listq` is the pattern).
+  The job body of `secrets-reencrypt` ([wire_api.go](../../internal/app/wire_api.go), `registerSecretsReencrypt`) calls
+  `repository.ResealSecrets` for the one registered sealed column (`repository_secrets.sealed`) and records
+  `columns`, `resealed`, `current` and `failed` as its result; it fails permanently when `failed` is above zero (a value the
+  ring of this replica cannot open is left as it is), and fails permanently, naming the column, for a column registered later
+  without a walk of its own. The first feature that registers another column writes its walk (the sealed counter in `listq`
+  is the pattern).
 
 ## Rate limits, CORS and response headers
 

@@ -420,7 +420,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 			if err := s.writeSecrets(ctx, tx, row.ID, nd.pending); err != nil {
 				return err
 			}
-			if err := s.upstreamChanged(ctx, tx, cur, nd, out.Repository); err != nil {
+			if err := s.upstreamChanged(ctx, tx, c, cur, nd, before); err != nil {
 				return err
 			}
 		}

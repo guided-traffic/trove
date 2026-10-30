@@ -8,7 +8,9 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/observability/health"
+	"github.com/guided-traffic/trove/internal/secrets"
 )
 
 // closer adapts a type with Close to a Component.
@@ -27,26 +29,30 @@ type firstCloser struct{ closer }
 
 func (firstCloser) stopsFirst() {}
 
-// startCoordination wires signals, the change log, the cache registry and the
-// replica registry, in the order of docs/developer/coordination.md (R-ARCH-024
-// step 7): signals and changes first, caches before the first poll, the
-// `invalidation` check, then the registry row.
-func (a *App) startCoordination(ctx context.Context) error {
-	db := a.database()
-	var bus cluster.Bus
-	if vk := a.valkey(); vk != nil {
-		bus = vk // never a typed nil: a nil Bus means "Valkey never available"
+// wireCoordination is the coordination area: signals, the change log, the cache
+// registry and the replica registry, in the order of
+// docs/developer/coordination.md (R-ARCH-024 step 7): signals and changes first,
+// caches before the first poll, the `invalidation` check, then the registry row.
+// A worker (and all) then starts the lease manager and the job worker; a web
+// replica only gets the queue it enqueues on.
+func (a *App) wireCoordination(ctx context.Context, keys keysArea, pg postgresArea, vk valkeyArea) (coordArea, error) {
+	if err := requireInputs(AreaCoordination, given("key ring", keys.ring), given("database", pg.db), given("valkey client", vk.vk)); err != nil {
+		return coordArea{}, err
 	}
+	db := pg.db
+	// The bus is the Valkey client, which never blocks: while Valkey is away the
+	// signals fall back to the change log (degraded mode).
+	var bus cluster.Bus = vk.vk
 	reg := a.tele.metrics.Registry()
 	log := a.log
 	wd := a.cfg.Health.WatchdogTimeout
 
 	signals, err := cluster.NewSignals(cluster.SignalsOptions{Bus: bus, Config: a.cfg.Cluster, Log: log.With("component", "signals"), Metrics: reg})
 	if err != nil {
-		return err
+		return coordArea{}, err
 	}
 	if err := a.startComponent(ctx, firstCloser{closer{name: "signals", close: signals.Close}}); err != nil {
-		return err
+		return coordArea{}, err
 	}
 
 	changes, err := cluster.NewChanges(cluster.ChangesOptions{
@@ -54,15 +60,15 @@ func (a *App) startCoordination(ctx context.Context) error {
 		WatchdogTimeout: wd, Watchdog: a.health, Log: log.With("component", "changes"), Metrics: reg,
 	})
 	if err != nil {
-		return err
+		return coordArea{}, err
 	}
 	caches, err := cache.NewRegistry(changes, reg)
 	if err != nil {
-		return err
+		return coordArea{}, err
 	}
 	changes.AddListener(caches)
 	if err := a.startComponent(ctx, changes); err != nil {
-		return err
+		return coordArea{}, err
 	}
 	// The poll depends on PostgreSQL only, never on Valkey (R-OPS-001). A stale poll
 	// that is the database being away gets the same grace as the database check, so
@@ -70,40 +76,36 @@ func (a *App) startCoordination(ctx context.Context) error {
 	// check would (Q-OPS-31).
 	a.health.AddReadiness("invalidation", changes.Check, false, health.WithGrace(a.cfg.Health.DatabaseOutageGrace))
 
-	reps, err := cluster.NewRegistry(a.registryOptions())
+	reps, err := cluster.NewRegistry(a.registryOptions(db, keys.ring))
 	if err != nil {
-		return err
+		return coordArea{}, err
 	}
 	if err := a.startComponent(ctx, reps); err != nil {
-		return err
+		return coordArea{}, err
 	}
 
 	registry, err := a.jobRegistry()
 	if err != nil {
-		return err
+		return coordArea{}, err
 	}
-	a.mu.Lock()
-	a.signals, a.changes, a.caches = signals, changes, caches
-	a.mu.Unlock()
-
+	area := coordArea{signals: signals, changes: changes, caches: caches, vk: vk.vk}
 	if a.sub.JobLoops {
-		return a.startWorker(ctx, registry, signals)
+		area.leases, area.queue, err = a.startWorker(ctx, db, registry, signals)
+		return area, err
 	}
-	a.mu.Lock()
-	a.queue = jobs.NewQueue(jobs.QueueOptions{DB: db.Main(), Registry: registry, Signals: signals, Log: log})
-	a.mu.Unlock()
-	return nil
+	area.queue = jobs.NewQueue(jobs.QueueOptions{DB: db.Main(), Registry: registry, Signals: signals, Log: log})
+	return area, nil
 }
 
 // registryOptions describes this replica to the registry (R-OPS-003).
-func (a *App) registryOptions() cluster.RegistryOptions {
+func (a *App) registryOptions(db *postgres.DB, ring *secrets.KeyRing) cluster.RegistryOptions {
 	bi := buildinfo.Get()
 	return cluster.RegistryOptions{
-		DB: a.database().ControlPool(),
+		DB: db.ControlPool(),
 		Identity: cluster.ReplicaIdentity{
 			UID: a.id.UID, Name: a.id.Instance, Version: bi.Version, Revision: bi.Commit, Role: a.id.Role,
 			Node: a.id.Node, Pool: a.id.Pool, StartedAt: a.startedAt,
-			SecretKeyIDs: a.ring.KeyIDs(), ActiveSecretKeyID: a.ring.ActiveKeyID(),
+			SecretKeyIDs: ring.KeyIDs(), ActiveSecretKeyID: ring.ActiveKeyID(),
 		},
 		Snapshot: a.replicaSnapshot,
 		Leases: func() []cluster.HeldInfo {
@@ -161,16 +163,16 @@ func (g *workerGroup) Stop(ctx context.Context) error {
 	return err
 }
 
-// startWorker builds the lease manager and the job worker on worker and all.
-func (a *App) startWorker(ctx context.Context, registry *jobs.Registry, signals *cluster.Signals) error {
-	db := a.database()
+// startWorker builds the lease manager and the job worker on worker and all and
+// returns the leases and the queue the worker enqueues on.
+func (a *App) startWorker(ctx context.Context, db *postgres.DB, registry *jobs.Registry, signals *cluster.Signals) (*cluster.Leases, *jobs.Queue, error) {
 	wd := a.cfg.Health.WatchdogTimeout
 	leases, err := cluster.NewLeases(cluster.LeaseOptions{
 		Pool: db.LeasePool(), Config: a.cfg.Cluster, CheckInterval: a.cfg.Database.LeaseCheckInterval,
 		WatchdogTimeout: wd, Watchdog: a.health, Log: a.log.With("component", "leases"), Metrics: a.tele.metrics.Registry(),
 	})
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	worker, err := jobs.NewWorker(jobs.WorkerOptions{
 		Role: a.id.Role, Instance: a.id.Instance, UID: a.id.UID, Main: db.Main(), Control: db.ControlPool(),
@@ -178,12 +180,16 @@ func (a *App) startWorker(ctx context.Context, registry *jobs.Registry, signals 
 		Ready: a.health.Ready, Watchdog: a.health, WatchdogTimeout: wd, Log: a.log, Metrics: a.tele.metrics.Registry(),
 	})
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
+	// The registry heartbeat reads the held leases from the replica (leasesOrNil).
 	a.mu.Lock()
-	a.leases, a.queue = leases, worker.Queue()
+	a.leases = leases
 	a.mu.Unlock()
-	return a.startComponent(ctx, &workerGroup{leases: leases, worker: worker})
+	if err := a.startComponent(ctx, &workerGroup{leases: leases, worker: worker}); err != nil {
+		return nil, nil, err
+	}
+	return leases, worker.Queue(), nil
 }
 
 func (a *App) leasesOrNil() *cluster.Leases { a.mu.Lock(); defer a.mu.Unlock(); return a.leases }

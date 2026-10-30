@@ -4,8 +4,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
-func (e *env) addItems(repoKey string, folders, files int) {
+func (e *stackEnv) addItems(repoKey string, folders, files int) {
 	e.t.Helper()
 	e.exec(`INSERT INTO blobs (sha256, sha1, md5, sha512, size)
 	        SELECT decode(lpad(to_hex(i), 64, '0'), 'hex'), decode(lpad(to_hex(i), 40, '0'), 'hex'),
@@ -28,27 +28,30 @@ func (e *env) addItems(repoKey string, folders, files int) {
 	          FROM repositories r, generate_series(1, $2::int) AS i WHERE r.key = $1`, repoKey, files)
 }
 
-func (e *env) waitJob(q *jobs.Queue, id string) jobs.Job {
+func (e *stackEnv) waitJob(q *jobs.Queue, id string) jobs.Job {
 	e.t.Helper()
-	var j jobs.Job
-	waitFor(e.t, "the deletion job to end", 30*time.Second, func() bool {
-		got, ok, err := q.Get(context.Background(), id)
-		if err != nil || !ok {
-			return false
-		}
-		j = got
-		return j.Terminal()
-	})
-	return j
+	return waitJob(e.t, q, id)
+}
+
+// phase is the phase member of a deletion event ("started" or "completed").
+func phase(t *testing.T, ev event) string {
+	t.Helper()
+	var d struct {
+		Phase string `json:"phase"`
+	}
+	if err := json.Unmarshal([]byte(ev.Details), &d); err != nil {
+		t.Fatal(err)
+	}
+	return d.Phase
 }
 
 func TestDelete(t *testing.T) {
-	e := newEnv(t)
+	e := newStackEnv(t)
 	poll := 300 * time.Millisecond
 	// The worker replica runs the job and the web replica asks for it, as in the
 	// chart; the batch size of 2 makes the job loop over several transactions.
-	w := e.newReplica("del-worker", replicaOpts{role: "worker", deleteBatch: 2, poll: poll})
-	web := e.newReplica("del-web", replicaOpts{deleteBatch: 2, poll: poll})
+	w := e.newReplica("del-worker", stackOpts{role: "worker", deleteBatch: 2, poll: poll})
+	web := e.newReplica("del-web", stackOpts{deleteBatch: 2, poll: poll})
 	ctx := context.Background()
 
 	if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "to-delete"))); err != nil {
@@ -75,14 +78,15 @@ func TestDelete(t *testing.T) {
 			t.Fatalf("result = %+v: a repository with content is deleted by a job", res)
 		}
 		job = res.JobID
-		if got := web.rec.types(); got[len(got)-1] != repository.EventDeleted || !strings.Contains(string(web.rec.last().Details), `"phase":"started"`) {
-			t.Fatalf("events = %v", got)
+		evs := e.events(web.Name)
+		if last := evs[len(evs)-1]; last.Type != repository.EventDeleted || phase(t, last) != "started" {
+			t.Fatalf("events = %v", types(evs))
 		}
 	})
 
 	var finished jobs.Job
 	t.Run("R-REPO-013 the job removes the items in batches and the row last", func(t *testing.T) {
-		finished = e.waitJob(w.queue, job)
+		finished = e.waitJob(w.App.Queue(), job)
 		if finished.State != jobs.StateSucceeded {
 			t.Fatalf("job = %+v", finished)
 		}
@@ -104,14 +108,12 @@ func TestDelete(t *testing.T) {
 	})
 
 	t.Run("R-REPO-013 the completion is audited and announced to every replica", func(t *testing.T) {
-		types := web.rec.types()
-		if len(types) < 3 { // two creates, the started event
-			t.Fatalf("events on the web replica: %v", types)
+		if evs := e.events(web.Name); len(evs) < 3 { // two creates, the started event
+			t.Fatalf("events on the web replica: %v", types(evs))
 		}
 		waitFor(t, "the worker to record the completion", 5*time.Second, func() bool {
-			w.rec.mu.Lock()
-			defer w.rec.mu.Unlock()
-			return len(w.rec.events) == 1 && strings.Contains(string(w.rec.events[0].Details), `"phase":"completed"`)
+			evs := e.events(w.Name)
+			return len(evs) == 1 && phase(t, evs[0]) == "completed"
 		})
 		waitFor(t, "the web replica to drop the repository", 3*poll, func() bool {
 			_, err := web.reader.ByKey(ctx, "to-delete")
@@ -165,7 +167,7 @@ func TestDelete(t *testing.T) {
 		if err != nil || res.JobID == "" {
 			t.Fatalf("Delete = %+v, %v", res, err)
 		}
-		if j := e.waitJob(w.queue, res.JobID); j.State != jobs.StateSucceeded {
+		if j := e.waitJob(w.App.Queue(), res.JobID); j.State != jobs.StateSucceeded {
 			t.Fatalf("job = %+v", j)
 		}
 		if e.scalar(`SELECT count(*) FROM repositories WHERE key = 'held'`) != 0 {

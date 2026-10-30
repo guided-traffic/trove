@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -31,62 +30,59 @@ func withMinEpoch(next func(*http.Request) (httpserver.Principal, error)) func(*
 	}
 }
 
-// wireAuthz builds the decision point (R-AUTHZ-028): the grant index is built
-// from PostgreSQL before the client listener opens, and the engine follows the
-// change areas authz and repo_config. Valkey is not an input; the engine reaches
-// it only through the change log. A replica without PostgreSQL (the unit tests of
-// the composition root) wires nothing and nobody holds a permission.
-func (a *App) wireAuthz(ctx context.Context) error {
-	db := a.database()
-	if db == nil || a.changes == nil {
-		return nil
+// wireAuthz is the authz area: the decision point (R-AUTHZ-028) and the policy
+// service. The grant index is built from PostgreSQL before the client listener
+// opens, and the engine follows the change areas authz and repo_config. Valkey
+// is not an input; the engine reaches it only through the change log.
+func (a *App) wireAuthz(ctx context.Context, in infra, repo repositoryArea, id identityArea, ex exposureArea) (authzArea, error) {
+	if err := requireInputs(AreaAuthz, given("repository reader", repo.reader), given("principal store", id.principals),
+		given("anonymous-access switch", id.anonymousAccess), given("exposure ceiling", ex.ceiling)); err != nil {
+		return authzArea{}, err
 	}
 	cfg := a.cfg
 	eng, err := authz.New(authz.Options{
-		Source:            authz.NewPostgresSource(db, cfg.Authz.Cache.MaxStaleness),
-		Changes:           a.changes,
+		Source:            authz.NewPostgresSource(in.db, cfg.Authz.Cache.MaxStaleness),
+		Changes:           in.changes,
 		Config:            cfg.Authz,
 		Audit:             cfg.Audit,
 		EpochPollInterval: cfg.Cluster.EpochPollInterval,
 		RetryBudget:       cfg.Database.Retry.MaxElapsed,
-		AnonymousAccess:   a.m1.anonymousAccess,
-		Repositories:      a.m1.repositories,   // the lookup and catch-up of a repository the index lacks (R-API-052)
-		Ceiling:           a.exposureCeiling(), // the endpoints area (R-EP-013, wire_exposure.go)
-		Formats:           catalog.Default(),   // the name rule that folds the names and patterns of a format (R-AUTHZ-005)
-		Recorder:          a.m1.recorder,
+		AnonymousAccess:   id.anonymousAccess,
+		Repositories:      repo.reader,       // the lookup and catch-up of a repository the index lacks (R-API-052)
+		Ceiling:           ex.ceiling,        // the exposure area (R-EP-013, wire_exposure.go)
+		Formats:           catalog.Default(), // the name rule that folds the names and patterns of a format (R-AUTHZ-005)
+		Recorder:          in.rec,
 		Replica:           a.id.Instance,
 		Log:               a.log.With("component", "authz"),
 		Metrics:           a.tele.metrics.Registry(),
 	})
 	if err != nil {
-		return err
+		return authzArea{}, err
 	}
 	if err := a.startComponent(ctx, eng); err != nil {
-		return err
+		return authzArea{}, err
 	}
-	a.m1.authorizer, a.m1.authzEngine = eng, eng
-	if a.m1.principals != nil && a.m1.repositories != nil {
-		// The recorder is the one of step 4; a shell without infrastructure has none.
-		var rec audit.Recorder = audit.Nop{}
-		if a.m1.recorder != nil {
-			rec = a.m1.recorder
-		}
-		svc := authz.NewService(authz.ServiceOptions{
-			DB: db, Changes: a.changes, Principals: a.m1.principals, Repositories: a.m1.repositories, Recorder: rec,
-			Formats: catalog.Default(),
-		})
-		a.mu.Lock()
-		a.m1.authzService = svc
-		a.mu.Unlock()
+	svc := authz.NewService(authz.ServiceOptions{
+		DB: in.db, Changes: in.changes, Principals: id.principals, Repositories: repo.reader, Recorder: in.rec,
+		Formats: catalog.Default(),
+	})
+	return authzArea{engine: eng, service: svc}, nil
+}
+
+// decider returns the decision point the request paths decide through, nil on a
+// replica without the authz area (the shell profile). The nil is explicit
+// because a nil *authz.Engine in the interface would not be nil.
+func (a *App) decider() authz.Decider {
+	e := part[authzArea](a.parts).engine
+	if e == nil {
+		return nil
 	}
-	return nil
+	return e
 }
 
 // authzServices are the services the permission operations of the management API
-// use; a member is nil while the authz wiring has not run.
+// use; a member is nil on a replica without the authz area.
 func (a *App) authzServices() v1.AuthzServices {
-	owners := a.ownershipService() // before the lock, which it takes itself (wire_ownership.go)
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return v1.AuthzServices{Policies: a.m1.authzService, Engine: a.m1.authzEngine, Owners: owners}
+	az := part[authzArea](a.parts)
+	return v1.AuthzServices{Policies: az.service, Engine: az.engine, Owners: part[ownershipArea](a.parts).service}
 }

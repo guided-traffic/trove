@@ -16,8 +16,19 @@ import (
 // retrying cannot fix (configuration, preflight, a schema floor above this
 // binary) ends the process.
 type postgresComponent struct {
-	a  *App
-	db *postgres.DB
+	a     *App
+	db    *postgres.DB
+	facts postgres.SystemFacts
+}
+
+// wirePostgres is the postgres area: it starts the component and hands the
+// connected database and the system facts to the steps after it.
+func (a *App) wirePostgres(ctx context.Context) (postgresArea, error) {
+	c := &postgresComponent{a: a}
+	if err := a.startComponent(ctx, c); err != nil {
+		return postgresArea{}, err
+	}
+	return postgresArea{db: c.db, facts: c.facts}, nil
 }
 
 func (c *postgresComponent) Name() string { return "postgres" }
@@ -70,6 +81,7 @@ func (c *postgresComponent) Start(ctx context.Context) (err error) {
 	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
 		f, err := c.db.SystemFacts(ctx)
 		if err == nil {
+			c.facts = f
 			a.setSystemFacts(f)
 			break
 		}

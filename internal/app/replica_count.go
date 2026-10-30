@@ -39,9 +39,6 @@ func (c *replicaCount) Get() int { return max(1, int(c.n.Load())) }
 // last request has been answered.
 func (c *replicaCount) Start(ctx context.Context) error {
 	db := c.a.database()
-	if db == nil {
-		return nil
-	}
 	stale := c.a.cfg.System.HeartbeatStaleAfter.Seconds()
 	refresh := func(ctx context.Context) {
 		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -81,23 +78,4 @@ func (c *replicaCount) Stop(context.Context) error {
 	}
 	c.wg.Wait()
 	return nil
-}
-
-// servingReplicas returns the replica count of the pool, started as a component on
-// the first call.
-func (a *App) servingReplicas(ctx context.Context) (*replicaCount, error) {
-	a.mu.Lock()
-	c := a.m1.replicas
-	a.mu.Unlock()
-	if c != nil {
-		return c, nil
-	}
-	c = &replicaCount{a: a}
-	if err := a.startComponent(ctx, c); err != nil {
-		return nil, err
-	}
-	a.mu.Lock()
-	a.m1.replicas = c
-	a.mu.Unlock()
-	return c, nil
 }

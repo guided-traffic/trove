@@ -2,17 +2,14 @@ package app
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/netip"
 	"strings"
-	"time"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
-	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -55,107 +52,108 @@ func TokenScopeOptions(cfg *config.Config) scope.Options {
 	}
 }
 
-// wireIdentity builds the identity components at the WIRING POINT of step 8
-// (docs/developer/m1-contracts.md): the principal store, the settings store, the
-// token service, the provisioner and manager, and the authentication stage. A
-// replica without PostgreSQL (the HTTP shell of the tests) gets the same stage
-// over an empty token store, so there is one authentication code path.
-func (a *App) wireIdentity() error {
+// wireIdentity is the identity area: the principal store, the settings store,
+// the token service, the provisioner and the manager, on the metrics the session
+// store and the login count into as well (R-AUTH-041). The authentication stage
+// is the auth area, which also needs the sessions and the limiters of a
+// replica with a client listener.
+func (a *App) wireIdentity(_ context.Context, in infra) (identityArea, error) {
 	cfg := a.cfg.Auth
-	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
+	metrics, err := principal.NewMetrics(a.tele.metrics.Registry())
 	if err != nil {
-		return err
+		return identityArea{}, err
 	}
-	a.m1.publicOps = map[string]bool{}
-	for pattern, op := range doc.Operations() {
-		if op.Requirement.Public || op.Requirement.PublicSwitch != "" {
-			a.m1.publicOps[pattern] = true
-		}
-	}
-	db, changes, caches := a.database(), a.changesOrNil(), a.caches
-	if db == nil || changes == nil || caches == nil {
-		a.m1.authenticator = auth.New(auth.Options{
-			Tokens: emptyTokens{}, Settings: anonymousOn{}, BasicEnabled: cfg.Clients.Basic.Enabled, ClientAddr: clientAddr, Log: a.log,
-		})
-		return nil
-	}
-	metrics, err := a.authMetrics()
-	if err != nil {
-		return err
-	}
-	gate := principal.Gate{Fresh: changes, Bound: cfg.RevocationBound, Metrics: metrics}
-	rec := a.auditRecorder()
+	gate := principal.Gate{Fresh: in.changes, Bound: cfg.RevocationBound, Metrics: metrics}
 
-	principals := principal.NewStore(principal.StoreOptions{DB: db, Cache: caches, Gate: gate, SafetyTTL: cfg.Tokens.CacheTTL})
+	principals := principal.NewStore(principal.StoreOptions{DB: in.db, Cache: in.caches, Gate: gate, SafetyTTL: cfg.Tokens.CacheTTL})
 	settings := token.NewSettingsStore(token.SettingsOptions{
-		DB: db, Notifier: changes, Recorder: rec, Cache: caches, Gate: gate, Tokens: cfg.Tokens, Anonymous: cfg.Anonymous,
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, Cache: in.caches, Gate: gate, Tokens: cfg.Tokens, Anonymous: cfg.Anonymous,
 	})
-	recent, err := cluster.NewTokenSeen(a.valkey(), cfg.RateLimit.RecentTokenWindow)
+	recent, err := cluster.NewTokenSeen(in.vk, cfg.RateLimit.RecentTokenWindow)
 	if err != nil {
-		return err
+		return identityArea{}, err
 	}
 	tokens := token.NewService(token.ServiceOptions{
-		DB: db, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, Principals: principals, Settings: settings, Cache: in.caches, Gate: gate,
 		Tokens: cfg.Tokens, Recent: recent, Metrics: metrics, Log: a.log.With("component", "tokens"),
 		Scope: TokenScopeOptions(a.cfg),
 	})
 	breakGlass := cfg.BreakGlass.Username // reserved: no OIDC login and no user can take the name (R-AUTH-007)
 	manager := principal.NewManager(principal.ManagerOptions{
-		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Authz: authz.NewPrincipalHook(changes),
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, BreakGlassName: breakGlass, Authz: authz.NewPrincipalHook(in.changes),
 	})
 	provisioner := principal.NewProvisioner(principal.ProvisionerOptions{
-		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Metrics: metrics, Authz: authz.NewPrincipalHook(changes),
+		DB: in.db, Notifier: in.changes, Recorder: in.rec, BreakGlassName: breakGlass, Metrics: metrics, Authz: authz.NewPrincipalHook(in.changes),
 	})
-
-	limiter := a.m1.failureLimiter
-	if limiter == nil {
-		// A process without a client listener validates no credential; the
-		// per-replica counter keeps the stage complete.
-		limiter = auth.NewLocalLimiter(cfg.RateLimit.FailuresPerAddress, time.Minute, nil, nil)
-	}
-	// A nil *session.Store must not become a non-nil interface: a replica without
-	// sessions (a worker) has none, and the stage skips the cookie then.
-	var sessions session.Validator
-	if a.m1.sessions != nil {
-		sessions = a.m1.sessions
-	}
-	stage := auth.New(auth.Options{
-		Tokens: tokens, Sessions: sessions, Principals: principals, Settings: settings, Limiter: limiter,
-		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
-		Metrics: metrics, Log: a.log.With("component", "auth"),
-	})
-
-	a.mu.Lock()
-	a.m1.principals, a.m1.principalManager, a.m1.provisioner = principals, manager, provisioner
-	a.m1.tokens, a.m1.authSettings, a.m1.authenticator = tokens, settings, stage
-	// The decision point reads the runtime anonymous switch (R-AUTH-037) from the
-	// same cached settings row the stage reads.
-	a.m1.anonymousAccess = func(ctx context.Context) (bool, error) {
-		eff, err := settings.Effective(ctx)
-		return eff.AnonymousAccess, err
-	}
-	a.mu.Unlock()
-	return nil
+	a.tokenSvc.set(tokens)
+	return identityArea{
+		metrics: metrics, principals: principals, manager: manager, provisioner: provisioner, tokens: tokens, settings: settings,
+		// The decision point reads the runtime anonymous switch (R-AUTH-037) from the
+		// same cached settings row the stage reads.
+		anonymousAccess: func(ctx context.Context) (bool, error) {
+			eff, err := settings.Effective(ctx)
+			return eff.AnonymousAccess, err
+		},
+	}, nil
 }
 
-// authMetrics returns the identity metrics of R-AUTH-041, built once: the
-// session store, the login and the identity components count into the same
-// families (attempts, rate-limited requests, cache bypasses).
-func (a *App) authMetrics() (*principal.Metrics, error) {
-	if a.m1.authMetrics != nil {
-		return a.m1.authMetrics, nil
+// wireAuth is the auth area: the authentication stage of the client listeners'
+// chains, on the stores of the identity area, the session store and the
+// cluster-wide failure throttle (R-AUTH-001, R-AUTH-038).
+func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim limitsArea) (authArea, error) {
+	if err := requireInputs(AreaAuth, given("token service", id.tokens), given("session store", ss.store), given("failure limiter", lim.failures)); err != nil {
+		return authArea{}, err
 	}
-	m, err := principal.NewMetrics(a.tele.metrics.Registry())
+	cfg := a.cfg.Auth
+	publicOps, err := publicOperations()
+	if err != nil {
+		return authArea{}, err
+	}
+	stage := auth.New(auth.Options{
+		Tokens: id.tokens, Sessions: ss.store, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
+		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
+		Metrics: id.metrics, Log: a.log.With("component", "auth"),
+	})
+	return authArea{stage: stage, publicOps: publicOps}, nil
+}
+
+// wireShell is the shell area: the same stage over an empty token store, so the
+// HTTP shell of the tests has one authentication code path.
+func (a *App) wireShell(context.Context) (shellArea, error) {
+	publicOps, err := publicOperations()
+	if err != nil {
+		return shellArea{}, err
+	}
+	stage := auth.New(auth.Options{
+		Tokens: emptyTokens{}, Settings: anonymousOn{}, BasicEnabled: a.cfg.Auth.Clients.Basic.Enabled, ClientAddr: clientAddr, Log: a.log,
+	})
+	return shellArea{auth: authArea{stage: stage, publicOps: publicOps}}, nil
+}
+
+// publicOperations lists the patterns of the management API operations whose
+// declaration is public, or public by a switch.
+func publicOperations() (map[string]bool, error) {
+	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
 	if err != nil {
 		return nil, err
 	}
-	a.m1.authMetrics = m
-	return m, nil
+	out := map[string]bool{}
+	for pattern, op := range doc.Operations() {
+		if op.Requirement.Public || op.Requirement.PublicSwitch != "" {
+			out[pattern] = true
+		}
+	}
+	return out, nil
 }
 
-func (a *App) changesOrNil() *cluster.Changes { a.mu.Lock(); defer a.mu.Unlock(); return a.changes }
-
-func (a *App) tokenService() *token.Service { a.mu.Lock(); defer a.mu.Unlock(); return a.m1.tokens }
+// authStage is the authentication stage of this replica: the auth area's, or the
+// shell's.
+func (a *App) authStage() authArea {
+	if au := part[authArea](a.parts); au.stage != nil {
+		return au
+	}
+	return part[shellArea](a.parts).auth
+}
 
 // clientAddr is the client address after the trusted-proxy rule, resolved by the
 // chain before the authentication stage (R-ARCH-005 step 5).
@@ -183,7 +181,7 @@ func (a *App) publicRoute(rt *endpointRuntime) func(*http.Request) bool {
 		if rt.router == nil {
 			return false
 		}
-		return a.m1.publicOps[rt.router.Pattern(r)]
+		return a.authStage().publicOps[rt.router.Pattern(r)]
 	}
 }
 
@@ -202,17 +200,13 @@ func (emptyTokens) Validate(context.Context, string) (token.Info, error) {
 // of maintenance.tasks wins over the fallback here.
 func (a *App) registerIdentityJobs(r *jobs.Registry) {
 	run := func(fn func(context.Context, *token.Service) (any, error)) jobs.Handler {
-		return func(ctx context.Context, run *jobs.Run) error {
-			svc := a.tokenService()
-			if svc == nil {
-				return jobs.Permanent(errors.New("this replica has no token service"))
-			}
+		return a.tokenSvc.handler("token service", func(ctx context.Context, svc *token.Service, run *jobs.Run) error {
 			res, err := fn(ctx, svc)
 			if err == nil {
 				err = run.SetResult(res)
 			}
 			return err
-		}
+		})
 	}
 	tasks := []struct {
 		name, schedule string
@@ -241,21 +235,40 @@ func (a *App) registerIdentityJobs(r *jobs.Registry) {
 // (internal/api/v1). A component a replica does not have stays nil, and the
 // operations that need it answer 503 unavailable.
 func (a *App) authServices() v1.AuthServices {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	id, ss, lg, lim := part[identityArea](a.parts), part[sessionsArea](a.parts), part[loginArea](a.parts), part[limitsArea](a.parts)
 	svc := v1.AuthServices{
-		Manager: a.m1.principalManager, Tokens: a.m1.tokens, Settings: a.m1.authSettings, Config: a.cfg.Auth,
+		Manager: id.manager, Tokens: id.tokens, Settings: id.settings, Config: a.cfg.Auth,
 		EndpointConfigured: TokenScopeOptions(a.cfg).Endpoint,
 	}
 	// A nil *session.Store or *oidc.Service must not become a non-nil interface.
-	if a.m1.sessions != nil {
-		svc.Sessions = a.m1.sessions
+	if ss.store != nil {
+		svc.Sessions = ss.store
 	}
-	if a.m1.login != nil {
-		svc.Login = a.m1.login
+	if lg.service != nil {
+		svc.Login = lg.service
 	}
-	if a.m1.flowStarts != nil {
-		svc.FlowStarts = takeLimiter{a.m1.flowStarts}
+	if lim.flowStarts != nil {
+		svc.FlowStarts = takeLimiter{lim.flowStarts}
 	}
 	return svc
+}
+
+// authenticate returns the authentication stage of an endpoint's chain: the
+// stage of the auth area (or the shell's) behind the conversion to
+// httpserver.Principal. The chain is built after every step has run, so the stage
+// is there.
+func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
+	rules := endpointRules(rt)
+	rules.PublicRoute = a.publicRoute(rt)
+	rules.Refused = a.credentialRefused(rt)
+	stage := a.authStage().stage
+	return withMinEpoch(func(r *http.Request) (httpserver.Principal, error) {
+		res, err := stage.Authenticate(r, rules)
+		if err != nil {
+			return httpserver.Principal{}, err
+		}
+		p := principalFromResult(res)
+		recordPrincipal(r, p)
+		return p, nil
+	})
 }

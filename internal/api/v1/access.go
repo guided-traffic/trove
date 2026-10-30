@@ -25,16 +25,6 @@ type Beginner interface {
 // index the request holds.
 func NewAccess(d authz.Decider) Access { return authzAccess{d: d} }
 
-// DeciderOf returns the per-request form of a decision point that is wired as an
-// [authz.Authorizer], nil when there is none. The engine implements both; the
-// services of the composition root are still typed by the job-and-command
-// interface, and a value that cannot decide per request must answer 503, never
-// decide on an index of its own.
-func DeciderOf(a authz.Authorizer) authz.Decider {
-	d, _ := a.(authz.Decider)
-	return d
-}
-
 type authzAccess struct{ d authz.Decider }
 
 // holder is the request's holder: the one the shared step stored, brought up to
@@ -90,8 +80,7 @@ var (
 // permission questions the handler asks through [Access] are answered on the
 // same index. Without a decision point wired the holder is nil and the context
 // unchanged; the caller answers 503 where it needs a decision.
-func requestHolder(ctx context.Context, a authz.Authorizer, keys ...string) (context.Context, *edge.Access, error) {
-	d := DeciderOf(a)
+func requestHolder(ctx context.Context, d authz.Decider, keys ...string) (context.Context, *edge.Access, error) {
 	if d == nil {
 		return ctx, nil, nil
 	}

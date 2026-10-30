@@ -83,13 +83,14 @@ func TestR_EP_013_ExposureCeilingFromConfiguration(t *testing.T) {
 		"mirror":    {Listen: ":8444", BaseURL: "https://mirror.example.com", Exposure: "all"},
 	}
 	a := &App{cfg: cfg}
-	cl := a.exposureCeiling()
+	ex, err := a.wireExposure(t.Context(), infra{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl := ex.ceiling
 	for name, want := range map[string]string{"default": authz.ExposureModeAll, "customers": authz.ExposureModeRules, "mirror": authz.ExposureModeAll, "unknown": authz.ExposureModeRules} {
 		if got := cl.Mode(name); got != want {
 			t.Errorf("%s: %s, want %s", name, got, want)
 		}
-	}
-	if a.exposureCeiling() != cl {
-		t.Fatal("the ceiling is built twice")
 	}
 }

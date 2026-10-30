@@ -5,28 +5,24 @@ import (
 )
 
 // TestR_ARCH_034_OneReplicaCountForEveryLimiter: the count the limiter families
-// divide their fallback share by is one component per process, started once and
-// stopped with the others at shutdown, and it is at least 1 before the first read.
+// divide their fallback share by is one component per process, built by the
+// limits area (the only step that builds a limiter set, so there is one count),
+// and it is at least 1 before the first read.
 func TestR_ARCH_034_OneReplicaCountForEveryLimiter(t *testing.T) {
-	a := &App{}
-	first, err := a.servingReplicas(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	c := &replicaCount{a: &App{}}
+	if c.Get() != 1 {
+		t.Fatalf("n = %d before the first read, want 1", c.Get())
 	}
-	second, err := a.servingReplicas(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	if err := c.Stop(t.Context()); err != nil {
+		t.Fatalf("stop of a count that never started: %v", err)
 	}
-	if first != second {
-		t.Fatal("two counts were started")
+	builders := 0
+	for _, s := range wiringSteps() {
+		if s.gives.String() == "app.limitsArea" {
+			builders++
+		}
 	}
-	if first.Get() != 1 {
-		t.Fatalf("n = %d before the first read, want 1", first.Get())
-	}
-	if len(a.comps) != 1 || a.comps[0].Name() != "replica-count" {
-		t.Fatalf("components = %v", a.comps)
-	}
-	if err := first.Stop(t.Context()); err != nil {
-		t.Fatal(err)
+	if builders != 1 {
+		t.Fatalf("%d steps build the limiter set, want 1", builders)
 	}
 }

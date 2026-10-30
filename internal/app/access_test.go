@@ -6,7 +6,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
-	"github.com/guided-traffic/trove/internal/authz"
 )
 
 // beginAccess is an Access that takes an index of its own, as the access over the
@@ -35,12 +34,13 @@ func TestR_AUTHZ_015_TheBridgeBeginsThroughTheAccessBehindIt(t *testing.T) {
 			t.Fatalf("holder %v, %v", a, err)
 		}
 	})
-	t.Run("R-AUTHZ-015 an Authorizer that cannot decide per request is not wired as an access", func(t *testing.T) {
-		if b := newBridgeAccess(struct{ authz.Authorizer }{}, false); b.inner != nil {
-			t.Fatal("the bridge wrapped an Authorizer that has no per-request form")
-		}
+	t.Run("R-AUTHZ-015 a missing decision point is not wrapped, and a replica without the authz area has none", func(t *testing.T) {
 		if b := newBridgeAccess(nil, false); b.inner != nil {
 			t.Fatal("the bridge wrapped a missing decision point")
+		}
+		// A nil *authz.Engine in the interface would not be nil: decider answers the untyped nil.
+		if d := (&App{parts: &wiring{}}).decider(); d != nil {
+			t.Fatalf("decider = %v on a replica without the authz area", d)
 		}
 	})
 }

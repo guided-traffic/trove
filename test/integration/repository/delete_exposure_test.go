@@ -8,22 +8,7 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/guided-traffic/trove/internal/audit"
 )
-
-// exposureDeleted returns the endpoint.exposure.deleted events the recorder kept.
-func (r *recorder) exposureDeleted() []audit.Event {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var out []audit.Event
-	for _, ev := range r.events {
-		if ev.Type == "endpoint.exposure.deleted" {
-			out = append(out, ev)
-		}
-	}
-	return out
-}
 
 // TestH164_DeletingARepositoryRecordsItsExposureRules: the foreign key removes
 // the rules with the repository row, and the delete hook records each one as
@@ -32,20 +17,23 @@ func (r *recorder) exposureDeleted() []audit.Event {
 // job (finishDelete) is what runs here; the immediate removal of a virtual
 // repository (deleteNow) calls the same hook before it deletes the row.
 func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
-	e := newEnv(t)
-	rec := &recorder{}
-	_ = e.newReplica("h164-worker", replicaOpts{role: "worker", poll: 200 * time.Millisecond, rec: rec, exposure: true})
-	web := e.newReplica("h164-web", replicaOpts{rec: &recorder{}})
+	e := newStackEnv(t)
+	// The worker records the rule events (the job runs there); the web replica
+	// only asks for the deletion.
+	worker := e.newReplica("h164-worker", stackOpts{role: "worker", poll: 200 * time.Millisecond})
+	web := e.newReplica("h164-web", stackOpts{})
 	ctx := context.Background()
+	const exposureDeleted = "endpoint.exposure.deleted"
+	exposureEvents := func() []event { return e.eventsLike(worker.Name, exposureDeleted) }
 
 	rule := func(repo, endpoint, name string) {
 		e.exec(`INSERT INTO endpoint_exposure_rule (id, endpoint, name, repo_id)
 		        SELECT gen_random_uuid(), $1, $2, id FROM repositories WHERE key = $3`, endpoint, name, repo)
 	}
-	check := func(t *testing.T, ev audit.Event, endpoint, name, repo string) {
+	check := func(t *testing.T, ev event, endpoint, name, repo string) {
 		t.Helper()
 		var d map[string]any
-		if err := json.Unmarshal(ev.Details, &d); err != nil {
+		if err := json.Unmarshal([]byte(ev.Details), &d); err != nil {
 			t.Fatal(err)
 		}
 		if d["endpoint"] != endpoint || d["name"] != name || d["repository"] != repo || d["cause"] != "repository_deleted" {
@@ -54,7 +42,10 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 		if e, _ := d["epoch"].(float64); e < 1 {
 			t.Errorf("epoch = %v", d["epoch"])
 		}
-		if len(ev.Journal) == 0 {
+		// The journal entry is the revocation_outbox row of the event's id, written in
+		// the same transaction (R-EP-020).
+		if e.scalar(`SELECT count(*) FROM revocation_outbox o JOIN audit_event a ON a.id = o.id
+			WHERE a.action = $1 AND a.repository = $2 AND a.details->>'name' = $3`, exposureDeleted, ev.Subject, name) < 1 {
 			t.Error("the event carries no journal entry (R-EP-020)")
 		}
 	}
@@ -74,14 +65,14 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 		if n := e.scalar(`SELECT count(*) FROM endpoint_exposure_rule`); n != 0 {
 			t.Fatalf("%d rules left", n)
 		}
-		waitFor(t, "the events", 5*time.Second, func() bool { return len(rec.exposureDeleted()) == 2 })
-		got := rec.exposureDeleted()
+		waitFor(t, "the events", 5*time.Second, func() bool { return len(exposureEvents()) == 2 })
+		got := exposureEvents()
 		check(t, got[0], "customers", "rel", "doomed-rules")
 		check(t, got[1], "partners", "rel", "doomed-rules")
 	})
 
 	t.Run("H-164 a repository without rules records no exposure event", func(t *testing.T) {
-		before := len(rec.exposureDeleted())
+		before := len(exposureEvents())
 		if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "doomed-plain"))); err != nil {
 			t.Fatal(err)
 		}
@@ -91,7 +82,7 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 		waitFor(t, "the repository gone", 10*time.Second, func() bool {
 			return e.scalar(`SELECT count(*) FROM repositories WHERE key = 'doomed-plain'`) == 0
 		})
-		if got := len(rec.exposureDeleted()); got != before {
+		if got := len(exposureEvents()); got != before {
 			t.Errorf("%d exposure events, want %d", got, before)
 		}
 	})
@@ -101,7 +92,9 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 			t.Fatal(err)
 		}
 		rule("doomed-atomic", "customers", "atomic")
-		rec.setFail(true)
+		// Only the rule event is refused: the deletion itself is recorded by the web
+		// replica and has to get through.
+		lift := e.failAudit(exposureDeleted)
 		if _, err := web.svc.Delete(ctx, caller, "doomed-atomic", false); err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +103,7 @@ func TestH164_DeletingARepositoryRecordsItsExposureRules(t *testing.T) {
 			e.scalar(`SELECT count(*) FROM endpoint_exposure_rule WHERE name = 'atomic'`) != 1 {
 			t.Fatal("the row or the rule is gone although its audit record could not be written")
 		}
-		rec.setFail(false)
+		lift()
 		waitFor(t, "the retry to finish", 30*time.Second, func() bool {
 			return e.scalar(`SELECT count(*) FROM endpoint_exposure_rule WHERE name = 'atomic'`) == 0
 		})

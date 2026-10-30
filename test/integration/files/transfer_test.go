@@ -20,7 +20,58 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/api/v1/apitest"
+	"github.com/guided-traffic/trove/internal/authz"
 )
+
+// transferEnv is the component environment (env_test.go) with two replicas with two replicas, the repository generic-local and the
+// users of the transfer tests: ci may read and deploy, maint may also overwrite and
+// delete, reader may read.
+type transferEnv struct {
+	*env
+	a, b *replica
+	val  *apitest.Validator
+}
+
+func newTransferEnv(t *testing.T, opts ...func(*replicaOpts)) *transferEnv {
+	t.Helper()
+	e := newEnv(t)
+	e.breakGlass()
+	val := apitest.New(t, v1.EmbeddedYAML())
+	o := replicaOpts{validate: val}
+	for _, f := range opts {
+		f(&o)
+	}
+	te := &transferEnv{env: e, val: val}
+	te.a = e.newReplica("a", o)
+	te.b = e.newReplica("b", o)
+	te.a.createRepository("generic-local", nil)
+	for _, u := range []string{"ci", "maint", "reader", "nobody"} {
+		e.user(u)
+	}
+	e.grant(te.a, "ci-deploy", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:ci": {"read", "deploy"}})
+	e.grant(te.a, "maint-all", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:maint": {"read", "deploy", "overwrite", "delete"}})
+	e.grant(te.a, "reader-read", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:reader": {"read"}})
+	te.await("the policies on both replicas", func(r *replica) bool {
+		return (r.put("ci", "/files/generic-local/.probe-ci", "x").status/100 == 2) && r.get("reader", "/files/generic-local/.probe-ci").status == 200 &&
+			r.get("maint", "/files/generic-local/.probe-ci").status == 200
+	})
+	// The probe file served only to wait for the policies.
+	if res := te.a.do("maint", "DELETE", "/files/generic-local/.probe-ci", nil); res.status != 204 {
+		t.Fatalf("remove the probe: %d %s", res.status, res.body)
+	}
+	return te
+}
+
+// await waits until cond holds on both replicas.
+func (te *transferEnv) await(what string, cond func(*replica) bool) {
+	te.t.Helper()
+	for _, r := range []*replica{te.a, te.b} {
+		waitFor(te.t, what, 10*time.Second, func() bool { return cond(r) })
+	}
+}
 
 // generator is a reader of n deterministic bytes that keeps no copy of them and
 // hashes what it hands out.
