@@ -164,6 +164,7 @@ func wiringSteps() []step {
 		newStep(AreaFormats, everyRole, (*App).wireFormats),
 		newStep(AreaFiles, everyRole, (*App).wireFiles),
 		newStep(AreaFormatHost, withListener, (*App).wireFormatHost),
+		newStep(AreaVirtualEngine, withListener, (*App).wireVirtualEngine),
 		newStep(AreaLimits, withListener, (*App).wireLimits),
 		newStep(AreaSessions, withListener, (*App).wireSessions),
 		newStep(AreaLogin, withListener, (*App).wireLogin),

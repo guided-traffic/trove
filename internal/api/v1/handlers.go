@@ -160,6 +160,12 @@ type Options struct {
 	// repositories (cache_api.go); a nil member answers them with 503.
 	Cache CacheServices
 	// <<< M2 proxy
+
+	// >>> M2 virtual
+	// Resolution is the virtual engine behind the resolution explanation
+	// (resolution_api.go); nil disables the operation with 503.
+	Resolution ResolutionExplainer
+	// <<< M2 virtual
 }
 
 // Server implements gen.ServerInterface.

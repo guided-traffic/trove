@@ -937,6 +937,99 @@ func (e RepositoryConsumerViewClass) Valid() bool {
 	}
 }
 
+// Defines values for RepositoryResolutionDescriptorKind.
+const (
+	RepositoryResolutionDescriptorKindArtifact RepositoryResolutionDescriptorKind = "artifact"
+	RepositoryResolutionDescriptorKindMetadata RepositoryResolutionDescriptorKind = "metadata"
+	RepositoryResolutionDescriptorKindOther    RepositoryResolutionDescriptorKind = "other"
+	RepositoryResolutionDescriptorKindSearch   RepositoryResolutionDescriptorKind = "search"
+	RepositoryResolutionDescriptorKindWrite    RepositoryResolutionDescriptorKind = "write"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryResolutionDescriptorKind enum.
+func (e RepositoryResolutionDescriptorKind) Valid() bool {
+	switch e {
+	case RepositoryResolutionDescriptorKindArtifact:
+		return true
+	case RepositoryResolutionDescriptorKindMetadata:
+		return true
+	case RepositoryResolutionDescriptorKindOther:
+		return true
+	case RepositoryResolutionDescriptorKindSearch:
+		return true
+	case RepositoryResolutionDescriptorKindWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryResolutionMembersClass.
+const (
+	RepositoryResolutionMembersClassLocal  RepositoryResolutionMembersClass = "local"
+	RepositoryResolutionMembersClassRemote RepositoryResolutionMembersClass = "remote"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryResolutionMembersClass enum.
+func (e RepositoryResolutionMembersClass) Valid() bool {
+	switch e {
+	case RepositoryResolutionMembersClassLocal:
+		return true
+	case RepositoryResolutionMembersClassRemote:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryResolutionMembersDecision.
+const (
+	RepositoryResolutionMembersDecisionCircuitOpen      RepositoryResolutionMembersDecision = "circuit-open"
+	RepositoryResolutionMembersDecisionClaimedElsewhere RepositoryResolutionMembersDecision = "claimed-elsewhere"
+	RepositoryResolutionMembersDecisionDisabled         RepositoryResolutionMembersDecision = "disabled"
+	RepositoryResolutionMembersDecisionHit              RepositoryResolutionMembersDecision = "hit"
+	RepositoryResolutionMembersDecisionMiss             RepositoryResolutionMembersDecision = "miss"
+	RepositoryResolutionMembersDecisionNegative         RepositoryResolutionMembersDecision = "negative"
+	RepositoryResolutionMembersDecisionNoCacheFill      RepositoryResolutionMembersDecision = "no-cache-fill"
+	RepositoryResolutionMembersDecisionNoRead           RepositoryResolutionMembersDecision = "no-read"
+	RepositoryResolutionMembersDecisionNotAdmitted      RepositoryResolutionMembersDecision = "not_admitted"
+	RepositoryResolutionMembersDecisionOffline          RepositoryResolutionMembersDecision = "offline"
+	RepositoryResolutionMembersDecisionPinnedOut        RepositoryResolutionMembersDecision = "pinned-out"
+	RepositoryResolutionMembersDecisionRefusedClaimed   RepositoryResolutionMembersDecision = "refused-claimed"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryResolutionMembersDecision enum.
+func (e RepositoryResolutionMembersDecision) Valid() bool {
+	switch e {
+	case RepositoryResolutionMembersDecisionCircuitOpen:
+		return true
+	case RepositoryResolutionMembersDecisionClaimedElsewhere:
+		return true
+	case RepositoryResolutionMembersDecisionDisabled:
+		return true
+	case RepositoryResolutionMembersDecisionHit:
+		return true
+	case RepositoryResolutionMembersDecisionMiss:
+		return true
+	case RepositoryResolutionMembersDecisionNegative:
+		return true
+	case RepositoryResolutionMembersDecisionNoCacheFill:
+		return true
+	case RepositoryResolutionMembersDecisionNoRead:
+		return true
+	case RepositoryResolutionMembersDecisionNotAdmitted:
+		return true
+	case RepositoryResolutionMembersDecisionOffline:
+		return true
+	case RepositoryResolutionMembersDecisionPinnedOut:
+		return true
+	case RepositoryResolutionMembersDecisionRefusedClaimed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RepositorySummaryClass.
 const (
 	RepositorySummaryClassLocal   RepositorySummaryClass = "local"
@@ -3086,6 +3179,43 @@ type RepositoryRead struct {
 	union json.RawMessage
 }
 
+// RepositoryResolution defines model for RepositoryResolution.
+type RepositoryResolution struct {
+	// DecidedBy The claim or the pin rule that narrowed the members; absent when neither did.
+	DecidedBy *struct {
+		Claim *string `json:"claim,omitempty"`
+
+		// ClaimedBy The repositories with the most specific claim that the caller can read.
+		ClaimedBy *[]string `json:"claimedBy,omitempty"`
+		Pin       *string   `json:"pin,omitempty"`
+	} `json:"decidedBy,omitempty"`
+	Descriptor struct {
+		Kind    RepositoryResolutionDescriptorKind `json:"kind"`
+		Package *string                            `json:"package,omitempty"`
+		Path    string                             `json:"path"`
+	} `json:"descriptor"`
+
+	// Members The members in the order of the member list, without those the caller cannot read.
+	Members []struct {
+		Class    RepositoryResolutionMembersClass    `json:"class"`
+		Decision RepositoryResolutionMembersDecision `json:"decision"`
+		Key      string                              `json:"key"`
+	} `json:"members"`
+	Repository string `json:"repository"`
+
+	// UnreadableMembers The number of members the caller cannot read, which are not named.
+	UnreadableMembers int `json:"unreadableMembers"`
+}
+
+// RepositoryResolutionDescriptorKind defines model for RepositoryResolution.Descriptor.Kind.
+type RepositoryResolutionDescriptorKind string
+
+// RepositoryResolutionMembersClass defines model for RepositoryResolution.Members.Class.
+type RepositoryResolutionMembersClass string
+
+// RepositoryResolutionMembersDecision defines model for RepositoryResolution.Members.Decision.
+type RepositoryResolutionMembersDecision string
+
 // RepositorySummary defines model for RepositorySummary.
 type RepositorySummary struct {
 	// Addresses The client addresses: absolute URLs, the public base URL followed by the repository's path.
@@ -4154,6 +4284,12 @@ type RemovePackageOwnerParams struct {
 	Release *bool `form:"release,omitempty" json:"release,omitempty"`
 }
 
+// GetRepositoryResolutionParams defines parameters for GetRepositoryResolution.
+type GetRepositoryResolutionParams struct {
+	// Path The repository-relative client path to explain.
+	Path string `form:"path" json:"path"`
+}
+
 // GetItemStatsParams defines parameters for GetItemStats.
 type GetItemStatsParams struct {
 	Path string `form:"path" json:"path"`
@@ -4749,6 +4885,9 @@ type ServerInterface interface {
 	// RemovePackageOwner Remove an owner, or release the name with its last owner
 	// (DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner})
 	RemovePackageOwner(w http.ResponseWriter, r *http.Request, repoKey string, packageName string, owner string, params RemovePackageOwnerParams)
+	// GetRepositoryResolution Explain how a virtual repository resolves a client path
+	// (GET /api/v1/repositories/{repoKey}/resolution)
+	GetRepositoryResolution(w http.ResponseWriter, r *http.Request, repoKey string, params GetRepositoryResolutionParams)
 	// GetItemStats Read the download statistics of a file
 	// (GET /api/v1/repositories/{repoKey}/stats)
 	GetItemStats(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemStatsParams)
@@ -7659,6 +7798,48 @@ func (siw *ServerInterfaceWrapper) RemovePackageOwner(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// GetRepositoryResolution operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryResolution(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryResolutionParams
+
+	// ------------- Required query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryResolution(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetItemStats operation middleware
 func (siw *ServerInterfaceWrapper) GetItemStats(w http.ResponseWriter, r *http.Request) {
 
@@ -9841,6 +10022,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/upstream-tests", wrapper.TestUpstream)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.GetRepositoryClaims)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.PutRepositoryClaims)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/resolution", wrapper.GetRepositoryResolution)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.GetPackageOwners)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.AddPackageOwner)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}", wrapper.RemovePackageOwner)

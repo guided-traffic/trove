@@ -5559,6 +5559,69 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/resolution:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        description: The key of a virtual repository (R-REPO-002).
+        schema:
+          type: string
+    get:
+      operationId: getRepositoryResolution
+      tags: [repositories]
+      summary: Explain how a virtual repository resolves a client path
+      description: |
+        Evaluates steps 1 to 6 of the resolution algorithm (R-REPO-019) for the calling principal and a
+        path, without transferring content and without contacting an upstream, and says per member of
+        the virtual repository what would happen to it. `path` is the repository-relative path as the
+        package client sends it, decoded once (`@acme/util/-/util-1.4.0.tgz`, `lodash`). `decidedBy`
+        names the claim or the pin rule that narrowed the members; its `claimedBy` lists only the
+        repositories the caller can read. A member the caller cannot read is not named: it counts in
+        `unreadableMembers`, unless the caller holds `repositories:read-config`, who gets it as the
+        decision `no-read` and a count of 0. The decisions are `disabled`, `not_admitted`, `pinned-out`,
+        `claimed-elsewhere`, `refused-claimed`, `no-read`, `no-cache-fill`, `hit`, `miss`, `negative`,
+        `offline` and `circuit-open`. Needs `read` on the virtual repository (the gate of step 1);
+        another class answers `400 not_applicable`.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: The repository-relative client path to explain.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+      responses:
+        "200":
+          description: The resolution of the path, member by member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryResolution"
+              example:
+                repository: npm-all
+                descriptor: {path: "@acme/util/-/util-1.4.0.tgz", kind: artifact, package: "@acme/util"}
+                decidedBy: {claim: "@acme/*", claimedBy: [npm-local]}
+                members:
+                  - {key: npm-local, class: local, decision: hit}
+                  - {key: npm-remote, class: remote, decision: claimed-elsewhere}
+                unreadableMembers: 0
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M2 virtual
   #
   # >>> M2 npm
@@ -9102,6 +9165,67 @@ components:
           items:
             type: string
             maxLength: 256
+    RepositoryResolution:
+      type: object
+      required: [repository, descriptor, members, unreadableMembers]
+      properties:
+        repository:
+          type: string
+        descriptor:
+          type: object
+          required: [path, kind]
+          properties:
+            path:
+              type: string
+            kind:
+              type: string
+              enum: [artifact, metadata, search, write, other]
+            package:
+              type: string
+        decidedBy:
+          type: object
+          description: The claim or the pin rule that narrowed the members; absent when neither did.
+          properties:
+            claim:
+              type: string
+            pin:
+              type: string
+            claimedBy:
+              type: array
+              description: The repositories with the most specific claim that the caller can read.
+              items:
+                type: string
+        members:
+          type: array
+          description: The members in the order of the member list, without those the caller cannot read.
+          items:
+            type: object
+            required: [key, class, decision]
+            properties:
+              key:
+                type: string
+              class:
+                type: string
+                enum: [local, remote]
+              decision:
+                type: string
+                enum:
+                  - disabled
+                  - not_admitted
+                  - pinned-out
+                  - claimed-elsewhere
+                  - refused-claimed
+                  - no-read
+                  - no-cache-fill
+                  - hit
+                  - miss
+                  - negative
+                  - offline
+                  - circuit-open
+        unreadableMembers:
+          type: integer
+          minimum: 0
+          description: The number of members the caller cannot read, which are not named.
     # <<< M2 virtual
     #
     # >>> M2 npm

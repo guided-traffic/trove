@@ -1679,7 +1679,9 @@ components act in this order:
      R-ARCH-012, remote documents from R-ARCH-013, with stale serving and the circuit applying. The
      format then merges them under the per-version source rule.
 4. The merged result is cached as the proxy page specifies. The cache key includes the eligible
-   member set and the base URL.
+   member set with the caller's cache-fill right on each remote member, and the endpoint
+   (Q-REPO-110). The base URL is not part of the key: the merge holds no absolute link, the
+   format rewrites links to the response base URL after the cache (step 5).
    - Each entry also records the `rev_seq` of every eligible local member, with `0` for a member
      that does not hold the package, and one `RevSeqs` query per request checks them. A local
      publish, including the first publish of a name that so far came only from a remote member, is

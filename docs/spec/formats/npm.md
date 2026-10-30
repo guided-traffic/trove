@@ -868,9 +868,11 @@ Priority: **MVP** · Covers: PKG-NPM-032
     (`npm.abbreviated_time`) and the `config_version` of the serving repository, which covers its
     repository settings;
   - the *merge fingerprint* of a virtual document is: the member fingerprint of R-REPO-020 (which
-    already reflects patterns, pin rules, claims and the caller's readable members), each
-    contributing member's revision (local: `packages.rev_seq`, 0 when absent; remote: the stored
-    document digest), the `config_version` of the virtual repository and of each member (covering
+    already reflects patterns, pin rules, claims, the caller's readable members, whether the caller
+    may fill each remote member and the endpoint, Q-REPO-110), each contributing member's revision
+    (local: `packages.rev_seq`, 0 when absent; remote: the stored document digest), for each
+    remote member the versions whose tarballs are cached (the engine's `Merged.MergeFingerprint`
+    covers these three), the `config_version` of the virtual repository and of each member (covering
     `latestStrategy`, `distTagStrategy`, `externalDependencies` and `serveRemovedVersions`), the
     public base URL and `npmRenderVersion`;
   - after a restore, `rev_seq` and `config_version` have grown by 2^32 (R-BAK-022, R-NPM-047), so

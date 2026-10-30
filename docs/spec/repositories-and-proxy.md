@@ -868,6 +868,9 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
 7. When nothing was found: answer 404 if every consulted member answered "not found"; otherwise
    answer with the failure of the first member that failed transiently (502, 503 or 504 per
    R-REPO-029), because "not found" would be a false statement about an item that may exist.
+   A member that the caller may not populate and whose cache lacks the item is not consulted and
+   counts as "not found"; a failure after the first byte of an artifact ends the request, because
+   another member cannot continue it (Q-REPO-111).
 
 - Artifact responses MUST carry `Trove-Resolved-From: <member key>`; the member is one the caller
   can read, so the header discloses nothing new. On an endpoint with exposure rules the header is
@@ -878,7 +881,15 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
   `not_admitted`, `pinned-out`, `claimed-elsewhere`, `refused-claimed`, `no-read`, `no-cache-fill`,
   `hit`, `miss`, `negative`, `offline`, `circuit-open`). Members the caller cannot read appear only
   as a count (`"unreadableMembers": 2`) unless the caller holds `repositories:read-config`.
-  Permission: the gate of step 1.
+  Permission: the gate of step 1. The members are listed in the order of the member list; the
+  decision of a member that routing keeps is `hit` or `miss` for a local member and, for a remote
+  member, `hit` when its cache holds the path, else `no-cache-fill` when the caller may not
+  populate it, else `negative`, `offline`, `circuit-open` or `miss` as its state says
+  (Q-REPO-114). `refused-claimed` is a remote member that refuses the name because of a global
+  claim (R-REPO-023). `decidedBy` names the pattern of the claim (`claim`) or of the pin rule
+  (`pin`) that narrowed the members; its `claimedBy` lists only the claimants the caller can read,
+  unless the caller holds `repositories:read-config`. When the virtual repository is disabled or
+  its patterns do not admit the path, every member shows `disabled` or `not_admitted`.
 
 ```json
 {
@@ -918,9 +929,14 @@ Priority: **MVP** · Covers: REPO-037
   served to clients, so it is never stored in or read from Valkey
   ([architecture.md](architecture.md) R-ARCH-030, Q-ARCH-16). The cache key MUST include the virtual
   repository, the canonical path, the variant, the endpoint of the request
-  ([endpoints.md](endpoints.md) R-EP-018) and a SHA-256 fingerprint of the ordered list of
-  members that took part after permission filtering: two callers who see different members never
-  share an entry ([R-AUTHZ-009](authorization.md) rule 4); callers who see the same members do.
+  ([endpoints.md](endpoints.md) R-EP-018) and a SHA-256 fingerprint of the endpoint and of the
+  ordered list of members that took part after permission filtering, each with its class and
+  whether the caller may fill its cache ([R-AUTHZ-008](authorization.md); Q-REPO-110): two callers
+  who see different members, or who may fill different remote members, never share an entry
+  ([R-AUTHZ-009](authorization.md) rule 4); callers who see the same members with the same rights do.
+  A caller who may not fill a remote member gets that member's document restricted to the versions
+  whose artifacts are cached (Q-REPO-113), which is why the right is part of the key. A path that
+  belongs to no package, a period of 0 and `proxy.merged_metadata_cache_bytes: 0` keep nothing.
 - A merged entry expires at the earlier of `mergedMetadataTtlSeconds` after merging and the earliest
   expiry of the contributing remote entries, so staleness does not add up across the two layers.
 - **Local members: `rev_seq` check.** Every merged entry MUST record the `rev_seq` of every
@@ -941,9 +957,12 @@ Priority: **MVP** · Covers: REPO-037
   and a remote refresh made on another replica reaches a merged entry at the latest when that entry
   expires, which is never later than the contributing remote entries. Claim changes reach the merged
   entries through their change area `claims` (R-REPO-023), whose bound does not depend on Valkey.
-- A remote member that fails transiently and has no stored copy is left out of the merge; the result
-  MUST NOT be cached, and the response carries `Cache-Status: trove; detail=partial`
-  (R-REPO-047). Pin rules and claims keep internal names independent of remote members, so a partial
+- A remote member that fails transiently (502, 503 or 504 of the remote request path) and has no
+  stored copy is left out of the merge; the result MUST NOT be cached, and the response carries
+  `Cache-Status: trove; detail=partial` (R-REPO-047). A member that answers "not found", or that
+  the caller may not populate and that has nothing stored, is a miss and does not make the merge
+  partial. If no member contributes, the answer is 404 when every consulted member said "not found"
+  and the failure of the first member that failed otherwise (R-REPO-019 step 7). Pin rules and claims keep internal names independent of remote members, so a partial
   merge cannot switch a package's origin.
 
 Configuration:
@@ -1274,7 +1293,11 @@ before the operation's transaction. No database transaction is held open during 
 - The check comes in addition to `deploy` and package ownership ([R-AUTHZ-018](authorization.md));
   it never grants anything. A refusal is audited as a denial with reason `deny.shadowing`.
 - An unreachable upstream fails closed: it must not be a way around the check. Only first publishes
-  of names outside L's claims are affected while a remote member's upstream is down.
+  of names outside L's claims are affected while a remote member's upstream is down. A remote
+  repository is asked once per publish however many virtual repositories of the exposure set contain
+  it; when several answer "undetermined" the Retry-After is the longest of them; an error while
+  reading the stored state fails the publish and is no verdict; a replica without the remote engine
+  treats every remote repository as undetermined (Q-REPO-115).
 - **Approval in advance.** A manual claim of L that covers n satisfies the check, because the check
   runs only when no claim of L covers n. A `members` claim needs `manage` on L (R-REPO-023), so it
   is the same decision taken ahead of time. This is the path for CI: a `manage` holder claims
@@ -2828,6 +2851,16 @@ Priority: **MVP** · Covers: trove-only
 | Negative entry | `trove; hit; detail=negative` |
 | Collapsed onto another request's fetch | additional parameter `collapsed` |
 | Partial merge (R-REPO-020) | `trove; detail=partial` |
+| Merged document served from the merged-metadata cache | `trove; hit; ttl=<seconds left>` |
+| Merged document built for this request | `trove; fwd=miss` |
+
+`trove_virtual_resolutions_total` counts one resolution per artifact request and per metadata
+request of a virtual repository, by the tier that served it: `local`, `cache` (a merged document
+served from the merged-metadata cache or built from stored remote documents only, an artifact from
+a remote member's cache), `upstream` (an artifact fetched from, or a merge that refreshed a
+document from, an upstream) and `none` (404 or a failure). `trove_shadow_checks_total` counts the
+checks that ran: a write that the check does not apply to (L already holds a version, or a claim of
+L covers the name) is not counted (Q-REPO-115).
 
 - Metrics: the remote-repository metrics of [operations-and-observability.md](operations-and-observability.md)
   apply as defined there (`trove_remote_cache_lookups_total`, `trove_remote_upstream_requests_total`,
@@ -3971,6 +4004,114 @@ Context: R-REPO-005 says the warning applies "on an npm repository", because `*`
 **Rationale:** The warning is advice, not a rule, and (a) is correct for the two MVP formats. The development agent would revisit this with the first format that has `/` in names and a different rule, and then add the fact (b).
 
 **Applied in the spec:** R-REPO-005 (the sentence on `pattern_unscoped_only`).
+
+### Q-REPO-110 · The merged-metadata key carries the populate right and the endpoint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-020 keyed a merged document by "the ordered list of members that took part after permission filtering". R-AUTHZ-008 restricts the document of a remote member that the caller may not populate to the versions whose artifacts are cached, and R-EP-019 lets an endpoint switch the right off for every caller. Two callers with the same readable members can therefore be owed different bytes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Fingerprint of the endpoint and the ordered (member id, class, mayFill) | The populate right is decided per member by `MemberUsableOn` before the key is made | Callers with equal rights share; no entry is served to a caller owed other bytes; costs one SHA-256 of a few dozen bytes | The same set of members may hold two entries (one per right) |
+| (b) Keep the wording and never restrict a merge | A non-filling caller gets every version the remote document lists | One entry per member set | Violates R-EP-018: a version a filtered document lists is not downloadable, and a caller sees versions it cannot get |
+| (c) Key by the subject | An entry per principal | Trivially correct | The cache stops sharing; its size grows with the number of callers |
+
+**Choice:** (a). The key is the virtual repository, the canonical path, the variant, the endpoint and the fingerprint (`planFingerprint`); the key also carries the member ids and the hash of the package name so that an eviction finds the entries of a member or a package without a second index.
+
+**Rationale:** (a) is the least that is correct: the right is the only caller-dependent input of the bytes besides the member set. The development agent would revisit this if a measurement showed many entries per member set, and then share the common prefix of the restricted and the unrestricted merge.
+
+**Applied in the spec:** R-REPO-020 (the key), R-ARCH-015 step 4, formats/npm.md R-NPM-013 (the merge fingerprint inputs).
+
+### Q-REPO-111 · The virtual engine meets its neighbours through interfaces it declares itself
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the virtual engine needs the remote engine (documents, caches, state, probes), the item store and package rows, the routing, the decision point and a format's adapter. The remote engine is built beside it, and the layers forbid a domain package to import a format.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Import the neighbours | `internal/virtual` imports `internal/proxy` and the formats | Fewer types | Cannot be built or tested before the proxy engine lands; the layer rule forbids the format import |
+| (b) Consumer-side interfaces in `internal/virtual`, bridged in `internal/formathost` | `Router`, `Decider`, `Locals`, `Remotes`, `Tiers` and `Merger` are declared where they are used; `formathost` turns a `formats.Request` into a `Caller` and a `Descriptor`, a `VirtualAdapter` into a `Merger` and the Host's stores into `Tiers` | Builds and tests with fakes; the proxy engine binds by implementing five methods; the engine stays format-neutral | Two small bridge types to keep in step with the contract |
+| (c) Put the engine into `formathost` | One package | No interfaces | `formathost` is an edge package that the dispatcher imports; the engine would be untestable without a Host |
+
+**Choice:** (b). The errors of a remote member are classified by their kind: `NotFound` and the refusal to populate are a miss; `UpstreamFailed`, `UpstreamTimeout` and `Unavailable` are a transient failure (the merge drops the member and is partial, an artifact goes on to the next member and answers with the first such failure when nothing is found); anything else ends the request. A failure after the first byte of an artifact ends the request, because the next member cannot continue it. A replica without the remote engine treats every remote member as a transient failure.
+
+**Rationale:** the classification is the one R-REPO-019 step 7 states, expressed in the kinds of R-ARCH-023. The development agent would revisit the interface list when the proxy engine's real API differs from plan section 3.4; the binding is documented in [virtual.md](../developer/virtual.md).
+
+**Applied in the spec:** R-REPO-019 (step 7, the failure after the first byte, the member that cannot be populated).
+
+### Q-REPO-112 · A merged entry validates itself on every hit and is never kept when partial
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-020 and R-ARCH-015 want a local publish visible on every replica when its commit has returned, with or without Valkey, a period that never outlives the remote entries, early eviction by `metadata_changed` and the change areas, and no storage of a partial merge.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The entry records the rev_seq of every eligible local member and one `RevSeqs` query checks them per hit | Valkey and the signal only evict early | Correct without any message; one indexed query per hit | A query per hit |
+| (b) Evict by signal and change area only | No query | Cheaper | A lost signal shows stale local data until the period ends: violates R-ARCH-015 |
+| (c) Build every merge, cache nothing | No state | Simplest | The remote and local documents are re-collected on every request |
+
+**Choice:** (a). The record is the revision returned by `LocalDocument` (so a document and its revision always match), 0 for a member without the package, and the revision of a package row without a live version is recorded as it is. The cache is the registered `merged_metadata` cache with the fill rule of R-ARCH-018 on the areas `cache_invalidation`, `claims` and `repo_config`; a result that must not be kept (a partial merge, an entry that is already expired) weighs more than the whole cache, which the cache treats as "not stored". `claims`, `repo_config` and every payload this build cannot read flush the cache; a virtual invalidation drops the entries of that repository under the prefix, and one of a remote repository those built from it. `metadata_changed` carries `<repository id>:<hex SHA-256 of the package name>` and drops the entries that contain the member and the package. A path with no package name and a period of 0 are not cached. The expiry is the earlier of the period and the earliest expiry of the remote documents; the safety TTL is 2 hours.
+
+**Rationale:** (a) is the only option that keeps the guarantee without a message. The development agent would revisit the query per hit if the budget of R-ARCH-027 is missed by it, and then batch it with the rendition cache's revision read.
+
+**Applied in the spec:** R-REPO-020 (cacheable cases, partial), R-REPO-047 (the Cache-Status values of a merge).
+
+### Q-REPO-113 · A caller who may not fill a remote member gets only the versions that are cached
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-008 says npm restricts the remote member's document of such a caller to versions whose tarballs are cached, and the format's `Merge` is the only code that can edit a document. The contract's `MemberDocument` had `CachedVersions` and no way to say that the caller may not populate the member.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A field `Restricted` on `MemberDocument` | The engine sets it from the populate right; the format lists only `CachedVersions` of a restricted part | Explicit; one bool; the kit can test it | A field added to a contract that is not yet frozen |
+| (b) A nil `CachedVersions` means unrestricted | No new field | No contract change | A restricted part with nothing cached would need a non-nil empty map: an easy mistake that leaks versions |
+| (c) The engine filters the document | The engine edits the bytes | The format cannot get it wrong | The engine would parse every format's document |
+
+**Choice:** (a). `CachedVersions` of a part that is not restricted only moves a version to the second tier of the source rule. The set comes from `CachedArtifacts` of the remote engine below the artifact prefix of the package (the directory of an `index.json` document, else the document path) and the format's own `Classify` of each cached path.
+
+**Rationale:** the restriction is a security property of the merge (R-AUTHZ-008, R-EP-018) and should not hang on a convention. The development agent would revisit this when the contract freezes (E3.3), and fold the flag into the part's tier if a second use appears.
+
+**Applied in the spec:** none beyond R-REPO-020 and R-AUTHZ-008, which already state the rule; the field is in [formats.md](../developer/formats.md) and [virtual.md](../developer/virtual.md).
+
+### Q-REPO-114 · The explanation names readable members in list order and hides the rest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-019 lists the decisions and says members the caller cannot read appear only as a count unless the caller holds `repositories:read-config`. It does not say in which order the members come, what a member that routing dropped and the caller cannot read looks like, what the claimants of `decidedBy` may show, or what the explanation says when the virtual repository itself refuses.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) List order; unreadable members are counted whatever the route did to them; claimants filtered by read; a refusing virtual repository shows `disabled` or `not_admitted` for every member | One rule: a key reaches only a caller who may read it, or may read the configuration | No key leaks through a dropped member or a claimant; the list equals the member list the caller can edit | The resolution order is shown only through `class` and the tiers |
+| (b) Resolution order, unreadable members counted only when kept | Shows the order a request uses | More informative | A dropped unreadable member would be named |
+| (c) Answer 404 when the virtual repository refuses | Same as the client | Simple | An explanation exists to say why a client gets 404 |
+
+**Choice:** (a). The state of a remote member (`negative`, `offline`, `circuit-open`) comes from the remote engine's `EntryState` and is reported only when the caller may populate the member and nothing is stored; the explanation makes no call that can reach an upstream. A holder of `repositories:read-config` gets the unreadable members as `no-read` and a count of 0. An operation on a repository that is not virtual answers 400 `not_applicable`.
+
+**Rationale:** (a) keeps the security note of R-REPO-019 true for every field of the answer. The development agent would revisit the order if the UI wants the resolution order, and add a position to each line.
+
+**Applied in the spec:** R-REPO-019 (the explanation paragraph).
+
+### Q-REPO-115 · The shadowing check fails closed and asks each remote repository once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-048 fixes the outcomes. It leaves open how several virtual repositories that contain one remote repository are probed, what Retry-After is when several circuits are open, what an error of the stored-state read means, what a replica without the remote engine does, when the metric counts, and how a format learns the refusal and the pairs for the audit event.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One probe per remote repository; the longest retry; a read error fails the publish; no engine means undetermined; the metric counts the checks that ran; the outcome carries the refusal and the pairs | The smallest number of upstream requests, the safest answers, the format does one thing with the outcome | Fixed, testable rules | A new field in the contract's `ShadowOutcome` |
+| (b) One probe per pair (V, R) | Simple loop | The same upstream asked twice for one publish | More load, contradicts "one probe per publish" |
+| (c) A read error is undetermined | A publish by a manage holder goes on | Never refuses for a database error | A database fault would decide a security question |
+
+**Choice:** (a). The probe is made on behalf of the publisher without the cache-fill check and stores nothing. `formats.ShadowOutcome` gains `Refusal` (the 403 or 503 to answer, naming the package and the virtual repositories the caller can read, never a remote member) and `Shadowed` (the pairs for `repository.remote_package_shadowed`). The codes `shadows_remote_package` and `shadow_check_unavailable` are registered in the problem catalog.
+
+**Rationale:** the spec says an unreachable upstream must not be a way around the check and that a value read from outside may only make trove refuse; (a) extends that to the engine's own failures. The development agent would revisit the approach to read errors if the database fault window of a publish turns out to be a support cost.
+
+**Applied in the spec:** R-REPO-048 (the fail-closed bullet), R-REPO-047 (the metric).
 
 ## What this does not cover
 

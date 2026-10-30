@@ -428,7 +428,8 @@ func (a *App) startClient() error {
 			Endpoints:    a.endpointServices(),
 			Repositories: a.repositoryAPI(),
 			Files:        part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
-			Cache: a.cacheAPI(),
+			Cache:      a.cacheAPI(),
+			Resolution: a.resolutionExplainer(),
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

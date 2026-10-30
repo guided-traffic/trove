@@ -7,13 +7,16 @@ repository owns a name, and the API that edits the claims. Code: [internal/repos
 and [queries/claims.sql](../../internal/meta/postgres/queries/claims.sql), the handlers in
 [claims_api.go](../../internal/api/v1/claims_api.go). The resolution itself (per-caller steps, tiers, the merged
 metadata, the shadowing check, the explanation API) is the virtual engine of [R-REPO-019](../spec/repositories-and-proxy.md)
-and R-REPO-020, which a later work package adds as `internal/virtual` and as sections of this page.
+and R-REPO-020, in [internal/virtual](../../internal/virtual/); its sections start at [The virtual engine](#the-virtual-engine).
 
 What exists today: the model and its validation, the routing and the claim index, the auto claim of a first publish, the
-claims API, the detach of R-REPO-013, and the grant index reading the members from their rows. What does not exist yet:
-nested virtual repositories (R-REPO-018, a member that is virtual answers `invalid_member`), `effectiveMembers`, and every
-format that has package names, so no repository of a real format can hold a claim until npm lands. The tests use a
-format registered in a test catalog.
+claims API, the detach of R-REPO-013, the grant index reading the members from their rows, and the engine: the plan, the
+tiers of an artifact, the merged-metadata cache, the shadowing check, the deploy target and the explanation API. What does not
+exist yet: nested virtual repositories (R-REPO-018, a member that is virtual answers `invalid_member`), `effectiveMembers`,
+every format that has package names (so no repository of a real format can hold a claim or be resolved until npm lands), and
+the binding of the proxy engine to the engine's `Remotes` seam (below): until it is bound, a remote member is a member that
+cannot be asked. The tests use a format registered in a test catalog and the fakes of
+[virtualtest](../../internal/virtual/virtualtest/).
 
 ## Files
 
@@ -160,6 +163,8 @@ last transaction notifies `claims` when the repository had any, so every replica
 |---|---|---|
 | `repositories.max_virtual_members` | `100` | the most members one virtual repository lists (`out_of_range` at `/virtual/members`) |
 | `proxy.claims.remote_refusal` | `true` | read by `Routing.RemoteRefused` through `RoutingOptions.RemoteRefusal` |
+| `proxy.merged_metadata_cache_bytes` | `256MiB` | the size of the cache `merged_metadata` of one replica (`virtual.Options.CacheBytes`); `0` turns the cache off |
+| `virtual.mergedMetadataTtlSeconds` (a repository setting) | `7200` | the period of a merged entry, `0` to `86400`; `0` keeps nothing |
 
 ## Tests
 
@@ -177,3 +182,169 @@ in the deploy's audit event (`autoClaim`), and do nothing else with it. Do not c
 
 **Add a new pin or claim form.** Do not: both are limited to the forms for which `rank()` is total. A new form needs a new total order,
 a new trie confirmation and a change of R-REPO-023.
+
+## The virtual engine
+
+The engine ([internal/virtual](../../internal/virtual/)) is R-REPO-019 steps 1 to 6 for one caller, the merged-metadata cache of
+R-REPO-020, the shadowing check of R-REPO-048 and the explanation. It is a domain package and knows no format and no request:
+what it needs of its neighbours it declares as interfaces ([Q-REPO-111](../spec/repositories-and-proxy.md)), and
+[formathost](../../internal/formathost/virtual.go) turns a `formats.Request` into what the engine takes.
+
+| File | Responsibility |
+|---|---|
+| [types.go](../../internal/virtual/types.go) | `Descriptor`, `Caller`, `Plan`, `Member`, `Part`, `Merged`, `Strategy`, `Tier` and the seams: `Router`, `Decider`, `Locals`, `Remotes`, `Tiers`, `Merger` |
+| [engine.go](../../internal/virtual/engine.go) | `Options`, `New`, `Start`/`Stop` (the `metadata_changed` subscription), `Plan`, `planFingerprint`, `DeployTarget` |
+| [artifact.go](../../internal/virtual/artifact.go) | `Artifact`: the three tiers, `Trove-Resolved-From`, the 404-or-failure rule of step 7, the failure after the first byte |
+| [metadata.go](../../internal/virtual/metadata.go) | `Metadata`: strategy, cache lookup and validation, `build` (one goroutine per member), `mergeFingerprint`, `firstMatch` |
+| [mcache.go](../../internal/virtual/mcache.go) | the registered cache `merged_metadata`: key, entry, `weigh`, `onMergedChange`, the payload of `metadata_changed` |
+| [shadow.go](../../internal/virtual/shadow.go) | `ShadowCheck`, `ShadowOutcome` and its error |
+| [explain.go](../../internal/virtual/explain.go) | `Explain` and the `Explanation` of the API |
+| [metrics.go](../../internal/virtual/metrics.go) | `trove_virtual_resolutions_total`, `trove_shadow_checks_total` |
+| [virtualtest](../../internal/virtual/virtualtest/) | the fakes and fixtures: repositories with members, `Rows` (package rows), `Merger` (a test format), `Remote` (a programmable remote engine), `Artifacts` (tiers), `Router`, `NewDecider` (the real decision point over a few grants) |
+| [formathost/virtual.go](../../internal/formathost/virtual.go) | `NewResolver` (the `formats.Resolver` over the engine), `NewVirtualLocals` (`Locals` over the package rows and the item store) |
+| [api/v1/resolution_api.go](../../internal/api/v1/resolution_api.go) | `GET /api/v1/repositories/{repoKey}/resolution?path=` |
+| [app/wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go) | the wiring step `virtual-engine` (inputs: `infra`, `virtualArea`, `authzArea`; the item store from the files area): builds the engine as a component; `resolutionExplainer` for the API |
+
+### The request path
+
+`Plan(ctx, caller, v, descriptor)` is steps 1 to 5: `Routing.Route` (patterns, pin rules, claims, order; the caller plays no part),
+then `Decider.MemberUsableOn` for each member the route kept, which is the per-member `read` and the populate check
+(R-AUTHZ-009 rules 2 and 3). The plan holds the members in resolution order with `MayFill`, the number of members the caller cannot read,
+and the fingerprint. The plan does not repeat the gate on the virtual repository (rule 1) nor the rule for anonymous callers (rule 6):
+the coarse check of the request decided both through `DecideOn` before the format ran; `Plan` of a request that skipped it would
+consult only the members the caller can read, which is safe, but would not refuse.
+
+`Artifact(ctx, caller, plan, tiers, w)`: local members in order, then the caches of the remote members, then the upstreams of the
+remote members with `MayFill`. The first hit is served with `Trove-Resolved-From: <member>` (never on an endpoint with rules). A member
+the caller may not fill is not consulted in the third tier. Nothing found: 404 if every consulted member said "not found" (or refused to
+populate, which counts as a miss), else the failure of the first member that failed transiently. A failure after the first byte ends the
+request.
+
+`Metadata(ctx, caller, plan, merger)`: by `merger.Strategy`. `FirstMatch` serves the document of the first member that has it (local members,
+then remote members) and caches nothing. `Merge` and `Newest` (resolved as `Merge`; revalidating the remote members first, R-REPO-036, waits
+for the first format with a latest-version request) collect one document per member concurrently and call `merger.Merge`.
+
+### The merged-metadata cache
+
+| Aspect | Rule |
+|---|---|
+| Key | `mergedKey`: virtual id, path, variant, endpoint, the plan fingerprint (endpoint and ordered member id, class, populate right: D-7, Q-REPO-110), the member ids and the SHA-256 of the package name (the last two make eviction a scan of keys) |
+| Entry | merged bytes, merge fingerprint, the rev_seq of every eligible local member (0 when absent), expiry |
+| Hit | the entry is not expired and one `Locals.RevSeqs` call returns the recorded revisions; otherwise the entry is removed and the document is built again. No message is needed |
+| Expiry | the earlier of `virtual.mergedMetadataTtlSeconds` after the merge and the earliest `ExpiresAt` of the remote documents; the cache's safety TTL is 2 hours |
+| Not cached | a partial merge, an entry already expired (a stale remote document), a path with no package name, a period of 0, `proxy.merged_metadata_cache_bytes: 0` |
+| Partial | a remote member that failed transiently and has no copy is left out; `Cache-Status: trove; detail=partial`. A member that answers not found, or that the caller may not populate and that has nothing stored, is a miss and not a reason for `partial` |
+| Cache-Status | `trove; hit; ttl=<s>` for a hit, `trove; fwd=miss` for a built document, `trove; detail=partial` |
+| Early eviction | the signal `metadata_changed` with `PackageChanged(repoID, name)` drops the entries that contain the member and the package; a coarse signal or a payload that does not parse drops everything. The area `cache_invalidation` drops by `invalidation.ParsePayload`: `virt` the entries of that virtual repository under the prefix (whole segments), `add` the entries that contain that remote repository under the prefix, `del` nothing; `claims`, `repo_config` and an unknown kind flush |
+| Fill rule | the cache's `Load` (R-ARCH-018): a result computed while one of the three areas changed is served and not stored |
+
+`PackageChanged` is the payload that a publisher of a local change (the `OnCommit` of a format's writer, after its commit) and the remote engine
+(after a refresh with new content) publish on the signal area `metadata_changed`. Nobody publishes it yet; the engine is correct without it.
+
+### The contract of a format's merge
+
+A format implements `formats.VirtualAdapter` (`Strategy`, `Merge`, `LocalDocument`); `formathost` builds the engine's `Merger` from it. What the
+engine requires:
+
+- `LocalDocument` returns the revision the document was rendered at **whether or not** it found a document (a package row without a live
+  version has a `rev_seq`), and renders from committed rows, never from a cache the engine does not validate.
+- `Merge` gets the parts in resolution order. A part has `Tier` `Local` or `Remote`; the version entry comes from the lowest (tier, position)
+  that holds it, where a remote part's version is in the second tier when `CachedVersions` has it (R-REPO-020). A part with `Restricted` set
+  lists **only** `CachedVersions` of its document (R-AUTHZ-008, Q-REPO-113): the field is the only thing that stops a caller who may not fill a
+  mirror from being offered a version it cannot download.
+- The merged bytes hold no absolute link: the format rewrites links to the response base URL after the cache, which is why the base URL is not in
+  the key.
+- `ArtifactPrefix` is derived by `formathost` from `Format.PackageDocumentPath` (the document's path, or its directory when the document is an
+  `index.json`, then a slash) and the version of a cached path from `Format.Classify`; a format whose cached artifacts live elsewhere has no
+  cached versions in a merge.
+
+### The shadowing check
+
+`ShadowCheck(ctx, caller, local, name, docPath)` runs after the write was authorized and before the commit, in no transaction: it does nothing when
+`Locals.HoldsVersion` or `Router.CoveredByOwnClaim` says the check does not apply, asks `Router.ExposureSet`, then each distinct remote repository
+**once** and concurrently: `Remotes.EntryState` (a stored document that is not gone serves the name; one marked gone does not; `Negative` is never
+read) and, with nothing stored, `Remotes.Probe` with the call of the publisher without the populate check. The outcome follows the table of R-REPO-048;
+`manage` is `Decider.CheckOn`, which audits nothing. `ShadowOutcome.Err(name)` is the 403 or 503; the formats see it as `formats.ShadowOutcome.Refusal`,
+with the pairs in `Shadowed` for the audit event of the commit transaction. The codes are registered in `errs` (`shadows_remote_package`,
+`shadow_check_unavailable`). A format calls `Host.Resolver().ShadowCheck(ctx, rq, name)` for a first version of a name and answers `Refusal` when
+`Proceed` is false.
+
+### The explanation API
+
+`Explain` is `Plan` for every member of the list, then `decide` for each: the reasons of the route, `hit`/`miss` for a local member
+(`Locals.Holds`), and for a remote member `refused-claimed` (`Router.RemoteRefused`), `hit` (`Remotes.Cached`), `no-cache-fill`, then
+`EntryState`: `negative`, `offline`, `circuit-open`, `miss`. It makes no call that can reach an upstream. The handler
+[resolution_api.go](../../internal/api/v1/resolution_api.go) classifies the path with the format's `Classify`, passes `Subject` and the request's
+index, and answers 503 on a replica without the engine. The operation declares `read` on the virtual repository, which the shared step decides.
+
+### The seams
+
+The parameter types of `ctx` are elided below.
+
+```go
+// Router: *repository.Routing implements it.
+type Router interface {
+	Route(ctx, virtual repository.Repository, req repository.RouteRequest) (repository.Route, error)
+	RemoteRefused(ctx, remote repository.Repository, name string, via *repository.Repository) (bool, error)
+	CoveredByOwnClaim(ctx, local repository.Repository, name string) (bool, error)
+	ExposureSet(ctx, local repository.Repository, name string) ([]repository.Exposure, error)
+}
+// Decider: authz.Decider implements it.
+type Decider interface {
+	MemberUsableOn(ctx, idx *authz.Index, sub authz.Subject, member string, c authz.Coordinate) (read, fill bool)
+	ReadableOn(ctx, idx *authz.Index, sub authz.Subject, keys []string) ([]string, error)
+	HoldsOn(idx *authz.Index, sub authz.Subject, permission string) bool
+	CheckOn(idx *authz.Index, sub authz.Subject, items []authz.CheckItem) ([]bool, error)
+}
+// Locals: formathost.NewVirtualLocals(pkgs, items); *packages.Store implements RevSeqs.
+type Locals interface {
+	RevSeqs(ctx, repoIDs []int64, name string) (map[int64]int64, error)
+	Holds(ctx, m repository.Repository, d Descriptor) (bool, error)
+	HoldsVersion(ctx, m repository.Repository, name string) (bool, error)
+}
+```
+
+### Binding the proxy engine
+
+The remote engine is the one seam without a production implementation yet. `Options.Remotes` takes a `virtual.Remotes`; the composition root's
+`virtualRemotes()` ([wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go)) returns nil until the proxy engine is bound (it is not on main yet; the binding is to return it there, as a new input of the step), and the engine
+then treats every remote member as one that cannot be asked (502 for an artifact, `partial` for a merge, `offline` in the explanation, undetermined
+for the shadowing check). The binding is mechanical:
+
+```go
+type Remotes interface {
+	Cached(ctx, rc RemoteCall) (bool, error)                      // proxy.Engine.Cached: Request{Path, Kind from the path}
+	Metadata(ctx, rc RemoteCall) (*RemoteDoc, error)              // proxy.Engine.Metadata: Request{Mode Normal, MayFill: rc.MayFill}
+	EntryState(ctx, repoID int64, path string) (EntryState, error) // proxy.Engine.EntryState, plus the three fields below
+	Probe(ctx, rc RemoteCall) (ProbeResult, error)                // proxy.Engine.Probe: Served | NotServed | Undetermined(retryAfter)
+	CachedArtifacts(ctx, repoID int64, prefix string) ([]string, error) // proxy.Engine.CachedArtifacts
+}
+```
+
+| Engine field | Source |
+|---|---|
+| `RemoteCall.MayFill` | the engine's `Request.MayFill`: without it `Metadata` serves what the cache holds (an expired document too) and never contacts the upstream; a path the cache lacks answers `NotFound` or `populate_not_permitted`, both a miss |
+| `RemoteDoc` | `proxy.Document`: `Digest`, `Bytes`, `ExpiresAt`, `Stale`; `Fetched` is true when the call contacted the upstream (its `CacheStatus` is not a hit) |
+| `EntryState.Stored`, `GoneAt` | R-REPO-048 steps 1 and 2: any variant stored, the gone mark |
+| `EntryState.Negative`, `Offline`, `CircuitOpenFor` | only for the explanation: a peek at the negative entry (the L1, then Valkey; unavailable Valkey means false), `remote.availability.mode`/the global switch, the circuit copy's remaining open time. The shadowing check ignores all three |
+| `Probe` | offline: `NotServed`; open circuit: `Undetermined` with the remaining time; else one GET through the fetch client, storing nothing and writing no negative entry |
+
+`RemoteCall` carries the remote and virtual repositories, the path, variant and package, the subject (for the audit and the upstream log, with
+`flight_role: probe` for a probe) and the endpoint. Two more lines complete the wiring when the formats with a virtual class register: the Host
+takes `formathost.NewResolver(engine, nil)` as `Options.Resolver` in `wireFormatHost`
+([wire_formats.go](../../internal/app/wire_formats.go); the step then takes `virtualEngineArea` as an input), and the format's writer calls `ShadowCheck`.
+The management API already takes the engine (`Options.Resolution`, set in `startClient` of [app.go](../../internal/app/app.go) by `resolutionExplainer`).
+
+### Tests of the engine
+
+| Test | Covers |
+|---|---|
+| [artifact_test.go](../../internal/virtual/artifact_test.go) | R-REPO-019 tiers, header, 404 and 502, step 1 to 5, R-AUTHZ-009 rules 3 and 5 to 8 with the real decision point (rules 2 and 4 are in the next row) |
+| [metadata_test.go](../../internal/virtual/metadata_test.go) | R-REPO-020 (different readable members, shared entries, the rev_seq check without any signal, partial merges, the fingerprint of D-7, expiry, early eviction, the areas), R-ARCH-015 across two engines |
+| [shadow_test.go](../../internal/virtual/shadow_test.go) | R-REPO-048: every outcome row, one probe per remote repository, no negative entry, concurrent probes |
+| [explain_test.go](../../internal/virtual/explain_test.go) | R-REPO-019 decisions, hidden members, `decidedBy` |
+| [virtual_test.go (formathost)](../../internal/formathost/virtual_test.go) | the bridge: caller, descriptor, tiers on a request of the member, merger, deploy target, shadow outcome |
+| [resolution_api_test.go](../../internal/api/v1/resolution_api_test.go) | the operation: declared permission, descriptor, 400, 404, 503, answers validated against the document |
+| [virtual_test.go (integration)](../../test/integration/virtual/virtual_test.go) | three replicas on PostgreSQL without Valkey: publish on A visible on B and C at once (50 iterations), claims reaching the merged entries, the explanation against the real routing, the shadowing check against the real exposure set and with no transaction open while a probe runs |
+
+**Bind a format to the engine.** Implement `VirtualAdapter` as above, list `Virtual` in the descriptor's classes, and run check 5 of the conformance kit ([formattest](../../internal/formats/formattest/), the per-version source rule). The kit does not test `Restricted` yet: add a merge case with a restricted part in the format's own tests. Add nothing to `internal/virtual`.

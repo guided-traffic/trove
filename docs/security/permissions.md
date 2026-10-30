@@ -187,12 +187,13 @@ coordinate per request; it becomes live with virtual resolution (M2) if that cod
 The ownership check and claim (`Ownership.EnforceTx`) and the populate check (`MayPopulateOn`, `PopulateOn`,
 `MemberUsableOn`) exist in the decision point and are tested on PostgreSQL, but no format writer calls the first and no remote
 or virtual engine the second. The owner operations of R-AUTHZ-019 and the deletion hook are wired
-([wire_ownership.go](../../internal/app/wire_ownership.go)). The shadowing check of R-REPO-048 is not implemented. Dormant: the only
-format is `generic`, which has no package names, and no remote repository can be created. It becomes live with the first
-package format writer and the remote engine (M2): a writer that does not call `EnforceTx` lets a `deploy` grant alone publish
-any name inside its patterns, including a name another team owns; a remote engine that fetches without `PopulateOn` lets a
-session cookie or a `cache_fill: false` endpoint fill a cache; and without the shadowing check a virtual repository's deploy
-target can shadow a remote package.
+([wire_ownership.go](../../internal/app/wire_ownership.go)). The shadowing check of R-REPO-048 exists in the virtual engine
+(`Resolver.ShadowCheck`, [virtual.md](../developer/virtual.md)) and reaches the formats through `Host.Resolver()`; the virtual
+resolution of reads asks `MemberUsableOn` per member and has callers in its tests only. Dormant: the only format is `generic`, which
+has no package names. It becomes live with the first package format writer, the remote engine and the binding of the engine to the Host
+(M2): a writer that does not call `EnforceTx` lets a `deploy` grant alone publish any name inside its patterns, including a name another
+team owns; a remote engine that fetches without `PopulateOn` lets a session cookie or a `cache_fill: false` endpoint fill a cache; and a
+writer that does not call `ShadowCheck` lets a virtual repository's deploy target shadow a remote package.
 
 ### H-104 · The commit-time re-check decides on the grants, not on the credential
 

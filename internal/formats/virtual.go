@@ -49,7 +49,12 @@ type MemberDocument struct {
 	// CachedVersions are the versions of a remote member whose artifact is cached:
 	// the source rule of R-AUTHZ-008.
 	CachedVersions map[string]bool
-	Stale          bool
+	// Restricted says that the caller may not populate this remote member's cache
+	// (R-AUTHZ-008): the merge lists only CachedVersions of Doc, so that every version a
+	// document lists can be downloaded. CachedVersions of a member that is not restricted only
+	// move a version to the second tier of the source rule.
+	Restricted bool
+	Stale      bool
 }
 
 // VirtualAdapter is what a format contributes to virtual resolution.
@@ -83,6 +88,19 @@ type ShadowOutcome struct {
 	Code         string
 	RetryAfter   time.Duration
 	Undetermined bool
+	// Refusal is the error to answer when Proceed is false: 403 shadows_remote_package
+	// naming the package and the virtual repositories the caller can read, or 503
+	// shadow_check_unavailable with Retry-After. A format returns it as it is.
+	Refusal error
+	// Shadowed are the pairs (V, R) in which a remote member serves the name, for the
+	// security audit event repository.remote_package_shadowed that the commit records
+	// when the write proceeds on the strength of manage (R-REPO-048).
+	Shadowed []ShadowPair
+}
+
+// ShadowPair names a virtual repository and the remote member of it that serves a package.
+type ShadowPair struct {
+	Virtual, Remote string
 }
 
 // Resolver is virtual resolution as a format meets it (C-5).

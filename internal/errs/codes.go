@@ -221,6 +221,16 @@ const (
 )
 
 // <<< M2 ownership
+//
+// >>> M2 virtual
+
+// Codes of the shadowing check of a first publish (R-REPO-048).
+const (
+	CodeShadowsRemotePackage   = "shadows_remote_package"
+	CodeShadowCheckUnavailable = "shadow_check_unavailable"
+)
+
+// <<< M2 virtual
 
 // CodeInfo documents one code for the problem catalog.
 type CodeInfo struct {
@@ -376,6 +386,10 @@ var registry = []CodeInfo{
 	{CodeLastOwner, Conflict, "Last owner", "Removing the only owner of a package would leave it without one; add the new owner first, or release the name with release=true (needs manage)."},
 	{CodePopulateNotPermitted, Forbidden, "Populate not permitted", "The caller may read the remote repository but not bring new content into its cache: the repository's cacheFillAction is not granted, the request came with the session cookie, or the endpoint does not fill caches. What the cache holds is still served."},
 	// <<< M2 ownership
+	// >>> M2 virtual
+	{CodeShadowsRemotePackage, Forbidden, "Shadows a remote package", "The first publish of this package name into a local repository would replace, for the clients of the virtual repositories that contain it, a package that a remote repository serves. A holder of manage on the package decides that; otherwise a holder of manage claims the name on the repository first (R-REPO-048). Nothing was stored."},
+	{CodeShadowCheckUnavailable, Unavailable, "Shadowing check unavailable", "Whether a remote repository serves this package name could not be determined, for example because its upstream is unreachable or its circuit is open, and the caller does not hold manage. Retry after the Retry-After period; nothing was stored."},
+	// <<< M2 virtual
 }
 
 // Codes returns a copy of the registry in declaration order.

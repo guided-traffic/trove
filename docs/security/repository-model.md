@@ -84,7 +84,38 @@ Every claim and pin-rule change is audited in its transaction (`repository.claim
 replicas through the change areas `claims` and `repo_config`, within `cluster.epoch_poll_interval` with or without Valkey. The members
 and the deploy target the grant index uses for the virtual gate (R-AUTHZ-009) are the same rows ([permissions.md](permissions.md)).
 
+## Virtual resolution: what the engine decides per caller
+
+The routing above is the same for everybody; the engine ([virtual.md](../developer/virtual.md)) adds what depends on the caller
+([R-AUTHZ-009](../spec/authorization.md), [R-REPO-019](../spec/repositories-and-proxy.md), [R-REPO-020](../spec/repositories-and-proxy.md)):
+
+- **A member the caller cannot read is never consulted.** `Resolver.Plan` asks `MemberUsableOn` for each member the route kept and
+  leaves the others out, so a package that exists only in such a member answers 404, byte for byte as a package that does not exist
+  (tested for artifacts and documents, `TestR_AUTHZ_009_PerMemberDecisions`).
+- **A merged document is shared only between callers owed the same bytes.** The key of the merged-metadata cache holds the readable
+  members, whether the caller may fill each remote member and the endpoint (Q-REPO-110), so a caller who may not fill a mirror, or who
+  is on an endpoint with `cache_fill: false`, never receives the entry of one who may. The entry validates itself against the
+  `rev_seq` of the local members on every hit and lives in the replica's memory only.
+- **A caller who may not fill a mirror is offered only what it can download.** The engine marks the part `Restricted`; honouring it is the
+  format's merge (H-283).
+- **The explanation names no member the caller cannot read.** Such members are a count, the claimants of `decidedBy` are filtered by `read`, and
+  the keys appear only for a holder of `repositories:read-config`. The claim or pin pattern itself is shown (H-7 names the same disclosure).
+- **The shadowing check fails closed.** An upstream that cannot be asked, a stored-state read that fails and a replica without the remote engine
+  refuse a `deploy` holder; a `manage` holder proceeds on an undetermined answer and the commit records it. The probe stores nothing and no
+  negative entry is read or written, so a forged entry in Valkey cannot admit a write. Each remote repository is probed once per publish
+  (Q-REPO-115).
+
 ## What this does not cover
+
+### H-283 · Honouring `Restricted` is up to the format's merge
+
+Component: `VirtualAdapter.Merge` of a format ([virtual.md](../developer/virtual.md) "The contract of a format's merge"). Subject: the versions
+a caller who may not fill a remote member is offered. Dormant: no format has a virtual adapter yet. The engine decides the populate right per
+member, keeps merges of different rights apart (Q-REPO-110) and marks the part `Restricted`, but only the format can drop the versions of its own
+document; a merge that ignores the flag lists versions of an upstream that the caller cannot download (a read-only caller of a frozen mirror
+then sees 404 for a version the document announced) and, for a caller on an endpoint with `cache_fill: false`, reveals what the mirror's upstream
+publishes. Nothing is stolen and nothing is stored, but R-EP-018 ("every version a filtered document lists is downloadable") is broken. What makes
+it real: the first format with a virtual class, until its tests pin the two callers of Q-REPO-113 in both orders (check 5 of the conformance kit does not cover `Restricted`).
 
 ### H-274 · A stored claim that does not parse protects nothing
 
