@@ -54,6 +54,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   layout: 'generic',
   protocolBasePath: '/files/{key}/',
   defaultUpstreamUrl: null,
+  defaultExtraHosts: [],
   defaultMetadataTtlSeconds: null,
   defaultNotFoundTtlSeconds: 1800,
   patternSubject: 'path',
