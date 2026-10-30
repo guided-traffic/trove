@@ -155,8 +155,8 @@ func TestE1_14Exposure(t *testing.T) {
 		dim := adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", map[string]any{
 			"name": "bad", "repository": "generic-local", "packages": map[string]any{"include": []string{"@acme/*"}},
 		})
-		if dim.Status != 422 || dim.Code() != "dimension_not_supported" {
-			t.Errorf("a packages rule on a generic repository = %s, want 422 dimension_not_supported", dim)
+		if dim.Status != 422 || dim.Code() != "validation_failed" || dim.FieldCode() != "dimension_not_supported" {
+			t.Errorf("a packages rule on a generic repository = %s, want 422 validation_failed with dimension_not_supported", dim)
 		}
 	})
 

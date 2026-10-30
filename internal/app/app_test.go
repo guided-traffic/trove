@@ -291,7 +291,7 @@ func TestListeners(t *testing.T) {
 			if !strings.Contains(err.Error(), "GET /v2/x") {
 				t.Fatalf("error does not name the route: %v", err)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(30 * time.Second): // a guard against a start-up that never fails, not a time budget: a loaded CI runner took more than 5 s
 			t.Fatal("start-up did not fail")
 		}
 	})

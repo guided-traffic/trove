@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -265,6 +266,22 @@ func (r reply) Code() string {
 	return p.Code
 }
 
+// FieldCode is the code of the first entry of errors[]: a 422 carries the convention
+// code validation_failed at the top and the resource's own code per field (R-API-009,
+// Q-API-136).
+func (r reply) FieldCode() string {
+	var p struct {
+		Errors []struct {
+			Code string `json:"code"`
+		} `json:"errors"`
+	}
+	_ = json.Unmarshal(r.Body, &p)
+	if len(p.Errors) == 0 {
+		return ""
+	}
+	return p.Errors[0].Code
+}
+
 func (r reply) JSON(t testing.TB, v any) {
 	t.Helper()
 	if err := json.Unmarshal(r.Body, v); err != nil {
@@ -416,8 +433,27 @@ func adminToken(t testing.TB) string {
 		if adminErr != nil {
 			return
 		}
-		// Tokens of earlier runs would reach the account's limit of active tokens: revoke them.
 		a := newAPI(t).withToken(adminTok)
+		// The command binds the role in PostgreSQL; every web replica learns of it through
+		// the change log within R-AUTHZ-028's bound. Wait until the binding is in force on
+		// all of them, as an administrator who read the command's result would.
+		deadline := time.Now().Add(15 * time.Second)
+		for inForce := 0; inForce < 6; {
+			var me struct {
+				Roles []string `json:"roles"`
+			}
+			if r := a.get("/api/v1/authz/me"); r.Status == 200 && json.Unmarshal(r.Body, &me) == nil && slices.Contains(me.Roles, "admin") {
+				inForce++
+				continue
+			}
+			inForce = 0
+			if time.Now().After(deadline) {
+				adminErr = fmt.Errorf("the admin binding of e2e-admin is not in force on every replica after 15 s")
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		// Tokens of earlier runs would reach the account's limit of active tokens: revoke them.
 		var cur struct {
 			ID string `json:"id"`
 		}

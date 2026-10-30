@@ -231,10 +231,12 @@ func TestE1_11Scatter(t *testing.T) {
 		replicas := map[string]bool{}
 		name := fmt.Sprintf("e2e-vis-%d", time.Now().Unix())
 		t.Cleanup(func() { adm.do(http.MethodDelete, "/api/v1/groups/"+name, nil) })
-		adm.do(http.MethodPost, "/api/v1/groups", map[string]string{"name": name, "description": "v0"}).want(t, "create group", 201)
+		// Each write sends the ETag of the previous one: identity resources carry a revision (Q-AUTH-50).
+		etag := adm.do(http.MethodPost, "/api/v1/groups", map[string]string{"name": name, "description": "v0"}).want(t, "create group", 201).Header.Get("ETag")
 		for i := 1; i <= 24; i++ {
 			desc := "v" + strconv.Itoa(i)
-			w := adm.do(http.MethodPatch, "/api/v1/groups/"+name, `{"description":"`+desc+`"}`, "Content-Type", "application/merge-patch+json").want(t, "patch "+desc, 200)
+			w := adm.do(http.MethodPatch, "/api/v1/groups/"+name, `{"description":"`+desc+`"}`, "Content-Type", "application/merge-patch+json", "If-Match", etag).want(t, "patch "+desc, 200)
+			etag = w.Header.Get("ETag")
 			for k := 0; k < 3; k++ { // three reads in a row reach the other replicas
 				r := adm.get("/api/v1/groups/"+name).want(t, "read after write", 200)
 				var g struct{ Description string }
