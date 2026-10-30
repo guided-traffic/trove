@@ -61,6 +61,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   priorityMembers: false,
   pinsAndClaims: false,
   caps: false,
+  settingsSchema: null,
 };
 
 /** A package format as the catalog could list it: name patterns, versions and tags. */

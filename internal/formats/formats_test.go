@@ -22,6 +22,8 @@ type fake struct {
 	virt   VirtualAdapter
 	expo   ExposureAdapter
 	view   ViewAdapter
+	// classify replaces the default Classify (everything is Content).
+	classify func(Path) PathInfo
 }
 
 func (f fake) Descriptor() Descriptor { return f.d }
@@ -29,7 +31,13 @@ func (f fake) Routes() []Route        { return f.routes }
 func (f fake) Match(m, p string) (*Route, Params, error) {
 	return MatchRoutes(f.routes, m, p)
 }
-func (fake) Classify(Path) PathInfo                  { return PathInfo{Kind: Content} }
+
+func (f fake) Classify(p Path) PathInfo {
+	if f.classify != nil {
+		return f.classify(p)
+	}
+	return PathInfo{Kind: Content}
+}
 func (fake) PackageDocumentPath(string) (Path, bool) { return Path{}, false }
 func (f fake) Remote() RemoteAdapter                 { return f.remote }
 func (f fake) Virtual() VirtualAdapter               { return f.virt }
@@ -80,6 +88,13 @@ func TestRegister(t *testing.T) {
 		"no subject":       {fake{d: Descriptor{Facts: catalog.Facts{ID: "nosub", Classes: []Class{Local}, Layout: "x"}, ContractVersion: 1}}, "pattern subject"},
 		"class twice":      {fake{d: Descriptor{Facts: catalog.Facts{ID: "twice", Classes: []Class{Local, Local}, Layout: "x", PatternSubject: SubjectPath}, ContractVersion: 1}}, "invalidly"},
 		"class out of set": {fake{d: Descriptor{Facts: catalog.Facts{ID: "oos", Classes: []Class{"mirror"}, Layout: "x", PatternSubject: SubjectPath}, ContractVersion: 1}}, "invalidly"},
+		// A format's settings are the document member named after it: the name must be free of
+		// the other members, and a schema needs the member to be stored in.
+		"named like a member": {fake{d: valid("storage")}, "named like a member of the repository document"},
+		"schema without a member": {fake{d: Descriptor{Facts: catalog.Facts{
+			ID: "setfmt", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectPath,
+			SettingsSchema: []byte(`{"type":"object","additionalProperties":false}`),
+		}, ContractVersion: 1}}, "no \"setfmt\" member"},
 	}
 	for name, c := range bad {
 		t.Run("R-ARCH-010 Register panics on "+name, func(t *testing.T) {
@@ -194,6 +209,18 @@ func TestR_ARCH_010_RegisterChecksTheRoutes(t *testing.T) {
 		f := withBase("probe-base", route("a.get", http.MethodGet, "/a", "a"))
 		f.d.ProtocolBasePath = "/files/{key}/"
 		mustPanic(t, f, "protocol base path")
+	})
+	t.Run("an upload route onto a computed path is refused, an admin route is accepted (R-ARCH-012)", func(t *testing.T) {
+		computed := func(Path) PathInfo { return PathInfo{Kind: PathComputed} }
+		put := route("tag.put", http.MethodPut, "/-/tag/{name}", "-/tag/x")
+		put.Kind = Upload
+		f := withBase("probe-comp", put)
+		f.classify = computed
+		mustPanic(t, f, "marks computed")
+		put.Kind = Admin
+		g := withBase("probe-adm", put)
+		g.classify = computed
+		Register(g)
 	})
 	t.Run("a route of a class the format lacks", func(t *testing.T) {
 		r := route("a.get", http.MethodGet, "/a", "a")

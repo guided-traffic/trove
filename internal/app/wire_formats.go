@@ -157,7 +157,7 @@ func (a *App) wireFormats(_ context.Context, in infra, vr virtualArea, ow owners
 // decision point.
 func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo repositoryArea, ex exposureArea, fa filesArea, eng proxyEngineArea, ve virtualEngineArea) (formatHostArea, error) {
 	if err := requireInputs(AreaFormatHost, given("item store", fa.items), given("decision point", fa.decider),
-		given("repository reader", repo.reader), given("exposure ceiling", ex.ceiling)); err != nil {
+		given("repository reader", repo.reader), given("exposure ceiling", ex.ceiling), given("virtual engine", ve.engine)); err != nil {
 		return formatHostArea{}, err
 	}
 	pkgs, err := packages.NewStore(in.db)
@@ -168,13 +168,10 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 	if err != nil {
 		return formatHostArea{}, err
 	}
-	// The virtual engine is the Host's Resolver (virtual resolution as a format meets it);
-	// a replica without the engine keeps the stub that answers "not supported".
-	var resolver formats.Resolver
-	if ve.engine != nil {
-		if resolver, err = formathost.NewResolver(ve.engine, nil); err != nil {
-			return formatHostArea{}, err
-		}
+	// The virtual engine is the Host's Resolver (virtual resolution as a format meets it).
+	resolver, err := formathost.NewResolver(ve.engine, nil)
+	if err != nil {
+		return formatHostArea{}, err
 	}
 	host, err := formathost.New(formathost.Options{
 		Runner: in.db, Decider: fa.decider, Items: fa.items, Packages: pkgs, Deps: fm.deps, Renditions: rend, Engine: eng.remote(),

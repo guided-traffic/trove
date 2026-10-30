@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -51,6 +53,13 @@ type Settings struct {
 	// Storage is the member owned by storage.md (upload size, quota, presigned
 	// downloads, checksum policy). The model keeps it as an opaque JSON object.
 	Storage json.RawMessage `json:"storage,omitempty"`
+	// NPM is the settings member of the npm format, named after the format
+	// (R-REPO-004). It is validated against the format's settings schema
+	// (catalog.Entry.ValidateSettings) and stored in its canonical form; the format
+	// reads it from the stored document. A format with settings adds its member here
+	// and to [formatMembers]; formats.Validate refuses a format that declares a schema
+	// and has no member.
+	NPM json.RawMessage `json:"npm,omitempty"`
 
 	// pending are the secret fields of the validated document that still have to
 	// be written to repository_secrets. They carry the plaintext of a request, so
@@ -148,6 +157,68 @@ func (s *Settings) normalize() {
 	}
 	// <<< M2 virtual
 	s.Storage = emptyToNil(s.Storage)
+	s.NPM = canonicalObject(emptyToNil(s.NPM))
+}
+
+// formatMembers are the members of a document that hold the settings of one format,
+// named after the format.
+func formatMembers() []formatMember {
+	return []formatMember{
+		{"npm", func(s *Settings) json.RawMessage { return s.NPM }},
+	}
+}
+
+type formatMember struct {
+	format string
+	read   func(*Settings) json.RawMessage
+}
+
+// HasFormatMember reports whether the repository document has a settings member for
+// the format.
+func HasFormatMember(format string) bool {
+	return slices.ContainsFunc(formatMembers(), func(m formatMember) bool { return m.format == format })
+}
+
+// IsReservedMember reports whether name is a member of the repository document that is
+// no format's settings member (R-REPO-004). A format is named like its settings member,
+// so a format may not be named like any other member: its ID would be ambiguous in a
+// document.
+func IsReservedMember(name string) bool {
+	if HasFormatMember(name) {
+		return false
+	}
+	for _, t := range []reflect.Type{reflect.TypeFor[Document](), reflect.TypeFor[Settings]()} {
+		for f := range t.Fields() {
+			if tag, _, _ := strings.Cut(f.Tag.Get("json"), ","); tag == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// canonicalObject writes a JSON object with its members in key order and no spacing, so
+// that the document that is stored and the one that is read back (PostgreSQL keeps jsonb,
+// which has its own order) are the same bytes. A value that is no object is returned as it
+// is: validation refuses it.
+func canonicalObject(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil || m == nil {
+		return raw
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return raw
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // emptyToNil treats a JSON null like an absent member.

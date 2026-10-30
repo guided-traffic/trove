@@ -31,7 +31,7 @@ the client setup page of the admin UI ([web-ui.md](web-ui.md#package-screens-and
 | [internal/formats/npm/view.go](../../internal/formats/npm/view.go), [internal/formatdata/npm/view.go](../../internal/formatdata/npm/view.go) | npm's adapter and its reads ([npm.md](npm.md#the-package-view)) |
 | [internal/meta/postgres/queries/package_view.sql](../../internal/meta/postgres/queries/package_view.sql), [npm_view.sql](../../internal/meta/postgres/queries/npm_view.sql) | The statements |
 | [internal/config/ui.go](../../internal/config/ui.go) | `ui.readme.*` and `ui.client_setup.*` ([configuration.md](configuration.md)) |
-| [internal/app/wire_packages.go](../../internal/app/wire_packages.go) | Wiring: the view over the registered adapters, the engine as classifier, the renderer with the operator's origins |
+| [internal/app/wire_packages.go](../../internal/app/wire_packages.go) | The step `packages-api` (`wirePackagesAPI`, a role with a listener): the view over the registered adapters, the engine as classifier, the renderer with the operator's origins. A part that cannot be built (the renderer under `ui.readme.*`) stops the start-up; the operations are never served as `503` by a replica that is ready (Q-ARCH-230). `requireServing` names the package services |
 
 ## The request path of a list
 

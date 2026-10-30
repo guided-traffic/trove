@@ -1,8 +1,10 @@
 package blob
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -51,11 +53,34 @@ var errRollback = errors.New("rollback")
 //
 // link may be nil to commit the blob alone.
 func (s *Store) Commit(ctx context.Context, sp *Spooled, link LinkFunc) (CommitResult, error) {
-	var (
-		res     CommitResult
-		putDone bool
-		putAt   time.Time
-	)
+	res, err := s.CommitAll(ctx, []*Spooled{sp}, link)
+	return res[0], err
+}
+
+// member is one distinct blob of a [Store.CommitAll] and what the protocol has
+// done for it so far.
+type member struct {
+	sp      *Spooled
+	res     CommitResult
+	putDone bool
+	putAt   time.Time
+	act     action
+	ins     bool
+}
+
+// CommitAll is the commit protocol for several blobs in one link transaction
+// (R-STOR-005, R-ARCH-009): every blob has a live row whose object is in the
+// bucket, and link runs once, in the one transaction that holds the FOR SHARE
+// lock of every row, so that the references it writes either all exist or none
+// does. Blobs with the same digest are one blob. The rows are locked and
+// inserted in digest order, so that two commits over overlapping sets never wait
+// on each other's uncommitted insert in opposite orders. The results are in the
+// order of sps.
+//
+// A failure after any object write queues the digests that may have been left
+// without a reference for collection, as a failed Commit does.
+func (s *Store) CommitAll(ctx context.Context, sps []*Spooled, link LinkFunc) ([]CommitResult, error) {
+	ms, index := distinctMembers(sps)
 	attempts := s.cfg.Upload.CommitAttempts
 	if attempts < 1 {
 		attempts = 1
@@ -68,105 +93,155 @@ func (s *Store) Commit(ctx context.Context, sp *Spooled, link LinkFunc) (CommitR
 	// cannot follow such a drop (R-STOR-005, R-STOR-024).
 	window := min(s.cfg.Upload.CommitDeadline, s.cfg.GC.DeleteSettle/2)
 
-	fail := func(err error) (CommitResult, error) {
-		if putDone || res.Wrote {
-			s.enqueueAfterFailure(ctx, sp.SHA256)
+	results := func() []CommitResult {
+		out := make([]CommitResult, len(sps))
+		for i, at := range index {
+			out[i] = ms[at].res
 		}
-		return res, err
+		return out
+	}
+	fail := func(err error) ([]CommitResult, error) {
+		for _, m := range ms {
+			if m.putDone || m.res.Wrote {
+				s.enqueueAfterFailure(ctx, m.sp.SHA256)
+			}
+		}
+		return results(), err
 	}
 
 	for round := 1; round <= attempts; round++ {
-		res.Rounds = round
+		for _, m := range ms {
+			m.res.Rounds = round
+		}
 		if err := ctx.Err(); err != nil {
 			return fail(err)
 		}
-		canInsert := putDone && s.now().Sub(putAt) <= window
-		act, inserted, err := s.commitRound(ctx, sp, link, canInsert)
+		done, err := s.commitRound(ctx, ms, link, window)
 		if err != nil {
 			return fail(err)
 		}
-		switch act {
-		case actDone:
-			res.Inserted = inserted
-			res.Deduplicated = !inserted && !res.Wrote
-			return res, nil
-		case actPut:
-			if err := s.putObject(ctx, sp); err != nil {
+		if done {
+			for _, m := range ms {
+				m.res.Inserted = m.ins
+				m.res.Deduplicated = !m.ins && !m.res.Wrote
+			}
+			return results(), nil
+		}
+		for _, m := range ms {
+			if err := s.settle(ctx, m); err != nil {
 				return fail(err)
 			}
-			putDone, putAt, res.Wrote = true, s.now(), true
-		case actRepair:
-			if err := s.putObject(ctx, sp); err != nil {
-				return fail(err)
-			}
-			res.Wrote = true
-			if err := s.db.InTx(ctx, func(tx meta.Tx) error {
-				return s.rows.MarkOK(ctx, tx, sp.SHA256)
-			}); err != nil {
-				return fail(err)
-			}
-		case actWaitDeleting:
-			// A GC delete may still land on the key: the object we wrote (if any)
-			// is not trustworthy, so write it again after the row is gone.
-			putDone = false
-			if err := s.waitGone(ctx, sp.SHA256); err != nil {
-				return fail(err)
-			}
-		case actRetry:
 		}
 	}
 	return fail(errs.E(errs.Unavailable, errs.CodeUnavailable, "the upload could not be committed; retry",
 		errs.WithRetryAfter(retryAfter), errs.WithCause(ErrCommitAttempts)))
 }
 
-// commitRound is one pass of the protocol's loop body in one transaction.
-func (s *Store) commitRound(ctx context.Context, sp *Spooled, link LinkFunc, canInsert bool) (act action, inserted bool, err error) {
-	err = s.db.InTx(ctx, func(tx meta.Tx) error {
-		act, inserted = actDone, false // the function may run again
-		state, status, found, err := s.rows.LockShare(ctx, tx, sp.SHA256)
-		if err != nil {
+// distinctMembers is the blobs of sps without repeats, sorted by digest, and for
+// each element of sps the position of its blob among them.
+func distinctMembers(sps []*Spooled) (ms []*member, index []int) {
+	seen := make(map[Digest]bool, len(sps))
+	for _, sp := range sps {
+		if !seen[sp.SHA256] {
+			seen[sp.SHA256] = true
+			ms = append(ms, &member{sp: sp})
+		}
+	}
+	slices.SortFunc(ms, func(a, b *member) int { return bytes.Compare(a.sp.SHA256[:], b.sp.SHA256[:]) })
+	at := make(map[Digest]int, len(ms))
+	for i, m := range ms {
+		at[m.sp.SHA256] = i
+	}
+	index = make([]int, len(sps))
+	for i, sp := range sps {
+		index[i] = at[sp.SHA256]
+	}
+	return ms, index
+}
+
+// settle does what the last round found a blob needs before the next round.
+func (s *Store) settle(ctx context.Context, m *member) error {
+	switch m.act {
+	case actPut:
+		if err := s.putObject(ctx, m.sp); err != nil {
 			return err
 		}
-		switch {
-		case !found:
-			if !canInsert {
-				act = actPut
-				return errRollback
-			}
-			won, err := s.rows.InsertLive(ctx, tx, sp)
+		m.putDone, m.putAt, m.res.Wrote = true, s.now(), true
+	case actRepair:
+		if err := s.putObject(ctx, m.sp); err != nil {
+			return err
+		}
+		m.res.Wrote = true
+		return s.db.InTx(ctx, func(tx meta.Tx) error {
+			return s.rows.MarkOK(ctx, tx, m.sp.SHA256)
+		})
+	case actWaitDeleting:
+		// A GC delete may still land on the key: the object we wrote (if any)
+		// is not trustworthy, so write it again after the row is gone.
+		m.putDone = false
+		return s.waitGone(ctx, m.sp.SHA256)
+	}
+	return nil
+}
+
+// commitRound is one pass of the protocol's loop body in one transaction. It
+// reports done when every blob had a live row and link ran; otherwise each
+// member's act says what it needs.
+func (s *Store) commitRound(ctx context.Context, ms []*member, link LinkFunc, window time.Duration) (done bool, err error) {
+	err = s.db.InTx(ctx, func(tx meta.Tx) error {
+		pending := false
+		for _, m := range ms {
+			m.act, m.ins = actDone, false // the function may run again
+		}
+		for _, m := range ms {
+			canInsert := m.putDone && s.now().Sub(m.putAt) <= window
+			state, status, found, err := s.rows.LockShare(ctx, tx, m.sp.SHA256)
 			if err != nil {
 				return err
 			}
-			if !won { // a concurrent uploader won; read again
-				act = actRetry
-				return errRollback
+			switch {
+			case !found:
+				if !canInsert {
+					m.act, pending = actPut, true
+					continue
+				}
+				won, err := s.rows.InsertLive(ctx, tx, m.sp)
+				if err != nil {
+					return err
+				}
+				if !won { // a concurrent uploader won; read again
+					m.act, pending = actRetry, true
+					continue
+				}
+				m.ins = true
+			case state == "deleting":
+				m.act, pending = actWaitDeleting, true
+			case status != "ok":
+				m.act, pending = actRepair, true
 			}
-			inserted = true
-		case state == "deleting":
-			act = actWaitDeleting
-			return errRollback
-		case status != "ok":
-			act = actRepair
+		}
+		if pending {
 			return errRollback
 		}
 		if link != nil {
-			if err := link(ctx, tx); err != nil {
-				return err
-			}
+			return link(ctx, tx)
 		}
 		return nil
 	})
 	switch {
 	case errors.Is(err, errRollback):
-		return act, false, nil
+		return false, nil
 	case err != nil && sqlState(err) == sqlStateAS001:
 		// The guard saw a row that is not live (a collector claimed it between
 		// our lock and the reference): start the protocol again.
-		return actRetry, false, nil
+		for _, m := range ms {
+			m.act = actRetry
+		}
+		return false, nil
 	case err != nil:
-		return actDone, false, err
+		return false, err
 	}
-	return act, inserted, nil
+	return true, nil
 }
 
 // waitGone polls until the blob row has disappeared, for at most

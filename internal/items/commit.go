@@ -26,6 +26,15 @@ const retryAfter = 2 * time.Second
 // sets MayOverwrite.
 var ErrOverwriteDenied = errors.New("items: overwrite not granted")
 
+// OverwriteDeniedError is the [ErrOverwriteDenied] of one path: the file of a commit that
+// holds other content, which is a companion's path when a commit carries companions.
+type OverwriteDeniedError struct{ Path string }
+
+func (e *OverwriteDeniedError) Error() string { return ErrOverwriteDenied.Error() + ": " + e.Path }
+
+// Unwrap makes errors.Is(err, ErrOverwriteDenied) true.
+func (*OverwriteDeniedError) Unwrap() error { return ErrOverwriteDenied }
+
 // IngestOptions describe one body for [Store.Spool].
 type IngestOptions struct {
 	// ContentLength is the declared length, -1 when unknown (chunked).
@@ -87,6 +96,39 @@ type CommitSpec struct {
 	// has arrived: the server then lets the request finish past the shutdown
 	// deadline (R-ARCH-024 step 5).
 	BeginCommit func()
+	// Companions are the other files of the same write: they commit in the one
+	// transaction of the lead, or none of them does (R-ARCH-009). See [Companion].
+	Companions []Companion
+
+	// generated and lead are set for the file of a companion: the item row is
+	// marked generated, and the event names the lead item it belongs to.
+	generated bool
+	lead      Ref
+}
+
+// Companion is a file that is committed with the lead of a [CommitSpec], in the
+// same transaction: the derived file a format stores beside the artifact (a
+// package's generated manifest) or the attachment of a publish (a provenance
+// bundle). The companion takes the lead's origin, actor, source, endpoint,
+// CreateOnly and MayOverwrite: the committer decided the write as a whole.
+//
+// The lead's link runs first, then each companion's in the order given, each
+// with its own storage hook ([Hooks.OnCommit], with CommitEvent.Lead naming the
+// lead) and its own audit row. A companion exists to go with a lead that changed:
+// when the lead is identical to the content at its path nothing is written, the
+// companions included, and the result carries no companion item.
+type Companion struct {
+	// Path is the canonical path of a file, other than the lead's and the other
+	// companions'.
+	Path      repository.Cleaned
+	Spooled   *Spooled
+	MediaType string
+	Declared  Expected
+	// Generated marks the item as derived by the committer from the lead rather than
+	// received from the client; a raw write to it can be refused for that reason.
+	Generated bool
+	// Payload is handed to the storage hook in the CommitEvent of this companion.
+	Payload any
 }
 
 // CommitResult is the outcome of a commit.
@@ -97,6 +139,9 @@ type CommitResult struct {
 	// Overwritten says that different content replaced an existing file.
 	Overwritten bool
 	Item        Item
+	// Companions are the outcomes of [CommitSpec.Companions], in order; empty when
+	// the lead was identical and nothing was written.
+	Companions []CommitResult
 }
 
 // Commit stores a spooled body as the file at a path (R-STOR-005, R-ARCH-014
@@ -106,6 +151,12 @@ type CommitResult struct {
 // runs [CommitSpec.Extra], the storage hook ([Hooks.OnCommit]) and writes the
 // audit row. A failure of any of them leaves no item. Identical content at the
 // path changes no row: only Extra runs.
+//
+// The companions of the spec go through the same steps in the same transaction,
+// after the lead: the blobs of all files are committed with one link
+// transaction (blob.Store.CommitAll), so a failure of any file leaves none of
+// them (R-ARCH-009: everything one client request writes goes through one
+// transaction).
 //
 // Commit makes no decision. The committer decided before and settles the
 // overwrite question in CommitSpec.MayOverwrite.
@@ -118,21 +169,79 @@ func (s *Store) Commit(ctx context.Context, spec CommitSpec) (CommitResult, erro
 	case spec.Origin != OriginUpload && spec.Origin != OriginFill:
 		return CommitResult{}, errs.E(errs.Internal, errs.CodeInternal, "items: a commit has an origin")
 	}
+	if err := checkCompanions(spec); err != nil {
+		return CommitResult{}, err
+	}
 	repo := RepoOf(spec.Repo)
 	spec.UpstreamURL = withoutUserInfo(spec.UpstreamURL)
 	if spec.BeginCommit != nil {
 		spec.BeginCommit()
 	}
-	var out linkOutcome
-	_, err := s.blobs.Commit(ctx, spec.Spooled, func(ctx context.Context, tx meta.Tx) error {
-		out = linkOutcome{}
-		return s.linkFile(ctx, tx, repo, spec, &out)
+	files := spec.files()
+	sps := make([]*Spooled, len(files))
+	for i, f := range files {
+		sps[i] = f.Spooled
+	}
+	outs := make([]linkOutcome, len(files))
+	_, err := s.blobs.CommitAll(ctx, sps, func(ctx context.Context, tx meta.Tx) error {
+		clear(outs)
+		if err := s.linkFile(ctx, tx, repo, files[0], &outs[0]); err != nil {
+			return err
+		}
+		if !outs[0].changed() { // an identical lead: the companions have nothing to go with
+			return nil
+		}
+		for i, f := range files[1:] {
+			f.lead = outs[0].ref
+			if err := s.linkFile(ctx, tx, repo, f, &outs[i+1]); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return CommitResult{}, err
 	}
 	s.touch(repo.ID)
-	return CommitResult{Created: out.created || out.overwritten, Overwritten: out.overwritten, Item: out.item}, nil
+	res := outs[0].result()
+	if outs[0].changed() {
+		for _, o := range outs[1:] {
+			res.Companions = append(res.Companions, o.result())
+		}
+	}
+	return res, nil
+}
+
+// checkCompanions refuses a companion the commit cannot take.
+func checkCompanions(spec CommitSpec) error {
+	seen := map[string]bool{spec.Path.Path: true}
+	for _, c := range spec.Companions {
+		switch {
+		case c.Path.Path == "" || c.Path.Folder:
+			return errs.E(errs.Invalid, errs.CodeInvalidPath, "A file is committed at a path that names a file.")
+		case c.Spooled == nil:
+			return errs.E(errs.Internal, errs.CodeInternal, "items: no spooled body to commit")
+		case seen[c.Path.Path]:
+			return errs.E(errs.Internal, errs.CodeInternal, "items: two files of one commit take the path "+c.Path.Path)
+		}
+		seen[c.Path.Path] = true
+	}
+	return nil
+}
+
+// files is the lead and then each companion as the CommitSpec of its own file.
+func (spec CommitSpec) files() []CommitSpec {
+	out := make([]CommitSpec, 0, 1+len(spec.Companions))
+	lead := spec
+	lead.Companions = nil
+	out = append(out, lead)
+	for _, c := range spec.Companions {
+		f := lead
+		f.Path, f.Spooled, f.MediaType, f.Declared, f.Payload = c.Path, c.Spooled, c.MediaType, c.Declared, c.Payload
+		f.Extra, f.BeginCommit, f.generated = nil, nil, c.Generated
+		out = append(out, f)
+	}
+	return out
 }
 
 // withoutUserInfo removes the credentials a URL may carry (user:password@): the
@@ -157,6 +266,14 @@ func withoutUserInfo(raw string) string {
 type linkOutcome struct {
 	created, overwritten bool
 	item                 Item
+	ref                  Ref
+}
+
+// changed reports that the link step wrote a row: a new file or a replacement.
+func (o linkOutcome) changed() bool { return o.created || o.overwritten }
+
+func (o linkOutcome) result() CommitResult {
+	return CommitResult{Created: o.changed(), Overwritten: o.overwritten, Item: o.item}
 }
 
 // maxLinkRounds bounds the retries of the link step when concurrent writers
@@ -214,7 +331,7 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 			return readCommitted(ctx, qs, repo, path, out)
 		default:
 			if !spec.MayOverwrite {
-				return ErrOverwriteDenied
+				return &OverwriteDeniedError{Path: path}
 			}
 			if err := replaceFile(ctx, qs, rows[0].ID, p); err != nil {
 				return err
@@ -225,8 +342,9 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 		if err := s.extra(ctx, tx, spec, ref); err != nil {
 			return err
 		}
+		out.ref = ref
 		if err := s.hooks.OnCommit(ctx, tx, CommitEvent{
-			Origin: spec.Origin, Repo: repo, Item: ref, Digests: sp.Digests, MediaType: spec.MediaType,
+			Origin: spec.Origin, Repo: repo, Item: ref, Lead: spec.lead, Digests: sp.Digests, MediaType: spec.MediaType,
 			UpstreamURL: spec.UpstreamURL, Payload: spec.Payload, Actor: p.actor, Replaced: out.overwritten,
 		}); err != nil {
 			return err
@@ -271,7 +389,7 @@ func insertFile(ctx context.Context, qs *q.Queries, p fileParams) (id int64, ok 
 	ids, err := qs.InsertFileItem(ctx, q.InsertFileItemParams{
 		RepoID: p.rid, Path: p.path, Parent: p.parent, BlobSha256: p.spec.Spooled.SHA256[:], Size: p.spec.Spooled.Size,
 		MediaType: p.spec.MediaType, DeclaredSha256: d.SHA256, DeclaredSha512: d.SHA512, DeclaredSha1: d.SHA1, DeclaredMd5: d.MD5,
-		UpstreamUrl: p.spec.UpstreamURL, Actor: p.actor,
+		UpstreamUrl: p.spec.UpstreamURL, Generated: p.spec.generated, Actor: p.actor,
 	})
 	if err != nil || len(ids) != 1 {
 		return 0, false, err
@@ -284,7 +402,7 @@ func replaceFile(ctx context.Context, qs *q.Queries, id int64, p fileParams) err
 	_, err := qs.ReplaceFileContent(ctx, q.ReplaceFileContentParams{
 		ID: id, BlobSha256: p.spec.Spooled.SHA256[:], Size: p.spec.Spooled.Size, MediaType: p.spec.MediaType,
 		DeclaredSha256: d.SHA256, DeclaredSha512: d.SHA512, DeclaredSha1: d.SHA1, DeclaredMd5: d.MD5,
-		UpstreamUrl: p.spec.UpstreamURL, Actor: p.actor,
+		UpstreamUrl: p.spec.UpstreamURL, Generated: p.spec.generated, Actor: p.actor,
 	})
 	return err
 }

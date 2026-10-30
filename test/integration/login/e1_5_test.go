@@ -72,8 +72,8 @@ func (noBlobs) Ingest(context.Context, io.Reader, blob.IngestOptions) (*blob.Spo
 	return nil, errNoBlobs
 }
 
-func (noBlobs) Commit(context.Context, *blob.Spooled, blob.LinkFunc) (blob.CommitResult, error) {
-	return blob.CommitResult{}, errNoBlobs
+func (noBlobs) CommitAll(context.Context, []*blob.Spooled, blob.LinkFunc) ([]blob.CommitResult, error) {
+	return nil, errNoBlobs
 }
 
 func (noBlobs) Open(context.Context, blob.Digest, int64, blob.OpenOptions) (io.ReadCloser, error) {

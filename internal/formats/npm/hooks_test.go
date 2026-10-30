@@ -137,7 +137,7 @@ func newPublish(t *testing.T, pkg, version, tag string) *publishCommit {
 		name: n, version: version, tag: tag, principal: "11111111-1111-1111-1111-111111111111",
 		stored: manifest.Manifest{"name": pkg, "version": version},
 		res:    &tarball.Result{Manifest: manifest.Manifest{"name": pkg}, FileCount: 3, UnpackedSize: 1200, Readme: "# hi", ReadmeFilename: "README.md"},
-		audit:  rows.Audit{RepoKey: "npm-local"},
+		audit:  rows.Audit{RepoKey: "npm-local"}, latestGuard: true,
 	}
 }
 
@@ -199,6 +199,37 @@ func TestR_NPM_007_OnCommitOfALaterVersion(t *testing.T) {
 	if pc.latest != "2.0.0" || !pc.kept {
 		t.Fatalf("result %q %v", pc.latest, pc.kept)
 	}
+}
+
+func TestR_NPM_016_LatestGuardSetting(t *testing.T) {
+	f := New()
+	publish := func(guard bool) *publishCommit {
+		w := &fakeWriter{live: []formats.VersionRow{{ID: 1, Version: "1.0.0"}}}
+		st := &fakeStore{tags: map[string]string{"latest": "2.0.0"}}
+		pc := newPublish(t, "left-pad", "1.5.0", "latest")
+		pc.latestGuard = guard
+		if err := f.OnCommit(context.Background(), nil, publishEvent(t, w, st, pc)); err != nil {
+			t.Fatal(err)
+		}
+		return pc
+	}
+	t.Run("R-NPM-016 npm.latestGuard on keeps latest where it is", func(t *testing.T) {
+		if pc := publish(true); pc.latest != "2.0.0" || !pc.kept {
+			t.Fatalf("latest %q kept %v", pc.latest, pc.kept)
+		}
+	})
+	t.Run("R-NPM-016 npm.latestGuard off lets the publish move latest", func(t *testing.T) {
+		if pc := publish(false); pc.latest != "1.5.0" || pc.kept {
+			t.Fatalf("latest %q kept %v", pc.latest, pc.kept)
+		}
+	})
+	t.Run("R-NPM-016 the settings read from the stored document default the guard on", func(t *testing.T) {
+		for config, want := range map[string]bool{``: true, `{}`: true, `{"npm":{}}`: true, `{"npm":{"latestGuard":false}}`: false, `{"npm":{"latestGuard":true}}`: true} {
+			if got := settingsOf([]byte(config)).LatestGuard; got != want {
+				t.Errorf("settingsOf(%q).LatestGuard = %v, want %v", config, got, want)
+			}
+		}
+	})
 }
 
 func TestR_NPM_007_OnCommitRefusals(t *testing.T) {

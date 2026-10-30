@@ -16,6 +16,13 @@ R-STOR-018](../spec/storage.md), [R-ARCH-009, R-ARCH-014, R-ARCH-019](../spec/ar
 - **One commit, one order.** `Store.Commit` runs, in one PostgreSQL transaction that also holds the blob row's lock: the ancestor
   folders and the item row, then `CommitSpec.Extra`, then `Hooks.OnCommit`, then the audit row. Any step that fails rolls the
   others back, so no item is left without the committer's rows and no row without its item.
+- **One request, one transaction, several files.** `CommitSpec.Companions` are the other files of the same write (a package's generated manifest, a provenance bundle):
+  the blobs of all files commit with one link transaction (`blob.Store.CommitAll`), the lead's link, `Extra` and hook run first, then each companion's
+  link, hook (`CommitEvent.Lead` names the lead) and audit row, in the order given. A companion takes the lead's origin, actor, `CreateOnly` and `MayOverwrite`,
+  and is marked `generated` when it says so (`Companion.Generated`, the `items.generated` column). A lead identical to the content at its path writes nothing, the
+  companions included (`CommitResult.Companions` is then empty). `ErrOverwriteDenied` comes as an `OverwriteDeniedError` that names the path that holds the other content, which is
+  a companion's when the lead's is free. A failure of any file leaves none of them ([Q-ARCH-228](../spec/architecture.md#decisions);
+  `TestR_ARCH_009_ItemStoreCommitsCompanionsInOneTransaction`).
 - **A fill is not an upload.** `OriginFill` stores `upstream_url`, tells the hook it is a fill, and writes no `artifact.deployed`
   (Q-STOR-146). `OriginUpload` writes it.
 - **The overwrite question is settled outside.** `CommitSpec.MayOverwrite` is decided by the committer before the call, never by
@@ -67,8 +74,9 @@ type CommitSpec struct {
 	Payload any                    // handed to Hooks.OnCommit unchanged
 	Extra func(ctx context.Context, tx meta.Tx, it Ref) error // in the transaction, after the row, before the hook
 	BeginCommit func()             // the server may now finish the request past the shutdown deadline
+	Companions []Companion         // files of the same write, one transaction with the lead (Path, Spooled, MediaType, Declared, Generated, Payload)
 }
-type CommitResult struct { Created, Overwritten bool; Item Item } // Item is read in the commit transaction, so a delete or overwrite right after it cannot empty it
+type CommitResult struct { Created, Overwritten bool; Item Item; Companions []CommitResult } // Item is read in the commit transaction, so a delete or overwrite right after it cannot empty it
 
 // The rest of the store.
 func (s *Store) CreateFolder(ctx context.Context, spec FolderSpec) (FolderResult, error)

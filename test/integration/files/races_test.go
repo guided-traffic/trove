@@ -195,11 +195,11 @@ type commitProbe struct {
 	inside   atomic.Int64
 }
 
-func (p *commitProbe) Commit(ctx context.Context, sp *blob.Spooled, link blob.LinkFunc) (blob.CommitResult, error) {
+func (p *commitProbe) CommitAll(ctx context.Context, sps []*blob.Spooled, link blob.LinkFunc) ([]blob.CommitResult, error) {
 	if p.before != nil {
 		p.before()
 	}
-	return p.Store.Commit(ctx, sp, func(ctx context.Context, tx meta.Tx) error {
+	return p.Store.CommitAll(ctx, sps, func(ctx context.Context, tx meta.Tx) error {
 		p.inCommit.Store(true)
 		defer p.inCommit.Store(false)
 		return link(ctx, tx)

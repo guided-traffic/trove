@@ -376,6 +376,9 @@ func (a *App) requireServing() error {
 		given("audit store", a.auditStoreForAPI()),
 		given("invalidation set", part[invalidationArea](w).set),
 		given("format dispatcher", part[formatHostArea](w).disp),
+		given("remote engine", part[proxyEngineArea](w).engine),
+		given("virtual engine", part[virtualEngineArea](w).engine),
+		given("package services", part[packagesAPIArea](w).services.View),
 		given("ownership service", part[ownershipArea](w).service),
 	)
 }
@@ -426,7 +429,7 @@ func (a *App) startClient() error {
 			Auth: a.authServices(), AuditStore: a.auditStoreForAPI(), Authz: a.authzServices(),
 			// The endpoint and exposure-rule operations (R-EP-016, wire_exposure.go).
 			Endpoints:    a.endpointServices(),
-			Repositories: a.repositoryAPI(), Packages: a.packagesAPI(),
+			Repositories: a.repositoryAPI(), Packages: part[packagesAPIArea](a.parts).services,
 			Files: part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
 			Cache:      a.cacheAPI(),
 			Resolution: a.resolutionExplainer(),

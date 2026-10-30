@@ -43,9 +43,7 @@ type Format struct {
 	routes   []formats.Route
 	replicas replicas
 	ports    replicas
-	// >>> WP2.9 exposure
 	exposure *exposure
-	// <<< WP2.9 exposure
 }
 
 var _ formats.Format = (*Format)(nil)
@@ -54,9 +52,7 @@ var _ formats.Format = (*Format)(nil)
 func New() *Format {
 	f := &Format{}
 	f.routes = f.buildRoutes()
-	// >>> WP2.9 exposure
 	f.exposure = newExposure()
-	// <<< WP2.9 exposure
 	return f
 }
 
@@ -83,6 +79,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			// A local repository of npm holds package ownership enforced until its
 			// document says otherwise (R-AUTHZ-018, Q-AUTHZ-2).
 			OwnershipDefault: catalog.OwnershipEnforce,
+			SettingsSchema:   settingsSchema,
 		},
 		ContractVersion:  formats.ContractVersion,
 		Names:            names{},

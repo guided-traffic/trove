@@ -46,7 +46,7 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 | [route.go](../../internal/formats/route.go) | `Route`, `RouteKind`, `Params`, `Template`, `MatchRoutes`, `Request`, `EndpointFacts`, `Target`, `PathKind`, `PathInfo` |
 | [host.go](../../internal/formats/host.go) | `Host` and its parts: `Ingestor`, `ItemStore`, `PackageStore`, `LinkBuilder`, `RenditionCache` |
 | [hooks.go](../../internal/formats/hooks.go) | The storage-hook types: `RepoRef`, `ItemRef`, `CommitEvent`, `ItemsEvent`, `Inspection`, `PackageWriter`, `OwnershipWrite` |
-| [remote.go](../../internal/formats/remote.go) | `RemoteAdapter`, `RemoteFetcher` and their types (the engine arrives with the first remote format) |
+| [remote.go](../../internal/formats/remote.go) | `RemoteAdapter`, `RemoteFetcher` and their types (the engine is internal/proxy, bridged by [internal/formathost/remote.go](../../internal/formathost/remote.go)) |
 | [virtual.go](../../internal/formats/virtual.go) | `VirtualAdapter`, `MemberDocument`, `Resolver` and their types |
 | [exposure.go](../../internal/formats/exposure.go) | `ExposureAdapter`, `IndexBuilder` |
 | [setup.go](../../internal/formats/setup.go) | `Client`, `SetupTemplate`, `SetupData` |
@@ -56,14 +56,14 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 
 | Package | Responsibility |
 |---|---|
-| [internal/formats/catalog](../../internal/formats/catalog/) | The facts of every format, the name rule, the exposure facts (a leaf layer); `Register` fills it |
+| [internal/formats/catalog](../../internal/formats/catalog/) | The facts of every format, the name rule, the exposure facts and the compiled settings schema with `Entry.ValidateSettings` (a leaf layer); `Register` fills it |
 | [internal/formats/untrusted](../../internal/formats/untrusted/) | `Limits`, `DefaultLimits`, `Tighten`, and the bounded readers of R-ARCH-028 (see [Untrusted content](#untrusted-content)) |
 | [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the ten checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
 | [internal/formats/generic](../../internal/formats/generic/) | The generic format: no routes, `Classify`, a paths-only exposure adapter |
 | [internal/formats/all](../../internal/formats/all/all.go) | Registers every format at compile time (R-ARCH-010) |
 | [internal/httpserver/content](../../internal/httpserver/content/content.go) | The content-header wrapper (`File`, `Index`, `Document`); `httpserver.ContentWriterFor` is the request-aware call |
 | [internal/packages](../../internal/packages/) | The generic package rows: `Store` (reads), `Writer` (writes, raises `rev_seq` once per package per transaction), `RestoredAt`; statements in [packages.sql](../../internal/meta/postgres/queries/packages.sql) |
-| [internal/formathost](../../internal/formathost/) | The `Host` ([host.go](../../internal/formathost/host.go)), the item-store adapters ([ingest.go](../../internal/formathost/ingest.go)), the `PackageWriter` adapter and the ownership seams ([writer.go](../../internal/formathost/writer.go)), the storage hooks and the files seam ([hooks.go](../../internal/formathost/hooks.go)), the data-port bindings ([bind.go](../../internal/formathost/bind.go)), links, renditions, per-request state, the stubs of the engines that do not exist yet, and the bridge from the virtual engine to `formats.Resolver` ([virtual.go](../../internal/formathost/virtual.go), [virtual.md](virtual.md)) |
+| [internal/formathost](../../internal/formathost/) | The `Host` ([host.go](../../internal/formathost/host.go)), the item-store adapters ([ingest.go](../../internal/formathost/ingest.go)), the `PackageWriter` adapter and the ownership seams ([writer.go](../../internal/formathost/writer.go)), the storage hooks and the files seam ([hooks.go](../../internal/formathost/hooks.go)), the data-port bindings ([bind.go](../../internal/formathost/bind.go)), links, renditions, per-request state, the stubs of a Host built without the engines ([stubs.go](../../internal/formathost/stubs.go); every call refuses, the shadowing check included), and the bridge from the virtual engine to `formats.Resolver` ([virtual.go](../../internal/formathost/virtual.go), [virtual.md](virtual.md)) |
 | [internal/api/dispatch](../../internal/api/dispatch/) | The dispatcher: [dispatcher.go](../../internal/api/dispatch/dispatcher.go) (routing and the request path), [errors.go](../../internal/api/dispatch/errors.go) (the error shape of a prefix) |
 | [internal/app/wire_formats.go](../../internal/app/wire_formats.go) | The wiring: hooks and files seam at step 8, Host and dispatcher at step 9, the data-port bindings, the catalog freeze |
 | [internal/files/formats.go](../../internal/files/formats.go) | `files.Formats`, the seam the generic layer asks a format through: `Classify` for the coordinate of every decision and the patterns (R-EP-014), `ServeCheck` in `Stat`, `RawDeploy` in `Deploy`, `CheckRemoval` in the transaction of a delete |
@@ -140,6 +140,14 @@ The item store ([items.md](items.md)) runs `items.Hooks` inside the transaction 
 3. It calls `OnCommit` (with `Origin` upload or fill, the inspection and payload of an upload, `Replaced`) or `OnItemsRemoved` (each removed item with the
    version it belonged to).
 
+**One request, one transaction.** Everything one client request writes commits in one transaction (R-ARCH-009). A request that stores more than one file passes the lead to
+`Ingest().Commit` and the others as `Commit.Companions` (`formats.Companion`: its spool, path, media type, an own payload, and `Generated` for a file the format derived from the
+lead, such as a package's generated manifest; npm's provenance bundle is one, NuGet's `.nuspec` will be). The item store commits the blobs of all files with one link transaction
+(`blob.Store.CommitAll`) and links the lead first, then each companion in order, each with its own `OnCommit` (`CommitEvent.Lead` is the lead item on a companion's event, so the
+hook of a companion finds its version through the rows the lead's hook wrote a moment before) and its own audit row; a failure of any of them leaves none of the files, the blob rows
+of the written objects included (they are queued for the collector). A companion goes with a lead that changed: when the lead is identical to the content at its path, `Committed.Identical`
+is true, nothing is written, the companions included, and `Committed.Companions` is empty. The companions take the lead's `CreateOnly` and `MayOverwrite`: the format decided the write as a whole.
+
 A route that removes the files of a version calls `PackageWriter.DeleteItems(repo, paths...)` from inside `Host.Write`: the host's writer hands the paths to
 `items.Store.RemoveIn` in the same transaction, which tells `OnItemsRemoved` there, so the route's checks and the format's side rows commit with the removal (npm: [npm.md](npm.md), Q-NPM-27).
 Only the writer of a request removes (`formathost.ItemRemover` on the host's item store); the writer of a hook answers `errs.Internal`.
@@ -153,6 +161,22 @@ Q-AUTHZ-160); `ServeCheck` makes the `/files/` GET of a tombstoned tarball a 404
 `ProtocolBasePath` is `/files/{key}/` (409 for every other format, before the body, Q-ARCH-223); `CheckRemoval` asks the ownership of every
 package whose files a delete removes, in the removing transaction (Q-AUTHZ-161). For generic, classification, the check and the raw deploy
 change nothing.
+
+## Format settings
+
+A format with settings of its own (npm: `latestGuard`, `serveRemovedVersions`, `latestStrategy`, `distTagStrategy`) keeps them in the member of the repository document that is named
+after the format (R-REPO-004). Four pieces make it one mechanism, and none of them is the format's own SQL:
+
+| Piece | Where | What |
+|---|---|---|
+| The schema | `catalog.Facts.SettingsSchema`, a JSON Schema 2020-12 the format embeds ([npm settings.schema.json](../../internal/formats/npm/settings.schema.json)) | The root is an object with `additionalProperties: false` (a misspelt setting is refused, R-REPO-008); a property may name the classes it applies to in `x-trove-classes`. `Register` compiles it and panics on a schema that does not compile or breaks these two rules |
+| The validator | `catalog.Entry.ValidateSettings(class, raw)` ([settings.go](../../internal/formats/catalog/settings.go)), on `github.com/santhosh-tekuri/jsonschema/v6`, the library `kin-openapi` uses (one version, in `go.mod`) | Reports every violation with a JSON Pointer inside the member (`invalid_value`), and a setting of another class as `not_applicable` |
+| The member | `repository.Settings.NPM` and `formatMembers` in [document.go](../../internal/repository/document.go) | Decoded strictly with the rest of the document, stored in `repositories.config` in canonical form (key order, no spacing, so a read-back is byte-equal), validated in `validateFormatSettings` ([validate.go](../../internal/repository/validate.go)) at `/<format>/<pointer>`: 422 `validation_failed`. The member of one format on a repository of another is `not_applicable` |
+| The reader | the format reads its member from `rq.Repo.Config` (npm: `settingsOf`, [settings.go](../../internal/formats/npm/settings.go)) | Defaults for what the document leaves out. The format never validates what the service validated |
+
+`formats.Validate` refuses a format that declares a schema and has no `formatMembers` entry, and a format named like another member of the document (`repository.IsReservedMember`). The schema is
+served as `settingsSchema` of `GET /api/v1/formats`, and the create form is meant to render from it (R-ARCH-004); the form is not built yet (see [web-ui.md](web-ui.md)). The OpenAPI schema of the
+member (`NpmSettings`) is written by hand and `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember` fails on any difference to the registered schema.
 
 ## Content headers and error shapes
 
@@ -170,13 +194,18 @@ error's headers alike (`trackWriter.scrub`, Q-EP-60; `TestR_EP_018_NoCacheStatus
 | Function | Moment | Does |
 |---|---|---|
 | `wireFormats` | step `formats` | freezes the catalog, binds and checks the data ports (`formatPorts` is where a format with side tables adds its constructor), builds the hooks and the files seam; also on a worker, whose delete job runs the hooks |
-| `formatHost`, `buildFormatHost` | first use | builds the package store, the rendition cache (`cache.rendition_bytes`), the `Host` and the dispatcher, once |
+| `wireFormatHost` | step `formathost` (a role with a listener) | builds the package store, the rendition cache (`cache.rendition_bytes`), the `Host` with the proxy engine as its remote and the virtual engine as its resolver, and the dispatcher; refuses to start without the item store, the decision point, the repository reader, the exposure ceiling or the virtual engine |
+| `wirePackagesAPI` | step `packages-api` | the read model and the README renderer behind the package screens ([packages.md](packages.md)); a part that cannot be built stops the start-up |
 | `registerFormats` | step 9, from `startClient` | mounts the prefix of every format with routes on each endpoint's router, with its error shape |
 
 The composition root binds `formathost.Ownership` (over `authz.Ownership.EnforceTx`, and `PrecheckWrite` for `Host.CheckOwnership`, the read-only question a writer asks before it reads a body, Q-ARCH-226; the in-memory host takes it from `HostOptions.Precheck`) and `formathost.AutoClaimer` (over `repository.Routing.AutoClaim`, which gets the caller of the
-request and returns its `AutoClaimResult`) with two small adapters. It does **not** bind the remote engine and the resolver yet (`Host.Remote()` and `Host.Resolver()` answer an internal
-error that says so; a virtual `DeployTarget` answers `405 no_deploy_target`; the stub's `ShadowCheck` lets a first publish proceed, because without the engine no remote member serves a name).
+request and returns its `AutoClaimResult`) with two small adapters. It binds the remote engine (`formathost.Options.Engine`) and the resolver (`formathost.NewResolver` over the virtual engine) too, and `wireFormatHost`
+refuses a replica that has no virtual engine. A `Host` built without them (a unit test, `formattest`) answers every call of `Remote()` and `Resolver()` with an internal error that says so, and the stub's
+`ShadowCheck` is one of them: it **refuses** the first publish, because a check that cannot run must not let a publish through (R-REPO-048). A virtual `DeployTarget` of such a host answers `405 no_deploy_target`.
 Each is a field of `formathost.Options` or `Deps`.
+
+The composition root also reads the host at request time in one place, the files seam (`a.host`, a `late` value): the host is built from the item store, which is built with the seam, so the seam
+cannot hold the host when it is created (Q-ARCH-210).
 
 ## Tests
 
@@ -348,6 +377,11 @@ test of its own).
    `Names` if it has package names, `PropertyPrefix`, `DataPort` if it has side tables), `Routes`, `Match` (one call of `formats.MatchRoutes`), `Classify` and
    `PackageDocumentPath`, then what it needs of the hooks, the adapters (`Remote()` exactly when `Classes` lists `Remote`, `Virtual()` likewise), `Exposure()` and `WriteError`.
    Give every route at least one example; a name that two routes could both match needs a `Route.Match` that tells them apart.
+   If it has settings: embed the schema, set `Facts.SettingsSchema`, add the member to `repository.Settings` and to `formatMembers`, the schema to `api/openapi.yaml`
+   (`<Format>Settings`, referenced from `Repository`) and read the member with defaults ([Format settings](#format-settings)).
+   `Names.Normalize` is the widest rule the format accepts anywhere (a remote may serve a name a local repository would refuse): `!ok` means the string is no name of the
+   format, and routing then refuses it instead of looking up the spelling as written ([virtual.md](virtual.md)); a rule only local repositories apply belongs in `Inspect`.
+   A route of kind `Upload` must not accept a write to a path that `Classify` marks computed (`Register` refuses it, R-ARCH-012); a change of rows that no client uploaded, such as a dist-tag, is an `Admin` route.
 3. If it has side tables: add the migration ([database.md](database.md)), the port interface in the format package, the implementation in
    `internal/formatdata/<id>` (domain layer, sqlc statements in `queries/`), and its constructor in `formatPorts` in
    [wire_formats.go](../../internal/app/wire_formats.go).
@@ -361,5 +395,8 @@ test of its own).
 
 - The kit does not run the dispatcher, the authorization decision or the real item store: it runs the format against an in-memory `Host`. That the production host
   behaves like the in-memory one is tested by the integration tests of `test/integration/files`, not by the kit.
-- The remote engine, package ownership and the namespace auto claim are built and bound by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)). The virtual engine exists ([virtual.md](virtual.md)) and the Host takes it as `Options.Resolver`
+- The remote engine, package ownership, the namespace auto claim and the virtual engine are built and bound by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)). The virtual engine exists ([virtual.md](virtual.md)) and the Host takes it as `Options.Resolver`
   through `formathost.NewResolver`; `MemberDocument.Restricted` and `ShadowOutcome.Refusal`/`Shadowed` are the two fields it added to the contract.
+- What the contract still lacks for NuGet (a hook on a remote fill, discovery documents, a pass-through for volatile requests, validation of remote settings, an `Inspect` on the raw routes) and the
+  dormant methods that cannot be implemented as they are frozen (`IndexBuilder.Rebuild`, `RemoveVersion`, `OnItemsRestored`, `Enqueue`) are work packages of
+  roadmap M3, "Contract additions before the freeze" ([roadmap.md](../coverage/roadmap.md)). Until they land, a format must not approximate them over `rq.Repo.Members()` and the stores: that skips the per-member read check (R-AUTHZ-009 rule 2) and the pin and claim rules.

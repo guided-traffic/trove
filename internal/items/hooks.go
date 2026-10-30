@@ -44,6 +44,9 @@ type CommitEvent struct {
 	Origin Origin
 	Repo   RepoRef
 	Item   Ref
+	// Lead is the lead item of the commit when Item is the file of a
+	// [Companion]; the zero Ref for the lead itself.
+	Lead Ref
 	// Digests are those of the stored content.
 	Digests   blob.Digests
 	MediaType string

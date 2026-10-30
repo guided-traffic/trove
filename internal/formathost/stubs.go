@@ -9,11 +9,11 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
-// The engines of the remote and the virtual class arrive with the first format
-// that has those classes (R-REPO-024 and R-REPO-017; the bridges are remote.go and
-// virtual.go of this package, added with them). A host without them answers every
-// call with an error that says so: a format that registers the class gets the
-// refusal in its own tests, not a silent miss.
+// A Host built without the engines of the remote and the virtual class (the
+// bridges are remote.go and virtual.go of this package; the composition root always
+// provides them) answers every call with an error that says so: a format that
+// registers the class gets the refusal in its own tests, not a silent miss, and
+// no call answers as if the engine had found nothing.
 func errNoRemote() error {
 	return errs.E(errs.Internal, errs.CodeInternal, "The remote engine is not wired on this replica.")
 }
@@ -55,18 +55,18 @@ func (unsupportedResolver) Metadata(context.Context, *formats.Request, formats.P
 }
 
 // DeployTarget answers what R-REPO-021 says of a virtual repository without a
-// default deployment target, which is every one until resolution exists.
+// default deployment target, which is every one of a Host without the engine.
 func (unsupportedResolver) DeployTarget(context.Context, *formats.Request) (*repository.Repository, error) {
 	return nil, errs.E(errs.MethodNotAllowed, errs.CodeNoDeployTarget,
 		"The virtual repository has no default deployment target, so it takes no deploys.", errs.WithAllow("GET", "HEAD"))
 }
 
-// ShadowCheck lets a first publish proceed: without the virtual engine no remote
-// member of a virtual repository serves a name, so nothing can be shadowed
-// (R-REPO-048 "an empty exposure set lets the publish proceed"). The engine's
-// bridge replaces this answer with the check.
+// ShadowCheck refuses the publish: whether a remote member of a virtual repository serves
+// the name cannot be known without the engine, and a check that cannot run must not let a
+// first publish through (R-REPO-048, fail closed). The composition root always hands the
+// Host the engine ([NewResolver]); this answer is for a Host built without one.
 func (unsupportedResolver) ShadowCheck(context.Context, *formats.Request, string) (formats.ShadowOutcome, error) {
-	return formats.ShadowOutcome{Proceed: true}, nil
+	return formats.ShadowOutcome{}, errNoResolver()
 }
 
 // missCache is the rendition cache of a host that has none: it never hits.

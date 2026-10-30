@@ -150,15 +150,25 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	pc := &publishCommit{
 		name: n, version: version, tag: req.Tag, res: res, principal: rq.Subject.ID, audit: audit,
 		installScript: manifest.HasInstallScript(res.Manifest, res.Facts), shadowing: shadow, shadowSkipped: shadowSkipped,
+		latestGuard: settingsOf(rq.Repo.Config).LatestGuard,
 	}
 	pc.stored = manifest.Stored(req.Manifest, manifest.ServerFields{
 		Name: n.String(), Version: version, Principal: principalName(rq), Integrity: integrity, Shasum: res.SHA1Hex(),
 		FileCount: res.FileCount, UnpackedSize: res.UnpackedSize, HasInstallScript: pc.installScript, HasShrinkwrap: res.HasShrinkwrap,
 	})
-	committed, err := rq.Host.Ingest().Commit(ctx, rq, tarSpool, formats.Commit{
+	commit := formats.Commit{
 		Path: formats.Path{Path: TarballPath(n, version)}, MediaType: "application/octet-stream",
 		Inspection: insp, Payload: pc,
-	})
+	}
+	// The provenance bundle commits with the tarball, in the one transaction of the
+	// publish (R-ARCH-009): a version is never visible without the bundle the client sent.
+	sc := &sigstoreCommit{name: n, version: version}
+	if sigSpool != nil {
+		commit.Companions = []formats.Companion{{
+			Spooled: sigSpool, Path: formats.Path{Path: SigstorePath(n, version)}, MediaType: req.Sigstore.ContentType, Payload: sc,
+		}}
+	}
+	committed, err := rq.Host.Ingest().Commit(ctx, rq, tarSpool, commit)
 	if err != nil {
 		return f.commitError(ctx, rq, w, rep, st, req, err, integrity, sigSpool)
 	}
@@ -174,13 +184,6 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	}
 	rev := pc.rev
 	if sigSpool != nil {
-		sc := &sigstoreCommit{name: n, version: version}
-		if _, err := rq.Host.Ingest().Commit(ctx, rq, sigSpool, formats.Commit{
-			Path:      formats.Path{Path: SigstorePath(n, version)},
-			MediaType: req.Sigstore.ContentType, Payload: sc,
-		}); err != nil {
-			return errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(fmt.Errorf("%s@%s is published and its provenance bundle is not stored: %w", n, version, err)))
-		}
 		rev = sc.rev
 	}
 	if pc.kept {

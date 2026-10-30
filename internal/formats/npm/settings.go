@@ -1,17 +1,26 @@
 package npm
 
 import (
+	_ "embed" // the settings schema
 	"encoding/json"
 
 	"github.com/guided-traffic/trove/internal/formats/npm/merge"
 )
 
-// settings are the members of the npm section of a repository document that the remote
-// and virtual classes read (R-NPM-026, R-NPM-031). The repository document has no
-// format section yet (Q-NPM-23), so the section is read from the stored document as it
-// is: a document that carries one is honoured, and one that carries none runs on the
-// defaults.
+// settingsSchema is the JSON Schema 2020-12 of the npm member of a repository document
+// (R-ARCH-008, R-NPM-016, R-NPM-026, R-NPM-031). The repository service validates the member
+// against it when a document is written, and GET /api/v1/formats serves it to the create form.
+//
+//go:embed settings.schema.json
+var settingsSchema []byte
+
+// settings are the members of the npm section of a repository document (R-NPM-016,
+// R-NPM-026, R-NPM-031). The repository service stores the section as the document carries
+// it, validated against [settingsSchema]; the format reads it back from the stored document
+// of the request's repository, with the defaults for what the document leaves out.
 type settings struct {
+	// LatestGuard is npm.latestGuard of a local repository.
+	LatestGuard bool
 	// ServeRemovedVersions is npm.serveRemovedVersions of a remote repository.
 	ServeRemovedVersions bool
 	// LatestStrategy and DistTagStrategy are those of a virtual repository.
@@ -19,15 +28,17 @@ type settings struct {
 }
 
 func defaultSettings() settings {
-	return settings{LatestStrategy: merge.HighestMemberLatest, DistTagStrategy: merge.MemberOrder}
+	return settings{LatestGuard: true, LatestStrategy: merge.HighestMemberLatest, DistTagStrategy: merge.MemberOrder}
 }
 
-// settingsOf reads the npm section of a repository document; a value that is not one
-// the strategies know is the default.
+// settingsOf reads the npm section of a stored repository document. The service refuses a
+// value the schema does not allow, so a value that is none of the strategies can only come
+// from a row written around the service; it is the default.
 func settingsOf(config []byte) settings {
 	out := defaultSettings()
 	var doc struct {
 		NPM struct {
+			LatestGuard          *bool  `json:"latestGuard"`
 			ServeRemovedVersions bool   `json:"serveRemovedVersions"`
 			LatestStrategy       string `json:"latestStrategy"`
 			DistTagStrategy      string `json:"distTagStrategy"`
@@ -35,6 +46,9 @@ func settingsOf(config []byte) settings {
 	}
 	if json.Unmarshal(config, &doc) != nil {
 		return out
+	}
+	if doc.NPM.LatestGuard != nil {
+		out.LatestGuard = *doc.NPM.LatestGuard
 	}
 	out.ServeRemovedVersions = doc.NPM.ServeRemovedVersions
 	switch doc.NPM.LatestStrategy {

@@ -72,8 +72,6 @@ type Repository struct {
 	// remote is the parsed remote section of a remote repository (Remote).
 	remote *RemoteSettings
 
-	// >>> M2 virtual
-
 	// PriorityMember is the priorityMember setting (R-REPO-022).
 	PriorityMember bool
 	// rid is the numeric id; autoClaim is local.autoClaim with the format's default
@@ -81,8 +79,6 @@ type Repository struct {
 	rid       int64
 	autoClaim bool
 	virt      *virtualState
-
-	// <<< M2 virtual
 }
 
 // Admits reports whether a canonical path is admitted by the repository's

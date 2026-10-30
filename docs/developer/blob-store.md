@@ -62,7 +62,10 @@ All errors are `*errs.Error` values with the sentinel as cause (`errors.Is(err, 
 ## Commit protocol (R-STOR-005)
 
 `Store.Commit(ctx, spooled, link)` runs the loop of the specification; `link` runs in the transaction that holds the
-row's `FOR SHARE` lock and adds the reference (item insert, hooks). The statements are sqlc queries in
+row's `FOR SHARE` lock and adds the reference (item insert, hooks). `Store.CommitAll(ctx, []*Spooled, link)` is the same loop over several blobs
+and one `link` (a request that writes more than one file, [items.md](items.md)): blobs of one content are one blob, the rows are locked and inserted in digest
+order (two commits over overlapping sets never wait on each other's insert in opposite orders), a round in which any blob needs a write, a repair or a wait is rolled back and
+the next round starts after all of them were served, and a failure queues every digest that was written. `Commit` is `CommitAll` of one. The statements are sqlc queries in
 [queries/blob.sql](../../internal/meta/postgres/queries/blob.sql), run on the transaction behind `meta.Tx`
 (`postgres.Unwrap` + `q.New`, [sql.go](../../internal/blob/sql.go)); `meta.Tx` itself cannot run SQL. `Store` needs
 only `DB.InTx(ctx, func(meta.Tx) error)`, which `*postgres.DB` has. The commit and download paths reach the table

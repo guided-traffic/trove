@@ -63,6 +63,9 @@ func (h *Hooks) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEvent) e
 		Size: e.Digests.Size, Digests: digestsOf(e.Digests), UpstreamURL: e.UpstreamURL, Payload: e.Payload,
 		Actor: e.Actor, Replaced: e.Replaced, Data: h.d.Bindings.Get(f.Descriptor().ID),
 	}
+	if e.Lead.ID != 0 {
+		ev.Lead = itemRef(e.Lead)
+	}
 	if cp, ok := e.Payload.(*commitPayload); ok {
 		rq, ev.Inspection, ev.Payload = cp.req, cp.inspection, cp.payload
 	}

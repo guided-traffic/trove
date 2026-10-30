@@ -264,15 +264,11 @@ func (e *Engine) mayFill(ctx context.Context, rq Request) bool {
 	return false
 }
 
-// >>> WP2.9 exposure
-
 // FillRefused counts an upstream contact that an endpoint's cache-fill policy prevented
 // before the engine was asked: the virtual engine does not ask a remote member for an
 // artifact the caller may not fill (R-EP-019, R-AUTHZ-009 rule 3). The label is the
 // endpoint the subject carries, one of the configured names.
 func (e *Engine) FillRefused(endpoint string) { e.m.fillRefused.WithLabelValues(endpoint).Inc() }
-
-// <<< WP2.9 exposure
 
 // denyFill is the refusal of a request that has nothing to serve: 403
 // populate_not_permitted, audited by the populate check (R-AUTHZ-008). No negative

@@ -302,6 +302,9 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		PriorityMembers           bool     `json:"priorityMembers"`
 		PinsAndClaims             bool     `json:"pinsAndClaims"`
 		Caps                      bool     `json:"caps"`
+		// SettingsSchema is the JSON Schema of the format's settings member; null for
+		// a format without settings.
+		SettingsSchema json.RawMessage `json:"settingsSchema"`
 	}
 	out := struct {
 		Formats []descriptor `json:"formats"`
@@ -318,7 +321,10 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Layout: d.Layout, DefaultExtraHosts: append([]string{}, d.DefaultExtraHosts...),
 			ProtocolBasePath: d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
 			DefaultNotFoundTTLSeconds: d.DefaultNotFoundTTLSeconds, PatternSubject: string(d.PatternSubject),
-			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps,
+			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps, SettingsSchema: json.RawMessage("null"),
+		}
+		if len(d.SettingsSchema) > 0 {
+			x.SettingsSchema = d.SettingsSchema
 		}
 		if d.DefaultUpstreamURL != "" {
 			u := d.DefaultUpstreamURL

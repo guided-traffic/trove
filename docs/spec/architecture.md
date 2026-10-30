@@ -335,9 +335,11 @@ Normative rules:
   (HA-006) therefore does not exist in trove.
 - Imports form layers:
   1. Edge: `httpserver`, `api/v1`, `api/edge`, `api/dispatch`, `webui`, `formats` (the contract and the format handlers), `formathost`.
-  2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
+  2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `virtual`, `formatdata`, `authz`, `auth`, `jobs`, `audit`, `backup`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `auth/scope`. Every layer may import them, and they import only each other.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `formats/npm/rows`, `auth/scope`. Every layer may import them, and they import only each other.
+     `formats/npm/rows` is the values of npm's data port, shared by the format and `formatdata/npm` (Q-ARCH-193); it is a leaf listed by hand in
+     archtest's `layerTable`, and the rule "`formats/<id>/rows` is a leaf that imports only `errs`" replaces the hand entry before NuGet adds its own (roadmap M3).
 
   No lower layer imports a higher one. Format packages reach storage only through the host interface
   (R-ARCH-009), so the diagram has no arrow from `formats` to `blob`.
@@ -823,6 +825,9 @@ Consequences, normative for every component:
     `Content-Type` but cannot remove or weaken them.
   - A route of another kind (`Upload`, `Delete`, `Admin`, `Volatile`) that returns package-derived
     bytes is a contract violation, which the conformance kit detects (R-ARCH-010 check 7).
+    *Status (milestone M2):* NuGet's search is a `Volatile` route that returns package metadata (titles, descriptions, icon
+    URLs), which this sentence forbids; the contract addition of roadmap M3 lets a `Volatile` route serve content under the headers of `Metadata`
+    and rewrites this sentence (Q-ARCH-233). No route of npm is `Volatile`.
 - The UI never embeds package-provided HTML. It renders README content only as sanitized output of
   its own Markdown renderer ([api-and-ui.md](api-and-ui.md)).
 - **Content links from one place.** Every absolute URL to package content that a response hands to
@@ -1046,7 +1051,7 @@ type Descriptor struct {
 	ContractVersion  int             // the literal the format was written against; Register panics on a mismatch
 	Names            catalog.Names   // the one package-name normaliser; nil exactly when !PackageNames
 	Clients          []Client        // native clients and tested versions (FMT-002, FMT-003)
-	SettingsSchema   []byte          // JSON Schema 2020-12 of format-specific repository settings
+	// SettingsSchema ([]byte, JSON Schema 2020-12 of the settings member named after the format) is a catalog fact: catalog.Facts, Q-ARCH-229
 	PropertyPrefix   string          // reserved property namespace, e.g. "npm." (FMT-008)
 	MaxDocumentBytes int64           // bound for documents held in memory (R-ARCH-028)
 	Limits           Limits          // tightenings of the defaults of R-ARCH-028
@@ -1083,7 +1088,8 @@ type Request struct {
 
 // Target is what a format asks the decision point inside the addressed repository. The host completes the
 // coordinate (repository, class, format, the kind of the route), so a format names neither another repository
-// nor another endpoint (Q-ARCH-189).
+// nor another endpoint (Q-ARCH-189). That holds for Authorize; the read stores, EnsureLocked and DeleteItems still
+// take a RepoRef the format builds, and rq.Repo is the whole repository model (narrowing them: roadmap M3, Q-ARCH-233).
 type Target struct {
 	Package, Version, Path string // normalized; all empty is the repository level
 	Actions                []Action
@@ -1148,7 +1154,7 @@ type Strategy uint8
 const (
 	FirstMatch Strategy = iota + 1 // tiered lookup, first eligible member that has it wins
 	Merge                          // every eligible member contributes
-	Newest                         // Merge, with remote members revalidated first (REPO-036)
+	Newest                         // Merge, with remote members revalidated first; the revalidation is not built, the engine resolves it as Merge (Q-ARCH-234)
 )
 
 // ExposureAdapter is a format's part of endpoint exposure (endpoints.md R-EP-018).
@@ -1257,7 +1263,7 @@ type Host interface {
 	// write decisions of the request are recorded in it (R-AUTHZ-029).
 	Write(ctx context.Context, rq *Request, fn func(tx Tx, w PackageWriter) error) error
 
-	Ingest() Ingestor            // upload pipeline of storage.md: admission, spool, digests, commit
+	Ingest() Ingestor            // upload pipeline of storage.md: admission, spool, digests, commit; Commit takes the request's other files as Companions, in one transaction (Q-ARCH-228)
 	Items() ItemStore            // repository paths <-> blobs, Range and conditional reads (storage.md)
 	Packages() PackageStore      // package and version rows behind the package view (FMT-007)
 	Remote() RemoteFetcher       // remote engine (repositories-and-proxy.md)
@@ -1307,6 +1313,8 @@ type PackageWriter interface {
 
 - Formats never see blob addresses, bucket names or SQL. Item, package and blob schemas belong to
   [storage.md](storage.md).
+  *Status (milestone M2):* the host hands no format an address, and `Bind(host, *config.Config, metrics)` hands a format the whole configuration,
+  which holds the bucket name; npm reads its own section only. A typed environment with the format's own section replaces it before the freeze (roadmap M3, Q-ARCH-233).
 - This page requires one thing of that schema: a revision sequence `rev_seq bigint NOT NULL DEFAULT 1`
   on storage.md's generic `packages` row, not in a format's side table.
   - The core reads it for read-your-writes (R-ARCH-012) and for the merged-metadata check
@@ -1336,7 +1344,8 @@ type PackageWriter interface {
   decisions that allowed a write travel with the request and are recorded in the write's transaction.
   The storage hooks of the item store reach the formats through it (`items.Hooks`).
 - Copy, move and delete change rows only, never blob content (STOR-002, [storage.md](storage.md)).
-- Everything one client request writes goes through one transaction: items, package rows,
+- Everything one client request writes goes through one transaction: items (the lead and the companion files of one
+  request, Q-ARCH-228), package rows,
   properties, audit event and job enqueue. Its notifications are attached to that transaction and
   leave it as their area's class decides (R-ARCH-018): a change area writes its change-log row
   inside the transaction, and a signal area is published to Valkey through the coalescer after
@@ -1514,14 +1523,16 @@ Priority: **MVP** · Covers: FMT-011
     increments whenever it changes the rendered bytes (npm: `npmRenderVersion`).
   - A cached rendering and the `ETag` computed for it use the same inputs, so a client never holds
     an `ETag` for bytes that a settings change or a new release would render differently
-    ([formats/npm.md](formats/npm.md) R-NPM-013).
+    ([formats/npm.md](formats/npm.md) R-NPM-013). *Status (milestone M2):* the format hashes the inputs of its ETag itself and keeps them in step
+    with the rendition key by hand; the contract derives one ETag from the key in roadmap M3 (Q-ARCH-233).
 - Every change that reaches package rows through the storage hooks of R-ARCH-008 increments
   `rev_seq` in its own transaction. Those changes are: publish or upload, delete, trash restore,
   copy, move, import, retention removal and remote cache fill. The catalog lists deploy, delete,
   copy and move as triggers (FMT-011); every such operation in trove goes through these hooks, so
   none can bypass the metadata.
-- Clients never upload derived metadata. No route accepts a write to a path that `Classify` marks
-  `Computed`.
+- Clients never upload derived metadata. No `Upload` route accepts a write to a path that `Classify` marks
+  `Computed`, and `Register` refuses a route table that has one. A change that only edits the rows a computed path is
+  rendered from, such as npm's dist-tag writes, is an `Admin` route and may name a computed path (Q-ARCH-232).
 - Repository-wide indexes of later formats, such as a Helm `index.yaml` or Debian `Packages`,
   follow Q-ARCH-12:
   1. **Default: rendered per request.** The index is rendered from rows and cached under a
@@ -1564,6 +1575,9 @@ status codes are owned by [repositories-and-proxy.md](repositories-and-proxy.md)
 fixes their order and the components involved.
 
 6. `Format.Classify`. A `Volatile` path passes through without being stored.
+   *Status (milestone M2):* the remote engine fetches artifacts and metadata only, and no route of npm is `Volatile`, so no
+   pass-through exists in the code. It arrives with the contract additions NuGet's search needs (a query on the remote fetcher
+   with an engine-owned cache, and the member fan-out of a virtual repository), roadmap M3 (Q-ARCH-233).
 7. The proxy looks up the cache entry in PostgreSQL, and on a miss the negative entry in its
    in-process L1 and then in Valkey (R-ARCH-030). Without Valkey, only the L1 answers. The outcomes
    are owned by the proxy page; the codes shown are those it uses:
@@ -5671,7 +5685,7 @@ absent. A `web` replica whose wiring misses the decision point or the object sto
 **Choice:** (a). `Subsystems.Areas` is the set a role enables, `Subsystems.Shell` marks the shell profile, and `planSteps` runs in `New`,
 so a role that cannot satisfy its steps never starts. Each step checks its inputs with `requireInputs`, which names every nil one
 (`files: no authorizer`). A part that is only unreachable stays a retry (steps 3 to 7 of R-ARCH-024); a part the wiring does not provide
-is refused.
+is refused. Q-ARCH-230 applies it to the four places that kept a convention.
 
 **Rationale:** the replica that serves `503` on `/files/` is today's failure mode (the plan of WP2.0-4 names it), and the same shape would
 hide a missing data-port binding of a format. The development agent would revisit this if a role needs a part to be optional on purpose;
@@ -5696,6 +5710,7 @@ the role check can run in `New`, and adding an area has to be one file and one l
 other shape. `planSteps` proves, before anything starts, that every input is built by a step of an enabled area listed before the step,
 that each area has one step and each type one builder. Job kinds are registered before the areas are wired, so a handler reads its
 service through `late[T]`, set once by the step: a job claimed before it is retried, in one place instead of one nil check per kind.
+`late[T]` is for job handlers; the one reader at request time is the Host that the files seam reads (Q-ARCH-231).
 
 **Rationale:** the list is short and read by people adding an area, so one line per area and no edit of the framework matters more than
 a compile-time check of a call that the shape check and the tests cover. The development agent would revisit this if the list grows past
@@ -6069,6 +6084,163 @@ write that it did not ask the host about before (none does).
 
 **Applied in the spec:** [authorization.md](authorization.md) R-AUTHZ-015 (the commit-time re-check). Code:
 `internal/formathost/{state.go,ingest.go,host.go}`.
+
+### Q-ARCH-228 · One request, one transaction: a commit carries the companion files of its lead
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-009 says everything one client request writes goes through one transaction. The item store committed one file per transaction.
+npm's provenance publish therefore took two (Q-NPM-22 chose to commit the tarball first): the tarball's commit made the version visible, and a
+failure of the bundle's commit left the version published without it and answered 500. NuGet's push stores the `.nupkg` and the generated
+`.nuspec` in one commit (R-NUGET-005 step 6), and its symbol and icon files will follow.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commit carries companions | `Commit.Companions` (`items.CommitSpec.Companions`): the lead and further files; the blobs of all go through one link transaction (`blob.Store.CommitAll`), the lead's link and hook run first, then each companion's, each with its own `OnCommit` and audit row | The lead/derived relation of both formats; a companion's hook finds the version the lead's hook wrote a moment before; `Generated` marks a derived file; the existing one-file commit is the case with no companion | A request with several files and no lead has no shape (none exists) |
+| (b) `Ingestor.CommitMany` | A list of equal commits | No lead | The order of hooks is the caller's, and "the version exists" is not a property of the call; every hook must cope with any order |
+| (c) The format holds a transaction across commits | A handle like `Host.Write` | Any order | The blob store's commit protocol owns the transaction while it holds the blob row's lock (Q-ARCH-207), and a second owner would break R-STOR-005 |
+| (d) Keep two transactions and repair | A job reconciles the missing bundle | No change | The window stays; a version without a bundle is visible to every client until the job runs |
+
+**Choice:** (a). `blob.CommitAll` writes the objects that are missing first, outside any transaction, and then runs one link function in one transaction that holds
+the `FOR SHARE` lock of every blob row; it locks and inserts the rows in digest order, so two commits over overlapping sets do not wait on each other's insert in opposite
+orders, and two files of one content are one blob. The items store links the lead, and only when the lead changed a row the companions: a lead identical to the
+content at its path is a retry that changes nothing, and its companions with it (npm decides a retry from the facts it reads, which the bundle is part of; a bundle that
+differs is no retry). The companions take the lead's origin, actor, `CreateOnly` and `MayOverwrite`: the committer decided the write as a whole. A failure after the first file
+leaves nothing: no item, no folder, no audit row; the digests that were written are queued for the collector as after any failed commit.
+
+**Rationale:**
+- The two formats that need it have a lead and files that belong to it; the hook order lead-first is what npm's bundle needs (it links itself to the version the tarball's hook created).
+- The rollback of an object the commit wrote is the collector's, as for any failed commit (R-STOR-005); no new state.
+- The development agent would revisit it if a request must write several files that have no lead (a batch import): `CommitMany` over the same `CommitAll` would then be the shape, and the
+  hook would learn all items of the transaction at once.
+
+**Applied in the spec:** R-ARCH-009 (the Host's `Ingest().Commit`), [storage.md](storage.md) R-STOR-005 (the commit protocol over several blobs), [formats/npm.md](formats/npm.md) R-NPM-006 and R-NPM-007 steps 5 and 6 (Q-NPM-58),
+[formats/nuget.md](formats/nuget.md) R-NUGET-005 step 6. Code: `internal/blob/commit.go`, `internal/items/commit.go`, `internal/formats/{host.go,hooks.go}`, `internal/formathost/ingest.go`.
+
+### Q-ARCH-229 · A format's settings schema is a catalog fact, and the repository service validates against it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Descriptor.SettingsSchema` was declared (R-ARCH-008) and set by no format, read by nothing. The repository model that has to validate a document is a domain package and cannot
+import the format contract (edge). The management API refused a member named after a format, so npm's settings could be written only by SQL.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The schema is in `catalog.Facts`; the catalog compiles it and validates | `Entry.ValidateSettings(class, raw)` in the leaf; the repository service calls it with the member of the repository's format | The facts every layer reads are in one leaf, as the name rule is (Q-ARCH-188); the same schema serves the form, the validation and the format list | A third-party validator in the leaf |
+| (b) The schema stays in the descriptor; the composition root injects a validate function into the repository service | A callback | The leaf stays free of a library | A second path between format and model, and the model cannot validate in a unit test without wiring |
+| (c) Hand-written checks per format in the repository package | Go code | No library | The domain learns every format's settings; the schema in the format list would be a second statement |
+
+**Choice:** (a), with `github.com/santhosh-tekuri/jsonschema/v6`: the library `kin-openapi` already pulls in at the version `go.mod` pins, so the repository gains no second schema dependency
+(it is a direct requirement now, one version). The schema is compiled at `Register`, which panics on a schema that does not compile, whose root is no object, or whose root does not set
+`additionalProperties: false` (a misspelt setting would be dropped silently, R-REPO-008). A property may carry `x-trove-classes`, the classes it applies to: the service reports a setting of another
+class as `not_applicable`, the way R-REPO-004 treats the class sections. A violation is a field error at `/<format>/<json pointer>`, `invalid_value`; the list answers 422 `validation_failed`.
+`GET /api/v1/formats` serves the schema as `settingsSchema` (null for a format without settings).
+
+**Rationale:** the leaf already holds what the model and the decision point must agree on, and a schema is data. The development agent would revisit it for a setting whose validity depends on
+another repository (a list of repositories that must exist): a hook of the format (roadmap M3, remote configuration) would then run after the schema.
+
+**Applied in the spec:** R-ARCH-008 (`SettingsSchema` is a catalog fact), R-ARCH-004 (the form is rendered from the served schema), [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004 (Q-REPO-122, Q-REPO-124),
+[api-and-ui.md](api-and-ui.md) (`GET /api/v1/formats`). Code: `internal/formats/catalog/settings.go`, `internal/repository/{document.go,validate.go}`, `internal/formats/npm/settings.schema.json`.
+
+### Q-ARCH-230 · A part the wiring needs is an input of its step, and a missing one stops the start-up
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-ARCH-209 made a part the wiring does not provide a start-up error, and four places still ran on convention: the package screens' services were assembled outside the step list and were
+the zero value (503) when a part was missing or the README renderer could not be built from `ui.readme.*`; the virtual engine read the item store from a `late` value and returned an empty
+area without it; the Host then took a stub resolver whose shadowing check let a first publish proceed (R-REPO-048); and the listener check did not list the engines.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Typed inputs and a step per part | `packages-api` is an area with its own step; `virtual-engine` takes the files area; `wireFormatHost` requires the engine; the stub's check refuses; `requireServing` lists both engines and the package services | The plan proves the order; a missing part names itself at start-up | One more area |
+| (b) Keep the zero values and report the area as not ready | A readiness check per area | No new step | A replica that is ready for some routes and 503 for others |
+| (c) Panic | — | Loud | The same as (a) without a message that names the area |
+
+**Choice:** (a). The stub resolver of a Host built without the engine (unit tests, the in-memory kit) answers every call with an error, `ShadowCheck` included: a check that cannot run does
+not let a publish through. Component constructors keep their documented defaults for tests (`proxy.New` without an invalidation matcher treats every entry as valid; `formathost.New` without engines
+takes the refusing stubs); the composition root requires every one of them, so no replica runs on a default.
+
+**Rationale:** the failing case of the stub was dormant (web and all always ran the files step first), but the structure allowed it; a typed input removes the case instead of ordering it away. The development agent
+would revisit the component defaults if a production caller other than the composition root appears.
+
+**Applied in the spec:** R-ARCH-024 (step 8), [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048 (the shadowing check does not proceed without the engine). Code: `internal/app/{wire_packages.go,wire_virtual_engine.go,wire_formats.go,app.go,steps.go}`,
+`internal/formathost/stubs.go`.
+
+### Q-ARCH-231 · `late[T]` stays for job handlers and for the one reader the Host cannot avoid
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-ARCH-210 scoped `late[T]` to job handlers, whose registry is frozen before the areas are wired. The files seam also reads the Host at request time through `a.host`; the package services and the
+virtual engine did too, until Q-ARCH-230 gave them typed inputs.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The seam keeps its `late` Host, documented | `FilesSeam` takes a function that returns the Host | The Host is built from the item store, which is built with the seam; the cycle has one edge, and it is the seam's | A request-time read of a value set once |
+| (b) The seam takes the Host through a setter after it is built | Mutable seam | No `late` | A seam that can be used before it is complete; the same race, as a field |
+| (c) Split the item store from the seam | Two stores | No cycle | `items.Store` would be built twice or the seam would need its own reads; far larger than the problem |
+
+**Choice:** (a). The one request-time reader is named in the developer documentation; a request that arrives before the Host is set (the listener opens after the step) cannot happen, and the seam answers 500
+`internal` if it does.
+
+**Rationale:** the edge is real and has one reader. The development agent would revisit it if a second request-time reader of a `late` value appears.
+
+**Applied in the spec:** Q-ARCH-210 (scope), R-ARCH-024 (step 8). Code: `internal/app/{steps.go,wire_formats.go}`.
+
+### Q-ARCH-232 · The rule against uploading derived metadata is a rule about `Upload` routes, and `Register` enforces it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-012 said "No route accepts a write to a path that `Classify` marks `Computed`". npm's dist-tag routes match `-/package/...`, which `Classify` marks `Computed`, and nothing enforced the rule.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The rule names `Upload` routes; `Register` refuses one whose example `Classify` marks `Computed` | A check in `checkRoutes` | The dist-tag is a write of rows, an `Admin` route; what the rule protects (a client storing a document that trove renders) is checked | The rule is about the route's kind |
+| (b) Keep the wording, move the dist-tag routes to a path that is not computed | Change npm's protocol | The words stay true | npm clients call `-/package/<name>/dist-tags/<tag>`; the protocol is not ours |
+| (c) Leave it unenforced | — | Nothing to build | A rule nobody checks |
+
+**Choice:** (a). The conformance kit runs `Register`'s checks, so every format meets it.
+
+**Rationale:** the rule's purpose is that a client cannot plant derived bytes. The development agent would revisit it if a format has an `Admin` write that stores bytes the core serves back.
+
+**Applied in the spec:** R-ARCH-012. Code: `internal/formats/formats.go` (`checkRoutes`).
+
+### Q-ARCH-233 · A claim of the spec that the code does not meet yet is a status line with a milestone, not a silent claim
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the review of milestone M2 found places where the spec states what the contract will do for NuGet and the code of M2 does not do it: the pass-through of `Volatile` requests (R-ARCH-013 step 6), the use of the URL map for
+metadata (R-REPO-043), the narrowing of what a format can name (Q-ARCH-189), the configuration a format sees (R-ARCH-009), the rendition and its validator derived from one set of inputs (the doc of `RenditionKey`), and `Volatile` search that returns package metadata (R-ARCH-007).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The spec keeps the target and says what is built, with the milestone that builds the rest | A status line at each place, and a row in roadmap M3 "Contract additions before the freeze" | The spec stays the source of truth for the freeze; the gap is visible where a reader meets the claim | A page with a "not yet" in it |
+| (b) Weaken the claim to the code | Rewrite the sentence | No gap on the page | The freeze would freeze the weaker contract; the NuGet work would not know it has to build the rest |
+| (c) Build all of it in this change | — | No gap | Each is a design of its own (A-2 to A-4, A-6 to A-9 of the review), and NuGet's decisions are what shape them |
+
+**Choice:** (a). Each place states the gap and points at the roadmap; the code comment of `RenditionKey` says what the code does (the cache keys on every field; the format keeps its ETag in step by hand).
+
+**Rationale:** a contract frozen at the end of M3 must carry the additions; marking them where they are claimed makes the spec and the roadmap the same list. The development agent would revisit it if M3 drops one of them: the claim then
+changes in the spec in the change that drops it.
+
+**Applied in the spec:** R-ARCH-007 (the sentence on `Volatile`), R-ARCH-009, R-ARCH-013 step 6, Q-ARCH-189 (the `Target` comment of R-ARCH-008), [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-043, [coverage/roadmap.md](../coverage/roadmap.md) M3.
+
+### Q-ARCH-234 · `Newest` resolves as `Merge` until the revalidation exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-008 says `Newest` is `Merge` with the remote members revalidated first. The engine resolves it as `Merge` and revalidates nothing; no format returns `Newest`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Say so in the contract and the engine | The doc comments and R-ARCH-008 state the behaviour; roadmap M3 has the row | Honest; no format depends on it | A format that returns it today gets a merge of possibly stale remote documents |
+| (b) The engine refuses `Newest` | An error where the strategy is read | A format that asks for it learns in its tests | `Strategy` returns no error; the signature would change before the freeze anyway |
+| (c) Build the revalidation | `EnsureCurrent` on every remote member before the merge | The contract is true | A design for a request no format has (NuGet's registration needs a different merge, roadmap M3) |
+
+**Choice:** (a).
+
+**Rationale:** nothing returns it; building it for an imagined caller would fix the wrong shape. The development agent would revisit it when the first format's merge needs "newest first": the freeze either carries a working `Newest` or no `Newest`.
+
+**Applied in the spec:** R-ARCH-008 (the `Strategy` constants). Code: `internal/virtual/types.go`, `internal/formats/virtual.go`.
 
 ## What this does not cover
 

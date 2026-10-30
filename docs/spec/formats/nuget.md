@@ -415,7 +415,9 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 6. In the commit transaction (R-STOR-005): create the `packages` row if absent and the
    `package_versions` row (its unique index on the URL form makes a duplicate answer 409); create
    the item of the `.nupkg` as lead item and the derived items with `generated = true`; insert
-   the NuGet side rows below; increment `packages.rev_seq` (R-ARCH-009). After the commit, the
+   the NuGet side rows below; increment `packages.rev_seq` (R-ARCH-009). The `.nupkg` is the lead of
+   one commit and the derived items are its companions (`Commit.Companions` with `Generated`, Q-ARCH-228):
+   all of them commit in this one transaction, the lead's hook first. After the commit, the
    early-eviction signal of R-REPO-020 goes to the post-commit coalescer of
    [architecture.md](../architecture.md) R-ARCH-018. It travels through Valkey, is best-effort, and
    nothing below waits for it.

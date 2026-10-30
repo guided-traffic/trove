@@ -168,9 +168,6 @@ type Descriptor struct {
 	Names catalog.Names
 	// Clients are the native clients and their tested versions (FMT-002, FMT-003).
 	Clients []Client
-	// SettingsSchema is the JSON Schema 2020-12 of the format's settings member of
-	// the repository document.
-	SettingsSchema []byte
 	// PropertyPrefix is the reserved property namespace, "npm."; Inspect and
 	// SetProperties write only below it (FMT-008).
 	PropertyPrefix string
@@ -270,6 +267,12 @@ func Validate(f Format) error {
 	if f.View() != nil && !d.PackageNames {
 		return fmt.Errorf("%q has a package view and no package names", id)
 	}
+	switch {
+	case repository.IsReservedMember(string(id)):
+		return fmt.Errorf("%q is named like a member of the repository document, whose member for the format's settings it must be", id)
+	case len(d.SettingsSchema) > 0 && !repository.HasFormatMember(string(id)):
+		return fmt.Errorf("%q declares a settings schema and the repository document has no %q member for it", id, id)
+	}
 	return checkRoutes(f, d)
 }
 
@@ -326,6 +329,11 @@ func checkRoutes(f Format, d Descriptor) error {
 		for _, ex := range r.Examples {
 			if _, err := repository.CleanPath(ex); err != nil {
 				return fmt.Errorf("%q: example %q of route %q is no clean path", d.ID, ex, r.Name)
+			}
+			// Clients never upload derived metadata (R-ARCH-012): what trove renders is
+			// changed by a write to the rows it renders from, which is an Admin route.
+			if r.Kind == Upload && f.Classify(Path{Path: ex}).Kind == PathComputed {
+				return fmt.Errorf("%q: upload route %q accepts a write to %q, which Classify marks computed", d.ID, r.Name, ex)
 			}
 			for j := range routes {
 				o := &routes[j]

@@ -98,8 +98,19 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 	if err := i.h.recheck(ctx, rq); err != nil {
 		return formats.Committed{}, err
 	}
+	companions := make([]items.Companion, len(c.Companions))
+	for n, cc := range c.Companions {
+		cs, ok := cc.Spooled.(*spooled)
+		if !ok {
+			return formats.Committed{}, errs.E(errs.Internal, errs.CodeInternal, "The body was not spooled by this host.")
+		}
+		companions[n] = items.Companion{
+			Path: cc.Path, Spooled: cs.s, MediaType: cc.MediaType, Declared: cs.expect, Generated: cc.Generated,
+			Payload: &commitPayload{req: rq, payload: cc.Payload},
+		}
+	}
 	res, err := i.h.o.Items.Commit(ctx, items.CommitSpec{
-		Repo: *rq.Repo, Path: c.Path, Spooled: s.s, MediaType: c.MediaType, Declared: s.expect,
+		Repo: *rq.Repo, Path: c.Path, Spooled: s.s, MediaType: c.MediaType, Declared: s.expect, Companions: companions,
 		Origin: items.OriginUpload, CreateOnly: c.CreateOnly, MayOverwrite: c.MayOverwrite,
 		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,
 		Payload: &commitPayload{req: rq, inspection: c.Inspection, payload: c.Payload},
@@ -110,17 +121,27 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 	})
 	if errors.Is(err, items.ErrOverwriteDenied) {
 		// The path appeared meanwhile: the format passed MayOverwrite=false because
-		// it did not hold overwrite when it decided.
+		// it did not hold overwrite when it decided. The path is the one that holds the
+		// other content, a companion's when the lead's is free.
+		denied := c.Path.Path
+		var od *items.OverwriteDeniedError
+		if errors.As(err, &od) {
+			denied = od.Path
+		}
 		return formats.Committed{}, errs.E(errs.Forbidden, errs.CodeForbidden,
-			"The action overwrite is not permitted on "+rq.Repo.Key+"/"+c.Path.Path+".")
+			"The action overwrite is not permitted on "+rq.Repo.Key+"/"+denied+".")
 	}
 	if err != nil {
 		return formats.Committed{}, err
 	}
-	return formats.Committed{
+	out := formats.Committed{
 		Item:    formats.ItemRef{ID: res.Item.ID, Repo: repoRef(*rq.Repo), Path: c.Path.Path},
 		Created: res.Created, Overwritten: res.Overwritten, Identical: !res.Created,
-	}, nil
+	}
+	for n, cr := range res.Companions {
+		out.Companions = append(out.Companions, formats.ItemRef{ID: cr.Item.ID, Repo: repoRef(*rq.Repo), Path: c.Companions[n].Path.Path})
+	}
+	return out, nil
 }
 
 // Close implements [formats.Ingestor].

@@ -244,7 +244,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `remote` | R-REPO-024; `cacheFillAction` within it is [R-AUTHZ-008](authorization.md) | — | this page |
 | `virtual` | R-REPO-017 | — | this page |
 | `storage` | Upload size, quota, presigned downloads, client checksum policy | see owner | [storage.md](storage.md) |
-| `npm`, `nuget`, … | Format settings, under a member named after the format | see owner | format page |
+| `npm`, `nuget`, … | Format settings, under a member named after the format. The service validates it against the JSON Schema the format registers (`GET /api/v1/formats` serves it as `settingsSchema`), reports a violation as 422 `validation_failed` at `/<format>/<member>` (`invalid_value`), and answers `not_applicable` for a setting of another class and for the member of another format (Q-ARCH-229, Q-REPO-122). Built: `npm`; `nuget` joins with its format | see owner | format page |
 
 - A class section that does not match the class (for example `virtual` on a local repository)
   answers 422 `validation_failed` with `not_applicable` in `errors[]`.
@@ -855,7 +855,9 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
 2. Take V's effective member list in order; drop members that are disabled, being deleted, or whose
    patterns (or those of a virtual repository on their chain) do not admit d.
 3. Apply pin rules and namespace claims (R-REPO-023). They depend on the package name and on stored
-   configuration only, never on c's permissions.
+   configuration only, never on c's permissions. A name the format's name rule cannot fold is no name of the
+   format: V admits nothing under it, no remote member is consulted or served from its cache, and a remote
+   repository addressed directly refuses it (Q-REPO-123).
 4. Drop members on which c does not hold `read` for d. Unreadable members are skipped silently; they
    never turn the answer into 403 ([R-AUTHZ-009](authorization.md)).
 5. Order the remaining members stably: priority members first (R-REPO-022, P1), else list order.
@@ -1103,7 +1105,9 @@ patterns.
 - **Remote refusal.** With `proxy.claims.remote_refusal: true`, every remote repository of the format,
   also when addressed directly, answers 404 for a name covered by a `global` claim and does not
   serve cached copies of it, unless the request comes through a virtual repository whose pin rule
-  names that remote repository for n.
+  names that remote repository for n. A name the format's name rule cannot fold is refused by every
+  remote repository whatever the switch says: no claim can be looked up for what is no name, and
+  looking it up as written would miss the claim on its folded form (Q-REPO-123).
 - Overlapping claims of different repositories are allowed and reported as the warning
   `claim_overlaps` for a manual claim whose pattern covers a name that a claim of another repository of the
   format covers too, when either claim is `global` or the two repositories are members of one virtual
@@ -1252,6 +1256,9 @@ Item operations report a refusal per item (`shadows_remote_package`, `shadow_che
 and leave that item unchanged. Without them, a `deploy` holder could publish a name into a
 repository that no virtual repository contains, where nothing is exposed, and copy it into L
 afterwards.
+
+The check is never skipped for lack of the engine: a replica without the virtual engine does not start, and a Host built
+without one refuses the publish (Q-ARCH-230).
 
 Later versions of a name L already holds or claims are never checked, so a public package that
 someone registers after an internal name's first publish cannot block the internal team's
@@ -2603,6 +2610,9 @@ Priority: **MVP** · Covers: trove-only
   format derives from `url` and the canonical path, nothing is recorded; otherwise the mapping is
   recorded in `remote_url_map` when the document is parsed. The server MUST NOT derive an upstream
   host from a client request path: no client can choose the host trove fetches from.
+  *Status (milestone M2):* the engine reads the map to address an artifact; a metadata path is addressed from the
+  repository's `url` alone, and recording a mapping for a metadata path has no reader yet. The reader for metadata (the
+  non-inlined registration pages of NuGet) is a contract addition of roadmap M3 (Q-ARCH-233).
 - The map follows the stored document: a fill that kept the stored document, or whose upsert
   lost to a newer one (R-REPO-026), records no mapping, so the map and the document always
   describe one document (Q-REPO-119, R-NPM-024).
@@ -4378,6 +4388,67 @@ Context: R-REPO-026 keeps the entry with the newer `fetched_at`, which is the ti
 **Rationale:** the stored document, its records and its URL map have to describe one document whichever fill commits last (R-NPM-024); that is only possible when the decision that wrote the records and the decision that wrote the entry are the same one. The development agent would revisit the choice if a second format records an order of its own and the three values prove too coarse.
 
 **Applied in the spec:** R-REPO-026 step 5 (below), [architecture.md](architecture.md) R-ARCH-012 (`OnFill`).
+
+### Q-REPO-122 · The format's settings are a member of the document per format, decoded with the rest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-004 says format settings live under a member named after the format, and the decoder refused one: it reads the document strictly into a struct, so an `npm` member was an unknown member (400), and npm's
+settings could be written only by SQL. The member has to be validated against the format's schema (Q-ARCH-229), stored, read back, and covered by the reflection that finds unknown members of a merge patch.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One typed member per format (`Settings.NPM json.RawMessage`) and a table of them | Decoded, patched and unknown-member-checked like every other member; validated in `validateSections` | No custom marshalling of a type that is embedded in the API's representation (a `MarshalJSON` on `Document` would be promoted into it and drop the server's members); the OpenAPI schema lists the member by name | A format with settings adds a field and a table entry (checked by `formats.Validate`) |
+| (b) A map `format -> raw` with custom (un)marshalling | Any format without a change in the model | No edit per format | The custom marshaller is promoted through the embedding; the reflection that finds unknown members needs a special case; the member is open-ended in the OpenAPI document |
+| (c) Settings in a separate resource | `/repositories/{key}/settings` | No change to the document | Configuration as code (R-OPS-029) and the create form need one document; a second resource to keep in step |
+
+**Choice:** (a). The member is stored in `repositories.config` in a canonical form (members in key order, no spacing), so that a document read and sent back is byte-equal to what is stored and an update that changes nothing is
+not a change. A member of one format on a repository of another is `not_applicable`; a `null` member is an omitted one (R-REPO-011). A format is not named like another member of the document (`formats.Validate`).
+
+**Rationale:** the set of formats is small and compiled in; a field per format with settings is one line, and the compiler and the reflection do the rest. The development agent would revisit it when a third format with settings appears and the table
+grows by a line each time without anyone noticing: a generated member list would then pay for itself.
+
+**Applied in the spec:** R-REPO-004 (the table row), [formats/npm.md](formats/npm.md) (Q-NPM-59). Code: `internal/repository/{document.go,validate.go}`.
+
+### Q-REPO-123 · A name the format cannot fold fails closed in routing
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `catalog.Names.Normalize` folds a name and validates it. The routing used `if n, ok := NormalizeName(...); ok { name = n }` and otherwise looked up the name as written. For npm, where folding is validating and names are
+case-sensitive, that is harmless. For a case-insensitive format the lookup of an unfolded spelling misses a claim or a pin rule on the folded form: a claim on `acme.*` would not cover a name written `ACME.Widgets 1` (that the rule rejects), and the remote member would be
+asked: the dependency-confusion protection of R-REPO-023 would fail open.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `!ok` means "no name of the format": nothing is looked up, the virtual repository admits nothing under it, no remote member is consulted, a remote repository refuses it | Routing checks the second result of the rule | Fail closed at every site that looked up a claim or a pin; one rule | A format whose rule rejects a valid upstream name would block it: its rule must be the widest it accepts anywhere (the contract says so) |
+| (b) Fold what can be folded and look up the rest as written | Today | No refusal | The failure it exists to prevent |
+| (c) Fold in two functions (validate, fold) | Split the interface | A name can be valid and unfoldable | A second function for a case no format has; the contract freezes with both |
+
+**Choice:** (a). The virtual route reports `Admitted` false and drops the remote members as `not_admitted` (no new decision value for the explanation API: it is a pattern-style refusal, and the generated clients keep their enum); `RemoteRefused` answers true
+for such a name whatever `proxy.claims.remote_refusal` says, because the refusal is not about claims; the shadowing precondition `CoveredByOwnClaim` is false, so the check asks; `ClaimsFor` returns nothing. `Names.Normalize` is specified as the widest rule
+the format accepts anywhere, with a rule that only local repositories apply checked in `Inspect`.
+
+**Rationale:** npm's `Normalize` is `name.Parse`: the change refuses names that no handler lets through anyway. The development agent would revisit it when NuGet's rule is written: if its upstream and local rules differ, `Normalize` carries the upstream one and `Inspect` the local.
+
+**Applied in the spec:** R-REPO-019 (step 3), R-REPO-023 (remote refusal), R-REPO-048. Code: `internal/repository/routing.go`, `internal/formats/catalog/catalog.go` (the doc of `Names`).
+
+### Q-REPO-124 · The OpenAPI member of a format's settings is written by hand and compared with the registered schema
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the generated clients are built from the OpenAPI document, and the create form from the schema the format registers. A setting added to one must reach the other.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two statements and a test that compares them | `NpmSettings` in `api/openapi.yaml` and `settings.schema.json`; `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember` compares the properties, types, values and defaults | Typed clients; the schema is the one the service validates against; a drift fails a test | Two places to edit |
+| (b) Generate the OpenAPI schema from the registered one | A generator step | One place | The OpenAPI document is edited by hand everywhere else and is the source of the generated types; a generated block in it breaks `generate-check` for people editing it |
+| (c) `additionalProperties: true` in OpenAPI, the registered schema alone | No second statement | One place | The typed client has no setting names; the document says nothing |
+
+**Choice:** (a).
+
+**Rationale:** the comparison is a table of four properties. The development agent would revisit it when a format with many settings makes the second statement a burden.
+
+**Applied in the spec:** R-REPO-004. Code: `api/openapi.yaml` (`NpmSettings`), `internal/api/v1/format_settings_test.go`.
 
 ## What this does not cover
 

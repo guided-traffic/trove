@@ -127,6 +127,7 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 		validateLocal(v, info, d, na)
 	}
 	applyOwnershipDefault(info, d)
+	validateFormatSettings(v, info, d)
 	if len(d.Storage) > 0 {
 		trimmed := bytes.TrimSpace(d.Storage)
 		var probe map[string]json.RawMessage
@@ -134,6 +135,24 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 			v.add("/storage", codeInvalidValue, "must be a JSON object")
 		} else if raw, ok := probe["maxUploadSize"]; ok && !validByteLimit(raw) {
 			v.add("/storage/maxUploadSize", codeInvalidValue, "must be a non-negative integer number of bytes")
+		}
+	}
+}
+
+// validateFormatSettings checks the settings member of the repository's format against
+// the format's schema (R-ARCH-008): a violation is reported at the member's pointer, a
+// member of another format is not applicable (R-REPO-004).
+func validateFormatSettings(v *validation, info catalog.Entry, d *Document) {
+	for _, m := range formatMembers() {
+		raw := m.read(&d.Settings)
+		switch {
+		case len(raw) == 0:
+		case m.format != string(info.ID):
+			v.add("/"+m.format, errs.CodeNotApplicable, fmt.Sprintf("the %s member holds the settings of %s repositories", m.format, m.format))
+		default:
+			for _, sv := range info.ValidateSettings(d.Class, raw) {
+				v.add("/"+m.format+sv.Pointer, sv.Code, sv.Detail)
+			}
 		}
 	}
 }

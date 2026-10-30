@@ -113,6 +113,13 @@ type Facts struct {
 	// or off. Empty for a format without package names, where ownership does not
 	// apply (Q-AUTHZ-155).
 	OwnershipDefault string
+	// SettingsSchema is the JSON Schema 2020-12 of the format's settings member of the
+	// repository document, the member named after the format (R-ARCH-008, R-REPO-004).
+	// Nil for a format without settings. The root must be an object schema with
+	// additionalProperties false; a property may name the classes it applies to in
+	// x-trove-classes. [Entry.ValidateSettings] checks a document against it, and
+	// GET /api/v1/formats serves it to the create form.
+	SettingsSchema []byte
 }
 
 // The values of OwnershipDefault (R-AUTHZ-018 packageOwnership).
@@ -137,9 +144,14 @@ func (f Facts) Supports(c Class) bool {
 // a name is compared as never differs between two features.
 type Names interface {
 	// Normalize returns the normalized name; ok is false for a string that is no
-	// name of the format. It is idempotent and leaves the pattern characters
-	// * ? [ ] { } , ! and \ unchanged, so a pattern is folded with the function
-	// that folds a name.
+	// name of the format. It implements the widest rule the format accepts anywhere
+	// (a remote repository may serve names a local one would refuse), so that !ok
+	// means "no repository of the format holds or may be asked for this string":
+	// routing then refuses the name instead of looking up its spelling as written,
+	// which would miss a claim or a pin rule on the folded form and fail open. A
+	// rule only local repositories apply is checked in Inspect. It is idempotent and
+	// leaves the pattern characters * ? [ ] { } , ! and \ unchanged, so a pattern is
+	// folded with the function that folds a name.
 	Normalize(name string) (norm string, ok bool)
 }
 
@@ -176,6 +188,9 @@ type Entry struct {
 	// Names is nil exactly when the format has no package names.
 	Names    Names
 	Exposure Exposure
+
+	// settings is the compiled SettingsSchema, filled by Register.
+	settings *settingsSchema
 }
 
 var (
@@ -217,11 +232,19 @@ func Or(r *Registry) *Registry {
 // reserved ID, a duplicate, no class or a class twice, no layout, a pattern
 // subject that is neither name nor path, package names without a [Names] (or a
 // [Names] without package names), exposure of versions without [Versioning],
-// exposure dimensions of a format that is not exposable, or a registration after
-// [Registry.Freeze].
+// exposure dimensions of a format that is not exposable, a settings schema that
+// does not compile or is no object schema that refuses unknown members, or a
+// registration after [Registry.Freeze].
 func (r *Registry) Register(e Entry) {
 	if err := check(e); err != nil {
 		panic(fmt.Sprintf("catalog: %v", err))
+	}
+	var compiled *settingsSchema
+	if len(e.SettingsSchema) > 0 {
+		var err error
+		if compiled, err = compileSettings(e.ID, e.SettingsSchema); err != nil {
+			panic(fmt.Sprintf("catalog: %v", err))
+		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -232,6 +255,7 @@ func (r *Registry) Register(e Entry) {
 		panic(fmt.Sprintf("catalog: %q is registered twice", e.ID))
 	}
 	e.Classes = append([]Class(nil), e.Classes...)
+	e.settings = compiled
 	r.by[e.ID] = e
 }
 

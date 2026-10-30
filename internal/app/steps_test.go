@@ -116,7 +116,7 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		base, _ := SubsystemsFor("web")
 		// The proxy engine and the format host need the files area, so all of them go.
 		base.Areas = slices.DeleteFunc(base.Areas, func(a Area) bool {
-			return a == AreaFiles || a == AreaProxyEngine || a == AreaFormatHost || a == AreaVirtualEngine
+			return a == AreaFiles || a == AreaProxyEngine || a == AreaFormatHost || a == AreaVirtualEngine || a == AreaPackagesAPI
 		})
 		if _, err := planSteps(wiringSteps(), base, "web"); err != nil {
 			t.Fatalf("plan: %v", err)
@@ -131,6 +131,34 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		_, err := (&App{}).wireFiles(t.Context(), infra{}, repositoryArea{}, authzArea{}, formatsArea{})
 		if err == nil || !strings.HasPrefix(err.Error(), "files: no repository reader, no authorizer, no format hooks, no format seam") {
 			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("R-REPO-048 the virtual engine and the package services are required inputs, not conventions that fall back", func(t *testing.T) {
+		_, err := (&App{}).wireVirtualEngine(t.Context(), infra{}, virtualArea{}, authzArea{}, repositoryArea{}, formatsArea{}, proxyEngineArea{}, filesArea{})
+		if err == nil || !strings.Contains(err.Error(), "no item store") || !strings.HasPrefix(err.Error(), "virtual-engine: ") {
+			t.Fatalf("virtual engine without its inputs: %v", err)
+		}
+		_, err = (&App{}).wireFormatHost(t.Context(), infra{}, formatsArea{}, repositoryArea{}, exposureArea{}, filesArea{}, proxyEngineArea{}, virtualEngineArea{})
+		if err == nil || !strings.Contains(err.Error(), "no virtual engine") {
+			t.Fatalf("format host without the virtual engine: %v", err)
+		}
+		_, err = (&App{}).wirePackagesAPI(t.Context(), infra{}, authzArea{}, repositoryArea{}, formatHostArea{})
+		if err == nil || !strings.HasPrefix(err.Error(), "packages-api: no format host, no decision point, no repository reader") {
+			t.Fatalf("package services without their inputs: %v", err)
+		}
+	})
+
+	t.Run("R-REPO-048 a client listener is not opened without the engines and the package services", func(t *testing.T) {
+		base, _ := SubsystemsFor("web")
+		err := (&App{sub: base, parts: &wiring{}}).requireServing()
+		if err == nil {
+			t.Fatal("a replica without any area was accepted")
+		}
+		for _, want := range []string{"no remote engine", "no virtual engine", "no package services"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%q does not name %q", err, want)
+			}
 		}
 	})
 

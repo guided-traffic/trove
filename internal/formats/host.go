@@ -64,7 +64,9 @@ type Ingestor interface {
 	// Commit stores the spooled body: the blob, the item row, the hooks and the
 	// audit row in one transaction (items.Store.Commit with Origin Upload). It
 	// marks the request committing (R-ARCH-024 step 5). The format decided deploy
-	// and overwrite on the inspected identity before.
+	// and overwrite on the inspected identity before. The [Commit.Companions] go in
+	// the same transaction: everything one client request writes commits as a unit
+	// (R-ARCH-009), so a failure of any file leaves none of them.
 	Commit(ctx context.Context, rq *Request, sp Spooled, c Commit) (Committed, error)
 	// Close removes the spool file. The dispatcher closes every spool of a request
 	// on every path.
@@ -82,6 +84,27 @@ type Commit struct {
 	Inspection   *Inspection
 	// Payload reaches OnCommit as CommitEvent.Payload.
 	Payload any
+	// Companions are the other files of the same request: they commit in the
+	// transaction of this one, after it, each with its own OnCommit
+	// (CommitEvent.Lead is this item). They take the lead's CreateOnly and
+	// MayOverwrite, since the format decided the write as a whole. A companion
+	// goes with a lead that changed: when the lead is identical to what is stored
+	// nothing is written, and [Committed.Companions] is empty.
+	Companions []Companion
+}
+
+// Companion is a file committed with the lead of a [Commit]: the attachment of a
+// publish (an npm provenance bundle) or a file derived from the lead (a NuGet
+// package's generated manifest), spooled with [Ingestor.Spool] like the lead.
+type Companion struct {
+	Spooled   Spooled
+	Path      Path
+	MediaType string
+	// Generated marks a file the format derived from the lead, not one a client
+	// sent; the item row records it, so that a raw write to it can be refused.
+	Generated bool
+	// Payload reaches OnCommit as CommitEvent.Payload of this file.
+	Payload any
 }
 
 // Committed is the outcome of a commit.
@@ -90,6 +113,9 @@ type Committed struct {
 	// Created is true for a new path and for a replacement, Identical for the same
 	// content at the path.
 	Created, Overwritten, Identical bool
+	// Companions are the items of [Commit.Companions], in order; empty when the lead
+	// was Identical.
+	Companions []ItemRef
 }
 
 // Item is a file or folder as the item store reads it.
@@ -147,8 +173,12 @@ type LinkBuilder interface {
 	File(repoKey, p string) string
 }
 
-// RenditionKey identifies a rendered document. The core hashes every field; a
-// rendition and its ETag use the same inputs (R-ARCH-012, R-NPM-013; C-12).
+// RenditionKey identifies a rendered document. The cache is keyed by every field of
+// the key, so a rendition is found only under all of its inputs (R-ARCH-012,
+// R-NPM-013; C-12). The ETag of a rendition is the format's own: it hashes the
+// inputs it keeps (npm: document.Inputs) and keeps them in step with this key by
+// hand. One ETag derived from the key by the core is a contract addition of
+// roadmap M3 (Q-ARCH-233).
 type RenditionKey struct {
 	Repo     RepoRef
 	Package  string

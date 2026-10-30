@@ -301,7 +301,7 @@ Priority: **MVP** · Covers: PKG-NPM-033, PKG-NPM-034, REPO-029, FMT-008
 - A published version is a `packages` row, a `package_versions` row and one item, the tarball at
   its canonical path, as lead item ([storage.md](../storage.md) R-STOR-003). Tarball bytes live
   only in the blob store (INV-4). A provenance bundle sent with a publish is a second item of the
-  version at `<name>/-/<basename>-<version>.sigstore`.
+  version at `<name>/-/<basename>-<version>.sigstore`, committed in the same transaction as the tarball (Q-NPM-58).
 - npm-owned state lives in the tables below. Package documents are not stored; they are rendered
   from these rows (R-NPM-010) and cached (R-NPM-013).
 - The package's revision counter is `rev_seq` on storage.md's generic `packages` row
@@ -550,6 +550,8 @@ Processing:
    message to other replicas after the commit: every replica reads the new revision on its next
    document request (R-NPM-010), and merged entries check it (R-NPM-030). Since 2026-10-28 trove
    issues no `NOTIFY` ([architecture.md](../architecture.md) R-ARCH-018, Q-ARCH-15).
+   A provenance bundle is a companion file of the same commit (Q-NPM-58): its hook runs after the tarball's, in the
+   same transaction, and links the bundle to the version the tarball's hook inserted; a failure of either leaves neither.
 6. Answer 201 `{"ok": true, "id": "<name>", "rev": "<rev>"}` once the blob is durable and the
    transaction committed; npm ignores the body. A replica that shuts down never cuts a publish
    between its commit and this status line ([architecture.md](../architecture.md) R-ARCH-024).
@@ -576,7 +578,7 @@ commits and the other answers 400 `npm_invalid_name`, and two concurrent first p
 new name both succeed.
 
 Notes on the implementation (Q-NPM-20, Q-NPM-22, Q-NPM-24): the body is read by a scanner that does not assume the order of its members; outside the attachment data it
-may hold 768 KiB, a provenance bundle 256 KiB. The tarball is committed first and the bundle second, so a publish with a bundle raises `rev_seq` twice. An upload to an npm
+may hold 768 KiB, a provenance bundle 256 KiB. The bundle is committed with the tarball in one transaction (Q-NPM-58), so a publish with a bundle raises `rev_seq` once. An upload to an npm
 repository through `/files/` is refused until R-NPM-036 exists. The answer of an acknowledged retry carries the current `rev`.
 
 Configuration (`trove.yaml`):
@@ -997,7 +999,7 @@ Configuration (`npm` section of a local repository):
 
 ```yaml
 npm:
-  latestGuard: true   # default (proposed); not settable yet: the repository document has no format section, so the guard is always on (Q-NPM-23)
+  latestGuard: true   # default (proposed); a member of the repository document, validated against the format's schema (Q-NPM-59, Q-NPM-60)
 ```
 
 Acceptance criteria:
@@ -1458,7 +1460,7 @@ Configuration (`npm` section of a remote repository):
 
 ```yaml
 npm:
-  serveRemovedVersions: false   # default (proposed)
+  serveRemovedVersions: false   # default (proposed); a member of the repository document (Q-NPM-59)
 ```
 
 Acceptance criteria:
@@ -1615,7 +1617,7 @@ Configuration (`npm` section of a virtual repository):
 
 ```yaml
 npm:
-  latestStrategy: highest-member-latest   # default (proposed); highest-member-latest | newest-published
+  latestStrategy: highest-member-latest   # default (proposed); highest-member-latest | newest-published; a member of the repository document (Q-NPM-59)
   distTagStrategy: member-order           # default (proposed); member-order | highest-semver | newest-published
 ```
 
@@ -3337,7 +3339,7 @@ the `npm.*` configuration and exports metrics, and a process may hold several re
 
 ### Q-NPM-22 · The provenance bundle of a publish
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by Q-NPM-58**: option (c) was built once the item store could commit several files in one transaction (Q-ARCH-228).
 
 A publish with a provenance bundle stores two items, the tarball and `<name>/-/<basename>-<version>.sigstore` (R-NPM-006). The item
 store commits one item per transaction, and a commit of an item runs the format's hook.
@@ -3373,13 +3375,13 @@ statements need an owner: who computes the tags, and what is stored in `warn` mo
 
 **Choice:** (b). `warn` accepts the publish, records `npm.publish.manifest_mismatch` and stores the request's manifest, as R-NPM-007 says; the
 description of `npm.publish.manifest_consistency` is corrected. `npm.latestGuard` is on for every repository: the repository document has no
-format section yet, so the setting of R-NPM-016 cannot be written, and a published version never moves `latest` backwards.
+format section yet, so the setting of R-NPM-016 cannot be written, and a published version never moves `latest` backwards. *Update:* the format section exists (Q-NPM-59), and the guard is a setting of local repositories, on by default.
 
 **Rationale:**
 - The guard exists to stop a maintenance release from becoming `latest`; leaving it on until the setting exists errs towards the safe side, and the
   rows' `LatestKept` flag is in the audit event, so the day the setting exists nothing changes for existing data.
 - Storing the tarball's values in `warn` would change what the document lists against what the publisher sent.
-- The development agent would revisit it when a format section of the repository document is built (not planned).
+- The development agent would revisit it when a format section of the repository document is built (not planned). It is built (Q-NPM-59).
 
 **Applied in the spec:** R-NPM-016 (the guard is always on until the setting exists), R-NPM-007 (the description of `warn`). Code: `internal/formats/npm/tags.go`.
 
@@ -3644,10 +3646,10 @@ R-NPM-026 says unlisted versions stay served with `true`; Q-NPM-5 stores only th
 | (a) Tarballs stay served, documents do not list the version | The cached tarball of an unlisted version, and those of a gone package, are served on every route; a document never lists what the current upstream document lacks | Lockfile installs keep working; no second representation | `npm view` does not show the version |
 | (b) Keep each unlisted manifest | A second copy in `npm_remote_versions`, merged back | Documents list it | Rejected by Q-NPM-5 |
 
-**Choice:** (a). The npm member of the stored repository document (`npm.serveRemovedVersions`, `npm.latestStrategy`, `npm.distTagStrategy`) is read as it is, with defaults when absent; the repository service does not accept the member yet.
+**Choice:** (a). The npm member of the stored repository document (`npm.serveRemovedVersions`, `npm.latestStrategy`, `npm.distTagStrategy`) is read as it is, with defaults when absent. *Update:* the repository service accepts and validates the member now (Q-NPM-59).
 
 **Rationale:**
-- Revisit when the repository document gets a format section: validation and the OpenAPI schema join, the reading stays.
+- Revisit when the repository document gets a format section: validation and the OpenAPI schema join, the reading stays. They joined (Q-NPM-59).
 
 **Applied in the spec:** R-NPM-026, R-NPM-031. Code: `internal/formats/npm/settings.go`.
 
@@ -4154,6 +4156,63 @@ Context: Q-NPM-32 reported `Superseded` before it looked at `time.modified`. Wit
 **Rationale:** a stale answer that overtakes a newer one is exactly the case the stale-copy rule exists for; ordering it by fetch time made the rule depend on which response was slow. The development agent would revisit the choice if upstreams that send a `time.modified` that does not grow with their content show up.
 
 **Applied in the spec:** R-NPM-024 (the paragraph on one stored document), Q-NPM-32 (the order of the two rules).
+
+### Q-NPM-58 · The provenance bundle commits with the tarball, in one transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NPM-22 committed the tarball first and the bundle second, because the item store committed one file per transaction. The tarball's commit made the version visible, and a failure of the bundle's commit left the version published without it and answered 500. R-ARCH-009
+says everything one client request writes goes through one transaction, and Q-ARCH-228 gave the item store the means: companion files in the commit of the lead.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two commits (Q-NPM-22 (a)) | As built | No change | A version without its bundle is visible until a retry, which answers 409 (the bundle is part of the retry facts) |
+| (b) The bundle is a companion of the tarball's commit | `formats.Commit.Companions`: one transaction, the tarball's hook first, then the bundle's, which links the item to the version the tarball's hook created | The window is gone; a refused bundle leaves nothing | The bundle's hook runs in the same transaction as the tarball's |
+| (c) Bundle first (Q-NPM-22 (b)) | The tarball's commit links it | The version never exists without it | An item at a version's path that no version owns, plantable by a `deploy` holder |
+
+**Choice:** (b). A bundle that cannot be stored (its path holds other content, the version is not live in the transaction) rolls the tarball back with it: no version, no package rows, no claim, no audit event, no `rev_seq`. The writer raises
+`rev_seq` once per package per transaction, so a publish with a bundle raises it once (it was twice). A retry whose tarball is identical to the stored one writes nothing, the bundle included, and is decided from the committed facts as before (R-NPM-008).
+
+**Rationale:** it is the choice Q-NPM-22 named as the answer when attestations are served, made earlier because the window was live for `npm publish --provenance`. The development agent would revisit it if the bundle ever has to be read before it is stored (R-NPM-027): the validation would then run
+before the commit, outside the transaction, as the tarball's does.
+
+**Applied in the spec:** R-NPM-006, R-NPM-007 steps 5 and 6 and the notes on the implementation; Q-NPM-22 is superseded. Code: `internal/formats/npm/{publish.go,hooks.go}`; tests: `test/integration/npm/provenance_atomic_test.go`.
+
+### Q-NPM-59 · npm's settings are the `npm` member of the repository document, with a schema and four settings
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the repository document had no format member (Q-NPM-23, Q-NPM-35), so `latestGuard` could not be set, and `serveRemovedVersions`, `latestStrategy` and `distTagStrategy` could be set only by writing the row. Q-ARCH-229 and Q-REPO-122 gave every format that member and the validation.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The settings the code reads, now | `latestGuard` (local), `serveRemovedVersions` (remote), `latestStrategy` and `distTagStrategy` (virtual), each with its class in `x-trove-classes` and its default | The schema says what is in effect; nothing is accepted that is ignored (R-REPO-008) | The rest of the spec's `npm` sections (`externalDependencies`, `audit`, trusted publishing) are not settable yet |
+| (b) Every setting the spec names | Schema members for features that are not built | One schema | A setting that is accepted and does nothing |
+| (c) Leave the member to SQL | — | Nothing to build | The review's finding |
+
+**Choice:** (a). The schema is [settings.schema.json](../../../internal/formats/npm/settings.schema.json); the settings of the features that arrive later join the schema in the change that builds them. A setting that the document leaves out takes its default (guard on, removed versions hidden, `highest-member-latest`, `member-order`).
+The format reads its member from the stored document of the request's repository (`settingsOf`), and `npm_remote.sql` reads `serveRemovedVersions` from the same stored member.
+
+**Rationale:** the format reads one stored document and the service validates it, so the two cannot disagree about a value. The development agent would revisit it when a setting must be validated against another repository (the `remotes` of `externalDependencies` must exist): the schema would then be followed by a hook of the format (roadmap M3, validation of remote configuration).
+
+**Applied in the spec:** R-NPM-016, R-NPM-026 and R-NPM-031 (the `Configuration` blocks); Q-NPM-23 and Q-NPM-35 (the revisit condition they name is met). Code: `internal/formats/npm/{settings.go,settings.schema.json}`; tests: `test/integration/npm/settings_test.go`.
+
+### Q-NPM-60 · The latest guard is applied by a publish, and only by a publish
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-016 puts the guard on a publish that carries `latest`; a dist-tag write moves `latest` to any live version deliberately ("moving it back after a broken release is legitimate"). With the setting readable, the question is which writes read it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The publish reads it | The handler reads `npm.latestGuard` once and the hook applies it with the tags read under the package row lock | The guard is about an implicit move; the tag write is explicit | The hook has no request, so the value travels in the commit's payload |
+| (b) Every write that can move `latest` reads it | The dist-tag handlers as well | One rule | The deliberate move would be refused with the guard on, which R-NPM-016 says it must not be |
+
+**Choice:** (a). The removal rules (`latest` moves to the highest remaining non-pre-release version when its version goes) are not a setting and always apply.
+
+**Rationale:** the setting names what a publish may do. The development agent would revisit it if a client's tag write is found to move `latest` unintentionally (none does).
+
+**Applied in the spec:** R-NPM-016 (the configuration block). Code: `internal/formats/npm/{publish.go,hooks.go}`.
 
 ## What this does not cover
 

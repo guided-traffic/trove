@@ -3487,6 +3487,15 @@ export interface components {
             priorityMembers: boolean;
             pinsAndClaims: boolean;
             caps: boolean;
+            /**
+             * @description The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
+             *     after the format, R-REPO-004), which the create form renders and the service validates a document
+             *     against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
+             *     a setting of another class answers `not_applicable`. `null` for a format without settings.
+             */
+            settingsSchema: {
+                [key: string]: unknown;
+            } | null;
         };
         FormatList: {
             formats: components["schemas"]["FormatDescriptor"][];
@@ -3563,6 +3572,7 @@ export interface components {
             storage?: {
                 [key: string]: unknown;
             };
+            npm?: components["schemas"]["NpmSettings"];
             /** @enum {string} */
             readonly lifecycle?: "active" | "deleting";
             /** Format: date-time */
@@ -3576,6 +3586,36 @@ export interface components {
             readonly lastActivityAt?: string | null;
             /** @description Findings of the write that did not block it; present on create, replace and update. */
             readonly warnings?: components["schemas"]["RepositoryWarning"][];
+        };
+        /**
+         * @description The settings of the npm format, the `npm` member of a repository document (R-REPO-004). The document
+         *     of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember`
+         *     fails on any difference between the two. A setting that does not apply to the class of the repository
+         *     answers 422 `not_applicable`. An omitted setting takes its default.
+         */
+        NpmSettings: {
+            /**
+             * @description Local repositories (R-NPM-016). A publish under `latest` does not move `latest` backwards or onto a pre-release in front of a release.
+             * @default true
+             */
+            latestGuard: boolean;
+            /**
+             * @description Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists.
+             * @default false
+             */
+            serveRemovedVersions: boolean;
+            /**
+             * @description Virtual repositories (R-NPM-031). How `latest` is merged.
+             * @default highest-member-latest
+             * @enum {string}
+             */
+            latestStrategy: "highest-member-latest" | "newest-published";
+            /**
+             * @description Virtual repositories (R-NPM-031). How the other dist-tags are merged.
+             * @default member-order
+             * @enum {string}
+             */
+            distTagStrategy: "member-order" | "highest-semver" | "newest-published";
         };
         /** @description What a caller sees who may read a repository but not its configuration (R-REPO-010). */
         RepositoryConsumerView: {
@@ -7404,7 +7444,8 @@ export interface operations {
                      *           "patternSubject": "path",
                      *           "priorityMembers": false,
                      *           "pinsAndClaims": false,
-                     *           "caps": false
+                     *           "caps": false,
+                     *           "settingsSchema": null
                      *         }
                      *       ],
                      *       "baseUrl": "https://trove.example.com"

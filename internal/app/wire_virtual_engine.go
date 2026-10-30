@@ -27,20 +27,16 @@ func (c *virtualComponent) Stop(context.Context) error {
 }
 
 // wireVirtualEngine builds the engine on the routing, the decision point and the item
-// store (read from the files area when that runs; without it there is no engine). The
-// remote members are asked through the proxy engine (formathost.NewVirtualRemotes). The Host does
-// not take the engine as its Resolver yet; that is one line in wireFormatHost when the
-// first format with a virtual class registers (docs/developer/virtual.md).
-func (a *App) wireVirtualEngine(ctx context.Context, in infra, v virtualArea, az authzArea, repo repositoryArea, fm formatsArea, px proxyEngineArea) (virtualEngineArea, error) {
+// store of the files area. The remote members are asked through the proxy engine
+// (formathost.NewVirtualRemotes). The Host takes the engine as its Resolver
+// (wireFormatHost). An input that is missing stops the start-up: a replica without the
+// engine would let a first publish skip the shadowing check (R-REPO-048).
+func (a *App) wireVirtualEngine(ctx context.Context, in infra, v virtualArea, az authzArea, repo repositoryArea, fm formatsArea, px proxyEngineArea, fa filesArea) (virtualEngineArea, error) {
 	if err := requireInputs(AreaVirtualEngine, given("routing", v.routing), given("decision point", az.engine),
-		given("repository reader", repo.reader), given("remote engine", px.engine)); err != nil {
+		given("repository reader", repo.reader), given("remote engine", px.engine), given("item store", fa.items)); err != nil {
 		return virtualEngineArea{}, err
 	}
-	// A role without the files area serves no package protocol; it has no engine either.
-	store, ok := a.itemStore.get()
-	if !ok {
-		return virtualEngineArea{}, nil
-	}
+	store := fa.items
 	pkgs, err := packages.NewStore(in.db)
 	if err != nil {
 		return virtualEngineArea{}, err
@@ -53,9 +49,7 @@ func (a *App) wireVirtualEngine(ctx context.Context, in infra, v virtualArea, az
 		Router: v.routing, Decider: az.engine, Locals: formathost.NewVirtualLocals(pkgs, store),
 		Remotes: remotes, Caches: in.caches, CacheBytes: int64(a.cfg.Proxy.MergedMetadataCacheBytes),
 		Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "virtual"),
-		// >>> WP2.9 exposure
 		FillRefused: px.engine.FillRefused,
-		// <<< WP2.9 exposure
 	}
 	if in.signals != nil { // a nil *cluster.Signals in the interface would not be nil
 		o.Signals = in.signals

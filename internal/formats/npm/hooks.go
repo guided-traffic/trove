@@ -39,6 +39,8 @@ type publishCommit struct {
 	// shadowSkipped says that the shadowing check asked nothing because the repository held a
 	// live version when it ran.
 	shadowSkipped bool
+	// latestGuard is npm.latestGuard of the repository the publish goes to.
+	latestGuard bool
 
 	// Filled by the hook.
 	pkg    formats.PackageID
@@ -47,8 +49,9 @@ type publishCommit struct {
 	kept   bool
 }
 
-// sigstoreCommit is the payload of the commit of a provenance bundle, which links
-// the item to the version the tarball commit created.
+// sigstoreCommit is the payload of the provenance bundle, the companion of the
+// tarball's commit: its hook links the item to the version the tarball's hook created
+// in the same transaction.
 type sigstoreCommit struct {
 	name    name.Name
 	version string
@@ -151,7 +154,7 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 	if err != nil {
 		return err
 	}
-	tags, kept := tagAfterPublish(cur, p.tag, p.version, true)
+	tags, kept := tagAfterPublish(cur, p.tag, p.version, p.latestGuard)
 	err = st.Publish(ctx, tx, rows.PublishInput{
 		RepoID: c.Repo.ID, PackageID: int64(pkg.ID), VersionID: int64(vid), Name: pkgName, NameFold: p.name.Fold(), Version: p.version,
 		Manifest: stored, Integrity: p.res.Integrity(), Shasum: p.res.SHA1Hex(),
@@ -181,8 +184,9 @@ func shadowingOf(first bool, s rows.Shadowing) rows.Shadowing {
 }
 
 // commitSigstore links the provenance bundle to the version of the tarball. The
-// bundle is committed after the tarball, so the version is live by then; a version
-// that was unpublished in between is a conflict.
+// bundle is a companion of the tarball's commit, so its hook runs after the tarball's
+// in the same transaction and the version is live by then; a version that is not is a
+// conflict, and rolls the tarball back with it.
 func (f *Format) commitSigstore(ctx context.Context, c formats.CommitEvent, p *sigstoreCommit) error {
 	pkgName := p.name.String()
 	pkg, _, err := c.Packages.EnsureLocked(ctx, c.Repo, pkgName, pkgName)

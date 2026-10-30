@@ -592,6 +592,45 @@ func (e LocalFormatName) Valid() bool {
 	}
 }
 
+// Defines values for NpmSettingsDistTagStrategy.
+const (
+	NpmSettingsDistTagStrategyHighestSemver   NpmSettingsDistTagStrategy = "highest-semver"
+	NpmSettingsDistTagStrategyMemberOrder     NpmSettingsDistTagStrategy = "member-order"
+	NpmSettingsDistTagStrategyNewestPublished NpmSettingsDistTagStrategy = "newest-published"
+)
+
+// Valid indicates whether the value is a known member of the NpmSettingsDistTagStrategy enum.
+func (e NpmSettingsDistTagStrategy) Valid() bool {
+	switch e {
+	case NpmSettingsDistTagStrategyHighestSemver:
+		return true
+	case NpmSettingsDistTagStrategyMemberOrder:
+		return true
+	case NpmSettingsDistTagStrategyNewestPublished:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NpmSettingsLatestStrategy.
+const (
+	NpmSettingsLatestStrategyHighestMemberLatest NpmSettingsLatestStrategy = "highest-member-latest"
+	NpmSettingsLatestStrategyNewestPublished     NpmSettingsLatestStrategy = "newest-published"
+)
+
+// Valid indicates whether the value is a known member of the NpmSettingsLatestStrategy enum.
+func (e NpmSettingsLatestStrategy) Valid() bool {
+	switch e {
+	case NpmSettingsLatestStrategyHighestMemberLatest:
+		return true
+	case NpmSettingsLatestStrategyNewestPublished:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OwnedPackageReason.
 const (
 	OwnedPackageReasonAdded        OwnedPackageReason = "added"
@@ -2591,6 +2630,12 @@ type FormatDescriptor struct {
 
 	// ProtocolBasePath The client address template; `{key}` is the repository key.
 	ProtocolBasePath string `json:"protocolBasePath"`
+
+	// SettingsSchema The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
+	// after the format, R-REPO-004), which the create form renders and the service validates a document
+	// against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
+	// a setting of another class answers `not_applicable`. `null` for a format without settings.
+	SettingsSchema *map[string]interface{} `json:"settingsSchema"`
 }
 
 // FormatDescriptorClasses defines model for FormatDescriptor.Classes.
@@ -2874,6 +2919,30 @@ type NewUser struct {
 	// Username Matches `^[a-z0-9][a-z0-9._@+-]{0,127}$` and is not reserved (R-AUTH-007).
 	Username string `json:"username"`
 }
+
+// NpmSettings The settings of the npm format, the `npm` member of a repository document (R-REPO-004). The document
+// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember`
+// fails on any difference between the two. A setting that does not apply to the class of the repository
+// answers 422 `not_applicable`. An omitted setting takes its default.
+type NpmSettings struct {
+	// DistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
+	DistTagStrategy *NpmSettingsDistTagStrategy `json:"distTagStrategy,omitempty"`
+
+	// LatestGuard Local repositories (R-NPM-016). A publish under `latest` does not move `latest` backwards or onto a pre-release in front of a release.
+	LatestGuard *bool `json:"latestGuard,omitempty"`
+
+	// LatestStrategy Virtual repositories (R-NPM-031). How `latest` is merged.
+	LatestStrategy *NpmSettingsLatestStrategy `json:"latestStrategy,omitempty"`
+
+	// ServeRemovedVersions Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists.
+	ServeRemovedVersions *bool `json:"serveRemovedVersions,omitempty"`
+}
+
+// NpmSettingsDistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
+type NpmSettingsDistTagStrategy string
+
+// NpmSettingsLatestStrategy Virtual repositories (R-NPM-031). How `latest` is merged.
+type NpmSettingsLatestStrategy string
 
 // ObjectStoreFacts defines model for ObjectStoreFacts.
 type ObjectStoreFacts struct {
@@ -3477,7 +3546,13 @@ type Repository struct {
 	Layout         *string                 `json:"layout,omitempty"`
 	Lifecycle      *RepositoryLifecycle    `json:"lifecycle,omitempty"`
 	Local          *map[string]interface{} `json:"local,omitempty"`
-	PriorityMember *bool                   `json:"priorityMember,omitempty"`
+
+	// Npm The settings of the npm format, the `npm` member of a repository document (R-REPO-004). The document
+	// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember`
+	// fails on any difference between the two. A setting that does not apply to the class of the repository
+	// answers 422 `not_applicable`. An omitted setting takes its default.
+	Npm            *NpmSettings `json:"npm,omitempty"`
+	PriorityMember *bool        `json:"priorityMember,omitempty"`
 
 	// Remote The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
 	// defaults of the format applied. Omitted members of a request take their defaults. The password

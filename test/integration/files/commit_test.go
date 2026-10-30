@@ -50,6 +50,8 @@ type hookProbe struct {
 	rowInTx     []bool // whether the committed item's row was visible to the hook's own transaction
 	failCommit  error
 	failRemoved error
+	// failPath fails the hook of that path only, after the hooks before it ran.
+	failPath string
 }
 
 func (h *hookProbe) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEvent) error {
@@ -66,6 +68,9 @@ func (h *hookProbe) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEven
 	defer h.mu.Unlock()
 	h.commits = append(h.commits, e)
 	h.rowInTx = append(h.rowInTx, n == 1)
+	if h.failPath != "" && e.Item.Path == h.failPath {
+		return errors.New("the format refused " + e.Item.Path)
+	}
 	return h.failCommit
 }
 

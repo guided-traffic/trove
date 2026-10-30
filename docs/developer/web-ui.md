@@ -433,10 +433,10 @@ Conventions these screens follow:
 - `GET /api/v1/system/banner` is not wired to `BannerStore`. The catalog services, `system/encryption`, `whoami`, `login-options`, `authz/me`, `authz/check` and `users/me/preferences` use the generated types (Q-UI-12).
 - System status: the backups card and route are placeholders (R-UI-048).
 - What the API lacks for the catalog screens, and the UI works around (Q-UI-15, Q-UI-18, Q-UI-19): the values of `ui.browser.page_size` and
-  `ui.deploy.max_upload_bytes`; a creation time and a sort by creation on the repository summary view; a settings schema in the format descriptor; a flag for
-  formats with tags in the descriptor.
+  `ui.deploy.max_upload_bytes`; a creation time and a sort by creation on the repository summary view; a flag for
+  formats with tags in the descriptor. The descriptor carries the settings schema now (`settingsSchema`, Q-ARCH-229); the form that renders from it is not built.
 - The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: M1 has neither class. Copy, move, properties and the trash can are P1.
-- The repository settings forms cover the generic format; NuGet's `deleteMode` view, upstream presets, "Test connection", the member editor and the other format
+- The repository settings forms cover the generic format; the `npm` member (`latestGuard`, `serveRemovedVersions`, `latestStrategy`, `distTagStrategy`) is settable through the API only until a form renders from the format's settings schema (R-ARCH-004; BETA.md, phase 3); NuGet's `deleteMode` view, upstream presets, "Test connection", the member editor and the other format
   panels arrive with those formats.
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
   expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,

@@ -167,6 +167,7 @@ func wiringSteps() []step {
 		newStep(AreaProxyEngine, withListener, (*App).wireProxyEngine),
 		newStep(AreaVirtualEngine, withListener, (*App).wireVirtualEngine),
 		newStep(AreaFormatHost, withListener, (*App).wireFormatHost),
+		newStep(AreaPackagesAPI, withListener, (*App).wirePackagesAPI),
 		newStep(AreaSessions, withListener, (*App).wireSessions),
 		newStep(AreaLogin, withListener, (*App).wireLogin),
 		newStep(AreaAuth, withListener, (*App).wireAuth),

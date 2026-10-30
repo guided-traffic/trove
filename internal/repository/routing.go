@@ -189,16 +189,23 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 	if !known || virtual.virt == nil {
 		return out
 	}
-	out.Admitted = admits(virtual, info, req)
 	name := req.Name
+	// A name the format cannot fold is no name of the format. Looking up the spelling as
+	// written would miss a claim or a pin rule on its folded form, so such a name takes no
+	// lookup at all: the virtual repository admits nothing under it and no remote member is
+	// asked (fail closed). A format whose folding is no validation never gets here.
+	unfoldable := false
 	if n, ok := cat.NormalizeName(virtual.Format, name); ok {
 		name = n
+	} else {
+		unfoldable = name != ""
 	}
+	out.Admitted = !unfoldable && admits(virtual, info, req)
 
 	var pin pinMatch
 	var claimed []claimHit
 	pinned := false
-	if name != "" {
+	if name != "" && !unfoldable {
 		if pin, pinned = virtual.virt.pins.best(name); pinned {
 			out.Decision = RouteDecision{Kind: DecidedByPin, Pattern: pin.pattern.String()}
 		} else if hits := mostSpecific(inEffect(idx.lookup(virtual.Format, name), virtual.virt)); len(hits) > 0 {
@@ -213,7 +220,7 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 		switch {
 		case m.Disabled || m.Lifecycle != Active:
 			out.Dropped[m.Key] = DropDisabled
-		case !admits(m, info, req):
+		case !admits(m, info, req), unfoldable && m.Class == Remote:
 			out.Dropped[m.Key] = DropNotAdmitted
 		case pinned && !pin.names(m.Key):
 			out.Dropped[m.Key] = DropPinnedOut
@@ -269,7 +276,15 @@ func admits(r Repository, info catalog.Entry, req RouteRequest) bool {
 // virtual repository (via) whose pin rule for the name lists the remote
 // repository (R-REPO-023 "Remote refusal").
 func (rt *Routing) RemoteRefused(ctx context.Context, remote Repository, name string, via *Repository) (bool, error) {
-	if !rt.refusal() || remote.Class != Remote || name == "" {
+	if remote.Class != Remote || name == "" {
+		return false, nil
+	}
+	// A name the format cannot fold is no name of the format: no upstream is asked for it,
+	// whatever the switch says, because no claim can be looked up for it.
+	if _, ok := rt.cat.NormalizeName(remote.Format, name); !ok {
+		return true, nil
+	}
+	if !rt.refusal() {
 		return false, nil
 	}
 	idx, err := rt.index(ctx)
@@ -281,9 +296,11 @@ func (rt *Routing) RemoteRefused(ctx context.Context, remote Repository, name st
 
 // remoteRefused is RemoteRefused on an explicit index, with the switch on.
 func remoteRefused(cat *catalog.Registry, idx *claimIndex, remote Repository, name string, via *Repository) bool {
-	if n, ok := cat.NormalizeName(remote.Format, name); ok {
-		name = n
+	n, ok := cat.NormalizeName(remote.Format, name)
+	if !ok {
+		return true
 	}
+	name = n
 	global := false
 	for _, h := range idx.lookup(remote.Format, name) {
 		if h.scope == ScopeGlobal {
@@ -314,9 +331,11 @@ func (rt *Routing) CoveredByOwnClaim(ctx context.Context, local Repository, name
 }
 
 func coveredByOwn(cat *catalog.Registry, idx *claimIndex, local Repository, name string) bool {
-	if n, ok := cat.NormalizeName(local.Format, name); ok {
-		name = n
+	n, ok := cat.NormalizeName(local.Format, name)
+	if !ok { // no claim covers what is no name; the shadowing check then asks
+		return false
 	}
+	name = n
 	for _, h := range idx.lookup(local.Format, name) {
 		if h.repoID == local.rid {
 			return true
@@ -338,9 +357,11 @@ type ClaimMatch struct {
 // most specific first (R-REPO-023). Claims of equal specificity are ordered by
 // repository id; use [MostSpecificClaims] for the ones that decide.
 func (rt *Routing) ClaimsFor(ctx context.Context, format, name string) ([]ClaimMatch, error) {
-	if n, ok := rt.cat.NormalizeName(format, name); ok {
-		name = n
+	n, ok := rt.cat.NormalizeName(format, name)
+	if !ok { // what is no name of the format is covered by no claim
+		return nil, nil
 	}
+	name = n
 	idx, err := rt.index(ctx)
 	if err != nil {
 		return nil, err

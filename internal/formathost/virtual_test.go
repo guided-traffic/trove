@@ -360,6 +360,13 @@ func TestR_REPO_021_BridgeDeployTarget(t *testing.T) {
 	}
 }
 
+func TestR_REPO_048_AHostWithoutTheEngineRefusesTheShadowingCheck(t *testing.T) {
+	out, err := unsupportedResolver{}.ShadowCheck(t.Context(), nil, "lodash")
+	if err == nil || errs.KindOf(err) != errs.Internal || out.Proceed {
+		t.Fatalf("the check of a Host without the engine let a publish through: %+v, %v", out, err)
+	}
+}
+
 func TestR_REPO_048_BridgeShadowCheck(t *testing.T) {
 	b := newBridge(t)
 	b.eng.target, b.eng.targetOK = vt.LocalRepo(1, "team-local"), true

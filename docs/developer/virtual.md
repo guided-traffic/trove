@@ -97,7 +97,10 @@ patterns the path; a request without a name is admitted), as `pinned-out` when t
 list it, and as `claimed-elsewhere` when a claim in effect in V covers the name and the member is not among the repositories
 with the most specific claim. A pin rule decides before claims. A claim is in effect in V when its scope is `global`, or its
 repository is a member of V. If a claim decides and no member is left, the answer is 404 and no remote member is asked: the
-engine must not consult the cache or the upstream for it. The members left are ordered priority members first when the format
+engine must not consult the cache or the upstream for it. A name that the format's name rule cannot fold (`NormalizeName` answers `!ok`) is no name of the
+format and fails closed: `Admitted` is false, the remote members are dropped as `not_admitted`, no claim or pin is looked up as written (the unfolded
+spelling would miss the claim on the folded form), `RemoteRefused` answers true whatever `proxy.claims.remote_refusal` says, `CoveredByOwnClaim` is false (so the
+shadowing check asks) and `ClaimsFor` returns nothing (Q-REPO-123, `TestR_ARCH_008_AnUnfoldableNameFailsClosedInRouting`). The members left are ordered priority members first when the format
 declares `PriorityMembers`, else in list order. Per-member `read`, the cache-fill check, the tiers and the merge belong to the
 engine and follow `Route`.
 
@@ -340,7 +343,7 @@ type Remotes interface {
 `RemoteCall` carries the remote and virtual repositories, the path, variant and package, the subject (for the audit and the upstream log, with
 `flight_role: probe` for a probe) and the endpoint. Two more lines complete the wiring when the formats with a virtual class register: the Host
 takes `formathost.NewResolver(engine, nil)` as `Options.Resolver` in `wireFormatHost`
-([wire_formats.go](../../internal/app/wire_formats.go); the step now takes `virtualEngineArea` as an input and runs after `wireVirtualEngine`), and the format's writer calls `ShadowCheck`
+([wire_formats.go](../../internal/app/wire_formats.go); the step takes `virtualEngineArea` as an input, requires the engine and runs after `wireVirtualEngine`, which takes the item store from `filesArea`), and the format's writer calls `ShadowCheck`
 (npm: `shadowCheck` in [publish.go](../../internal/formats/npm/publish.go); a proceeding outcome reaches the publish transaction, which writes `repository.remote_package_shadowed` and `shadowCheck: undetermined`).
 The management API already takes the engine (`Options.Resolution`, set in `startClient` of [app.go](../../internal/app/app.go) by `resolutionExplainer`).
 

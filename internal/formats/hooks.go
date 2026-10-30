@@ -120,8 +120,12 @@ type CommitEvent struct {
 	Origin Origin
 	Repo   RepoRef
 	Item   ItemRef
-	Path   Path
-	Size   int64
+	// Lead is the lead item of the commit when Item is the file of a
+	// [Companion]; the zero ItemRef for the lead itself. The lead's own OnCommit
+	// has run before a companion's, in the same transaction.
+	Lead ItemRef
+	Path Path
+	Size int64
 	// Digests are those of the stored content.
 	Digests Digests
 	// UpstreamURL is the final upstream URL without user info (OriginFill).

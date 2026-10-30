@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/guided-traffic/trove/internal/formats/npm/settings.schema.json",
+  "title": "npm repository settings",
+  "description": "The npm member of a repository document (R-REPO-004). A member lists the classes it applies to in x-trove-classes; a member of another class is refused as not applicable.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "latestGuard": {
+      "description": "A publish under latest does not move latest backwards or onto a pre-release in front of a release; the version is stored and latest stays (R-NPM-016).",
+      "type": "boolean",
+      "default": true,
+      "x-trove-classes": ["local"]
+    },
+    "serveRemovedVersions": {
+      "description": "Serve the cached tarball of a version the upstream no longer lists, and keep its package served when the upstream drops it (R-NPM-026). The package documents never list such a version.",
+      "type": "boolean",
+      "default": false,
+      "x-trove-classes": ["remote"]
+    },
+    "latestStrategy": {
+      "description": "How a virtual repository merges latest (R-NPM-031).",
+      "type": "string",
+      "enum": ["highest-member-latest", "newest-published"],
+      "default": "highest-member-latest",
+      "x-trove-classes": ["virtual"]
+    },
+    "distTagStrategy": {
+      "description": "How a virtual repository merges the other dist-tags (R-NPM-031).",
+      "type": "string",
+      "enum": ["member-order", "highest-semver", "newest-published"],
+      "default": "member-order",
+      "x-trove-classes": ["virtual"]
+    }
+  }
+}

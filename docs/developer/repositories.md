@@ -19,7 +19,7 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | File | Responsibility |
 |---|---|
 | [repository.go](../../internal/repository/repository.go) | the shared contract: `Repository`, `Class` (the catalog's), `Lifecycle`, `Reader`, `KeyPattern`, `ReservedKeys()`; `Repository.Admits` |
-| [document.go](../../internal/repository/document.go) | `Document` and `Settings` (the configuration document of R-REPO-004), `DecodeDocument` (strict: unknown and duplicate members), `ConsumerView` |
+| [document.go](../../internal/repository/document.go) | `Document` and `Settings` (the configuration document of R-REPO-004, with the settings member of each format that has some, `formatMembers`), `DecodeDocument` (strict: unknown and duplicate members), `ConsumerView`, `canonicalObject` (the stored form of a format member), `IsReservedMember` |
 | [validate.go](../../internal/repository/validate.go) | `validate`: every rule of R-REPO-008 in one pass; the error shape (one violation under its own code, several under `validation_failed`) |
 | [key.go](../../internal/repository/key.go), [path.go](../../internal/repository/path.go) | `ValidKeyShape`, `IsReservedKey`; `CleanPath` (R-ARCH-005) |
 | [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `PatternSubject` (the catalog's), `Pattern.Match`, `Admission` (include and exclude lists, folder admission) |
@@ -195,8 +195,9 @@ The ordered checklist with the contract's details is in [formats.md](formats.md#
    and repository patterns fold names and patterns with it) and, to be exposable on an endpoint, an `Exposure`; add a
    line to the tree of R-ARCH-003.
 3. Register it in [formats/all/all.go](../../internal/formats/all/all.go).
-4. Add its settings to `repository.Settings` as a member named after the format (a strict document refuses a member the
-   struct does not know) and its validation to `validate.go`.
+4. If it has settings, give the format a JSON Schema (`catalog.Facts.SettingsSchema`) and add them to `repository.Settings` as a member named after the format (a strict
+   document refuses a member the struct does not know) with an entry in `formatMembers`; `validateFormatSettings` runs the schema, so `validate.go` needs no change
+   ([formats.md](formats.md#format-settings), Q-REPO-122). A setting that applies to one class says so in the schema (`x-trove-classes`).
 5. Name the requirement IDs in the tests; run `make coverage` and `go run ./internal/tools/coverage -links`.
 
 ## Paths and patterns
