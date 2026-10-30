@@ -300,6 +300,20 @@ The themes are the ones of [R-API-021](../spec/api-and-ui.md): `color-scheme: li
 5. Browser journeys: use `openFilter(page, '<category>')` from [web/e2e/support.ts](../../web/e2e/support.ts) before using a filter field.
 
 <!-- >>> M1 ui-b -->
+### The base URL rule
+
+Every address the UI shows or copies as a client address, and the `curl` text of the repository forms, is built from the **server's configured base
+URL**, never from `location` (Q-UI-69). [ServerAddress](../../web/src/app/core/server-address.ts) answers `baseUrl()`:
+
+1. a holder of `settings:read` gets `baseUrl` from `GET /api/v1/system/info`;
+2. any other caller gets it from the first readable repository whose absolute `addresses` entry ends in the format's `protocolBasePath` with its
+   key (`protocolPath`); the part before the suffix is the base;
+3. neither answers: `null`, and the screen shows no address (the review step of the repository wizard an en dash) instead of a wrong one.
+
+`clientAddress(baseUrl, format, key)` and `apiAddress(baseUrl, path)` in [repository-model.ts](../../web/src/app/features/repositories/repository-model.ts)
+build the strings. Lists and the consumer view show the absolute `addresses` of the server unchanged. A spec that proves the rule renders a screen under
+jsdom's own origin and asserts that the shown address carries the fake's configured base URL and not `location.origin`.
+
 ## Identity, token and permission screens
 
 Built against the real management API with the generated types of `schema.d.ts`. Requirements: R-UI-002 to R-UI-005 (sign-in, sessions),

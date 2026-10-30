@@ -1,6 +1,10 @@
 import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
-import { FakeRepositoriesApi } from '../../api/testing/fakes-catalog';
+import {
+  FakeRepositoriesApi,
+  GENERIC_FORMAT,
+  PACKAGE_FORMAT,
+} from '../../api/testing/fakes-catalog';
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
 
@@ -126,6 +130,36 @@ describe('Repository edit form', () => {
     const r = await open(undefined, 'no-such-repo');
     expect(text(r.root)).toContain('does not exist');
     await expectAccessible(r.root);
+  });
+
+  it('R-REPO-002 R-UI-021 the client address and the curl command carry the configured base URL even though the page is served from another origin', async () => {
+    const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
+    expect(location.origin).not.toBe('https://trove.example.net');
+    expect(text(r.root)).toContain('https://trove.example.net/files/generic-local/');
+    type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Api');
+    await settle(r.fixture);
+    const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+      t.textContent?.includes('API'),
+    )!;
+    tab.click();
+    await settle(r.fixture);
+    expect(text(r.root)).toContain(
+      "curl -X PATCH 'https://trove.example.net/api/v1/repositories/generic-local'",
+    );
+    expect(text(r.root)).not.toContain(location.origin);
+  });
+
+  it('R-REPO-002 R-UI-021 without settings:read and without any readable address the page shows no client address instead of the page origin', async () => {
+    const r = await renderScreen(RepositoryDetail, {
+      inputs: { key: 'generic-local' },
+      capabilities: ['repositories:read-config', 'repositories:write-config'],
+      setup: (get) => {
+        const fake = get(RepositoriesApi) as FakeRepositoriesApi;
+        fake.listAll = async () => [];
+      },
+    });
+    expect(text(r.root)).not.toContain(location.origin);
+    expect(text(r.root)).not.toContain('generic-local/');
   });
 
   it('R-UI-021 the API tab shows the stored document and the request that saves the change', async () => {

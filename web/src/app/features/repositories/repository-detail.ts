@@ -1,4 +1,4 @@
-import { DOCUMENT, DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import {
   Component,
   computed,
@@ -21,8 +21,10 @@ import {
   RepositoryConsumerView,
   Versioned,
   isConsumerView,
+  repositoryUrl,
 } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
+import { ServerAddress } from '../../core/server-address';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { ConflictResolver } from '../../shared/conflict-dialog';
@@ -36,7 +38,7 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
-import { RepositoryForm, clientAddress, curlOf, formOf, settingsOf } from './repository-model';
+import { RepositoryForm, apiAddress, clientAddress, curlOf, formOf, settingsOf } from './repository-model';
 import { classLabel } from './repository-wizard';
 
 /**
@@ -70,12 +72,13 @@ export class RepositoryDetail implements HasUnsavedChanges {
   private readonly conflicts = inject(ConflictResolver);
   private readonly drafts = inject(DraftStore);
   private readonly recent = inject(RecentRepositories);
-  private readonly dom = inject(DOCUMENT);
+  private readonly serverAddress = inject(ServerAddress);
 
   /** The route parameter `:key`, bound by the router. */
   readonly key = input.required<string>();
 
   protected readonly formats = resource({ loader: () => this.api.formats() });
+  private readonly baseUrl = resource({ loader: () => this.serverAddress.baseUrl() });
   protected readonly loaded = resource({
     params: () => this.key(),
     loader: ({ params }) => this.api.get(params),
@@ -117,14 +120,14 @@ export class RepositoryDetail implements HasUnsavedChanges {
     () => (valueOf(this.formats) ?? []).find((f) => f.name === this.stored()?.format) ?? null,
   );
   protected readonly address = computed(() =>
-    clientAddress(this.dom.location.origin, this.format() ?? undefined, this.key()),
+    clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, this.key()),
   );
   protected readonly documentJson = computed(() => JSON.stringify(this.stored(), null, 2));
   protected readonly patchJson = computed(() => JSON.stringify(this.patch(), null, 2));
   protected readonly curl = computed(() =>
     curlOf(
       'PATCH',
-      `${this.dom.location.origin}/api/v1/repositories/${encodeURIComponent(this.key())}`,
+      apiAddress(valueOf(this.baseUrl), repositoryUrl(this.key())),
       this.patch(),
       [`If-Match: ${this.etag}`],
     ),

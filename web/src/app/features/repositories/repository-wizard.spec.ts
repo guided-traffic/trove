@@ -7,6 +7,8 @@ import {
   GENERIC_FORMAT,
   PACKAGE_FORMAT,
 } from '../../api/testing/fakes-catalog';
+import { SystemApi } from '../../api/system-api';
+import { FakeSystemApi, sampleInfo } from '../../api/testing/fakes';
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryWizard } from './repository-wizard';
 
@@ -117,6 +119,51 @@ describe('Repository creation wizard', () => {
       'snapshots/**',
     ]);
     expect(navigate).toHaveBeenCalledWith(['/admin/repositories', 'build-output']);
+  });
+
+  it('R-REPO-002 R-UI-021 the review shows the client address and the curl command on the configured base URL, not on the origin of the page', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
+    });
+    // The page is served from jsdom's origin; the installation's base URL is another one.
+    expect(location.origin).not.toBe('https://trove.example.net');
+    await pick(r, 'class', 'local');
+    await next(r);
+    await pick(r, 'format', 'npm');
+    await next(r);
+    type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'web-libs');
+    await settle(r.fixture);
+    await next(r);
+    await next(r);
+
+    const t = text(r.root);
+    expect(t).toContain('https://trove.example.net/api/npm/web-libs/');
+    expect(r.root.querySelector('details pre:last-of-type')?.textContent).toContain(
+      "curl -X POST 'https://trove.example.net/api/v1/repositories'",
+    );
+    expect(t).not.toContain(location.origin);
+  });
+
+  it('R-REPO-002 R-UI-021 a caller without settings:read gets the base URL from the addresses of the repositories it may see', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      capabilities: ['repositories:write-config'],
+      setup: (get) => {
+        (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM];
+        (get(SystemApi) as FakeSystemApi).infoResult = sampleInfo({
+          baseUrl: 'https://must-not-be-asked.example',
+        });
+      },
+    });
+    await pick(r, 'class', 'local');
+    await next(r);
+    await pick(r, 'format', 'npm');
+    await next(r);
+    type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'web-libs');
+    await settle(r.fixture);
+    await next(r);
+    await next(r);
+    expect(text(r.root)).toContain('https://trove.example.net/api/npm/web-libs/');
   });
 
   it('R-UI-021 the key is checked live: shape at once, availability after a pause (a 404 means free)', async () => {

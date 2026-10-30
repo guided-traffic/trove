@@ -1,4 +1,3 @@
-import { DOCUMENT } from '@angular/common';
 import {
   Component,
   DestroyRef,
@@ -20,6 +19,7 @@ import {
   RepositoryClass,
 } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
+import { ServerAddress } from '../../core/server-address';
 import { SessionStore } from '../../core/session-store';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ErrorSummary, SummaryItem, fieldMessage, problemsAt } from '../../shared/field-errors';
@@ -31,6 +31,7 @@ import {
   EMPTY_FORM,
   KEY_PATTERN,
   RepositoryForm,
+  apiAddress,
   clientAddress,
   curlOf,
   documentOf,
@@ -93,13 +94,14 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private readonly notifier = inject(Notifier);
   private readonly session = inject(SessionStore);
   private readonly drafts = inject(DraftStore);
-  private readonly dom = inject(DOCUMENT);
+  private readonly serverAddress = inject(ServerAddress);
   private readonly destroyed = inject(DestroyRef);
 
   /** Generated when the wizard opens and kept until it closes (R-UI-042). */
   private readonly idempotencyKey = newIdempotencyKey();
 
   protected readonly formats = resource({ loader: () => this.api.formats() });
+  private readonly baseUrl = resource({ loader: () => this.serverAddress.baseUrl() });
   protected readonly step = signal(0);
   protected readonly cls = signal<RepositoryClass | null>(null);
   protected readonly formatName = signal<string | null>(null);
@@ -164,13 +166,13 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly curl = computed(() => {
     const doc = this.body();
     return doc
-      ? curlOf('POST', `${this.dom.location.origin}/api/v1/repositories`, doc, [
+      ? curlOf('POST', apiAddress(valueOf(this.baseUrl), '/api/v1/repositories'), doc, [
           'Idempotency-Key: <a fresh UUID>',
         ])
       : '';
   });
   protected readonly address = computed(() =>
-    clientAddress(this.dom.location.origin, this.format() ?? undefined, this.form().key),
+    clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, this.form().key),
   );
   protected readonly includes = computed(() => lines(this.form().includePatterns));
   protected readonly excludes = computed(() => lines(this.form().excludePatterns));

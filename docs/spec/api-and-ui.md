@@ -4868,6 +4868,25 @@ The owner asked on 2026-10-30 for a product-grade layout with a navigation sideb
 
 **Applied in the spec:** R-UI-002 gains the top bar, grouped navigation, rail, breadcrumbs and list-screen bullets and three acceptance criteria; R-UI-006 states that the packages list uses the shared table and filter panel; R-UI-020 drops "sort by key or creation" (the API has no `sort`; the list is ordered by key) and names the filter panel; R-UI-024, R-UI-025 and R-UI-037 name the sortable column and the panel. The implementation is described in [web-ui.md](../developer/web-ui.md#shell-design-tokens-and-the-list-components).
 
+### Q-UI-69 · Client addresses come from the server's base URL, never from the page's location
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The repository wizard and the repository page built the client address of a repository from `location.origin`. Behind a proxy, a port forward or another host name for the same installation that origin is not the address a package manager must use; the public base URL is configuration (`server.base_url`, per endpoint `baseUrl`) and the server already serves it. The owner's rule: addresses shown in the UI come from the server's configured base URL.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `GET /api/v1/system/info` for every screen | `baseUrl` of the installation facts | One call, the value of record | The operation needs `settings:read`; a repository administrator without it would see no address |
+| (b) The absolute `addresses` of the repository answers only | Show `addresses[0]` where a repository exists | No permission needed; the server builds them from the same URL | A repository that does not exist yet (the wizard's review step) has no address |
+| (c) One service that asks (a) for a holder of `settings:read` and otherwise derives the base from (b), and never from the location | `core/server-address.ts` | Works for every caller who can see any repository; one place to change when the API gains a public base URL | The base is unknown for a caller who may read no repository and may not read the facts; the screens then show no address instead of a wrong one |
+| (d) A new public member (login options or `authz/me` carries `baseUrl`) | API change | Works for everyone, including the wizard of the first repository | A change of two contracts outside this work; not needed to fix the defect |
+
+**Choice:** (c). `ServerAddress.baseUrl()` returns the base URL without a trailing slash: from `system/info` when the session holds `settings:read`, else from the first repository (of `GET /api/v1/repositories`, which is filtered by what the caller may see) whose `addresses` has an entry ending in the format's `protocolBasePath` with its key; the part before that suffix is the base. The answer is kept once known and a `null` is not remembered. The wizard and the repository page build the client address from it plus the format's `protocolBasePath` from `GET /api/v1/formats`; the management API addresses of their "as API request" `curl` text come from it too and show `<base URL>` while it is unknown. Where the repository answer carries absolute `addresses` (the list and the consumer view) the screens show them unchanged. `location.origin` is no longer used for any address.
+
+**Rationale:** (a) alone fails a caller the screens are built for (R-AUTHZ-010 gives `repositories:write-config` without `settings:read`), (b) alone has no answer for the wizard, and (d) is the better end state, but it is an API change that the defect does not need. The development agent revisits this when a public member of the base URL exists: `ServerAddress` then reads it, and (c)'s derivation is deleted. The gap that remains today is the wizard of a caller with `repositories:write-config` but neither `settings:read` nor a readable repository: its review shows an en dash for the client address.
+
+**Applied in the spec:** none (R-REPO-002's address is unchanged); [web-ui.md](../developer/web-ui.md#the-base-url-rule).
+
 ### Q-API-16 · A `limit` above the maximum is clamped
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
