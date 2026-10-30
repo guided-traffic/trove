@@ -51,6 +51,24 @@ func (f *fixture) repo(key, class, format, cfg string) *fixture {
 	if cfg == "" {
 		cfg = "{}"
 	}
+	// The members and the deploy target of a virtual repository are rows of their
+	// own (R-REPO-017); a test writes them in the document and the fixture splits
+	// them off, as the service does.
+	var doc struct {
+		Virtual struct {
+			Members      []string `json:"members"`
+			DeployTarget string   `json:"deployTarget"`
+		} `json:"virtual"`
+	}
+	if err := json.Unmarshal([]byte(cfg), &doc); err != nil {
+		panic(err)
+	}
+	for _, m := range doc.Virtual.Members {
+		f.s.VirtualMembers = append(f.s.VirtualMembers, q.AuthzBuildVirtualMembersRow{VirtualID: f.next, MemberKey: m})
+	}
+	if doc.Virtual.DeployTarget != "" {
+		f.s.DeployTargets = append(f.s.DeployTargets, q.AuthzBuildDeployTargetsRow{VirtualID: f.next, TargetKey: doc.Virtual.DeployTarget})
+	}
 	f.s.Repositories = append(f.s.Repositories, q.AuthzBuildRepositoriesRow{ID: f.next, Key: key, Class: class, Format: format, Config: []byte(cfg)})
 	return f
 }

@@ -99,6 +99,14 @@ type Options struct {
 	// Remote holds the key ring and the upstream prober of remote repositories
 	// (secrets_store.go); the composition root may bind them later (Bind).
 	Remote RemoteDeps
+
+	// >>> M2 virtual
+
+	// MaxVirtualMembers is repositories.max_virtual_members (R-REPO-017); zero
+	// means DefaultMaxVirtualMembers.
+	MaxVirtualMembers int
+
+	// <<< M2 virtual
 }
 
 // Service is the write and management-read side of the repository model:
@@ -118,6 +126,9 @@ type Service struct {
 	batch int
 	// remote is set once by Bind or NewService, read by every request.
 	remote atomic.Pointer[RemoteDeps]
+
+	// maxMembers bounds the member list of a virtual repository (R-REPO-017).
+	maxMembers int
 }
 
 // NewService creates the service.
@@ -137,9 +148,12 @@ func NewService(o Options) (*Service, error) {
 	if o.DeleteBatch <= 0 {
 		o.DeleteBatch = 5000
 	}
+	if o.MaxVirtualMembers <= 0 {
+		o.MaxVirtualMembers = DefaultMaxVirtualMembers
+	}
 	s := &Service{
 		run: o.Runner, cat: catalog.Or(o.Catalog), rec: o.Recorder, notif: o.Notifier, jobs: o.Jobs,
-		hooks: o.Hooks, log: o.Log, batch: o.DeleteBatch,
+		hooks: o.Hooks, log: o.Log, batch: o.DeleteBatch, maxMembers: o.MaxVirtualMembers,
 	}
 	s.Bind(o.Remote)
 	return s, nil
@@ -210,14 +224,20 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byt
 		return Stored{}, err
 	}
 	_, v := validate(s.cat, &d, true)
+	qs, err := queries(tx)
+	if err != nil {
+		return Stored{}, err
+	}
+	// >>> M2 virtual
+	rel, err := s.resolveVirtual(ctx, qs, v, &d)
+	if err != nil {
+		return Stored{}, err
+	}
+	// <<< M2 virtual
 	if err := v.err(); err != nil {
 		return Stored{}, err
 	}
 	cfg, err := d.marshalConfig()
-	if err != nil {
-		return Stored{}, err
-	}
-	qs, err := queries(tx)
 	if err != nil {
 		return Stored{}, err
 	}
@@ -236,13 +256,27 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byt
 			return Stored{}, err
 		}
 	}
-	out, err := s.stored(rows[0], v.warnings)
+	// >>> M2 virtual
+	if rel != nil {
+		if _, _, err := writeVirtual(ctx, qs, rows[0].ID, rel, nil); err != nil {
+			return Stored{}, err
+		}
+	}
+	// <<< M2 virtual
+	out, err := s.stored(ctx, qs, rows[0], v.warnings)
 	if err != nil {
 		return Stored{}, err
 	}
 	if err := s.afterWrite(ctx, tx, c, EventCreated, out.Repository, []string{"key", "class", "format"}); err != nil {
 		return Stored{}, err
 	}
+	// >>> M2 virtual
+	if rel != nil && len(rel.pins) > 0 {
+		if err := s.notifyPins(tx, out.Repository); err != nil {
+			return Stored{}, err
+		}
+	}
+	// <<< M2 virtual
 	return out, nil
 }
 
@@ -250,16 +284,26 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byt
 // repository being deleted is returned with Lifecycle Deleting; the handler shows
 // it only to holders of repositories:read-config.
 func (s *Service) Get(ctx context.Context, key string) (Stored, error) {
-	rows, err := readRows(ctx, s.run, func(qs *q.Queries) ([]q.Repository, error) {
-		return qs.GetRepositoryByKey(ctx, key)
+	var out Stored
+	err := s.run.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.GetRepositoryByKey(ctx, key)
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return notFound(key)
+		}
+		out, err = s.stored(ctx, qs, rows[0], nil)
+		return err
 	})
 	if err != nil {
 		return Stored{}, err
 	}
-	if len(rows) == 0 {
-		return Stored{}, notFound(key)
-	}
-	return s.stored(rows[0], nil)
+	return out, nil
 }
 
 // Replace implements PUT of R-REPO-011: the body is a complete document and
@@ -318,7 +362,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		if !pre.Any && pre.Version != row.ConfigVersion {
 			return stale(row.ConfigVersion)
 		}
-		cur, err := toDocument(row, s.cat)
+		cur, curRel, err := s.document(ctx, qs, row)
 		if err != nil {
 			return fmt.Errorf("repository: stored document of %q: %w", key, err)
 		}
@@ -328,6 +372,12 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 			return err
 		}
 		nd, v := s.checkUpdate(cur, nd)
+		// >>> M2 virtual
+		rel, err := s.resolveVirtual(ctx, qs, v, &nd)
+		if err != nil {
+			return err
+		}
+		// <<< M2 virtual
 		if err := v.err(); err != nil {
 			return err
 		}
@@ -335,11 +385,17 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		if err != nil {
 			return err
 		}
-		oldCfg, err := cur.marshalConfig()
+		// What changed is read from the complete documents, the rows of a virtual
+		// repository included; the stored configuration lacks them.
+		newFull, err := nd.marshalFull()
 		if err != nil {
 			return err
 		}
-		changes := changedMembers(oldCfg, newCfg)
+		oldFull, err := cur.marshalFull()
+		if err != nil {
+			return err
+		}
+		changes := changedMembers(oldFull, newFull)
 		if hasSecretWrites(nd.pending) && !slices.Contains(changes, "remote") {
 			// A new secret value reads like the old one ({"set": true}); it is still a
 			// change, and it moves config_version so that the clients built with the
@@ -348,7 +404,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 			sort.Strings(changes)
 		}
 		if len(changes) == 0 {
-			out, err = s.stored(row, v.warnings) // nothing to write: same version, no event
+			out, err = s.stored(ctx, qs, row, v.warnings) // nothing to write: same version, no event
 			return err
 		}
 		updated, err := qs.UpdateRepositoryConfig(ctx, q.UpdateRepositoryConfigParams{
@@ -368,13 +424,28 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 				return err
 			}
 		}
-		out, err = s.stored(updated[0], v.warnings)
+		// >>> M2 virtual
+		pinsChanged := false
+		if rel != nil {
+			if _, pinsChanged, err = writeVirtual(ctx, qs, row.ID, rel, curRel); err != nil {
+				return err
+			}
+		}
+		// <<< M2 virtual
+		out, err = s.stored(ctx, qs, updated[0], v.warnings)
 		if err != nil {
 			return err
 		}
 		if err := s.afterWrite(ctx, tx, c, EventUpdated, out.Repository, changes); err != nil {
 			return err
 		}
+		// >>> M2 virtual
+		if pinsChanged {
+			if err := s.notifyPins(tx, out.Repository); err != nil {
+				return err
+			}
+		}
+		// <<< M2 virtual
 		if s.hooks != nil {
 			return s.hooks.OnUpdated(ctx, tx, c, before, out.Repository)
 		}
@@ -433,7 +504,22 @@ func changedMembers(a, b []byte) []string {
 	return out
 }
 
-func (s *Service) stored(row q.Repository, warnings []Warning) (Stored, error) {
+// stored renders a row as the management API shows it. The members, the deploy
+// target and the pin rules of a virtual repository are read from their rows
+// through qs (M2 virtual).
+func (s *Service) stored(ctx context.Context, qs *q.Queries, row q.Repository, warnings []Warning) (Stored, error) {
+	var rel *virtualRel
+	if Class(row.Class) == Virtual {
+		rels, err := loadVirtualRels(ctx, qs, []int64{row.ID})
+		if err != nil {
+			return Stored{}, err
+		}
+		rel = rels[row.ID]
+	}
+	return s.storedRel(row, rel, warnings)
+}
+
+func (s *Service) storedRel(row q.Repository, rel *virtualRel, warnings []Warning) (Stored, error) {
 	r, err := toRepository(row, s.cat)
 	if err != nil {
 		s.log.Warn("repository: stored configuration does not load", "key", row.Key, "error", err)
@@ -442,7 +528,30 @@ func (s *Service) stored(row q.Repository, warnings []Warning) (Stored, error) {
 	if derr != nil {
 		return Stored{}, fmt.Errorf("repository: stored document of %q: %w", row.Key, derr)
 	}
+	d.renderVirtual(rel)
+	if r.virt != nil && d.Virtual != nil {
+		r.virt.settings = d.Virtual.clone()
+	}
 	return Stored{Repository: r, Document: d, Warnings: warnings}, nil
+}
+
+// document reads the stored document of a row with the rows of its virtual
+// section, and those rows as they are (nil for another class).
+func (s *Service) document(ctx context.Context, qs *q.Queries, row q.Repository) (Document, *virtualRel, error) {
+	var rel *virtualRel
+	if Class(row.Class) == Virtual {
+		rels, err := loadVirtualRels(ctx, qs, []int64{row.ID})
+		if err != nil {
+			return Document{}, nil, err
+		}
+		rel = rels[row.ID]
+	}
+	d, err := toDocument(row, s.cat)
+	if err != nil {
+		return Document{}, nil, err
+	}
+	d.renderVirtual(rel)
+	return d, rel, nil
 }
 
 // changePayload is the payload of a repo_config change: the repository id, never
@@ -518,7 +627,19 @@ type ListResult struct {
 // parameters. The number of repositories of an installation is small, so the
 // filter runs over one read of the table.
 func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
-	rows, err := readRows(ctx, s.run, func(qs *q.Queries) ([]q.Repository, error) { return qs.ListRepositories(ctx) })
+	var rows []q.Repository
+	var rels map[int64]*virtualRel
+	err := s.run.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		if rows, err = qs.ListRepositories(ctx); err != nil {
+			return err
+		}
+		rels, err = loadVirtualRels(ctx, qs, virtualIDs(rows))
+		return err
+	})
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -537,7 +658,7 @@ func (s *Service) List(ctx context.Context, f ListFilter) (ListResult, error) {
 		if len(f.Formats) > 0 && !slices.Contains(f.Formats, row.Format) {
 			continue
 		}
-		st, err := s.stored(row, nil)
+		st, err := s.storedRel(row, rels[row.ID], nil)
 		if err != nil {
 			return ListResult{}, err
 		}

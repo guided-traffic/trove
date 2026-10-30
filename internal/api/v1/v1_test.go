@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
@@ -21,6 +22,11 @@ import (
 type allowAll struct{}
 
 func (allowAll) Require(context.Context, string) error { return nil }
+
+// RequireAction lets the action form of x-trove-permission pass as well, so that an
+// operation which declares a repository action reaches the checks behind the
+// shared step (R-API-012 answers 428 there).
+func (allowAll) RequireAction(context.Context, authz.Coordinate) error { return nil }
 
 type denyAnonymous struct{}
 

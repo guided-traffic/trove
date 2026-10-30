@@ -3979,8 +3979,9 @@ paths:
         for a repository without content. From the first transaction on the repository is not
         resolvable and not addressable, and it is listed only to holders of
         `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
-        honoured when sent. With `detach=true` references from virtual repositories are removed in the
-        same transaction; virtual repositories arrive after milestone M1, so the flag changes nothing yet.
+        honoured when sent. A repository that a virtual repository lists as a member, a deploy target
+        or a pin-rule member answers `409 repository_referenced` naming those repositories; with
+        `detach=true` the references are removed in the same transaction (R-REPO-013).
       x-trove-recent-auth: true
       x-trove-permission:
         permission: repositories:write-config
@@ -5431,6 +5432,126 @@ paths:
   # <<< M2 proxy
   #
   # >>> M2 virtual
+  /api/v1/repositories/{repoKey}/claims:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        description: The repository key (R-REPO-002).
+        schema:
+          type: string
+    get:
+      operationId: getRepositoryClaims
+      tags: [repositories]
+      summary: Read the namespace claims of a repository
+      description: |
+        The claims of a local repository (R-REPO-023), with `ETag: "<claims_version>"`. A claim says
+        which names the repository owns in the virtual repositories that contain it (scope `members`)
+        or in every virtual repository of the format and, with remote refusal, in every remote
+        repository (scope `global`). `source` is `manual` for a claim a person wrote and `auto` for the
+        exact claim the first publish of a name created. A repository that cannot hold claims (not local,
+        or a format without package names) answers an empty list. Needs `read` on the repository.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The claims.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryClaims"
+              example:
+                claims:
+                  - {pattern: "@acme/*", source: manual, scope: global, createdAt: "2026-10-30T09:00:00.000Z"}
+                  - {pattern: left-pad, source: auto, scope: members, createdAt: "2026-10-30T09:05:00.000Z"}
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: putRepositoryClaims
+      tags: [repositories]
+      summary: Replace the manual namespace claims of a repository
+      description: |
+        Replaces the manual claims of the repository as a whole (R-REPO-023). Automatic claims stay
+        unless their pattern is listed under `removeAuto`. A claim pattern is an exact name or a
+        literal followed by one trailing `*` or `**` (`422 invalid_pattern` otherwise); it is folded
+        with the format's name rule, and a claim of a pattern an automatic claim already holds turns
+        that claim into a manual one. `If-Match` with the `claims_version` of the last read is
+        required: `428` without it, `412` with `currentEtag` when stale (an automatic claim added by a
+        publish also moves the tag, so read again, then write), `*` for a deliberate blind write.
+        `manage` on the repository is enough for claims of scope `members`; a request that adds,
+        keeps, narrows or removes a claim of scope `global` also needs `repositories:write-config`
+        (`403` otherwise). The warning `claim_overlaps` marks a manual claim that overlaps a claim of
+        another repository which is in effect together with it. A write that changes nothing keeps
+        the tag.
+      x-trove-permission:
+        action: manage
+        repository: path.repoKey
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryClaimsInput"
+            example:
+              claims:
+                - {pattern: "@acme/*", scope: global}
+                - {pattern: "@partner/*"}
+              removeAuto: [left-pad]
+      responses:
+        "200":
+          description: The claims after the write, with the warnings of the write.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryClaims"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M2 virtual
   #
   # >>> M2 npm
@@ -7697,8 +7818,7 @@ components:
         remote:
           $ref: "#/components/schemas/RemoteSettings"
         virtual:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/VirtualSettings"
         storage:
           type: object
           additionalProperties: true
@@ -8588,6 +8708,115 @@ components:
     # <<< M2 proxy
     #
     # >>> M2 virtual
+    VirtualSettings:
+      type: object
+      description: |
+        The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
+        the pin rules are stored as rows, so that a repository which is a member or a target cannot be
+        deleted (`409 repository_referenced`, or `detach=true`); the document is rendered from them.
+      properties:
+        members:
+          type: array
+          description: |
+            The keys of the member repositories in resolution order: local and remote repositories of
+            the virtual repository's format, no duplicates, at most `repositories.max_virtual_members`.
+            Virtual members arrive with nested virtual repositories (R-REPO-018).
+          items:
+            type: string
+        deployTarget:
+          type: [string, "null"]
+          description: The key of the local member that takes writes (R-REPO-021); `null` makes the repository read-only.
+        mergedMetadataTtlSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: How long a merged metadata document is cached (R-REPO-020).
+        pinning:
+          type: object
+          properties:
+            rules:
+              type: array
+              maxItems: 200
+              items:
+                $ref: "#/components/schemas/PinRule"
+    PinRule:
+      type: object
+      description: |
+        Only the listed members are consulted for the names that `packages` selects (R-REPO-023). A
+        pattern is an exact name or a literal followed by one trailing `*` or `**`; the rule of the most
+        specific matching pattern applies. Pin rules take precedence over claims. A rule without members
+        answers `404` for its names. The members are listed in the order of the member list.
+      required: [packages, members]
+      properties:
+        packages:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 256
+        members:
+          type: array
+          items:
+            type: string
+    RepositoryClaim:
+      type: object
+      required: [pattern, source, scope, createdAt]
+      properties:
+        pattern:
+          type: string
+          description: The claimed name or prefix, in the format's normalized form.
+        source:
+          type: string
+          enum: [manual, auto]
+        scope:
+          type: string
+          enum: [members, global]
+        createdAt:
+          type: string
+          format: date-time
+    RepositoryClaims:
+      type: object
+      required: [claims]
+      properties:
+        claims:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/RepositoryClaim"
+        warnings:
+          type: array
+          readOnly: true
+          description: Findings of the write that did not block it (`claim_overlaps`); present on a write.
+          items:
+            $ref: "#/components/schemas/RepositoryWarning"
+    RepositoryClaimsInput:
+      type: object
+      required: [claims]
+      additionalProperties: false
+      properties:
+        claims:
+          type: array
+          maxItems: 1000
+          description: The complete set of manual claims.
+          items:
+            type: object
+            required: [pattern]
+            additionalProperties: false
+            properties:
+              pattern:
+                type: string
+                maxLength: 256
+              scope:
+                type: string
+                enum: [members, global]
+                default: members
+        removeAuto:
+          type: array
+          description: Patterns of automatic claims to remove. Automatic claims not listed here stay.
+          items:
+            type: string
+            maxLength: 256
     # <<< M2 virtual
     #
     # >>> M2 npm

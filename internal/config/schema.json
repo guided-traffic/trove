@@ -1759,6 +1759,14 @@
           "type": "string",
           "x-trove-env": "TROVE_REPOSITORIES_LOOKUP_WAIT",
           "x-trove-type": "duration"
+        },
+        "max_virtual_members": {
+          "default": 100,
+          "description": "The most members one virtual repository may list (R-REPO-017).",
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer",
+          "x-trove-env": "TROVE_REPOSITORIES_MAX_VIRTUAL_MEMBERS"
         }
       },
       "type": "object"

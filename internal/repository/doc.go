@@ -11,4 +11,10 @@
 // package does not know formats: internal/formats is above this layer, so the
 // model validates against the format catalog (internal/formats/catalog, a leaf)
 // that every format registers its facts in. docs/developer/repositories.md describes the flows.
+//
+// The virtual class is here as well (R-REPO-017 to R-REPO-023, R-REPO-048):
+// members, deploy target and pin rules as rows (virtual.go, members.go, pins.go),
+// namespace claims and their API (claims.go), and the caller-independent routing
+// that the virtual engine builds on (routing.go). docs/developer/virtual.md
+// describes them.
 package repository

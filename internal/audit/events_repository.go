@@ -21,6 +21,38 @@ const repositoryEventSchema = `{
   "additionalProperties": false
 }`
 
+// >>> M2 virtual
+
+// claimsEventSchema is the data of repository.claims_changed (R-REPO-023): who
+// changed the claims of a repository and how. source is "manual" for a claims
+// write of the API and "auto" for the claim a first publish created. added lists
+// the claims that were created or whose scope changed, removed the patterns that
+// went; claimsVersion is the revision the change produced.
+const claimsEventSchema = `{
+  "type": "object",
+  "properties": {
+    "source": {"type": "string", "enum": ["manual", "auto"]},
+    "added": {
+      "type": "array", "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": {"type": "string"},
+          "scope": {"type": "string", "enum": ["members", "global"]}
+        },
+        "required": ["pattern", "scope"],
+        "additionalProperties": false
+      }
+    },
+    "removed": {"type": "array", "maxItems": 1000, "items": {"type": "string"}},
+    "claimsVersion": {"type": "integer"}
+  },
+  "required": ["source", "added", "removed", "claimsVersion"],
+  "additionalProperties": false
+}`
+
+// <<< M2 virtual
+
 func init() {
 	for _, name := range []string{"repository.created", "repository.updated", "repository.deleted"} {
 		Register(EventType{
@@ -30,6 +62,14 @@ func init() {
 			Schema:   repositoryEventSchema,
 		})
 	}
+	// >>> M2 virtual
+	Register(EventType{
+		Name:     "repository.claims_changed",
+		Category: CategoryRepository,
+		Mode:     Transactional,
+		Schema:   claimsEventSchema,
+	})
+	// <<< M2 virtual
 }
 
 // >>> M2 proxy

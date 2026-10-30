@@ -220,6 +220,12 @@ type replicaOpts struct {
 	// exposure attaches the delete hook that records the exposure rules a deletion
 	// takes with it (H-164).
 	exposure bool
+	// catalog is the format catalog of the replica; nil is catalog.Default. The
+	// virtual tests register a format with package names, which the process
+	// registry lacks until npm is built.
+	catalog *catalog.Registry
+	// maxMembers is repositories.max_virtual_members; zero is the default.
+	maxMembers int
 }
 
 // replica is one in-process replica with pools and components of its own.
@@ -233,6 +239,7 @@ type replica struct {
 	changes *cluster.Changes
 	caches  *cache.Registry
 	reader  *repository.SnapshotReader
+	routing *repository.Routing
 	svc     *repository.Service
 	rec     *recorder
 	queue   *jobs.Queue
@@ -310,8 +317,12 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		}
 	}
 
+	cat := o.catalog
+	if cat == nil {
+		cat = catalog.Default()
+	}
 	r.reader, err = repository.NewReader(repository.ReaderOptions{
-		Runner: r.runner, Catalog: catalog.Default(), Caches: r.caches, Poller: r.changes,
+		Runner: r.runner, Catalog: cat, Caches: r.caches, Poller: r.changes,
 		SafetyTTL: 5 * time.Minute, UnknownKeys: 10000, LookupWait: 5 * time.Second, Log: quiet,
 	})
 	if err != nil {
@@ -322,8 +333,15 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		hooks = authz.NewExposureHook(authz.NewExposureService(authz.ExposureServiceOptions{DB: r.db, Changes: r.changes, Recorder: o.rec}))
 	}
 	r.svc, err = repository.NewService(repository.Options{
-		Runner: r.db, Catalog: catalog.Default(), Recorder: o.rec, Notifier: r.changes, Jobs: r.queue,
-		DeleteBatch: o.deleteBatch, Hooks: hooks, Log: quiet,
+		Runner: r.db, Catalog: cat, Recorder: o.rec, Notifier: r.changes, Jobs: r.queue,
+		DeleteBatch: o.deleteBatch, Hooks: hooks, Log: quiet, MaxVirtualMembers: o.maxMembers,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.routing, err = repository.NewRouting(repository.RoutingOptions{
+		Runner: r.runner, Reader: r.reader, Catalog: cat, Caches: r.caches, Notifier: r.changes, Recorder: o.rec,
+		SafetyTTL: 5 * time.Minute, Log: quiet,
 	})
 	if err != nil {
 		t.Fatal(err)

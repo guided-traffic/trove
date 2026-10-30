@@ -107,7 +107,9 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
 `BuildIndex(snapshot)` turns the rows of one snapshot into:
 
 - `repos`: the active repositories by key with class, format, `requireAuthentication`, `hideExistence`, virtual members and
-  deploy target (decoded from the `config` document by `parseRepoConfig`);
+  deploy target (the rows of `virtual_members` and `virtual_deploy_targets`, read in the same snapshot as
+  `Snapshot.VirtualMembers` and `DeployTargets`; the remaining settings are decoded from the `config` document by
+  `parseRepoConfig`; [virtual.md](virtual.md));
 - `grants[repositoryID][principalID]`: the compiled grants (actions, package and path matchers, policy name). Selectors are
   expanded against the repository list; `NuGet` repositories compile their package patterns case-folded;
 - `bindings[principalID]`: the system roles; `ci[name]`: the principal IDs of CI mappings named by entries.

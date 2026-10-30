@@ -354,8 +354,9 @@ Rules that hold for them:
   `ci_issuer_id` has no foreign key until M4 adds it `NOT VALID` and validates it (Q-ARCH-191).
 - **Ownership of a deleted repository.** `package_ownership.domain = 'repo:<id>'` carries no foreign key: the repository
   delete job removes the rows (R-AUTHZ-018). Repository ids come from an identity column and are never reused.
-- **Revision columns.** `repositories.claims_version` is the ETag of the claims resource (R-REPO-023). Update it with
-  `SET claims_version = claims_version + 1 ... WHERE key = $1 AND claims_version = $2`.
+- **Revision columns.** `repositories.claims_version` is the ETag of the claims resource (R-REPO-023). The claims service takes
+  the row lock (`LockRepositoryByKey`), compares the version and bumps it with `BumpClaimsVersion` in the same transaction;
+  the auto claim of a first publish bumps it with the same statement ([virtual.md](virtual.md)).
 
 A package that finds that it needs another column or constraint asks for a follow-up expand step (`00017`) and never
 edits a migration of another work package. Query files by owner: `proxy.sql`, `invalidation.sql`, `remote_settings.sql`,

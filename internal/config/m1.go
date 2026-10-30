@@ -128,4 +128,10 @@ type Repositories struct {
 	LookupWait time.Duration `yaml:"lookup_wait" default:"5s" validate:"min=100ms" doc:"How long a request for a repository key that PostgreSQL knows and the snapshot does not waits for the change-log poll before it answers 503 (R-ARCH-011 step 2)."`
 
 	// <<< M1 repository
+
+	// >>> M2 virtual
+
+	MaxVirtualMembers int `yaml:"max_virtual_members" default:"100" validate:"min=1,max=10000" doc:"The most members one virtual repository may list (R-REPO-017)."`
+
+	// <<< M2 virtual
 }

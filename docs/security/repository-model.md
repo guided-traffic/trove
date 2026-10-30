@@ -54,7 +54,47 @@ in-process copy of PostgreSQL rows, rebuilt in full when a change of the area `r
   its key stays taken, and the items go in batches before the row (R-REPO-013). A deleted key can be created again and
   is empty.
 
+## Virtual repositories: members, claims and pin rules
+
+The routing of virtual repositories ([virtual.md](../developer/virtual.md)) decides which member a name resolves from, and
+therefore which source a client's `npm install` trusts. It has four properties that matter for dependency confusion
+([R-REPO-023](../spec/repositories-and-proxy.md)):
+
+- **It does not look at the caller.** `Routing.Route` takes the virtual repository and the name and nothing else. A caller
+  who cannot read the internal member is routed exactly as one who can, so it receives a 404 for a claimed name, never the
+  public package of the same name. Per-member permissions are applied after the routing, by the engine. That the claim exists
+  is observable by comparison (H-7).
+- **A global claim is a separate privilege.** A `global` claim is in effect in every virtual repository of the format and, with
+  `proxy.claims.remote_refusal`, at every remote repository. Writing one needs `repositories:write-config`; `manage` on the
+  repository is enough for `members` claims. The claim set is one resource replaced under `If-Match` on `claims_version`
+  (428 and 412), and a request that narrows or drops a global claim needs the permission as well, so a manager cannot reopen a
+  name by omission (Q-REPO-105). The check runs inside the write transaction, after the revision compare, and a refusal changes
+  nothing ([claims.go](../../internal/repository/claims.go) `PutClaims`, [claims_api.go](../../internal/api/v1/claims_api.go)).
+- **An automatic claim cannot take a name.** The exact claim of a first publish is skipped when another repository's claim is in
+  effect in a virtual repository that contains the publisher, and the deploy records `autoClaim: skipped`; taking a name over is
+  a manual claim and needs `manage`. The decision reads committed claims in the publish transaction, and a concurrent first
+  publish inserts one claim ([routing.go](../../internal/repository/routing.go) `AutoClaim`).
+- **Claims and pin rules fail toward protection.** A claim whose repository is disabled or being deleted still decides: the name
+  resolves from nothing (404), not from the remote members. The claims of a deleted repository stay in effect until its row goes.
+  A member that cannot be linked into the snapshot is left out, never added. A repository that a virtual repository lists cannot
+  be deleted without `detach`, and a detach leaves a pin rule that lost its last member as a rule that blocks its names
+  (Q-REPO-107).
+
+Every claim and pin-rule change is audited in its transaction (`repository.claims_changed`, `repository.updated`) and reaches the other
+replicas through the change areas `claims` and `repo_config`, within `cluster.epoch_poll_interval` with or without Valkey. The members
+and the deploy target the grant index uses for the virtual gate (R-AUTHZ-009) are the same rows ([permissions.md](permissions.md)).
+
 ## What this does not cover
+
+### H-274 · A stored claim that does not parse protects nothing
+
+Component: the claim index ([claims.go](../../internal/repository/claims.go) `buildClaimIndex`). Subject: the names of a claim row whose
+pattern is outside the two admitted forms. Live with milestone M2. The service validates every pattern before it writes, and the
+column only bounds the length, so such a row can come from a manual edit of the database or from a restore of a damaged dump. The
+index skips it and logs `a stored claim does not parse and protects nothing` at error level; the names it was meant to cover resolve
+as unclaimed (tier order, then the remote members) until the row is fixed. The pattern of a repository document that does not compile,
+by contrast, disables the repository. What makes it real: a restore from a dump that was edited by hand. The remedy is to
+read the log line after a restore and to replace the claim through the API.
 
 ### H-132 · A replica enforces the previous repository settings until its snapshot is rebuilt
 

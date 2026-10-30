@@ -62,10 +62,27 @@ func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
 	s.normalize()
 	out.Disabled, out.RequireAuthentication, out.HideExistence = s.Disabled, s.RequireAuthentication, s.HideExistence
 	subject := SubjectPath
-	if info, ok := cat.Lookup(r.Format); ok {
+	info, known := cat.Lookup(r.Format)
+	if known {
 		subject = info.PatternSubject
 	}
-	adm, err := NewAdmission(subject, s.IncludePatterns, s.ExcludePatterns)
+	// >>> M2 virtual
+	// A name pattern is folded with the format's name rule, like the name it is
+	// matched against (R-REPO-005, R-AUTHZ-005).
+	include, exclude := s.IncludePatterns, s.ExcludePatterns
+	if subject == SubjectName {
+		include, exclude = foldAll(cat, r.Format, include), foldAll(cat, r.Format, exclude)
+	}
+	out.rid, out.PriorityMember = r.ID, s.PriorityMember
+	out.autoClaim = known && info.PinsAndClaims && info.PackageNames
+	if s.Local != nil && s.Local.AutoClaim != nil {
+		out.autoClaim = out.autoClaim && *s.Local.AutoClaim
+	}
+	if out.Class == Virtual {
+		out.virt = &virtualState{settings: VirtualSettings{Members: []string{}, MergedMetadataTTLSeconds: ptr(mergedTTLOf(s)), Pinning: Pinning{Rules: []PinRule{}}}}
+	}
+	// <<< M2 virtual
+	adm, err := NewAdmission(subject, include, exclude)
 	if err != nil {
 		out.Disabled = true
 		return out, err
@@ -81,6 +98,25 @@ func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
 	}
 	return out, nil
 }
+
+// >>> M2 virtual
+
+// foldAll folds name patterns with the name rule of the format; a pattern the
+// rule does not take stays as written and fails to compile or never matches.
+func foldAll(cat *catalog.Registry, format string, list []string) []string {
+	out := make([]string, len(list))
+	for i, p := range list {
+		if n, ok := cat.NormalizeName(format, p); ok {
+			p = n
+		}
+		out[i] = p
+	}
+	return out
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// <<< M2 virtual
 
 // toDocument renders the stored row as the configuration document.
 func toDocument(r q.Repository, cat *catalog.Registry) (Document, error) {

@@ -60,9 +60,17 @@ func validate(cat *catalog.Registry, d *Document, create bool) (catalog.Entry, *
 	if known {
 		validatePatterns(v, info.PatternSubject, "/includePatterns", d.IncludePatterns)
 		validatePatterns(v, info.PatternSubject, "/excludePatterns", d.ExcludePatterns)
+		// >>> M2 virtual
+		warnUnscopedOnly(v, info, d)
+		// <<< M2 virtual
 	}
 	if known && classOK {
 		validateSections(v, info, d)
+		// >>> M2 virtual
+		if d.Class == Virtual {
+			validateVirtual(v, cat, d)
+		}
+		// <<< M2 virtual
 	}
 	return info, v
 }
@@ -101,7 +109,7 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 	if d.Class != Remote && len(d.Remote) > 0 {
 		na("/remote", "the remote section applies to remote repositories")
 	}
-	if d.Class != Virtual && len(d.Virtual) > 0 {
+	if d.Class != Virtual && d.Virtual != nil {
 		na("/virtual", "the virtual section applies to virtual repositories")
 	}
 	if d.PriorityMember {

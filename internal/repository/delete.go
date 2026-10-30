@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -71,7 +72,6 @@ func (s *Service) Delete(ctx context.Context, c Caller, key string, detach bool)
 // of R-API-012 (a delete honours it when it is sent): a version that differs from
 // the stored one answers 412 and nothing changes.
 func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition) (DeleteResult, error) {
-	_ = detach
 	qs, err := queries(tx)
 	if err != nil {
 		return DeleteResult{}, err
@@ -92,6 +92,11 @@ func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string
 		return res, s.deleteNow(ctx, tx, qs, c, row, &res)
 	}
 	if Lifecycle(row.Lifecycle) == Active {
+		// >>> M2 virtual
+		if err := s.detachReferences(ctx, tx, qs, c, row, detach); err != nil {
+			return DeleteResult{}, err
+		}
+		// <<< M2 virtual
 		marked, err := qs.MarkRepositoryDeleting(ctx, q.MarkRepositoryDeletingParams{ID: row.ID, Actor: c.principalID()})
 		if err != nil {
 			return DeleteResult{}, err
@@ -228,6 +233,15 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		if err := s.onDelete(ctx, tx, Caller{Actor: a.Actor}, r); err != nil {
 			return err
 		}
+		// >>> M2 virtual
+		// The claims go with the row (ON DELETE CASCADE). Every replica drops them
+		// from its index within the change-log bound; until then a global claim of
+		// the deleted repository would keep refusing its names (R-REPO-013).
+		claims, err := qs.CountRepositoryClaims(ctx, a.RepoID)
+		if err != nil {
+			return err
+		}
+		// <<< M2 virtual
 		n, err := qs.DeleteRepositoryRow(ctx, a.RepoID)
 		if err != nil {
 			return err
@@ -235,6 +249,13 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		if n == 0 {
 			return errors.New("repository-delete: the row is not marked for deletion")
 		}
+		// >>> M2 virtual
+		if claims > 0 {
+			if err := s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Key, Op: "deleted"}); err != nil {
+				return err
+			}
+		}
+		// <<< M2 virtual
 		return s.recordAndNotify(ctx, tx, Caller{Actor: a.Actor}, EventDeleted, r,
 			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, "deleted")
 	})

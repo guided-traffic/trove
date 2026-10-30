@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -198,6 +199,26 @@ func (e *env) repo(key, class, format, cfg string) {
 		cfg = "{}"
 	}
 	e.exec("INSERT INTO repositories (key, class, format, config) VALUES ($1, $2, $3, $4::jsonb)", key, class, format, cfg)
+	// The members and the deploy target of a virtual repository are rows of
+	// their own (R-REPO-017): a test writes them in the document and they are
+	// split off here, as the repository service does.
+	var doc struct {
+		Virtual struct {
+			Members      []string `json:"members"`
+			DeployTarget string   `json:"deployTarget"`
+		} `json:"virtual"`
+	}
+	if err := json.Unmarshal([]byte(cfg), &doc); err != nil {
+		e.t.Fatal(err)
+	}
+	for i, m := range doc.Virtual.Members {
+		e.exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
+		        SELECT v.id, $2, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $3`, key, i, m)
+	}
+	if t := doc.Virtual.DeployTarget; t != "" {
+		e.exec(`INSERT INTO virtual_deploy_targets (virtual_id, target_id)
+		        SELECT v.id, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $2`, key, t)
+	}
 }
 
 // sub builds the subject the authentication stage would hand over.

@@ -1608,7 +1608,11 @@ included) together with R-REPO-005 patterns. This page uses R-REPO-023's terms: 
 namespace claim* is a claim with scope `global`. npm applies them as follows:
 
 - Pin-rule and claim patterns are npm package-name patterns matched against the normalized name:
-  `@acme/*` covers scope `@acme`, `acme-*` unscoped names with that prefix.
+  `@acme/*` covers scope `@acme`, `acme-*` unscoped names with that prefix. They are limited to the two forms
+  of R-REPO-023, an exact name or a literal followed by one trailing `*` or `**`, because only for those is
+  "most specific wins" a total order: `@acme/util`, `@acme/*`, `acme-*`, `*` (every unscoped name) and `**` are
+  valid, `@*/*` and `a*b` answer 422 `invalid_pattern`. The include and exclude lists of R-REPO-005 take the full
+  name-pattern syntax.
 - A pinned or claimed name restricts every npm request about the package: documents of both
   variants, single-version documents, tarballs, dist-tags and search hits (R-NPM-037). Audit
   forwarding withholds every name covered by a claim of any scope or a pin rule (R-NPM-038).

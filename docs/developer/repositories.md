@@ -9,9 +9,10 @@ and the first format, [formats/generic.md](../spec/formats/generic.md)), the sta
 over the functions below, in [repositories_api.go](../../internal/api/v1/repositories_api.go) (see "HTTP operations"); the
 `x-trove-permission` declaration, the ETag/`If-Match` headers, the cursor and the idempotency key are the API layer's, everything
 else is decided in the domain.
-Milestone M1 implements the local class of the generic format only; the remote settings (R-REPO-024, R-REPO-033), their
-secrets and the upstream test are built for any format that registers the remote class (see "Remote settings"); the pull-through
-engine, the virtual class and the rest of R-REPO-017 to R-REPO-049 are specified and not built.
+Milestone M1 implements the local class of the generic format only. Since M2 the remote settings (R-REPO-024, R-REPO-033),
+their secrets and the upstream test are built for any format that registers the remote class (see "Remote settings"), and the
+virtual class (members, deploy target, pin rules, claims and their routing) is built and described in
+[virtual.md](virtual.md); the pull-through engine and the rest of R-REPO-024 to R-REPO-049 are specified and not built.
 
 ## Files
 
@@ -36,7 +37,7 @@ engine, the virtual class and the rest of R-REPO-017 to R-REPO-049 are specified
 | [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the name rule and the exposure facts), `Format`, `RequestDescriptor`, `Register` (fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types |
 | [formats/generic/generic.go](../../internal/formats/generic/generic.go) | the generic format: descriptor and request classification |
 | [formats/all/all.go](../../internal/formats/all/all.go) | registers every format; the composition root imports it |
-| [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted` |
+| [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted`, `.claims_changed` |
 | [app/wire_repository.go](../../internal/app/wire_repository.go) | `wireRepository` (reader and service, both on `catalog.Default()`), the job kind registration |
 | [app/wire_proxy.go](../../internal/app/wire_proxy.go) | `wireProxy`: the upstream clients, and `Service.Bind` with the key ring and the prober |
 | [queries/remote_settings.sql](../../internal/meta/postgres/queries/remote_settings.sql) | the statements on `repository_secrets` |
@@ -101,7 +102,9 @@ transactions of `storage.delete.batch_size`, reports progress, then removes the 
 event (`phase: completed`) in the last transaction, which frees the key. It is idempotent and resumable. The kind is
 registered in `app.jobRegistry` through `registerRepositoryJobs`; its handler finds the service at run time because the
 registry is built and frozen before the repository component is wired. A virtual repository has no content and is
-removed in the first transaction. `detach` has nothing to detach until virtual membership exists (R-REPO-017).
+removed in the first transaction. A local or remote repository that a virtual repository lists answers 409
+`repository_referenced` unless `detach` is set, in which case the same transaction removes the references
+([virtual.md](virtual.md) "Deleting a repository").
 
 ## Remote settings
 
@@ -199,12 +202,17 @@ reported as `Folder`. Decoding first and splitting after means `%2e%2e` and `..%
 `authz` imports `repository`, not the other way round; the authorization area calls `CompilePattern` rather than
 keeping a second copy (R-REPO-005: "a pattern copied between them selects the same names"). `Admission` holds both lists of
 a repository, compiled once when the snapshot is built; `Repository.Admits(path, folder)` is what the files transfer calls.
+For a format whose patterns match names, `toRepository` folds each pattern with the format's name rule (`foldAll`) before it
+compiles the lists, as a grant folds its package patterns, so a NuGet repository's `Acme.*` admits `acme.core`. The
+routing of virtual repositories asks the same `Admission` ([virtual.md](virtual.md)), and `TestRoutingRunsTheMatcherTable` runs the
+name-pattern table of R-AUTHZ-005 through it.
 
 ## Configuration
 
 | Key | Default | Meaning |
 |---|---|---|
 | `repositories.lookup_wait` | `5s` | how long a lookup of a key that PostgreSQL knows and the snapshot does not waits for the change-log poll before it answers 503 |
+| `repositories.max_virtual_members` | `100` | the most members one virtual repository lists (R-REPO-017) |
 | `cache.snapshot_safety_ttl`, `cache.unknown_repo_keys` | existing | the snapshot's age bound; the size of the negative cache of unknown keys |
 | `storage.delete.batch_size` | existing | items per transaction of the deletion job |
 

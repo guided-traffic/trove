@@ -1418,8 +1418,9 @@ export interface paths {
          *     for a repository without content. From the first transaction on the repository is not
          *     resolvable and not addressable, and it is listed only to holders of
          *     `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
-         *     honoured when sent. With `detach=true` references from virtual repositories are removed in the
-         *     same transaction; virtual repositories arrive after milestone M1, so the flag changes nothing yet.
+         *     honoured when sent. A repository that a virtual repository lists as a member, a deploy target
+         *     or a pin-rule member answers `409 repository_referenced` naming those repositories; with
+         *     `detach=true` the references are removed in the same transaction (R-REPO-013).
          */
         delete: operations["deleteRepository"];
         options?: never;
@@ -1845,6 +1846,49 @@ export interface paths {
          *     nothing to refer to here. The result is that of `testRepositoryUpstream`.
          */
         post: operations["testUpstream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the namespace claims of a repository
+         * @description The claims of a local repository (R-REPO-023), with `ETag: "<claims_version>"`. A claim says
+         *     which names the repository owns in the virtual repositories that contain it (scope `members`)
+         *     or in every virtual repository of the format and, with remote refusal, in every remote
+         *     repository (scope `global`). `source` is `manual` for a claim a person wrote and `auto` for the
+         *     exact claim the first publish of a name created. A repository that cannot hold claims (not local,
+         *     or a format without package names) answers an empty list. Needs `read` on the repository.
+         */
+        get: operations["getRepositoryClaims"];
+        /**
+         * Replace the manual namespace claims of a repository
+         * @description Replaces the manual claims of the repository as a whole (R-REPO-023). Automatic claims stay
+         *     unless their pattern is listed under `removeAuto`. A claim pattern is an exact name or a
+         *     literal followed by one trailing `*` or `**` (`422 invalid_pattern` otherwise); it is folded
+         *     with the format's name rule, and a claim of a pattern an automatic claim already holds turns
+         *     that claim into a manual one. `If-Match` with the `claims_version` of the last read is
+         *     required: `428` without it, `412` with `currentEtag` when stale (an automatic claim added by a
+         *     publish also moves the tag, so read again, then write), `*` for a deliberate blind write.
+         *     `manage` on the repository is enough for claims of scope `members`; a request that adds,
+         *     keeps, narrows or removes a claim of scope `global` also needs `repositories:write-config`
+         *     (`403` otherwise). The warning `claim_overlaps` marks a manual claim that overlaps a claim of
+         *     another repository which is in effect together with it. A write that changes nothing keeps
+         *     the tag.
+         */
+        put: operations["putRepositoryClaims"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3140,9 +3184,7 @@ export interface components {
                 [key: string]: unknown;
             };
             remote?: components["schemas"]["RemoteSettings"];
-            virtual?: {
-                [key: string]: unknown;
-            };
+            virtual?: components["schemas"]["VirtualSettings"];
             storage?: {
                 [key: string]: unknown;
             };
@@ -3664,6 +3706,64 @@ export interface components {
                 code: "dns_error" | "connection_refused" | "timeout" | "tls_untrusted" | "egress_denied" | "source_network_unavailable" | "upstream_secret_unavailable" | "offline" | "too_many_redirects" | "insecure_redirect" | "request_failed";
                 message: string;
             } | null;
+        };
+        /**
+         * @description The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
+         *     the pin rules are stored as rows, so that a repository which is a member or a target cannot be
+         *     deleted (`409 repository_referenced`, or `detach=true`); the document is rendered from them.
+         */
+        VirtualSettings: {
+            /**
+             * @description The keys of the member repositories in resolution order: local and remote repositories of
+             *     the virtual repository's format, no duplicates, at most `repositories.max_virtual_members`.
+             *     Virtual members arrive with nested virtual repositories (R-REPO-018).
+             */
+            members?: string[];
+            /** @description The key of the local member that takes writes (R-REPO-021); `null` makes the repository read-only. */
+            deployTarget?: string | null;
+            /** @description How long a merged metadata document is cached (R-REPO-020). */
+            mergedMetadataTtlSeconds?: number;
+            pinning?: {
+                rules?: components["schemas"]["PinRule"][];
+            };
+        };
+        /**
+         * @description Only the listed members are consulted for the names that `packages` selects (R-REPO-023). A
+         *     pattern is an exact name or a literal followed by one trailing `*` or `**`; the rule of the most
+         *     specific matching pattern applies. Pin rules take precedence over claims. A rule without members
+         *     answers `404` for its names. The members are listed in the order of the member list.
+         */
+        PinRule: {
+            packages: string[];
+            members: string[];
+        };
+        RepositoryClaim: {
+            /** @description The claimed name or prefix, in the format's normalized form. */
+            pattern: string;
+            /** @enum {string} */
+            source: "manual" | "auto";
+            /** @enum {string} */
+            scope: "members" | "global";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RepositoryClaims: {
+            claims: components["schemas"]["RepositoryClaim"][];
+            /** @description Findings of the write that did not block it (`claim_overlaps`); present on a write. */
+            readonly warnings?: components["schemas"]["RepositoryWarning"][];
+        };
+        RepositoryClaimsInput: {
+            /** @description The complete set of manual claims. */
+            claims: {
+                pattern: string;
+                /**
+                 * @default members
+                 * @enum {string}
+                 */
+                scope: "members" | "global";
+            }[];
+            /** @description Patterns of automatic claims to remove. Automatic claims not listed here stay. */
+            removeAuto?: string[];
         };
     };
     responses: {
@@ -8162,6 +8262,117 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getRepositoryClaims: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The claims. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "claims": [
+                     *         {
+                     *           "pattern": "@acme/*",
+                     *           "source": "manual",
+                     *           "scope": "global",
+                     *           "createdAt": "2026-10-30T09:00:00.000Z"
+                     *         },
+                     *         {
+                     *           "pattern": "left-pad",
+                     *           "source": "auto",
+                     *           "scope": "members",
+                     *           "createdAt": "2026-10-30T09:05:00.000Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RepositoryClaims"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    putRepositoryClaims: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "claims": [
+                 *         {
+                 *           "pattern": "@acme/*",
+                 *           "scope": "global"
+                 *         },
+                 *         {
+                 *           "pattern": "@partner/*"
+                 *         }
+                 *       ],
+                 *       "removeAuto": [
+                 *         "left-pad"
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["RepositoryClaimsInput"];
+            };
+        };
+        responses: {
+            /** @description The claims after the write, with the warnings of the write. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepositoryClaims"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

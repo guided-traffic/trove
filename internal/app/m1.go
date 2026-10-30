@@ -108,6 +108,14 @@ type m1Wiring struct {
 	repositoryService *repository.Service
 	// <<< M1 repository
 
+	// >>> M2 virtual
+	// routing is the caller-independent routing of virtual repositories (members,
+	// pin rules, claims; R-REPO-019 steps 2 and 3, R-REPO-023). The virtual engine
+	// and the formats' publish transaction read it under a.mu; nil on a replica
+	// without PostgreSQL.
+	routing *repository.Routing
+	// <<< M2 virtual
+
 	// >>> M1 files
 	// files is the files transfer service (R-STOR-007 and the items operations);
 	// nil on a replica without PostgreSQL or the object store, where /files/

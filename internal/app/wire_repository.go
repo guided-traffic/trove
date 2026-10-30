@@ -41,6 +41,7 @@ func (a *App) wireRepository() error {
 	opts := repository.Options{
 		Runner: db, Catalog: catalog.Default(), Recorder: rec, Notifier: changes,
 		DeleteBatch: a.cfg.Storage.Delete.BatchSize, Log: log,
+		MaxVirtualMembers: a.cfg.Repositories.MaxVirtualMembers,
 		// The authorization area records authz.settings.changed in the transaction of an update
 		// (R-AUTHZ-031) and endpoint.exposure.deleted for the rules a deletion takes with it (H-164);
 		// the policy hook moves the epoch and the policy versions the deletion changes (R-AUTHZ-028).
@@ -57,7 +58,7 @@ func (a *App) wireRepository() error {
 	a.mu.Lock()
 	a.m1.repositoryService = svc
 	a.mu.Unlock()
-	return nil
+	return a.wireVirtual(db, reader, caches, changes, rec)
 }
 
 // registerRepositoryJobs registers the deletion job of R-REPO-013 in the replica's

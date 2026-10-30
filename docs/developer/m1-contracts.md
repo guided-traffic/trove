@@ -218,7 +218,7 @@ Each area registers its types in `internal/audit/events_<area>.go` (one file per
 | `login` | `auth.`, `cli_login.` | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed` |
 | `identity` | `token.`, `user.`, `group.`, `serviceaccount.`, `settings.auth.` | `token.created`, `token.revoked` (journal), `token.rejected`, `user.disabled` (journal), `group.members.changed` (journal), `settings.auth.changed` |
 | `authz` | `authz.`, `admin_role.` | `authz.policy.created`, `authz.denied` (async), `authz.role.bound` |
-| `repository` | `repository.` | `repository.created`, `repository.updated`, `repository.deleted` |
+| `repository` | `repository.` | `repository.created`, `repository.updated`, `repository.deleted`, `repository.claims_changed` (M2, [virtual.md](virtual.md)) |
 | `files` | `artifact.` | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` (async) |
 | `endpoints` | `endpoint.` | `endpoint.exposure.created`, `endpoint.exposure.updated` and `.deleted` (journal) |
 | `api` | `system.` | `system.task_triggered`, `system.config_applied` |

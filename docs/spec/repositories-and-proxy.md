@@ -287,7 +287,8 @@ Priority: **MVP** · Covers: REPO-011, RMT-034
     that evaluates permission and retention patterns ([storage.md](storage.md) Q-STOR-9), so a
     pattern copied between them selects the same names. On npm, `*` does not cross `/`: a bare
     `*` covers unscoped names only, `@*/*` covers every scoped name and `**` every name. A list
-    that contains `*` on an npm repository but neither `**` nor `@*/*` returns the warning
+    that contains `*` on an npm repository (a format whose name rule takes scoped names,
+    [Q-REPO-109](#q-repo-109--pattern_unscoped_only-is-decided-by-the-formats-name-rule)) but neither `**` nor `@*/*` returns the warning
     `pattern_unscoped_only` (R-REPO-008), because `excludePatterns: ["*"]` would otherwise look
     like "exclude everything" while scoped names, usually the internal ones, still reach the
     upstream. Include and exclude lists have no precedence among their patterns; most specific
@@ -613,12 +614,14 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
   of `repositories:read-config`. With `detach=true`, the same transaction removes it from every
   member list, pin rule and deploy-target reference.
 - A background job ([architecture.md](architecture.md)) removes items permanently, bypassing the
-  trash can ([storage.md](storage.md), R-STOR-018), and removes cache entries, URL mappings, claims
-  and invalidations in batches. A batch that removes claims calls `cluster.Notify("claims", …)`
-  with the repository id ([architecture.md](architecture.md) R-ARCH-018), so every replica drops
-  them from its in-memory trie within 2 seconds (R-REPO-023); without that, a `global` claim of
-  the deleted repository would keep refusing its names on every replica until that replica
-  restarts. The repository's negative entries in Valkey are left to expire: their
+  trash can ([storage.md](storage.md), R-STOR-018), and removes cache entries, URL mappings
+  and invalidations in batches. The claims of the repository stay in effect until the row goes and
+  are removed with it (the foreign key cascades): a `global` claim keeps protecting its names while the
+  job runs, which a batch-wise removal would end early (Q-REPO-106). The transaction that removes the
+  row of a repository that held claims calls `cluster.Notify("claims", …)` with the repository id
+  ([architecture.md](architecture.md) R-ARCH-018), so every replica drops them from its in-memory trie
+  within 2 seconds (R-REPO-023); without that, a `global` claim of the deleted repository would keep
+  refusing its names on every replica until that replica restarts. The repository's negative entries in Valkey are left to expire: their
   keys carry the repository id, which an identity column never hands out again (R-REPO-028). The job
   runs on the `worker` role and is resumable after a replica restart. The repository row goes last,
   which frees the key; that transaction calls `cluster.Notify("repo_config", …)`, because the row
@@ -758,6 +761,11 @@ Priority: **MVP** · Covers: REPO-033
 - Members and their order can change without touching client configuration; a change takes effect
   on all replicas within 2 seconds and drops the repository's merged-metadata cache (R-REPO-020).
 - Recommended practice, shown in the UI: clients use a virtual repository; local members come first.
+- The members, the deploy target and the pin rules are rows (the data model below), not part of `repositories.config`: a
+  read renders them into `virtual`, an update replaces them in the transaction that raises `config_version`, and the grant
+  index reads the member lists and the deploy targets from the same rows ([R-AUTHZ-009](authorization.md)). A member is
+  checked in the update's transaction under a share lock, so it cannot be marked for deletion between the check and the
+  commit ([Q-REPO-104](#q-repo-104--members-deploy-target-and-pin-rules-are-rows-and-the-document-is-rendered-from-them)).
 
 Data model:
 
@@ -1029,7 +1037,9 @@ patterns.
 - With `local.autoClaim: true` (default (proposed) for formats that support claims), the first
   deploy of a package name that no claim of that repository covers creates an exact claim with
   scope `members` in the same transaction. Claims are not removed when packages are deleted: the
-  deleted case is exactly when protection matters.
+  deleted case is exactly when protection matters. Patterns are stored in the folded form of the format's name rule.
+  A repository holds at most 1000 claims; an auto claim that would exceed the limit is not created, the deploy
+  proceeds and its audit event records `autoClaim: limit` ([Q-REPO-106](#q-repo-106--claim-and-pin-rule-patterns-are-stored-folded-a-manual-claim-replaces-an-automatic-one-and-the-limit-spares-the-deploy)).
 - An auto claim MUST NOT take a name from another repository. When a claim of another repository
   that is in effect in a virtual repository containing the deploying repository (directly or
   through nesting) covers the name, the deploy proceeds without creating the auto claim, and its
@@ -1037,7 +1047,8 @@ patterns.
   from the claiming repository. Otherwise the exact auto claim, being the most specific match,
   would let any `deploy` holder of one team's repository take over a name that another team
   claims in a shared virtual repository. Taking a name over on purpose is a manual claim, which
-  needs `manage` and is reported as `claim_overlaps`.
+  needs `manage` and is reported as `claim_overlaps`. A manual claim of a pattern that an automatic claim of the same
+  repository holds turns that claim into a manual one.
 - Claims for names that do not exist yet are created explicitly; this reserves a scope or prefix
   before its first publish.
 - **Claim scope.** Every claim has a scope. `members` (the default, and the only scope an auto
@@ -1047,7 +1058,9 @@ patterns.
   `repositories:write-config`; `manage` on the repository suffices for `members` claims. Without
   this split, one deploy of `react` into any local repository, even a personal sandbox that no
   virtual repository contains, would make `react` unresolvable in every virtual repository and,
-  through remote refusal, in every remote repository of the format.
+  through remote refusal, in every remote repository of the format. The claims of a repository are
+  replaced as one set, so a request that narrows a `global` claim to `members` or leaves it out of the set
+  needs `repositories:write-config` as well ([Q-REPO-105](#q-repo-105--a-global-claim-is-changed-only-with-repositorieswrite-config-also-when-it-is-narrowed-or-dropped)).
 - **In a virtual repository**, for a package name n without an applicable pin rule: if a claim in
   effect in V covers n (a `global` claim of any local repository of the format, or a `members`
   claim of a member of V), only the local members of V whose claims are the most specific match for
@@ -1058,7 +1071,9 @@ patterns.
   serve cached copies of it, unless the request comes through a virtual repository whose pin rule
   names that remote repository for n.
 - Overlapping claims of different repositories are allowed and reported as the warning
-  `claim_overlaps`; under most-specific matching, a team that claims `@acme/billing-*` takes those
+  `claim_overlaps` for a manual claim whose pattern covers a name that a claim of another repository of the
+  format covers too, when either claim is `global` or the two repositories are members of one virtual
+  repository (the text does not name the other repository, which the caller need not be able to read); under most-specific matching, a team that claims `@acme/billing-*` takes those
   names from a broader `@acme/*` claim. Who may publish a name is decided by package ownership
   ([R-AUTHZ-018](authorization.md)); claims decide where a name resolves from; whether a first
   publish may shadow a package that a remote member serves is decided by R-REPO-048.
@@ -1070,7 +1085,10 @@ patterns.
   rule's members are consulted for every request about n (documents, artifacts, latest-version,
   search results). When none of them has the package, the answer is 404.
 - Rule members MUST be in V's effective member list. A rule may name a remote member, for a partner
-  registry that owns a scope; that is the only way a claimed name reaches a remote repository.
+  registry that owns a scope; that is the only way a claimed name reaches a remote repository. A pattern
+  appears in one rule of V only (422 `invalid_pattern`), so the most specific pattern selects one rule; a rule
+  with no members answers 404 for its names; the members of a rule are kept in the order of V's member list
+  ([Q-REPO-107](#q-repo-107--pin-rule-edge-cases-one-pattern-one-rule-an-empty-rule-is-a-block-and-a-detach-keeps-it)).
 - Pin rules take precedence over claims; claims over priority members (R-REPO-022).
 
 **Independence from the caller.** Both mechanisms MUST be evaluated on stored configuration only,
@@ -1124,7 +1142,7 @@ API:
 | Method and path | Body / response | Permission |
 |---|---|---|
 | `GET /api/v1/repositories/{key}/claims` | 200 `{"claims": [{"pattern": "@acme/*", "source": "manual", "scope": "global", "createdAt": …}]}`, `ETag: "<claims_version>"` | `read` on the repository |
-| `PUT /api/v1/repositories/{key}/claims` | `{"claims": [{"pattern": "@acme/*", "scope": "global"}]}`; `scope` defaults to `members`; replaces the manual claims; auto claims stay unless listed under `"removeAuto"`; `If-Match: "<claims_version>"` required → 200 with the new `ETag`; 412 `precondition_failed` when stale; 428 `precondition_required` without it | `manage` on the repository for `members` claims; `repositories:write-config` when the request adds or keeps a `global` claim |
+| `PUT /api/v1/repositories/{key}/claims` | `{"claims": [{"pattern": "@acme/*", "scope": "global"}]}`; `scope` defaults to `members`; replaces the manual claims; auto claims stay unless listed under `"removeAuto"`; `If-Match: "<claims_version>"` required → 200 with the new `ETag`; 412 `precondition_failed` when stale; 428 `precondition_required` without it | `manage` on the repository for `members` claims; `repositories:write-config` when the request adds, keeps, narrows or removes a `global` claim |
 | `PATCH /api/v1/repositories/{key}` | `{"virtual": {"pinning": {"rules": [...]}}}` with `If-Match: "<config_version>"` (R-REPO-011) | as update |
 
 - The claims of a repository are one revisioned resource: `claims_version` increases with every
@@ -1132,7 +1150,10 @@ API:
   replaces the manual claim set as a whole, so a stale one could drop a `global` claim another
   administrator just added and reopen a dependency-confusion path; it therefore requires `If-Match`
   ([api-and-ui.md](api-and-ui.md) R-API-012, Q-API-2), with `If-Match: *` as the deliberate blind
-  write. A 412 after an automatic claim was added means: read again, then write.
+  write. A 412 after an automatic claim was added means: read again, then write. The claims are listed sorted
+  by pattern in byte order; a write that changes nothing keeps `claims_version`. A pattern outside the two
+  forms is 422 `validation_failed` with `invalid_pattern` at `/claims/<i>/pattern`; a repository that cannot
+  hold claims (not local, or a format without them) answers 422 with `not_applicable` at `/claims`.
 
 Configuration:
 
@@ -3836,6 +3857,115 @@ Context: R-REPO-045 folds a row into the entries validated before it by setting 
 **Rationale:** an hour is far above the 60 s default of `cache.metadataRefreshTimeoutSeconds` and its 600 s limit, which bound how long a request waits for a fill. A fold of one million entries takes about 70 s on the integration stack (200 batches); the call that created the row does not wait for it. The development agent would revisit the hour if a fill can outlive it, for example through a detached refresh with a longer limit.
 
 **Applied in the spec:** the fold and deletion bullets of R-REPO-045.
+
+### Q-REPO-104 · Members, deploy target and pin rules are rows, and the document is rendered from them
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-017 and R-REPO-021 define the tables `virtual_members` and `virtual_deploy_targets`, and R-REPO-023 `virtual_pin_rules` and `virtual_pin_members`, with foreign keys that make the detach rule of R-REPO-013 hold in the database. The grant index, as built in M1, read the member list and the deploy target out of the `virtual` section of `repositories.config`. Milestone M1 never stored a virtual section (Q-REPO-16), so nothing has to be migrated.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rows are the source of truth | `repositories.config` keeps `virtual.mergedMetadataTtlSeconds` only; a read renders the section from the rows, a write replaces them in the transaction that raises `config_version`; the grant index reads the rows in its snapshot | `ON DELETE RESTRICT` enforces R-REPO-013 and the deploy-target rule; one copy; a member check under a share lock cannot race a deletion | Every read of a virtual repository loads four small queries; the update compares complete documents to find what changed |
+| (b) The document is the source, the tables a copy | The JSON keeps everything and the service mirrors it into the tables | One read | Two copies that can differ; the foreign keys protect a mirror only |
+| (c) Tables unused | The document keeps everything, no foreign keys | The index needs no change | R-REPO-013's rule is code only and racy; the schema of 00015 is dead |
+
+**Choice:** (a). `Settings.Virtual` is a typed section (a misspelt member is a 400 like any other); `marshalConfig` writes the stored form and `marshalFull` the complete one. The members are locked `FOR SHARE` in id order while the update checks them, so the update that marks a member for deletion waits. A list read loads the rows of all virtual repositories in one query each.
+
+**Rationale:** R-REPO-013 says the database holds the rule, and only (a) does. The development agent would revisit this if reading a virtual repository becomes a measured cost; the snapshot already holds the rendered form for the request path.
+
+**Applied in the spec:** R-REPO-017 (the bullet on rows and the share lock).
+
+### Q-REPO-105 · A global claim is changed only with `repositories:write-config`, also when it is narrowed or dropped
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-023 asks for `repositories:write-config` "when the request adds or keeps a `global` claim". A `PUT` replaces the manual claims as a set, so a request can also narrow a global claim to `members` or leave it out, which removes the protection of the name in every virtual repository and at every remote repository without ever containing the word `global`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Any change that touches a global claim needs the permission | The permission is needed when the body holds a global claim, or the stored set holds a global claim that the body narrows or omits | Closes the way round the rule; the claim set stays one resource | A holder of `manage` only cannot edit the members claims of a repository that has a global claim through this `PUT` |
+| (b) Exactly the text: adding or keeping | Narrowing and removal need `manage` only | Follows the words | A holder of `manage` can reopen a dependency-confusion path by omission |
+| (c) Per-claim endpoints | `PUT`/`DELETE` of one claim | Permissions per claim | A different API; R-REPO-023 fixes the replace-all resource |
+
+**Choice:** (a). The service takes a `GlobalGuard` and calls it inside the write transaction, after the `If-Match` comparison, when the request touches a global claim; the handler passes a function that asks the request's access holder for `repositories:write-config`. A refusal changes nothing.
+
+**Rationale:** The sentence of R-REPO-023 names the risk (a stale or careless replace that drops a global claim), and (b) leaves that risk open for a holder of the lesser permission. The development agent would revisit this if operators ask for team-level editing of members claims on a repository with a global claim: then a body that leaves the global claims untouched could be allowed to omit them (merge semantics for the global part).
+
+**Applied in the spec:** R-REPO-023 (the API table and the paragraph on claim scope).
+
+### Q-REPO-106 · Claim and pin-rule patterns are stored folded, a manual claim replaces an automatic one, and the limit spares the deploy
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-023 leaves four details open. (1) A NuGet claim `Acme.*` and `acme.*` are one pattern for the matcher; the table key is the string. (2) A manual claim for a pattern that an automatic claim of the repository already holds hits the primary key `(repo_id, pattern)`. (3) The limit of 1000 claims per repository includes automatic claims, one per name, so a repository of 1,500 unscoped packages reaches it. (4) R-REPO-013 says the delete job removes claims in batches and notifies each batch; a batch-wise removal ends the protection of the names before the repository is gone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Folded storage; manual replaces automatic; at the limit the auto claim is skipped and the deploy goes on; claims go with the row | Patterns are stored in the format's folded form; a listed pattern of an auto claim becomes manual (the creator and time are the writer's); an auto claim at the limit is not created and the deploy's audit event records `autoClaim: limit`; the claims cascade with the repository row and the row's transaction notifies `claims` | One pattern, one row; a person's decision wins; no publish fails for a limit; names stay protected until the repository is gone | An auto claim is missing at the limit (the name is then protected only by the local tier); the displayed pattern is the folded form |
+| (b) Store as written | Case variants are two rows | Shows what was typed | Two claims for one name; the order of precedence between them is accidental |
+| (c) Refuse the deploy at the limit | 409 at the 1001st first publish | Never an unprotected name | A publish fails for a reason the publisher cannot fix; the fix is a manual claim `@scope/*` by someone else |
+| (d) Batch-wise removal as written in R-REPO-013 | Claims go before the items | As specified | The names of a global claim are open to the upstream while the job runs |
+
+**Choice:** (a).
+
+**Rationale:** A claim that cannot be created must not turn a publish into an error, and a limit that is reached means a broad manual claim (`@scope/*`, `prefix-*`) is the right tool; the response of `GET .../claims` shows the count. The development agent would revisit the limit behavior if the raised audit value shows real installations hitting it, and would then offer (c) as a repository setting.
+
+**Applied in the spec:** R-REPO-023 (limit, folded form, manual over auto), R-REPO-013 (claims go with the row).
+
+### Q-REPO-107 · Pin-rule edge cases: one pattern, one rule; an empty rule is a block; and a detach keeps it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: "The most specific pattern over all rules of V selects its rule" has no answer when two rules hold the same pattern. A rule with no members could be read as "no restriction" or as "nothing". A detach (R-REPO-013) can remove the last member of a rule.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse a pattern in two rules; an empty rule answers 404 for its names; a detach leaves the rule; members are kept in member-list order | `invalid_pattern` "already used by rule n"; the rule is a deliberate block; a read returns a rule's members in the order of the member list | Total order, no accident; a detach never opens a name to the upstream; a document compares equal to itself | A rule that lost its members must be removed by an editor |
+| (b) Earlier rule wins | Duplicates allowed | No new error | Order of rules becomes meaning |
+| (c) A detach drops an emptied rule | The rule goes with its last member | No dead rules | A name that was pinned to a partner registry falls through to the claims and the upstream: the opposite of the purpose |
+
+**Choice:** (a).
+
+**Rationale:** Pin rules exist to keep a name from the wrong source; every default in (a) fails closed. The development agent would revisit the third point if the UI shows emptied rules as noise: it can offer to delete them.
+
+**Applied in the spec:** R-REPO-023 (pin rules bullet), R-REPO-013 (detach).
+
+### Q-REPO-108 · Routing reads the snapshot for members and pins and a cache of its own for claims
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-023 wants the claims and pin rules of all repositories in a prefix trie per format, rebuilt from the change area `claims`. Pin rules are part of the document of a virtual repository and change with `repo_config`; claims change with every first publish.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Pins in the snapshot, claims in a cache of their own | Members, deploy target and a pin index per virtual repository are built into the repository snapshot (area `repo_config`); the claim index is a registered cache `claims` on the area `claims`, holding repository ids; `Route` joins them through the snapshot of the same call | A first publish does not rebuild the snapshot; each is current within the change-log bound; no query per request | Two caches; a claim of a repository the snapshot does not know yet is a non-member for a moment (a global claim still applies) |
+| (b) Everything in one cache on both areas | One trie holding claims and pins | One cache | Every first publish rebuilds the repository snapshot; the cost grows with the number of claims |
+| (c) Query per request | Claims and pins from PostgreSQL | Always current | A database query on every resolution, against R-REPO-023's "a lookup costs no database query" |
+
+**Choice:** (a). `Routing` is built on the `SnapshotReader` and registers the cache `claims` (`SafetyTTL` = `cache.snapshot_safety_ttl`). The area `claims` is also notified when pin rules change, so everything that routes reads one area.
+
+**Rationale:** The two inputs change at different rates and both tolerate the propagation bound of R-ARCH-018. The development agent would revisit this if a measurement shows the join through the snapshot on the request path.
+
+**Applied in the spec:** none beyond R-REPO-023's text, which already describes the trie and the area.
+
+### Q-REPO-109 · `pattern_unscoped_only` is decided by the format's name rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-005 says the warning applies "on an npm repository", because `*` does not cross `/` and only npm has names that contain one. The model must not name formats (R-ARCH-008), and the catalog has no fact "names can be scoped".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Ask the name rule | The warning is raised for a format with a name subject whose `Names.Normalize` accepts `@scope/name` | No new fact; follows what the format accepts; NuGet (IDs without `/`) never warns | A heuristic: a format whose rule accepts the probe but has no scoped names would warn |
+| (b) A catalog fact `ScopedNames` | The format declares it | Exact | A change of the catalog contract owned by the format work packages |
+| (c) Warn for every name-subject format | No detection | Simple | A false warning on NuGet |
+
+**Choice:** (a), with the probe `@scope/name`.
+
+**Rationale:** The warning is advice, not a rule, and (a) is correct for the two MVP formats. The development agent would revisit this with the first format that has `/` in names and a different rule, and then add the fact (b).
+
+**Applied in the spec:** R-REPO-005 (the sentence on `pattern_unscoped_only`).
 
 ## What this does not cover
 

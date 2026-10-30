@@ -46,6 +46,16 @@ type Snapshot struct {
 	// Exposure are the endpoint exposure rules of the active repositories
 	// (endpoints.md R-EP-012), read in the same snapshot.
 	Exposure []q.EndpointsExposureBuildRow
+	// >>> M2 virtual
+
+	// VirtualMembers and DeployTargets are the rows of virtual_members and
+	// virtual_deploy_targets in the same snapshot: the members and the deploy
+	// target of a virtual repository are rows, not part of its document
+	// (R-REPO-017, Q-REPO-104).
+	VirtualMembers []q.AuthzBuildVirtualMembersRow
+	DeployTargets  []q.AuthzBuildDeployTargetsRow
+
+	// <<< M2 virtual
 }
 
 // repoInfo is a repository as the index knows it.
@@ -102,11 +112,7 @@ func (x *Index) Epoch() int64 { return x.label.AuthzEpoch }
 func parseRepoConfig(raw []byte) (c struct {
 	RequireAuthentication bool   `json:"requireAuthentication"`
 	HideExistence         string `json:"hideExistence"`
-	Virtual               struct {
-		Members      []string `json:"members"`
-		DeployTarget string   `json:"deployTarget"`
-	} `json:"virtual"`
-	Remote struct {
+	Remote                struct {
 		CacheFillAction string `json:"cacheFillAction"`
 	} `json:"remote"`
 }, ok bool,
@@ -160,7 +166,7 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 		entries:    map[string][]q.AuthzBuildEntriesRow{},
 		matchCache: map[string][]*repoInfo{},
 	}
-	b.addRepositories(s.Repositories)
+	b.addRepositories(s.Repositories, s.VirtualMembers, s.DeployTargets)
 	b.x.exposure = buildExposure(s.Exposure, b.byID, b.reg, log)
 	for _, r := range s.Bindings {
 		b.x.bindings[r.PrincipalID] |= Role(r.Role).bit()
@@ -192,13 +198,21 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	return b.x
 }
 
-func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow) {
+func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []q.AuthzBuildVirtualMembersRow, targets []q.AuthzBuildDeployTargetsRow) {
+	memberKeys := map[int64][]string{}
+	for _, m := range members {
+		memberKeys[m.VirtualID] = append(memberKeys[m.VirtualID], m.MemberKey)
+	}
+	targetKey := map[int64]string{}
+	for _, t := range targets {
+		targetKey[t.VirtualID] = t.TargetKey
+	}
 	for _, r := range rows {
 		cfg, ok := parseRepoConfig(r.Config)
 		info := &repoInfo{
 			repoView:    repoView{ID: r.ID, Key: r.Key, Class: repository.Class(r.Class), Format: r.Format},
 			requireAuth: cfg.RequireAuthentication || !ok, // an unreadable document fails closed
-			hide:        cfg.HideExistence, members: cfg.Virtual.Members, deployTarget: cfg.Virtual.DeployTarget,
+			hide:        cfg.HideExistence, members: memberKeys[r.ID], deployTarget: targetKey[r.ID],
 			cacheFill: cfg.Remote.CacheFillAction,
 		}
 		if info.hide == "" {

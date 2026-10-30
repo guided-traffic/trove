@@ -112,6 +112,7 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `listFormats` | `GET /api/v1/formats` | public; 401 for an anonymous caller while anonymous access is off ([repositories.md](repositories.md#http-operations)) |
 | `listRepositories`, `getRepository` | `GET /api/v1/repositories`, `/{key}` | public; the handler decides what the caller sees (R-AUTHZ-016) |
 | `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository` | `POST`, `PUT`, `PATCH`, `DELETE` on `/api/v1/repositories` and `/{key}` | `repositories:write-config` |
+| `getRepositoryClaims`, `putRepositoryClaims` | `/api/v1/repositories/{repoKey}/claims` | `{action: read\|manage, repository: path.repoKey}`; a global claim also needs `repositories:write-config`, asked in the handler ([virtual.md](virtual.md)) |
 | `getItem`, `deleteItem`, `listChildren`, `getItemStats` | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats` | `{action: read\|delete, repository: path.repoKey, path: query.path}` ([files.md](files.md)) |
 | `downloadFile`, `headFile`, `deployFile`, `deleteFile` | `GET`, `HEAD`, `PUT`, `DELETE /files/{repoKey}/{path}` | `{action: read\|deploy\|delete, …}`, in the document but decided by the files handler |
 

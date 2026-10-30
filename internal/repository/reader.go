@@ -58,7 +58,18 @@ type ReaderOptions struct {
 type snapshot struct {
 	byKey map[string]Repository
 	list  []Repository
+	// >>> M2 virtual
+
+	// keys maps a repository id to its key; containing maps the id of a local or
+	// remote repository to the virtual repositories that list it as a member.
+	keys       map[int64]string
+	containing map[int64][]Repository
+
+	// <<< M2 virtual
 }
+
+// keyOf returns the key of a repository id, or "" for an id the snapshot lacks.
+func (s *snapshot) keyOf(id int64) string { return s.keys[id] }
 
 // SnapshotReader answers [Reader] from a per-replica snapshot of the repository
 // table (R-REPO-049: an in-process copy of PostgreSQL rows). Every change of the
@@ -157,18 +168,32 @@ func (r *SnapshotReader) snapshot(ctx context.Context) (*snapshot, error) {
 }
 
 func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
-	rows, err := readRows(ctx, r.run, func(qs *q.Queries) ([]q.Repository, error) { return qs.ListRepositories(ctx) })
+	rows, rels, err := readSnapshot(ctx, r.run)
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{byKey: make(map[string]Repository, len(rows)), list: make([]Repository, 0, len(rows))}
+	repos := make([]Repository, 0, len(rows))
 	for _, row := range rows {
 		repo, err := toRepository(row, r.cat)
 		if err != nil {
 			r.log.Error("repository: stored configuration does not load; the repository is disabled", "key", row.Key, "error", err)
 		}
+		repos = append(repos, repo)
+	}
+	linkVirtual(repos, rels, r.cat, r.log)
+	s := &snapshot{
+		byKey: make(map[string]Repository, len(rows)), list: make([]Repository, 0, len(rows)),
+		keys: make(map[int64]string, len(rows)), containing: map[int64][]Repository{},
+	}
+	for _, repo := range repos {
 		s.byKey[repo.Key] = repo
 		s.list = append(s.list, repo)
+		s.keys[repo.rid] = repo.Key
+		if repo.virt != nil {
+			for _, m := range repo.virt.members {
+				s.containing[m.rid] = append(s.containing[m.rid], repo)
+			}
+		}
 	}
 	sort.Slice(s.list, func(i, j int) bool { return s.list[i].Key < s.list[j].Key })
 	return s, nil
@@ -223,7 +248,9 @@ func (r *SnapshotReader) lookup(ctx context.Context, key string) (Repository, er
 		return repo, nil
 	}
 	// The row has been deleted since, or the poll has not seen the change: the
-	// row we read is the truth (PostgreSQL decides).
+	// row we read is the truth (PostgreSQL decides). A virtual repository comes
+	// without its members here (they are rows of their own and the snapshot
+	// holds them), so it resolves nothing until the next snapshot: fail closed.
 	repo, err := toRepository(row, r.cat)
 	if err != nil {
 		r.log.Error("repository: stored configuration does not load; the repository is disabled", "key", row.Key, "error", err)

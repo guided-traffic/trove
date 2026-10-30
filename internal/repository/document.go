@@ -43,10 +43,11 @@ type Settings struct {
 	Local         *LocalSettings `json:"local,omitempty"`
 	// Remote and Virtual are the class sections of R-REPO-024 and R-REPO-017. The
 	// remote section is validated and rewritten in its canonical form by
-	// validateRemote (remote.go); the virtual section is carried as written until
-	// its owner reads it.
-	Remote  json.RawMessage `json:"remote,omitempty"`
-	Virtual json.RawMessage `json:"virtual,omitempty"`
+	// validateRemote (remote.go). The members, deploy target and pin rules of the
+	// virtual section are rows, not part of repositories.config (Q-REPO-104,
+	// virtual.go).
+	Remote  json.RawMessage  `json:"remote,omitempty"`
+	Virtual *VirtualSettings `json:"virtual,omitempty"`
 	// Storage is the member owned by storage.md (upload size, quota, presigned
 	// downloads, checksum policy). The model keeps it as an opaque JSON object.
 	Storage json.RawMessage `json:"storage,omitempty"`
@@ -141,7 +142,11 @@ func (s *Settings) normalize() {
 		s.Local = nil
 	}
 	s.Remote = emptyToNil(s.Remote)
-	s.Virtual = emptyToNil(s.Virtual)
+	// >>> M2 virtual
+	if s.Virtual != nil {
+		s.Virtual.normalize()
+	}
+	// <<< M2 virtual
 	s.Storage = emptyToNil(s.Storage)
 }
 
@@ -153,8 +158,26 @@ func emptyToNil(m json.RawMessage) json.RawMessage {
 	return m
 }
 
-// marshalConfig is the content of repositories.config.
+// marshalConfig is the content of repositories.config. The virtual section keeps
+// only the period of the merged-metadata cache: the members, the deploy target
+// and the pin rules are rows.
 func (s Settings) marshalConfig() ([]byte, error) {
+	s.normalize()
+	// >>> M2 virtual
+	stored := struct {
+		Settings
+		Virtual *storedVirtual `json:"virtual,omitempty"`
+	}{Settings: s}
+	if s.Virtual != nil {
+		stored.Virtual = &storedVirtual{MergedMetadataTTLSeconds: mergedTTLOf(s)}
+	}
+	// <<< M2 virtual
+	return json.Marshal(stored)
+}
+
+// marshalFull is the complete document as JSON, relational members included: the
+// form in which two documents are compared to find what an update changed.
+func (s Settings) marshalFull() ([]byte, error) {
 	s.normalize()
 	return json.Marshal(s)
 }

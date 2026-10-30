@@ -399,16 +399,16 @@ func (e GroupMemberKind) Valid() bool {
 
 // Defines values for GroupMembersChangeSource.
 const (
-	Auto   GroupMembersChangeSource = "auto"
-	Manual GroupMembersChangeSource = "manual"
+	GroupMembersChangeSourceAuto   GroupMembersChangeSource = "auto"
+	GroupMembersChangeSourceManual GroupMembersChangeSource = "manual"
 )
 
 // Valid indicates whether the value is a known member of the GroupMembersChangeSource enum.
 func (e GroupMembersChangeSource) Valid() bool {
 	switch e {
-	case Auto:
+	case GroupMembersChangeSourceAuto:
 		return true
-	case Manual:
+	case GroupMembersChangeSourceManual:
 		return true
 	default:
 		return false
@@ -745,6 +745,60 @@ func (e RepositoryLifecycle) Valid() bool {
 	case RepositoryLifecycleActive:
 		return true
 	case RepositoryLifecycleDeleting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryClaimScope.
+const (
+	RepositoryClaimScopeGlobal  RepositoryClaimScope = "global"
+	RepositoryClaimScopeMembers RepositoryClaimScope = "members"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryClaimScope enum.
+func (e RepositoryClaimScope) Valid() bool {
+	switch e {
+	case RepositoryClaimScopeGlobal:
+		return true
+	case RepositoryClaimScopeMembers:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryClaimSource.
+const (
+	RepositoryClaimSourceAuto   RepositoryClaimSource = "auto"
+	RepositoryClaimSourceManual RepositoryClaimSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryClaimSource enum.
+func (e RepositoryClaimSource) Valid() bool {
+	switch e {
+	case RepositoryClaimSourceAuto:
+		return true
+	case RepositoryClaimSourceManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryClaimsInputClaimsScope.
+const (
+	RepositoryClaimsInputClaimsScopeGlobal  RepositoryClaimsInputClaimsScope = "global"
+	RepositoryClaimsInputClaimsScopeMembers RepositoryClaimsInputClaimsScope = "members"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryClaimsInputClaimsScope enum.
+func (e RepositoryClaimsInputClaimsScope) Valid() bool {
+	switch e {
+	case RepositoryClaimsInputClaimsScopeGlobal:
+		return true
+	case RepositoryClaimsInputClaimsScopeMembers:
 		return true
 	default:
 		return false
@@ -2442,6 +2496,15 @@ type PermissionPolicyList struct {
 	NextCursor *string            `json:"nextCursor"`
 }
 
+// PinRule Only the listed members are consulted for the names that `packages` selects (R-REPO-023). A
+// pattern is an exact name or a literal followed by one trailing `*` or `**`; the rule of the most
+// specific matching pattern applies. Pin rules take precedence over claims. A rule without members
+// answers `404` for its names. The members are listed in the order of the member list.
+type PinRule struct {
+	Members  []string `json:"members"`
+	Packages []string `json:"packages"`
+}
+
 // PolicyEntry Actions given to one principal. A policy holds at most one entry per principal.
 type PolicyEntry struct {
 	// Actions Actions or presets (`read`, `write`, `maintain`, `full`) on input; the expanded, alphabetical list of actions on output.
@@ -2748,7 +2811,11 @@ type Repository struct {
 	RequireAuthentication *bool                   `json:"requireAuthentication,omitempty"`
 	Storage               *map[string]interface{} `json:"storage,omitempty"`
 	UpdatedAt             *time.Time              `json:"updatedAt,omitempty"`
-	Virtual               *map[string]interface{} `json:"virtual,omitempty"`
+
+	// Virtual The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
+	// the pin rules are stored as rows, so that a repository which is a member or a target cannot be
+	// deleted (`409 repository_referenced`, or `detach=true`); the document is rendered from them.
+	Virtual *VirtualSettings `json:"virtual,omitempty"`
 
 	// Warnings Findings of the write that did not block it; present on create, replace and update.
 	Warnings *[]RepositoryWarning `json:"warnings,omitempty"`
@@ -2762,6 +2829,45 @@ type RepositoryHideExistence string
 
 // RepositoryLifecycle defines model for Repository.Lifecycle.
 type RepositoryLifecycle string
+
+// RepositoryClaim defines model for RepositoryClaim.
+type RepositoryClaim struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Pattern The claimed name or prefix, in the format's normalized form.
+	Pattern string                `json:"pattern"`
+	Scope   RepositoryClaimScope  `json:"scope"`
+	Source  RepositoryClaimSource `json:"source"`
+}
+
+// RepositoryClaimScope defines model for RepositoryClaim.Scope.
+type RepositoryClaimScope string
+
+// RepositoryClaimSource defines model for RepositoryClaim.Source.
+type RepositoryClaimSource string
+
+// RepositoryClaims defines model for RepositoryClaims.
+type RepositoryClaims struct {
+	Claims []RepositoryClaim `json:"claims"`
+
+	// Warnings Findings of the write that did not block it (`claim_overlaps`); present on a write.
+	Warnings *[]RepositoryWarning `json:"warnings,omitempty"`
+}
+
+// RepositoryClaimsInput defines model for RepositoryClaimsInput.
+type RepositoryClaimsInput struct {
+	// Claims The complete set of manual claims.
+	Claims []struct {
+		Pattern string                            `json:"pattern"`
+		Scope   *RepositoryClaimsInputClaimsScope `json:"scope,omitempty"`
+	} `json:"claims"`
+
+	// RemoveAuto Patterns of automatic claims to remove. Automatic claims not listed here stay.
+	RemoveAuto *[]string `json:"removeAuto,omitempty"`
+}
+
+// RepositoryClaimsInputClaimsScope defines model for RepositoryClaimsInput.Claims.Scope.
+type RepositoryClaimsInputClaimsScope string
 
 // RepositoryConsumerView What a caller sees who may read a repository but not its configuration (R-REPO-010).
 type RepositoryConsumerView struct {
@@ -3360,6 +3466,25 @@ type Version struct {
 	Version string `json:"version"`
 }
 
+// VirtualSettings The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
+// the pin rules are stored as rows, so that a repository which is a member or a target cannot be
+// deleted (`409 repository_referenced`, or `detach=true`); the document is rendered from them.
+type VirtualSettings struct {
+	// DeployTarget The key of the local member that takes writes (R-REPO-021); `null` makes the repository read-only.
+	DeployTarget *string `json:"deployTarget,omitempty"`
+
+	// Members The keys of the member repositories in resolution order: local and remote repositories of
+	// the virtual repository's format, no duplicates, at most `repositories.max_virtual_members`.
+	// Virtual members arrive with nested virtual repositories (R-REPO-018).
+	Members *[]string `json:"members,omitempty"`
+
+	// MergedMetadataTtlSeconds How long a merged metadata document is cached (R-REPO-020).
+	MergedMetadataTtlSeconds *int `json:"mergedMetadataTtlSeconds,omitempty"`
+	Pinning                  *struct {
+		Rules *[]PinRule `json:"rules,omitempty"`
+	} `json:"pinning,omitempty"`
+}
+
 // Whoami defines model for Whoami.
 type Whoami struct {
 	Credential WhoamiCredential `json:"credential"`
@@ -3786,6 +3911,18 @@ type ListChildrenParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// GetRepositoryClaimsParams defines parameters for GetRepositoryClaims.
+type GetRepositoryClaimsParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// PutRepositoryClaimsParams defines parameters for PutRepositoryClaims.
+type PutRepositoryClaimsParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
 // DeleteItemParams defines parameters for DeleteItem.
 type DeleteItemParams struct {
 	// Path The canonical path of a file or folder, without a leading or trailing slash; empty or
@@ -4058,6 +4195,9 @@ type ReplaceRepositoryJSONRequestBody = Repository
 
 // InvalidateRepositoryCacheJSONRequestBody defines body for InvalidateRepositoryCache for application/json ContentType.
 type InvalidateRepositoryCacheJSONRequestBody = CacheInvalidateRequest
+
+// PutRepositoryClaimsJSONRequestBody defines body for PutRepositoryClaims for application/json ContentType.
+type PutRepositoryClaimsJSONRequestBody = RepositoryClaimsInput
 
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = NewServiceAccount
@@ -4365,6 +4505,12 @@ type ServerInterface interface {
 	// ListChildren List the children of a folder
 	// (GET /api/v1/repositories/{repoKey}/children)
 	ListChildren(w http.ResponseWriter, r *http.Request, repoKey string, params ListChildrenParams)
+	// GetRepositoryClaims Read the namespace claims of a repository
+	// (GET /api/v1/repositories/{repoKey}/claims)
+	GetRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, params GetRepositoryClaimsParams)
+	// PutRepositoryClaims Replace the manual namespace claims of a repository
+	// (PUT /api/v1/repositories/{repoKey}/claims)
+	PutRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, params PutRepositoryClaimsParams)
 	// DeleteItem Delete a file or folder
 	// (DELETE /api/v1/repositories/{repoKey}/items)
 	DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params DeleteItemParams)
@@ -6867,6 +7013,110 @@ func (siw *ServerInterfaceWrapper) ListChildren(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetRepositoryClaims operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryClaims(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryClaimsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryClaims(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutRepositoryClaims operation middleware
+func (siw *ServerInterfaceWrapper) PutRepositoryClaims(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutRepositoryClaimsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutRepositoryClaims(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteItem operation middleware
 func (siw *ServerInterfaceWrapper) DeleteItem(w http.ResponseWriter, r *http.Request) {
 
@@ -9131,6 +9381,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/upstream-test", wrapper.TestRepositoryUpstream)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/upstream-tests", wrapper.TestUpstream)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.GetRepositoryClaims)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.PutRepositoryClaims)
 
 	return m
 }
