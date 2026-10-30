@@ -2,7 +2,7 @@
 
 The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart part), E0.6, E0.7,
 E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md), and the
-end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (API part), E1.13 and E1.14. It runs
+end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (the API part and the browser journeys), E1.13 and E1.14. It runs
 the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
 [R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12); the M1 tests are
 [described below](#m1-tests).
@@ -53,8 +53,8 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
                             against the test IdP, port-forwards to single pods, the Valkey outage, the scatter profile
   e1_01_login_test.go       E1.1: sign-in with Keycloak, JIT user, groups, logout, break-glass
   e1_08_ratelimit_test.go   E1.8: R-AUTH-038 thresholds, R-API-016 classes, R-ARCH-034 cluster-wide counting
-  e1_11_scatter_test.go     E1.11 (API part): list walks, Idempotency-Key, read after write, R-AUTH-042; the hook for the
-                            Playwright journeys of R-UI-047
+  e1_11_scatter_test.go     E1.11: list walks, Idempotency-Key, read after write, R-AUTH-042 (TestE1_11Scatter), and
+                            TestE1_11Journeys, which runs the Playwright journeys of R-UI-047 (web/e2e, below)
   e1_13_transfer_test.go    E1.13: curl -T during a rollout, downloads during a rollout and a pod deletion, GC on a worker
   e1_14_exposure_test.go    E1.14: exposure rules on the endpoint `customers`, bound tokens, R-EP-015
   e99_scatter_test.go       E0.11, last because it switches the profile
@@ -63,6 +63,11 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   k6/transfer.js            the transfer loop of E1.13: PUT, GET and SHA-256 of 256 KiB bodies on generic-local
   cmd/driver/               the driver (main.go: connections, probe and job commands; load.go: the load loop)
   Dockerfile                the driver image: a static binary on the release image's base
+web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
+  playwright.config.ts      Chromium, one worker, no retries, the edge URL and the IdP mapping from the environment
+  global-setup.ts           verifies the TLS chains against the dev CA, removes alice and bob (JIT users of an earlier run)
+  support.ts                the `page`, `admin` and `replicas` fixtures, the CSP watch, `expectAccessible` (axe), the sign-ins
+  tests/01-...07-*.spec.ts  the journeys, in the order they run (Browser journeys, below)
 ```
 
 ## Running it
@@ -283,9 +288,113 @@ which no M1 test uses: the read and write classes are tested with tokens, the an
 | E1.1 | `TestE1_01Login` | alice signs in through the Ingress with the code flow and PKCE (the authorization request carries `code_challenge_method=S256`, `state`, `nonce` and the redirect URI of the edge; the realm enforces S256, so a completed exchange proves the verifier); created just in time (`origin: jit`, deleted before the test so the creation is observable); groups `team-web` and `platform-admins` from the claim `groups` through the rule `trove-(.+)`, bob only `team-web`. Logout: the answer names the IdP's end-session endpoint with `id_token_hint`, `client_id` and the post-logout URI; the browser follows it; the cookie of the ended session is refused on every replica within `auth.revocation_bound`; a second sign-in in the same browser needs no password before the logout (the control) and asks for it again after (R-AUTH-013: the IdP session ended). Break-glass: wrong password `401`, the generated password `204`, `isAdmin` via `break-glass`; `TROVE_AUTH_BREAK_GLASS_ENABLED=false` on the web Deployment (R-AUTH-014: disabled): nine attempts over the three replicas get `403 local_login_disabled`, the earlier session `401 session_expired`; enabled again, the login works |
 | E1.8 | `TestE1_08RateLimits` | R-API-016: 400 reads with one token get `429` with `Retry-After`, `rate_limited` and the `RateLimit` fields of class `read` after the burst of 200, a second token is not slowed; the write class likewise at 50, and a token whose write budget is gone still reads. R-ARCH-034: 1000 requests with one token round robin over three replicas are admitted 200 times, not three bursts, and the same on one replica; with Valkey stopped the same bound holds (each replica's share, `trove_ratelimit_fallback{limiter="api_read"}` is 1 on all three), and sequential reads add no delay with the circuit open. The latency injection: `CLIENT PAUSE 4000 ALL` on the primary holds every check for `valkey.command_timeout`; exactly the 15 checks of `failure_threshold` 5 times three replicas are held, then thousands of fast requests. R-AUTH-038: 400 random well-formed tokens, Bearer and Basic alternating, are validated (401) 300 times and answer 429 after that, both kinds; a PAT used once before still works on all three replicas during the burst; 40 starts of the login flow get 429 from the 31st on; with Valkey stopped at most 300 validations and the 40 starts admit about 30 (each replica's share of 10), and `trove_ratelimit_fallback{limiter="auth.credential_failures"}` is 1 on each replica |
 | E1.11 | `TestE1_11Scatter` | every list operation (repositories, users, groups, service accounts, tokens, policies, role bindings, audit events, exposure rules, jobs) walked with `limit=1` returns what one page of 500 returns (read before and after, no duplicate, served by at least two replicas); an `Idempotency-Key` replayed 15 times is `201` with `Idempotency-Replayed: true`, the stored body and `Location`, from all three replicas, the same key with another body is `422 idempotency_key_reused` (R-API-051); a write on one replica is read back at once on the others, 24 times, and a new repository takes uploads on all three replicas at once (R-API-052). R-AUTH-042, in three modes (Valkey up with 50 browser logins, Valkey stopped for its whole duration with 25 and every pod `degraded: valkey`, and `FLUSHALL` at the lockout, after the revocation and in the middle of 25 logins): break-glass lockout (five wrong passwords one after another over the three replicas, the correct one `429 break_glass_locked` with `Retry-After` on each, still locked after `FLUSHALL`, unlock through the API; five at once lock it as well), PAT revocation (the token worked on all three replicas, then 401 on all three within the 2 s of `auth.revocation_bound`, and after `FLUSHALL` too), re-authentication (the session's `authenticated_at` set back two hours: `401 reauthentication_required` on any replica, the silent round trip `purpose=reauth` needs no password and rotates the session, the old cookie is dead), logout, and the browser logins on varying replicas |
-| E1.11 hook | `TestE1_11Journeys` | runs `npx playwright test` in `web/e2e` against the scatter profile when `web/e2e/playwright.config.ts` exists (the contract is in the test's comment); until then it skips and says so. The journeys of R-UI-047 arrive with the screens |
+| E1.11 journeys | `TestE1_11Journeys` | runs `npx playwright test` in `web/e2e` against the scatter profile and fails on any failure of any journey, including an axe violation of impact serious or critical on a visited screen; one subtest per journey, named by its title. A missing `npm ci` or browser is a failure that names the command to run, not a skip. See [Browser journeys](#browser-journeys) |
 | E1.13 | `TestE1_13Transfers` | R-HA-011: two loops of `curl -T` of 500 MB at 50 MB/s during `kubectl rollout restart deploy/trove-web`: none fails, uploads overlapped the rollout, and what arrived has the SHA-256 that was sent. R-ARCH-024, download 1: a 400 MiB file of `generic-local` is downloaded during a rollout restart and matches ([Q-ARCH-76](../spec/architecture.md#q-arch-76--the-pace-of-the-download-that-a-rollout-restart-must-not-break): at 6 MB/s, so that the serving pod is drained while it transfers, which the test asserts). Download 2: at 2 MB/s (200 s, longer than the grace period) with the serving pod deleted after 3 s: the bytes stop arriving about 110 s later (the shutdown timeout; the pod's log says `requests cut at the shutdown deadline`), curl ends with an error, `curl -C -` resumes with `206` from another replica and the SHA-256 matches. Download 1 was red in about half of the runs until [finding 5](#findings-of-the-suite) was fixed; the cut download must end for curl within 15 s of its last bytes. R-HA-002: `POST /api/v1/system/tasks/gc/run` through a web pod is executed by a worker (the job's `replica`, and `job.ran_by` resolved through the replica table), and no job was ever run by a web replica. E0.14: `TestE14Drain` runs `k6/transfer.js` next to the ping load (4 iterations/s: PUT, GET, SHA-256 compared) and fails on any transfer that is not 200/201, a wrong checksum or a dropped iteration |
 | E1.14 | `TestE1_14Exposure` | on `customers` (through its own Ingress): without a rule nothing is exposed (`404`) and a write is `403 endpoint_read_only`, a rule with `packages` on a generic repository is `422 dimension_not_supported`; a rule `paths.include: ["releases/**"]` makes `releases/1.0/app.zip` downloadable with a service-account token bound to `customers` while `internal/x.bin` and several missing paths answer the same 404 (problem body without `instance` and `requestId`, same content type and cache control); the same token is `401 invalid_token` on the default endpoint; a PAT is `401 invalid_token` on `customers` with no query of the token table (`api_token` is locked `ACCESS EXCLUSIVE` for 14 s: 41 PATs are answered in milliseconds, while an unknown PAT on the default endpoint, the control, waits for the lock and ends `503` after the statement timeout; the statistics views are no evidence, an idle backend flushes its counters up to a minute late) and `trove_endpoint_credentials_refused_total{reason="token_type"}` +41; an unbound SAT is refused with `reason="token_binding"`; no credential and a valid session cookie are `401 credentials_required`; an administrator token bound to `customers` reads the exposed file, gets the 404 for the internal one, lists only `generic-local` among the repositories and no `internal` folder. The rule lifecycle (created, narrowed with a merge patch, deleted) is read on every replica through a port-forward to its endpoint listener within the bound of R-AUTHZ-028 (Valkey up and stopped), and each change is one audit event (`endpoint.exposure.created`, `.updated`, `.deleted`). R-EP-015: 400 reads with one token get `429` after the burst with `Retry-After` and the policy `endpoint:external`, a second bound token is not slowed, the same token is not held on the default endpoint; 1000 requests with one token over the three replicas are admitted at most burst plus decay, with Valkey stopped too, where `trove_ratelimit_fallback{limiter="endpoint_external"}` is 1 on every replica |
+
+## Browser journeys
+
+`TestE1_11Journeys` is the second half of E1.11: the Playwright journeys of [R-UI-047](../spec/api-and-ui.md) in
+[web/e2e](../../web/e2e), run in Chromium against the chart-installed build in the `scatter` profile (three `web`
+replicas, every request to another one). The unit and component tiers stay in `make web-test`
+([web-ui.md](web-ui.md#test-tiers-r-ui-047)); this is the tier that sees the real layout, the real CSP, the real IdP page
+and, with `@axe-core/playwright`, `color-contrast` and the document-level rules (Q-UI-11, Q-UI-66).
+
+### What a journey is
+
+| File | Journey | Requirements | What it does |
+|---|---|---|---|
+| `01-sign-in.spec.ts` | sign-in through the IdP, and the local form | R-UI-004, R-AUTH-009, R-AUTH-013, R-AUTH-022 | alice signs in at the test IdP (the dev profile sets `autoRedirect`), the session survives reloads on other replicas, sign-out ends the IdP session too (the next protected route asks for the password); the break-glass administrator signs in with `?local=1`, axe on the local form |
+| `02-repository-and-files.spec.ts` | wizard, upload, browse, download | R-UI-010 to R-UI-012 | the administrator creates a repository with the five wizard steps, uploads `hello.txt` in the browser, finds it in the tree, downloads it and compares the bytes |
+| `03-access.spec.ts` | group, membership, policy editor, the effect for bob | R-UI-025, R-UI-026 | bob signs in (JIT) and sees no repository; the administrator creates a group, adds bob, writes a policy in the editor (the preview reports problems while the draft is empty, then the covered repository, and "Try it" explains the draft); bob sees the repository and its file on several requests; removing the membership takes it away again |
+| `04-tokens.spec.ts` | personal token create and revoke | R-UI-029 | alice creates a token, sees the value once, uses it six times (every replica), revokes it, and the token is refused six times after the bound of R-AUTH-042 |
+| `05-exposure.spec.ts` | exposure rule with the preview | R-UI-039, R-EP-017 | on the endpoint `customers`: the preview's verdict per path as the rule is typed, create, read back on another replica |
+| `06-audit-and-system.spec.ts` | audit log, system status | R-UI-036 to R-UI-038 | one entry for each action the journeys before it did (repository, group, membership, policy, token created and revoked, exposure rule), an event opened; the status screen shows three ready `web` replicas and "Answered by" names one of them |
+| `07-german-dark.spec.ts` | German, dark theme | R-UI-044, R-UI-045 | the break-glass sign-in at `/ui/de/...`, five screens in German with axe in the dark theme, the language menu back to English, sign-out |
+
+The files run in this order, in one worker: the audit journey reads what the journeys before it did. A journey prepares
+its data through the API with the administrator token (INV-17: `beforeAll` creates repositories and files, `afterAll`
+deletes them) and does through the UI only what it tests. Every name carries a base-36 timestamp, so a rerun needs no
+cleanup first.
+
+### Every journey is scattered, and every page is checked
+
+- **Replicas.** The `replicas` fixture collects the `X-Trove-Replica` of every response the page received; a journey
+  asserts at least two. (The status screen's "Answered by" is checked to name one of the three, not to change: a screen
+  makes a fixed number of API calls, and with the round robin of the edge pod that holds the browser's connection a
+  given call can reach the same replica on every load; 8 reloads in a row did.) The scatter profile's
+  round robin is per request, so a journey that signs in, writes and reads back has used the session, the change log
+  and the caches across replicas (R-ARCH-032, R-API-052).
+- **Accessibility.** `expectAccessible(page, screen)` waits for finite animations (a dialog still fading in has a
+  blended colour), runs axe on the page and fails on a violation of impact serious or critical. It runs on each screen
+  a journey visits, in English with the light theme and, in the German journey, in the dark theme.
+- **CSP.** Every page of every journey is watched for `securitypolicyviolation` events; one fails the test (the
+  security tier of R-UI-047).
+- **TLS.** Chromium does not read `NODE_EXTRA_CA_CERTS`, and the dev CA is in no system store, so the browser contexts
+  ignore certificate errors. `global-setup.ts` makes up for it: before any journey it opens a verified TLS connection
+  (dev CA, name checked) to the edge and to the IdP and fails the run on a wrong or expired certificate.
+
+### How the browser reaches the IdP
+
+The issuer is the Service name `trove-keycloak.trove.svc` ([local-profile.md](local-profile.md#the-test-idp)), which
+no resolver on the host knows. `TestE1_11Journeys` opens a `kubectl port-forward` to the Service (the one the Go
+tests use, `keycloakAddr`) and passes its address as `TROVE_E2E_KEYCLOAK_ADDR`; `playwright.config.ts` adds
+`--host-resolver-rules=MAP trove-keycloak.trove.svc <address>` to Chromium, so the page keeps the issuer's name (and its
+certificate check) and no hosts entry is needed. Without that variable the name must resolve on its own.
+
+### Environment
+
+| Variable | Set by | Meaning |
+|---|---|---|
+| `TROVE_E2E_EDGE_URL` | `e2e.sh` | the edge, `https://localhost:<port>` |
+| `NODE_EXTRA_CA_CERTS` | `TestE1_11Journeys` (from `TROVE_E2E_CA_FILE`) | the dev CA for `global-setup.ts` and the Node side of the suite |
+| `TROVE_E2E_KEYCLOAK_ADDR` | `TestE1_11Journeys` | `host:port` of the port-forward to the test IdP |
+| `TROVE_E2E_ALICE_PASSWORD`, `TROVE_E2E_BOB_PASSWORD`, `TROVE_E2E_BREAKGLASS_PASSWORD` | `TestE1_11Journeys` | read from the Secrets `trove-keycloak` and `trove-break-glass` |
+| `TROVE_E2E_ADMIN_TOKEN` | `TestE1_11Journeys` | the token of the account `e2e-admin` (`adminToken`) |
+| `PLAYWRIGHT_JSON_OUTPUT_NAME` | `TestE1_11Journeys` | `.out/playwright/results.json`, which the test turns into one subtest per journey |
+
+`TestE1_11Journeys` also unlocks the break-glass user first (a lockout left by `TestE1_11Scatter` would fail the first
+sign-in for a reason that is not the UI). `global-setup.ts` deletes the users `alice` and `bob`, as `TestE1_01Login`
+does: a user left by an earlier run is bound to the subject of an IdP that may since have been rebuilt, and the sign-in
+refuses it with `username_taken`.
+
+### Installing and running
+
+```shell
+cd web && npm ci                                   # @playwright/test and @axe-core/playwright, pinned exactly in package-lock.json
+npx playwright install --with-deps chromium       # the browser build of the locked Playwright version (--with-deps: apt on Linux)
+make e2e SET=access                                # or: make e2e SET='^TestE1_11Journeys$'
+```
+
+The browser binaries live outside the repository (`~/.cache/ms-playwright`, on macOS `~/Library/Caches/ms-playwright`)
+and are named by the Playwright version, so they follow the lockfile: after a Playwright bump run the install again.
+
+**CI.** The `e2e` job of [release.yml](../../.github/workflows/release.yml) sets up Node from `web/.nvmrc`, runs `npm ci` in
+`web/` and `npx playwright install --with-deps chromium` before the dev profile comes up, and uploads
+`.out/playwright/` (HTML report, traces and screenshots of failed journeys) as `e2e-playwright-<set>`. The `--with-deps`
+step uses `sudo apt-get`, which the job already does for the build tools; a self-hosted runner that is not a Debian
+derivative needs the libraries Playwright lists installed by hand. This has not run on a GitHub runner yet; locally the
+same commands ran on macOS (the browser download without `--with-deps`).
+
+**After a new image** the deployment does not restart on its own (the chart does not change, the tag is `dev`):
+`kubectl -n trove rollout restart deploy/trove-web deploy/trove-worker`, then wait for the rollout.
+
+By hand against a running profile (after `TROVE_PROFILE=scatter deploy/dev/up.sh`): export the variables above, forward
+the IdP and run `npx playwright test` in `web/e2e` (`--ui` or `--headed` to watch). The HTML report is
+`.out/playwright/report/index.html`; `npx playwright show-report .out/playwright/report` opens it.
+
+### What the browser tier found
+
+Both are fixed in the same change; the journeys fail without the fix (axe, serious or critical).
+
+1. **The label of every `mat-form-field` was `display: none`.** The density of -2 sets
+   `--mat-form-field-filled-label-display: none`, so the sign-in form, the filters of the identity screens and the
+   fields of the policy and token forms showed empty boxes, and axe reported `label` and `select-name` as critical (the
+   label is hidden). jsdom has no layout and could not see it. Fix: `--mat-form-field-filled-label-display: block` in
+   [main.scss](../../web/src/styles/main.scss) (Q-UI-67).
+2. **The user menu button's accessible name ("User menu") did not contain its visible text (the user's name).**
+   WCAG 2.5.3, axe `label-content-name-mismatch`, on every screen. Fix: no `aria-label`; the name is the visible user
+   name followed by a visually hidden "User menu" ([app.html](../../web/src/app/app.html), Q-UI-67).
 
 ## Measured on the dev cluster
 
@@ -445,6 +554,11 @@ harness:
   token has a read budget (R-API-016) that a list walk spends. A test that exceeds a per-address limit goes through
   `podForwards`; one that needs Valkey down goes through `withValkeyStopped`.
 
+- **A new browser journey.** A file `web/e2e/tests/NN-<topic>.spec.ts`, importing `test` and `expect` from `../support`
+  (never from `@playwright/test`, so the CSP watch and the replica collection apply), a title that starts with the
+  requirement IDs, data prepared through the `admin` fixture, `expectAccessible` on every screen it visits and an
+  assertion on `replicas`. Names carry `unique(...)`. Selectors are roles and labels, scoped (`getByRole('dialog')`,
+  `getByRole('group', { name })`), because the page behind a dialog keeps its fields.
 - **A new e2e check.** Put it in the file of its exit criterion, name the subtest `R-… E0.x …`, and fail
   with a message that says what was measured. Use `faultRun` for a fault under load.
 - **A new fault.** A script in `deploy/dev/` that injects, waits for the recovery and prints how long

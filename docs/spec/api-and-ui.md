@@ -4514,6 +4514,11 @@ waits for a harness. What jsdom cannot see stays on the Playwright tier of R-UI-
 `light-dark()` pairs chosen for 4.5:1 and are not machine-verified yet), focus order across a real navigation, reflow at 320 CSS px, both locales.
 The development agent would revisit this when the e2e work package has its Playwright harness; the jsdom run then stays as the fast tier.
 
+**Revisited (Q-UI-66):** the harness exists. `@axe-core/playwright` runs on every screen a journey of `web/e2e` visits, with `color-contrast` and the
+document-level rules on, in light and dark, English and German, and fails on a serious or critical violation; the jsdom run stays as the fast tier, as
+planned. What jsdom could not see was real: it hid two violations that every screen had (Q-UI-67). The contrast of the status colours in both themes is now
+machine-verified on the screens the journeys visit.
+
 **Applied in the spec:** R-UI-044 and R-UI-047 are unchanged; this block states the M1 subset. Q-UI-9 said axe starts with the first M1 screen: it does, in the form chosen here.
 
 ### Q-UI-12 · HTTP layer, service interfaces and endpoints that are not in the OpenAPI document yet
@@ -4757,6 +4762,46 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied in the spec:** R-UI-005, R-UI-030 and R-UI-031 are unchanged; the gaps are recorded here.
 <!-- <<< M1 ui-b -->
+
+<!-- >>> M1 e2e-ui -->
+### Q-UI-66 · The browser tier: Playwright in the web workspace, one worker, no retries, the journeys in file order
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Decision | Options | Chosen |
+|---|---|---|
+| Where the suite and its tools live | A `web/e2e` project with its own `package.json`; devDependencies of the Angular workspace (`web/package.json`) | The Angular workspace's `package.json`: one lockfile pins `@playwright/test` 1.64.1, `@axe-core/playwright` 4.14.0 (its `axe-core ~4.14.0` is the version of the jsdom tier) and `@types/node`; the browser build is `npx playwright install --with-deps chromium`, which resolves to the locked version, so there is one version per tool |
+| How the browser trusts the dev CA | Install the CA into the browser profile or the system store; `--ignore-certificate-errors-spki-list` for the leaf; `ignoreHTTPSErrors` with a verified handshake first | `ignoreHTTPSErrors`, after `global-setup.ts` has opened a verified TLS connection to the edge and to the IdP against the dev CA (name checked). A system store needs administrator rights, an SPKI list breaks when the leaf rotates (E0.15 renews it under load), and the handshake keeps the check the CA exists for |
+| How the browser reaches the IdP's Service name | A hosts entry (administrator rights); a proxy; `--host-resolver-rules` | `--host-resolver-rules=MAP trove-keycloak.trove.svc <port-forward>`: the page keeps the issuer's name, the redirect URI and the certificate check are the real ones, and the host stays untouched |
+| Concurrency and retries | Parallel workers with retries; one worker, no retries | One worker, in file order, no retries. The journeys share one installation and the per-address limits of R-AUTH-038; the audit journey reads the actions of those before it; a retry that turns red into green hides a finding |
+| What an assertion of "scattered" is | Count requests in the proxy; the `X-Trove-Replica` of the responses the page saw | The responses the page saw: at least two replicas per journey. Which replica a single call reaches is not asserted: the calls of a screen repeat in a fixed number, so one of them can reach the same replica on every load (measured on the status screen). Nothing is inferred from server metrics |
+| Test data | Through the UI; through the API | Through the API with the administrator token (INV-17), `beforeAll` and `afterAll` per journey; the UI is used for what the journey tests. `global-setup.ts` removes alice and bob, the JIT users of an earlier run, like E1.1 |
+| Reporting | The list only; plus a JSON report | List, HTML (`.out/playwright/report`, uploaded by CI) and, when `TestE1_11Journeys` runs it, JSON, which the Go test turns into one subtest per journey named by its title, so the `go test -json` report says which journey failed |
+| Browsers | Chromium, Firefox and WebKit | Chromium. R-UI-047 asks for all three in the full run on the commit that closes the phase; that run is not set up (the self-hosted runner would install two more browsers, and the journeys have no engine-specific behavior yet) |
+
+**Rationale:** The choices keep the tier cheap to run on the e2e job that already exists and the verdict unambiguous: a failing journey, an axe violation
+or a CSP violation fails `TestE1_11Journeys`. The development agent would revisit Firefox and WebKit at the end of the milestone, and the single worker if the
+journeys grow past what the 90-minute budget of the e2e job leaves.
+
+**Applied in the spec:** R-UI-047 is unchanged; this block states how its end-to-end, accessibility and security tiers are met at M1: seven journeys, Chromium, axe on
+every visited screen, `securitypolicyviolation` watched on every page. Not covered at M1: Firefox and WebKit, the client-setup journey with real `npm` and
+`dotnet`, the claim tester and the backups screen (no such screens yet), reflow at 320 CSS px and focus order across navigations.
+
+### Q-UI-67 · What the browser tier's axe run found, and how it was fixed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Finding | Options | Chosen |
+|---|---|---|
+| The label of every `mat-form-field` was `display: none`: the density of -2 sets `--mat-form-field-filled-label-display: none`. Sighted users saw empty boxes; axe reported `label` and `select-name` as critical | Leave the density; give each field an `aria-label` and a visible placeholder; set the token to `block` once | Set `--mat-form-field-filled-label-display: block` on `html` in `main.scss`: the label becomes the floating label and every field of every screen is fixed at once; per-field fixes would repeat in each form |
+| The user menu button had `aria-label="User menu"` while its visible text is the user's name (WCAG 2.5.3, axe `label-content-name-mismatch`, serious, on every screen) | Keep the `aria-label` and add the name to it; drop the `aria-label` and add the words as visually hidden text | Drop the `aria-label`; the name is the visible user name followed by a visually hidden "User menu" (same message id `shell.user-menu`, so the German unit stays valid) |
+| The upload dialog's title, label and hint failed `color-contrast` when axe ran while the dialog was still fading in | Raise the colours; wait for the animation | Wait: `expectAccessible` awaits the finite animations of the document before axe runs. The colours were not wrong (the same dialog passes after the transition) |
+
+**Rationale:** The first two were present on every screen and invisible to the jsdom tier; they are the reason the browser tier was worth building.
+The third was a false alarm of timing, not a defect. The development agent would revisit the token if a form needs the compact label-less look again.
+
+**Applied in the spec:** R-UI-044 is unchanged; the fixes are in [main.scss](../../web/src/styles/main.scss) and [app.html](../../web/src/app/app.html).
+<!-- <<< M1 e2e-ui -->
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

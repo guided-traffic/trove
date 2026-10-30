@@ -489,33 +489,98 @@ func (b *browser) reauth(password string) loginTrace {
 	return b.walkLogin(b.base+"/auth/oidc/keycloak/start?purpose=reauth&return_to=%2Fui%2F", "bob", password)
 }
 
-// ── the hook for the browser journeys of R-UI-047 ────────────────────────────
+// ── the browser journeys of R-UI-047 ─────────────────────────────────────────
 
-// TestE1_11Journeys runs the Playwright journeys of R-UI-047 against the scatter profile when the suite exists
-// (web/e2e/playwright.config.ts), with the edge URL, the dev CA and the users of the test IdP in the environment.
-// The screens are being built; until the suite lands this test says so and skips, so the gap is in the log and
-// not silent. The suite's contract: `npx playwright test` in web/e2e, base URL TROVE_E2E_EDGE_URL, the CA in
-// NODE_EXTRA_CA_CERTS, passwords in TROVE_E2E_ALICE_PASSWORD, TROVE_E2E_BOB_PASSWORD and
-// TROVE_E2E_BREAKGLASS_PASSWORD, the administrator token in TROVE_E2E_ADMIN_TOKEN.
+// TestE1_11Journeys runs the Playwright journeys of R-UI-047 (web/e2e) against the scatter profile and fails on
+// any failure of any journey, including an axe violation of impact serious or critical on a visited screen.
+// The suite needs `npm ci` in web/ and `npx playwright install --with-deps chromium` on the host (CI does both in
+// the e2e job; docs/developer/e2e.md); without them this test fails and says what to run, it does not skip.
+//
+// The contract with the suite: base URL TROVE_E2E_EDGE_URL, the dev CA in NODE_EXTRA_CA_CERTS (the suite verifies
+// the edge and the IdP against it), TROVE_E2E_KEYCLOAK_ADDR (the address of a port-forward to the test IdP's
+// Service, to which the browser maps the issuer's name), the passwords in TROVE_E2E_ALICE_PASSWORD,
+// TROVE_E2E_BOB_PASSWORD and TROVE_E2E_BREAKGLASS_PASSWORD, the administrator token in TROVE_E2E_ADMIN_TOKEN.
 func TestE1_11Journeys(t *testing.T) {
 	dir := filepath.Join(cfg.repo, "web", "e2e")
 	if _, err := os.Stat(filepath.Join(dir, "playwright.config.ts")); err != nil {
-		t.Skip("R-UI-047 E1.11: the Playwright journeys are not part of the repository yet (web/e2e/playwright.config.ts); this test runs them as soon as they are")
+		t.Fatalf("R-UI-047 E1.11: the Playwright suite is missing (%v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.repo, "web", "node_modules", ".bin", "playwright")); err != nil {
+		t.Fatal("R-UI-047 E1.11: the Playwright suite is not installed; run `npm ci` in web/ and `npx playwright install --with-deps chromium`")
 	}
 	useScatter(t)
+	adm := adminAPI(t)
+	// The journeys sign in with the break-glass password and as alice and bob; a lockout left by an earlier test
+	// would fail the first of them for a reason that is not the UI.
+	adm.do(http.MethodPost, "/api/v1/users/admin/unlock", nil).want(t, "unlock break-glass", 204)
 	cmd := exec.Command("npx", "playwright", "test")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"TROVE_E2E_EDGE_URL="+cfg.edgeURL,
+		"TROVE_E2E_KEYCLOAK_ADDR="+keycloakAddr(t),
 		"NODE_EXTRA_CA_CERTS="+cfg.caFile,
 		"TROVE_E2E_ALICE_PASSWORD="+secretValue(t, "trove-keycloak", "alice-password"),
 		"TROVE_E2E_BOB_PASSWORD="+secretValue(t, "trove-keycloak", "bob-password"),
 		"TROVE_E2E_BREAKGLASS_PASSWORD="+secretValue(t, "trove-break-glass", "password"),
 		"TROVE_E2E_ADMIN_TOKEN="+adminToken(t),
 	)
+	reportFile := filepath.Join(cfg.repo, ".out", "playwright", "results.json")
+	_ = os.Remove(reportFile)
+	cmd.Env = append(cmd.Env, "PLAYWRIGHT_JSON_OUTPUT_NAME="+reportFile)
 	out, err := cmd.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(cfg.out, "playwright.log"), out, 0o644)
-	if err != nil {
-		t.Fatalf("playwright: %v\n%s", err, tail(string(out), 4000))
+
+	// One subtest per journey, named by its title (which carries the requirement IDs), so that the report of this
+	// run says which journey failed; the run itself decides the verdict below.
+	specs := playwrightSpecs(t, reportFile)
+	for _, sp := range specs {
+		t.Run(sp.Title, func(t *testing.T) {
+			if !sp.OK {
+				t.Errorf("journey %s failed (see playwright.log and .out/playwright/report)", sp.File)
+			}
+		})
 	}
+	if err != nil {
+		t.Fatalf("playwright: %v\n%s", err, tail(string(out), 6000))
+	}
+	if len(specs) == 0 {
+		t.Fatalf("playwright ran no journey:\n%s", tail(string(out), 2000))
+	}
+	t.Logf("playwright: %d journeys passed\n%s", len(specs), tail(string(out), 1500))
+}
+
+type playwrightSpec struct {
+	Title string `json:"title"`
+	OK    bool   `json:"ok"`
+	File  string `json:"file"`
+}
+
+type playwrightSuite struct {
+	Specs  []playwrightSpec  `json:"specs"`
+	Suites []playwrightSuite `json:"suites"`
+}
+
+// playwrightSpecs reads the specs of Playwright's JSON report, in every nested suite.
+func playwrightSpecs(t testing.TB, path string) []playwrightSpec {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var rep struct {
+		Suites []playwrightSuite `json:"suites"`
+	}
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		t.Fatalf("playwright report %s: %v", path, err)
+	}
+	var out []playwrightSpec
+	var walk func(ss []playwrightSuite)
+	walk = func(ss []playwrightSuite) {
+		for _, s := range ss {
+			out = append(out, s.Specs...)
+			walk(s.Suites)
+		}
+	}
+	walk(rep.Suites)
+	return out
 }

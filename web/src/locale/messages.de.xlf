@@ -21,7 +21,7 @@
     </unit>
     <unit id="shell.user-menu">
       <notes>
-        <note category="location">src/app/app.html:28,30</note>
+        <note category="location">src/app/app.html:31,32</note>
       </notes>
       <segment>
         <source>User menu</source>
@@ -1704,15 +1704,6 @@
       </segment>
     </unit>
     <!-- >>> M1 ui-a -->
-    <unit id="problem.repository_exists">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:69</note>
-      </notes>
-      <segment>
-        <source>A repository with this key exists, or is still being deleted.</source>
-        <target>Ein Repository mit diesem Schlüssel existiert oder wird noch gelöscht.</target>
-      </segment>
-    </unit>
     <unit id="problem.repository_not_found">
       <notes>
         <note category="location">src/app/core/http/problem-messages.ts:71</note>

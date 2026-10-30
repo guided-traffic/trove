@@ -772,6 +772,20 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Set up Node.js (the Playwright journeys of E1.11)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Install the Playwright journeys and their browser
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          # The browser build is the one the locked @playwright/test version names: one version per tool.
+          # --with-deps installs the system libraries through apt (sudo, as for the build tools above).
+          npx playwright install --with-deps chromium
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -836,6 +850,15 @@ jobs:
           name: e2e-artifacts-${{ matrix.set }}
           path: .out/e2e/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the Playwright report, traces and screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-playwright-${{ matrix.set }}
+          path: .out/playwright/
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Cluster state (failure only)

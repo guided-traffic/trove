@@ -91,7 +91,7 @@
     </unit>
     <unit id="shell.user-menu">
       <notes>
-        <note category="location">src/app/app.html:28,30</note>
+        <note category="location">src/app/app.html:31,32</note>
       </notes>
       <segment>
         <source>User menu</source>
@@ -681,17 +681,9 @@
         <source>Something went wrong on the server.</source>
       </segment>
     </unit>
-    <unit id="problem.repository_exists">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:69</note>
-      </notes>
-      <segment>
-        <source>A repository with this key exists, or is still being deleted.</source>
-      </segment>
-    </unit>
     <unit id="problem.repository_not_found">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:71</note>
+        <note category="location">src/app/core/http/problem-messages.ts:69</note>
       </notes>
       <segment>
         <source>This repository does not exist, or you may not see it.</source>
@@ -699,7 +691,7 @@
     </unit>
     <unit id="problem.repository_disabled">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:73</note>
+        <note category="location">src/app/core/http/problem-messages.ts:71</note>
       </notes>
       <segment>
         <source>This repository is disabled.</source>
@@ -707,7 +699,7 @@
     </unit>
     <unit id="problem.repository_referenced">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:75</note>
+        <note category="location">src/app/core/http/problem-messages.ts:73</note>
       </notes>
       <segment>
         <source>Other repositories still include this one.</source>
@@ -715,7 +707,7 @@
     </unit>
     <unit id="problem.invalid_key">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:77</note>
+        <note category="location">src/app/core/http/problem-messages.ts:75</note>
       </notes>
       <segment>
         <source>The key must have 2 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or digit, without two dots in a row and not ending in a dot.</source>
@@ -723,7 +715,7 @@
     </unit>
     <unit id="problem.reserved_name">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:79</note>
+        <note category="location">src/app/core/http/problem-messages.ts:77</note>
       </notes>
       <segment>
         <source>This name is reserved.</source>
@@ -731,7 +723,7 @@
     </unit>
     <unit id="problem.invalid_pattern">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:81</note>
+        <note category="location">src/app/core/http/problem-messages.ts:79</note>
       </notes>
       <segment>
         <source>This pattern is not valid.</source>
@@ -739,7 +731,7 @@
     </unit>
     <unit id="problem.invalid_document">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:83</note>
+        <note category="location">src/app/core/http/problem-messages.ts:81</note>
       </notes>
       <segment>
         <source>The document contains a member that is unknown or misspelt.</source>
@@ -747,7 +739,7 @@
     </unit>
     <unit id="problem.immutable_field">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:85</note>
+        <note category="location">src/app/core/http/problem-messages.ts:83</note>
       </notes>
       <segment>
         <source>This field cannot be changed after creation.</source>
@@ -755,7 +747,7 @@
     </unit>
     <unit id="problem.not_applicable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:87</note>
+        <note category="location">src/app/core/http/problem-messages.ts:85</note>
       </notes>
       <segment>
         <source>This setting does not apply to this class or format.</source>
@@ -763,7 +755,7 @@
     </unit>
     <unit id="problem.unsupported_class">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:89</note>
+        <note category="location">src/app/core/http/problem-messages.ts:87</note>
       </notes>
       <segment>
         <source>This format does not support the chosen class.</source>
@@ -771,7 +763,7 @@
     </unit>
     <unit id="problem.invalid_path">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:91</note>
+        <note category="location">src/app/core/http/problem-messages.ts:89</note>
       </notes>
       <segment>
         <source>The path is not valid: no empty, dot or double-dot segments, no backslash or control characters.</source>
@@ -779,7 +771,7 @@
     </unit>
     <unit id="problem.path_conflict">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:93</note>
+        <note category="location">src/app/core/http/problem-messages.ts:91</note>
       </notes>
       <segment>
         <source>A file and a folder cannot share a path.</source>
@@ -787,7 +779,7 @@
     </unit>
     <unit id="problem.not_admitted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:95</note>
+        <note category="location">src/app/core/http/problem-messages.ts:93</note>
       </notes>
       <segment>
         <source>The include and exclude patterns of this repository do not admit this path.</source>
@@ -795,7 +787,7 @@
     </unit>
     <unit id="problem.content_unavailable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:97</note>
+        <note category="location">src/app/core/http/problem-messages.ts:95</note>
       </notes>
       <segment>
         <source>The content is temporarily unavailable. Try again later.</source>
@@ -803,7 +795,7 @@
     </unit>
     <unit id="problem.endpoint_not_configured">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:99</note>
+        <note category="location">src/app/core/http/problem-messages.ts:97</note>
       </notes>
       <segment>
         <source>This endpoint is no longer configured, so its rules cannot be created or replaced.</source>
@@ -811,7 +803,7 @@
     </unit>
     <unit id="problem.exposure_rule_limit_reached">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:101</note>
+        <note category="location">src/app/core/http/problem-messages.ts:99</note>
       </notes>
       <segment>
         <source>This endpoint has reached the maximum number of exposure rules.</source>
@@ -819,7 +811,7 @@
     </unit>
     <unit id="problem.format_not_exposable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:103</note>
+        <note category="location">src/app/core/http/problem-messages.ts:101</note>
       </notes>
       <segment>
         <source>Repositories of this format cannot be exposed through rules yet.</source>
@@ -827,7 +819,7 @@
     </unit>
     <unit id="problem.invalid_version_range">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:105</note>
+        <note category="location">src/app/core/http/problem-messages.ts:103</note>
       </notes>
       <segment>
         <source>The version range is not valid in the syntax of this format.</source>
@@ -835,7 +827,7 @@
     </unit>
     <unit id="problem.dimension_not_supported">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:107</note>
+        <note category="location">src/app/core/http/problem-messages.ts:105</note>
       </notes>
       <segment>
         <source>This format has no such filter.</source>
@@ -843,7 +835,7 @@
     </unit>
     <unit id="problem.invalid_audit_range">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:109</note>
+        <note category="location">src/app/core/http/problem-messages.ts:107</note>
       </notes>
       <segment>
         <source>The export needs a start and an end, at most 400 days apart.</source>
@@ -851,7 +843,7 @@
     </unit>
     <unit id="problem.key_ring_incompatible">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:111</note>
+        <note category="location">src/app/core/http/problem-messages.ts:109</note>
       </notes>
       <segment>
         <source>The replicas do not hold the same key IDs, so the secrets cannot be re-encrypted yet.</source>
@@ -859,7 +851,7 @@
     </unit>
     <unit id="problem.rate_limited">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:129</note>
+        <note category="location">src/app/core/http/problem-messages.ts:127</note>
       </notes>
       <segment>
         <source>Too many requests. Wait a moment and try again.</source>
@@ -867,7 +859,7 @@
     </unit>
     <unit id="problem.rate_limited_wait">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:130</note>
+        <note category="location">src/app/core/http/problem-messages.ts:128</note>
       </notes>
       <segment>
         <source>Too many requests. Try again in <ph id="0" equiv="seconds" disp="seconds"/> seconds.</source>
@@ -875,7 +867,7 @@
     </unit>
     <unit id="problem.network">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:136</note>
+        <note category="location">src/app/core/http/problem-messages.ts:134</note>
       </notes>
       <segment>
         <source>The server could not be reached. Check your connection and try again.</source>

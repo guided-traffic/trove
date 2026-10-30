@@ -21,6 +21,9 @@ html {
       density: -2,
     )
   );
+  // The density of -2 sets the label of a filled field to `display: none`, which leaves the input without a
+  // visible or an accessible label (found by axe in the browser tier, R-UI-047). The label stays.
+  --mat-form-field-filled-label-display: block;
 }
 
 html,

@@ -24,11 +24,11 @@
         mat-button
         type="button"
         [matMenuTriggerFor]="userMenu"
-        i18n-aria-label="@@shell.user-menu"
-        aria-label="User menu"
       >
         <span class="material-icons" aria-hidden="true">account_circle</span>
         <span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span>
+        <!-- The visible name is the first part of the accessible name (WCAG 2.5.3, axe label-content-name-mismatch). -->
+        <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.user-menu">User menu</ng-container></span>
       </button>
     }
     @case ('anonymous') {
