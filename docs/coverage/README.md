@@ -17,7 +17,7 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **6.7%** (149 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
+| **Implemented** | **7.8%** (175 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (359 of 359) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.2% (293 of 521) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 31.1% (675 of 2,167) | measured from `Covers:` lines |
@@ -51,12 +51,12 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 359 | 359 | 0 | 100% | 359 | 110 |
-| **P1** | 521 | 293 | 228 | 56.2% | 58 | 32 |
+| **MVP** | 359 | 359 | 0 | 100% | 359 | 131 |
+| **P1** | 521 | 293 | 228 | 56.2% | 58 | 37 |
 | **P2** | 896 | 23 | 873 | 2.6% | 12 | 7 |
 | **Later** | 391 | 0 | 391 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 675 | 1,564 | 30.1% | 429 | 149 |
+| **Total** | 2,239 | 675 | 1,564 | 30.1% | 429 | 175 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -187,9 +187,9 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 75 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 75 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 440 of 460 specified, 20 open (95.7%) | 123 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
+| **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 98 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 89 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 440 of 460 specified, 20 open (95.7%) | 137 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 
