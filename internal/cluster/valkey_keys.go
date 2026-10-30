@@ -264,3 +264,22 @@ var rlFamily = registerKeyFamily("rl", 1, 24*time.Hour)
 var tokSeenFamily = registerKeyFamily("tokseen", 1, MaxTokenSeenWindow)
 
 // <<< M1 identity
+//
+// >>> M2 proxy
+
+// flightLockFamily is the fetch lock of one flight (R-ARCH-033, mechanism in
+// valkey_flight.go). Its longest expiry is ten minutes; the actual expiry is
+// cluster.flight_lock_ttl.
+var flightLockFamily = registerKeyFamily("lock:fetch", 1, MaxFlightLockTTL)
+
+// flightFillChannel carries the outcome of one flight to its waiters
+// (R-ARCH-033). The channel is per flight, so a subscriber hears only the
+// flights it waits for.
+var flightFillChannel = registerChannelFamily("fill", 1)
+
+// negFamily holds the negative entries of remote repositories (R-REPO-028,
+// mechanism in valkey_negative.go). The longest expiry is the longest
+// notFoundTtlSeconds (24 h) plus the 5 s clock allowance of the readers.
+var negFamily = registerKeyFamily("neg", 1, MaxNegativeTTL)
+
+// <<< M2 proxy

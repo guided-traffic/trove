@@ -17,8 +17,8 @@ import (
 // They are unexported (Q-ARCH-16): what Valkey holds is never served and never
 // a positive authorization decision, and the way to keep it so is that no
 // package outside internal/cluster can read or write a Valkey key at all. Other
-// packages get typed mechanisms (signals, change messages, and later flight
-// locks and negative caches) whose code lives here. The integration tests reach
+// packages get typed mechanisms (signals, change messages, rate-limit counters,
+// flight locks and negative entries) whose code lives here. The integration tests reach
 // the raw commands through valkey_integration.go, which only the integration
 // build tag compiles.
 

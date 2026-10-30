@@ -308,8 +308,9 @@ func (v *Valkey) CountDegraded(mechanism string) {
 }
 
 // CountCacheLookup records a lookup in Valkey after an in-process miss
-// (trove_valkey_cache_lookups_total). cache is a registered cache name, result
-// is "hit", "miss" or "error".
+// (trove_valkey_cache_lookups_total). cache is a registered cache name ("negative"),
+// result is "hit", "miss", "rejected" (the entry was malformed or reader
+// validation refused it) or "unavailable".
 func (v *Valkey) CountCacheLookup(cache, result string) {
 	v.m.cacheLookups.WithLabelValues(cache, result).Inc()
 }

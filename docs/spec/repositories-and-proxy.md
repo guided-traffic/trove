@@ -1535,7 +1535,7 @@ behind `cluster.FlightLock` ([architecture.md](architecture.md) R-ARCH-033, Q-AR
 PostgreSQL advisory lock. The protocol:
 
 1. **Flight key.** (repository id, canonical path, variant). `<f>`, the lowercase hex SHA-256 of
-   `repository id 0x00 path 0x00 variant`, names the flight in Valkey: the lock
+   `repository id 0x00 path 0x00 variant` (the id in decimal digits), names the flight in Valkey: the lock
    `trove:<ks>:lock:fetch:v1:<f>` and the outcome channel `trove:<ks>:fill:v1:<f>`
    ([architecture.md](architecture.md) R-ARCH-030). The full hash leaves no collision case
    (Q-ARCH-7).

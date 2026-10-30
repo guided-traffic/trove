@@ -46,7 +46,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [database.md](database.md) | PostgreSQL connections, pools, migrations, sqlc and the job and change tables |
 | [blob-store.md](blob-store.md) | The S3 blob layer: keys, spool, commit, download, garbage collection |
 | [coordination.md](coordination.md) | Change log, signals, leases, the job queue and the replica registry |
-| [valkey.md](valkey.md) | The Valkey client, Sentinel discovery, key families, degraded mode |
+| [valkey.md](valkey.md) | The Valkey client, Sentinel discovery, key families, degraded mode, the flight lock and the negative store |
 | [observability.md](observability.md) | Logs, metrics, traces, health and the ops listener |
 | [secrets.md](secrets.md) | The stored-secret key ring and the envelope of sealed columns |
 | [tls.md](tls.md) | TLS material on every listener and client: loading, reloading, rotating, testing |

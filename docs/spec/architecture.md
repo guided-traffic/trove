@@ -2347,7 +2347,7 @@ The keys are shown with the default prefix `trove:`.
 | Mechanism | Lives in | Keys and channels | Lifetime | Valkey unavailable | Valkey lost its data (failover, flush, restart) | Specified in |
 |---|---|---|---|---|---|---|
 | Collapsing of remote fetches | Valkey, behind the in-process single-flight | `trove:<ks>:lock:fetch:v1:<f>`; channel `trove:<ks>:fill:v1:<f>` | `cluster.flight_lock_ttl` (30 s), extended while the fetch runs | Single-flight per replica only: at most one upstream fetch per replica and flight | A second replica may fetch too; content addressing and the entry upsert rules make the duplicate harmless | R-ARCH-033, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 |
-| Negative cache of remote repositories | Valkey, behind a bounded per-replica L1 (`proxy.negative_l1_entries`, 100,000 entries per replica by default) | `trove:<ks>:neg:v1:<repo id>:<f>` → `{"s": 404 or 410, "c": <time the upstream request was sent, Unix ms, replica clock>}`; written by the flight's holder before it releases the flight | the repository's `notFoundTtlSeconds` | L1 only: more upstream requests for missing paths | More upstream requests. An entry that an older primary brings back is ignored when a newer invalidation covers it | R-REPO-028, R-REPO-045 |
+| Negative cache of remote repositories | Valkey, behind a bounded per-replica L1 (`proxy.negative_l1_entries`, 100,000 entries per replica by default) | `trove:<ks>:neg:v1:<repo id>:<f>` → `{"s": 404 or 410, "c": <time the upstream request was sent, Unix ms, replica clock>}`; written by the flight's holder before it releases the flight; a malformed value is ignored and removed with a compare-and-delete (Q-ARCH-197) | the repository's `notFoundTtlSeconds` | L1 only: more upstream requests for missing paths | More upstream requests. An entry that an older primary brings back is ignored when a newer invalidation covers it | R-REPO-028, R-REPO-045 |
 | Rate-limit counters with cluster scope | Valkey | `trove:<ks>:rl:v1:<limiter>:<b>:<window>` | 2 × the window | Per-replica buckets at the configured values divided by the live replicas of the role | Counters restart: at most one extra window of budget | R-ARCH-034 |
 | Throttle exemption markers of recently validated credentials | Valkey | `trove:<ks>:tokseen:v1:<t>` | `auth.rate_limit.recent_token_window` (10 min) | Only the replica's own cache exempts | Colleagues behind a throttled address may get `429` until they are revalidated | R-AUTH-038 |
 | Change messages, the fast path of change areas | Valkey Pub/Sub; correctness lies in the PostgreSQL change log | channel `trove:<ks>:inv:v1` | none (Pub/Sub) | Changes apply at the next change-log poll | Lost messages: as unavailable | R-ARCH-018 |
@@ -2362,7 +2362,7 @@ The keys are shown with the default prefix `trove:`.
 
 `<ks>` is the keyspace: the first 12 hex digits of `system_state.keyspace_id` after its dashes are removed
 ([backup-and-restore.md](backup-and-restore.md) R-BAK-022), read from PostgreSQL at start-up. `<f>`
-is the lowercase hex SHA-256 of `repository id ‖ 0x00 ‖ canonical path ‖ 0x00 ‖ variant`, the
+is the lowercase hex SHA-256 of `repository id ‖ 0x00 ‖ canonical path ‖ 0x00 ‖ variant` (the id in decimal digits), the
 flight key of R-REPO-026. `<b>` is the lowercase hex of the first 16 bytes of the SHA-256 of the
 limiter's bucket key. `<t>` is the lowercase hex of the first 16 bytes of
 SHA-256(`"tokseen"` ‖ 0x00 ‖ `secret_sha256`), where `secret_sha256` is the stored hash of the
@@ -2528,17 +2528,29 @@ cross-replica lock (INV-11, Q-ARCH-6).
 ```go
 package cluster
 
+// FlightKey is <f> of R-ARCH-030; the only way to form one is NewFlightKey(repoID, path, variant).
+type FlightKey struct{ /* the 64 hex digits */ }
+
+// Outcome is "stored" (an entry or a negative entry exists now) or "failed" (the holder gave
+// up). Wait alone also returns "gone": the lock key is absent and no outcome was heard.
+type Outcome string
+
 type FlightLock interface {
 	// Acquire tries once. ok is false while another holder has the flight.
-	// ErrUnavailable means: go on without the cross-replica lock.
+	// An error that wraps ErrUnavailable means: go on without the cross-replica lock.
 	Acquire(ctx context.Context, f FlightKey) (h *FlightHold, ok bool, err error)
 	// Wait returns when the holder publishes an outcome, when the lock is gone,
-	// or when ctx ends. The caller then repeats the proxy's checks and may call Acquire again.
+	// or when ctx ends (then with ctx's error). The caller then repeats the proxy's checks
+	// and may call Acquire again.
 	Wait(ctx context.Context, f FlightKey) (Outcome, error)
 }
 
-// Release deletes the lock if this hold still owns it and publishes the outcome.
-func (h *FlightHold) Release(ctx context.Context, o Outcome) error
+// Release deletes the lock if this hold still owns it and publishes the outcome, with the
+// leader's traceparent when it has one (empty: none). It may be called again and then does nothing.
+func (h *FlightHold) Release(ctx context.Context, o Outcome, traceparent string) error
+
+// Lost reports that an extension found the key gone or owned by another token.
+func (h *FlightHold) Lost() bool
 ```
 
 - **Acquire.** `SET trove:<ks>:lock:fetch:v1:<f> <token> NX PX <cluster.flight_lock_ttl>`. The token is
@@ -2549,24 +2561,29 @@ func (h *FlightHold) Release(ctx context.Context, o Outcome) error
   extending, counts `trove_flight_lock_lost_total`, and never deletes the other holder's key.
 - **Release.** After the entry has committed, after an upstream `404` or `410` has been recorded
   as a negative entry, or after the fetch has failed, the hold runs `DELIFEQ <key> <token>` and then
-  `PUBLISH trove:<ks>:fill:v1:<f> <stored|failed>`. Both run even when the initiating client is gone,
+  `PUBLISH trove:<ks>:fill:v1:<f> <stored|failed>`, in that order, so a woken waiter finds the lock gone. A recorded
+  `404` or `410` is `stored`: the outcome says that an entry or a negative entry exists now (Q-ARCH-195). Both run even when the initiating client is gone,
   since R-REPO-026 runs the fetch detached. The outcome message may also carry the leader's
-  `traceparent`, still under 1 KiB, so waiters on other replicas can add a span link
+  `traceparent` after a space (`stored 00-…`), still under 1 KiB, so waiters on other replicas can add a span link
   ([operations-and-observability.md](operations-and-observability.md) R-OPS-018). On shutdown, a
   fetch still running 5 s before the deadline is cancelled and released with `failed`
   (R-ARCH-024 step 4; [storage.md](storage.md) R-STOR-004 step 8).
 - **Wait.** The waiter first subscribes to `trove:<ks>:fill:v1:<f>`, then checks that the lock key still
   exists, so a release between its failed `Acquire` and the subscription is not missed. It then
-  waits for the outcome, for `proxy.lock_poll_interval_ms` (after which it checks the key again), or
-  for its context deadline (`proxy.fetch_wait_timeout_seconds`). When `Wait` returns, the caller
+  waits for the outcome, for `proxy.lock_poll_interval_ms` (after which it checks the key again), for
+  the re-subscription of the Pub/Sub connection after a primary change or a broken connection
+  (R-ARCH-031; the key is checked again then too), or for its context deadline
+  (`proxy.fetch_wait_timeout_seconds`). The waiters of one flight on a replica share one subscription,
+  so 50 waiters cost one `SUBSCRIBE`. When `Wait` returns, the caller
   repeats the proxy's checks (the entry, the circuit and the negative entry;
   [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 4) and answers from them,
   or calls `Acquire` again.
 - **Expiry instead of session end.** A holder that dies without releasing (process killed, node
   lost) frees the flight when the key expires, after at most `cluster.flight_lock_ttl`. A holder
   that shuts down gracefully releases at once.
-- **Unavailable.** When the breaker is open or a call fails, `Acquire` and `Wait` return
-  `ErrUnavailable` at once. The proxy then fetches under its in-process single-flight only and
+- **Unavailable.** When the breaker is open or a call fails, `Acquire` and `Wait` return an error
+  that wraps `ErrUnavailable` at once (Q-ARCH-196). A call that fails during the hold is retried at the next
+  extension; the lock may expire meanwhile, and the next call that reaches Valkey then finds it gone. The proxy then fetches under its in-process single-flight only and
   counts `trove_flight_lock_bypass_total{reason="valkey_unavailable"}`.
 - **Bypass reasons.** `trove_flight_lock_bypass_total{reason}` counts every fetch that goes on
   without the cross-replica lock:
@@ -5064,6 +5081,71 @@ Context: the table of R-ARCH-018 lists `claims`, `cache_invalidation` and `upstr
 **Rationale:** The areas are part of the contract of the tables, so they travel with them. The development agent would revisit this if an area needs a payload that its first writer cannot express in version 1.
 
 **Applied in the spec:** none; the R-ARCH-018 table already lists the four areas.
+
+### Q-ARCH-195 · What a waiter learns when a flight ends
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-033 has the holder publish `stored` or `failed` and has `Wait` return "when the holder publishes an outcome, when the lock is gone, or when ctx ends", without saying what `Wait` returns in each case, what `stored` means for an upstream `404` that became a negative entry, or how the leader's `traceparent` travels.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two outcomes | `stored` and `failed`; a lock that is gone is returned as `failed` | Smallest vocabulary | A waiter, its log line and a later metric cannot tell a holder that gave up from a lock that expired or was lost in a failover |
+| (b) Three values | `stored` and `failed` are published; `gone` is returned by `Wait` alone when the key is absent and no message was heard. `stored` means "an entry or a negative entry exists now". The message is the outcome, optionally followed by a space and the `traceparent` | Distinguishes the three ways a wait ends; the message stays the literal `stored` or `failed` that R-ARCH-033 shows; a recorded `404` needs no word of its own | One more value to document; callers must treat all three alike |
+| (c) A word per result | `stored`, `negative`, `failed`, `gone` | The waiter knows which of the entry or the negative entry to read | The waiter repeats the checks of R-REPO-025 steps 4 to 8 in any case (R-REPO-026 step 4), so nothing is decided by the word; one more vocabulary to keep in step between the holder and the waiter |
+
+**Choice:** (b).
+
+**Rationale:**
+- Every waiter does the same thing for every value: repeat the proxy's checks and perhaps acquire. The vocabulary is for the log and for diagnosis, so it should tell the three endings apart and no more.
+- A negative entry is written before the release (R-REPO-026 step 5), so "something is stored now" is true for it, and the waiter finds it through the negative-entry check.
+- The trace context rides in the message so that no second message or key is needed. Only a short printable token (at most 256 characters, no whitespace) is sent; anything else is dropped, never an error, because the release must not fail over a header.
+- `Wait` returns only the outcome today. The development agent would revisit this when waiters add the span link of R-OPS-018: `Wait` then needs a second result for the `traceparent`, an additive change to the interface.
+
+**Applied in the spec:** R-ARCH-033 (interface block, Release bullet, the unavailable bullet).
+
+### Q-ARCH-196 · The life of a hold, and what a failed call is
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-033 has the hold extend its lock every third of the TTL while the fetch runs, and has `Acquire` and `Wait` return `ErrUnavailable` "when the breaker is open or a call fails". Open points: who drives the extension, what a failed extension means, how long a hold may live, which errors are `ErrUnavailable`, and whether the in-process single-flight group lives in `internal/cluster`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One goroutine per hold | `Acquire` starts a ticker goroutine bound to the Valkey client's lifetime; it extends with `SET … IFEQ <token> PX <ttl>` every TTL/3, ends at `Release`, when an extension finds the key gone or foreign, or when the client closes | The caller has nothing to remember; the hold cannot be forgotten by a code path that returns early; a failed call is retried at the next tick | One goroutine per running fetch, bounded by `proxy.max_concurrent_fetches` plus the fetches waiting for a slot |
+| (b) One loop per `FlightLock` | A single loop extends every live hold, in a pipeline | Fewest goroutines | A registry of holds to keep consistent with `Release`; one slow call delays every hold; no gain at the concurrency a replica has (tens of fetches) |
+| (c) The caller extends | `FlightHold.Extend` is called from the fetch loop | No goroutine | A path that forgets, or a transfer that does not return to the loop for a TTL, loses the lock: the failure is silent and in the proxy |
+
+**Choice:** (a). Every failed call, a breaker that is open and a missing keyspace included, returns an error that wraps `ErrUnavailable` (`errors.Is`), after counting `trove_valkey_degraded_total{mechanism="flight_lock"}`; a context that ended returns its own error; a flight key that was not formed with `NewFlightKey` is a programming error and is neither. A hold has no longest life of its own: the proxy ends it (a fetch that has not finished 5 s before the shutdown deadline is released with `failed`, R-ARCH-024 step 4), and closing the client ends every extension. The in-process single-flight group is not in `internal/cluster`: it shares the fetch result between requests of one replica and is part of the proxy engine (`internal/proxy`), in front of `Acquire`.
+
+**Rationale:**
+- A transient failure of an extension must not end the hold: the next tick may reach Valkey. If the key expired meanwhile, that tick finds it gone and the loss is counted once, which is the case R-ARCH-033 describes.
+- One rule for the caller keeps R-REPO-026's fallback in one place: anything that is not a context error and not `ok`, `Acquire` and `Wait` alike, means "fetch under the in-process single-flight and count `valkey_unavailable`". A Valkey reply the client does not classify (a type error) is also "go on without the lock"; the request never fails because of the lock.
+- The group is generic request plumbing (`golang.org/x/sync/singleflight`, R-REPO-026 step 2) whose result type belongs to the engine. The infrastructure layer would otherwise need to know entries and documents.
+- The development agent would revisit (b) when the per-replica fetch count rises into the thousands, and the lack of a longest life when a leaked hold shows up in `trove_flight_lock_lost_total` or in keys that stay for the maximum.
+
+**Applied in the spec:** R-ARCH-033 (unavailable bullet); the single-flight placement is stated in [../developer/valkey.md](../developer/valkey.md#flightlock).
+
+### Q-ARCH-197 · The negative store checks the form of an entry; the proxy judges its validity
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-028 has readers validate an entry (`c` within the repository's current `notFoundTtlSeconds`, no later invalidation covering the path), delete a malformed one, and keep a bounded L1 in front of Valkey. `internal/cluster` knows neither the repository's period, nor the path (the key holds a hash), nor the invalidations.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Form in the store, validity in the proxy | `NegativeStore` writes and reads `{"s", "c"}` and removes a malformed value; the proxy's wrapper holds the L1 and applies the window and the invalidations | Each layer decides what it knows; the store can be tested against Valkey alone | The metric `rejected` is split between two places |
+| (b) The store validates | `Lookup` takes the period and a predicate over the invalidations | One place counts and decides | `cluster` would depend on the invalidation set and on paths, against the layering (infrastructure below the domain) |
+| (c) The store holds the L1 as well | One type with L1, Valkey and validation | One object for the proxy to call | The L1 is a registered cache of the proxy (R-ARCH-032, `proxy.negative_l1_entries`) and follows the cache rules of that layer |
+
+**Choice:** (a). `Lookup` decodes strictly (exactly `s` of 404 or 410 and `c` above 0, no other field, nothing after the value); anything else is deleted with `DELIFEQ` of the value that was read, so a writer that stored a good value meanwhile keeps it, counted as `rejected` and returned as not found. `Record` with a period of zero or less stores nothing (`notFoundTtlSeconds: 0`), refuses any status but 404 and 410, and refuses a period above 24 h plus 5 s. The L1, the validity window and the invalidations are the proxy's. `hit` is counted when the store returns an entry; an entry that the proxy then refuses is counted there as a further `rejected`.
+
+**Rationale:**
+- Only the proxy knows the period, the path and the invalidations, and R-REPO-028 already puts them with the reader.
+- The deletion of a value that was read, not of the key, is what the ACL allows (`DELIFEQ`, no `DEL`) and what is safe against a concurrent writer.
+- A refused entry is counted twice, as `hit` and as `rejected`: the ratio `hit ÷ (hit + miss)` of R-OPS-045 then overstates the saving by the refused entries, which are rare (they exist for the seconds after an invalidation). The development agent would revisit this if the ratio is used for alerts, and give the store a way to take back a `hit`.
+
+**Applied in the spec:** R-ARCH-030 (the negative-cache row), R-OPS-045 (`trove_valkey_cache_lookups_total` row).
 
 ### Q-ARCH-198 · Source-address binding of a remote's connections
 
