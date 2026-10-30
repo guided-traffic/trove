@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-10-29
+**Last updated:** 2026-10-30
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -25,7 +25,7 @@ completes. The beta release is the release that closes phase 7.
 |---|---|---|---|
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
-| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | — | 🟡 |
+| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | — | 🟢 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | ⚪ |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
@@ -101,38 +101,38 @@ Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 
 **Identity and tokens**
-- 🟡 OIDC login with a test identity provider, sessions, CSRF protection, logout
-- 🟡 Break-glass administrator and bootstrap commands
-- 🟡 Users, groups (from the login provider's claims) and service accounts
-- 🟡 Personal and service-account tokens (`trv_pat_`, `trv_sat_`): scopes, lifetime, revocation
-- 🟡 Brute-force protection with cluster-wide counters
+- 🟢 OIDC login with a test identity provider (Keycloak in the dev profile, Q-AUTH-35), sessions, CSRF protection, logout
+- 🟢 Break-glass administrator and bootstrap commands; the chart mounts its password from a Secret that internal-secrets-operator can generate and rotate (`secrets.breakGlass`)
+- 🟢 Users, groups (from the login provider's claims) and service accounts
+- 🟢 Personal and service-account tokens (`trv_pat_`, `trv_sat_`): scopes, lifetime, revocation
+- 🟢 Brute-force protection with cluster-wide counters
 
 **Permissions**
-- 🟡 Permission policies: principals, repositories, name patterns, actions
-- 🟡 Evaluation engine with caches that stay correct across replicas
-- 🟡 Audit of logins, token changes, policy changes and denied requests
+- 🟢 Permission policies: principals, repositories, name patterns, actions
+- 🟢 Evaluation engine with caches that stay correct across replicas
+- 🟢 Audit of logins, token changes, policy changes and denied requests
 
 **Endpoints and exposure**
-- ⚪ Accepted credentials per endpoint; tokens bound to endpoints
-- ⚪ Exposure rules per endpoint (repository, package and version patterns, version ranges, pre-releases, tags) as a ceiling for every caller, administrators included; hidden content answers 404
-- ⚪ Management API and admin screen for endpoints and exposure rules, with an exposure check
-- ⚪ Raw files on an endpoint filtered by exposure; rate limit per endpoint
+- 🟢 Accepted credentials per endpoint; tokens bound to endpoints
+- 🟢 Exposure rules per endpoint (repository, package and version patterns, version ranges, pre-releases, tags) as a ceiling for every caller, administrators included; hidden content answers 404
+- 🟢 Management API and admin screen for endpoints and exposure rules, with an exposure check
+- 🟢 Raw files on an endpoint filtered by exposure; rate limit per endpoint
 
 **Repositories and files**
-- 🟡 Repository model and management API (local, remote, virtual)
-- ⚪ Generic local repositories and raw file transfer under `/files/`
-- 🟡 API conventions: errors, cursor pagination, ETags, idempotency keys, rate limits
+- 🟢 Repository model and management API (local, remote, virtual); the generic format implements the local class, remote and virtual repositories take shape with npm in phase 3
+- 🟢 Generic local repositories and raw file transfer under `/files/`
+- 🟢 API conventions: errors, cursor pagination, ETags, idempotency keys, rate limits
 
 **Admin UI**
-- 🟡 Sign-in, repository list and creation wizard, file browser
-- ⚪ Users, groups, service accounts, personal tokens
-- ⚪ Permission policy editor with "why can X do Y" explainer
-- ⚪ Endpoint screen with the exposure rule editor and its preview
-- ⚪ Audit log and system status
+- 🟢 Sign-in, repository list and creation wizard, file browser
+- 🟢 Users, groups, service accounts, personal tokens
+- 🟢 Permission policy editor with a "why can X do Y" preview from the draft (Q-UI-21); the explain operation of R-AUTHZ-024 is P1 (Q-AUTHZ-27)
+- 🟢 Endpoint screen with the exposure rule editor and its preview
+- 🟢 Audit log and system status
 
 **Tests**
-- ⚪ Integration tests: login, tokens, permission evaluation, raw transfer
-- ⚪ E2E tests: browser journeys across replicas with random distribution
+- 🟢 Integration tests: login, tokens, permission evaluation, raw transfer
+- 🟢 E2E tests: browser journeys across replicas with random distribution (Playwright with axe), and the exit checks E1.1, E1.8, E1.11, E1.13 and E1.14 on the kind cluster
 
 **Release**
 - ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
@@ -248,7 +248,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | Area | Integration tests | E2E tests | Drain and failover load |
 |---|---|---|---|
 | Foundation (storage, coordination) | 🟢 | — | 🟢 |
-| Access core (login, tokens, permissions) | ⚪ | ⚪ | — |
+| Access core (login, tokens, permissions) | 🟢 | 🟢 | 🟢 |
 | **npm** | ⚪ | ⚪ | ⚪ |
 | **NuGet (.NET)** | ⚪ | ⚪ | ⚪ |
 | GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
