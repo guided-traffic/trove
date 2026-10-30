@@ -5183,6 +5183,144 @@ paths:
   # <<< M1 endpoints
   #
   # >>> M2 proxy
+  /api/v1/repositories/{repoKey}/cache/invalidate:
+    post:
+      operationId: invalidateRepositoryCache
+      tags: [repositories]
+      summary: Invalidate the cached metadata or misses of a remote or virtual repository
+      description: |
+        Makes the cached metadata (`scope: metadata`, the default), the cached misses (`negative`) or
+        both (`all`) under a path prefix count as expired (R-OPS-021, R-REPO-045). The next request
+        revalidates a metadata entry against the upstream and serves the stale copy if that fails.
+        Cached binaries are never touched. On a remote repository the call inserts one row, whatever
+        the size of the cache, and the row is in force on every replica within
+        `cluster.epoch_poll_interval` plus 1 s, with or without Valkey. `path` is empty for the whole
+        repository, or a canonical path or package name prefix as whole segments: `@acme` covers
+        `@acme/util` and not `@acmecorp/util`; it has no leading or trailing slash, no empty segment
+        and no `.` or `..` segment, and at most 256 bytes. `invalidated` counts the covered metadata
+        entries in PostgreSQL at the time of the call; cached misses live in Valkey and are not
+        counted, so it is 0 for `negative`. On a virtual repository the merged metadata under the
+        prefix is dropped on every replica and `invalidated` is 0; its remote members are not
+        touched. A local repository answers `400 not_applicable`. Needs `manage` on the repository
+        or the system administrator role. Allowed in read-only mode.
+      x-trove-permission:
+        action: manage
+        repository: path.repoKey
+      parameters:
+        - name: repoKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CacheInvalidateRequest"
+            example:
+              path: "@acme"
+              scope: all
+      responses:
+        "200":
+          description: The invalidation is recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheInvalidateResult"
+              example:
+                invalidated: 12
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/cache/entries:
+    get:
+      operationId: listCacheEntries
+      tags: [repositories]
+      summary: List the cache entries of a remote repository
+      description: |
+        The stored entries of a remote repository for diagnosis (R-REPO-032), in the byte order of
+        `path` then `variant`, with a cursor. `kind` is `metadata` (the default) or `artifact`;
+        `pathPrefix` limits the list to the entries an invalidation of that prefix would cover.
+        `expiresAt` is null for an artifact, and `upstreamGoneAt` is set for a document the upstream
+        answered 404 or 410 for. The list reads PostgreSQL. Needs `repositories:read-config`, or
+        `manage` on the repository. A repository that is not remote answers `400 not_applicable`.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: repoKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pathPrefix
+          in: query
+          description: Only entries below this path prefix; empty or absent lists all of them.
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [metadata, artifact]
+            default: metadata
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of entries.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheEntryPage"
+              example:
+                items:
+                  - path: "@acme/util"
+                    variant: full
+                    kind: metadata
+                    upstreamUrl: https://registry.npmjs.org/@acme%2futil
+                    fetchedAt: "2026-10-30T08:00:00.000Z"
+                    validatedAt: "2026-10-30T08:00:00.000Z"
+                    expiresAt: "2026-10-30T10:00:00.000Z"
+                    upstreamGoneAt: null
+                    lastUsedAt: "2026-10-30T08:00:00.000Z"
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M2 proxy
   #
   # >>> M2 virtual
@@ -8002,6 +8140,64 @@ components:
     # <<< M1 endpoints
     #
     # >>> M2 proxy
+    CacheInvalidateRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          maxLength: 256
+          description: A canonical path or package name prefix of whole segments; empty is the whole repository.
+          default: ""
+        scope:
+          type: string
+          enum: [metadata, negative, all]
+          default: metadata
+    CacheInvalidateResult:
+      type: object
+      required: [invalidated]
+      properties:
+        invalidated:
+          type: integer
+          minimum: 0
+          description: The metadata entries covered at the time of the call; cached misses are not counted.
+    CacheEntry:
+      type: object
+      required: [path, variant, kind, upstreamUrl, fetchedAt, validatedAt, expiresAt, upstreamGoneAt, lastUsedAt]
+      properties:
+        path:
+          type: string
+        variant:
+          type: string
+        kind:
+          type: string
+          enum: [metadata, artifact]
+        upstreamUrl:
+          type: string
+        fetchedAt:
+          type: string
+          format: date-time
+        validatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        upstreamGoneAt:
+          type: [string, "null"]
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+    CacheEntryPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CacheEntry"
+        nextCursor:
+          type: [string, "null"]
     # <<< M2 proxy
     #
     # >>> M2 virtual

@@ -59,6 +59,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/proxy/invalidation"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -664,6 +665,10 @@ func (r *replica) serve(o replicaOpts) {
 		t.Fatal(err)
 	}
 	router := httpserver.NewClientRouter()
+	inv, err := invalidation.NewService(invalidation.ServiceOptions{Runner: r.db, Notifier: r.changes, Recorder: r.rec})
+	if err != nil {
+		t.Fatal(err)
+	}
 	api := v1.New(v1.Options{
 		Document: doc, Identity: v1.Identity{Replica: r.name, Role: "web"}, Ready: func() bool { return true },
 		Access: v1.NewAccess(r.engine),
@@ -673,6 +678,7 @@ func (r *replica) serve(o replicaOpts) {
 		Repositories: v1.RepositoryServices{Service: r.repos, Authz: r.engine, Reader: r.reader, AnonymousAccess: func(context.Context) (bool, error) { return r.e.anonymous.Load(), nil }},
 		Files:        r.files,
 		FilesDecider: r.engine,
+		Cache:        v1.CacheServices{Invalidations: inv, Repositories: r.repos, Authz: r.engine},
 	})
 	api.Register(router)
 	rawfiles.New(rawfiles.Options{Service: r.files, Decider: r.engine, Download: r.e.s3.cfg.Download, API: apiConfig()}).Register(router)

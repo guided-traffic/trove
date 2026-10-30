@@ -1993,9 +1993,12 @@ Priority: **MVP** · Covers: RMT-003
   disappeared upstream. Items of a gone package (R-REPO-029) stay listed and copyable; only
   serving them to clients stops.
 - Metadata entries are listed for diagnosis by `GET /api/v1/repositories/{key}/cache/entries?pathPrefix=&kind=&limit=&cursor=`
-  (path, kind, fetched, validated, expires, upstream gone, last used, upstream URL), in the
-  `items` and `nextCursor` envelope of [api-and-ui.md](api-and-ui.md) R-API-010; permission
-  `repositories:read-config` or `manage` on the repository.
+  (path, variant, kind, fetched, validated, expires, upstream gone, last used, upstream URL), in the
+  `items` and `nextCursor` envelope of [api-and-ui.md](api-and-ui.md) R-API-010, in the byte order of
+  path and variant; permission `repositories:read-config` or `manage` on the repository, the
+  exposure ceiling of the endpoint binding both. `kind` is `metadata` (the default) or `artifact`,
+  `pathPrefix` limits the list to the entries that an invalidation of that prefix would cover
+  (R-REPO-045), and a repository that is not remote answers `400 not_applicable` (Q-OPS-155).
 
 Acceptance criteria:
 
@@ -2541,36 +2544,46 @@ because RMT-026 is. This requirement specifies its semantics and mechanism.
   (`negative`) or both (`all`) count as expired, in constant time regardless of cache size. Artifacts
   are never invalidated, and nothing is deleted.
 - A prefix covers a canonical path when it is empty, equal to the path, or equal to its leading
-  segments: `@acme` covers `@acme/util` but not `@acmecorp/util`.
-- **Mechanism.** An invalidation is a row (repository, prefix, scope, time). A metadata entry is
-  invalid when an invalidation of its repository with a covering prefix and a matching scope is newer
-  than its `validated_at`. A negative entry is invalid under the rule of R-REPO-028: its time is its
+  segments: `@acme` covers `@acme/util` but not `@acmecorp/util`. A prefix is empty or a sequence of
+  segments without a leading or trailing slash, without an empty segment, without `.` or `..` as a
+  segment, valid UTF-8 without control characters, and at most 256 bytes; anything else answers `422
+  validation_failed` with the pointer `/path` (Q-REPO-100).
+- **Mechanism.** An invalidation is a row (repository, prefix, scope, time). Its time is taken inside
+  the inserting transaction as its first statement, not at the start of the transaction (Q-REPO-101).
+  A metadata entry is invalid when an invalidation of its repository with a covering prefix and a
+  matching scope is newer than its `validated_at`. A negative entry is invalid under the rule of R-REPO-028: its time is its
   creation time `c`, compared with a 5 s allowance in the invalidation's favour.
   - Each replica keeps the invalidations in memory, loaded at start. The inserting transaction
     calls `cluster.Notify("cache_invalidation", …)` with the repository id
     ([architecture.md](architecture.md) R-ARCH-018), so an invalidation is in force on every
     replica within milliseconds with Valkey and within `cluster.epoch_poll_interval` without.
+    The change carries the whole row, so a replica applies it without a query, and a request
+    asks the in-memory set only: the cost of a lookup is the number of segments of the path,
+    whatever the number of rows (Q-REPO-102; the payload: Q-OPS-154).
     Until 2026-10-28 this was `NOTIFY trove_cache_invalidation`; trove issues no `NOTIFY` any
     more ([architecture.md](architecture.md) Q-ARCH-15).
   - A background job on the `worker` role later folds each invalidation into the metadata entries
     validated before it, in batches, setting `expires_at` to the invalidation time and, when the
     last batch is done, `folded_at` on the row (Q-REPO-87). An entry
-    refreshed after the invalidation keeps its own expiry. Invalidating a million entries is
-    therefore one insert, not a long `UPDATE`.
+    refreshed after the invalidation keeps its own expiry, and no entry gets a later expiry than it
+    had. Invalidating a million entries is therefore one insert, not a long `UPDATE`. The task is
+    `proxy-invalidation-fold` ([operations-and-observability.md](operations-and-observability.md)
+    R-OPS-019, Q-OPS-153); Q-REPO-103 has the batching and the last check before a deletion.
   - Negative entries live in Valkey and are never deleted to invalidate them. Readers apply the
     invalidation instead, so a row of scope `negative` or `all` MUST stay until no negative entry it
     covers can still count: 86,405 s after its creation, the largest `notFoundTtlSeconds` plus the
-    clock allowance. A row of scope `metadata` is deleted once it is folded.
+    clock allowance. A row of scope `metadata` is deleted once it is folded and one hour has passed
+    since the fold, after one more fold pass that finds an entry a fill stored late (Q-REPO-103).
   - The job deletes a row of scope `negative` or `all` once it is folded and that period has
-    passed. Its deletions call `cluster.Notify("cache_invalidation", …)` with the repository id
+    passed (after the same last fold pass). Its deletions call `cluster.Notify("cache_invalidation", …)` with the repository id
     too, so every replica drops deleted rows from memory. The job deletes no negative entry: they
     are in Valkey and expire on their own (R-REPO-028). A replica never drops a row the database still
     holds: an `all` row whose fold is late would otherwise let unfolded metadata entries count as
     fresh again. The in-memory set therefore stays bounded by the rows in PostgreSQL, however often
     invalidations are made.
-  - The `invalidated` count is the number of covered metadata entries at the time of the call;
-    negative entries in Valkey are not counted, because counting them would need a scan of the
-    keyspace.
+  - The `invalidated` count is the number of covered metadata entries at the time of the call, those
+    marked upstream gone included; negative entries in Valkey are not counted, because counting them
+    would need a scan of the keyspace, so the scope `negative` answers 0 (Q-REPO-101).
 - Each entry is refreshed on its next request under R-REPO-027. A failed refresh serves the stale
   copy, which can show an old package list; the UI therefore shows the circuit state next to the
   result and tells the operator to verify the refresh.
@@ -3623,6 +3636,79 @@ Context: R-REPO-045 keeps a row of scope `negative` or `all` for 86,405 s, and d
 **Rationale:** The page's own rule, that a replica never drops a row the database still holds before its fold, needs the flag. The development agent would revisit this if folds become resumable inside one row (then a cursor column joins it).
 
 **Applied in the spec:** the data model and the fold bullet of R-REPO-045.
+
+### Q-REPO-100 · The prefix of an invalidation is whole segments, validated up front
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-045 defines when a prefix covers a path, and the call takes the prefix from a request body. A prefix such as `/@acme`, `@acme/` or `a//b` can never cover a canonical path, and the prefix travels in the change payload, whose limit is 1 KiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Accept any string | The matcher compares as written | No rule to document | The operator's typo is a silent no-op that still answers 200; the payload is unbounded |
+| (b) Normalise | Trim leading and trailing slashes | Forgiving | `a/` and `a` become one thing; a client cannot tell what was recorded |
+| (c) Validate | Empty, or segments without a leading or trailing slash, an empty segment or a dot segment; valid UTF-8 without control characters; at most 256 bytes; otherwise `422 validation_failed` with the pointer `/path` | A mistake is answered, not stored; the payload is bounded | A client that sends a trailing slash must learn the rule |
+
+**Choice:** (c). The entry list applies the same rule to `pathPrefix`, as a query parameter with `400`.
+
+**Rationale:** the longest npm package name is 214 characters, so 256 bytes covers the name rule of the MVP formats with the scope. The development agent would revisit the limit when a format with longer paths is added (Maven coordinates), by raising it together with the payload encoding, which carries the prefix as base64url (Q-OPS-154).
+
+**Applied in the spec:** the prefix bullet of R-REPO-045; R-OPS-021.
+
+### Q-REPO-101 · The row is stamped inside its transaction, and the count is of metadata entries only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-045 compares the row's time with the `validated_at` of an entry. The column default `now()` is the start of the transaction, and the transaction also counts up to a million entries.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `DEFAULT now()` | The time of the start of the transaction | Nothing to write | A fill that validates an entry while the transaction runs gets a `validated_at` after the row's time and escapes an invalidation that commits after it |
+| (b) `clock_timestamp()` in the insert | The time of the statement; the insert is the first statement and the count follows it | The window shrinks to the rest of the transaction | Still the database's clock, not the commit's |
+| (c) The application's clock | The replica stamps the row | One clock per replica | Replica clocks differ; the page compares with times that the database wrote |
+
+**Choice:** (b). The count is of the metadata entries under the prefix (kind `metadata`, those marked gone included, no artifact), and the scope `negative` answers 0 without a query.
+
+**Rationale:** a row can only err by the length of one count in the invalidation's disfavour, and the 5 s allowance of R-REPO-028 covers the negative entries that the replicas time themselves. The development agent would revisit this if the proxy engine stamps `validated_at` with a replica clock instead of the database's: the comparison then needs the same allowance as the negative entries.
+
+**Applied in the spec:** the mechanism and count bullets of R-REPO-045.
+
+### Q-REPO-102 · The matcher keeps the newest time per prefix and applies a row from its payload
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: every request for a cached document asks whether an invalidation covers it. The rows are few (bounded by the table and its retention) but the questions are many, and R-OPS-021 forbids a database round trip per request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A list of rows, scanned per request | Compare with every row of the repository | Trivial | The cost of a request grows with the number of invalidations |
+| (b) A map from prefix to the newest creation time, per scope class | A lookup tries the empty prefix, each leading segment and the path: one map access per segment | Constant in the number of rows; no allocation; immutable snapshots need no lock | A change rebuilds the repository's maps (rare) |
+| (c) A trie of segments | Walk the path | The same bound | More code for the same answer |
+
+**Choice:** (b). A replica loads every row at start (a failure stops the start-up), applies a new row from its change payload without a query, and reloads a repository after a deletion notice, every repository after a flush of the area, and all of them every `cache.snapshot_safety_ttl`. A reload merges the rows that arrived by payload while its query ran. A row leaves memory only when a reload no longer finds it in the database.
+
+**Rationale:** a lookup takes about 30 ns without an allocation with 50,000 rows (benchmark in the package). The safety reload covers the rows that the cascade of a repository deletion removed without a notice. The development agent would revisit this if the rows of a single repository grow into the millions, which the retention of R-REPO-045 should prevent.
+
+**Applied in the spec:** the in-memory bullet of R-REPO-045.
+
+### Q-REPO-103 · The fold never extends an expiry, does not skip locked rows and checks once more before a deletion
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-045 folds a row into the entries validated before it by setting `expires_at` to the invalidation time, and deletes a `metadata` row once it is folded. Two cases are left open. An entry that already expires before the row would get a later expiry from a literal `SET expires_at = <time>`. A fill that was in flight when the row committed can store an entry with a `validated_at` before the row after the fold ran, and the deleted row can no longer invalidate it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The literal statement | `SET expires_at = <time>` for the entries validated before the row | As written | Revives an entry that had expired |
+| (b) `LEAST` and a condition | Only entries with `validated_at` before and `expires_at` after the row, set to the lesser, in batches of 5,000 locked in key order, each batch in its own transaction | Idempotent; shortens only; a run is resumable by the columns alone | Waits for a locked row instead of skipping it |
+| (c) `SKIP LOCKED` | Leave a locked entry for the next run | Never waits | A skipped entry stays fresh in the database once the row is gone |
+| Deleting a folded `metadata` row | (i) at once; (ii) one hour after the fold, with one more fold pass before the delete | (ii) finds the late fill | (ii) holds the row for an hour |
+
+**Choice:** (b) with (ii): a folded `metadata` row is deleted one hour after `folded_at`, and every row is folded once more immediately before its deletion.
+
+**Rationale:** an hour is far above the 60 s default of `cache.metadataRefreshTimeoutSeconds` and its 600 s limit, which bound how long a request waits for a fill. A fold of one million entries takes about 70 s on the integration stack (200 batches); the call that created the row does not wait for it. The development agent would revisit the hour if a fill can outlive it, for example through a detached refresh with a longer limit.
+
+**Applied in the spec:** the fold and deletion bullets of R-REPO-045.
 
 ## What this does not cover
 

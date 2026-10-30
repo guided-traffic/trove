@@ -1737,6 +1737,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/repositories/{repoKey}/cache/invalidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invalidate the cached metadata or misses of a remote or virtual repository
+         * @description Makes the cached metadata (`scope: metadata`, the default), the cached misses (`negative`) or
+         *     both (`all`) under a path prefix count as expired (R-OPS-021, R-REPO-045). The next request
+         *     revalidates a metadata entry against the upstream and serves the stale copy if that fails.
+         *     Cached binaries are never touched. On a remote repository the call inserts one row, whatever
+         *     the size of the cache, and the row is in force on every replica within
+         *     `cluster.epoch_poll_interval` plus 1 s, with or without Valkey. `path` is empty for the whole
+         *     repository, or a canonical path or package name prefix as whole segments: `@acme` covers
+         *     `@acme/util` and not `@acmecorp/util`; it has no leading or trailing slash, no empty segment
+         *     and no `.` or `..` segment, and at most 256 bytes. `invalidated` counts the covered metadata
+         *     entries in PostgreSQL at the time of the call; cached misses live in Valkey and are not
+         *     counted, so it is 0 for `negative`. On a virtual repository the merged metadata under the
+         *     prefix is dropped on every replica and `invalidated` is 0; its remote members are not
+         *     touched. A local repository answers `400 not_applicable`. Needs `manage` on the repository
+         *     or the system administrator role. Allowed in read-only mode.
+         */
+        post: operations["invalidateRepositoryCache"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/cache/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the cache entries of a remote repository
+         * @description The stored entries of a remote repository for diagnosis (R-REPO-032), in the byte order of
+         *     `path` then `variant`, with a cursor. `kind` is `metadata` (the default) or `artifact`;
+         *     `pathPrefix` limits the list to the entries an invalidation of that prefix would cover.
+         *     `expiresAt` is null for an artifact, and `upstreamGoneAt` is set for a document the upstream
+         *     answered 404 or 410 for. The list reads PostgreSQL. Needs `repositories:read-config`, or
+         *     `manage` on the repository. A repository that is not remote answers `400 not_applicable`.
+         */
+        get: operations["listCacheEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3056,7 +3114,7 @@ export interface components {
             format: string;
             description: string;
             layout: string;
-            /** @description The client addresses, paths on the public base URL. */
+            /** @description The client addresses: absolute URLs, the public base URL followed by the repository's path. */
             addresses: string[];
         };
         /** @description The answer of a read, by the caller's view. */
@@ -3067,6 +3125,7 @@ export interface components {
             class: "local" | "remote" | "virtual";
             format: string;
             description: string;
+            /** @description The client addresses: absolute URLs, the public base URL followed by the repository's path. */
             addresses: string[];
             disabled: boolean;
             /**
@@ -3332,6 +3391,43 @@ export interface components {
             /** @description SHA-256 over the mode and the ID, revision and state of every stored rule of the endpoint for the repository (R-EP-018). */
             exposureFingerprint: string;
             warnings: string[];
+        };
+        CacheInvalidateRequest: {
+            /**
+             * @description A canonical path or package name prefix of whole segments; empty is the whole repository.
+             * @default
+             */
+            path: string;
+            /**
+             * @default metadata
+             * @enum {string}
+             */
+            scope: "metadata" | "negative" | "all";
+        };
+        CacheInvalidateResult: {
+            /** @description The metadata entries covered at the time of the call; cached misses are not counted. */
+            invalidated: number;
+        };
+        CacheEntry: {
+            path: string;
+            variant: string;
+            /** @enum {string} */
+            kind: "metadata" | "artifact";
+            upstreamUrl: string;
+            /** Format: date-time */
+            fetchedAt: string;
+            /** Format: date-time */
+            validatedAt: string;
+            /** Format: date-time */
+            expiresAt: string | null;
+            /** Format: date-time */
+            upstreamGoneAt: string | null;
+            /** Format: date-time */
+            lastUsedAt: string;
+        };
+        CacheEntryPage: {
+            items: components["schemas"]["CacheEntry"][];
+            nextCursor: string | null;
         };
     };
     responses: {
@@ -6416,7 +6512,7 @@ export interface operations {
                      *           "format": "generic",
                      *           "description": "Installers and build outputs",
                      *           "addresses": [
-                     *             "/files/generic-local/"
+                     *             "https://trove.example.net/files/generic-local/"
                      *           ],
                      *           "disabled": false,
                      *           "lastActivityAt": "2026-10-28T09:14:03.117Z",
@@ -7638,6 +7734,110 @@ export interface operations {
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    invalidateRepositoryCache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "path": "@acme",
+                 *       "scope": "all"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CacheInvalidateRequest"];
+            };
+        };
+        responses: {
+            /** @description The invalidation is recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "invalidated": 12
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CacheInvalidateResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listCacheEntries: {
+        parameters: {
+            query?: {
+                /** @description Only entries below this path prefix; empty or absent lists all of them. */
+                pathPrefix?: string;
+                kind?: "metadata" | "artifact";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of entries. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "path": "@acme/util",
+                     *           "variant": "full",
+                     *           "kind": "metadata",
+                     *           "upstreamUrl": "https://registry.npmjs.org/@acme%2futil",
+                     *           "fetchedAt": "2026-10-30T08:00:00.000Z",
+                     *           "validatedAt": "2026-10-30T08:00:00.000Z",
+                     *           "expiresAt": "2026-10-30T10:00:00.000Z",
+                     *           "upstreamGoneAt": null,
+                     *           "lastUsedAt": "2026-10-30T08:00:00.000Z"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CacheEntryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];

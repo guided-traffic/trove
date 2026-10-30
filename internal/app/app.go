@@ -386,6 +386,11 @@ func (a *App) bootstrap(ctx context.Context) error {
 		return err
 	}
 	// <<< M1 api
+	// >>> M2 proxy
+	if err := a.wireInvalidation(ctx, infra); err != nil {
+		return err
+	}
+	// <<< M2 proxy
 	// Wiring of the M1 areas ends here.
 	a.freezeRegistries()
 	a.startGauges(ctx, infra)
@@ -483,6 +488,9 @@ func (a *App) startClient() error {
 			Files:        a.filesService(),
 			FilesDecider: a.filesDecider(),
 			// <<< M1 files
+			// >>> M2 proxy
+			Cache: a.cacheAPI(),
+			// <<< M2 proxy
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

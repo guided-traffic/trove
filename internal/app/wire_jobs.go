@@ -40,6 +40,9 @@ func (a *App) jobRegistry() (*jobs.Registry, error) {
 	// <<< M1 identity
 	registerSecretsReencrypt(r)
 	a.registerAuditJobs(r)
+	// >>> M2 proxy
+	a.registerInvalidationJobs(r)
+	// <<< M2 proxy
 	if err := jobs.ValidateSchedules(a.cfg.Maintenance); err != nil {
 		return nil, err
 	}

@@ -2037,6 +2037,7 @@ shared key is offered again on the next scheduler tick, so it is postponed, neve
 | `ci-issuance-retention` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-030, R-CI-020 | `40 3 * * *` (proposed, gitlab-ci-oidc.md) |
 | `secrets-reencrypt` | [architecture.md](architecture.md) R-ARCH-021: re-seals every stored secret with the active key; its job kind has the same name ([api-and-ui.md](api-and-ui.md) R-API-049) | manual only; precondition: the key rings of all live replicas are compatible (R-OPS-003), else `409` `key_ring_incompatible` |
 | `cluster-change-prune` | [architecture.md](architecture.md) R-ARCH-016 and R-ARCH-018: deletes change-log rows older than `cluster.change_retention` | `*/10 * * * *` (proposed, architecture.md) |
+| `proxy-invalidation-fold` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045: folds the cache invalidations into the metadata entries and deletes the rows that no reader needs any more (Q-OPS-153); one run at a time | `*/5 * * * *` (proposed) |
 | `backup-check` | [ha-and-helm.md](ha-and-helm.md) R-HA-023: the checks of `trove admin backup check`, exported as `trove_backup_check_ok{check}`; the task name is proposed here | `40 5 * * *` (proposed) |
 
 Retention policies ([storage.md](storage.md)) carry their own schedules and appear in the job list,
@@ -2153,6 +2154,10 @@ a wrong or forged negative entry short without a Valkey credential (H-49).
 ```
 
 - `path` is a path or package-name prefix within the repository. Empty means the whole repository.
+  It is whole segments, without a leading or trailing slash, an empty segment or a dot segment, and
+  at most 256 bytes; anything else answers `422 validation_failed` with the pointer `/path`
+  ([repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-100). An unknown `scope` answers the
+  same with `/scope`.
 - `scope` is one of:
   - `metadata` (default): cached metadata expires now, and the next request revalidates it against
     the upstream. The stale copy is still served if the upstream fails (INV-11).
@@ -2175,7 +2180,8 @@ a wrong or forged negative entry short without a Valkey credential (H-49).
   works while Valkey is unavailable and needs no Valkey permission beyond trove's own.
 - Response: `200 {"invalidated": 12}`. The count covers metadata entries only: the covered
   metadata entries in PostgreSQL at the time of the call. Negative entries in Valkey are not
-  counted, because counting them would need a scan of the keyspace.
+  counted, because counting them would need a scan of the keyspace; the scope `negative` therefore
+  answers 0, and so does a virtual repository.
 - Permission: repository action `manage` on `{key}`, or system administrator.
 - Audit: `repository.cache_invalidated`.
 - Allowed in read-only mode (R-OPS-024).
@@ -5312,6 +5318,61 @@ token ID and authentication method; the User-Agent was filled by hand in some pl
 request-scoped handle of the architecture review is introduced.
 
 **Applied in the spec:** none (R-OPS-015 already names the fields).
+
+### Q-OPS-153 · The fold of the cache invalidations is the scheduled task `proxy-invalidation-fold`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-045 asks for a background job on the `worker` role that folds the invalidation rows into the metadata entries and deletes the rows that are no longer needed. R-OPS-019 lists every task by name, schedule and owning page.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A scheduled task, every five minutes, exclusive | The scheduler enqueues the job; at most one run is queued or running; it folds every unfolded row and deletes what is due | Fits the task framework, the manual trigger and the job list; one run at a time | Up to five minutes between the call and the rewrite of the expiries |
+| (b) A job per invalidation, enqueued in the inserting transaction | The call enqueues its own fold | Folds at once | Repeated invalidations queue repeated jobs that all fold the same entries; the retention deletions still need a task |
+| (c) A loop in every replica | Each `worker` replica folds on a timer | No scheduler | All workers fold the same rows, and the loop is outside the job list |
+
+**Choice:** (a), with the schedule `*/5 * * * *` as the default of the package. `maintenance.tasks.proxy-invalidation-fold` overrides it, and `POST /api/v1/system/tasks/proxy-invalidation-fold/run` starts a run.
+
+**Rationale:** the delay costs nothing that a reader notices, because every request applies the in-memory rows (R-REPO-045); the fold only shortens the stored expiries so that a restored or cold replica and the cache view agree, and it bounds the life of the rows. The development agent would revisit the period if the table of rows grows beyond what five minutes of invalidations produce.
+
+**Applied in the spec:** the task table of R-OPS-019.
+
+### Q-OPS-154 · The change payload of `cache_invalidation` carries the whole row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-045 says the inserting transaction calls `cluster.Notify("cache_invalidation", …)` with the repository id. A replica that learns of a change from the poll must act on it, and a change message holds 1 KiB at most (R-ARCH-018).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The repository id only | The replica reads the rows of the repository after every change | Tiny payload | A query between the change and its effect, on every replica, for every invalidation |
+| (b) The row as plain JSON | `{repo, id, prefix, scope, created}` | No query | `json.Marshal` writes `<`, `>` and `&` as six bytes, so a 256-byte prefix can exceed the limit |
+| (c) The row with the prefix as base64url, and a kind | `{"k":"add","r":<repo>,"i":<row id>,"p":"<base64url>","s":"<scope>","t":<created, µs>}`; `{"k":"del","r":<repo>}` after a deletion by the fold task; `{"k":"virt","r":<virtual repo>,"p":"<base64url>","s":"<scope>"}` for a virtual repository | No query for a new row; a deletion makes a replica read once; the longest prefix fits (about 450 bytes) | The prefix is not readable in the change log |
+
+**Choice:** (c), payload version 1. A consumer ignores a kind it does not know, and the Set reloads on one.
+
+**Rationale:** with (c) the invalidation is in force the moment the poll applies the change, which the bound of R-OPS-021 needs. The development agent would revisit the encoding if the change log is to be read by people.
+
+**Applied in the spec:** the in-memory bullet of R-REPO-045 (by reference).
+
+### Q-OPS-155 · The entry list is open to a holder of `repositories:read-config` or of `manage`, decided in the handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-032 lets a holder of `repositories:read-config` or of `manage` on the repository list the cache entries. The declaration `x-trove-permission` of R-API-008 has one form per operation (a capability, a role or an action) and no "either".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Declare `manage` | The shared step decides it | Declarative | Refuses the holders of `repositories:read-config` that the page names |
+| (b) Declare `repositories:read-config` | The shared step decides it | Declarative | Refuses a manager of the repository |
+| (c) Declare `authenticated` and decide in the handler | The handler asks `repositories:read-config`, then `manage` on the repository, on the index of the request; the exposure ceiling of the endpoint binds both | Both holders are admitted with the tools that exist | One operation decides outside the shared step, as the repository read does |
+| (d) A new "any of" form | The declaration lists several forms | Declarative | Changes the contract of R-API-008 for every operation |
+
+**Choice:** (c). The list is for remote repositories (`400 not_applicable` otherwise), `kind` is `metadata` (default) or `artifact`, and the cursor holds the path and the variant of the last entry.
+
+**Rationale:** (d) is the better form once a second operation needs a disjunction; one operation does not justify it. The development agent would revisit this at the second.
+
+**Applied in the spec:** R-REPO-032; the row of the entry list in R-API-024 (no change of wording needed).
 
 ## What this does not cover
 

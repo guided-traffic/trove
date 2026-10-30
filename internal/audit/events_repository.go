@@ -31,3 +31,21 @@ func init() {
 		})
 	}
 }
+
+// >>> M2 proxy
+
+// EventRepositoryCacheInvalidated is the cache invalidation of a remote or virtual
+// repository (R-OPS-021, R-REPO-045). path is the invalidated prefix, count the
+// metadata entries it covered when the call was made.
+const EventRepositoryCacheInvalidated = "repository.cache_invalidated"
+
+func init() {
+	Register(EventType{
+		Name: EventRepositoryCacheInvalidated, Category: CategoryRepository, Mode: Transactional,
+		Schema: `{"type":"object","properties":{"path":{"type":"string"},` +
+			`"scope":{"type":"string","enum":["metadata","negative","all"]},` +
+			`"count":{"type":"integer","minimum":0}},"required":["path","scope","count"],"additionalProperties":false}`,
+	})
+}
+
+// <<< M2 proxy

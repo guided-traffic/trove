@@ -37,6 +37,45 @@ func (e AuditEventOutcome) Valid() bool {
 	}
 }
 
+// Defines values for CacheEntryKind.
+const (
+	CacheEntryKindArtifact CacheEntryKind = "artifact"
+	CacheEntryKindMetadata CacheEntryKind = "metadata"
+)
+
+// Valid indicates whether the value is a known member of the CacheEntryKind enum.
+func (e CacheEntryKind) Valid() bool {
+	switch e {
+	case CacheEntryKindArtifact:
+		return true
+	case CacheEntryKindMetadata:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CacheInvalidateRequestScope.
+const (
+	CacheInvalidateRequestScopeAll      CacheInvalidateRequestScope = "all"
+	CacheInvalidateRequestScopeMetadata CacheInvalidateRequestScope = "metadata"
+	CacheInvalidateRequestScopeNegative CacheInvalidateRequestScope = "negative"
+)
+
+// Valid indicates whether the value is a known member of the CacheInvalidateRequestScope enum.
+func (e CacheInvalidateRequestScope) Valid() bool {
+	switch e {
+	case CacheInvalidateRequestScopeAll:
+		return true
+	case CacheInvalidateRequestScopeMetadata:
+		return true
+	case CacheInvalidateRequestScopeNegative:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CheckResultStatus.
 const (
 	CheckResultStatusDegraded CheckResultStatus = "degraded"
@@ -1171,6 +1210,24 @@ func (e ListRepositoriesParamsView) Valid() bool {
 	}
 }
 
+// Defines values for ListCacheEntriesParamsKind.
+const (
+	ListCacheEntriesParamsKindArtifact ListCacheEntriesParamsKind = "artifact"
+	ListCacheEntriesParamsKindMetadata ListCacheEntriesParamsKind = "metadata"
+)
+
+// Valid indicates whether the value is a known member of the ListCacheEntriesParamsKind enum.
+func (e ListCacheEntriesParamsKind) Valid() bool {
+	switch e {
+	case ListCacheEntriesParamsKindArtifact:
+		return true
+	case ListCacheEntriesParamsKindMetadata:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListServiceAccountsParamsSort.
 const (
 	ListServiceAccountsParamsSortName ListServiceAccountsParamsSort = "name"
@@ -1451,6 +1508,44 @@ type AuthzMe struct {
 	Principals []string      `json:"principals"`
 	Roles      []RoleName    `json:"roles"`
 	Scope      *ScopeSummary `json:"scope"`
+}
+
+// CacheEntry defines model for CacheEntry.
+type CacheEntry struct {
+	ExpiresAt      *time.Time     `json:"expiresAt"`
+	FetchedAt      time.Time      `json:"fetchedAt"`
+	Kind           CacheEntryKind `json:"kind"`
+	LastUsedAt     time.Time      `json:"lastUsedAt"`
+	Path           string         `json:"path"`
+	UpstreamGoneAt *time.Time     `json:"upstreamGoneAt"`
+	UpstreamUrl    string         `json:"upstreamUrl"`
+	ValidatedAt    time.Time      `json:"validatedAt"`
+	Variant        string         `json:"variant"`
+}
+
+// CacheEntryKind defines model for CacheEntry.Kind.
+type CacheEntryKind string
+
+// CacheEntryPage defines model for CacheEntryPage.
+type CacheEntryPage struct {
+	Items      []CacheEntry `json:"items"`
+	NextCursor *string      `json:"nextCursor"`
+}
+
+// CacheInvalidateRequest defines model for CacheInvalidateRequest.
+type CacheInvalidateRequest struct {
+	// Path A canonical path or package name prefix of whole segments; empty is the whole repository.
+	Path  *string                      `json:"path,omitempty"`
+	Scope *CacheInvalidateRequestScope `json:"scope,omitempty"`
+}
+
+// CacheInvalidateRequestScope defines model for CacheInvalidateRequest.Scope.
+type CacheInvalidateRequestScope string
+
+// CacheInvalidateResult defines model for CacheInvalidateResult.
+type CacheInvalidateResult struct {
+	// Invalidated The metadata entries covered at the time of the call; cached misses are not counted.
+	Invalidated int `json:"invalidated"`
 }
 
 // CheckResult defines model for CheckResult.
@@ -3319,6 +3414,22 @@ type ReplaceRepositoryParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// ListCacheEntriesParams defines parameters for ListCacheEntries.
+type ListCacheEntriesParams struct {
+	// PathPrefix Only entries below this path prefix; empty or absent lists all of them.
+	PathPrefix *string                     `form:"pathPrefix,omitempty" json:"pathPrefix,omitempty"`
+	Kind       *ListCacheEntriesParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListCacheEntriesParamsKind defines parameters for ListCacheEntries.
+type ListCacheEntriesParamsKind string
+
 // ListChildrenParams defines parameters for ListChildren.
 type ListChildrenParams struct {
 	// Path The folder; empty or absent is the root of the repository.
@@ -3607,6 +3718,9 @@ type UpdateRepositoryApplicationMergePatchPlusJSONRequestBody UpdateRepositoryAp
 
 // ReplaceRepositoryJSONRequestBody defines body for ReplaceRepository for application/json ContentType.
 type ReplaceRepositoryJSONRequestBody = Repository
+
+// InvalidateRepositoryCacheJSONRequestBody defines body for InvalidateRepositoryCache for application/json ContentType.
+type InvalidateRepositoryCacheJSONRequestBody = CacheInvalidateRequest
 
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = NewServiceAccount
@@ -3899,6 +4013,12 @@ type ServerInterface interface {
 	// ReplaceRepository Replace a repository configuration
 	// (PUT /api/v1/repositories/{key})
 	ReplaceRepository(w http.ResponseWriter, r *http.Request, key string, params ReplaceRepositoryParams)
+	// ListCacheEntries List the cache entries of a remote repository
+	// (GET /api/v1/repositories/{repoKey}/cache/entries)
+	ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKey string, params ListCacheEntriesParams)
+	// InvalidateRepositoryCache Invalidate the cached metadata or misses of a remote or virtual repository
+	// (POST /api/v1/repositories/{repoKey}/cache/invalidate)
+	InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, repoKey string)
 	// ListChildren List the children of a folder
 	// (GET /api/v1/repositories/{repoKey}/children)
 	ListChildren(w http.ResponseWriter, r *http.Request, repoKey string, params ListChildrenParams)
@@ -6152,6 +6272,113 @@ func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ReplaceRepository(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCacheEntries operation middleware
+func (siw *ServerInterfaceWrapper) ListCacheEntries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCacheEntriesParams
+
+	// ------------- Optional query parameter "pathPrefix" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "pathPrefix", r.URL.Query(), &params.PathPrefix, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pathPrefix"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pathPrefix", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCacheEntries(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InvalidateRepositoryCache operation middleware
+func (siw *ServerInterfaceWrapper) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InvalidateRepositoryCache(w, r, repoKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8514,6 +8741,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.PatchExposureRule)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.ReplaceExposureRule)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/check-exposure", wrapper.CheckExposure)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
 
 	return m
 }

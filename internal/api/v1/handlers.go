@@ -154,6 +154,12 @@ type Options struct {
 	// when the shared step stored no holder in the request (edge.Resolve, R-AUTHZ-015).
 	FilesDecider authz.Decider
 	// <<< M1 files
+
+	// >>> M2 proxy
+	// Cache holds the services of the cache operations of remote and virtual
+	// repositories (cache_api.go); a nil member answers them with 503.
+	Cache CacheServices
+	// <<< M2 proxy
 }
 
 // Server implements gen.ServerInterface.
