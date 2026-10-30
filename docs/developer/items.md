@@ -68,7 +68,7 @@ type CommitSpec struct {
 	Extra func(ctx context.Context, tx meta.Tx, it Ref) error // in the transaction, after the row, before the hook
 	BeginCommit func()             // the server may now finish the request past the shutdown deadline
 }
-type CommitResult struct { Created, Overwritten bool; Item Item }
+type CommitResult struct { Created, Overwritten bool; Item Item } // Item is read in the commit transaction, so a delete or overwrite right after it cannot empty it
 
 // The rest of the store.
 func (s *Store) CreateFolder(ctx context.Context, spec FolderSpec) (FolderResult, error)

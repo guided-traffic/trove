@@ -42,15 +42,19 @@ func (s *Store) read(ctx context.Context, fn func(*q.Queries) error) error {
 // is none. A file whose object is missing or damaged is returned as it is; see
 // [ContentError].
 func (s *Store) Live(ctx context.Context, repo RepoRef, path string) (it Item, found bool, err error) {
-	err = s.read(ctx, func(qs *q.Queries) error {
-		rows, err := qs.GetLiveItem(ctx, q.GetLiveItemParams{RepoID: repo.ID, Path: path})
-		if err != nil || len(rows) == 0 {
-			return err
-		}
-		it, found = itemFrom(repo.Key, rows[0]), true
-		return nil
+	err = s.read(ctx, func(qs *q.Queries) (err error) {
+		it, found, err = liveItem(ctx, qs, repo, path)
+		return err
 	})
 	return it, found, err
+}
+
+func liveItem(ctx context.Context, qs *q.Queries, repo RepoRef, path string) (Item, bool, error) {
+	rows, err := qs.GetLiveItem(ctx, q.GetLiveItemParams{RepoID: repo.ID, Path: path})
+	if err != nil || len(rows) == 0 {
+		return Item{}, false, err
+	}
+	return itemFrom(repo.Key, rows[0]), true, nil
 }
 
 // ContentError refuses a file whose blob is not ok: 503 with Retry-After for a

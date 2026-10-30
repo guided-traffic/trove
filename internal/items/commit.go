@@ -132,15 +132,7 @@ func (s *Store) Commit(ctx context.Context, spec CommitSpec) (CommitResult, erro
 		return CommitResult{}, err
 	}
 	s.touch(repo.ID)
-	sp := spec.Spooled
-	it, found, err := s.Live(ctx, repo, spec.Path.Path)
-	if err != nil {
-		return CommitResult{}, err
-	}
-	if !found { // removed again between the commit and this read
-		it = Item{Repository: repo.Key, Path: spec.Path.Path, Kind: KindFile, Size: sp.Size, Digest: sp.SHA256, MediaType: spec.MediaType}
-	}
-	return CommitResult{Created: out.created || out.overwritten, Overwritten: out.overwritten, Item: it}, nil
+	return CommitResult{Created: out.created || out.overwritten, Overwritten: out.overwritten, Item: out.item}, nil
 }
 
 // withoutUserInfo removes the credentials a URL may carry (user:password@): the
@@ -158,9 +150,13 @@ func withoutUserInfo(raw string) string {
 	return u.String()
 }
 
-// linkOutcome is what the link step of a file commit did.
+// linkOutcome is what the link step of a file commit did. item is the row the
+// commit left at the path, read in the transaction that holds its lock: a
+// concurrent delete or overwrite after the commit changes the path, never what
+// this commit describes.
 type linkOutcome struct {
 	created, overwritten bool
+	item                 Item
 }
 
 // maxLinkRounds bounds the retries of the link step when concurrent writers
@@ -212,7 +208,10 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 			// Identical: nothing changes, so neither the hook nor an event; the
 			// committer's own write still runs.
 			ref.ID = rows[0].ID
-			return s.extra(ctx, tx, spec, ref)
+			if err := s.extra(ctx, tx, spec, ref); err != nil {
+				return err
+			}
+			return readCommitted(ctx, qs, repo, path, out)
 		default:
 			if !spec.MayOverwrite {
 				return ErrOverwriteDenied
@@ -232,9 +231,26 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 		}); err != nil {
 			return err
 		}
-		return s.recordCommitted(ctx, tx, repo.Key, spec, out.overwritten)
+		if err := s.recordCommitted(ctx, tx, repo.Key, spec, out.overwritten); err != nil {
+			return err
+		}
+		return readCommitted(ctx, qs, repo, path, out)
 	}
 	return errs.E(errs.Unavailable, errs.CodeUnavailable, "The path is being changed by concurrent requests; retry.", errs.WithRetryAfter(retryAfter))
+}
+
+// readCommitted describes the item the link step has written or kept, with the
+// state of its blob. The path is locked by this transaction, so the row exists.
+func readCommitted(ctx context.Context, qs *q.Queries, repo RepoRef, path string, out *linkOutcome) error {
+	it, found, err := liveItem(ctx, qs, repo, path)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errs.E(errs.Internal, errs.CodeInternal, "items: the committed item is not readable in its transaction")
+	}
+	out.item = it
+	return nil
 }
 
 func (s *Store) extra(ctx context.Context, tx meta.Tx, spec CommitSpec, ref Ref) error {
