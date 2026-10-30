@@ -339,3 +339,24 @@ e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failov
 npm-clients-image: ## Build the image of the npm client matrix (R-NPM-045: npm 10-12, pnpm 10-12, Yarn 4, Yarn 1) into the local Docker; NPM_CLIENTS_IMAGE, default trove-e2e-clients:dev
 	test/e2e/clients/build.sh $(or $(NPM_CLIENTS_IMAGE),trove-e2e-clients:dev)
 # <<< M2 npm-clients
+
+# >>> M2 npm-stub
+# The counting test upstream of the npm tests (test/npmstub, docs/developer/e2e.md) and the reference
+# lockfile resolved against it (perf/npm, perf/README.md). Edit only between the markers.
+NPM_STUB_IMAGE ?= trove-e2e-npmstub:dev
+
+.PHONY: npm-stub-image
+npm-stub-image: ## Build the counting npm test upstream image (NPM_STUB_IMAGE, IMAGE_ARCH) on the release base image
+	@mkdir -p .out/npmstub
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/npmstub/npmstub-linux-$(IMAGE_ARCH) ./test/npmstub/cmd/npmstub
+	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+	  -f test/npmstub/Containerfile -t $(NPM_STUB_IMAGE) .out/npmstub
+
+.PHONY: npm-reference
+npm-reference: npm-stub-image ## Regenerate perf/npm/reference (package.json, package-lock.json) with the pinned Node image's npm against the stub
+	NPM_STUB_IMAGE=$(NPM_STUB_IMAGE) perf/npm/reference.sh
+
+.PHONY: npm-reference-check
+npm-reference-check: npm-stub-image ## Fail when perf/npm/reference differs from a regeneration (the corpus is deterministic)
+	NPM_STUB_IMAGE=$(NPM_STUB_IMAGE) perf/npm/reference.sh --check
+# <<< M2 npm-stub

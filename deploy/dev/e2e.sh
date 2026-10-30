@@ -101,6 +101,24 @@ kn get deployment trove-worker -o json | jq --arg image "$DRIVER_IMAGE" --arg ns
   | kn apply -f - >/dev/null
 kn wait --for=condition=Ready pod/trove-e2e-driver --timeout=120s >/dev/null || { kn describe pod trove-e2e-driver >&2; die "the driver pod did not become ready"; }
 
+# >>> M2 npm-stub
+# ── the counting npm test upstream ───────────────────────────────────────────
+# TROVE_E2E_NPMSTUB=1 builds the image of test/npmstub (make npm-stub-image), loads it into kind and (re)starts
+# the stub of deploy/dev/npmstub.yaml: Service npmstub.<ns>.svc:443, TLS from the dev CA, control token in Secret
+# trove-npmstub. The tests that need it read TROVE_E2E_NPMSTUB_HOST. Nothing here runs without the switch.
+if [ "${TROVE_E2E_NPMSTUB:-0}" = "1" ]; then
+  log "building the npm test upstream image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory npm-stub-image IMAGE_ARCH="$ARCH") >"$OUT/npmstub-image.log" 2>&1 || { tail -20 "$OUT/npmstub-image.log" >&2; die "npm test upstream image build failed"; }
+  kind load docker-image trove-e2e-npmstub:dev --name "$CLUSTER" >"$OUT/npmstub-load.log" 2>&1 || { tail -20 "$OUT/npmstub-load.log" >&2; die "kind load of the npm test upstream failed"; }
+  log "starting the npm test upstream"
+  render "$DEV_DIR/npmstub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-npmstub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-npmstub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-npmstub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-npmstub >&2; die "the npm test upstream did not become ready"; }
+  export TROVE_E2E_NPMSTUB_HOST="npmstub.$NS.svc"
+fi
+# <<< M2 npm-stub
+
 # ── the tests ────────────────────────────────────────────────────────────────
 # The whole path is TLS (R-ARCH-035): the edge serves the dev CA's certificate for localhost, and the
 # pods' :8081 is HTTPS too. The scheme and the CA stay parameters: TROVE_DEV_SCHEME (https|http),

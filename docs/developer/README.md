@@ -54,7 +54,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [http-api.md](http-api.md) | Listeners, the middleware chain, the system API and the problem format |
 | [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
-| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings |
+| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings; the counting npm test upstream and its corpus |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
 | [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
@@ -153,9 +153,11 @@ trove/
 │   ├── integration/          # build tag `integration`: area folders with an env_test.go: api/, audit/, authz/, endpoints/, files/,
 │   │                         # identity/, login/, repository/, tls/, coordination/, postgres/, server/ (each creates its own database)
 │   ├── chart/                # build tag `chart`: render assertions and the lint script
+│   ├── npmstub/              # the counting npm test upstream (TLS only): stub, corpus/ (700 synthetic packages), recorded set, cmd/npmstub, Containerfile
 │   └── e2e/                  # build tag `e2e`: M0 scenarios (e03 to e16, e99), the M1 access-core scenarios (e1_01 login,
 │                             # e1_08 rate limits, e1_11 scatter, e1_13 transfer, e1_14 exposure), m1_env_test.go; k6 load script
 │                             # clients/: the npm client matrix image (R-NPM-045), npm_clients_test.go
+├── perf/                     # data of the performance tests: npm/reference (package.json, package-lock.json), see perf/README.md
 ├── .github/
 │   ├── workflows/            # release.yml (Test and Release), build.yml (Release Docker & Helm), renovate.yml
 │   ├── actionlint.yaml       # actionlint's configuration (the App token inputs of the pinned version)

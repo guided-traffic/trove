@@ -611,7 +611,135 @@ test/e2e/clients/
   wrapper's output with the version in `package.json`, and `R-NPM-045 the base URL reaches the cluster with a verified
   certificate` requests `/api/v1/system/ping` from the pod through the forwarder with a plain Node.js `https.get`.
 
+## The counting npm test upstream
+
+[test/npmstub](../../test/npmstub) is the upstream registry of the npm tests (M2, R-NPM-045): exit criteria E2.2, E2.4,
+E2.5 and E2.9 are read off what it counted. Decisions: Q-NPM-41 to Q-NPM-43 in [npm.md](../spec/formats/npm.md).
+It is a Go package (used in-process by integration tests), a container and a pod of the dev cluster; all three
+are the same code. It reaches no network, and it answers TLS only.
+
+| File | Responsibility |
+|---|---|
+| [stub.go](../../test/npmstub/stub.go) | `Server`: state under one mutex (counters, mode, published and dropped versions), `Publish`, `Drop`, `Restore`, `SetMode`, `Reset`, `ResetAll` |
+| [serve.go](../../test/npmstub/serve.go) | the registry: documents (full, and `application/vnd.npm.install-v1+json` when the `Accept` header names it), tarballs, `-/ping`, `ETag`/`Last-Modified` and 304, gzip on request, the failure gate in front of every route |
+| [route.go](../../test/npmstub/route.go) | path to package name: `@scope%2fname` and `@scope/name` are one package |
+| [counts.go](../../test/npmstub/counts.go) | the counters and their readers: `Documents`, `ConditionalDocuments`, `Tarballs`, `Tarball`, `Requests`, `Violations(maxDocuments, maxTarballs)` |
+| [mode.go](../../test/npmstub/mode.go) | the failure switches |
+| [control.go](../../test/npmstub/control.go) | the control API below `/-/stub/` |
+| [tls.go](../../test/npmstub/tls.go) | `Start` (TLS or nothing), a throwaway CA and certificate, a certificate reloaded when its files change |
+| [recorded.go](../../test/npmstub/recorded.go) | the recorded set, embedded from `testdata/recorded` |
+| [corpus/](../../test/npmstub/corpus) | the synthetic corpus: generator, documents, tarballs, SemVer order, the reference project |
+| [cmd/npmstub](../../test/npmstub/cmd/npmstub) | `serve` (default), `reference` (writes the reference `package.json`), `record` (by hand) |
+| [Containerfile](../../test/npmstub/Containerfile) | the image: a static binary on the release base image |
+
+### Use in a Go test
+
+```go
+stub, _ := npmstub.New(npmstub.Config{})                        // the default corpus and the recorded set
+ss, _ := npmstub.NewSelfSigned("localhost", "127.0.0.1")        // or the stack's certificate (test/integration/testenv)
+run, _ := stub.Start("127.0.0.1:0", ss.ServerConfig())          // run.URL is https://127.0.0.1:<port>
+defer run.Close()
+// point the repository's remote at run.URL; trust ss.CAPEM (proxy.outbound.tls.ca_files) and allow 127.0.0.1/32
+// ... clients install ...
+c := stub.Counts()
+c.Violations(1, 1)                                              // E2.2: at most one document and one tarball request each
+stub.SetMode(npmstub.Mode{Down: npmstub.DownUnavailable})       // E2.4
+stub.Publish("@acme/ui", "99.0.0", nil)                         // E2.5: a higher version of a claimed name
+```
+
+### What it serves
+
+| Request | Answer |
+|---|---|
+| `GET /{name}`, `GET /@scope%2fname`, `GET /@scope/name` | the package document; the install document when `Accept` contains `application/vnd.npm.install-v1+json`; `Vary: Accept, Accept-Encoding`; a weak `ETag` over the body and `Last-Modified`; 304 for a matching `If-None-Match`, else for an `If-Modified-Since` at or after the modification time (only when no `If-None-Match` is present); gzip when asked |
+| `GET /{name}/-/{file}.tgz` | the tarball; `ETag` and 304 |
+| `GET /-/ping` | `{}` |
+| any other method on a package | 405 (counted) |
+| anything else | 404 |
+
+`dist.tarball` in a document is `Config.PublicURL` (flag `-public-url`) plus `/{name}/-/{file}.tgz`, or `https://` and the
+request's `Host`. The recorded packages are the exception to "synthetic": `left-pad`, `JSONStream` (a capitalised legacy
+name), `lodash`, `react` and `sigstore` (`_npmUser.trustedPublisher`, `dist.attestations`, `dist.signatures`), each trimmed to
+two versions plus `latest`, with the real tarballs. They are served as recorded, only the tarball addresses change, and
+`Publish` refuses them. `npmstub record -package NAME -versions A,B` rewrites one (network, by hand, the integrity of
+every downloaded tarball is checked against the document).
+
+### Counting
+
+Every request except the control API is counted by method, escaped path as sent, conditionality (`If-None-Match` or
+`If-Modified-Since` present) and credential scheme (`none`, `bearer`, `basic`, `other`; never the credential). A request
+the failure gate refuses is counted too; a connection that fails its TLS handshake never reaches the counters. The
+readers add the spellings of a scoped name. `Violations(1, 1)` is the E2.2 check: it lists every document requested more
+than once and every tarball file requested more than once.
+
+### Failure switches
+
+`Mode` replaces the previous mode as a whole; `{}` clears it. Over the control API it is the JSON below.
+
+| Field | Effect |
+|---|---|
+| `down` | `503`: every request answers 503; `reset`: the connection is cut without an answer; `hang`: the request is held until the client gives up (at most two minutes) |
+| `delay_ms` | `{"document": 200}` delays by class: `document`, `tarball`, `other` |
+| `not_found`, `gone` | names whose documents and tarballs answer 404 / 410 |
+| `bad_integrity` | names whose documents promise an integrity the tarballs do not have |
+| `wrong_name` | names whose documents carry another `name` than the one requested |
+| `drop_tarballs` | the tarballs of dropped versions answer 404 (by default only the document loses the version) |
+| `require_authorization` | the exact `Authorization` value every request must carry, else 401 |
+
+Changes to the packages are separate from modes: `Publish(name, version, deps, tags...)` offers a version (creating the
+package if the stub does not know the name; it becomes `latest` when it is a release above the current one),
+`Drop(name, version)` removes it from the document, `Restore` lists it again, `ResetAll` undoes all of it. Each changes the
+document and therefore its `ETag`.
+
+### Control API
+
+Below `/-/stub/`, with `Authorization: Bearer <token>` (`-control-token-file`; without a token the API does not exist).
+Control requests are not counted.
+
+| Request | Effect |
+|---|---|
+| `GET /-/stub/counts` | `{"entries": [{method, path, conditional, auth, kind, name, file, accept, count}]}` |
+| `POST /-/stub/reset[?all=true]` | zero the counters; with `all` also modes and package changes |
+| `GET`/`POST /-/stub/mode` | read / replace the failure switches |
+| `POST /-/stub/publish` | `{"name","version","dependencies","tags"}` (409 if the version exists) |
+| `POST /-/stub/drop`, `POST /-/stub/restore` | `{"name","version"}` |
+
+### The corpus
+
+[corpus.Default()](../../test/npmstub/corpus/generate.go) is 700 packages and about 5,100 versions from `DefaultConfig()`
+(seed 20261030): a quarter scoped (`@lattice`, `@quartz`, ...), versions that mix patch, minor and major steps, `-beta.N`
+and `-rc.1` prereleases ahead of some majors, a pending `-beta.1` above the last release for some (tag `next`), a `legacy`
+tag for some with several majors, a few deprecated versions, two packages with 1,000 versions each, and dependencies only on
+earlier packages (a DAG; the first 45 packages are the hubs, the middle ones have up to four dependencies, the last 400
+two to nine, ranges `^`, `~`, `>= <`, exact). No manifest has a `scripts` entry.
+
+Byte stability: the generator uses its own splitmix64 stream; maps are written with sorted keys; tarball entries are
+sorted with the mtime of npm's own packer and owners zero, wrapped in gzip stored blocks (no deflate implementation in
+the bytes). `TestCorpusIsByteStable` generates twice, compares, and compares with
+[corpus/testdata/corpus.sha256](../../test/npmstub/corpus/testdata/corpus.sha256). When the generator changes on purpose,
+write the new digest there and run `make npm-reference`; the same commit carries both.
+
+### In the cluster
+
+[deploy/dev/npmstub.yaml](../../deploy/dev/npmstub.yaml): Service `npmstub` on 443, one replica (the counters are in
+memory), a certificate of the dev CA for `npmstub.<ns>.svc`, the control token in Secret `trove-npmstub` (key
+`control-token`, generated by the secret operator), TCP probes (an HTTP probe would be counted). `e2e.sh` builds
+(`make npm-stub-image`), loads and applies it when `TROVE_E2E_NPMSTUB=1` and exports `TROVE_E2E_NPMSTUB_HOST`. trove
+trusts the dev CA for upstreams through `proxy.outbound.tls.ca_files` (values-dev.yaml sets it to the `ca.crt` of Secret
+`trove-keycloak-tls`, which cert-manager fills with the dev CA that also signs the stub's certificate). Not verified in this change: that the default egress policy admits the pod address of the
+stub (the cluster was in use by another agent), and the pod itself (only the image was run locally).
+
+### The reference lockfile
+
+`make npm-reference` writes [perf/npm/reference](../../perf/npm/reference); [perf/README.md](../../perf/README.md) says
+how and why. `make npm-reference-check` regenerates and diffs; it needs Docker, not the cluster.
+
 ## Extension checklist
+
+- **A new failure case of the npm upstream.** A field in `Mode` ([mode.go](../../test/npmstub/mode.go)) with its
+  validation, its effect in `gate` or the document view ([serve.go](../../test/npmstub/serve.go),
+  [stub.go](../../test/npmstub/stub.go) `viewLocked`), a test in
+  [stub_test.go](../../test/npmstub/stub_test.go), and a row in the table above. Never a new listener.
 
 - **A new M1 check.** Use `adminAPI` for the seed and `newSAToken` for a token of your own: the shared administrator
   token has a read budget (R-API-016) that a list walk spends. A test that exceeds a per-address limit goes through
