@@ -101,7 +101,7 @@ func TestReplicas(t *testing.T) {
 		if info.InstallationID == nil || info.Incarnation == nil || *info.InstallationID == "" {
 			t.Errorf("installation facts not filled: %s", body)
 		}
-		if info.Database == nil || !strings.HasPrefix(info.Database.ServerVersion, "16") || info.Database.SchemaVersion < 1 || info.Database.Pools["request"].Max < 1 {
+		if info.Database == nil || !strings.HasPrefix(info.Database.ServerVersion, "18") || info.Database.SchemaVersion < 1 || info.Database.Pools["request"].Max < 1 {
 			t.Errorf("database block: %s", body)
 		}
 		if info.Valkey.Keyspace == nil || !regexp.MustCompile(`^[0-9a-f]{12}$`).MatchString(*info.Valkey.Keyspace) || info.Valkey.Mode != "sentinel" {

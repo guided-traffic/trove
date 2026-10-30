@@ -56,6 +56,23 @@ func wantState(t testing.TB, c *pgx.Conn, state, sql string, args ...any) {
 	}
 }
 
+// wantRestrict runs a delete that an ON DELETE RESTRICT foreign key refuses.
+// PostgreSQL 18 reports it as restrict_violation (23001); 16 and 17 report
+// foreign_key_violation (23503). The expected code follows the server, so the
+// test stays exact on every supported version (R-HA-013).
+func wantRestrict(t testing.TB, c *pgx.Conn, sql string, args ...any) {
+	t.Helper()
+	var num int
+	if err := c.QueryRow(context.Background(), "SELECT current_setting('server_version_num')::int").Scan(&num); err != nil {
+		t.Fatal(err)
+	}
+	state := "23503"
+	if num >= 180000 {
+		state = "23001"
+	}
+	wantState(t, c, state, sql, args...)
+}
+
 // TestM1Migrations checks the tables of milestone M1: that each exists with its
 // export class, the rows the migrations seed, the integrity rules in the database
 // and the audit partitions with their privileges.
