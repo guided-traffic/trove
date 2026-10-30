@@ -89,3 +89,23 @@ func init() {
 }
 
 // <<< M2 proxy
+
+// >>> M2 npm
+
+// EventRepositoryRemotePackageShadowed is the security event of a first publish of a
+// name that a remote member of a containing virtual repository serves, made on the
+// strength of manage (R-REPO-048). The local repository is the event's repository,
+// package the name, exposure the pairs (virtual, remote) that serve it.
+const EventRepositoryRemotePackageShadowed = "repository.remote_package_shadowed"
+
+func init() {
+	Register(EventType{
+		Name: EventRepositoryRemotePackageShadowed, Category: CategoryRepository, Mode: Transactional,
+		Schema: `{"type":"object","properties":{"package":{"type":"string"},` +
+			`"exposure":{"type":"array","maxItems":1000,"items":{"type":"object","properties":{` +
+			`"virtual":{"type":"string"},"remote":{"type":"string"}},"required":["virtual","remote"],"additionalProperties":false}}},` +
+			`"required":["package","exposure"],"additionalProperties":false}`,
+	})
+}
+
+// <<< M2 npm

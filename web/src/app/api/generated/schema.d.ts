@@ -1895,6 +1895,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/repositories/{repoKey}/resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The key of a virtual repository (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Explain how a virtual repository resolves a client path
+         * @description Evaluates steps 1 to 6 of the resolution algorithm (R-REPO-019) for the calling principal and a
+         *     path, without transferring content and without contacting an upstream, and says per member of
+         *     the virtual repository what would happen to it. `path` is the repository-relative path as the
+         *     package client sends it, decoded once (`@acme/util/-/util-1.4.0.tgz`, `lodash`). `decidedBy`
+         *     names the claim or the pin rule that narrowed the members; its `claimedBy` lists only the
+         *     repositories the caller can read. A member the caller cannot read is not named: it counts in
+         *     `unreadableMembers`, unless the caller holds `repositories:read-config`, who gets it as the
+         *     decision `no-read` and a count of 0. The decisions are `disabled`, `not_admitted`, `pinned-out`,
+         *     `claimed-elsewhere`, `refused-claimed`, `no-read`, `no-cache-fill`, `hit`, `miss`, `negative`,
+         *     `offline` and `circuit-open`. Needs `read` on the virtual repository (the gate of step 1);
+         *     another class answers `400 not_applicable`.
+         */
+        get: operations["getRepositoryResolution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/repositories/{repoKey}/packages/{packageName}/owners": {
         parameters: {
             query?: never;
@@ -3258,22 +3291,22 @@ export interface components {
          *     any difference; no list of formats per class is kept by hand anywhere.
          * @enum {string}
          */
-        FormatName: "generic";
+        FormatName: "generic" | "npm";
         /**
          * @description The formats whose classes contain `local`. The create form offers these for a local repository.
          * @enum {string}
          */
-        LocalFormatName: "generic";
+        LocalFormatName: "generic" | "npm";
         /**
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
          */
-        RemoteFormatName: never;
+        RemoteFormatName: "npm";
         /**
          * @description The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
          * @enum {string}
          */
-        VirtualFormatName: never;
+        VirtualFormatName: "npm";
         RepositoryWarning: {
             code: string;
             pointer?: string;
@@ -3891,6 +3924,32 @@ export interface components {
             }[];
             /** @description Patterns of automatic claims to remove. Automatic claims not listed here stay. */
             removeAuto?: string[];
+        };
+        RepositoryResolution: {
+            repository: string;
+            descriptor: {
+                path: string;
+                /** @enum {string} */
+                kind: "artifact" | "metadata" | "search" | "write" | "other";
+                package?: string;
+            };
+            /** @description The claim or the pin rule that narrowed the members; absent when neither did. */
+            decidedBy?: {
+                claim?: string;
+                pin?: string;
+                /** @description The repositories with the most specific claim that the caller can read. */
+                claimedBy?: string[];
+            };
+            /** @description The members in the order of the member list, without those the caller cannot read. */
+            members: {
+                key: string;
+                /** @enum {string} */
+                class: "local" | "remote";
+                /** @enum {string} */
+                decision: "disabled" | "not_admitted" | "pinned-out" | "claimed-elsewhere" | "refused-claimed" | "no-read" | "no-cache-fill" | "hit" | "miss" | "negative" | "offline" | "circuit-open";
+            }[];
+            /** @description The number of members the caller cannot read, which are not named. */
+            unreadableMembers: number;
         };
         /** @description The ownership of one package name in one repository (R-AUTHZ-019). */
         PackageOwners: {
@@ -8546,6 +8605,67 @@ export interface operations {
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
             428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getRepositoryResolution: {
+        parameters: {
+            query: {
+                /** @description The repository-relative client path to explain. */
+                path: string;
+            };
+            header?: never;
+            path: {
+                /** @description The key of a virtual repository (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The resolution of the path, member by member. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "repository": "npm-all",
+                     *       "descriptor": {
+                     *         "path": "@acme/util/-/util-1.4.0.tgz",
+                     *         "kind": "artifact",
+                     *         "package": "@acme/util"
+                     *       },
+                     *       "decidedBy": {
+                     *         "claim": "@acme/*",
+                     *         "claimedBy": [
+                     *           "npm-local"
+                     *         ]
+                     *       },
+                     *       "members": [
+                     *         {
+                     *           "key": "npm-local",
+                     *           "class": "local",
+                     *           "decision": "hit"
+                     *         },
+                     *         {
+                     *           "key": "npm-remote",
+                     *           "class": "remote",
+                     *           "decision": "claimed-elsewhere"
+                     *         }
+                     *       ],
+                     *       "unreadableMembers": 0
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RepositoryResolution"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

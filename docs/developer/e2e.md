@@ -685,6 +685,10 @@ than once and every tarball file requested more than once.
 | `wrong_name` | names whose documents carry another `name` than the one requested |
 | `drop_tarballs` | the tarballs of dropped versions answer 404 (by default only the document loses the version) |
 | `require_authorization` | the exact `Authorization` value every request must carry, else 401 |
+| `stale_copy`, `stale_copy_skip`, `stale_copy_delay_ms` | names whose document is answered once with an older copy (without the newest version, `time.modified` an hour earlier), after `skip` normal answers, held `delay` before the status line; no validators apply to it (R-NPM-024) |
+| `html_content_type` | names whose documents and tarballs answer 200 with an HTML page (R-REPO-042) |
+| `redirect_to` | every tarball request answers 302 to this base URL and the same path (R-REPO-039) |
+| `foreign_tarball_host` | the base URL the `dist.tarball` addresses of documents name instead of the stub's own (R-REPO-043) |
 
 Changes to the packages are separate from modes: `Publish(name, version, deps, tags...)` offers a version (creating the
 package if the stub does not know the name; it becomes `latest` when it is a release above the current one),

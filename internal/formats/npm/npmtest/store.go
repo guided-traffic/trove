@@ -69,6 +69,10 @@ type Store struct {
 	Tombstones  []rows.TombstoneInput
 	Cleared     []string
 	FoldClashes int
+	// Fills logs the documents ApplyFill recorded, in order.
+	Fills       []rows.RemoteFill
+	remote      map[string]*remoteRec
+	remoteState RemoteState
 }
 
 // New creates an empty store.
@@ -78,6 +82,9 @@ func New() *Store {
 		versions: map[string]rows.VersionFacts{}, tombstones: map[string]string{}, revs: map[int64]int64{},
 	}
 }
+
+// now is the clock of the twin's gone mark.
+func (s *Store) now() time.Time { return time.Unix(1_800_000_000, 0).UTC() }
 
 func key(repo int64, name, version string) string {
 	return fmt.Sprintf("%d/%s/%s", repo, name, version)

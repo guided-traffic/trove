@@ -55,6 +55,15 @@ type Server struct {
 	dropped map[string]map[string]bool
 	touched map[string]time.Time // when a package last lost a version
 	cache   map[cacheKey]*rendered
+	// stale holds the older copies still to be served, by package name (Mode.StaleCopy).
+	stale map[string]*staleLeft
+}
+
+// staleLeft is the state of the older copy of one package: the document requests to answer
+// normally first and the time to hold the copy.
+type staleLeft struct {
+	skip  int
+	delay time.Duration
 }
 
 // New creates a Server.
@@ -92,6 +101,7 @@ func (s *Server) resetLocked() {
 	s.dropped = map[string]map[string]bool{}
 	s.touched = map[string]time.Time{}
 	s.cache = map[cacheKey]*rendered{}
+	s.stale = map[string]*staleLeft{}
 }
 
 // Counts returns a snapshot of the request counters.
@@ -141,7 +151,45 @@ func (s *Server) SetMode(m Mode) error {
 	defer s.mu.Unlock()
 	s.mode = m
 	s.cache = map[cacheKey]*rendered{}
+	s.stale = map[string]*staleLeft{}
+	for _, name := range m.StaleCopy {
+		s.stale[name] = &staleLeft{skip: m.StaleCopySkip, delay: time.Duration(m.StaleCopyDelayMS) * time.Millisecond}
+	}
 	return nil
+}
+
+// takeStale decides what a document request of a package gets: ok is true when the request is
+// answered with the older copy, which is then used up; delay is how long to hold it.
+func (s *Server) takeStale(name string) (delay time.Duration, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	left := s.stale[name]
+	if left == nil {
+		return 0, false
+	}
+	if left.skip > 0 {
+		left.skip--
+		return 0, false
+	}
+	delete(s.stale, name)
+	return left.delay, true
+}
+
+// olderCopyLocked is the package as a lagging mirror serves it: without its newest version, and
+// with a time.modified an hour earlier. The caller holds s.mu.
+func (s *Server) olderCopyLocked(name string) (*corpus.Package, bool) {
+	if _, recorded := s.recorded[name]; recorded {
+		return nil, false
+	}
+	p, ok := s.viewLocked(name)
+	if !ok || len(p.Versions) < 2 {
+		return nil, false
+	}
+	c := p.Clone()
+	c.Remove(c.Versions[len(c.Versions)-1].Version)
+	c.Modified = p.Modified.Add(-time.Hour)
+	c.Retag()
+	return c, true
 }
 
 // Mode returns the current failure switches.

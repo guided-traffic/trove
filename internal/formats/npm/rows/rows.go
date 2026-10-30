@@ -64,7 +64,9 @@ type PublishInput struct {
 	PublishedBy string
 	// Claim is the outcome of the namespace auto claim, for the audit event.
 	Claim string
-	Audit Audit
+	// Shadowing is what the shadowing check found of a first version (R-REPO-048).
+	Shadowing Shadowing
+	Audit     Audit
 }
 
 // VersionFacts are what the acknowledged-retry rule and the immutability rule read
@@ -181,4 +183,72 @@ type LiveVersion struct {
 type LocalTags struct {
 	RevSeq int64
 	Tags   map[string]string
+}
+
+// ShadowPair names a virtual repository and the remote member of it that serves the
+// name a publish gives its local repository (R-REPO-048).
+type ShadowPair struct{ Virtual, Remote string }
+
+// Shadowing is what the shadowing check found when the publish proceeded: the pairs
+// (V, R) that serve the name, for repository.remote_package_shadowed, and whether a
+// remote member could not be asked (the publish event records shadowCheck:
+// undetermined).
+type Shadowing struct {
+	Shadowed     []ShadowPair
+	Undetermined bool
+}
+
+// RemoteVersion is the record of one version a stored upstream document lists
+// (npm_remote_versions, R-NPM-024): what tarball serving needs, so that no tarball
+// request parses a document. Integrity and Shasum are the upstream's dist values
+// ("" for none) and PublishedAt its time[version] (zero for none).
+type RemoteVersion struct {
+	Version, Integrity, Shasum string
+	PublishedAt                time.Time
+}
+
+// RemoteFill is the document a metadata fill of a remote repository stores, as the
+// fill transaction records it (R-NPM-024). DocModified is its time.modified, zero
+// when it has none or none that parses; FetchedAt is the time the core stores the
+// document with, on PostgreSQL's clock, which caps the stored DocModified.
+type RemoteFill struct {
+	RepoID      int64
+	Name        string
+	DocSHA256   [32]byte
+	DocModified time.Time
+	FetchedAt   time.Time
+	Versions    []RemoteVersion
+	Audit       Audit
+}
+
+// RemoteApplied is what applying a fill did. Stale says that the document is a stale
+// copy of the stored one (older time.modified), Superseded that the stored entry was
+// fetched later than the document (the core keeps the later one, R-REPO-026): in both
+// cases nothing was changed and the caller keeps the stored document. Removed are the
+// versions that went from listed to unlisted; Relisted those that came back.
+type RemoteApplied struct {
+	Stale, Superseded bool
+	Removed           []RemoteVersion
+	Relisted          []string
+}
+
+// TarballFacts is everything the serving of one tarball of a remote repository
+// reads in one statement (R-NPM-025, R-NPM-026): the version's record, the state of
+// the package document's cache entry and the settings that decide.
+type TarballFacts struct {
+	// Known says that a stored document listed the version at some time: a record exists.
+	Known  bool
+	Listed bool
+	// Integrity and Shasum are the upstream's digests of the version.
+	Integrity, Shasum string
+	// DocStored says that the package document is stored (variant full); DocGone is
+	// when it was marked gone upstream, zero for not gone.
+	DocStored bool
+	DocGone   time.Time
+	// DocCurrent says that the document is not expired on PostgreSQL's clock and was
+	// validated (a 200 or a 304) after the last restore of the installation: a cached
+	// tarball waits for such a document (Q-NPM-13).
+	DocCurrent bool
+	// ServeRemoved is npm.serveRemovedVersions of the repository.
+	ServeRemoved bool
 }

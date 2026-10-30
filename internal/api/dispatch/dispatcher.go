@@ -54,6 +54,9 @@ type Options struct {
 	Label func(ctx context.Context, name string)
 }
 
+// cacheViewSuffix turns a repository key into the address of its cache view (R-REPO-032).
+const cacheViewSuffix = "~cache"
+
 // Dispatcher serves the format prefixes.
 type Dispatcher struct {
 	o       Options
@@ -115,6 +118,9 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail := func(err error) { f.WriteError(w, r, err) }
+	// <key>~cache addresses the cache view of remote repository <key> (R-REPO-032): the
+	// request is decided and served on the remote repository itself.
+	key, cacheView := strings.CutSuffix(key, cacheViewSuffix)
 	if !repository.ValidKeyShape(key) {
 		fail(errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key."))
 		return
@@ -165,10 +171,14 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
+	if cacheView && repo.Class != repository.Remote {
+		fail(errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key."))
+		return
+	}
 	rq := &formats.Request{
 		Request: r, Repo: &repo, Route: route, Params: params, Path: cleaned, Escaped: rest,
 		Subject: acc.Subject, Index: acc.Index(), Endpoint: d.endpointFacts(r, acc, key),
-		Host: d.o.Host, Log: httpserver.Logger(ctx),
+		Host: d.o.Host, Log: httpserver.Logger(ctx), CacheView: cacheView,
 	}
 	formathost.Prepare(rq)
 	defer formathost.Finish(rq)
@@ -202,11 +212,12 @@ func (d *Dispatcher) resolve(ctx context.Context, f formats.Format, key string) 
 }
 
 // redirectClass answers a route that the addressed repository's class does not
-// serve: a write to a virtual repository goes to its deploy target (R-REPO-021,
-// 405 no_deploy_target without one); anything else is 405 with the methods the
-// path does have for the class.
+// serve: a write to a virtual repository, whatever kind of write, goes to its deploy
+// target (R-REPO-021, 405 no_deploy_target without one); anything else is 405 with
+// the methods the path does have for the class. The refusal names the class, so that
+// a format words it in its own code (npm: npm_class_not_writable, R-NPM-005).
 func (d *Dispatcher) redirectClass(ctx context.Context, f formats.Format, rq *formats.Request) (*repository.Repository, error) {
-	if rq.Repo.Class == formats.Virtual && rq.Route.Kind == formats.Upload {
+	if rq.Repo.Class == formats.Virtual && rq.Route.Kind.RequestKind() == formats.KindWrite {
 		target, err := d.o.Host.Resolver().DeployTarget(ctx, rq)
 		if err != nil {
 			return nil, err
@@ -216,7 +227,8 @@ func (d *Dispatcher) redirectClass(ctx context.Context, f formats.Format, rq *fo
 		}
 	}
 	return nil, errs.E(errs.MethodNotAllowed, errs.CodeMethodNotAllowed,
-		"A "+string(rq.Repo.Class)+" repository does not serve this request.", errs.WithAllow(d.allowFor(f, rq)...))
+		"A "+string(rq.Repo.Class)+" repository does not serve this request.", errs.WithAllow(d.allowFor(f, rq)...),
+		errs.WithExtension("repositoryClass", string(rq.Repo.Class)))
 }
 
 // allowFor lists the methods the path has a route for in the repository's class.

@@ -33,6 +33,8 @@ type publishCommit struct {
 	// principal is the id of the publishing principal, "" for none.
 	principal string
 	audit     rows.Audit
+	// shadowing is what the shadowing check found of a first version (R-REPO-048).
+	shadowing rows.Shadowing
 
 	// Filled by the hook.
 	pkg    formats.PackageID
@@ -146,6 +148,7 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 		HasInstallScript: p.installScript, HasShrinkwrap: p.res.HasShrinkwrap,
 		Readme: p.res.Readme, ReadmeFilename: p.res.ReadmeFilename,
 		Tag: p.tag, Tags: tags, LatestKept: kept, At: at, PublishedBy: c.Actor, Claim: claim, Audit: p.audit,
+		Shadowing: shadowingOf(first, p.shadowing),
 	})
 	if err != nil {
 		return err
@@ -155,6 +158,15 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 	}
 	p.pkg, p.rev, p.latest, p.kept = pkg.ID, rev, tags["latest"], kept
 	return nil
+}
+
+// shadowingOf is what the commit records of the shadowing check: only the publish that
+// gives the repository its first version of a name is a shadowing one.
+func shadowingOf(first bool, s rows.Shadowing) rows.Shadowing {
+	if !first {
+		return rows.Shadowing{}
+	}
+	return s
 }
 
 // commitSigstore links the provenance bundle to the version of the tarball. The

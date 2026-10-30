@@ -265,7 +265,11 @@ type FillEvent struct {
 	Replaces bool
 	Prepared Prepared
 	// StoredAt is when the stored copy was fetched; zero when there is none.
-	StoredAt     time.Time
+	StoredAt time.Time
+	// FetchedAt is when this document was fetched, the fetched_at the upsert writes: the
+	// upsert keeps a stored entry with a later one (R-REPO-026), and a format that records
+	// facts of the document applies the same comparison.
+	FetchedAt    time.Time
 	StoredDigest [32]byte
 	ETag         string
 	LastModified time.Time

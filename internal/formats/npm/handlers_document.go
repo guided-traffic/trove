@@ -44,6 +44,9 @@ func (f *Format) handleDocument(ctx context.Context, rq *formats.Request, w http
 	if err != nil {
 		return err
 	}
+	if rq.Repo.Class != formats.Local {
+		return f.nonLocalDocument(ctx, rq, w, n)
+	}
 	repo := rq.RepoRef()
 	if rq.URL.Query().Get("write") == "true" {
 		// >>> WP2.9 exposure
@@ -74,8 +77,11 @@ func (f *Format) handleVersion(ctx context.Context, rq *formats.Request, w http.
 	if err != nil {
 		return err
 	}
-	repo := rq.RepoRef()
 	ref := rq.Params.Get("ref")
+	if rq.Repo.Class != formats.Local {
+		return f.nonLocalDocumentOf(ctx, rq, w, n, formVersion, ref)
+	}
+	repo := rq.RepoRef()
 	// A number or a dist-tag (R-NPM-014): a tag is never a valid version, so the two
 	// cannot be mistaken for each other.
 	version, tag := "", ref

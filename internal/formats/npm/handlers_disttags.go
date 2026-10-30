@@ -29,6 +29,9 @@ func (f *Format) handleDistTags(ctx context.Context, rq *formats.Request, w http
 	if err != nil {
 		return err
 	}
+	if rq.Repo.Class != formats.Local {
+		return f.nonLocalDocumentOf(ctx, rq, w, n, formTags, "")
+	}
 	st, _, err := f.authorizeRead(ctx, rq, n, "")
 	if err != nil {
 		return err

@@ -24,6 +24,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // ItemOps is the part of the item store the host uses; *items.Store implements it.
@@ -56,9 +57,11 @@ type Deps struct {
 	Bindings  *Bindings
 	Ownership Ownership
 	AutoClaim AutoClaimer
-	Changes   Changer
-	Signals   Signaler
-	Jobs      Jobs
+	// Refusal decides the remote refusal of a name a global claim covers (R-REPO-023).
+	Refusal RemoteRefuser
+	Changes Changer
+	Signals Signaler
+	Jobs    Jobs
 }
 
 // Options configure [New].
@@ -178,6 +181,17 @@ func (h *Host) Authorize(ctx context.Context, rq *formats.Request, t formats.Tar
 			return errs.E(errs.Forbidden, errs.CodeNotAdmitted, "The package is not admitted by the include and exclude patterns of the repository.")
 		}
 		return authz.NotFound()
+	}
+	if rq.Repo.Class == repository.Remote && t.Package != "" && h.o.Refusal != nil && !writes(t.Actions) {
+		// R-REPO-025 step 2: a name a global claim covers is not asked of a remote
+		// repository, whatever its cache holds, and the answer is a missing resource.
+		refused, err := h.o.Refusal.RemoteRefused(ctx, *rq.Repo, t.Package, nil)
+		if err != nil {
+			return err
+		}
+		if refused {
+			return authz.NotFound()
+		}
 	}
 	if writes(t.Actions) {
 		if st := stateOf(rq); st != nil {

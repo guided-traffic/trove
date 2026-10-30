@@ -79,7 +79,16 @@ type Store interface {
 	// <<< M2 npm-read
 
 	// >>> M2 npm-remote
-	// The fill, the removal marks and the tarball facts of remote repositories
-	// (R-NPM-024 to R-NPM-026) are declared here.
+
+	// ApplyFill records the document a fill of a remote repository stores, in the fill
+	// transaction and under the lock of the package's record: the facts of its versions,
+	// the removal marks and npm.remote.version_removed for each version that went from
+	// listed to unlisted (R-NPM-024, R-NPM-026). A document older than the stored one is
+	// a stale copy: RemoteApplied.Stale is set and nothing changed.
+	ApplyFill(ctx context.Context, tx formats.Tx, f rows.RemoteFill) (rows.RemoteApplied, error)
+	// TarballFacts reads, outside a transaction and in one statement, what serving a
+	// tarball of a remote repository decides on: the version's record, the state of the
+	// package document's cache entry and npm.serveRemovedVersions (R-NPM-025, R-NPM-026).
+	TarballFacts(ctx context.Context, repoID int64, name, version string) (rows.TarballFacts, error)
 	// <<< M2 npm-remote
 }

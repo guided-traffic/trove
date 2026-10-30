@@ -1,10 +1,11 @@
 // Package npm is the npm registry format (R-NPM-001 to R-NPM-048): the routes
 // below /api/npm/<repoKey>/, the classification of paths, the storage hooks, the
-// publish of a version and the native error shape. This work package builds the
-// local repository's protocol and its publish; documents, tarball downloads,
-// dist-tags, unpublish and the identity endpoints are in the handler files of the
-// work package that renders them (routes.go lists every handler), and the remote
-// and virtual classes are added with their adapters.
+// publish of a version and the native error shape, for the three classes. The local
+// repository's protocol and its publish, the documents, the tarball downloads, the
+// dist-tags, unpublish and the identity endpoints are in the handler files that
+// render them (routes.go lists every handler); the remote class is the adapter of
+// remote.go with the handlers of handlers_remote.go, the virtual class the adapter
+// of virtual.go with handlers_virtual.go.
 //
 // Like every format it imports the format contract and almost nothing else
 // (R-ARCH-008): its tables are reached through the [Store] port, its generic
@@ -41,6 +42,7 @@ type Format struct {
 	formats.Base
 	routes   []formats.Route
 	replicas replicas
+	ports    replicas
 	// >>> WP2.9 exposure
 	exposure *exposure
 	// <<< WP2.9 exposure
@@ -65,7 +67,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "npm",
-			Classes:          []formats.Class{formats.Local},
+			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
 			ProtocolBasePath: "/api/npm/{key}/",
 			// The upstream registry the remote class proposes (R-NPM-023); the probe of

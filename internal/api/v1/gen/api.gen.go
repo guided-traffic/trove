@@ -661,6 +661,21 @@ func (e PermissionPolicyInputResourceType) Valid() bool {
 	}
 }
 
+// Defines values for RemoteFormatName.
+const (
+	RemoteFormatNameNpm RemoteFormatName = "npm"
+)
+
+// Valid indicates whether the value is a known member of the RemoteFormatName enum.
+func (e RemoteFormatName) Valid() bool {
+	switch e {
+	case RemoteFormatNameNpm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RemoteSettingsAuthMode.
 const (
 	RemoteSettingsAuthModeBasic  RemoteSettingsAuthMode = "basic"
@@ -1420,6 +1435,21 @@ func (e ValkeyViewState) Valid() bool {
 	case ValkeyViewStateAvailable:
 		return true
 	case ValkeyViewStateDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VirtualFormatName.
+const (
+	VirtualFormatNameNpm VirtualFormatName = "npm"
+)
+
+// Valid indicates whether the value is a known member of the VirtualFormatName enum.
+func (e VirtualFormatName) Valid() bool {
+	switch e {
+	case VirtualFormatNameNpm:
 		return true
 	default:
 		return false
@@ -2904,7 +2934,7 @@ type RemoteExtraHost struct {
 }
 
 // RemoteFormatName The formats whose classes contain `remote`. The create form offers these for a remote repository.
-type RemoteFormatName = string
+type RemoteFormatName string
 
 // RemoteSettings The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
 // defaults of the format applied. Omitted members of a request take their defaults. The password
@@ -3790,7 +3820,7 @@ type Version struct {
 }
 
 // VirtualFormatName The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
-type VirtualFormatName = string
+type VirtualFormatName string
 
 // VirtualSettings The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
 // the pin rules are stored as rows, so that a repository which is a member or a target cannot be

@@ -82,7 +82,7 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		needs := map[Area]Area{
 			AreaKeys: AreaBlob, AreaPostgres: AreaAudit, AreaAudit: AreaInfra, AreaBlob: AreaInfra, AreaValkey: AreaCoordination,
 			AreaCoordination: AreaInfra, AreaInfra: AreaKeyRing, AreaExposure: AreaRepository, AreaRepository: AreaVirtual, AreaInvalidation: AreaProxy,
-			AreaIdentity: AreaAuthz, AreaAuthz: AreaOwnership, AreaFiles: AreaProxyEngine, AreaLimits: AreaProxyEngine, AreaProxy: AreaProxyEngine, AreaProxyEngine: AreaFormatHost, AreaSessions: AreaLogin,
+			AreaIdentity: AreaAuthz, AreaAuthz: AreaOwnership, AreaFiles: AreaProxyEngine, AreaLimits: AreaProxyEngine, AreaProxy: AreaProxyEngine, AreaProxyEngine: AreaVirtualEngine, AreaSessions: AreaLogin,
 		}
 		base, _ := SubsystemsFor("web")
 		for drop, by := range needs {
@@ -241,7 +241,7 @@ func TestR_ARCH_024_AStepRefusesANilInput(t *testing.T) {
 			"api":          {second(a.wireAPI(ctx, limitsArea{}, authzArea{})), "api: no limiter set, no authorizer"},
 			"repository":   {second(a.wireRepository(ctx, infra{}, exposureArea{})), "repository: no exposure rule service"},
 			"ownership":    {second(a.wireOwnership(ctx, infra{}, authzArea{})), "ownership: no decision point"},
-			"formathost":   {second(a.wireFormatHost(ctx, infra{}, formatsArea{}, repositoryArea{}, exposureArea{}, filesArea{}, proxyEngineArea{})), "formathost: no item store, no decision point, no repository reader, no exposure ceiling"},
+			"formathost":   {second(a.wireFormatHost(ctx, infra{}, formatsArea{}, repositoryArea{}, exposureArea{}, filesArea{}, proxyEngineArea{}, virtualEngineArea{})), "formathost: no item store, no decision point, no repository reader, no exposure ceiling"},
 			"proxy-engine": {second(a.wireProxyEngine(ctx, infra{}, proxyArea{}, invalidationArea{}, filesArea{}, limitsArea{})), "proxy-engine: no upstream clients, no invalidation set, no item store, no replica count"},
 			"virtual":      {second(a.wireVirtual(ctx, infra{}, repositoryArea{})), "virtual: no repository snapshot"},
 			"proxy":        {second(a.wireProxy(ctx, infra{}, repositoryArea{}, invalidationArea{})), "proxy: no repository service, no invalidation service"},

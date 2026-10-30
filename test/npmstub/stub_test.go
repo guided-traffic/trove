@@ -603,6 +603,106 @@ func TestBadIntegrityAndWrongName(t *testing.T) {
 	}
 }
 
+func TestStaleCopyIsServedOnceAndHeld(t *testing.T) {
+	// R-NPM-024: an older copy of a document (a lagging mirror), once, after a number of normal
+	// answers, held before its status line; it carries no validators, so a conditional request
+	// that would be a 304 gets the copy all the same.
+	f := newFixture(t, Config{})
+	_, name := names(t)
+	if err := f.stub.SetMode(Mode{StaleCopy: []string{name}, StaleCopySkip: 1, StaleCopyDelayMS: 150}); err != nil {
+		t.Fatal(err)
+	}
+	type doc struct {
+		Versions map[string]json.RawMessage
+		Time     map[string]string
+	}
+	read := func(r reply) doc {
+		t.Helper()
+		var d doc
+		if err := json.Unmarshal(r.body, &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	first := f.get(docPath(name))
+	cur := read(first)
+	start := time.Now()
+	second := f.get(docPath(name), "If-None-Match", first.header.Get("ETag"))
+	if second.status != http.StatusOK || time.Since(start) < 150*time.Millisecond {
+		t.Fatalf("the older copy: status %d after %v", second.status, time.Since(start))
+	}
+	old := read(second)
+	if len(old.Versions) != len(cur.Versions)-1 {
+		t.Errorf("the copy lists %d versions, the document %d", len(old.Versions), len(cur.Versions))
+	}
+	curMod, _ := time.Parse(time.RFC3339, cur.Time["modified"])
+	oldMod, _ := time.Parse(time.RFC3339, old.Time["modified"])
+	if !oldMod.Before(curMod) {
+		t.Errorf("the copy is dated %v, the document %v", oldMod, curMod)
+	}
+	third := f.get(docPath(name))
+	if len(read(third).Versions) != len(cur.Versions) {
+		t.Error("the older copy was served twice")
+	}
+}
+
+func TestHTMLRedirectAndForeignTarballHost(t *testing.T) {
+	// R-REPO-042, R-REPO-043, R-REPO-039: an HTML page in place of a package, tarballs served from
+	// another host, and documents that name a host the remote was not given.
+	f := newFixture(t, Config{})
+	_, name := names(t)
+	pkg, _ := corpus.Default().Get(name)
+	file := "/" + name + "/-/" + corpus.TarballFile(name, pkg.Versions[0].Version)
+
+	if err := f.stub.SetMode(Mode{HTMLContentType: []string{name}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{docPath(name), file} {
+		r := f.get(path)
+		if r.status != http.StatusOK || !strings.HasPrefix(r.header.Get("Content-Type"), "text/html") || !strings.Contains(string(r.body), "<html>") {
+			t.Errorf("%s: %d %q", path, r.status, r.header.Get("Content-Type"))
+		}
+	}
+
+	if err := f.stub.SetMode(Mode{RedirectTo: "https://cdn.example.org"}); err != nil {
+		t.Fatal(err)
+	}
+	client := *f.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, f.run.URL+file, nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "https://cdn.example.org"+file {
+		t.Errorf("redirect: %d to %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if r := f.get(docPath(name)); r.status != http.StatusOK {
+		t.Errorf("a document is no tarball: %d", r.status)
+	}
+
+	if err := f.stub.SetMode(Mode{ForeignTarballHost: "https://files.example.net"}); err != nil {
+		t.Fatal(err)
+	}
+	var d struct {
+		Versions map[string]struct{ Dist struct{ Tarball string } }
+	}
+	if err := json.Unmarshal(f.get(docPath(name)).body, &d); err != nil {
+		t.Fatal(err)
+	}
+	for v, e := range d.Versions {
+		if !strings.HasPrefix(e.Dist.Tarball, "https://files.example.net/") {
+			t.Fatalf("%s: tarball %s", v, e.Dist.Tarball)
+		}
+	}
+	for _, bad := range []Mode{{RedirectTo: "ftp://x"}, {ForeignTarballHost: "no host"}, {StaleCopyDelayMS: -1}} {
+		if bad.Validate() == nil {
+			t.Errorf("%+v was accepted", bad)
+		}
+	}
+}
+
 func TestRecordedSet(t *testing.T) {
 	// R-NPM-027, R-NPM-002: the recorded documents keep provenance fields and the legacy
 	// capitalised name; their tarballs are the real ones.

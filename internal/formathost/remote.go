@@ -63,12 +63,41 @@ func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Pa
 	if err != nil {
 		return err
 	}
+	if expected.SHA256 == nil && expected.SHA512 == nil && expected.SHA1 == nil {
+		// The format's marks and the digests its metadata announces (ArtifactGate).
+		if expected, err = r.gate(ctx, rq, p); err != nil {
+			return err
+		}
+	}
 	preq.Expected = proxy.Digests{SHA256: expected.SHA256, SHA512: expected.SHA512, SHA1: expected.SHA1}
 	preq.Serve = func(ctx context.Context, w http.ResponseWriter, it items.Item) error {
 		fi := itemOf(rq.RepoRef(), it)
 		return r.h.Items().Serve(ctx, rq, w, fi, formats.ServeStored)
 	}
 	return r.e.Artifact(ctx, preq, w, rq.Request)
+}
+
+// gate asks the format's ArtifactGate, when its remote adapter has one, whether the
+// request may have the artifact and which digests are announced for it.
+func (r *remote) gate(ctx context.Context, rq *formats.Request, p formats.Path) (formats.Digests, error) {
+	f, ok := r.h.o.Formats(rq.Repo.Format)
+	if !ok || f.Remote() == nil {
+		return formats.Digests{}, nil
+	}
+	g, ok := f.Remote().(formats.ArtifactGate)
+	if !ok {
+		return formats.Digests{}, nil
+	}
+	return g.BeforeArtifact(ctx, r.h, rq, p)
+}
+
+// Gate runs the format's ArtifactGate for a request addressed to a remote repository; it is
+// the check a remote member of a virtual repository meets before its cached artifact is
+// served (the second tier never asks the upstream for the artifact, but a stale document may
+// have to be revalidated first, Q-NPM-13). A format without a gate allows everything.
+func (r *remote) Gate(ctx context.Context, rq *formats.Request, p formats.Path) error {
+	_, err := r.gate(ctx, rq, p)
+	return err
 }
 
 // Cached implements [formats.RemoteFetcher].
@@ -263,12 +292,20 @@ func (a *adapter) OnFill(ctx context.Context, tx meta.Tx, f proxy.FillEvent) (bo
 	prepared, _ := f.Prepared.Data.(formats.Prepared)
 	return a.ra.OnFill(ctx, tx, formats.FillEvent{
 		Repo: a.ref, Path: formats.Path{Path: f.Path}, Variant: f.Variant, Digest: f.Digest, Replaces: f.Replaces,
-		Prepared: prepared, StoredAt: f.StoredAt, StoredDigest: f.StoredDigest, ETag: f.ETag, LastModified: f.LastModified,
+		Prepared: prepared, StoredAt: f.StoredAt, FetchedAt: f.FetchedAt, StoredDigest: f.StoredDigest, ETag: f.ETag, LastModified: f.LastModified,
 		Packages: w, Data: a.deps.Bindings.Get(a.f.Descriptor().ID),
 	})
 }
 
 func (a *adapter) TracksVersionRemoval() bool { return a.ra.TracksVersionRemoval() }
+
+// ExpectsType implements [proxy.ExpectedTypes] over the format's [formats.TypeExpecter].
+func (a *adapter) ExpectsType(path, mediaType string) bool {
+	x, ok := a.ra.(formats.TypeExpecter)
+	return ok && x.ExpectsType(formats.Path{Path: path}, mediaType)
+}
+
+var _ proxy.ExpectedTypes = (*adapter)(nil)
 
 func (a *adapter) PackageDocumentPath(name string) (string, bool) {
 	p, ok := a.f.PackageDocumentPath(name)

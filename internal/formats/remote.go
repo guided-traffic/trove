@@ -47,13 +47,39 @@ type FillEvent struct {
 	Replaces bool
 	Prepared Prepared
 	// StoredAt is when the stored copy was fetched; zero when there is none.
-	StoredAt     time.Time
+	StoredAt time.Time
+	// FetchedAt is when this document was fetched, on PostgreSQL's clock: the time the
+	// core stores it with. The core keeps a stored entry that was fetched later
+	// (R-REPO-026), so a format that records facts of the document decides on the same
+	// comparison and records them only when StoredAt is not after FetchedAt.
+	FetchedAt    time.Time
 	StoredDigest [32]byte
 	ETag         string
 	LastModified time.Time
 	// Packages: a remote fill is a rev_seq trigger (R-ARCH-012).
 	Packages PackageWriter
 	Data     any
+}
+
+// TypeExpecter is an optional interface of a RemoteAdapter: it declares the media
+// types the format expects for a path, which the engine then does not block even when
+// integrity.blockUnexpectedContentTypes lists them (R-REPO-042).
+type TypeExpecter interface {
+	ExpectsType(p Path, mediaType string) bool
+}
+
+// ArtifactGate is an optional interface of a RemoteAdapter: before the engine looks at
+// or fetches an artifact for a request, the format decides whether its stored marks
+// allow it and which digests its metadata announces for it. The host calls it on every
+// road to a remote artifact: the format's own route and a remote member of a virtual
+// repository (R-NPM-025, R-NPM-026, Q-NPM-13).
+type ArtifactGate interface {
+	// BeforeArtifact runs on the request addressed to the remote repository (for a member
+	// of a virtual repository, a copy of the request addressed to the member). It may
+	// revalidate the format's document through h.Remote(), unless rq.CacheView is set. An
+	// errs.NotFound refuses the artifact. The digests are those the engine verifies a
+	// download against; none known is the zero value.
+	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
 }
 
 // RemoteAdapter is what a format contributes to the remote engine (R-ARCH-008).

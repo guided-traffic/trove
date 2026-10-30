@@ -13,10 +13,10 @@ import (
 // every handler, so that a work package that adds a handler adds a handler file and
 // never edits this table (handlers_*.go).
 //
-// The classes of the table are all classes of the format: until the format lists
-// the remote and the virtual class, a repository is local. Writes will then name
-// the classes that take them (a remote repository answers 405 npm_class_not_writable,
-// a virtual one routes to its deployment target), the reads stay open.
+// The classes of the table are all classes of the format, except for the writes: they
+// are Classes local, so that a remote repository answers 405 npm_class_not_writable
+// and the dispatcher routes a write addressed to a virtual repository to its
+// deployment target (R-NPM-029). The reads stay open to every class.
 //
 // Every route is wrapped by [Format.op], which records the access-log fields of
 // R-NPM-005 and counts the request (R-NPM-044).
@@ -29,10 +29,14 @@ func (f *Format) buildRoutes() []formats.Route {
 	route := func(id, method, tmpl string, kind formats.RouteKind, action formats.Action,
 		match func(string) (formats.Params, bool), examples []string, h formats.HandlerFunc,
 	) formats.Route {
-		return formats.Route{
+		r := formats.Route{
 			Name: "npm." + id, Method: method, Template: tmpl, Examples: examples, Action: action, Kind: kind,
 			Match: match, Handler: f.op(id, h),
 		}
+		if action != read {
+			r.Classes = []formats.Class{formats.Local}
+		}
+		return r
 	}
 	names := []string{"lodash", "@acme%2fui", "@acme/ui", "%40acme%2Fui"}
 	with := func(suffix string) []string {

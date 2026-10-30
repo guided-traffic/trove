@@ -3,9 +3,9 @@
 The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This page grows with the format: each work package adds
 its section. Built today: the format itself (routes, classification, error shape, setup snippets), the local repository end to end
 (publish, the package documents and their validators, tarball downloads, dist-tags, unpublish, whoami and ping, the serve-time check and the
-removal hooks), the data port and its PostgreSQL implementation, the leaf libraries every part builds on, and the exposure adapter with the
-filter of local documents on endpoints with rules (R-NPM-048). Planned and not built: deprecate (R-NPM-018, `PUT` without an attachment
-answers 501), the remote and virtual classes and merge (which call the exposure filter on their documents).
+removal hooks), the remote and virtual classes with the merge, the data port and its PostgreSQL implementation, the leaf libraries every part builds on, and the exposure adapter with the
+filter of documents on endpoints with rules (R-NPM-048). Planned and not built: deprecate (R-NPM-018, `PUT` without an attachment
+answers 501).
 
 ## Package layout
 
@@ -223,9 +223,47 @@ What the handlers do on an endpoint with rules, each in a block marked `>>> WP2.
 | `handleDistTags` | the tags of the filtered rows of the whole document (the moved `latest` needs the exposed versions) |
 | `handleTarball` | after `Authorize` (whose ceiling decides the version), the view repeats the decision before the item lookup |
 
-For the remote and virtual handlers (not built): call `f.Exposure().FilterDocument(ctx, p, doc, viewOf(rq))` on the merged or rewritten
-package document before compression, read the dist-tag map and the version of a tag from the filtered document, and key the rendition
-and the ETag with `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`. Nothing filters for them until they do (H-295).
+The remote and virtual handlers call `f.Exposure().FilterDocument(ctx, p, doc, viewOf(rq))` on the rewritten or merged package document before compression
+(`exposedDocument` in [handlers_remote.go](../../internal/formats/npm/handlers_remote.go)), read the dist-tag map from the filtered document, and key the rendition and the
+ETag with `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`; a tarball repeats the version check (`hiddenVersion`). The test on the R-EP-012 fixture of a virtual
+repository with a remote member is `TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember` ([exposure_virtual_test.go](../../test/integration/npm/exposure_virtual_test.go)).
+
+## Remote and virtual repositories
+
+The remote class (R-NPM-023 to R-NPM-027) and the virtual class (R-NPM-028 to R-NPM-033). Both serve one **full** document and derive
+everything else from it; neither renders from rows.
+
+```text
+internal/formats/npm/
+├── remote.go          Format.Remote(): the RemoteAdapter (UpstreamRequest, PrepareFill, OnFill, Rewrite, TracksVersionRemoval), TypeExpecter and the ArtifactGate
+├── virtual.go         Format.Virtual(): Strategy (Merge for a package document), LocalDocument (neutral tarball address), Merge
+├── settings.go        the npm member of the repository document: serveRemovedVersions, latestStrategy, distTagStrategy
+├── handlers_remote.go serveFull (validator, rendition cache, derivation of the forms), remote documents and tarballs, exposedDocument
+├── handlers_virtual.go the merged document, the tarball through the tiers, ?write=true from the deployment target
+├── remote/            the checks of R-NPM-024 (Check, a stream), Parse, Full / Abbreviated / Version, Rewrite, URL; a leaf
+└── merge/             the per-version source rule, the tag strategies, time and top-level fields, conflicts; a leaf
+internal/formatdata/npm/remote.go   ApplyFill, TarballFacts
+internal/meta/postgres/queries/npm_remote.sql
+```
+
+| Question | Answer |
+|---|---|
+| What is stored? | The upstream's full document, variant `full`, for both request variants (R-NPM-024). `PrepareFill` reads it once as a stream (`remote.Check`, outside any transaction) and returns the per-version facts and the URL-map rows of tarball URLs that are not the default |
+| What does `OnFill` do? | Calls `Store.ApplyFill` in the fill transaction: lock `npm_remote_packages`, read the entry as it is now, return `Superseded` or `Stale` (keep the stored document, change nothing, count the stale copy), else write the records, mark unlisted versions (`npm.remote.version_removed`), and signal `metadata_changed` (Q-NPM-32) |
+| How is a document served? | `serveFull`: ETag from (repository, form, base URL, endpoint, exposure fingerprint, settings, the document's digest or the merge fingerprint), 304 without reading, rendition cache, else `remote.Parse` and `Full` / `Abbreviated` / `Version`, `dist.tarball` rewritten onto `Links.Registry(servingKey)`. The cache view names `<key>~cache` |
+| What does the gate do? | `BeforeArtifact` (tarballs): a version without a record or a document that is not current is revalidated with `EnsureCurrent`; then the marks apply (`refuseRemoved`); the announced digests (`sha512`, else `shasum`) go to the engine (Q-NPM-33) |
+| How is a virtual document built? | `Resolver.Metadata` plans (patterns, claims, pins, `read`, `MayFill`), collects `LocalDocument` and the engine's documents, calls `Merge`; a member the caller may not fill is `Restricted` and supplies cached versions only (R-AUTHZ-008). Tarball addresses are neutral in the cache and rewritten per response (Q-NPM-34) |
+| Where do writes go? | Write routes are `Classes: local`. The dispatcher sends every write kind of a virtual repository to its target; a remote repository's 405 becomes `npm_class_not_writable` in `WriteError` (Q-NPM-36). `?write=true` on a virtual repository reads the target's own document |
+| What does an exposure rule do here? | `exposedDocument` rewrites, filters with `FilterDocument(viewOf(rq))` and parses again; dist-tags and `latest` come from the filtered document; a hidden version is 404 before any fetch (`hiddenVersion`) (R-NPM-048, H-295) |
+| Settings | `serveRemovedVersions`, `latestStrategy`, `distTagStrategy` are read from the stored document's `npm` member; the repository service does not accept them yet (Q-NPM-35) |
+
+Metrics: `trove_npm_virtual_version_conflicts_total`, `trove_npm_removed_upstream_versions_total`, `trove_npm_stale_upstream_documents_total`,
+`trove_npm_tarball_document_revalidations_total{outcome}` ([bind.go](../../internal/formats/npm/bind.go)). A fill reaches its replica through the data port it is handed
+(`Format.replicaOfPort`), because a storage hook has no request.
+
+Tests: `remote/remote_test.go` and `merge/merge_test.go` (with `FuzzRewrite`, `FuzzMerge`), `remote_test.go`, `handlers_remote_test.go`, `parity_test.go` (the install and version documents derived from a full
+document equal the local renderings), conformance checks 4 and 5, and in [test/integration/npm](../../test/integration/npm/) `remote_test.go`, `remote_marks_test.go`, `virtual_test.go`, `exposure_virtual_test.go`
+against [test/npmstub](../../test/npmstub/) in the test process (`remote_env_test.go` builds the repositories).
 
 ## Identity
 

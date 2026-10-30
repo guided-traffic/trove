@@ -3,7 +3,7 @@
 Status: implemented in M1 for the credential rules of an endpoint, endpoint-bound tokens, exposure rules as the ceiling of
 the decision point, the rate-limit class of an endpoint and the operations that manage exposure rules. M2 adds the package
 formats on an endpoint: the filter of npm's local documents, member names in the virtual engine and the cache-fill policy in
-the remote and virtual engines; npm's remote and virtual documents are filtered once those classes exist (H-295). The replay
+the remote and virtual engines; npm's remote and virtual documents are filtered too (H-295 stays for later formats). The replay
 of journaled exposure changes arrives with the restore (M5).
 
 This page says what an audience that reaches a further endpoint can present, what it can retrieve, what a refusal tells it,
@@ -158,8 +158,8 @@ registry.
 
 Stage: the npm handlers of the remote and virtual classes, and every later format's document handlers (R-EP-018).
 
-Dormant: npm's remote and virtual classes are not built; the local handlers filter (`exposeRows`, tested on every route), and
-generic has no documents. The filter is the format's call: nothing in the core stops a handler that serves a merged or rewritten
+Dormant for npm: its local, remote and virtual handlers filter (`exposeRows`, `exposedDocument`, tested on the R-EP-012 fixture of a virtual repository with a remote member), and
+generic has no documents; live for every later format. The filter is the format's call: nothing in the core stops a handler that serves a merged or rewritten
 document on an endpoint with rules without calling `FilterDocument` with `rq.Endpoint.Exposure`, and the ceiling, which decided the
 package, would let every version of that document through to the listing. Downloads stay bound by the ceiling. Subject: the version
 list of every exposed package of such a class. What makes it real: a remote or virtual document handler without the call; the

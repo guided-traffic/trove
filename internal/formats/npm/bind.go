@@ -26,6 +26,10 @@ type replica struct {
 	met *metrics
 }
 
+// A storage hook meets the format without a request and so without a Host: the fill
+// of a remote repository's document (OnFill) reaches its replica by the data port it is
+// handed, which the composition root builds once per replica.
+
 // Bind gives the format the npm section of the configuration and the metrics
 // registry of the replica that owns the Host h (R-NPM-007 limits, R-NPM-044). It
 // registers the metric families on m and must be called once per Host, before the
@@ -36,12 +40,25 @@ func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metri
 		r.met = newMetrics(m)
 	}
 	f.replicas.Store(h, r)
+	if d := h.FormatData(ID); d != nil {
+		f.ports.Store(d, r)
+	}
 }
 
 // replicaOf finds the replica of a request's Host.
 func (f *Format) replicaOf(h formats.Host) *replica {
 	if r, ok := f.replicas.Load(h); ok {
 		return r.(*replica)
+	}
+	return defaultReplica()
+}
+
+// replicaOfPort finds the replica a data port was bound for.
+func (f *Format) replicaOfPort(port any) *replica {
+	if port != nil {
+		if r, ok := f.ports.Load(port); ok {
+			return r.(*replica)
+		}
 	}
 	return defaultReplica()
 }
@@ -62,10 +79,14 @@ func defaultReplica() *replica {
 // R-NPM-044 calls repository is "repo" in the label list of R-OPS-007, capped by
 // the repository limit of the metrics section.
 type metrics struct {
-	repos    *observability.CappedLabels
-	requests *prometheus.CounterVec
-	duration *prometheus.HistogramVec
-	retries  *prometheus.CounterVec
+	repos       *observability.CappedLabels
+	requests    *prometheus.CounterVec
+	duration    *prometheus.HistogramVec
+	retries     *prometheus.CounterVec
+	conflicts   *prometheus.CounterVec
+	removed     *prometheus.CounterVec
+	stale       *prometheus.CounterVec
+	revalidated *prometheus.CounterVec
 }
 
 func newMetrics(m *observability.Metrics) *metrics {
@@ -77,6 +98,14 @@ func newMetrics(m *observability.Metrics) *metrics {
 			"Time from the start of an npm protocol operation to the end of its handler.", observability.HTTPBuckets(), "class", "operation"),
 		retries: m.NewCounterVec("trove_npm_publish_retries_acknowledged_total",
 			"Publish requests acknowledged as the retry of a publish whose answer was lost (R-NPM-007 step 4).", "repo"),
+		conflicts: m.NewCounterVec("trove_npm_virtual_version_conflicts_total",
+			"Versions that members of a virtual repository hold with different integrity (R-NPM-030).", "repo"),
+		removed: m.NewCounterVec("trove_npm_removed_upstream_versions_total",
+			"Versions a refreshed upstream document no longer lists (R-NPM-026).", "repo"),
+		stale: m.NewCounterVec("trove_npm_stale_upstream_documents_total",
+			"Fetched upstream documents that were older than the stored one and were not stored (R-NPM-024).", "repo"),
+		revalidated: m.NewCounterVec("trove_npm_tarball_document_revalidations_total",
+			"Tarball requests that revalidated the package document first, by outcome (R-NPM-025).", "repo", "outcome"),
 	}
 }
 
@@ -95,6 +124,33 @@ func (m *metrics) retryAcknowledged(repoKey string) {
 	m.retries.WithLabelValues(m.repos.Value("trove_npm_publish_retries_acknowledged_total", repoKey)).Inc()
 }
 
+func (m *metrics) versionConflicts(repoKey string, n int) {
+	if m != nil && n > 0 {
+		m.conflicts.WithLabelValues(m.repos.Value("trove_npm_virtual_version_conflicts_total", repoKey)).Add(float64(n))
+	}
+}
+
+func (m *metrics) removedVersions(repoKey string, n int) {
+	if m != nil && n > 0 {
+		m.removed.WithLabelValues(m.repos.Value("trove_npm_removed_upstream_versions_total", repoKey)).Add(float64(n))
+	}
+}
+
+func (m *metrics) staleDocument(repoKey string) {
+	if m != nil {
+		m.stale.WithLabelValues(m.repos.Value("trove_npm_stale_upstream_documents_total", repoKey)).Inc()
+	}
+}
+
+// revalidation counts a tarball request that revalidated the package document first:
+// outcome is "revalidated" when the upstream answered, "unreachable" when it could not
+// be asked and the stored marks decided (Q-NPM-13).
+func (m *metrics) revalidation(repoKey, outcome string) {
+	if m != nil {
+		m.revalidated.WithLabelValues(m.repos.Value("trove_npm_tarball_document_revalidations_total", repoKey), outcome).Inc()
+	}
+}
+
 // replicas is the registry of bound hosts, a field of the format and not a package
-// variable.
+// variable. The format keeps a second one by the data port of the replica.
 type replicas struct{ sync.Map }

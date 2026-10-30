@@ -196,11 +196,121 @@ func conformance(t *testing.T) formattest.Fixture {
 			{Spellings: []string{"lodash"}}, {Spellings: []string{"@acme/ui"}}, {Spellings: []string{"JSONStream"}},
 		},
 		OptionNames: []string{"_authToken", "npmAuthToken", "TROVE_TOKEN"},
-		Skip: map[formattest.Check]string{
-			formattest.CheckRewrite: "the remote class is not served yet: the format lists local only and has no remote adapter",
-			formattest.CheckMerge:   "the virtual class is not served yet: the format lists local only and has no virtual adapter",
+		Remote: &formattest.RemoteFixture{
+			Upstream: "https://registry.example.org",
+			Docs: []formattest.RemoteDoc{
+				{Name: "an unscoped package", Path: "lodash", Variant: "full", Body: upstreamDocument("lodash", "https://registry.example.org/lodash/-/", "4.17.20", "4.17.21")},
+				{Name: "a scoped package", Path: "@acme%2fui", Variant: "full", Body: upstreamDocument("@acme/ui", "https://registry.example.org/@acme/ui/-/", "1.0.0", "1.1.0-beta.1", "2.0.0")},
+			},
+			DownloadLinks: tarballLinks,
+		},
+		Merge: &formattest.MergeFixture{
+			Cases: []formattest.MergeCase{
+				{
+					Name: "a local member and a remote member that share a version", Path: "lodash",
+					Parts: []formats.MemberDocument{
+						{Member: formats.RepoRef{Key: "local"}, Tier: formats.TierLocal, Position: 0, Doc: markedDocument("lodash", "local", "4.17.21")},
+						{Member: formats.RepoRef{Key: "remote"}, Tier: formats.TierRemote, Position: 1, Doc: markedDocument("lodash", "remote", "4.17.20", "4.17.21")},
+					},
+					Sources: []string{"local", "remote"},
+				},
+				{
+					Name: "a remote member with a cached tarball before one without, local last", Path: "@acme%2fui",
+					Parts: []formats.MemberDocument{
+						{Member: formats.RepoRef{Key: "first"}, Tier: formats.TierRemote, Position: 0, Doc: markedDocument("@acme/ui", "first", "1.0.0", "2.0.0")},
+						{Member: formats.RepoRef{Key: "second"}, Tier: formats.TierRemoteCached, Position: 1, Doc: markedDocument("@acme/ui", "second", "1.0.0")},
+						{Member: formats.RepoRef{Key: "third"}, Tier: formats.TierLocal, Position: 2, Doc: markedDocument("@acme/ui", "third", "2.0.0")},
+					},
+					Sources: []string{"first", "second", "third"},
+				},
+			},
+			Versions:      documentVersions,
+			VersionSource: entrySource,
 		},
 	}
+}
+
+// upstreamDocument is a full document as the public registry serves it: the tarball
+// addresses name the upstream.
+func upstreamDocument(pkg, prefix string, versions ...string) []byte {
+	vs := map[string]any{}
+	times := map[string]string{"created": "2020-01-01T00:00:00.000Z", "modified": "2024-01-01T00:00:00.000Z"}
+	base := pkg
+	if i := strings.IndexByte(pkg, '/'); i >= 0 {
+		base = pkg[i+1:]
+	}
+	for _, v := range versions {
+		sum := sha512.Sum512([]byte(pkg + v))
+		vs[v] = map[string]any{
+			"name": pkg, "version": v, "description": "upstream " + v,
+			"dist": map[string]any{
+				"tarball": prefix + base + "-" + v + ".tgz", "integrity": "sha512-" + base64.StdEncoding.EncodeToString(sum[:]),
+				"signatures": []any{map[string]string{"keyid": "SHA256:x", "sig": "MEUC"}},
+			},
+			"_npmUser": map[string]any{"name": "maintainer", "trustedPublisher": map[string]string{"id": "github"}},
+		}
+		times[v] = "2023-01-01T00:00:00.000Z"
+	}
+	b, _ := json.Marshal(map[string]any{
+		"_id": pkg, "name": pkg, "dist-tags": map[string]string{"latest": versions[len(versions)-1]}, "versions": vs, "time": times,
+		"readme": "a <readme> & more",
+	})
+	return b
+}
+
+// markedDocument is a member document whose version entries carry the member that holds
+// them, so the check can read back where an entry of the merge came from.
+func markedDocument(pkg, member string, versions ...string) []byte {
+	vs := map[string]any{}
+	for _, v := range versions {
+		vs[v] = map[string]any{"name": pkg, "version": v, "x-member": member, "dist": map[string]any{"tarball": "https://" + member + ".example.org/x.tgz"}}
+	}
+	b, _ := json.Marshal(map[string]any{"name": pkg, "dist-tags": map[string]string{"latest": versions[len(versions)-1]}, "versions": vs})
+	return b
+}
+
+func tarballLinks(doc []byte) []string {
+	var d struct {
+		Versions map[string]struct {
+			Dist struct {
+				Tarball string `json:"tarball"`
+			} `json:"dist"`
+		} `json:"versions"`
+	}
+	if json.Unmarshal(doc, &d) != nil {
+		return nil
+	}
+	var out []string
+	for _, v := range d.Versions {
+		out = append(out, v.Dist.Tarball)
+	}
+	return out
+}
+
+func documentVersions(doc []byte) []string {
+	var d struct {
+		Versions map[string]json.RawMessage `json:"versions"`
+	}
+	if json.Unmarshal(doc, &d) != nil {
+		return nil
+	}
+	var out []string
+	for v := range d.Versions {
+		out = append(out, v)
+	}
+	return out
+}
+
+func entrySource(doc []byte, version string) string {
+	var d struct {
+		Versions map[string]struct {
+			Member string `json:"x-member"`
+		} `json:"versions"`
+	}
+	if json.Unmarshal(doc, &d) != nil {
+		return ""
+	}
+	return d.Versions[version].Member
 }
 
 func mustName(s string) name.Name {

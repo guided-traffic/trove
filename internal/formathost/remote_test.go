@@ -1,6 +1,7 @@
 package formathost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/proxy"
+	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/virtual"
 )
 
@@ -78,4 +80,72 @@ func TestVirtualRemotesPopulate(t *testing.T) {
 			t.Fatal("an empty binding was accepted")
 		}
 	})
+}
+
+type refuser struct {
+	names   map[string]bool
+	asked   []string
+	viaNil  bool
+	failure error
+}
+
+func (r *refuser) RemoteRefused(_ context.Context, _ repository.Repository, name string, via *repository.Repository) (bool, error) {
+	r.asked = append(r.asked, name)
+	r.viaNil = via == nil
+	return r.names[name], r.failure
+}
+
+func TestR_REPO_023_ARemoteRepositoryRefusesANameAGlobalClaimCoversEvenWhenAddressedDirectly(t *testing.T) {
+	d := &fakeDecider{}
+	h := newTestHost(t, d)
+	ref := &refuser{names: map[string]bool{"@acme/ui": true}}
+	h.o.Refusal = ref
+	remoteRq := func() *formats.Request {
+		rq := testRequest(formats.Metadata)
+		rq.Repo.Class = repository.Remote
+		return rq
+	}
+	read := []formats.Action{formats.ActionRead}
+	if err := h.Authorize(t.Context(), remoteRq(), formats.Target{Package: "@acme/ui", Actions: read}); errs.KindOf(err) != errs.NotFound {
+		t.Fatalf("a claimed name: %v", err)
+	}
+	if !ref.viaNil {
+		t.Error("a request addressed to the remote repository has no virtual repository in front of it")
+	}
+	if err := h.Authorize(t.Context(), remoteRq(), formats.Target{Package: "lodash", Actions: read}); err != nil {
+		t.Fatalf("an unclaimed name: %v", err)
+	}
+	// A repository of another class, a request without a package and a write are not subject to it.
+	local := testRequest(formats.Metadata)
+	ref.asked = nil
+	if err := h.Authorize(t.Context(), local, formats.Target{Package: "@acme/ui", Actions: read}); err != nil {
+		t.Fatalf("a local repository: %v", err)
+	}
+	if err := h.Authorize(t.Context(), remoteRq(), formats.Target{Actions: read}); err != nil {
+		t.Fatalf("no package: %v", err)
+	}
+	if len(ref.asked) != 0 {
+		t.Errorf("asked %v", ref.asked)
+	}
+	// A failure to decide is a failure to serve, not an admission.
+	ref.failure = errs.E(errs.Unavailable, errs.CodeUnavailable, "claims not loaded")
+	if err := h.Authorize(t.Context(), remoteRq(), formats.Target{Package: "lodash", Actions: read}); errs.KindOf(err) != errs.Unavailable {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+type typedRemote struct{ formats.RemoteAdapter }
+
+func (typedRemote) ExpectsType(p formats.Path, mediaType string) bool {
+	return p.Path == "doc" && mediaType == "text/html"
+}
+
+func TestR_REPO_042_TheExpectedTypesOfTheFormatReachTheEngine(t *testing.T) {
+	a := &adapter{ra: typedRemote{}}
+	if !a.ExpectsType("doc", "text/html") || a.ExpectsType("other", "text/html") {
+		t.Fatal("the adapter does not forward the format's declaration")
+	}
+	if (&adapter{ra: struct{ formats.RemoteAdapter }{}}).ExpectsType("doc", "text/html") {
+		t.Fatal("a format that declares nothing expects nothing")
+	}
 }

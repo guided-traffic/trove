@@ -128,17 +128,55 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request, rt route, m Mode) 
 	case rt.name != "" && m.has(m.Gone, rt.name):
 		writeError(w, http.StatusGone, "Gone")
 		return false
+	case rt.name != "" && (rt.kind == KindDocument || rt.kind == KindTarball) && m.has(m.HTMLContentType, rt.name):
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><body>Sign in to continue</body></html>"))
+		return false
+	case rt.kind == KindTarball && m.RedirectTo != "":
+		http.Redirect(w, r, strings.TrimSuffix(m.RedirectTo, "/")+r.URL.EscapedPath(), http.StatusFound) //nolint:gosec // G710: RedirectTo is a mode the test sets, not request data
+		return false
 	}
 	return true
 }
 
 func (s *Server) serveDocument(w http.ResponseWriter, r *http.Request, name string) {
 	abbreviated := strings.Contains(r.Header.Get("Accept"), corpus.AbbreviatedType)
+	if delay, stale := s.takeStale(name); stale {
+		if doc, ok := s.olderCopy(name, s.baseURL(r), abbreviated); ok {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				return
+			}
+			s.writeDocument(w, r, doc, abbreviated, false)
+			return
+		}
+	}
 	doc, ok := s.document(name, s.baseURL(r), abbreviated)
 	if !ok {
 		writeError(w, http.StatusNotFound, "Not found")
 		return
 	}
+	s.writeDocument(w, r, doc, abbreviated, true)
+}
+
+// olderCopy renders the older copy of a package (Mode.StaleCopy); it is not kept in the cache of
+// renderings, which holds what the registry serves normally.
+func (s *Server) olderCopy(name, base string, abbreviated bool) (*rendered, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.olderCopyLocked(name)
+	if !ok {
+		return nil, false
+	}
+	body := p.Document(base, abbreviated)
+	sum := sha256.Sum256(body)
+	return &rendered{body: body, etag: `W/"` + hex.EncodeToString(sum[:16]) + `"`, modified: p.Modified}, true
+}
+
+// writeDocument answers a request with a rendered document; validators are honoured unless the
+// answer is an older copy, which a lagging mirror serves whatever the client holds.
+func (s *Server) writeDocument(w http.ResponseWriter, r *http.Request, doc *rendered, abbreviated, validate bool) {
 	h := w.Header()
 	h.Set("Vary", "Accept, Accept-Encoding")
 	h.Set("ETag", doc.etag)
@@ -149,7 +187,7 @@ func (s *Server) serveDocument(w http.ResponseWriter, r *http.Request, name stri
 	} else {
 		h.Set("Content-Type", "application/json")
 	}
-	if notModified(r, doc.etag, doc.modified) {
+	if validate && notModified(r, doc.etag, doc.modified) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -158,7 +196,7 @@ func (s *Server) serveDocument(w http.ResponseWriter, r *http.Request, name stri
 		h.Set("Content-Encoding", "gzip")
 		body = doc.gzipped()
 	}
-	_, _ = w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // G705: a JSON document generated from the test corpus; the Host header only picks the tarball base
 }
 
 // document returns the rendered document of a package, from the cache when nothing changed since.
@@ -253,6 +291,12 @@ func (s *Server) tarball(name, file string) ([]byte, bool) {
 }
 
 func (s *Server) baseURL(r *http.Request) string {
+	s.mu.Lock()
+	foreign := s.mode.ForeignTarballHost
+	s.mu.Unlock()
+	if foreign != "" {
+		return strings.TrimSuffix(foreign, "/")
+	}
 	if s.cfg.PublicURL != "" {
 		return strings.TrimSuffix(s.cfg.PublicURL, "/")
 	}

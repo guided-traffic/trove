@@ -70,7 +70,14 @@ func (f *Format) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	if text == "" {
 		text = p.Title
 	}
+	if e.Kind == errs.MethodNotAllowed && e.Extensions["repositoryClass"] == "remote" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		// A write to a remote repository (R-NPM-001, R-NPM-005): the code and the text say why.
+		p.Code, text = errs.CodeNPMClassNotWritable, "This is a remote repository: it caches an upstream registry and takes no writes. Publish to a local repository, or to a virtual repository that has one as its deployment target."
+	}
 	h := w.Header()
+	for k, v := range e.Headers {
+		h.Set(k, v)
+	}
 	h.Set("Content-Type", "application/json")
 	h.Set("X-Content-Type-Options", "nosniff")
 	switch e.Kind {

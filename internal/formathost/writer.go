@@ -56,6 +56,14 @@ type AutoClaimer interface {
 	AutoClaimTx(ctx context.Context, tx meta.Tx, repo repository.Repository, name string, by repository.Caller) (repository.AutoClaimResult, error)
 }
 
+// RemoteRefuser decides the remote refusal of R-REPO-023: a remote repository answers
+// 404 for a name a global namespace claim covers, also when it is addressed directly.
+// The composition root binds it over repository.Routing.RemoteRefused. Unbound, the
+// refusal does not apply (a replica without the routing has no claims).
+type RemoteRefuser interface {
+	RemoteRefused(ctx context.Context, remote repository.Repository, name string, via *repository.Repository) (bool, error)
+}
+
 // Changer writes the change-log row of a change area into the transaction
 // (cluster.Changes implements it).
 type Changer interface {

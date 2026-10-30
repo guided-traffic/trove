@@ -394,7 +394,7 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 			return err
 		}
 		ev := FillEvent{
-			Path: rq.Path, Variant: rq.Variant, Digest: sp.SHA256, Prepared: prepared,
+			Path: rq.Path, Variant: rq.Variant, Digest: sp.SHA256, Prepared: prepared, FetchedAt: micro(fetchedUs),
 			ETag: resp.Header.Get("ETag"), LastModified: lastModified(resp.Header),
 		}
 		wasGone := false
@@ -411,13 +411,19 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 			return err
 		}
 		ttl := int64(rem.Settings.Cache.MetadataTTLSeconds)
-		if keep && ev.Replaces {
-			if _, err := qs.ProxyMetadataRenew(ctx, q.ProxyMetadataRenewParams{
+		// keep renews the entry that is stored now, which a concurrent fill may have created
+		// after this one read none; an entry that is there to renew decides, not Replaces.
+		renewed := false
+		if keep {
+			rows, err := qs.ProxyMetadataRenew(ctx, q.ProxyMetadataRenewParams{
 				RepoID: rem.id, Path: rq.Path, Variant: rq.Variant, TtlSeconds: ttl, UpstreamEtag: ev.ETag,
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
-		} else {
+			renewed = len(rows) > 0
+		}
+		if !renewed {
 			rows, err := qs.ProxyMetadataUpsert(ctx, q.ProxyMetadataUpsertParams{
 				RepoID: rem.id, Path: rq.Path, Variant: rq.Variant, BlobSha256: sp.SHA256[:], UpstreamUrl: stripUser(f.finalURL(resp)),
 				UpstreamEtag: ev.ETag, LastModifiedUs: unixMicro(ev.LastModified), FetchedUs: fetchedUs, TtlSeconds: ttl,

@@ -162,7 +162,23 @@ func (s *Store) Publish(ctx context.Context, tx meta.Tx, in rows.PublishInput) e
 	if in.Claim != "" {
 		details["claim"] = in.Claim
 	}
-	return s.record(ctx, tx, audit.EventNPMPublish, in.Audit, in.Name, details, "", nil)
+	if in.Shadowing.Undetermined {
+		details["shadowCheck"] = "undetermined"
+	}
+	if err := s.record(ctx, tx, audit.EventNPMPublish, in.Audit, in.Name, details, "", nil); err != nil {
+		return err
+	}
+	if len(in.Shadowing.Shadowed) == 0 {
+		return nil
+	}
+	// A first version of a name a remote member serves, published on the strength of
+	// manage: the security event of R-REPO-048, in the commit transaction.
+	exposure := make([]map[string]string, len(in.Shadowing.Shadowed))
+	for i, p := range in.Shadowing.Shadowed {
+		exposure[i] = map[string]string{"virtual": p.Virtual, "remote": p.Remote}
+	}
+	return s.record(ctx, tx, audit.EventRepositoryRemotePackageShadowed, in.Audit, in.Name,
+		map[string]any{"package": in.Name, "exposure": exposure}, "", nil)
 }
 
 // RecordRetry records the acknowledged retry of a publish.

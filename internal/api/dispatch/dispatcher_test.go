@@ -44,6 +44,14 @@ func (p probe) Routes() []formats.Route {
 			Name: "probe.file.put", Method: http.MethodPut, Template: "/{package}/-/{file}", Examples: []string{"left-pad/-/x.tgz"},
 			Action: formats.ActionDeploy, Kind: formats.Upload, Classes: []formats.Class{formats.Local}, Handler: p.handler,
 		},
+		{
+			Name: "probe.tag.put", Method: http.MethodPut, Template: "/-/tag/{package}", Examples: []string{"-/tag/left-pad"},
+			Action: formats.ActionDeploy, Kind: formats.Admin, Classes: []formats.Class{formats.Local}, Handler: p.handler,
+		},
+		{
+			Name: "probe.rev.delete", Method: http.MethodDelete, Template: "/{package}/-rev/{rev}", Examples: []string{"left-pad/-rev/1-x"},
+			Action: formats.ActionDelete, Kind: formats.Delete, Classes: []formats.Class{formats.Local}, Handler: p.handler,
+		},
 	}
 }
 
@@ -133,7 +141,10 @@ type fakeHost struct{ formats.Host }
 
 type noDeployResolver struct{ formats.Resolver }
 
-func (noDeployResolver) DeployTarget(context.Context, *formats.Request) (*repository.Repository, error) {
+func (noDeployResolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
+	if rq.Repo.Key == "virtual-with-target" {
+		return &repository.Repository{ID: "1", Key: "local", Class: repository.Local, Format: "probe"}, nil
+	}
 	return nil, errs.E(errs.MethodNotAllowed, errs.CodeNoDeployTarget, "none")
 }
 
@@ -152,16 +163,21 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	r := &rig{t: t, decider: &fakeDecider{}, repos: &fakeRepos{byKey: map[string]repository.Repository{
-		"local":   {ID: "1", Key: "local", Class: repository.Local, Format: "probe"},
-		"remote":  {ID: "2", Key: "remote", Class: repository.Remote, Format: "probe"},
-		"virt":    {ID: "3", Key: "virt", Class: repository.Virtual, Format: "probe"},
-		"other":   {ID: "4", Key: "other", Class: repository.Local, Format: "bare"},
-		"off":     {ID: "5", Key: "off", Class: repository.Local, Format: "probe", Disabled: true},
-		"dying":   {ID: "6", Key: "dying", Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
-		"virtual": {ID: "7", Key: "virtual", Class: repository.Virtual, Format: "probe"},
+		"local":               {ID: "1", Key: "local", Class: repository.Local, Format: "probe"},
+		"remote":              {ID: "2", Key: "remote", Class: repository.Remote, Format: "probe"},
+		"virt":                {ID: "3", Key: "virt", Class: repository.Virtual, Format: "probe"},
+		"other":               {ID: "4", Key: "other", Class: repository.Local, Format: "bare"},
+		"off":                 {ID: "5", Key: "off", Class: repository.Local, Format: "probe", Disabled: true},
+		"dying":               {ID: "6", Key: "dying", Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
+		"virtual":             {ID: "7", Key: "virtual", Class: repository.Virtual, Format: "probe"},
+		"virtual-with-target": {ID: "8", Key: "virtual-with-target", Class: repository.Virtual, Format: "probe"},
 	}}}
 	p := probe{handler: func(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
-		r.reached = append(r.reached, rq.Route.Name+" "+rq.Repo.Key+" "+rq.Params.Get("package"))
+		view := ""
+		if rq.CacheView {
+			view = " cache-view"
+		}
+		r.reached = append(r.reached, rq.Route.Name+" "+rq.Repo.Key+" "+rq.Params.Get("package")+view)
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}}
@@ -291,6 +307,61 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 			t.Fatalf("reached %v", r.reached)
 		}
 	})
+}
+
+func TestR_REPO_032_TheCacheViewIsTheRemoteRepositoryAddressedWithAMark(t *testing.T) {
+	r := newRig(t)
+	if rec := r.do("GET", "/api/probe/remote~cache/left-pad"); rec.Code != 204 {
+		t.Fatalf("answer %d", rec.Code)
+	}
+	if strings.Join(r.reached, ",") != "probe.doc.get remote left-pad cache-view" {
+		t.Fatalf("reached %v: the request is decided and served on the remote repository, marked as the cache view", r.reached)
+	}
+	if got := r.decider.asked[0].Repository; got != "remote" {
+		t.Fatalf("the coarse check asked for %q", got)
+	}
+	r.reached = nil
+	if rec := r.do("GET", "/api/probe/remote/left-pad"); rec.Code != 204 || strings.Join(r.reached, ",") != "probe.doc.get remote left-pad" {
+		t.Fatalf("the plain address: %d %v", rec.Code, r.reached)
+	}
+	for _, key := range []string{"local~cache", "virt~cache", "ghost~cache", "~cache"} {
+		rec := r.do("GET", "/api/probe/"+key+"/left-pad")
+		if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "repository_not_found" {
+			t.Errorf("%s: %d %v", key, rec.Code, rec.Header())
+		}
+	}
+	// A write to the cache view is a write to the remote repository: its class refuses it.
+	if rec := r.do("PUT", "/api/probe/remote~cache/left-pad/-/x.tgz"); rec.Code != 405 {
+		t.Errorf("a write to the cache view: %d", rec.Code)
+	}
+}
+
+func TestR_NPM_029_EveryKindOfWriteToAVirtualRepositoryGoesToItsDeployTarget(t *testing.T) {
+	r := newRig(t)
+	for _, c := range []struct{ method, path, route string }{
+		{"PUT", "/api/probe/virtual-with-target/left-pad/-/x.tgz", "probe.file.put"},
+		{"PUT", "/api/probe/virtual-with-target/-/tag/left-pad", "probe.tag.put"},
+		{"DELETE", "/api/probe/virtual-with-target/left-pad/-rev/1-x", "probe.rev.delete"},
+	} {
+		r.reached = nil
+		if rec := r.do(c.method, c.path); rec.Code != 204 {
+			t.Errorf("%s %s: %d %v", c.method, c.path, rec.Code, rec.Header())
+		}
+		if len(r.reached) != 1 || !strings.HasPrefix(r.reached[0], c.route+" local ") {
+			t.Errorf("%s %s reached %v, want %s on the target", c.method, c.path, r.reached, c.route)
+		}
+	}
+	for _, c := range []struct{ method, path string }{
+		{"PUT", "/api/probe/virtual/-/tag/left-pad"}, {"DELETE", "/api/probe/virtual/left-pad/-rev/1-x"},
+	} {
+		if rec := r.do(c.method, c.path); rec.Code != 405 || rec.Header().Get("X-Probe-Error") != "no_deploy_target" {
+			t.Errorf("%s %s without a target: %d %v", c.method, c.path, rec.Code, rec.Header())
+		}
+	}
+	// The refusal of a class names the class, so that a format words it itself.
+	if rec := r.do("DELETE", "/api/probe/remote/left-pad/-rev/1-x"); rec.Code != 405 {
+		t.Errorf("a delete on a remote repository: %d", rec.Code)
+	}
 }
 
 // TestR_ARCH_023_TheChainsRefusalsOnAPrefixAreTheFormatsShape: the authentication

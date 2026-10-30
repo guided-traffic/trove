@@ -1403,7 +1403,9 @@ the upstream removed them preserves exactly what the upstream took down.
   routes, `/files` and the cache view (R-NPM-003). With `true` they stay served (availability over
   takedown) and are marked in the cache view; this replaces the core's gone-package rule for npm,
   as R-REPO-029 provides. A version that the upstream lists again is served again
-  (`listed = true`).
+  (`listed = true`). With `true`, a document never lists a version the current upstream document
+  lacks: the tarball of an unlisted version stays served on every route and a gone package keeps
+  serving its cached tarballs, but the version does not reappear in documents (Q-NPM-35).
 - A stale upstream copy (R-NPM-024, older `time.modified`) never marks a version removed.
 - A build that needs a version the upstream withdrew legitimately keeps it by publishing the
   tarball to a local repository (R-NPM-036) or by setting `serveRemovedVersions: true` on that
@@ -1495,7 +1497,8 @@ Priority: **MVP** · Covers: PKG-NPM-045, REPO-038
 
 Writes through a virtual repository go to `virtual.deployTarget`
 ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-021; without a target 405
-`no_deploy_target`), with the target's permissions, patterns and ownership (R-AUTHZ-009 rule 5).
+`no_deploy_target`; the decision point refuses a write to a virtual repository without a target
+with 403 first, Q-NPM-36), with the target's permissions, patterns and ownership (R-AUTHZ-009 rule 5).
 npm specifics:
 
 - Publish, metadata `PUT`, `-rev` writes, tarball `DELETE` and dist-tag `PUT`/`DELETE` are all
@@ -3525,6 +3528,117 @@ member, whatever the stored manifest says.
 The development agent would revisit the README rule if a client is found that reads it from the version objects.
 
 **Applied in the spec:** R-NPM-010, R-NPM-011, R-NPM-014. Code: `internal/formats/npm/document/`.
+
+### Q-NPM-32 · Where the stale-copy rule and the newer-entry rule are decided
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-024 wants the stored document and its records to describe one document whichever of two fills commits last. The engine reads the entry before the fetch, so a first fill that a concurrent fill overtook has seen no entry, and the entry lock alone does not serialize the records.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In the engine's upsert, the format is told | The core compares `fetched_at`, the format receives `Replaces` | The core owns the comparison | A fill that saw no entry never learns that one appeared |
+| (b) In the data port, after the lock of `npm_remote_packages` | `ApplyFill` locks the package record, reads the cache entry as it is now, and reports `Superseded` (the stored entry was fetched later) or `Stale` (older `time.modified`); `OnFill` keeps the stored document for both | Decides on what is stored at that moment, in the fill transaction, with the same comparison as the upsert | The format repeats the core's `fetched_at` comparison; the engine renews the entry that exists instead of trusting `Replaces` |
+
+**Choice:** (b). `FillEvent` gains `FetchedAt`; the engine renews the stored entry whenever the format keeps it and a row exists to renew.
+
+**Rationale:**
+- The two-replica test with Valkey stopped, in both orders, failed under (a): 7 versions listed, 1 unlisted and an `npm.remote.version_removed` event, because the older answer overtook a first fill.
+- Revisit if the core takes over the comparison for formats that record per-document facts.
+
+**Applied in the spec:** R-NPM-024 (the two-replica criteria hold in both orders). Code: `internal/formatdata/npm/remote.go`, `internal/proxy/metadata.go`.
+
+### Q-NPM-33 · How tarballs meet the removal marks and the currency of the document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-025 and R-NPM-026 apply the marks on every road to a stored tarball: the npm route, `/files/`, the cache view and the tiers of a virtual repository (Q-NPM-13).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the npm route | The handler checks the marks | Simple | `/files/` and virtual tiers serve withdrawn versions |
+| (b) `ServeCheck` for the stored marks, an artifact gate of the remote adapter for the roads that may ask the upstream | `ServeCheck` reads `TarballFacts` (one statement) and refuses an unlisted version or a gone package unless `serveRemovedVersions`; `BeforeArtifact` first revalidates a document that is not current (expired, or validated before the last restore) in one flight, and returns the announced digests | Every road applies the marks; only roads that may ask the upstream do | Two entry points into one rule |
+
+**Choice:** (b). The gate also runs for the cached tier of a remote member of a virtual repository. When the upstream cannot be asked and the version has a record, the stored marks decide.
+
+**Rationale:**
+- The marks are PostgreSQL state, so a loss of Valkey's data changes nothing (INV-3).
+- Revisit when a second format needs a gate: the interface then moves into the contract proper.
+
+**Applied in the spec:** R-NPM-025, R-NPM-026. Code: `internal/formats/npm/remote.go`, `servecheck.go`, `internal/formathost/remote.go`.
+
+### Q-NPM-34 · Tarball addresses of merged documents
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-025 and R-REPO-043 put every `dist.tarball` on the serving repository's registry URL. The merged-metadata cache is shared by callers who reach a virtual repository through different hosts.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Merge with the serving URL | A cache entry per base URL | No rewrite after the merge | The key multiplies by endpoints; a host can leak between callers |
+| (b) Merge with a neutral address, rewrite after the cache | Local members render with `urn:trove:npm-tarball:`, the merge keeps each member's entry, the handler rewrites every address from the request's base URL | One cached merge for every endpoint; no host in cached bytes | A rewrite per rendering, itself cached by the rendition cache |
+
+**Choice:** (b). The rendition key and the ETag carry the merge fingerprint, the base URL, the endpoint and the exposure fingerprint; the synthetic `_rev` is `1-` and 32 hex characters of the fingerprint.
+
+**Rationale:**
+- Revisit if the rewrite shows in the render histogram.
+
+**Applied in the spec:** R-NPM-025, R-NPM-030, R-NPM-013. Code: `internal/formats/npm/virtual.go`, `handlers_remote.go`, `handlers_virtual.go`.
+
+### Q-NPM-35 · serveRemovedVersions and the document (D-16), and where the setting is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-026 says unlisted versions stay served with `true`; Q-NPM-5 stores only the current upstream document, which has no manifest for a dropped version. The repository document has no format section yet (Q-NPM-23).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Tarballs stay served, documents do not list the version | The cached tarball of an unlisted version, and those of a gone package, are served on every route; a document never lists what the current upstream document lacks | Lockfile installs keep working; no second representation | `npm view` does not show the version |
+| (b) Keep each unlisted manifest | A second copy in `npm_remote_versions`, merged back | Documents list it | Rejected by Q-NPM-5 |
+
+**Choice:** (a). The npm member of the stored repository document (`npm.serveRemovedVersions`, `npm.latestStrategy`, `npm.distTagStrategy`) is read as it is, with defaults when absent; the repository service does not accept the member yet.
+
+**Rationale:**
+- Revisit when the repository document gets a format section: validation and the OpenAPI schema join, the reading stays.
+
+**Applied in the spec:** R-NPM-026, R-NPM-031. Code: `internal/formats/npm/settings.go`.
+
+### Q-NPM-36 · Writes to remote and virtual repositories
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-001 answers 405 for a write to a remote repository, R-NPM-029 routes every write through a virtual repository to its deployment target.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Handlers check the class | Every write handler refuses | No dispatcher change | Twelve checks, one forgotten |
+| (b) Write routes list `Classes: local`; the dispatcher redirects every write kind | The 405 is the dispatcher's; npm's `WriteError` words it `npm_class_not_writable` for a remote repository; a virtual repository's writes (publish, tag, `-rev`) go to the target | One place, and the route table says it | A write the decision point refuses first is a 403, not a 405 |
+
+**Choice:** (b). A caller without `deploy` on a remote repository gets 403 before the class is looked at (R-AUTHZ-016); a virtual repository without a target is refused by the decision point (403) before the dispatcher could answer `no_deploy_target`.
+
+**Rationale:**
+- R-NPM-029 said 405; the decision point decides first (R-AUTHZ-009 rule 5). Written back.
+- Revisit if the decision point should let a write reach the class check.
+
+**Applied in the spec:** R-NPM-001, R-NPM-005, R-NPM-029. Code: `routes.go`, `errors.go`, `internal/api/dispatch/dispatcher.go`.
+
+### Q-NPM-37 · Remote refusal and the cache view in the host
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-REPO-023 makes a remote repository refuse a name a global claim covers, also when addressed directly; R-REPO-032 serves `<key>~cache` from storage only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) In the engine | The engine asks the routing | One place | The engine learns claims |
+| (b) In `Host.Authorize` for reads of a remote repository, and in the dispatcher for the address | `Authorize` asks `RemoteRefused` and answers the 404 of a missing resource; the dispatcher strips `~cache`, requires a remote repository and sets `Request.CacheView` | Before any cache lookup; the engine stays free of claims | A format that skips Authorize skips the refusal |
+
+**Choice:** (b). The cache view is the remote repository itself, marked; its tarball addresses name `<key>~cache`.
+
+**Rationale:**
+- Revisit when a second remote format exists.
+
+**Applied in the spec:** R-NPM-033, R-REPO-032, R-REPO-043. Code: `internal/formathost/host.go`, `internal/api/dispatch/dispatcher.go`.
 
 ### Q-NPM-38 · Where a document is filtered
 

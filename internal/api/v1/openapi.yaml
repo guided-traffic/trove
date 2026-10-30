@@ -8092,11 +8092,11 @@ components:
     RemoteFormatName:
       type: string
       description: The formats whose classes contain `remote`. The create form offers these for a remote repository.
-      enum: []
+      enum: [npm]
     VirtualFormatName:
       type: string
       description: The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
-      enum: []
+      enum: [npm]
     # <<< WP2.1 formats
     RepositoryWarning:
       type: object

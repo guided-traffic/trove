@@ -4,6 +4,13 @@ The remote class of [R-REPO-024 to R-REPO-049](../spec/repositories-and-proxy.md
 clients, the cache invalidation of remote repositories and the engine that answers a request for a remote repository (the request
 path, the flights, the circuit, the fill). Code: [internal/proxy](../../internal/proxy/).
 
+## What a format adds to the engine
+
+A format's `RemoteAdapter` may also implement `formats.TypeExpecter` (media types the engine does not block, R-REPO-042) and `formats.ArtifactGate` (`BeforeArtifact`: the format's marks and
+the digests its metadata announces, run before every road to a remote artifact, including the cached tier of a remote member of a virtual repository; Q-NPM-33). `FillEvent.FetchedAt` is the
+`fetched_at` the upsert writes, so a format that records facts decides with the comparison the upsert uses (Q-NPM-32); a fill whose format keeps the stored document renews the entry that is
+there. `Request.CacheView` is set by the dispatcher from `<key>~cache`, and `Host.Authorize` refuses a name a global claim covers on a remote repository (Q-NPM-37). npm: [npm.md](npm.md).
+
 ## The upstream clients
 
 Package [internal/proxy/upstream](../../internal/proxy/upstream/): the HTTP client of each remote repository, the credentials it

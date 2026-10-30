@@ -128,7 +128,8 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	if done, err := f.versionTaken(ctx, rq, w, rep, st, req, facts, integrity, sigSpool); done || err != nil {
 		return err
 	}
-	if err := f.shadowCheck(ctx, rq, n.String()); err != nil {
+	shadow, err := f.shadowCheck(ctx, rq, n.String())
+	if err != nil {
 		return err
 	}
 
@@ -138,7 +139,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	}
 	pc := &publishCommit{
 		name: n, version: version, tag: req.Tag, res: res, principal: rq.Subject.ID, audit: audit,
-		installScript: manifest.HasInstallScript(res.Manifest, res.Facts),
+		installScript: manifest.HasInstallScript(res.Manifest, res.Facts), shadowing: shadow,
 	}
 	pc.stored = manifest.Stored(req.Manifest, manifest.ServerFields{
 		Name: n.String(), Version: version, Principal: principalName(rq), Integrity: integrity, Shasum: res.SHA1Hex(),
@@ -357,24 +358,27 @@ func (f *Format) commitError(ctx context.Context, rq *formats.Request, w http.Re
 
 // shadowCheck is step 6 of the flow: the first publish of a name that a remote
 // member of a containing virtual repository serves must not shadow it (R-REPO-048).
-// It runs with no transaction open.
-func (f *Format) shadowCheck(ctx context.Context, rq *formats.Request, pkg string) error {
+// It runs with no transaction open. A refusal is the 403 or 503 the check built, which
+// names the package and the virtual repositories the caller can read and no remote
+// member; a write that proceeds hands the commit what the check found, for the audit
+// events of the transaction.
+func (f *Format) shadowCheck(ctx context.Context, rq *formats.Request, pkg string) (rows.Shadowing, error) {
 	live, _, err := rq.Host.Packages().Versions(ctx, rq.RepoRef(), pkg)
 	if err != nil || len(live) > 0 {
-		return err
+		return rows.Shadowing{}, err
 	}
 	out, err := rq.Host.Resolver().ShadowCheck(ctx, rq, pkg)
 	if err != nil {
-		return err
+		return rows.Shadowing{}, err
 	}
-	switch {
-	case out.Proceed:
-		return nil
-	case out.Code == "shadows_remote_package":
-		return errs.E(errs.Forbidden, out.Code, "The name is served by a remote repository of a virtual repository that contains this one; publishing it here would shadow it.")
+	if !out.Proceed {
+		if out.Refusal != nil {
+			return rows.Shadowing{}, out.Refusal
+		}
+		return rows.Shadowing{}, errs.E(errs.Unavailable, errs.CodeShadowCheckUnavailable,
+			"Whether the name is served by a remote repository could not be determined; try again.", errs.WithRetryAfter(out.RetryAfter))
 	}
-	return errs.E(errs.Unavailable, "shadow_check_unavailable", "Whether the name is served by a remote repository could not be determined; try again.",
-		errs.WithRetryAfter(out.RetryAfter))
+	return shadowing(out), nil
 }
 
 // writePublished answers a publish: 201 and the body npm ignores.

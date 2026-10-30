@@ -338,7 +338,8 @@ type Remotes interface {
 `RemoteCall` carries the remote and virtual repositories, the path, variant and package, the subject (for the audit and the upstream log, with
 `flight_role: probe` for a probe) and the endpoint. Two more lines complete the wiring when the formats with a virtual class register: the Host
 takes `formathost.NewResolver(engine, nil)` as `Options.Resolver` in `wireFormatHost`
-([wire_formats.go](../../internal/app/wire_formats.go); the step then takes `virtualEngineArea` as an input), and the format's writer calls `ShadowCheck`.
+([wire_formats.go](../../internal/app/wire_formats.go); the step now takes `virtualEngineArea` as an input and runs after `wireVirtualEngine`), and the format's writer calls `ShadowCheck`
+(npm: `shadowCheck` in [publish.go](../../internal/formats/npm/publish.go); a proceeding outcome reaches the publish transaction, which writes `repository.remote_package_shadowed` and `shadowCheck: undetermined`).
 The management API already takes the engine (`Options.Resolution`, set in `startClient` of [app.go](../../internal/app/app.go) by `resolutionExplainer`).
 
 ### Tests of the engine

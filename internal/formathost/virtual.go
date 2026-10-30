@@ -176,9 +176,19 @@ func (t tiers) Local(ctx context.Context, m virtual.Member, _ virtual.Descriptor
 }
 
 func (t tiers) RemoteCached(ctx context.Context, m virtual.Member, _ virtual.Descriptor) (virtual.Hit, bool, error) {
-	it, ok, err := t.rq.Host.Remote().Cached(ctx, t.forMember(m), t.p)
+	member := t.forMember(m)
+	it, ok, err := t.rq.Host.Remote().Cached(ctx, member, t.p)
 	if err != nil || !ok {
 		return nil, false, err
+	}
+	// The format's marks apply to a cached artifact as well: a stale document is
+	// revalidated first and a withdrawn version is refused (Q-NPM-13, R-NPM-026).
+	if g, ok := t.rq.Host.Remote().(interface {
+		Gate(context.Context, *formats.Request, formats.Path) error
+	}); ok {
+		if err := g.Gate(ctx, member, t.p); err != nil {
+			return nil, false, err
+		}
 	}
 	return t.serve(ctx, it), true, nil
 }
