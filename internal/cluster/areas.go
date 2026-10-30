@@ -109,6 +109,16 @@ func init() {
 	// >>> M1 repository
 	RegisterArea(Area{Name: AreaRepoConfig, Owner: "R-REPO-049", Class: ChangeArea, PayloadVersion: 1})
 	// <<< M1 repository
+	//
+	// The areas of M2 (repositories-and-proxy.md; Q-ARCH-194). Their cluster_epoch
+	// rows are seeded by 00014_remote_proxy and 00015_virtual_claims_ownership;
+	// metadata_changed is a signal and has none.
+	// >>> M2 schema
+	RegisterArea(Area{Name: AreaClaims, Owner: "R-REPO-023", Class: ChangeArea, PayloadVersion: 1})
+	RegisterArea(Area{Name: AreaCacheInvalidation, Owner: "R-REPO-045", Class: ChangeArea, PayloadVersion: 1})
+	RegisterArea(Area{Name: AreaUpstreamState, Owner: "R-REPO-029", Class: ChangeArea, PayloadVersion: 1})
+	RegisterArea(Area{Name: AreaMetadataChanged, Owner: "R-REPO-020", Class: SignalArea})
+	// <<< M2 schema
 }
 
 // Names of the areas of this package.
@@ -147,3 +157,27 @@ const AreaAuthz = "authz"
 const AreaRepoConfig = "repo_config"
 
 // <<< M1 repository
+//
+// >>> M2 schema
+
+// AreaClaims carries the changes of namespace claims and virtual pin rules: a
+// claims write, the auto claim of a first publish and the claim removal of the
+// repository delete job (R-REPO-023, R-ARCH-018). The cluster_epoch row is seeded
+// by migration 00015.
+const AreaClaims = "claims"
+
+// AreaCacheInvalidation carries a cache invalidation of a remote or virtual
+// repository and the deletion of folded invalidation rows by the fold job
+// (R-REPO-045). The cluster_epoch row is seeded by migration 00014.
+const AreaCacheInvalidation = "cache_invalidation"
+
+// AreaUpstreamState carries the transitions of a circuit, the global offline switch
+// and the reload of one repository's gone packages (R-REPO-029, R-REPO-031). The
+// cluster_epoch row is seeded by migration 00014.
+const AreaUpstreamState = "upstream_state"
+
+// AreaMetadataChanged is the signal for the early eviction of merged metadata after a
+// remote refresh (R-REPO-020); the rev_seq check keeps local members exact without it.
+const AreaMetadataChanged = "metadata_changed"
+
+// <<< M2 schema

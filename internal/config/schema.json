@@ -1460,6 +1460,78 @@
       },
       "type": "object"
     },
+    "npm": {
+      "additionalProperties": false,
+      "properties": {
+        "abbreviated_time": {
+          "default": true,
+          "description": "Add the time map to abbreviated package documents, which pnpm and Yarn need for release-age policies (R-NPM-011).",
+          "type": "boolean",
+          "x-trove-env": "TROVE_NPM_ABBREVIATED_TIME"
+        },
+        "document_max_age": {
+          "default": "0s",
+          "description": "max-age of the Cache-Control header of package documents; 0 makes clients revalidate every time, which a 304 makes cheap (R-NPM-013).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_NPM_DOCUMENT_MAX_AGE",
+          "x-trove-type": "duration"
+        },
+        "publish": {
+          "additionalProperties": false,
+          "properties": {
+            "manifest_consistency": {
+              "default": "reject",
+              "description": "A request manifest that differs from the tarball's package.json: reject answers 400 npm_manifest_mismatch, warn stores the tarball's values.",
+              "enum": [
+                "reject",
+                "warn"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_NPM_PUBLISH_MANIFEST_CONSISTENCY"
+            },
+            "max_tar_entries": {
+              "default": 100000,
+              "description": "Most entries in one tarball.",
+              "maximum": 10000000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NPM_PUBLISH_MAX_TAR_ENTRIES"
+            },
+            "max_tarball_size": {
+              "default": "256MiB",
+              "description": "Largest tarball of a publish; at most storage.upload.max_size.",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_NPM_PUBLISH_MAX_TARBALL_SIZE",
+              "x-trove-type": "bytes"
+            },
+            "max_unpacked_size": {
+              "default": "2GiB",
+              "description": "Largest sum of the unpacked entry sizes of a tarball.",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_NPM_PUBLISH_MAX_UNPACKED_SIZE",
+              "x-trove-type": "bytes"
+            },
+            "retry_window": {
+              "default": "10m",
+              "description": "How long a repeated publish of identical bytes is acknowledged as the first one (Q-NPM-11); 0s turns the acknowledgement off.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_NPM_PUBLISH_RETRY_WINDOW",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "process": {
       "additionalProperties": false,
       "properties": {
@@ -1479,6 +1551,106 @@
     "proxy": {
       "additionalProperties": false,
       "properties": {
+        "blocked_content_types": {
+          "default": [
+            "text/html",
+            "application/xhtml+xml"
+          ],
+          "description": "Media types an upstream answer may not have where integrity.blockUnexpectedContentTypes is true (R-REPO-042); lower-case type/subtype without parameters.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-trove-env": "TROVE_PROXY_BLOCKED_CONTENT_TYPES"
+        },
+        "claims": {
+          "additionalProperties": false,
+          "properties": {
+            "remote_refusal": {
+              "default": true,
+              "description": "A remote repository refuses a name that a global claim covers, also when addressed directly.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_PROXY_CLAIMS_REMOTE_REFUSAL"
+            }
+          },
+          "type": "object"
+        },
+        "fetch_wait_timeout_seconds": {
+          "default": 120,
+          "description": "How long a request waits for another replica's fetch of the same path; after it the request fetches without the cross-replica lock (R-REPO-026).",
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer",
+          "x-trove-env": "TROVE_PROXY_FETCH_WAIT_TIMEOUT_SECONDS"
+        },
+        "global_offline": {
+          "default": false,
+          "description": "No remote repository contacts its upstream; the runtime switch cannot lift it (R-REPO-031).",
+          "type": "boolean",
+          "x-trove-env": "TROVE_PROXY_GLOBAL_OFFLINE"
+        },
+        "lock_poll_interval_ms": {
+          "default": 1000,
+          "description": "How long a waiter for a flight lock waits for the outcome message before it checks the lock key again (R-REPO-026 step 4).",
+          "maximum": 60000,
+          "minimum": 50,
+          "type": "integer",
+          "x-trove-env": "TROVE_PROXY_LOCK_POLL_INTERVAL_MS"
+        },
+        "max_artifact_bytes": {
+          "default": "10GiB",
+          "description": "System value of limits.maxArtifactBytes: a larger upstream artifact is refused with 502 upstream_item_too_large (R-REPO-040).",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "x-trove-env": "TROVE_PROXY_MAX_ARTIFACT_BYTES",
+          "x-trove-type": "bytes"
+        },
+        "max_concurrent_fetches": {
+          "default": 256,
+          "description": "Per replica: upstream fetches in flight over all remote repositories (R-REPO-040).",
+          "maximum": 100000,
+          "minimum": 1,
+          "type": "integer",
+          "x-trove-env": "TROVE_PROXY_MAX_CONCURRENT_FETCHES"
+        },
+        "max_metadata_bytes": {
+          "default": "256MiB",
+          "description": "System value of limits.maxMetadataBytes (R-REPO-040).",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "x-trove-env": "TROVE_PROXY_MAX_METADATA_BYTES",
+          "x-trove-type": "bytes"
+        },
+        "max_redirects": {
+          "default": 5,
+          "description": "Redirect hops followed per upstream request; one more answers 502 too_many_redirects (R-REPO-039).",
+          "maximum": 20,
+          "minimum": 0,
+          "type": "integer",
+          "x-trove-env": "TROVE_PROXY_MAX_REDIRECTS"
+        },
+        "merged_metadata_cache_bytes": {
+          "default": "256MiB",
+          "description": "Per replica: merged package documents of virtual repositories (R-REPO-020); 0 turns the cache off.",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "x-trove-env": "TROVE_PROXY_MERGED_METADATA_CACHE_BYTES",
+          "x-trove-type": "bytes"
+        },
+        "negative_l1_entries": {
+          "default": 100000,
+          "description": "Per replica: entries of the in-process copy of the negative cache of remote repositories (R-REPO-028); about 100 bytes each.",
+          "maximum": 10000000,
+          "minimum": 1,
+          "type": "integer",
+          "x-trove-env": "TROVE_PROXY_NEGATIVE_L1_ENTRIES"
+        },
         "outbound": {
           "additionalProperties": false,
           "properties": {
@@ -1553,6 +1725,14 @@
             }
           },
           "type": "object"
+        },
+        "queue_timeout_seconds": {
+          "default": 10,
+          "description": "How long a fetch waits for a free slot before it answers 503 with Retry-After: 5; 0 refuses at once (R-REPO-040).",
+          "maximum": 600,
+          "minimum": 0,
+          "type": "integer",
+          "x-trove-env": "TROVE_PROXY_QUEUE_TIMEOUT_SECONDS"
         }
       },
       "type": "object"

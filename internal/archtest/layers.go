@@ -12,7 +12,7 @@ type layer int
 const (
 	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
-	layerDomain              // repository, proxy, authz, auth, jobs, audit, backup
+	layerDomain              // repository, proxy, virtual, formatdata, authz, auth, jobs, audit, backup
 	layerEdge                // httpserver, api/v1, webui, formats
 	layerApp                 // the composition root
 	layerCmd                 // the binaries
@@ -64,6 +64,8 @@ func layerTable() []layerRule {
 		{"internal/repository", layerDomain},
 		{"internal/files", layerDomain},
 		{"internal/proxy", layerDomain},
+		{"internal/virtual", layerDomain},
+		{"internal/formatdata", layerDomain},
 		{"internal/authz", layerDomain},
 		{"internal/auth", layerDomain},
 		{"internal/jobs", layerDomain},

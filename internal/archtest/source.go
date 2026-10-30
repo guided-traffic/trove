@@ -94,9 +94,9 @@ func sourceBans() []sourceBan {
 		},
 		{
 			rule:    "R-ARCH-033",
-			dirs:    []string{"internal/proxy"},
+			dirs:    []string{"internal/proxy", "internal/virtual"},
 			re:      regexp.MustCompile(`\bpg_(try_)?advisory`),
-			why:     "the remote fetch engine uses the Valkey flight lock, never a PostgreSQL advisory lock",
+			why:     "the remote fetch engine and the virtual engine use the Valkey flight lock, never a PostgreSQL advisory lock",
 			withSQL: true,
 		},
 	}

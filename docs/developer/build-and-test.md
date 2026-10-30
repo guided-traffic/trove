@@ -84,7 +84,7 @@ synthetic violation and asserts that the offending edge is named.
 | `http.Client{` and `net.Dial` only in `internal/outbound` and `_test.go` files | R-ARCH-002, R-ARCH-022 | `CheckOutbound` |
 | No package-level variable of map, slice, pointer or `sync.Map` type outside `cache`, `cluster`, `observability` and the start-up registries | R-ARCH-032 | `CheckPackageState` |
 | Nothing below `internal/blob` imports the Valkey client or uses a session-level advisory lock | R-STOR-046 | `CheckStorageValkey`, `CheckSourceBans` |
-| `internal/proxy` uses no `pg_advisory*` call | R-ARCH-033 | `CheckSourceBans` |
+| `internal/proxy` and `internal/virtual` use no `pg_advisory*` call | R-ARCH-033 | `CheckSourceBans` |
 
 To add a package: give it a layer in `layerTable`. A package under `internal/` without a layer fails the
 test and says so. The trees `internal/archtest`, `internal/tools`, `test`, `tools`, `perf`, `web` and

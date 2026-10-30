@@ -63,6 +63,20 @@ func TestLayers(t *testing.T) {
 		vs = CheckLayers(mod, []Package{pkg("internal/config", "internal/meta/postgres")})
 		wantEdge(t, vs, "R-ARCH-002", "internal/config", "internal/meta/postgres")
 	})
+	t.Run("R-ARCH-002 internal/virtual and internal/formatdata are domain packages", func(t *testing.T) {
+		for _, p := range []string{"internal/virtual", "internal/formatdata/npm", "internal/proxy/upstream", "internal/proxy/invalidation"} {
+			if l, ok := layerOf(p); !ok || l != layerDomain {
+				t.Errorf("%s: layer %v (found %v), want domain", p, l, ok)
+			}
+		}
+		wantEdge(t, CheckLayers(mod, []Package{pkg("internal/virtual", "internal/formats/npm")}), "R-ARCH-002", "internal/virtual", "internal/formats/npm")
+		wantEdge(t, CheckLayers(mod, []Package{pkg("internal/formatdata/npm", "internal/httpserver")}), "R-ARCH-002", "internal/formatdata/npm", "internal/httpserver")
+		wantEdge(t, CheckLayers(mod, []Package{pkg("internal/cluster", "internal/virtual")}), "R-ARCH-002", "internal/cluster", "internal/virtual")
+		wantClean(t, CheckLayers(mod, []Package{
+			pkg("internal/virtual", "internal/repository", "internal/authz", "internal/proxy", "internal/cache", "internal/cluster", "internal/meta"),
+			pkg("internal/formatdata/npm", "internal/meta", "internal/meta/postgres/q"),
+		}))
+	})
 	t.Run("R-ARCH-002 allowed edges pass", func(t *testing.T) {
 		wantClean(t, CheckLayers(mod, []Package{
 			pkg("cmd/trove", "internal/app", "internal/config", "internal/buildinfo"),
@@ -332,7 +346,7 @@ func TestFixtureModules(t *testing.T) {
 			from = append(from, v.Rule+" "+v.From)
 		}
 		joined := strings.Join(from, "\n")
-		for _, want := range []string{"R-STOR-046 internal/blob/s3/bad.go", "R-STOR-046 internal/blob/s3/bad.sql", "R-ARCH-033 internal/proxy/q.go"} {
+		for _, want := range []string{"R-STOR-046 internal/blob/s3/bad.go", "R-STOR-046 internal/blob/s3/bad.sql", "R-ARCH-033 internal/proxy/q.go", "R-ARCH-033 internal/virtual/q.go"} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("missing %q in\n%s", want, joined)
 			}

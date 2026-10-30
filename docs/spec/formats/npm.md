@@ -325,7 +325,7 @@ CREATE TABLE npm_packages (
                                                   -- no rev_seq here: packages.rev_seq (R-NPM-009)
   dist_tags      jsonb       NOT NULL DEFAULT '{}'::jsonb,  -- {"latest": "1.2.0", "next": "2.0.0-rc.1"}
   modified_at    timestamptz NOT NULL DEFAULT now(),
-  search_vector  tsvector,                        -- R-NPM-037
+  -- search_vector tsvector: added with R-NPM-037 (P1) as an expand step (Q-ARCH-191)
   UNIQUE (repo_id, name_fold)
 );
 
@@ -855,7 +855,7 @@ Configuration (`trove.yaml`):
 
 ```yaml
 npm:
-  document_max_age: 0 # default (proposed), seconds; clients revalidate every time, which a 304 makes cheap
+  document_max_age: 0s # default (proposed), a duration (Q-REPO-85); clients revalidate every time, which a 304 makes cheap
 ```
 
 Acceptance criteria:
@@ -1256,7 +1256,7 @@ CREATE TABLE npm_remote_packages (
   doc_sha256     bytea       NOT NULL,            -- digest of the stored upstream document
   doc_modified   timestamptz,                     -- its time.modified, capped at the store time
                                                   -- (PostgreSQL clock); NULL if absent or unparseable
-  search_vector  tsvector,                        -- R-NPM-037
+  -- search_vector tsvector: added with R-NPM-037 (P1) as an expand step (Q-ARCH-191)
   PRIMARY KEY (repo_id, name)
 );
 -- "Gone from the upstream" is not an npm column: it is the core's upstream_gone_at on the package

@@ -285,7 +285,7 @@ builder the architecture test allows to assemble SQL text.
 
 Columns added to `repositories`: `lifecycle` (`active`, `deleting`), `config_version` (ETag, registered),
 `created_by`, `updated_by` (plain uuid), `last_activity_at`, and the constraint `repositories_key_dots`. The row of the
-change area `repo_config` is seeded. `claims_version` and `project_id` come later (Q-REPO-11). The authorization
+change area `repo_config` is seeded. `claims_version` arrives with 00015 (M2) and `project_id` later (Q-REPO-11). The authorization
 settings of a repository (`cacheFillAction`, `packageOwnership`, `requireAuthentication`, `hideExistence`) stay in
 `config` (R-REPO-004).
 
@@ -308,12 +308,65 @@ break-glass account has no row (R-AUTH-014).
 |---|---|---|---|
 | `endpoint_exposure_rule` | Exposure rules of an endpoint (R-EP-012); the endpoints themselves are configuration | `id`, `UNIQUE (endpoint, name)`, `repo_id` (to `repositories`, cascade), `enabled`, `packages`, `paths`, `versions`, `prereleases`, `dist_tags`, `revision` (ETag, registered) | data |
 
+## M2 tables
+
+Migrations 00014 to 00016 create every table of milestone M2 at once, before any query that uses them, so that
+the generated `q/models.go` changes in one place and the later work packages add `queries/<area>.sql` only
+(Q-ARCH-190). All three are `-- trove:phase expand` files without a backfill, a `no-transaction` header or a
+`requires-app`: a v0.3.x replica never reads the new tables and keeps serving against them, and the M2 binary's
+`RequiredSchema()` is 16. Every table is registered as data in
+[tables_m2.go](../../internal/meta/postgres/tables_m2.go); the package that owns a table takes the line over in the same
+change. `repositories.claims_version` is registered there with `meta.RegisterRevisionColumn`, and the sealed column
+`repository_secrets.sealed` in [secret_columns.go](../../internal/repository/secret_columns.go). The change areas
+`claims`, `cache_invalidation`, `upstream_state` and `metadata_changed` are declared in
+[areas.go](../../internal/cluster/areas.go) between the `>>> M2 schema` markers (Q-ARCH-194).
+
+| Migration | Area (work package) | Tables and columns | Requirements |
+|---|---|---|---|
+| [00014_remote_proxy](../../internal/meta/postgres/migrations/00014_remote_proxy.sql) | remote engine (WP2.2) | `remote_cache_entries`, `remote_url_map`, `remote_upstream_state`, `remote_cache_invalidations`, `repository_secrets`; seeds the `cluster_epoch` rows of `cache_invalidation` and `upstream_state` | R-REPO-025, R-REPO-029, R-REPO-033, R-REPO-043, R-REPO-045 |
+| [00015_virtual_claims_ownership](../../internal/meta/postgres/migrations/00015_virtual_claims_ownership.sql) | virtual engine, ownership (WP2.3, WP-OWN) | `repositories.claims_version`, `virtual_members`, `virtual_deploy_targets`, `namespace_claims`, `virtual_pin_rules`, `virtual_pin_members`, `package_ownership`, `package_owner`; seeds the row of `claims` | R-REPO-017, R-REPO-021, R-REPO-023, R-AUTHZ-018 |
+| [00016_npm](../../internal/meta/postgres/migrations/00016_npm.sql) | npm (WP2.4, WP2.5) | `npm_packages`, `npm_versions`, `npm_tombstones`, `npm_remote_packages`, `npm_remote_versions` | R-NPM-006, R-NPM-008, R-NPM-024 |
+
+Where a migration differs from the specification's sketch, a decision says why: the surrogate `id` of
+`remote_cache_entries` (Q-REPO-86), `remote_cache_invalidations.folded_at` (Q-REPO-87), the omitted `search_vector`
+and the unconstrained `package_owner.ci_issuer_id` (Q-ARCH-191). The other additions are `CHECK`s only: non-negative
+positions and counters, the length of `last_failure`, `deprecated` and `readme`, the JSON-pointer form of
+`repository_secrets.field` and the `domain` form of `package_ownership`.
+
+Rules that hold for them:
+
+- **Blob references.** `remote_cache_entries.blob_sha256` follows the reference rule of R-STOR-003: indexed, guard
+  trigger, delete and update release triggers. The update trigger joins on `id`, which is why the column exists. A
+  refreshed metadata document that replaces the blob therefore queues the old blob for collection, and so does the
+  delete of an entry or of its repository. `npm_remote_packages.doc_sha256` is a digest, not a reference: no foreign
+  key to `blobs`.
+- **What cascades and what restricts.** Every table that names a repository by `repo_id` or `virtual_id` cascades on its
+  delete. A repository that is a member (`virtual_members.member_id`), a deploy target (`virtual_deploy_targets.target_id`)
+  or a pin member (`virtual_pin_members.member_id`) cannot be deleted while it is listed: the foreign key is
+  `ON DELETE RESTRICT` and the error is SQLSTATE `23503`. The service validates first and answers 409 (R-REPO-013); the
+  database is the backstop for a concurrent change.
+- **Tombstones survive.** `npm_tombstones` references only `repositories`: the version row, the item and the package row
+  may go (unpublish, permanent removal, trash retention) and the tombstone stays (R-NPM-008).
+- **One look-alike per repository.** `UNIQUE (repo_id, name_fold)` on `npm_packages` is what decides the race of two
+  concurrent first publishes of `acme-ui` and `acme_ui` (R-NPM-007): the loser's insert fails with `23505`.
+- **One owner entry.** `package_owner_unique` makes a second insert of the same principal or CI project for a name fail
+  with `23505`, so two replicas that claim a new name concurrently cannot both end up as first publisher (R-AUTHZ-018).
+  `ci_issuer_id` has no foreign key until M4 adds it `NOT VALID` and validates it (Q-ARCH-191).
+- **Ownership of a deleted repository.** `package_ownership.domain = 'repo:<id>'` carries no foreign key: the repository
+  delete job removes the rows (R-AUTHZ-018). Repository ids come from an identity column and are never reused.
+- **Revision columns.** `repositories.claims_version` is the ETag of the claims resource (R-REPO-023). Update it with
+  `SET claims_version = claims_version + 1 ... WHERE key = $1 AND claims_version = $2`.
+
+A package that finds that it needs another column or constraint asks for a follow-up expand step (`00017`) and never
+edits a migration of another work package. Query files by owner: `proxy.sql`, `invalidation.sql`, `remote_settings.sql`,
+`virtual.sql`, `claims.sql`, `ownership.sql`, `packages.sql`, `npm_local.sql`, `npm_remote.sql`.
+
 ## Table registry
 
 `tables.Register(name, class, Options{CycleBreak})` with classes `Data`, `Blobs`, `Transient`, `Schema`.
 `postgres.CheckTableRegistry` reads the catalog and reports unregistered tables and foreign-key cycles among
 exported tables without a `CycleBreak`. Tables of this package: `tables.go`. Tables created for other packages
-by the first migrations: `tables_m0.go`, and by the M1 migrations: `tables_m1.go`; the owning package deletes its line there when it registers the table
+by the first migrations: `tables_m0.go`, by the M1 migrations: `tables_m1.go` and by the M2 migrations: `tables_m2.go`; the owning package deletes its line there when it registers the table
 itself (a duplicate panics at start-up).
 
 ## sqlc
@@ -328,7 +381,9 @@ which M1 creates with the first list endpoint.
 `set -a; . .dev/integration/env; set +a; go test -tags integration -race ./test/integration/postgres/...`.
 Every test creates its own database `trove_pg_<random>`. `stepsWith` injects extra or edited migration files.
 The M1 schema is checked by [m1_test.go](../../test/integration/postgres/m1_test.go) (export classes, seeded rows,
-the integrity triggers, the audit partitions and privileges, a schema that is not called `trove`). The PgBouncer tests set role defaults with `ALTER ROLE` in a database of their own, because the pooler keeps
+the integrity triggers, the audit partitions and privileges, a schema that is not called `trove`), the M2 schema by
+[m2_test.go](../../test/integration/postgres/m2_test.go) (export classes, the expand-only steps, the seeded and registered
+areas, the revision registration, and the constraints named in the section above, each under its requirement ID). The PgBouncer tests set role defaults with `ALTER ROLE` in a database of their own, because the pooler keeps
 server connections per database. The stack serves TLS only (verify-full from the host);
 [test/integration/tls](../../test/integration/tls) rewrites a copy of its CA in place and shows that the next new
 connection uses it. Not covered: client-certificate authentication against the real server (the stack requests no

@@ -171,8 +171,11 @@ M1 ([m1-contracts.md](m1-contracts.md)): the shared types and interfaces of `int
 implemented; `internal/api/rawfiles/` and `internal/files/` carry the raw transfer. The `Principal` the
 chain stores is in [internal/httpserver/principal.go](../../internal/httpserver/principal.go).
 
-Planned, from [R-ARCH-003](../spec/architecture.md): the package formats (`internal/formats/npm`, `nuget`) and the
-remote fetch engine (`internal/proxy/`) do not exist yet.
+M2 starts with its schema: the tables of the remote engine, the virtual engine, claims, ownership and npm exist
+([database.md](database.md#m2-tables)), with their configuration keys ([configuration.md](configuration.md#m2-keys)), change
+areas and layer rows in `internal/archtest`. Planned, from [R-ARCH-003](../spec/architecture.md): the package formats
+(`internal/formats/npm`, `nuget`), the remote fetch engine (`internal/proxy/`), the virtual engine (`internal/virtual/`) and
+the format stores (`internal/formatdata/`) do not exist yet.
 
 ## Test tiers
 

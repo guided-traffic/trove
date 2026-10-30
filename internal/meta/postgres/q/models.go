@@ -314,6 +314,66 @@ type Job struct {
 	RanBy         pgtype.UUID
 }
 
+type NamespaceClaim struct {
+	RepoID    int64
+	Pattern   string
+	Source    string
+	Scope     string
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+}
+
+type NpmPackage struct {
+	PackageID  int64
+	RepoID     int64
+	NameFold   string
+	DistTags   []byte
+	ModifiedAt pgtype.Timestamptz
+}
+
+type NpmRemotePackage struct {
+	RepoID      int64
+	Name        string
+	DocSha256   []byte
+	DocModified pgtype.Timestamptz
+}
+
+type NpmRemoteVersion struct {
+	RepoID      int64
+	Name        string
+	Version     string
+	Integrity   pgtype.Text
+	Shasum      pgtype.Text
+	PublishedAt pgtype.Timestamptz
+	Listed      bool
+}
+
+type NpmTombstone struct {
+	RepoID        int64
+	Name          string
+	Version       string
+	Integrity     string
+	Source        string
+	UnpublishedAt pgtype.Timestamptz
+	UnpublishedBy pgtype.UUID
+}
+
+type NpmVersion struct {
+	VersionID        int64
+	Manifest         []byte
+	Integrity        string
+	Shasum           string
+	Deprecated       pgtype.Text
+	FileCount        int32
+	UnpackedSize     int64
+	HasInstallScript bool
+	HasShrinkwrap    bool
+	Readme           pgtype.Text
+	ReadmeFilename   pgtype.Text
+	PublishTag       string
+	PublishedAt      pgtype.Timestamptz
+}
+
 type OidcLoginFlow struct {
 	StateSha256          []byte
 	ProviderID           string
@@ -337,6 +397,30 @@ type Package struct {
 	CreatedAt   pgtype.Timestamptz
 }
 
+type PackageOwner struct {
+	ID          pgtype.UUID
+	Domain      string
+	Format      string
+	PackageName string
+	OwnerKind   string
+	PrincipalID pgtype.UUID
+	CiIssuerID  pgtype.UUID
+	CiProjectID pgtype.Text
+	Display     string
+	Reason      string
+	AddedBy     pgtype.UUID
+	AddedAt     pgtype.Timestamptz
+}
+
+type PackageOwnership struct {
+	Domain      string
+	Format      string
+	PackageName string
+	State       string
+	ClaimedAt   pgtype.Timestamptz
+	ClaimEvent  pgtype.UUID
+}
+
 type PackageVersion struct {
 	ID             int64
 	PackageID      int64
@@ -357,6 +441,50 @@ type Principal struct {
 	CreatedAt pgtype.Timestamptz
 	CreatedBy pgtype.UUID
 	Revision  int64
+}
+
+type RemoteCacheEntry struct {
+	ID                   pgtype.Int8
+	RepoID               int64
+	Path                 string
+	Variant              string
+	Kind                 string
+	ItemID               pgtype.Int8
+	BlobSha256           []byte
+	UpstreamUrl          string
+	UpstreamEtag         pgtype.Text
+	UpstreamLastModified pgtype.Timestamptz
+	FetchedAt            pgtype.Timestamptz
+	ValidatedAt          pgtype.Timestamptz
+	ExpiresAt            pgtype.Timestamptz
+	UpstreamGoneAt       pgtype.Timestamptz
+	LastUsedAt           pgtype.Timestamptz
+}
+
+type RemoteCacheInvalidation struct {
+	ID        int64
+	RepoID    int64
+	Prefix    string
+	Scope     string
+	CreatedAt pgtype.Timestamptz
+	CreatedBy pgtype.UUID
+	FoldedAt  pgtype.Timestamptz
+}
+
+type RemoteUpstreamState struct {
+	RepoID              int64
+	ConsecutiveFailures int32
+	OpenUntil           pgtype.Timestamptz
+	LastFailureAt       pgtype.Timestamptz
+	LastFailure         pgtype.Text
+	LastSuccessAt       pgtype.Timestamptz
+}
+
+type RemoteUrlMap struct {
+	RepoID      int64
+	Path        string
+	UpstreamUrl string
+	RecordedAt  pgtype.Timestamptz
 }
 
 type Replica struct {
@@ -390,6 +518,15 @@ type Repository struct {
 	CreatedBy      pgtype.UUID
 	UpdatedBy      pgtype.UUID
 	LastActivityAt pgtype.Timestamptz
+	ClaimsVersion  int64
+}
+
+type RepositorySecret struct {
+	RepoID    int64
+	Field     string
+	Sealed    pgtype.Text
+	SecretRef []byte
+	UpdatedAt pgtype.Timestamptz
 }
 
 type RepositoryUsage struct {
@@ -506,4 +643,27 @@ type UserPreference struct {
 	ProjectFilter     pgtype.Text
 	Revision          int64
 	UpdatedAt         pgtype.Timestamptz
+}
+
+type VirtualDeployTarget struct {
+	VirtualID int64
+	TargetID  int64
+}
+
+type VirtualMember struct {
+	VirtualID int64
+	Position  int32
+	MemberID  int64
+}
+
+type VirtualPinMember struct {
+	VirtualID int64
+	Position  int32
+	MemberID  int64
+}
+
+type VirtualPinRule struct {
+	VirtualID       int64
+	Position        int32
+	PackagePatterns []string
 }

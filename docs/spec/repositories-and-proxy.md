@@ -763,7 +763,7 @@ Data model:
 ```sql
 CREATE TABLE virtual_members (
   virtual_id bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-  position   integer NOT NULL,
+  position   integer NOT NULL CHECK (position >= 0),
   member_id  bigint NOT NULL REFERENCES repositories (id) ON DELETE RESTRICT,
   PRIMARY KEY (virtual_id, position),
   UNIQUE (virtual_id, member_id),
@@ -1104,7 +1104,7 @@ CREATE TABLE namespace_claims (
 
 CREATE TABLE virtual_pin_rules (
   virtual_id       bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-  position         integer NOT NULL,
+  position         integer NOT NULL CHECK (position >= 0),
   package_patterns text[] NOT NULL CHECK (cardinality(package_patterns) BETWEEN 1 AND 50),
   PRIMARY KEY (virtual_id, position)
 );
@@ -1482,6 +1482,7 @@ Data model:
 
 ```sql
 CREATE TABLE remote_cache_entries (
+  id                     bigint GENERATED ALWAYS AS IDENTITY UNIQUE,     -- joins the old and new rows of the blob release trigger (Q-REPO-86)
   repo_id                bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
   path                   text COLLATE "C" NOT NULL,
   variant                text NOT NULL DEFAULT '',
@@ -1501,10 +1502,13 @@ CREATE TABLE remote_cache_entries (
   CHECK ((kind = 'artifact') = (expires_at IS NULL)),
   CHECK (kind = 'metadata' OR upstream_gone_at IS NULL)
 );
+CREATE INDEX remote_cache_entries_blob ON remote_cache_entries (blob_sha256);       -- every blob reference is indexed (R-STOR-003)
+CREATE INDEX remote_cache_entries_item ON remote_cache_entries (item_id) WHERE item_id IS NOT NULL;
 CREATE INDEX remote_cache_entries_unused ON remote_cache_entries (repo_id, last_used_at)
   WHERE kind = 'metadata';
 CREATE INDEX remote_cache_entries_gone ON remote_cache_entries (repo_id)
   WHERE upstream_gone_at IS NOT NULL;                 -- loads the gone packages (R-REPO-029)
+-- Triggers blob_ref_guard, blob_ref_release and blob_ref_release_update as on items (storage.md R-STOR-003).
 ```
 
 Acceptance criteria:
@@ -1872,10 +1876,10 @@ Data model:
 ```sql
 CREATE TABLE remote_upstream_state (
   repo_id              bigint PRIMARY KEY REFERENCES repositories (id) ON DELETE CASCADE,
-  consecutive_failures integer NOT NULL DEFAULT 0,
+  consecutive_failures integer NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
   open_until           timestamptz,
   last_failure_at      timestamptz,
-  last_failure         text,
+  last_failure         text CHECK (length(last_failure) <= 1024),
   last_success_at      timestamptz
 );
 ```
@@ -2042,7 +2046,7 @@ Data model:
 ```sql
 CREATE TABLE repository_secrets (
   repo_id    bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-  field      text NOT NULL,      -- JSON pointer, e.g. '/remote/password', '/remote/headers/X-Api-Key'
+  field      text NOT NULL CHECK (field ~ '^/[A-Za-z0-9/._~-]{1,255}$'),  -- JSON pointer, e.g. '/remote/password', '/remote/headers/X-Api-Key'
   sealed     text,               -- inline value, sealed (R-ARCH-021 format v1:<key id>:<base64>)
   secret_ref jsonb,              -- {"file": …} or {"env": …}
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -2549,7 +2553,8 @@ because RMT-026 is. This requirement specifies its semantics and mechanism.
     Until 2026-10-28 this was `NOTIFY trove_cache_invalidation`; trove issues no `NOTIFY` any
     more ([architecture.md](architecture.md) Q-ARCH-15).
   - A background job on the `worker` role later folds each invalidation into the metadata entries
-    validated before it, in batches, setting `expires_at` to the invalidation time. An entry
+    validated before it, in batches, setting `expires_at` to the invalidation time and, when the
+    last batch is done, `folded_at` on the row (Q-REPO-87). An entry
     refreshed after the invalidation keeps its own expiry. Invalidating a million entries is
     therefore one insert, not a long `UPDATE`.
   - Negative entries live in Valkey and are never deleted to invalidate them. Readers apply the
@@ -2582,9 +2587,11 @@ CREATE TABLE remote_cache_invalidations (
   prefix     text COLLATE "C" NOT NULL,   -- '' = whole repository
   scope      text NOT NULL CHECK (scope IN ('metadata', 'negative', 'all')),
   created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid
+  created_by uuid,
+  folded_at  timestamptz                  -- set by the fold job (Q-REPO-87)
 );
 CREATE INDEX remote_cache_invalidations_repo ON remote_cache_invalidations (repo_id);
+CREATE INDEX remote_cache_invalidations_unfolded ON remote_cache_invalidations (created_at) WHERE folded_at IS NULL;
 ```
 
 Acceptance criteria:
@@ -3563,6 +3570,59 @@ resource-specific knowledge. The development agent would revisit this if clients
 
 **Applied in the spec:** the acceptance criteria and the code table of R-REPO-002, R-REPO-003, R-REPO-008, R-REPO-009, R-REPO-010
 and R-REPO-011 of this page; Q-REPO-12 and Q-REPO-21 are marked superseded; R-API-009 ([Q-API-136](api-and-ui.md#q-api-136--one-rule-for-the-top-level-code-of-an-error)).
+
+### Q-REPO-85 · The integer keys of `proxy.*` keep the unit in their name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the configuration framework asks for `time.Duration` and `ByteSize` instead of an integer with a unit in its name ([../developer/configuration.md](../developer/configuration.md#adding-a-key)). This page names `proxy.lock_poll_interval_ms`, `proxy.fetch_wait_timeout_seconds` and `proxy.queue_timeout_seconds` as integers, and its acceptance criteria, the failure-mode analysis (H-49) and [architecture.md](architecture.md) R-ARCH-033 quote the names and the values (`proxy.fetch_wait_timeout_seconds: 5`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the names and integer values | `lock_poll_interval_ms: 1000`, `fetch_wait_timeout_seconds: 120`, `queue_timeout_seconds: 10`; the code reads them through `LockPollInterval()`, `FetchWaitTimeout()` and `QueueTimeout()` | Every quoted name, value and criterion stays true; the generated environment names do not change | Three keys break the framework's convention; a value is not self-describing without its name |
+| (b) Rename to durations | `lock_poll_interval: 1s`, `fetch_wait_timeout: 2m`, `queue_timeout: 10s` | Follows the convention | Rewrites this page, R-ARCH-033, H-49 and every criterion that quotes a key; the work packages that were briefed with the old names diverge |
+
+**Choice:** (a), with the ranges `lock_poll_interval_ms` 50 to 60000, `fetch_wait_timeout_seconds` 1 to 3600, `queue_timeout_seconds` 0 to 600, and the cross-field rule that the poll interval is below the wait timeout. The byte sizes (`max_artifact_bytes`, `max_metadata_bytes`, `merged_metadata_cache_bytes`) are `ByteSize` and accept a plain integer, so their quoted values stay valid. Keys of the npm section that the spec writes without a unit in the name (`npm.document_max_age`, `npm.publish.retry_window`) are durations: `document_max_age: 0s`.
+
+**Rationale:** The names are a contract that criteria and a failure analysis quote, and a rename buys consistency at the price of rewriting them. The development agent would revisit this when the three keys are touched for another reason; the change is then a rename with a deprecation alias (the loader rejects unknown keys, so an alias needs a code change).
+
+**Applied in the spec:** [formats/npm.md](formats/npm.md) R-NPM-013 (`document_max_age: 0s`); [../developer/configuration.md](../developer/configuration.md) names the exception.
+
+### Q-REPO-86 · `remote_cache_entries` has a surrogate `id` so the blob release trigger applies unchanged
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an entry whose blob is replaced (a refreshed metadata document) must enqueue the replaced blob for collection ([storage.md](storage.md) R-STOR-003). `blob_ref_release_update()` joins the old and the new rows of an `UPDATE` on the column `id`; the primary key of the entry is `(repo_id, path, variant)`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A surrogate `id bigint GENERATED ALWAYS AS IDENTITY UNIQUE` | The existing function applies; `TestBlobReferenceRules` recognises the table unchanged | The smallest change; no second copy of the release logic | One more column and its unique index (8 bytes per entry) |
+| (b) A second release function | Joins on `(repo_id, path, variant)` | No extra column | Two functions to keep in step; the migration test has to learn a second shape |
+| (c) A generic function | Join columns passed in `TG_ARGV` | One function for every shape | Rewrites a function that `items` and every later table depend on |
+
+**Choice:** (a). The primary key stays `(repo_id, path, variant)`; nothing references `id`.
+
+**Rationale:** The rule "every table with a blob reference installs both triggers" is checked by catalog, and (a) keeps one implementation of it. The development agent would revisit this if the entry table grows so large that the second index matters; then (c) with `TG_ARGV` replaces it.
+
+**Applied in the spec:** the data model of R-REPO-025 (the column, the blob and item indexes, the trigger note).
+
+### Q-REPO-87 · Invalidation rows record their fold in `folded_at`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-045 keeps a row of scope `negative` or `all` for 86,405 s, and deletes it only "once it is folded and that period has passed". Without a record of the fold the job cannot tell a folded `all` row waiting for its period from one whose fold is still running, and readers must keep applying the unfolded ones.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A column `folded_at timestamptz` | NULL until the last batch of the fold has run; a partial index serves the job's scan of unfolded rows | One row carries its whole life; the job is restartable by the column alone | One more column |
+| (b) A table of fold progress | One row per invalidation with a cursor | Records progress inside a fold | A second table and a join for a flag |
+| (c) Decide by age alone | A row older than the period counts as folded | No schema | A late fold (a stopped worker) would drop the row early and let unfolded metadata entries count as fresh again, which the page forbids |
+
+**Choice:** (a). The job sets `folded_at` when the fold of the row is complete; scope `metadata` rows are deleted at once, `negative` and `all` rows when `folded_at` is set and 86,405 s have passed since `created_at`.
+
+**Rationale:** The page's own rule, that a replica never drops a row the database still holds before its fold, needs the flag. The development agent would revisit this if folds become resumable inside one row (then a cursor column joins it).
+
+**Applied in the spec:** the data model and the fold bullet of R-REPO-045.
 
 ## What this does not cover
 

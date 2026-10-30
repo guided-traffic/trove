@@ -215,7 +215,8 @@ flowchart LR
     API["api/v1"]
     UI["webui<br/>embedded Angular build"]
     FM["formats<br/>npm, nuget, ..."]
-    RP["repository<br/>snapshot, virtual resolver"]
+    RP["repository<br/>snapshot, routing"]
+    VT["virtual<br/>per-caller resolution, merged cache"]
     PX["proxy<br/>freshness, negative cache, collapse"]
     BL["blob<br/>spool, digests, s3"]
     MT["meta<br/>postgres, migrations"]
@@ -246,6 +247,9 @@ flowchart LR
   HS --> FM
   FM --> RP
   FM --> PX
+  FM --> VT
+  VT --> RP
+  VT --> PX
   API --> RP
   API --> JB
   RP --> MT
@@ -277,8 +281,10 @@ flowchart LR
 | api | `internal/api/v1` | Management REST API | [api-and-ui.md](api-and-ui.md) |
 | webui | `internal/webui` | Embedded Angular build | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004 |
 | formats | `internal/formats`, `internal/formats/<id>` | Package protocols behind the plug-in contract | R-ARCH-008 to R-ARCH-010; [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
-| repository | `internal/repository` | Repository model and snapshot, request classification, virtual resolution | [repositories-and-proxy.md](repositories-and-proxy.md) |
-| proxy | `internal/proxy` | Remote fetch engine | [repositories-and-proxy.md](repositories-and-proxy.md) |
+| repository | `internal/repository` | Repository model and snapshot, request classification, caller-independent routing of virtual repositories (members, claims, pin rules) | [repositories-and-proxy.md](repositories-and-proxy.md) |
+| proxy | `internal/proxy`, `internal/proxy/{upstream,invalidation}` | Remote fetch engine, per-remote upstream clients, cache invalidation | [repositories-and-proxy.md](repositories-and-proxy.md) |
+| virtual | `internal/virtual` | Per-caller resolution of virtual repositories, merged-metadata cache, shadowing check (Q-ARCH-192) | [repositories-and-proxy.md](repositories-and-proxy.md) |
+| formatdata | `internal/formatdata/<id>` | Implementations of the store ports that formats declare for their own tables (Q-ARCH-193) | [formats/npm.md](formats/npm.md) |
 | blob | `internal/blob`, `internal/blob/s3` | Spool, digests, content-addressed objects | [storage.md](storage.md) |
 | meta | `internal/meta`, `internal/meta/postgres` | Transactions, generated queries, embedded migrations | [storage.md](storage.md) (schema of items and packages), R-ARCH-016, R-ARCH-019, R-ARCH-026 |
 | cluster | `internal/cluster` | Valkey client and key registry, change log and signals, `FlightLock`, shared counters, leases, advisory-lock categories | R-ARCH-017, R-ARCH-018, R-ARCH-030, R-ARCH-031, R-ARCH-033, R-ARCH-034 |
@@ -439,7 +445,7 @@ trove/
 │   ├── api/rawfiles/            # the /files/ handler (R-API-025)
 │   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
 │   ├── authz/
-│   ├── repository/              # model, snapshot, CleanPath, classification, virtual resolver
+│   ├── repository/              # model, snapshot, CleanPath, classification, routing of virtual repositories (members, claims, pins)
 │   ├── files/                   # items: raw deploy, download, delete, listing, statistics (R-STOR-007 to R-STOR-018)
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
@@ -447,7 +453,12 @@ trove/
 │   │   ├── generic/
 │   │   ├── npm/
 │   │   └── nuget/
-│   ├── proxy/
+│   ├── proxy/                   # remote fetch engine
+│   │   ├── upstream/            # per-remote HTTP clients, credentials, hop policy
+│   │   └── invalidation/        # invalidation set, fold task
+│   ├── virtual/                 # per-caller resolution, merged-metadata cache, shadowing check (Q-ARCH-192)
+│   ├── formatdata/              # store ports of the formats, implemented over the generated queries (Q-ARCH-193)
+│   │   └── npm/
 │   ├── blob/                    # BlobStore interface, spool, digests
 │   │   ├── s3/
 │   │   └── blobtest/            # conformance kit and in-memory store for tests
@@ -4965,6 +4976,94 @@ download cut at the shutdown deadline is noticed by its client only after the ed
 reader that is slower than the margin allows must be served to the end (then the shutdown timeout, not this wait, is the knob).
 
 **Applied in the spec:** R-ARCH-024 step 5; [../developer/e2e.md](../developer/e2e.md#findings-of-the-suite) finding 5.
+
+### Q-ARCH-190 · The M2 tables ship as three expand-only migrations before any package that uses them
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: milestone M2 adds the remote cache, the virtual repositories with claims and ownership, and the npm format, owned by about ten work packages that run in parallel. Each needs tables, the generated `q/models.go` changes with every schema change, and `RequiredSchema()` (R-HA-018) is the highest expand step, so each extra migration is another rolling-upgrade step.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One schema package, three files by area | `00014_remote_proxy`, `00015_virtual_claims_ownership` and `00016_npm` land first; later packages add query files only | The generated models change once; no package edits another's migration; the tables are registered and tested before any code uses them | A package that finds a column missing asks for a follow-up expand step |
+| (b) Each package ships its own migration | A migration next to the code that needs it | The table and its owner arrive together | Parallel packages collide on the version numbers and on `q/models.go`; a gap in the numbering is an error (`ParseSteps`) |
+| (c) One file for everything | `00014_m2.sql` | One step | One failure rolls back all of M2; the file mixes three owners |
+
+**Choice:** (a). Every file is `-- trove:phase expand` without `no-transaction` or `requires-app`: no `DROP`, `RENAME` or `SET NOT NULL`, no backfill (no remote or virtual repository can exist before M2, Q-REPO-16), and the new indexes are on empty tables. A v0.3.x replica never reads the new tables, so it keeps serving against schema 16 during the rolling upgrade; the M2 binary requires 16. `repositories.claims_version` is the one change to an existing table, a column with a default. The tables are data tables (R-BAK-004), registered in `internal/meta/postgres/tables_m2.go` until their owning packages exist; the one new revision column is registered with `meta.RegisterRevisionColumn`.
+
+**Rationale:** The packages that follow depend on the schema, not on each other's code, and the migration test (`TestTableRegistry`, `TestRevisionColumns`, `TestBlobReferenceRules`, `TestM2Migrations`) can cover the constraints before an implementation exists. The development agent would revisit this when a package needs more than one follow-up step: then it merges those into one `00017`.
+
+**Applied in the spec:** none; [../developer/database.md](../developer/database.md#m2-tables) lists the tables.
+
+### Q-ARCH-191 · Columns and tables the M2 schema leaves out or leaves without a constraint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: three sketches reach beyond M2. `package_owner.ci_issuer_id` ([authorization.md](authorization.md) R-AUTHZ-018) references `ci_issuers`, a table of M4 (R-CI-002). `npm_packages.search_vector` (R-NPM-006, R-NPM-024) serves the search of R-NPM-037, which is P1. The tables `remote_references`, `client_certificates`, `outbound_proxies` and `proxy_offline_switch` belong to P1 requirements (R-REPO-031, R-REPO-034, R-REPO-037).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave out what no MVP code reads; keep the column that M2 writes, without its foreign key | `ci_issuer_id` stays a plain `uuid` with the CHECKs; M4 adds the foreign key `NOT VALID` and validates it; no `search_vector`, no P1 tables | The CHECKs that bind `owner_kind` to the columns hold from the first row; every later addition is an expand step | The column is unconstrained until M4 |
+| (b) Create the P1 and M4 structures now | An empty `ci_issuers`, the `tsvector`, the P1 tables | The sketches are followed to the letter | M4's table is created early without its design; an unused `tsvector` needs maintenance in every write path for no reader |
+| (c) Add the owner columns in M4 | `package_owner` without the CI columns now | No unconstrained column | The CHECK that binds `owner_kind` to the columns has to be replaced, which is a `DROP CONSTRAINT` and forbidden in an expand file |
+
+**Choice:** (a). `NOT VALID` and `VALIDATE CONSTRAINT` are allowed in expand files, and the M4 step adds the constraint on a table whose CI rows it can check. `npm_remote_packages.doc_sha256` is a digest, not a blob reference: it has no foreign key to `blobs`, so the blob reference rule does not apply; the stored document is referenced by `remote_cache_entries.blob_sha256`.
+
+**Rationale:** A column that nothing reads is cost without value, while the constraint on a column that is written from M2 on must not wait. The development agent would revisit this if M4 needs the owner rows of CI projects to exist before `ci_issuers`.
+
+**Applied in the spec:** [formats/npm.md](formats/npm.md) R-NPM-006 (the sketch marks `search_vector` as added by R-NPM-037); the `ci_issuer_id` line of the R-AUTHZ-018 sketch in [authorization.md](authorization.md) is the authorization work package's write-back.
+
+### Q-ARCH-192 · The per-caller virtual engine is a domain package of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-003 puts "virtual resolver" into `internal/repository`. Resolution needs the caller's permissions (`authz`) and the remote engine (`proxy`) for tier checks, merged documents and the shadowing probe; `authz` already imports `repository` (the grant index reads the snapshot).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Routing in `repository`, resolution in `internal/virtual` | The caller-independent steps (members, claims, pin rules) stay in `repository`; per-caller resolution, the merged-metadata cache and the shadowing check move to a new domain package that imports `repository`, `authz` and `proxy` | No import cycle; the snapshot readers (`authz`) see the routing without importing the engine | One more package |
+| (b) Everything in `repository` | As R-ARCH-003's tree says | One package | `repository` cannot import `authz` or `proxy`; every per-caller step needs a callback interface |
+
+**Choice:** (a). `internal/virtual` is a domain-layer package (archtest `layerTable`), and the R-ARCH-033 source ban (no PostgreSQL advisory lock) covers it like `internal/proxy`.
+
+**Rationale:** The import direction `authz → repository` is fixed by the grant index; the dependency of the engine on `authz` and `proxy` can only be satisfied by a package above both. The development agent would revisit this if the routing steps turn out to need the caller after all.
+
+**Applied in the spec:** R-ARCH-002 (component table and diagram) and R-ARCH-003 (tree); `internal/archtest/layers.go` and `internal/archtest/source.go`.
+
+### Q-ARCH-193 · A format reaches its own tables through a store port that a domain package implements
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: npm keeps `npm_packages`, `npm_versions`, `npm_tombstones` and the remote document records. Formats may not contain SQL or import the query package (R-ARCH-008, R-ARCH-002), yet the correctness rules of npm rest on constraints of those tables: `UNIQUE (repo_id, name_fold)` decides the look-alike race of R-NPM-007, the primary key of `npm_tombstones` refuses a republished version.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Store port in the format, implementation in `internal/formatdata/<id>` | The port is declared in the format package; a domain package implements it over the generated queries; the composition root binds it and checks at start-up that the binding implements the port | Keeps R-ARCH-008; the constraints stay in real tables | One more package per format with tables |
+| (b) Facts in the generic `attributes jsonb` | No format tables | No new package | Loses the unique constraints and the tombstone key |
+| (c) Formats import a leaf query package | The format calls `q` directly | Least code | Breaks R-ARCH-002 |
+
+**Choice:** (a). `internal/formatdata` is a domain-layer package tree (archtest `layerTable`).
+
+**Rationale:** The rules npm needs for correctness are database constraints, and only (a) keeps them without SQL in the format. The development agent would revisit this when a second format shows that the ports have a common shape worth a shared helper.
+
+**Applied in the spec:** R-ARCH-002 (component table) and R-ARCH-003 (tree). The `Host` method that hands a format its bound store (R-ARCH-009) is the format contract's write-back.
+
+### Q-ARCH-194 · The areas of M2: claims, cache invalidation and upstream state are change areas, the merged-metadata eviction a signal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the table of R-ARCH-018 lists `claims`, `cache_invalidation` and `upstream_state` as change areas and `metadata_changed` as a signal. Code needs the registrations and the `cluster_epoch` rows before a package writes or watches them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Register all four with the schema package | The areas are declared in `internal/cluster/areas.go` between `>>> M2 schema` markers; the migrations seed the epoch rows of the three change areas | No package registers another's area; a replica that sees a payload version above its own flushes the area (R-ARCH-018 step 5) from the first release | The areas exist before any writer does |
+| (b) Each owning package registers its area | Registration next to the code | Locality | The `cluster_epoch` row and the registration live in different changes, so a forgotten row is found only at run time |
+
+**Choice:** (a), payload version 1 for each change area, no `cluster_epoch` row for the signal. `00014_remote_proxy` seeds `cache_invalidation` and `upstream_state`, `00015_virtual_claims_ownership` seeds `claims`. `TestM2Migrations` checks that every registered change area has its row.
+
+**Rationale:** The areas are part of the contract of the tables, so they travel with them. The development agent would revisit this if an area needs a payload that its first writer cannot express in version 1.
+
+**Applied in the spec:** none; the R-ARCH-018 table already lists the four areas.
 
 ### Q-ARCH-198 · Source-address binding of a remote's connections
 

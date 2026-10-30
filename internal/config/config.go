@@ -36,6 +36,9 @@ type Config struct {
 	Authz        Authz        `yaml:"authz"`
 	API          API          `yaml:"api"`
 	Repositories Repositories `yaml:"repositories"`
+
+	// The M2 sections. proxy (above) gained its engine keys in outbound.go.
+	NPM NPM `yaml:"npm"`
 }
 
 //go:generate go run ./schemagen -out schema.json

@@ -56,7 +56,7 @@ func (q *Queries) DeleteRepositoryRow(ctx context.Context, id int64) (int64, err
 }
 
 const getRepositoryByID = `-- name: GetRepositoryByID :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
   FROM repositories
  WHERE id = $1::bigint
 `
@@ -83,6 +83,7 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -95,7 +96,7 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 }
 
 const getRepositoryByKey = `-- name: GetRepositoryByKey :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
   FROM repositories
  WHERE key = $1::text
 `
@@ -122,6 +123,7 @@ func (q *Queries) GetRepositoryByKey(ctx context.Context, key string) ([]Reposit
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -138,7 +140,7 @@ INSERT INTO repositories (key, format, class, config, created_by, updated_by)
 VALUES ($1::text, $2::text, $3::text, $4::text::jsonb,
         NULLIF($5::text, '')::uuid, NULLIF($5::text, '')::uuid)
 ON CONFLICT (key) DO NOTHING
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
 `
 
 type InsertRepositoryParams struct {
@@ -180,6 +182,7 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -193,7 +196,7 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 
 const listRepositories = `-- name: ListRepositories :many
 
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
   FROM repositories
  ORDER BY key
 `
@@ -227,6 +230,7 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -239,7 +243,7 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 }
 
 const lockRepositoryByKey = `-- name: LockRepositoryByKey :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
   FROM repositories
  WHERE key = $1::text
    FOR UPDATE
@@ -268,6 +272,7 @@ func (q *Queries) LockRepositoryByKey(ctx context.Context, key string) ([]Reposi
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -286,7 +291,7 @@ UPDATE repositories
        updated_at = now(),
        updated_by = NULLIF($1::text, '')::uuid
  WHERE id = $2::bigint AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
 `
 
 type MarkRepositoryDeletingParams struct {
@@ -318,6 +323,7 @@ func (q *Queries) MarkRepositoryDeleting(ctx context.Context, arg MarkRepository
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -336,7 +342,7 @@ UPDATE repositories
        updated_at = now(),
        updated_by = NULLIF($2::text, '')::uuid
  WHERE id = $3::bigint AND config_version = $4::bigint AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
 `
 
 type UpdateRepositoryConfigParams struct {
@@ -375,6 +381,7 @@ func (q *Queries) UpdateRepositoryConfig(ctx context.Context, arg UpdateReposito
 			&i.CreatedBy,
 			&i.UpdatedBy,
 			&i.LastActivityAt,
+			&i.ClaimsVersion,
 		); err != nil {
 			return nil, err
 		}

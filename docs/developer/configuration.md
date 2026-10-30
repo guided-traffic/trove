@@ -12,6 +12,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 |---|---|
 | [config.go](../../internal/config/config.go) | the root struct `Config`, one field per section; the `go:generate` line |
 | [process.go](../../internal/config/process.go), [server.go](../../internal/config/server.go) with [tls.go](../../internal/config/tls.go) (`server.tls`, `server.ops_tls`), [database.go](../../internal/config/database.go), [migrate.go](../../internal/config/migrate.go), [runtime.go](../../internal/config/runtime.go), [valkey.go](../../internal/config/valkey.go), [storage.go](../../internal/config/storage.go), [jobs.go](../../internal/config/jobs.go), [cluster.go](../../internal/config/cluster.go), [cache.go](../../internal/config/cache.go), [secrets.go](../../internal/config/secrets.go), [system.go](../../internal/config/system.go), [health.go](../../internal/config/health.go), [log.go](../../internal/config/log.go), [metrics.go](../../internal/config/metrics.go), [trace.go](../../internal/config/trace.go), [audit.go](../../internal/config/audit.go), [maintenance.go](../../internal/config/maintenance.go), [outbound.go](../../internal/config/outbound.go) | one section each (`Process`, `Server`, `Database`, `Migrate`, `Runtime`, `Valkey`, `Storage`, `Jobs`, `Cluster`, `Cache`, `Secrets`, `System`, `Health`, `Log`, `Metrics`, `Tracing`, `Audit`, `Maintenance`, `Proxy` with `Outbound`); the owner of a subsystem edits only its file |
+| [outbound.go](../../internal/config/outbound.go), [npm.go](../../internal/config/npm.go) | the sections of M2: `proxy.*` (inside the `>>> M2 proxy` markers of `Proxy`) and `npm`, see [M2 keys](#m2-keys) |
 | [schema.go](../../internal/config/schema.go) | `Describe`: flattens the tree into `Key`s, checks tags, derives environment names |
 | [load.go](../../internal/config/load.go) | `Load`: defaults, file, environment, flags; strict matching; secret resolution; validation |
 | [m1.go](../../internal/config/m1.go), [login.go](../../internal/config/login.go) | the sections of the M1 areas; in `auth` the login keys `auth.oidc`, `auth.login_page`, `auth.sessions`, `auth.break_glass` ([login.md](login.md#configuration)). `auth.oidc.providers` is a map of nested structs whose keys left out are filled by `AuthOIDCProvider.Defaulted`, not by `default` tags |
@@ -21,7 +22,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 | [effective.go](../../internal/config/effective.go), [jsonschema.go](../../internal/config/jsonschema.go), [schemagen](../../internal/config/schemagen/main.go), [schema.json](../../internal/config/schema.json) | redacted view, JSON Schema generator and its committed output |
 
 Sections that exist in the specification but have no owner yet are not in the tree: `backup`, `retention`,
-`authz`, `ci`, `proxy` (apart from `proxy.outbound`), `npm`, `nuget`, `api`, `ui`, `support`,
+`ci`, `proxy` (apart from the keys listed under [M2 keys](#m2-keys)), `nuget`, `api`, `ui`, `support`,
 `config_as_code`, `webhooks`, `mail`, `content_types`. Strict validation rejects a file that sets them
 until their owner adds the section. The chart must render only keys the tree knows.
 
@@ -153,4 +154,47 @@ Rules (`Server.Validate`): every entry names both files, no `cert_file` twice; `
 client certificates need certificates on the listener; with `inherit: true` every other `ops_tls` key must keep its
 default (it would be ignored); with `inherit: false` and no certificates the ops listener would be plain HTTP beside a
 TLS client listener, which is refused. `database.ssl_cert_file` and `database.ssl_key_file` are set together.
+
+## M2 keys
+
+The keys of the remote engine (`proxy.*` beside `proxy.outbound`), the virtual engine and the npm format. The per-repository
+settings of a remote repository (timeouts, cache periods, `limits.*`) are in the repository document
+([repositories.md](repositories.md)); the keys here are the system-wide values and bounds. Ranges are enforced by the
+`validate` tags; the rules across keys are in `Proxy.Validate` and in `Config.validateNPMCoupling`.
+
+```yaml
+proxy:
+  lock_poll_interval_ms: 1000        # default; 50 to 60000, below fetch_wait_timeout_seconds (R-REPO-026)
+  fetch_wait_timeout_seconds: 120    # default; 1 to 3600 (R-REPO-026)
+  negative_l1_entries: 100000        # default; 1 to 10000000, per replica (R-REPO-028)
+  max_redirects: 5                   # default; 0 to 20 (R-REPO-039)
+  max_artifact_bytes: 10GiB          # default; at least 1KiB (R-REPO-040)
+  max_metadata_bytes: 256MiB         # default; at least 1KiB (R-REPO-040)
+  max_concurrent_fetches: 256        # default; 1 to 100000, per replica (R-REPO-040)
+  queue_timeout_seconds: 10          # default; 0 to 600, 0 refuses at once (R-REPO-040)
+  global_offline: false              # default (R-REPO-031)
+  blocked_content_types:             # default; lower-case type/subtype, no parameters (R-REPO-042)
+    - text/html
+    - application/xhtml+xml
+  merged_metadata_cache_bytes: 256MiB  # default; 0 turns the cache off, per replica (R-REPO-020)
+  claims:
+    remote_refusal: true             # default (R-REPO-023)
+npm:
+  publish:
+    max_tarball_size: 256MiB         # default; at least 1KiB and at most storage.upload.max_size (R-NPM-007)
+    max_unpacked_size: 2GiB          # default; at least 1KiB
+    max_tar_entries: 100000          # default; 1 to 10000000
+    manifest_consistency: reject     # default; reject | warn
+    retry_window: 10m                # default; 0s to 24h, 0s turns the acknowledged retry off
+  abbreviated_time: true             # default (R-NPM-011)
+  document_max_age: 0s               # default; 0s to 24h (R-NPM-013)
+```
+
+The three keys that carry a unit in their name (`lock_poll_interval_ms`, `fetch_wait_timeout_seconds`,
+`queue_timeout_seconds`) are integers because the specification names them so (Q-REPO-85); code reads them through
+`Proxy.LockPollInterval()`, `Proxy.FetchWaitTimeout()` and `Proxy.QueueTimeout()`. Every other duration is a
+`time.Duration`, every size a `ByteSize` (a plain integer is bytes). Not in the tree yet, because their requirements are
+P1 or later: `npm.trusted_publishing` and the `npm.audit` forwarding. `proxy.global_offline` is only the configuration side of
+R-REPO-031; the runtime switch and its table (`proxy_offline_switch`) are not built.
+The unit tests are in [m2_test.go](../../internal/config/m2_test.go).
 
