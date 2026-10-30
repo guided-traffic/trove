@@ -5775,7 +5775,7 @@ any code change. The development agent would revisit the pin when a row fails on
 Q-NPM-45 already states, and the one-version rule is re-decided on the page that owns the row.
 
 **Applied in the spec:** [npm.md](formats/npm.md) (Q-NPM-45 names 26.13.0 and its verification); `web/.nvmrc` and `tools/versions.env`
-hold the pins; [docs/developer/e2e.md](../developer/e2e.md) and [perf/README.md](../../perf/README.md) name the version.
+hold the pins; [docs/developer/e2e.md](../developer/e2e.md) and [perf/README.md](../../perf/README.md) name the version. Node.js 26 links `libatomic.so.1`, which Node.js 24 did not; the CI jobs that set up the pinned Node.js on the self-hosted runners install `libatomic1` first, until the runner image ships it.
 
 ### Q-ARCH-219 · Which PostgreSQL version does the integration tier and the dev profile run?
 
