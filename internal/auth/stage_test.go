@@ -292,6 +292,27 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			t.Fatalf("challenge %q", e.Challenge)
 		}
 	})
+	t.Run("R-AUTH-002 a browser never gets the Basic challenge, a package client still does", func(t *testing.T) {
+		for _, tc := range []struct {
+			path string
+			hdr  []string
+			want string
+		}{
+			{"/files/generic-local/a.bin", nil, `Basic realm="trove"`},
+			{"/api/npm/npm-all/lodash", nil, `Basic realm="trove"`},
+			{"/files/generic-local/a.bin", []string{"Sec-Fetch-Mode", "navigate", "Sec-Fetch-Dest", "document"}, `Bearer realm="trove"`},
+			{"/api/npm/npm-all/lodash", []string{"Sec-Fetch-Mode", "cors"}, `Bearer realm="trove"`},
+			{"/favicon.ico", []string{"Sec-Fetch-Dest", "image"}, `Bearer realm="trove"`},
+			{"/favicon.ico", nil, `Bearer realm="trove"`},
+			{"/robots.txt", nil, `Bearer realm="trove"`},
+		} {
+			_, err := off.Authenticate(req("GET", tc.path, tc.hdr...), defaultRules())
+			e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
+			if e.Challenge != tc.want {
+				t.Errorf("%s %v: challenge %q, want %q", tc.path, tc.hdr, e.Challenge, tc.want)
+			}
+		}
+	})
 	t.Run("R-AUTH-037 on: the request runs as the anonymous principal", func(t *testing.T) {
 		res, err := on.Authenticate(req("GET", "/api/npm/npm-all/lodash"), defaultRules())
 		if err != nil || !res.Anonymous || res.Principal.ID != principal.AnonymousID || res.Principal.Kind != principal.KindAnonymous {

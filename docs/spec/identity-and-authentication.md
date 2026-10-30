@@ -177,6 +177,7 @@ Priority: **MVP** · Covers: TOK-033, TOK-034, PKG-NPM-007, PKG-NUGET-016
 |---|---|
 | `/api/v1/…` | `Bearer realm="trove"`, plus `error="invalid_token"` when a token was presented and rejected ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750) §3) |
 | `/api/<format>/…`, `/files/…` | `Basic realm="trove"`. Format pages may add challenges, for example the OCI token-service challenge. The npm endpoints MUST NOT include the token `otp` (PKG-NPM-012 is not implemented). |
+| Every other route, and every request that carries Fetch Metadata headers (`Sec-Fetch-Mode` or `Sec-Fetch-Dest`) | `Bearer realm="trove"`: a browser answers a Basic challenge with its native login dialog instead of trove's sign-in screen, and package clients send no Fetch Metadata (Q-AUTH-173) |
 
 - The error body carries one `code`:
 
@@ -199,6 +200,8 @@ Acceptance criteria:
   challenge.
 - No response on an npm endpoint contains `otp` in `WWW-Authenticate` (contract test over all
   npm routes).
+- A browser request without a credential to `/files/…` or to `/favicon.ico` gets 401 with
+  `WWW-Authenticate: Bearer realm="trove"`, never Basic, so no browser shows a login dialog.
 
 ## OpenID Connect login
 
@@ -4730,6 +4733,29 @@ a disabled user, and the session became valid when the user was enabled again.
 sees nothing to revisit here.
 
 **Applied in the spec:** R-AUTH-016, the user record.
+
+### Q-AUTH-173 · No Basic challenge for browsers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTH-002 named `Basic realm="trove"` as the challenge of every route outside the management API, so package clients
+answer it with their configured credentials. A browser answers the same challenge with its native login dialog: on the
+preview a request for `/favicon.ico`, or a download link opened without a session, asked for a user name and password
+that trove never accepts there.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep Basic everywhere outside `/api/v1/` | As written | Simple | Browsers show a login dialog trove cannot satisfy |
+| (b) Basic only on the package and raw-file routes, and only without Fetch Metadata (chosen) | Browsers send `Sec-Fetch-Mode`/`Sec-Fetch-Dest`, package clients do not; a browser and every other route get `Bearer realm="trove"` | No native dialog; npm, NuGet and curl keep the Basic challenge they answer | A non-browser client that sends Fetch Metadata gets Bearer |
+| (c) Redirect browser navigations to the sign-in screen | Best experience for documents | Needs a return path outside `/ui/`, which `return_to` refuses (R-AUTH-009) | More than the dialog needs |
+
+**Choice:** (b).
+
+**Rationale:** Browsers have sent Fetch Metadata for years and package clients do not, so the header separates the two
+without configuration. A 401 still carries a challenge (RFC 9110). The development agent would revisit this if a package
+client starts sending Fetch Metadata, or when (c) is wanted for download links.
+
+**Applied in the spec:** R-AUTH-002 (challenge table, acceptance criterion). Code: `auth.challenge`, `auth.fromBrowser`.
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

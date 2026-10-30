@@ -117,20 +117,34 @@ func (s *Stage) fail(method Method, reason string, err error) (Result, error) {
 	return Result{}, err
 }
 
-// challenge renders the WWW-Authenticate value of the endpoint family
-// (R-AUTH-002). A rejected token adds error="invalid_token" on the management API.
-func challenge(path string, tokenRejected bool) string {
+// challenge renders the WWW-Authenticate value of the request (R-AUTH-002). A
+// rejected token adds error="invalid_token" on the management API. Basic is
+// offered only to package clients on the package and raw-file routes, which answer
+// it with configured credentials; a browser, recognised by its Fetch Metadata
+// headers, would answer it with its native login dialog instead of trove's sign-in
+// screen, so it gets the Bearer challenge, as does every other route (Q-AUTH-173).
+func challenge(r *http.Request, tokenRejected bool) string {
+	path := r.URL.Path
 	if path == "/api/v1" || strings.HasPrefix(path, "/api/v1/") {
 		if tokenRejected {
 			return `Bearer realm="trove", error="invalid_token"`
 		}
 		return `Bearer realm="trove"`
 	}
-	return `Basic realm="trove"`
+	if (strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/files/")) && !fromBrowser(r) {
+		return `Basic realm="trove"`
+	}
+	return `Bearer realm="trove"`
+}
+
+// fromBrowser reports whether a request carries Fetch Metadata request headers,
+// which browsers send and package clients do not.
+func fromBrowser(r *http.Request) bool {
+	return r.Header.Get("Sec-Fetch-Mode") != "" || r.Header.Get("Sec-Fetch-Dest") != ""
 }
 
 func unauthenticated(r *http.Request, code, detail string, tokenRejected bool) error {
-	return errs.E(errs.Unauthenticated, code, detail, errs.WithChallenge(challenge(r.URL.Path, tokenRejected)))
+	return errs.E(errs.Unauthenticated, code, detail, errs.WithChallenge(challenge(r, tokenRejected)))
 }
 
 // credentialHeader extracts the token of an Authorization header. present is
