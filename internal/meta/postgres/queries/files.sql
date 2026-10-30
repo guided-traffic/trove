@@ -131,7 +131,7 @@ SELECT id, path, kind, blob_sha256, size
 -- size. The statement trigger of 00002 queues the released blobs for collection.
 DELETE FROM items
  WHERE id = ANY(sqlc.arg(ids)::bigint[]) AND repo_id = sqlc.arg(repo_id)::bigint
-RETURNING id, path, kind, blob_sha256, size;
+RETURNING id, path, kind, blob_sha256, size, COALESCE(version_id, 0)::bigint AS version_id;
 
 -- name: LockFolderExclusive :many
 SELECT id, explicit_folder

@@ -143,6 +143,11 @@ func (c Chain) recoverStage(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), keyLogger, log)
+		// The error shapes of the router's paths: every refusal of a stage below, and of
+		// the handler, renders through Problem and so through them (Q-ARCH-214).
+		if c.Router != nil {
+			ctx = context.WithValue(ctx, keyShapes, &c.Router.shapes)
+		}
 		if c.Endpoint != nil {
 			ctx = withEndpoint(ctx, c.Endpoint)
 		}

@@ -69,14 +69,18 @@ type Access interface {
 type Options struct {
 	Items Items
 	Repos repository.Reader
-	Log   *slog.Logger
+	// Formats is the seam to the formats (Q-ARCH-206); nil treats every repository
+	// as the generic format.
+	Formats Formats
+	Log     *slog.Logger
 }
 
 // Service is the generic layer over the item store.
 type Service struct {
-	items Items
-	repos repository.Reader
-	log   *slog.Logger
+	items   Items
+	repos   repository.Reader
+	formats Formats
+	log     *slog.Logger
 }
 
 // New creates the service.
@@ -90,7 +94,7 @@ func New(o Options) (*Service, error) {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	return &Service{items: o.Items, repos: o.Repos, log: o.Log}, nil
+	return &Service{items: o.Items, repos: o.Repos, formats: o.Formats, log: o.Log}, nil
 }
 
 // Caller is who acts: the request's decision holder, the subject behind it (whose

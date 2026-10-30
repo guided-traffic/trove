@@ -66,6 +66,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission, the populate check and `MemberUsable`, package ownership |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
+| [formats.md](formats.md) | The format contract: `formats.Format`, the registry and its start-up checks, the `Host`, the storage hooks, the dispatcher for `/api/<format>/<repoKey>/`, content headers and error shapes, the wiring, how to add a format |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
 | [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
 
@@ -103,6 +104,9 @@ One fact per line; each links to the page that explains it.
   and the action go to `authz`, which denies by default; the request takes the grant index once and asks every question
   of it; the index is per replica and a request may name the epoch it must see with `Trove-Authz-Min-Epoch`
   ([authorization.md](authorization.md)).
+- **Format request:** `/api/<format>/<repoKey>/…` reaches the dispatcher, which splits and cleans the path, asks the format's `Match`, takes the
+  request's index, runs the coarse check, resolves the repository and calls the route through `formats.ServeRoute`; the handler works through
+  `Host`; every error, the chain's refusals included, is rendered by the format ([formats.md](formats.md)).
 - **Raw upload:** `PUT /files/{repoKey}/{path}` is decided before the body is read; the body is spooled and digested, the write
   is decided again on a new index, then `items.Store.Commit` writes the item, the committer's rows, the format's hook and the
   audit row in one transaction ([files.md](files.md), [items.md](items.md)).
@@ -124,6 +128,7 @@ trove/
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
 │   ├── api/edge/             # request-to-domain conversions every entry point shares: SubjectFrom (with the endpoint), Access (the request's index)
+│   ├── api/dispatch/         # the format dispatcher: /api/<format>/<repoKey>/…, the error shape of a format prefix
 │   ├── api/login/            # the browser login routes under /auth/ (edge of internal/auth/oidc): cookies, redirects, the error page
 │   ├── api/rawfiles/         # the /files/ handler (edge of internal/files)
 │   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
@@ -142,7 +147,9 @@ trove/
 │   │                         # FlightLock, leases, lock categories, replica registry, watchdog loops, the cluster limiter
 │   ├── config/               # struct tree with defaults, loader, validation, schema.json (generated)
 │   ├── errs/                 # error kinds, the code registry (codes.go), problem rendering
-│   ├── httpserver/           # listeners, routes, middleware chain, client address, ops endpoints
+│   ├── httpserver/           # listeners, routes, middleware chain, client address, ops endpoints; content/ the content-header wrapper
+│   ├── formathost/           # the Host of the format contract, the hook and seam adapters, the data-port bindings
+│   ├── packages/             # the generic package rows: store and writer (rev_seq raised once per package per transaction)
 │   ├── jobs/                 # job kinds, tasks, the queue, workers, scheduler, reaper
 │   ├── meta/                 # transactions and the revision-column registry
 │   ├── meta/postgres/        # pools, connect, retry, migrations/ (embedded), queries/ (sqlc input), q/ (sqlc output),
@@ -152,8 +159,8 @@ trove/
 │   ├── repository/           # repository model: service, snapshot reader, validation, patterns, deletion job
 │   ├── files/                # the generic layer: decides on the request's index, resolves, admits; over items/
 │   ├── items/                # the item store: spool, the one commit, stat, open, listing, subtree delete, statistics; no authz
-│   ├── formats/              # format contract and registry; catalog/ (the facts of every format, a leaf), generic/ (raw files),
-│   │                         # all/ registers every format
+│   ├── formats/              # format contract and registry; catalog/ (the facts of every format, a leaf), untrusted/ (limits of
+│   │                         # untrusted content), generic/ (raw files), all/ registers every format
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
 │   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder

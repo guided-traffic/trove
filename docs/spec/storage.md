@@ -59,8 +59,8 @@ offer, used throughout this page:
 | Hook | Called | Purpose |
 |---|---|---|
 | `IngestOptions` | before an upload is spooled | Expected digests from the protocol (npm `integrity`, OCI digest), whether SHA-512 is needed (it is always computed, Q-STOR-2), media type. |
-| `OnCommit` | inside the commit transaction of an upload | Create or update the package and version rows, mark the lead item, write format metadata, increment `packages.rev_seq` (R-STOR-003). |
-| `OnItemsRemoved`, `OnItemsRestored` | inside the delete, trash, move and restore transactions | Keep format indexes consistent (an npm packument no longer lists a removed version) and increment `packages.rev_seq`. Formats with version tombstones write them on removal and remove a restored version's tombstone (R-STOR-022, R-STOR-023). |
+| `OnCommit` | inside the commit transaction of an upload and of a remote artifact fill (`CommitEvent.Origin`) | Create or update the package and version rows, mark the lead item, write format metadata. The event carries the `PackageWriter` bound to the transaction, which increments `packages.rev_seq` on every write of generic rows (once per package per transaction), and the format's data port (R-STOR-003, architecture.md R-ARCH-009). |
+| `OnItemsRemoved`, `OnItemsRestored` | inside the delete, trash, move and restore transactions | Keep format indexes consistent (an npm packument no longer lists a removed version); the event names each removed item and the version it belonged to, and carries the `PackageWriter`, which increments `packages.rev_seq`. Formats with version tombstones write them on removal and remove a restored version's tombstone (R-STOR-022, R-STOR-023). The sync delete and every batch of the `items-delete` job raise it, in the removing transaction. |
 | `RemoveVersion` | by retention and cap enforcement | Remove every item that belongs only to one version (an OCI tag with its manifest and exclusively owned children). |
 | `VersionGroup` | after a push, for repository caps | Name the group whose variants a cap counts (snapshot base version, image name). |
 

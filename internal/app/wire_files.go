@@ -97,11 +97,16 @@ func (a *App) wireFiles(ctx context.Context, infra bool) error {
 	if queue != nil { // a nil *jobs.Queue in the interface would not be nil
 		opts.Jobs = queue
 	}
+	hooks, seam, err := a.formatHooks(db)
+	if err != nil {
+		return err
+	}
+	opts.Hooks = hooks
 	store, err := items.New(opts)
 	if err != nil {
 		return err
 	}
-	svc, err := files.New(files.Options{Items: store, Repos: a.m1.repositories, Log: log})
+	svc, err := files.New(files.Options{Items: store, Repos: a.m1.repositories, Formats: seam, Log: log})
 	if err != nil {
 		return err
 	}

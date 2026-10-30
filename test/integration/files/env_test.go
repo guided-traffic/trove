@@ -442,6 +442,11 @@ type replicaOpts struct {
 	hooks items.Hooks
 	// recorder wraps the replica's audit recorder for the item store.
 	recorder func(audit.Recorder) audit.Recorder
+	// formats is the seam to the formats of the generic layer.
+	formats files.Formats
+	// routes adds routes to the replica's router (the format dispatcher), once the
+	// item store and the generic layer exist.
+	routes func(r *replica, router *httpserver.Router)
 }
 
 // replica is one in-process web replica with a listener of its own.
@@ -605,7 +610,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if r.files, err = files.New(files.Options{Items: r.items, Repos: r.reader, Log: quiet}); err != nil {
+	if r.files, err = files.New(files.Options{Items: r.items, Repos: r.reader, Formats: o.formats, Log: quiet}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -682,6 +687,9 @@ func (r *replica) serve(o replicaOpts) {
 	})
 	api.Register(router)
 	rawfiles.New(rawfiles.Options{Service: r.files, Decider: r.engine, Download: r.e.s3.cfg.Download, API: apiConfig()}).Register(router)
+	if o.routes != nil {
+		o.routes(r, router)
+	}
 	if err := doc.CheckRoutes(router.Patterns()); err != nil {
 		t.Fatalf("route table: %v", err)
 	}

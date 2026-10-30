@@ -1065,8 +1065,13 @@ Priority: **MVP** · Covers: trove-only
 type ExposureAdapter interface {
     // ValidateRange checks one version range in the format's native syntax (R-EP-012).
     ValidateRange(expr string) error
-    // Version parses a normalized version and says whether it is a pre-release.
-    Version(v string) (ver Version, ok bool)
+    // Prerelease says whether a normalized version is a pre-release; ok is false for a string
+    // that is no version of the format.
+    Prerelease(version string) (pre, ok bool)
+    // InRange says whether a normalized version lies in a validated range.
+    InRange(version, expr string) bool
+    // Dimensions says what rules may narrow: packages, versions, tags.
+    Dimensions() ExposureDimensions
     // FilterDocument removes every version, file and tag the view does not expose from a
     // rendered, merged or rewritten document, and fixes the fields that refer to them.
     FilterDocument(ctx context.Context, p Path, doc []byte, view ExposureView) ([]byte, error)
@@ -1079,6 +1084,13 @@ type ExposureView interface {
     Tag(name, tag, version string) bool
 }
 ```
+
+  The first three methods are `catalog.Versioning`. `formats.Register` puts them, with
+  `Dimensions`, into the format catalog, which the decision point reads when it compiles rules
+  (R-EP-012): there is no second copy of a format's exposure facts and no bridge between the
+  contract and `authz`. generic returns a paths-only adapter (`Dimensions` empty, `ValidateRange`
+  refusing, `FilterDocument` the identity), so its repositories are exposed through paths alone
+  (R-EP-014).
 
   A format without the adapter is not exposable: on an endpoint with `exposure: rules` every one of
   its routes answers `404`, and rules for its repositories are refused with `422`

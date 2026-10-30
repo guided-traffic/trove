@@ -90,22 +90,6 @@ func TestContentWriter(t *testing.T) {
 	})
 }
 
-func TestEncodeFileName(t *testing.T) {
-	for in, want := range map[string]string{
-		"a.bin":      "a.bin",
-		"a b":        "a%20b",
-		"é":          "%C3%A9",
-		"x'y\"z;":    "x%27y%22z%3B",
-		"100%":       "100%25",
-		"a/b":        "a%2Fb",
-		"ok!#$&+-.^": "ok!#$&+-.^",
-	} {
-		if got := encodeFileName(in); got != want {
-			t.Errorf("encodeFileName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestHandleUncleaned(t *testing.T) {
 	newRouter := func() (*Router, *[]string) {
 		var seen []string

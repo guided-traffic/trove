@@ -514,6 +514,27 @@ R-GENERIC-004 says 201 for a new file and 200 for a repeat; it names the status 
 
 **Applied in the spec:** R-GENERIC-004 reads unchanged.
 
+### Q-GENERIC-7 · The generic format implements the contract without routes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-005 reads as one dispatcher registration per format ID. The protocol of generic is `/files/{repoKey}/{path...}`, which the generic layer
+serves for every repository of every format (R-STOR-007, R-EP-014). A prefix `/api/generic/` would have no operation behind it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No prefix for a format without routes (chosen) | `Routes()` is empty, the dispatcher registers the prefix of a format only when it has routes; generic still implements `Classify`, `Exposure` and the descriptor | No route-table entry and no surface for nothing; `/files/` stays one code path for every format | R-ARCH-005's row says "per format ID whose `Routes()` is not empty" |
+| (b) A prefix per format | `/api/generic/` answers 404 for everything | The table is uniform | A route family entry and a catch-all handler with no content |
+| (c) Serve `/files/` as the generic format's routes | The raw view becomes generic's Download, Upload and Delete routes | One protocol per format | `/files/` is the raw view of every repository, npm's included; it would become format-specific |
+
+**Choice:** (a). The conformance test of generic skips the route checks with the reason "no routes: /files/ is the protocol".
+
+**Rationale:** the raw view and the format protocols are different things that share the item store; keeping `/files/` out of the dispatcher keeps the
+dispatcher's checks (key shape, class, route match) from running over a path grammar that has no routes. The development agent would revisit this when
+R-GENERIC-009 gives the generic format a remote class with its own routes.
+
+**Applied in the spec:** R-ARCH-005 table, R-GENERIC-001.
+
 ## What this does not cover
 
 ### H-131 · Generic content is served as stored, to whoever can read it

@@ -53,6 +53,56 @@ type Router struct {
 	// would redirect (HandleUncleaned). It is replaced as a whole, so the request
 	// path reads it without a lock.
 	uncleaned atomic.Pointer[[]uncleanedRoute]
+	// shapes are the error shapes of path prefixes (HandleErrorShape).
+	shapes shapeTable
+}
+
+// ShapeFunc renders an error in the body and with the headers a protocol's
+// clients parse. It writes the whole response.
+type ShapeFunc func(w http.ResponseWriter, r *http.Request, err error)
+
+type shapeRoute struct {
+	prefix string
+	fn     ShapeFunc
+}
+
+// shapeTable is the set of error shapes of a router; it is replaced as a whole, so
+// the request path reads it without a lock.
+type shapeTable struct{ routes atomic.Pointer[[]shapeRoute] }
+
+func (t *shapeTable) forPath(p string) ShapeFunc {
+	rs := t.routes.Load()
+	if rs == nil {
+		return nil
+	}
+	for _, r := range *rs {
+		if strings.HasPrefix(p, r.prefix) {
+			return r.fn
+		}
+	}
+	return nil
+}
+
+// HandleErrorShape makes fn render every error of a request whose path lies below
+// prefix: the handler's, and the refusals of the chain's own stages -
+// authentication (401 and its challenge), the host check (421), the in-flight limit
+// (503) and the rate limits (429) - which the chain renders through [Problem]. A
+// package format registers its protocol's error shape for /api/<id>/ here
+// (R-ARCH-023; R-NPM-005 asks for npm's body and challenge on every error
+// response). The prefix belongs to a route family and is dropped on an endpoint that
+// does not serve it, like a pattern.
+func (r *Router) HandleErrorShape(prefix string, fn ShapeFunc) {
+	if r.allow != nil && !r.allow(prefix) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var cur []shapeRoute
+	if p := r.shapes.routes.Load(); p != nil {
+		cur = *p
+	}
+	next := append(slices.Clone(cur), shapeRoute{prefix: prefix, fn: fn})
+	r.shapes.routes.Store(&next)
 }
 
 type uncleanedRoute struct {

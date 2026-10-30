@@ -97,6 +97,18 @@ func moduleBans() []moduleBan {
 			rule: "R-ARCH-002", from: "internal/api/login", forbidden: []string{"internal/api/v1"},
 			why: "the browser login routes are an entry point of their own; they share conversions through internal/api/edge and never import the management API (Q-AUTH-175)",
 		},
+		{
+			rule: "R-ARCH-002", from: "internal/api/dispatch", forbidden: []string{"internal/api/v1"},
+			why: "the format dispatcher is an entry point of its own; it shares conversions through internal/api/edge and never imports the management API (Q-ARCH-205)",
+		},
+		{
+			rule: "R-ARCH-002", from: "internal/formathost", forbidden: []string{"internal/api/v1"},
+			why: "the host of the format contract bridges to the domain and shares conversions through internal/api/edge; it never imports the management API (Q-ARCH-205)",
+		},
+		{
+			rule: "R-ARCH-002", from: "internal/formathost", forbidden: []string{"internal/formatdata"},
+			why: "the data port of a format is bound by the composition root; the host reaches it only through Host.FormatData (Q-ARCH-193)",
+		},
 	}
 }
 
@@ -123,20 +135,55 @@ func CheckModuleBans(module string, pkgs []Package) []Violation {
 // formatAllowed is what a format package may import from this module (R-ARCH-008,
 // R-ARCH-009): the format contract (internal/formats itself), its own tree, the
 // format catalog (the name rule and the exposure versioning it declares), the
-// error kinds, the configuration types it reads, and the observability
-// primitives. Everything else a format needs comes through Host. The match is the
-// exact package, so a sibling format, the object store, the job queue, the cache
-// registry, the SQL transaction type and the infrastructure are all refused.
+// untrusted-content limits and readers (R-ARCH-028), the error kinds, the
+// configuration types it reads, and the observability primitives. Everything else
+// a format needs comes through Host. The match is the exact package, so a sibling
+// format, the object store, the job queue, the cache registry, the SQL
+// transaction type and the infrastructure are all refused.
 //
 // A format that needs a table registered for backup (internal/backup/tables) or a
 // revision column (internal/meta) gets that row added here, with the requirement
 // that justifies it.
 func formatAllowed() []string {
-	return []string{"internal/formats", "internal/formats/catalog", "internal/errs", "internal/config", "internal/observability"}
+	return []string{
+		"internal/formats", "internal/formats/catalog", "internal/formats/untrusted",
+		"internal/errs", "internal/config", "internal/observability",
+	}
+}
+
+// contractAllowed is what the contract package itself (internal/formats) may
+// import: a format's list plus the core types it spells for the formats as
+// aliases (the decision point's subject, index and actions, the repository model
+// and its canonical path, the opaque transaction) and the content-header wrapper
+// that ServeRoute runs every content route through (Q-ARCH-189). A format
+// package sees none of them: it names core types through the contract's aliases.
+func contractAllowed() []string {
+	return append(formatAllowed(), "internal/authz", "internal/repository", "internal/meta", "internal/httpserver/content")
+}
+
+// kitAllowed is what the conformance kit (internal/formats/formattest) may
+// import: what the contract imports, so that check 7 runs the real ServeRoute and
+// the in-memory Host can hold a transaction and a subject (Q-ARCH-216). It still
+// refuses the storage implementation, the object store and the rest of the
+// infrastructure: the kit runs against an in-memory Host.
+func kitAllowed() []string { return contractAllowed() }
+
+// allowedFor returns the allowlist of a package of the formats tree.
+func allowedFor(rel string) []string {
+	switch {
+	case rel == formatRoot:
+		return contractAllowed()
+	case under(rel, formatKit):
+		return kitAllowed()
+	}
+	return formatAllowed()
 }
 
 // formatRoot is the tree of the format plug-ins and their contract.
 const formatRoot = "internal/formats"
+
+// formatKit is the conformance kit and its test format.
+const formatKit = formatRoot + "/formattest"
 
 // formatAll is the package that registers every format at compile time
 // (R-ARCH-010).
@@ -165,7 +212,7 @@ func CheckModuleImportBans(module string, pkgs []Package) []Violation {
 			continue
 		}
 		self := formatSelf(p.Rel)
-		allowed := formatAllowed()
+		allowed := allowedFor(p.Rel)
 		for _, imp := range p.Imports {
 			target := rel(module, imp)
 			if target == imp { // not a package of this module
@@ -183,7 +230,7 @@ func CheckModuleImportBans(module string, pkgs []Package) []Violation {
 			}
 			out = append(out, Violation{
 				Rule: "R-ARCH-008", From: p.Rel, To: target,
-				Detail: "a format reaches the core only through Host; it may import the format contract, errs, config types and observability primitives, and nothing else",
+				Detail: "a format reaches the core only through Host; it may import the format contract, the catalog, the untrusted-content limits, errs, config types and observability primitives, and nothing else",
 			})
 		}
 	}

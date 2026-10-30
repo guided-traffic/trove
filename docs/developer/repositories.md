@@ -34,7 +34,7 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | [secrets_store.go](../../internal/repository/secrets_store.go) | `SealSecret`, `OpenSecret`, `SecretStore` (rows for the clients), `RemoteDeps` and `Service.Bind`, `writeSecrets`, `ResealSecrets` |
 | [upstream.go](../../internal/repository/upstream.go) | `UpstreamProber`, `UpstreamTestResult`, `Service.UpstreamTest`, `Service.UpstreamTestUnsaved` |
 | [formats/catalog/catalog.go](../../internal/formats/catalog/catalog.go) | the format catalog (a leaf): `Facts`, `Names`, `Exposure`, `Entry`, `Registry`, `Default` |
-| [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the name rule and the exposure facts), `Format`, `RequestDescriptor`, `Register` (fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types |
+| [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the contract's own members), `Format`, `Register` (validates and fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types; the contract is described in [formats.md](formats.md) |
 | [formats/generic/generic.go](../../internal/formats/generic/generic.go) | the generic format: descriptor and request classification |
 | [formats/all/all.go](../../internal/formats/all/all.go) | registers every format; the composition root imports it |
 | [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted`, `.claims_changed` |
@@ -177,12 +177,14 @@ stores it on every create and update, so a replace or a merge patch that drops t
 is always explicit (R-AUTHZ-018, Q-AUTHZ-155). `ownershipDomain` answers `not_applicable` for every format until shared
 ownership domains (R-AUTHZ-020, P1) exist.
 
-`formats.Format` is a skeleton: `Descriptor()` and `Describe(method, path, folder)`, the request descriptor of R-REPO-003.
-The routes, storage hooks, remote and virtual adapters and the conformance kit of R-ARCH-008 and R-ARCH-010 join it with
-the first format that needs them (npm, M2), bumping `ContractVersion`. A format imports nothing but `internal/formats`,
-`internal/formats/catalog`, `errs`, `config` and `observability` (archtest R-ARCH-008); `formats/all` may import every format.
+`formats.Format` is the full contract of R-ARCH-008: routes, `Classify` (the request descriptor of R-REPO-003, as `PathInfo`),
+storage hooks, the remote and virtual adapters, the exposure adapter and the error shape; [formats.md](formats.md) describes it,
+its registry and the host. A format imports nothing but `internal/formats`, `internal/formats/catalog`,
+`internal/formats/untrusted`, `errs`, `config` and `observability` (archtest R-ARCH-008); `formats/all` may import every format.
 
 ### How to add a format
+
+The ordered checklist with the contract's details is in [formats.md](formats.md#how-to-add-a-format); the repository side of it:
 
 1. Write its spec page under `docs/spec/formats/` (prefix, Covers, Decisions, What this does not cover) and add the page
    to the table in [spec/README.md](../spec/README.md).

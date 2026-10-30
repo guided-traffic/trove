@@ -337,6 +337,21 @@ func (e FormatDescriptorPatternSubject) Valid() bool {
 	}
 }
 
+// Defines values for FormatName.
+const (
+	FormatNameGeneric FormatName = "generic"
+)
+
+// Valid indicates whether the value is a known member of the FormatName enum.
+func (e FormatName) Valid() bool {
+	switch e {
+	case FormatNameGeneric:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupOrigin.
 const (
 	GroupOriginAdmin GroupOrigin = "admin"
@@ -478,6 +493,21 @@ func (e JobState) Valid() bool {
 	case JobStateRunning:
 		return true
 	case JobStateSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LocalFormatName.
+const (
+	LocalFormatNameGeneric LocalFormatName = "generic"
+)
+
+// Valid indicates whether the value is a known member of the LocalFormatName enum.
+func (e LocalFormatName) Valid() bool {
+	switch e {
+	case LocalFormatNameGeneric:
 		return true
 	default:
 		return false
@@ -2188,7 +2218,10 @@ type FormatDescriptor struct {
 	Caps bool `json:"caps"`
 
 	// Classes The classes the implementation accepts.
-	Classes                   []FormatDescriptorClasses      `json:"classes"`
+	Classes []FormatDescriptorClasses `json:"classes"`
+
+	// DefaultExtraHosts The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
+	DefaultExtraHosts         []string                       `json:"defaultExtraHosts"`
 	DefaultMetadataTtlSeconds *int                           `json:"defaultMetadataTtlSeconds"`
 	DefaultNotFoundTtlSeconds *int                           `json:"defaultNotFoundTtlSeconds"`
 	DefaultUpstreamUrl        *string                        `json:"defaultUpstreamUrl"`
@@ -2213,6 +2246,11 @@ type FormatDescriptorPatternSubject string
 type FormatList struct {
 	Formats []FormatDescriptor `json:"formats"`
 }
+
+// FormatName A package format of this build (R-ARCH-010): the names of `GET /api/v1/formats`. The four enums of
+// this block are generated from the format registry and `TestR_ARCH_010_PerClassFormatEnums` fails on
+// any difference; no list of formats per class is kept by hand anywhere.
+type FormatName string
 
 // Group A group (R-AUTH-018). `roles` and `memberCount` are read only.
 type Group struct {
@@ -2408,6 +2446,9 @@ type LastReencryption struct {
 	JobId      openapi_types.UUID `json:"jobId"`
 	State      JobState           `json:"state"`
 }
+
+// LocalFormatName The formats whose classes contain `local`. The create form offers these for a local repository.
+type LocalFormatName string
 
 // LoginOptions What the sign-in screen offers (R-AUTH-009). It names no issuer, client ID or error detail.
 type LoginOptions struct {
@@ -2762,6 +2803,9 @@ type RemoteExtraHost struct {
 	// SendCredentials Send the upstream credentials to hosts that match (R-REPO-033).
 	SendCredentials *bool `json:"sendCredentials,omitempty"`
 }
+
+// RemoteFormatName The formats whose classes contain `remote`. The create form offers these for a remote repository.
+type RemoteFormatName = string
 
 // RemoteSettings The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
 // defaults of the format applied. Omitted members of a request take their defaults. The password
@@ -3608,6 +3652,9 @@ type Version struct {
 	// Version The trove version, or `dev` for a build without a release version.
 	Version string `json:"version"`
 }
+
+// VirtualFormatName The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
+type VirtualFormatName = string
 
 // VirtualSettings The `virtual` section of a virtual repository (R-REPO-017). The members, the deploy target and
 // the pin rules are stored as rows, so that a repository which is a member or a target cannot be

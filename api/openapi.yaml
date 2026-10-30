@@ -3626,6 +3626,7 @@ paths:
                     layout: generic
                     protocolBasePath: /files/{key}/
                     defaultUpstreamUrl: null
+                    defaultExtraHosts: []
                     defaultMetadataTtlSeconds: null
                     defaultNotFoundTtlSeconds: 1800
                     patternSubject: path
@@ -7965,7 +7966,7 @@ components:
     # >>> M1 repository
     FormatDescriptor:
       type: object
-      required: [name, classes, layout, protocolBasePath, defaultUpstreamUrl, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps]
+      required: [name, classes, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps]
       properties:
         name:
           type: string
@@ -7985,6 +7986,13 @@ components:
           description: The client address template; `{key}` is the repository key.
         defaultUpstreamUrl:
           type: [string, "null"]
+        # >>> WP2.1 formats
+        defaultExtraHosts:
+          type: array
+          description: The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
+          items:
+            type: string
+        # <<< WP2.1 formats
         defaultMetadataTtlSeconds:
           type: [integer, "null"]
         defaultNotFoundTtlSeconds:
@@ -8006,6 +8014,27 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FormatDescriptor"
+    # >>> WP2.1 formats
+    FormatName:
+      type: string
+      description: |
+        A package format of this build (R-ARCH-010): the names of `GET /api/v1/formats`. The four enums of
+        this block are generated from the format registry and `TestR_ARCH_010_PerClassFormatEnums` fails on
+        any difference; no list of formats per class is kept by hand anywhere.
+      enum: [generic]
+    LocalFormatName:
+      type: string
+      description: The formats whose classes contain `local`. The create form offers these for a local repository.
+      enum: [generic]
+    RemoteFormatName:
+      type: string
+      description: The formats whose classes contain `remote`. The create form offers these for a remote repository.
+      enum: []
+    VirtualFormatName:
+      type: string
+      description: The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
+      enum: []
+    # <<< WP2.1 formats
     RepositoryWarning:
       type: object
       required: [code, detail]

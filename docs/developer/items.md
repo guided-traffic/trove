@@ -28,7 +28,7 @@ R-STOR-018](../spec/storage.md), [R-ARCH-009, R-ARCH-014, R-ARCH-019](../spec/ar
 |---|---|
 | [items.go](../../internal/items/items.go) | `Store`, `Options`, `New`, `RepoRef` / `RepoOf`, the path helpers |
 | [commit.go](../../internal/items/commit.go) | `Spool`, `CommitSpec`, `Commit`, the link protocol (`linkFile`, `ensureParents`, `lockAncestors`), `CreateFolder`, `ErrOverwriteDenied`, `PathConflict`, `CreateOnlyFailed` |
-| [hooks.go](../../internal/items/hooks.go) | `Origin`, `Ref`, `CommitEvent`, `RemovedEvent`, `Hooks`, `NoHooks` |
+| [hooks.go](../../internal/items/hooks.go) | `Origin`, `Ref`, `CommitEvent`, `RemovedEvent` (each removed item names the package version it belonged to), `Hooks`, `NoHooks`; `internal/formathost` implements `Hooks` over the format registry ([formats.md](formats.md)) |
 | [read.go](../../internal/items/read.go) | `Live` (PostgreSQL only), `ContentError`, `Open` (the verifying reader or a range), `DownloadStats` |
 | [children.go](../../internal/items/children.go) | `Children`: keyset batches, the cursor, the scan limit; visibility is a callback |
 | [delete.go](../../internal/items/delete.go) | `Delete` (at once or by the job), `RunDeleteJob`, `DeleteJobKind` / `DeleteJobSpec`, `DeleteArgs` |

@@ -63,6 +63,9 @@ type Removed struct {
 	Item   Ref
 	Digest blob.Digest
 	Size   int64
+	// Version is the id of the package version the item belonged to, 0 for none:
+	// a hook that keeps package rows needs it after the item row is gone.
+	Version int64
 }
 
 // RemovedEvent is what a storage hook learns of the removal of files: the sync

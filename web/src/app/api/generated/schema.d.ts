@@ -3239,6 +3239,8 @@ export interface components {
             /** @description The client address template; `{key}` is the repository key. */
             protocolBasePath: string;
             defaultUpstreamUrl: string | null;
+            /** @description The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any. */
+            defaultExtraHosts: string[];
             defaultMetadataTtlSeconds: number | null;
             defaultNotFoundTtlSeconds: number | null;
             /** @enum {string} */
@@ -3250,6 +3252,28 @@ export interface components {
         FormatList: {
             formats: components["schemas"]["FormatDescriptor"][];
         };
+        /**
+         * @description A package format of this build (R-ARCH-010): the names of `GET /api/v1/formats`. The four enums of
+         *     this block are generated from the format registry and `TestR_ARCH_010_PerClassFormatEnums` fails on
+         *     any difference; no list of formats per class is kept by hand anywhere.
+         * @enum {string}
+         */
+        FormatName: "generic";
+        /**
+         * @description The formats whose classes contain `local`. The create form offers these for a local repository.
+         * @enum {string}
+         */
+        LocalFormatName: "generic";
+        /**
+         * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
+         * @enum {string}
+         */
+        RemoteFormatName: never;
+        /**
+         * @description The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
+         * @enum {string}
+         */
+        VirtualFormatName: never;
         RepositoryWarning: {
             code: string;
             pointer?: string;
@@ -6939,6 +6963,7 @@ export interface operations {
                      *           "layout": "generic",
                      *           "protocolBasePath": "/files/{key}/",
                      *           "defaultUpstreamUrl": null,
+                     *           "defaultExtraHosts": [],
                      *           "defaultMetadataTtlSeconds": null,
                      *           "defaultNotFoundTtlSeconds": 1800,
                      *           "patternSubject": "path",

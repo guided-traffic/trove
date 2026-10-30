@@ -16,6 +16,7 @@ const (
 	keyLogger
 	keyInfo
 	keyPrincipal
+	keyShapes
 )
 
 // RequestInfo is what the chain resolves once per request (R-ARCH-005 step 5).
@@ -89,8 +90,27 @@ func WithPrincipal(ctx context.Context, p Principal) context.Context {
 
 // Problem renders err as problem+json with the request's ID and logger
 // (R-ARCH-023, R-API-009).
+//
+// A path that has an error shape of its own (Router.HandleErrorShape: a format's
+// protocol answers in its own body and with its own challenge) is rendered by it,
+// so a refusal of the chain's own stages - authentication, the host check, the
+// in-flight limit, a rate limit - reaches a package client in the form it parses
+// (R-ARCH-023, Q-ARCH-214).
 func Problem(w http.ResponseWriter, r *http.Request, err error) {
+	if sh := shapeFor(r); sh != nil {
+		sh(w, r, err)
+		return
+	}
 	errs.Write(w, r, err, RequestID(r.Context()), Logger(r.Context()))
+}
+
+// shapeFor returns the error shape of the request's path, nil for none.
+func shapeFor(r *http.Request) ShapeFunc {
+	sh, _ := r.Context().Value(keyShapes).(*shapeTable)
+	if sh == nil {
+		return nil
+	}
+	return sh.forPath(r.URL.Path)
 }
 
 // CodeServerBusy is the problem code of the in-flight limit (R-ARCH-005 step 4).

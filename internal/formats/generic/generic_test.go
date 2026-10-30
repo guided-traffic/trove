@@ -24,41 +24,61 @@ func TestDescriptor(t *testing.T) {
 		}
 	})
 	t.Run("R-EP-014 generic is exposed through paths alone", func(t *testing.T) {
-		if x := d.Exposure; !x.Exposable || x.Packages || x.Versions || x.Tags || x.Versioning != nil || d.Names != nil {
+		e := formats.CatalogEntry(Format{})
+		if x := e.Exposure; !x.Exposable || x.Packages || x.Versions || x.Tags || x.Versioning != nil || d.Names != nil {
 			t.Fatalf("exposure = %+v, names = %v", x, d.Names)
+		}
+	})
+	t.Run("R-ARCH-008 the descriptor declares the contract version", func(t *testing.T) {
+		if d.ContractVersion != formats.ContractVersion {
+			t.Fatalf("contract version = %d", d.ContractVersion)
+		}
+		if err := formats.Validate(Format{}); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
 
-func TestDescribe(t *testing.T) {
+// TestQ_GENERIC_7_TheContractWithoutRoutes: the format implements the contract with
+// no route, so the dispatcher registers no prefix for it and a Match finds
+// nothing; its protocol is /files/ (Q-GENERIC-7).
+func TestQ_GENERIC_7_TheContractWithoutRoutes(t *testing.T) {
+	f := Format{}
+	if len(f.Routes()) != 0 {
+		t.Fatal("generic has routes")
+	}
+	if _, _, err := f.Match(http.MethodGet, "a/b.bin"); err == nil {
+		t.Fatal("Match found a route")
+	}
+	if _, ok := f.PackageDocumentPath("x"); ok {
+		t.Fatal("generic has no package names")
+	}
+	if f.Remote() != nil || f.Virtual() != nil || f.Indexes() != nil {
+		t.Fatal("only the local class is implemented")
+	}
+}
+
+func TestClassify(t *testing.T) {
 	cases := []struct {
-		name, method, path string
-		folder             bool
-		want               formats.RequestKind
+		name string
+		p    formats.Path
+		want formats.PathKind
+		kind formats.RequestKind
 	}{
-		{"GET of a file", http.MethodGet, "a/b.bin", false, formats.KindArtifact},
-		{"HEAD of a file", http.MethodHead, "a/b.bin", false, formats.KindArtifact},
-		{"GET of a folder", http.MethodGet, "a", true, formats.KindOther},
-		{"GET of the root", http.MethodGet, "", true, formats.KindOther},
-		{"GET of the root without the flag", http.MethodGet, "", false, formats.KindOther},
-		{"PUT", http.MethodPut, "a/b.bin", false, formats.KindWrite},
-		{"PUT of a folder", http.MethodPut, "a", true, formats.KindWrite},
-		{"DELETE", http.MethodDelete, "a/b.bin", false, formats.KindWrite},
-		{"POST", http.MethodPost, "a", false, formats.KindWrite},
-		{"a file that looks like metadata", http.MethodGet, "maven-metadata.xml", false, formats.KindArtifact},
-		{"a file that looks like a package document", http.MethodGet, "package.json", false, formats.KindArtifact},
+		{"a file", formats.Path{Path: "a/b.bin"}, formats.Content, formats.KindArtifact},
+		{"a file that looks like metadata", formats.Path{Path: "maven-metadata.xml"}, formats.Content, formats.KindArtifact},
+		{"a file that looks like a package document", formats.Path{Path: "package.json"}, formats.Content, formats.KindArtifact},
+		{"a folder", formats.Path{Path: "a", Folder: true}, formats.PathComputed, formats.KindMetadata},
+		{"the root", formats.Path{Folder: true}, formats.PathComputed, formats.KindMetadata},
 	}
 	for _, c := range cases {
 		t.Run("R-GENERIC-003 R-REPO-003 "+c.name, func(t *testing.T) {
-			got := Format{}.Describe(c.method, c.path, c.folder)
-			if got.Kind != c.want || got.Path != c.path {
-				t.Fatalf("Describe = %+v, want kind %s", got, c.want)
+			got := Format{}.Classify(c.p)
+			if got.Kind != c.want || got.Kind.RequestKind() != c.kind {
+				t.Fatalf("Classify = %+v, want kind %s", got, c.want)
 			}
-			if got.Package != "" || got.Version != "" || got.RoutingName != "" || got.Variant != "" {
+			if got.Package != "" || got.Version != "" || got.RoutingName != "" {
 				t.Fatalf("the generic format has no package identity: %+v", got)
-			}
-			if got.Kind == formats.KindMetadata {
-				t.Fatal("no generic path is metadata")
 			}
 		})
 	}

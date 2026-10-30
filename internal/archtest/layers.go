@@ -66,6 +66,7 @@ func layerTable() []layerRule {
 		{"internal/repository", layerDomain},
 		{"internal/files", layerDomain},
 		{"internal/items", layerDomain},
+		{"internal/packages", layerDomain},
 		{"internal/proxy", layerDomain},
 		{"internal/virtual", layerDomain},
 		{"internal/formatdata", layerDomain},
@@ -79,6 +80,7 @@ func layerTable() []layerRule {
 		{"internal/api", layerEdge},
 		{"internal/webui", layerEdge},
 		{"internal/formats", layerEdge},
+		{"internal/formathost", layerEdge},
 
 		{"internal/app", layerApp},
 		{"cmd", layerCmd},

@@ -28,6 +28,12 @@ func FamilyOf(pattern string) string {
 	return familyOfPath(patternPath(pattern))
 }
 
+// FamilyOfPath is [FamilyOf] for a request path, which unlike a pattern may
+// contain spaces. The format dispatcher asks it for the paths below /api/<id>/
+// that belong to a family of their own (npm's trusted-publishing exchange,
+// R-NPM-022).
+func FamilyOfPath(path string) string { return familyOfPath(path) }
+
 // familyOfPath is FamilyOf for a path without method and host. A request path
 // goes through it as it is: unlike a pattern it may contain spaces.
 func familyOfPath(path string) string {

@@ -285,6 +285,9 @@ flowchart LR
 | scope | `internal/auth/scope` | The value type of a token's scope (leaf), shared by the stage, the token service and the decision point | R-AUTH-024 |
 | catalog | `internal/formats/catalog` | The format catalog (leaf): every format's facts, its package-name rule and its exposure facts; `repository` and `authz` read it | R-REPO-003, R-AUTHZ-005, Q-ARCH-188 |
 | api | `internal/api/v1`, `internal/api/edge` | Management REST API; the conversions every HTTP entry point shares (the request to the `authz.Subject`, the holder of a request's index) | [api-and-ui.md](api-and-ui.md), R-AUTHZ-015 |
+| dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
+| formathost | `internal/formathost` | The `Host` of the format contract and the adapters of the item store's hooks and the generic layer's seam; the data ports are bound by the composition root | R-ARCH-009, Q-ARCH-193, Q-ARCH-212 |
+| packages | `internal/packages` | The generic package rows: the package store and the package writer that raises `packages.rev_seq` | R-ARCH-009, Q-ARCH-212 |
 | webui | `internal/webui` | Embedded Angular build | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004 |
 | formats | `internal/formats`, `internal/formats/<id>` | Package protocols behind the plug-in contract | R-ARCH-008 to R-ARCH-010; [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
 | repository | `internal/repository` | Repository model and snapshot, request classification, caller-independent routing of virtual repositories (members, claims, pin rules) | [repositories-and-proxy.md](repositories-and-proxy.md) |
@@ -322,8 +325,8 @@ Normative rules:
   and Valkey, as R-ARCH-030 assigns each mechanism (INV-12). The catalog's per-node peer address
   (HA-006) therefore does not exist in trove.
 - Imports form layers:
-  1. Edge: `httpserver`, `api/v1`, `api/edge`, `webui`, format handlers.
-  2. Domain: `repository`, `files`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
+  1. Edge: `httpserver`, `api/v1`, `api/edge`, `api/dispatch`, `webui`, `formats` (the contract and the format handlers), `formathost`.
+  2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
   4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `auth/scope`. Every layer may import them, and they import only each other.
 
@@ -446,9 +449,13 @@ trove/
 │   ├── buildinfo/               # version, commit, build date (-ldflags)
 │   ├── config/                  # schema, YAML + env loading, validation
 │   ├── httpserver/              # listeners, ServeMux, middleware, client address
+│   │   └── content/             # the content-header wrapper of R-ARCH-007, shared with the format contract and the kit
 │   ├── api/v1/                  # management API handlers
 │   │   └── gen/                 # oapi-codegen output: models, std-http-server interface (generated, committed)
 │   ├── api/rawfiles/            # the /files/ handler (R-API-025); content responses through api/edge
+│   ├── api/dispatch/            # the format dispatcher: /api/<id>/<repoKey>/…, the error shape of a format prefix (Q-ARCH-214)
+│   ├── formathost/              # the Host of the format contract, the hook and seam adapters, the data-port bindings (Q-ARCH-212)
+│   ├── packages/                # the generic package rows: store and writer, rev_seq raised once per package per transaction (Q-ARCH-212)
 │   ├── api/edge/                # what every entry point shares: Subject, Access, the content response, conditional and digest headers, links, list query, JSON (Q-ARCH-205)
 │   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
 │   ├── auth/scope/              # the token scope value type (leaf layer)
@@ -459,6 +466,7 @@ trove/
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
 │   │   ├── catalog/             # the format catalog: facts, name rule, exposure (leaf layer, Q-ARCH-188)
+│   │   ├── untrusted/           # resource limits and bounded readers for untrusted content (R-ARCH-028)
 │   │   ├── formattest/          # conformance kit, in-memory Host
 │   │   ├── generic/
 │   │   ├── npm/
@@ -594,7 +602,7 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
 | Pattern | Handler |
 |---|---|
 | `/api/v1/` | Management API ([api-and-ui.md](api-and-ui.md)) |
-| `/api/<id>/{repoKey}/{rest...}`, registered once per format ID | Format dispatcher (R-ARCH-008) |
+| `/api/<id>/{repoKey}/{rest...}` (and the bare `/api/<id>/{repoKey}`), registered once per format ID whose `Routes()` is not empty | Format dispatcher (R-ARCH-008; `internal/api/dispatch`). generic has no routes, its protocol is `/files/`, so it registers no prefix (Q-GENERIC-7) |
 | `/files/{repoKey}/{path...}` | Raw file access ([storage.md](storage.md)) |
 | `/auth/` | Browser login flow ([identity-and-authentication.md](identity-and-authentication.md)) |
 | `/ui/` | Embedded UI (R-ARCH-004) |
@@ -641,6 +649,12 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
   - No host-root route is served on the content host (`server.content_base_url`, R-ARCH-029).
   - The route-table test applies the same rule to `/.well-known/` and runs over the ServeMux of
     every endpoint ([endpoints.md](endpoints.md) R-EP-002, R-EP-006).
+- **Error shape of a format prefix.** Every error response below `/api/<id>/` is rendered by the
+  format's `WriteError`: the handler's own errors, and the refusals of the chain's stages above
+  (`401` with its challenge from step 6, `421` from step 5, `503 server_busy` from step 4, `429`
+  from step 7), which the chain renders through `httpserver.Problem`. The dispatcher registers the
+  format's shape for the prefix with `Router.HandleErrorShape`, and `Problem` consults that table by
+  path prefix (Q-ARCH-214). The `/api/v1/` paths keep `problem+json`.
 - The dispatcher hands the format the remaining path exactly as received: `r.URL.EscapedPath()`
   minus `/api/<id>/<repoKey>/`. It never hands over the unescaped wildcard value. This keeps an
   encoded slash in a package name (`@scope%2fname`) apart from a separator. Repository keys contain
@@ -656,7 +670,8 @@ Middleware, outermost first:
 2. Trace context and request ID ([operations-and-observability.md](operations-and-observability.md)).
    Every response carries `X-Request-Id`.
 3. Request log and metrics. The route label is the ServeMux pattern or the format route name
-   (R-ARCH-008), never the raw path.
+   (R-ARCH-008), never the raw path. The dispatcher sets it to `Route.Name` as soon as the format's
+   `Match` has resolved the route.
 4. In-flight limit (`server.max_in_flight` on the default endpoint, the endpoint's `max_in_flight`
    on a further endpoint; client listeners only): `503` with `Retry-After: 1` and code
    `server_busy`.
@@ -783,6 +798,8 @@ Consequences, normative for every component:
     authenticated the request (Q-ARCH-86);
   - for files, `Content-Disposition: attachment` with the file name ([storage.md](storage.md)).
 
+  A route of kind `Metadata` or `Computed` (a package document, a service index) carries the same
+  set without `Content-Disposition`: a client reads it as a response and does not save it as a file.
   This covers `/files/` and every format route of kind `Download`, `Metadata` or `Computed`
   (R-ARCH-008). It also covers uploaded and cached README, license, icon and manifest files.
   One exception: the HTML directory index of a folder `GET` under `/files/` is rendered by trove,
@@ -943,80 +960,93 @@ store.
 ```go
 package formats
 
-// ContractVersion changes whenever a method below changes meaning (R-ARCH-025).
+// ContractVersion changes whenever a method below changes meaning (R-ARCH-025). It stays 1 until
+// the contract freezes at the end of M3; before the freeze a change is applied to every format in
+// the same change (Q-ARCH-213). A format declares the literal it was written against.
 const ContractVersion = 1
 
-type ID string // "npm", "nuget"; ^[a-z][a-z0-9-]{1,31}$, never ^v[0-9]+$
-
-type Class uint8
-
-const (
-	Local Class = iota + 1
-	Remote
-	Virtual
+// The types of other packages under the names a format spells them: one type each, no mirrors
+// (Q-ARCH-188, Q-ARCH-189). A format imports this package and nothing else of the core.
+type (
+	ID     = catalog.ID         // "npm", "nuget"; ^[a-z][a-z0-9-]{1,31}$, never ^v[0-9]+$
+	Class  = catalog.Class      // "local", "remote", "virtual": a string, as stored and served
+	Action = authz.Action       // consts ActionRead, ActionAnnotate, ActionDeploy, ActionOverwrite, ActionDelete, ActionManage
+	Path   = repository.Cleaned // canonical repository path: Path ("" = root) and Folder
+	Tx     = meta.Tx            // opaque: it has no way to run SQL
+	Limits = untrusted.Limits   // R-ARCH-028
 )
 
 type Format interface {
 	Descriptor() Descriptor
 
-	// Routes lists every protocol operation below /api/<id>/<repoKey>/.
+	// Routes lists every protocol operation below /api/<id>/<repoKey>/. It is empty for a format whose
+	// protocol is /files/ alone: generic (Q-GENERIC-7).
 	Routes() []Route
-	// Match resolves method + repository-relative path (still percent-encoded) to a route.
-	// It returns errs.NotFound or errs.MethodNotAllowed and never touches storage.
+	// Match resolves method + repository-relative path (still percent-encoded) to a route. It returns
+	// errs.NotFound or errs.MethodNotAllowed and never touches storage. Usually:
+	// return formats.MatchRoutes(f.Routes(), method, escapedPath).
 	Match(method, escapedPath string) (*Route, Params, error)
-	// Classify says how a repository path behaves in caches (request classification,
-	// repositories-and-proxy.md).
-	Classify(p Path) PathKind
+	// Classify says how a canonical path behaves in caches and which package it belongs to. It gives
+	// a /files/ request its coordinate (R-EP-014) and every request its R-REPO-003 descriptor.
+	Classify(p Path) PathInfo
 	// PackageDocumentPath returns the canonical path of the package document of a normalized
 	// package name: the document whose existence upstream stands for the package's existence
-	// (npm: the package document; NuGet: "{lower_id}/index.json"). ok is false for a format
-	// without package names. Used by R-REPO-029 (gone packages) and R-REPO-048 (shadowing check).
+	// (npm: the package document; NuGet: "{lower_id}/index.json"). ok is false for a format without
+	// package names. Used by R-REPO-029 (gone packages) and R-REPO-048 (shadowing check).
 	PackageDocumentPath(name string) (p Path, ok bool)
 
-	// Storage hooks required by storage.md.
-	IngestOptions(rq *Request) IngestOptions                         // expected digests, SHA-512, media type
-	Inspect(ctx context.Context, in InspectInput) (*Inspection, error) // identity and namespaced properties (FMT-008)
-	OnCommit(ctx context.Context, tx Tx, c CommitEvent) error          // package and version rows, lead item
+	// Storage hooks required by storage.md. Every event carries the PackageWriter bound to the hook's
+	// transaction and the format's data port (Q-ARCH-193, Q-ARCH-212).
+	IngestOptions(rq *Request) IngestOptions                                   // expected digests, SHA-512, media type
+	Inspect(ctx context.Context, in InspectInput) (*Inspection, error)         // identity and namespaced properties (FMT-008)
+	OnCommit(ctx context.Context, tx Tx, c CommitEvent) error                  // c.Origin: Upload or Fill; package and version rows
 	OnItemsRemoved(ctx context.Context, tx Tx, e ItemsEvent) error
 	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
 	RemoveVersion(ctx context.Context, tx Tx, v VersionRef) ([]ItemRef, error) // retention and caps
 	VersionGroup(v VersionRef) string                                          // group a cap counts
 
-	// ServeCheck runs before the core serves a stored item on any route. errs.NotFound refuses
-	// the item because of format state the generic item row does not carry. It reads through h.
-	ServeCheck(ctx context.Context, h Host, repo RepoRef, it ItemRef) error
+	// ServeCheck runs before the core serves a stored item on any route. errs.NotFound refuses the item
+	// because of format state the generic item row does not carry. It reads through h.
+	ServeCheck(ctx context.Context, h Host, repo RepoRef, it ItemRef, mode ServeMode) error
 
-	Remote() RemoteAdapter   // nil when Descriptor().Classes lacks Remote
-	Virtual() VirtualAdapter // nil when Descriptor().Classes lacks Virtual
-	Indexes() IndexBuilder   // nil when the format has no rebuildable derived metadata
-	// Exposure filters documents per endpoint; nil makes the format unservable on an endpoint
-	// with exposure rules (endpoints.md R-EP-018, added before the contract freeze of M3).
+	Remote() RemoteAdapter     // nil exactly when Descriptor().Classes lacks Remote
+	Virtual() VirtualAdapter   // nil exactly when Descriptor().Classes lacks Virtual
+	Indexes() IndexBuilder     // nil when the format has no rebuildable derived metadata
+	// Exposure filters documents per endpoint; nil makes the format unservable on an endpoint with
+	// exposure rules (endpoints.md R-EP-018). It is the one source of the format's exposure facts.
 	Exposure() ExposureAdapter
 
 	// SetupTemplates returns the client setup templates (text/template) used by api-and-ui.md R-API-033.
 	SetupTemplates() []SetupTemplate
 
-	// WriteError renders a core error in the client's native error shape (R-ARCH-023).
+	// WriteError renders a core error in the client's native error shape (R-ARCH-023). The dispatcher also
+	// uses it for the refusals of the chain's own stages on this format's paths (Q-ARCH-214).
 	WriteError(w http.ResponseWriter, r *http.Request, err error)
 }
 
+// Descriptor is what a format registers: the catalog facts (R-REPO-003) plus what only the contract needs.
 type Descriptor struct {
-	ID               ID
-	DisplayName      string
-	Classes          []Class   // the authoritative class matrix (FMT-001, REPO-006)
-	Clients          []Client  // native clients and tested versions (FMT-002, FMT-003)
-	SettingsSchema   []byte    // JSON Schema 2020-12 of format-specific repository settings
-	PropertyPrefix   string    // reserved property namespace, e.g. "npm." (FMT-008)
-	MaxDocumentBytes int64     // bound for documents held in memory (R-ARCH-028)
-	RepositoryIndex  bool      // has repository-wide derived indexes; enables the per-repository revision (R-ARCH-012)
+	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ...
+	ContractVersion  int             // the literal the format was written against; Register panics on a mismatch
+	Names            catalog.Names   // the one package-name normaliser; nil exactly when !PackageNames
+	Clients          []Client        // native clients and tested versions (FMT-002, FMT-003)
+	SettingsSchema   []byte          // JSON Schema 2020-12 of format-specific repository settings
+	PropertyPrefix   string          // reserved property namespace, e.g. "npm." (FMT-008)
+	MaxDocumentBytes int64           // bound for documents held in memory (R-ARCH-028)
+	Limits           Limits          // tightenings of the defaults of R-ARCH-028
+	RepositoryIndex  bool            // has repository-wide derived indexes; enables the per-repository revision (R-ARCH-012)
+	DataPort         reflect.Type    // the interface type of the format's side-table port; nil without side tables (Q-ARCH-193)
 }
 
 type Route struct {
-	Name     string       // stable metric, log and audit label, e.g. "npm.tarball.get"
+	Name     string   // stable metric, log and audit label, e.g. "npm.tarball.get"
 	Method   string
-	Template string       // documentation form, e.g. "/{package}/-/{file}"
-	Action   authz.Action // coarse check before the body is read (INV-9 action)
-	Kind     RouteKind    // Download, Metadata, Computed, Upload, Delete, Admin, Volatile
+	Template string   // documentation form and default matcher, e.g. "/{package}/-/{file}"; "{rest...}" takes the tail
+	Examples []string // escaped paths this route must match and no other route of its method may (check 1)
+	Action   Action   // coarse check before the body is read
+	Kind     RouteKind // Download, Metadata, Computed, Upload, Delete, Admin, Volatile
+	Classes  []Class  // the classes that serve the route; empty is every class of the format
+	Match    func(escapedPath string) (Params, bool) // overrides the template for a grammar it cannot state
 	Handler  HandlerFunc
 }
 
@@ -1024,43 +1054,75 @@ type HandlerFunc func(ctx context.Context, rq *Request, w http.ResponseWriter) e
 
 type Request struct {
 	*http.Request
-	Repo      *repository.Repository // immutable snapshot entry
-	Route     *Route
-	Params    Params
-	Path      Path                   // canonical repository path (R-ARCH-005)
-	Subject   authz.Subject          // who acts, as the authentication stage resolved it (authorization.md R-AUTHZ-003)
-	Index     *authz.Index           // the grant index the request started on (authz.Engine.Begin); every decision of the request runs on it
-	Host      Host
+	Repo     *repository.Repository // the addressed repository, an immutable snapshot entry
+	Route    *Route
+	Params   Params
+	Path     Path                   // canonical repository path (R-ARCH-005)
+	Escaped  string                 // the repository-relative path as received
+	Subject  authz.Subject          // who acts, and on which endpoint (Subject.Endpoint, Q-EP-20)
+	Index    *authz.Index           // the index the request began on; every decision of the request runs on it
+	Endpoint EndpointFacts          // Name, Rules, CacheFill, ExposureFingerprint: derived from the listener's endpoint
+	Host     Host
+}
+
+// Target is what a format asks the decision point inside the addressed repository. The host completes the
+// coordinate (repository, class, format, the kind of the route), so a format names neither another repository
+// nor another endpoint (Q-ARCH-189).
+type Target struct {
+	Package, Version, Path string // normalized; all empty is the repository level
+	Actions                []Action
 }
 
 type PathKind uint8
 
 const (
-	Content  PathKind = iota + 1 // immutable once stored
-	Metadata                     // upstream document that expires after the metadata cache period
-	Computed                     // rendered by trove from stored rows, never fetched
-	Volatile                     // passed through, never cached (search, advisory queries)
+	Content      PathKind = iota + 1 // immutable once stored
+	PathMetadata                     // upstream document that expires after the metadata cache period
+	PathComputed                     // rendered by trove from stored rows, never fetched
+	PathVolatile                     // passed through, never cached (search, advisory queries)
 )
+
+// PathInfo is the format's R-REPO-003 descriptor of a canonical path.
+type PathInfo struct {
+	Kind        PathKind
+	Package     string // normalized, "" when the path belongs to no package
+	Version     string
+	RoutingName string // for an artifact without a package, so patterns, claims and pins can protect it
+}
+
+// ServeRoute runs rq.Route.Handler with the guarantees the core owes every route (the dispatcher and the
+// conformance kit both call it): the content headers of R-ARCH-007 for Download, Metadata and Computed
+// routes, panic recovery that logs format and route (R-ARCH-028), WriteError for an error returned before
+// the status line, and an aborted connection for one after it.
+func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool)
 
 type RemoteAdapter interface {
 	// UpstreamRequest maps a repository path to the upstream request.
-	UpstreamRequest(ctx context.Context, rc RemoteContext, p Path) (*http.Request, error)
+	UpstreamRequest(ctx context.Context, rc RemoteContext, p Path, variant string) (*http.Request, error)
 	// AcceptResponse checks status, headers and declared type before a byte is stored or sent.
 	AcceptResponse(p Path, resp *http.Response) error
-	// Rewrite renders a stored upstream document for one response (repositories-and-proxy.md).
-	Rewrite(ctx context.Context, rc RemoteContext, p Path, doc []byte, links LinkBuilder) ([]byte, error)
+	// PrepareFill validates a fetched metadata document before anything is stored, outside every
+	// transaction (R-ARCH-019); an error keeps the previous entry and answers 502 in the format's shape.
+	PrepareFill(ctx context.Context, rc RemoteContext, p Path, variant string, body io.ReaderAt, size int64) (Prepared, error)
 	// OnFill runs inside a remote metadata cache-fill transaction, while the core holds the cache
 	// entry's row lock and before it writes the entry. f.Replaces says whether the core's upsert
 	// rule replaces the stored document or keeps a newer stored one (repositories-and-proxy.md
 	// R-REPO-026 step 5). keepStored keeps the stored document and renews only its freshness.
 	OnFill(ctx context.Context, tx Tx, f FillEvent) (keepStored bool, err error)
+	// Rewrite renders a stored upstream document for one response (repositories-and-proxy.md).
+	Rewrite(ctx context.Context, rc RemoteContext, p Path, doc []byte, links LinkBuilder) ([]byte, error)
+	// TracksVersionRemoval says that the format's removal marks replace the generic gone-package rule (R-REPO-029).
+	TracksVersionRemoval() bool
 }
 
 type VirtualAdapter interface {
 	Strategy(p Path) Strategy
-	// Merge combines member documents. Each part carries its member's tier and position,
-	// so the format can apply the per-version source rule of repositories-and-proxy.md.
-	Merge(ctx context.Context, p Path, parts []MemberDocument, links LinkBuilder) ([]byte, error)
+	// Merge combines member documents. Each part carries its member's tier and position, so the format
+	// can apply the per-version source rule of repositories-and-proxy.md.
+	Merge(ctx context.Context, rq *Request, p Path, parts []MemberDocument) ([]byte, error)
+	// LocalDocument renders a local member's document from its rows (R-ARCH-012) for the core's
+	// merged-metadata cache (R-ARCH-015 step 3), so no format code orchestrates that cache.
+	LocalDocument(ctx context.Context, rq *Request, member RepoRef, p Path, variant string) (doc []byte, rev RevSeq, found bool, err error)
 }
 
 type Strategy uint8
@@ -1070,6 +1132,13 @@ const (
 	Merge                          // every eligible member contributes
 	Newest                         // Merge, with remote members revalidated first (REPO-036)
 )
+
+// ExposureAdapter is a format's part of endpoint exposure (endpoints.md R-EP-018).
+type ExposureAdapter interface {
+	catalog.Versioning // ValidateRange, Prerelease, InRange
+	Dimensions() ExposureDimensions
+	FilterDocument(ctx context.Context, p Path, doc []byte, view ExposureView) ([]byte, error)
+}
 
 type IndexBuilder interface {
 	// Rebuild recomputes derived metadata of a local repository from stored rows; runs as a job.
@@ -1082,7 +1151,7 @@ type SetupTemplate struct {
 	Section  string // "configure", "publish", "install"
 	Lang     string // "shell", "ini", "xml", "yaml"
 	File     string // target file when the snippet is file content, e.g. ".npmrc"
-	Template string // text/template; never receives a token (api-and-ui.md R-API-030)
+	Template string // text/template over SetupData, which has no credential field (api-and-ui.md R-API-030)
 }
 ```
 
@@ -1107,7 +1176,16 @@ Normative rules:
   content is the name authorization checks ([authorization.md](authorization.md)).
 - `Route.Action` is a coarse check that the core runs before the body is read: "may this principal
   do this action anywhere in this repository?". The handler then decides on the concrete path or
-  package through `Host.Authorize`, with an `authz.Coordinate` that names it.
+  package through `Host.Authorize`, with a `Target` that names it; the host completes the coordinate
+  with the repository, its class and format and the request kind of the route.
+- A format that has side tables of its own declares the interface type of their port in
+  `Descriptor.DataPort`; the port is implemented by a domain package (`internal/formatdata/<id>`) and
+  bound to the format ID by the composition root (Q-ARCH-193). A hook reaches it as `event.Data`, a
+  route as `Host.FormatData(id)`. A declared port without a binding, a binding that does not
+  implement it and a binding for no format stop the start-up.
+- A format writes its generic package rows through the `PackageWriter` of the event (R-ARCH-009) and
+  its side rows through its port, which takes the opaque `Tx` per call. It runs no SQL and cannot
+  unwrap the `Tx`.
 - `OnCommit`, `OnItemsRemoved`, `OnItemsRestored` and `RemoteAdapter.OnFill` run inside the
   storage transaction and MUST NOT perform I/O outside PostgreSQL.
 - **Remote fill.** The storage hook that runs inside a remote metadata cache-fill transaction,
@@ -1125,7 +1203,11 @@ Normative rules:
   causes (R-ARCH-033).
 - **Serve-time check.** The core calls `ServeCheck` before it serves a stored item on any route:
   `/files/<repo>/<path>`, a remote's cache view, virtual tier resolution and the format's own
-  routes. Through it a format refuses an item with `404` because of format state the generic item
+  routes. The mode says what the route may do: `ServeStored` decides on the stored marks only and
+  never contacts an upstream (`/files/`, the cache view, virtual tiers 1 and 2);
+  `ServeMayRevalidate` lets the format's own route revalidate a stale document first (Q-NPM-13). The
+  generic layer reaches the check through the `files.Formats` seam, implemented over the registry by
+  `internal/formathost`. Through it a format refuses an item with `404` because of format state the generic item
   row does not carry. npm refuses items of tombstoned versions, including versions withheld by a
   restore's replay ([formats/npm.md](formats/npm.md) R-NPM-047, Q-NPM-12), and of versions removed
   upstream (R-NPM-026).
@@ -1142,27 +1224,53 @@ Priority: **MVP** · Covers: FMT-007, STOR-001, STOR-002
 
 ```go
 type Host interface {
-	// Authorize decides the coordinate (repository, path or package, version, actions) for rq.Subject
-	// on rq.Index (authz.Engine.DecideOn) and returns the refusal of R-AUTHZ-016, or nil.
-	Authorize(ctx context.Context, rq *Request, c authz.Coordinate) error
-	InTx(ctx context.Context, fn func(tx Tx) error) error // R-ARCH-019
+	// Authorize decides the target for rq.Subject on rq.Index (authz.Decider.DecideOn) and returns the
+	// refusal of R-AUTHZ-016, or nil. The host completes the coordinate and applies the repository's
+	// include and exclude patterns (R-REPO-005) to the package name or the path.
+	Authorize(ctx context.Context, rq *Request, t Target) error
+	// Write runs fn in one transaction (R-ARCH-019) with the PackageWriter bound to rq. The allowed
+	// write decisions of the request are recorded in it (R-AUTHZ-029).
+	Write(ctx context.Context, rq *Request, fn func(tx Tx, w PackageWriter) error) error
 
 	Ingest() Ingestor            // upload pipeline of storage.md: admission, spool, digests, commit
 	Items() ItemStore            // repository paths <-> blobs, Range and conditional reads (storage.md)
 	Packages() PackageStore      // package and version rows behind the package view (FMT-007)
 	Remote() RemoteFetcher       // remote engine (repositories-and-proxy.md)
 	Resolver() Resolver          // virtual resolution (repositories-and-proxy.md)
-	Links() LinkBuilder          // absolute URLs from the request's base URL (R-ARCH-006)
-	Renditions() RenditionCache  // rendered documents (R-ARCH-018)
-	Jobs() JobEnqueuer           // R-ARCH-016
-	Notify(tx Tx, a Area, payload any) // attaches to tx; a change area writes the change log in tx, a signal area publishes after commit (R-ARCH-018)
+	Links(rq *Request) LinkBuilder // absolute URLs on the response base URL of rq's endpoint and host (R-ARCH-006)
+	Renditions() RenditionCache  // rendered documents (R-ARCH-012), keyed by a struct the core hashes
+	FormatData(id ID) any        // the data port bound to a format (Q-ARCH-193); nil without Descriptor.DataPort
+	RestoredAt(ctx context.Context) (time.Time, error) // system_state restored_at; zero until a restore ran
 }
 
 type PackageStore interface {
-	Versions(ctx context.Context, repo RepoRef, name string) ([]PackageVersion, RevSeq, error)
-	// RevSeqs returns packages.rev_seq per repository; a repository without the package maps to 0.
-	RevSeqs(ctx context.Context, repos []RepoRef, name string) (map[RepoID]RevSeq, error)
-	// Writes happen through the storage hooks (OnCommit, OnItemsRemoved, ...), not here.
+	Package(ctx context.Context, repo RepoRef, name string) (PackageRow, bool, error)
+	Versions(ctx context.Context, repo RepoRef, name string) ([]VersionRow, RevSeq, error)
+	// RevSeqs returns packages.rev_seq per repository id; a repository without the package maps to 0.
+	RevSeqs(ctx context.Context, repos []RepoRef, name string) (map[int64]RevSeq, error)
+}
+
+// PackageWriter writes the generic package rows inside a storage transaction. It is bound to the
+// transaction of the hook or of Host.Write that handed it out (Q-ARCH-212).
+type PackageWriter interface {
+	EnsureLocked(ctx context.Context, repo RepoRef, name, displayName string) (pkg PackageRef, created bool, err error)
+	Versions(ctx context.Context, pkg PackageRef) ([]VersionRow, error)
+	InsertVersion(ctx context.Context, pkg PackageRef, v NewVersion) (VersionID, error)
+	TrashOrDeleteVersion(ctx context.Context, v VersionID, purge bool) error
+	SetPackageAttributes(ctx context.Context, pkg PackageRef, attrs json.RawMessage) error
+	SetVersionAttributes(ctx context.Context, v VersionID, attrs json.RawMessage) error
+	LinkItem(ctx context.Context, it ItemRef, v VersionID, lead bool) error
+	SetProperties(ctx context.Context, it ItemRef, props map[string]string) error // below PropertyPrefix only
+	// BumpRevision raises rev_seq (once per transaction) and returns it with clock_timestamp() read after
+	// the row lock. It is for a change that writes only the format's side rows.
+	BumpRevision(ctx context.Context, pkg PackageRef) (RevSeq, time.Time, error)
+	// Claim checks ownership and claims in the commit transaction (R-AUTHZ-018); AutoClaim applies the
+	// namespace auto claim (R-REPO-023). Both refuse until the composition root binds the rule
+	// (Q-ARCH-215). Notify attaches a notification to the transaction (R-ARCH-018); Enqueue a job (R-ARCH-016).
+	Claim(ctx context.Context, t Target, w OwnershipWrite) error
+	AutoClaim(ctx context.Context, name string) error
+	Notify(area string, payload any) error
+	Enqueue(ctx context.Context, j JobSpec) error
 }
 ```
 
@@ -1172,9 +1280,10 @@ type PackageStore interface {
   on storage.md's generic `packages` row, not in a format's side table.
   - The core reads it for read-your-writes (R-ARCH-012) and for the merged-metadata check
     (R-ARCH-015) without format code, so a format keeps no second counter of its own.
-  - It is incremented in the transaction that changes the package, by every storage hook or format
-    write that changes the package's rows. Conformance kit check 9 (R-ARCH-010) catches a write that
-    forgets it.
+  - It is incremented in the transaction that changes the package, by the `PackageWriter` itself on
+    every call that writes the package's generic rows, once per package per transaction however many
+    calls there are (Q-ARCH-212). A change that writes only a format's side rows calls
+    `BumpRevision`. Conformance kit check 9 (R-ARCH-010) catches a write that forgets it.
   - It is the first entry of the revision-column registry below, so a restore raises it above
     every value the old installation can have issued as an `ETag`
     ([backup-and-restore.md](backup-and-restore.md) R-BAK-022).
@@ -1190,6 +1299,11 @@ type PackageStore interface {
   - The registry is frozen at start-up like the other registries (R-ARCH-032), and the restore
     reads it ([backup-and-restore.md](backup-and-restore.md) R-BAK-021 step 6). No second list of
     revision columns exists.
+- `internal/formathost` implements `Host` over the item store, `internal/packages` (the package
+  rows), the decision point and, when they exist, the remote and virtual engines; until an engine
+  exists its calls answer an internal error that says so. It holds no request state (R-ARCH-032): the
+  decisions that allowed a write travel with the request and are recorded in the write's transaction.
+  The storage hooks of the item store reach the formats through it (`items.Hooks`).
 - Copy, move and delete change rows only, never blob content (STOR-002, [storage.md](storage.md)).
 - Everything one client request writes goes through one transaction: items, package rows,
   properties, audit event and job enqueue. Its notifications are attached to that transaction and
@@ -1214,8 +1328,11 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
   - an external process would add a network hop to every package request.
 - At start-up, `Register` panics, and the process exits, on any of these:
   - a duplicate or reserved ID;
-  - a `ContractVersion` mismatch;
-  - a route set that fails the kit's ambiguity check;
+  - a `ContractVersion` mismatch (the contract stays at 1 until the freeze at the end of M3; every
+    change before it is applied to all formats in the same change, Q-ARCH-213);
+  - a route set that fails the kit's ambiguity check, which `Register` runs itself: every route has
+    a name, a method, a template, a handler, a kind, an action and at least one example, and every
+    entry of `Route.Examples` is matched by its own route and by no other route of the same method;
   - a class matrix with no matching adapter, for example `Remote` listed but `Remote()` returning
     nil.
 - The registry feeds these ([api-and-ui.md](api-and-ui.md)):
@@ -1225,7 +1342,12 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
     contain that class.
 
   The create form offers, for the chosen class, only those formats. No hand-maintained list of
-  formats per class exists anywhere in the code or the API document.
+  formats per class exists anywhere in the code or the API document. The document holds the schemas
+  `FormatName`, `LocalFormatName`, `RemoteFormatName` and `VirtualFormatName`
+  (`# >>> WP2.1 formats` in `api/openapi.yaml`), and `TestR_ARCH_010_PerClassFormatEnums` compares
+  each with the registry.
+- `Register` ends the registry's life as a free-for-all: the composition root freezes the catalog
+  before the replica serves, and a registration after that panics.
 
 The conformance kit (`internal/formats/formattest`) is table-driven. Every format runs it in its
 own tests:
@@ -1248,6 +1370,10 @@ own tests:
    in-memory `Host`.
 10. For every sample package name the kit ships, `PackageDocumentPath` returns a path that `Match`
     resolves to a `GET` route, and two spellings of the same normalized name yield the same path.
+
+A check that cannot apply to a format is skipped in the format's test with a stated reason (generic
+has no routes, no clients and no package names); a skip without a reason fails the check, so a
+later class cannot pass a check vacuously.
 
 End-to-end, every listed client runs its tested versions against a local, a remote and a virtual
 repository in `test/e2e` (FMT-002, FMT-003). The versions are fixed on the format pages.
@@ -5359,6 +5485,115 @@ re-check is for the window between the first decision and the commit. The develo
 long body.
 
 **Applied in the spec:** R-AUTHZ-015 reads unchanged.
+
+### Q-ARCH-211 · The contract's names are made unambiguous, and `Match` stays one line in each format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the sketch of R-ARCH-008 spells `Delete` as a route kind and as an action, and `Metadata`, `Computed` and `Volatile` as route kinds and
+as path kinds. It cannot compile as written. It also gives `Base` a `Match` over `Routes()`, which an embedded struct cannot do: it does not see
+the type that embeds it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Prefix where two meanings meet | Route kinds keep the names the spec pages use (`Download`, `Metadata`, `Computed`, `Upload`, `Delete`, `Admin`, `Volatile`); actions are `ActionRead` to `ActionManage`; path kinds are `Content`, `PathMetadata`, `PathComputed`, `PathVolatile`; a format writes `Match` as one call of `MatchRoutes` | The format pages and the kit checks keep their words (kind `Download`, kind `Delete`) | Two spellings of "metadata" |
+| (b) Sub-namespaces | `formats.Routes.Download`, `formats.Paths.Content` as struct values | No prefixes | Not constants: no `switch` over them without a helper |
+| (c) Rename the route kinds | `KindDownload` and so on | One flat set | Every format page and R-ARCH-007 name kinds `Download`, `Metadata`, `Computed`, `Upload`, `Delete`, `Admin`, `Volatile` |
+
+**Choice:** (a). `Base` offers the hooks, the nil adapters, `ServeCheck`, `SetupTemplates` and the `problem+json` `WriteError`; `Descriptor`, `Routes`, `Match`,
+`Classify` and `PackageDocumentPath` stay the format's own.
+
+**Rationale:** the route kinds are normative words on four pages and the action constants are a convenience for a format's code, so the convenience gives
+way. The development agent would revisit this if a third meeting of two meanings appears.
+
+**Applied in the spec:** R-ARCH-008 sketch.
+
+### Q-ARCH-212 · A storage hook holds the opaque transaction, a package writer and the data port; the writer raises the revision
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a hook must create package and version rows, lock the package, link items and, for npm, write side rows through its port, and every one of
+those changes must raise `packages.rev_seq` (R-ARCH-009). R-ARCH-008 forbids SQL in a format, and `meta.Tx` cannot run SQL by its own rule. The
+format's port (Q-ARCH-193) takes the transaction per call.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Tx` plus a `PackageWriter` and the port in the event (chosen) | The hook signatures of the sketch stay; `PackageWriter` is bound to the hook's transaction and raises `rev_seq` once per package per transaction on every call that writes generic rows; `BumpRevision` covers a change of side rows only | The most common mistake, a generic-row write without the revision, cannot be made; the kit measures the rest (check 9); one port shape per format | The writer and the port are two places per format |
+| (b) A writer only, with tx-bound copies of the port | `OnCommit(ctx, c)` and ports bound per transaction | One handle | Two port shapes per format, one for reads and one bound to a transaction |
+| (c) `Tx` only | The sketch as it was | Smallest contract | A hook could not write the generic rows without SQL |
+
+**Choice:** (a). The writer is `internal/packages` (a domain package over `packages`, `package_versions`, `items.version_id` and `item_properties`, with
+sqlc statements only); `internal/formathost` adapts its types. The raise is recorded in a slot of `meta.Tx.Value`, which belongs to one attempt of the
+transaction: a retry raises again, a rollback raises nothing. A package that a call creates starts at revision 1, and that counts as the
+transaction's raise. `SetProperties` raises the revision of the package the item belongs to. The writer of a fill or a job has no request, so
+`Claim` and `AutoClaim` refuse on it (Q-ARCH-215).
+
+**Rationale:** the revision is what clients hold as an ETag and what the merged-metadata cache compares; making the writer raise it turns a
+silent staleness into something no format can do. The development agent would revisit this if a format needs two raises of one package in one
+transaction, which no ETag scheme wants.
+
+**Applied in the spec:** R-ARCH-008 sketch, R-ARCH-009 sketch and its revision rule, storage.md hooks table.
+
+### Q-ARCH-213 · `ContractVersion` stays 1 until the freeze
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-025 says the version changes when a method changes meaning. E3.3 names 1 as the frozen version of the contract at the end of M3.
+Until then the contract changes with every format that lands, and at most two formats exist.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stay at 1, every change touches all formats in its change (chosen) | A format declares the literal; `Register` panics on a mismatch | The frozen version is 1, as E3.3 says; the mismatch check still works for a stale build of a format | A format outside the tree would not notice a change; there is none |
+| (b) Bump per change | 1, 2, 3 before the freeze | Each change is visible | The freeze would not be 1 |
+
+**Choice:** (a).
+
+**Rationale:** no format is built outside the tree before the freeze, so the number guards nothing yet and costs a rename of the literal in every
+format on every change. The development agent would revisit this if a format is built outside this repository.
+
+**Applied in the spec:** R-ARCH-010.
+
+### Q-ARCH-214 · The refusals of the chain's stages on a package path are rendered by the format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-005 asks for npm's body and challenge on every error response of an npm endpoint. The `401`, `421`, `503 server_busy` and `429` of the chain are
+written by stages that run before the dispatcher and know no format.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An error-shape table by path prefix (chosen) | `Router.HandleErrorShape("/api/<id>/", f.WriteError)`; `httpserver.Problem` finds the table through the context the first stage sets | Every stage renders through `Problem` already; the order of the chain stays; one registration per format | A format's `WriteError` must not call `Problem` |
+| (b) problem+json from the stages | As before | No change | Violates R-NPM-005; a package client cannot parse it |
+| (c) Authentication behind the router | The dispatcher authenticates | The format sees every refusal | Breaks the order of R-ARCH-005 and the `401`-before-the-body rule |
+
+**Choice:** (a). The table belongs to the router, so an endpoint whose surface does not hold the `packages` family drops the shape with its patterns.
+
+**Rationale:** the stages already agree on one function for errors; the only missing fact is which protocol a path speaks, and the path says it. The
+development agent would revisit this if a family other than `/api/<id>/` needs a shape (the OCI reservation `/v2/` will).
+
+**Applied in the spec:** R-ARCH-005 (error shape of a format prefix).
+
+### Q-ARCH-215 · Package ownership and the namespace auto claim are seams that refuse until they are bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a publish checks and records ownership in its commit transaction (R-AUTHZ-018, R-AUTHZ-015) and applies the auto claim of R-REPO-023. Both
+rules are written in a work package of their own that has not landed. The contract needs the call now, because the kit and the first format are
+written against it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A seam in `internal/formathost` that refuses until bound (chosen) | `Ownership.EnforceTx(ctx, tx, OwnershipCheck{Index, Subject, Coordinate, Write})` and `AutoClaimer.AutoClaimTx`, bound by the composition root; unbound, `Claim` and `AutoClaim` answer an internal error | A publish that cannot be checked is not allowed; no format asks before the rule exists | A format that claims cannot publish until the binding |
+| (b) Unbound means allowed | The seam answers nil | npm could publish before the rule lands | A forgotten binding is an open door |
+| (c) Wait for the ownership package | The contract waits | No stand-in | Blocks the kit and the first format |
+
+**Choice:** (a). `OwnershipWrite{Publish, FirstVersion}` says what kind of write it is: a change of a dist-tag is not a publish. A writer without a request
+(a fill, a job) refuses always.
+
+**Rationale:** the failure that matters is a package taken over by a caller who should not own it; refusing costs a visible error in a test that
+has no binding, allowing costs a hole nobody sees. The development agent would revisit this when the ownership package lands: the binding replaces the refusal.
+
+**Applied in the spec:** R-ARCH-009 sketch (`Claim`, `AutoClaim`).
 
 ## What this does not cover
 

@@ -127,6 +127,13 @@ type m1Wiring struct {
 	items *items.Store
 	// <<< M1 files
 
+	// >>> WP2.1 formats
+	// formats is the format wiring (wire_formats.go): the shared dependencies of the
+	// storage hooks and the Host, and the Host and the dispatcher once built. Nil
+	// where the item store is.
+	formats *formatsWiring
+	// <<< WP2.1 formats
+
 	// >>> M1 endpoints
 	// exposureCeiling is the endpoint exposure of R-EP-013 that the decision point
 	// applies, built once from the configured endpoints (exposureCeiling).

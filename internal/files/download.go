@@ -56,6 +56,13 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 	if err := items.ContentError(it); err != nil {
 		return Resolved{}, err
 	}
+	// A format keeps a say about its own items on this raw view too (R-ARCH-008
+	// "Serve-time check"): npm's tombstoned tarball is a 404 here as on its route.
+	if s.formats != nil {
+		if err := s.formats.ServeCheck(ctx, repo, it); err != nil {
+			return Resolved{}, err
+		}
+	}
 	return Resolved{Repo: repo, Item: it}, nil
 }
 

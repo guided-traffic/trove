@@ -514,6 +514,11 @@ func (a *App) startClient() error {
 		// >>> M1 files
 		a.registerFiles(router)
 		// <<< M1 files
+		//
+		// The package protocols under /api/<format>/ (wire_formats.go).
+		if err := a.registerFormats(router); err != nil {
+			return err
+		}
 		router.Handle(webui.MountPath, ui)
 		if a.o.Extra != nil {
 			a.o.Extra(router)

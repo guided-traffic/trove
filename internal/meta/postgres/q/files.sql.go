@@ -55,7 +55,7 @@ func (q *Queries) DeleteItemByIDOne(ctx context.Context, id int64) (int64, error
 const deleteItemsByID = `-- name: DeleteItemsByID :many
 DELETE FROM items
  WHERE id = ANY($1::bigint[]) AND repo_id = $2::bigint
-RETURNING id, path, kind, blob_sha256, size
+RETURNING id, path, kind, blob_sha256, size, COALESCE(version_id, 0)::bigint AS version_id
 `
 
 type DeleteItemsByIDParams struct {
@@ -69,6 +69,7 @@ type DeleteItemsByIDRow struct {
 	Kind       string
 	BlobSha256 []byte
 	Size       pgtype.Int8
+	VersionID  int64
 }
 
 // Returns what was removed, so that the event of a file carries its digest and
@@ -88,6 +89,7 @@ func (q *Queries) DeleteItemsByID(ctx context.Context, arg DeleteItemsByIDParams
 			&i.Kind,
 			&i.BlobSha256,
 			&i.Size,
+			&i.VersionID,
 		); err != nil {
 			return nil, err
 		}
