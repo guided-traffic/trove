@@ -12474,5 +12474,1593 @@
         <target>Filter anwenden</target>
       </segment>
     </unit>
+    <unit id="shell.menu.setup">
+      <notes>
+        <note category="location">src/app/app.html:69,70</note>
+      </notes>
+      <segment>
+        <source>Client setup</source>
+        <target>Client-Einrichtung</target>
+      </segment>
+    </unit>
+    <unit id="nav.packages">
+      <notes>
+        <note category="location">src/app/app.routes.ts:52</note>
+        <note category="location">src/app/core/navigation.ts:43</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.heading">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:2,4</note>
+      </notes>
+      <segment>
+        <source>Install</source>
+        <target>Installieren</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.no-clients">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:5,7</note>
+      </notes>
+      <segment>
+        <source>There are no install instructions for this package type yet.</source>
+        <target>Für diesen Pakettyp gibt es noch keine Installationsanleitung.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.client">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:9,10</note>
+      </notes>
+      <segment>
+        <source>Client</source>
+        <target>Client</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.repository">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:18,19</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+        <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.loading">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:31,33</note>
+      </notes>
+      <segment>
+        <source>Loading the command.</source>
+        <target>Der Befehl wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.collapse">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:46,47</note>
+      </notes>
+      <segment>
+        <source>Show less</source>
+        <target>Weniger anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.expand">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:48,50</note>
+      </notes>
+      <segment>
+        <source>Show the whole command</source>
+        <target>Ganzen Befehl anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.setup-link">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.html:59,64</note>
+      </notes>
+      <segment>
+        <source>Set up your client for this repository</source>
+        <target>Client für dieses Repository einrichten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.install.copy">
+      <notes>
+        <note category="location">src/app/features/packages/install-panel.ts:81</note>
+      </notes>
+      <segment>
+        <source>Copy install command</source>
+        <target>Installationsbefehl kopieren</target>
+      </segment>
+    </unit>
+    <unit id="pkg.detail.back">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:7,10</note>
+      </notes>
+      <segment>
+        <source>All packages</source>
+        <target>Alle Pakete</target>
+      </segment>
+    </unit>
+    <unit id="pkg.loading">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:13,14</note>
+        <note category="location">src/app/features/packages/package-detail.html:86,87</note>
+      </notes>
+      <segment>
+        <source>Loading.</source>
+        <target>Wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.facts">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:15</note>
+      </notes>
+      <segment>
+        <source>Package facts</source>
+        <target>Eckdaten des Pakets</target>
+      </segment>
+    </unit>
+    <unit id="pkg.fact.version">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:17,19</note>
+      </notes>
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="pkg.version.picker">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:27</note>
+      </notes>
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="pkg.version.prereleases">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:40,42</note>
+      </notes>
+      <segment>
+        <source>Include pre-releases</source>
+        <target>Vorabversionen einbeziehen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.fact.published">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:44,46</note>
+      </notes>
+      <segment>
+        <source>Published</source>
+        <target>Veröffentlicht</target>
+      </segment>
+    </unit>
+    <unit id="pkg.fact.licenses">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:48,49</note>
+      </notes>
+      <segment>
+        <source>Licenses</source>
+        <target>Lizenzen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.fact.downloads">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:50,51</note>
+      </notes>
+      <segment>
+        <source>Downloads</source>
+        <target>Downloads</target>
+      </segment>
+    </unit>
+    <unit id="pkg.fact.repositories">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:52,54</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="pkg.deprecated">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:65</note>
+      </notes>
+      <segment>
+        <source>Deprecated.</source>
+        <target>Veraltet.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.none">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:93,95</note>
+      </notes>
+      <segment>
+        <source>This version declares no further metadata.</source>
+        <target>Diese Version enthält keine weiteren Metadaten.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.links">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:96,97</note>
+      </notes>
+      <segment>
+        <source>Links</source>
+        <target>Links</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.external">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:104,105</note>
+      </notes>
+      <segment>
+        <source>(opens another site)</source>
+        <target>(öffnet eine andere Website)</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.authors">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:113,114</note>
+      </notes>
+      <segment>
+        <source>Authors</source>
+        <target>Autoren</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.dist-tags">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:121,122</note>
+      </notes>
+      <segment>
+        <source>Distribution tags</source>
+        <target>Verteilungs-Tags</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.engines">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:139,140</note>
+      </notes>
+      <segment>
+        <source>Required runtimes</source>
+        <target>Benötigte Laufzeitumgebungen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.download-link">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:159,161</note>
+      </notes>
+      <segment>
+        <source>Download</source>
+        <target>Herunterladen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.repo.show-in-browser">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:175,177</note>
+      </notes>
+      <segment>
+        <source>Show in browser</source>
+        <target>Im Browser anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.badge.prerelease">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:194,195</note>
+      </notes>
+      <segment>
+        <source>pre-release</source>
+        <target>Vorabversion</target>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.readme">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:130</note>
+      </notes>
+      <segment>
+        <source>README</source>
+        <target>README</target>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.metadata">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:131</note>
+      </notes>
+      <segment>
+        <source>Metadata</source>
+        <target>Metadaten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.files">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:132</note>
+      </notes>
+      <segment>
+        <source>Files</source>
+        <target>Dateien</target>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.repositories">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:133</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="pkg.tab.versions">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:134</note>
+      </notes>
+      <segment>
+        <source>All versions</source>
+        <target>Alle Versionen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.dependencies">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:145</note>
+      </notes>
+      <segment>
+        <source>Dependencies</source>
+        <target>Abhängigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.dev-dependencies">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:146</note>
+      </notes>
+      <segment>
+        <source>Development dependencies</source>
+        <target>Entwicklungsabhängigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.peer-dependencies">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:147</note>
+      </notes>
+      <segment>
+        <source>Peer dependencies</source>
+        <target>Peer-Abhängigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.optional-dependencies">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:148</note>
+      </notes>
+      <segment>
+        <source>Optional dependencies</source>
+        <target>Optionale Abhängigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.homepage">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:160</note>
+      </notes>
+      <segment>
+        <source>Homepage</source>
+        <target>Homepage</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.source">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:161</note>
+      </notes>
+      <segment>
+        <source>Source repository</source>
+        <target>Quell-Repository</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.bugs">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:162</note>
+      </notes>
+      <segment>
+        <source>Issue tracker</source>
+        <target>Fehlerverfolgung</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.path">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:184</note>
+      </notes>
+      <segment>
+        <source>File</source>
+        <target>Datei</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.size">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:185</note>
+      </notes>
+      <segment>
+        <source>Size</source>
+        <target>Größe</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.sha256">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:188</note>
+      </notes>
+      <segment>
+        <source>SHA-256</source>
+        <target>SHA-256</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.sha256">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:189</note>
+      </notes>
+      <segment>
+        <source>The checksum of the file&apos;s content. Compare it with the output of sha256sum on the downloaded file.</source>
+        <target>Die Prüfsumme des Dateiinhalts. Vergleichen Sie sie mit der Ausgabe von sha256sum für die heruntergeladene Datei.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.download">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:191</note>
+      </notes>
+      <segment>
+        <source>Download</source>
+        <target>Herunterladen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.ver.version">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:194</note>
+      </notes>
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="pkg.ver.published">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:195</note>
+      </notes>
+      <segment>
+        <source>Published</source>
+        <target>Veröffentlicht</target>
+      </segment>
+    </unit>
+    <unit id="pkg.ver.size">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:196</note>
+      </notes>
+      <segment>
+        <source>Size</source>
+        <target>Größe</target>
+      </segment>
+    </unit>
+    <unit id="pkg.ver.repositories">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:197</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="pkg.ver.downloads">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:198</note>
+      </notes>
+      <segment>
+        <source>Downloads</source>
+        <target>Downloads</target>
+      </segment>
+    </unit>
+    <unit id="pkg.repo.repository">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:201</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+        <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="pkg.repo.class">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:202</note>
+      </notes>
+      <segment>
+        <source>Class</source>
+        <target>Klasse</target>
+      </segment>
+    </unit>
+    <unit id="pkg.repo.published">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:203</note>
+      </notes>
+      <segment>
+        <source>Published</source>
+        <target>Veröffentlicht</target>
+      </segment>
+    </unit>
+    <unit id="pkg.repo.browse">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:204</note>
+      </notes>
+      <segment>
+        <source>Browse</source>
+        <target>Durchsuchen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.caption">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:206</note>
+      </notes>
+      <segment>
+        <source>Files of this version</source>
+        <target>Dateien dieser Version</target>
+      </segment>
+    </unit>
+    <unit id="pkg.ver.caption">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:207</note>
+      </notes>
+      <segment>
+        <source>All versions</source>
+        <target>Alle Versionen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.repo.caption">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:208</note>
+      </notes>
+      <segment>
+        <source>Repositories that hold this version</source>
+        <target>Repositories, die diese Version enthalten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.file.copy-sha">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:209</note>
+      </notes>
+      <segment>
+        <source>Copy SHA-256</source>
+        <target>SHA-256 kopieren</target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.heading">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.setup">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:3,6</note>
+      </notes>
+      <segment>
+        <source>Set up a client</source>
+        <target>Client einrichten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.label">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:7</note>
+      </notes>
+      <segment>
+        <source>Package views</source>
+        <target>Ansichten der Paketliste</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.all">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:14,17</note>
+      </notes>
+      <segment>
+        <source>All packages</source>
+        <target>Alle Pakete</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.recent">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:22,25</note>
+      </notes>
+      <segment>
+        <source>Recently viewed</source>
+        <target>Zuletzt angesehen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.saved">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:30,35</note>
+      </notes>
+      <segment>
+        <source>Saved views</source>
+        <target>Gespeicherte Ansichten</target>
+      </segment>
+    </unit>
+    <unit id="pkg.recent.empty">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:38,40</note>
+      </notes>
+      <segment>
+        <source>You have not opened a package yet.</source>
+        <target>Sie haben noch kein Paket geöffnet.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.name">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:56,58</note>
+      </notes>
+      <segment>
+        <source>Name of the view</source>
+        <target>Name der Ansicht</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.save">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:72,74</note>
+      </notes>
+      <segment>
+        <source> Save the current filters and sort </source>
+        <target> Aktuelle Filter und Sortierung speichern </target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.limit">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:76,78</note>
+      </notes>
+      <segment>
+        <source>You can keep at most 8 saved views. Delete one to save another.</source>
+        <target>Sie können höchstens 8 Ansichten speichern. Löschen Sie eine, um eine weitere zu speichern.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.empty">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:79,81</note>
+      </notes>
+      <segment>
+        <source>You have no saved views.</source>
+        <target>Sie haben keine gespeicherten Ansichten.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.rename-field">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:89,90</note>
+      </notes>
+      <segment>
+        <source>New name</source>
+        <target>Neuer Name</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.rename-save">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:95,97</note>
+      </notes>
+      <segment>
+        <source>Save name</source>
+        <target>Namen speichern</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.default">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:99,101</note>
+      </notes>
+      <segment>
+        <source>default</source>
+        <target>Standard</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.rename">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:101,102</note>
+      </notes>
+      <segment>
+        <source>Rename</source>
+        <target>Umbenennen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.unset-default">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:104,105</note>
+      </notes>
+      <segment>
+        <source> Remove default </source>
+        <target> Standard entfernen </target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.make-default">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:108,109</note>
+      </notes>
+      <segment>
+        <source> Make default </source>
+        <target> Zum Standard machen </target>
+      </segment>
+    </unit>
+    <unit id="pkg.views.delete">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:111,113</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+        <target>Löschen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.chips.label">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:120</note>
+      </notes>
+      <segment>
+        <source>Applied filters</source>
+        <target>Angewendete Filter</target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.clear">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:182,183</note>
+      </notes>
+      <segment>
+        <source> Clear all filters </source>
+        <target> Alle Filter zurücksetzen </target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.empty-setup">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:187,190</note>
+      </notes>
+      <segment>
+        <source>Set up a client to publish the first package</source>
+        <target>Client einrichten, um das erste Paket zu veröffentlichen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.type">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:202</note>
+        <note category="location">src/app/features/packages/package-list.ts:127</note>
+      </notes>
+      <segment>
+        <source>Package type</source>
+        <target>Pakettyp</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.repository">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:214</note>
+        <note category="location">src/app/features/packages/package-list.ts:135</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+        <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.text">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:228</note>
+        <note category="location">src/app/features/packages/package-list.html:233,234</note>
+        <note category="location">src/app/features/packages/package-list.ts:146</note>
+      </notes>
+      <segment>
+        <source>Name or description</source>
+        <target>Name oder Beschreibung</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.keyword">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:239</note>
+        <note category="location">src/app/features/packages/package-list.html:245</note>
+        <note category="location">src/app/features/packages/package-list.ts:153</note>
+      </notes>
+      <segment>
+        <source>Keyword</source>
+        <target>Schlüsselwort</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.created">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:250</note>
+        <note category="location">src/app/features/packages/package-list.html:254</note>
+        <note category="location">src/app/features/packages/package-list.ts:161</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+        <target>Erstellt</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.any">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:257,258</note>
+      </notes>
+      <segment>
+        <source>Any time</source>
+        <target>Beliebiger Zeitpunkt</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.from">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:264,266</note>
+      </notes>
+      <segment>
+        <source>From</source>
+        <target>Von</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.to">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.html:273,274</note>
+      </notes>
+      <segment>
+        <source>To (included)</source>
+        <target>Bis (einschließlich)</target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.caption">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:177</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.empty">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:178</note>
+      </notes>
+      <segment>
+        <source>No package has been published yet.</source>
+        <target>Es wurde noch kein Paket veröffentlicht.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.list.empty-filtered">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:179</note>
+      </notes>
+      <segment>
+        <source>No package matches the filters.</source>
+        <target>Kein Paket entspricht den Filtern.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.filter.apply">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:180</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+        <target>Suchen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.type">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:182</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+        <target>Typ</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.name">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:183</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+        <target>Name</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.latest">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:186</note>
+      </notes>
+      <segment>
+        <source>Latest version</source>
+        <target>Neueste Version</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.latest">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:187</note>
+      </notes>
+      <segment>
+        <source>The highest stable version you may see. A pre-release is shown only while no stable version exists.</source>
+        <target>Die höchste stabile Version, die Sie sehen dürfen. Eine Vorabversion erscheint nur, solange es keine stabile gibt.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.description">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:189</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+        <target>Beschreibung</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.created">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:192</note>
+      </notes>
+      <segment>
+        <source>First created</source>
+        <target>Erstmals erstellt</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.created">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:194</note>
+      </notes>
+      <segment>
+        <source>When the first version you may see was published.</source>
+        <target>Wann die erste Version veröffentlicht wurde, die Sie sehen dürfen.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.updated">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:198</note>
+      </notes>
+      <segment>
+        <source>Updated</source>
+        <target>Aktualisiert</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.updated">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:200</note>
+      </notes>
+      <segment>
+        <source>When the latest version you may see was published.</source>
+        <target>Wann die neueste Version veröffentlicht wurde, die Sie sehen dürfen.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.versions">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:204</note>
+      </notes>
+      <segment>
+        <source>Versions</source>
+        <target>Versionen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.versions">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:206</note>
+      </notes>
+      <segment>
+        <source>The number of versions you may see.</source>
+        <target>Die Anzahl der Versionen, die Sie sehen dürfen.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.repositories">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:210</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.repositories">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:212</note>
+      </notes>
+      <segment>
+        <source>The number of repositories that hold a version of the package.</source>
+        <target>Die Anzahl der Repositories, die eine Version des Pakets enthalten.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.col.downloads">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:216</note>
+      </notes>
+      <segment>
+        <source>Downloads</source>
+        <target>Downloads</target>
+      </segment>
+    </unit>
+    <unit id="pkg.help.downloads">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:218</note>
+      </notes>
+      <segment>
+        <source>All downloads of the versions you may see.</source>
+        <target>Alle Downloads der Versionen, die Sie sehen dürfen.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.period.7">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:223</note>
+      </notes>
+      <segment>
+        <source>Last 7 days</source>
+        <target>Letzte 7 Tage</target>
+      </segment>
+    </unit>
+    <unit id="pkg.period.30">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:224</note>
+      </notes>
+      <segment>
+        <source>Last 30 days</source>
+        <target>Letzte 30 Tage</target>
+      </segment>
+    </unit>
+    <unit id="pkg.period.90">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:225</note>
+      </notes>
+      <segment>
+        <source>Last 90 days</source>
+        <target>Letzte 90 Tage</target>
+      </segment>
+    </unit>
+    <unit id="pkg.period.custom">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:226</note>
+      </notes>
+      <segment>
+        <source>Custom period</source>
+        <target>Eigener Zeitraum</target>
+      </segment>
+    </unit>
+    <unit id="pkg.chips.remove">
+      <notes>
+        <note category="location">src/app/features/packages/package-list.ts:313</note>
+      </notes>
+      <segment>
+        <source>Remove the filter <ph id="0" equiv="filter" disp="label"/></source>
+        <target>Filter <ph id="0" equiv="filter" disp="label"/> entfernen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.readme.truncated">
+      <notes>
+        <note category="location">src/app/features/packages/package-readme.ts:57,60</note>
+      </notes>
+      <segment>
+        <source> This README is shortened because it is larger than the display limit. </source>
+        <target> Diese README ist gekürzt, weil sie größer als das Anzeigelimit ist. </target>
+      </segment>
+    </unit>
+    <unit id="pkg.readme.image-blocked">
+      <notes>
+        <note category="location">src/app/features/packages/package-readme.ts:62,64</note>
+      </notes>
+      <segment>
+        <source> One external image is shown as a link. </source>
+        <target> Ein externes Bild wird als Link angezeigt. </target>
+      </segment>
+    </unit>
+    <unit id="pkg.readme.images-blocked">
+      <notes>
+        <note category="location">src/app/features/packages/package-readme.ts:66,68</note>
+      </notes>
+      <segment>
+        <source> <ph id="0" equiv="INTERPOLATION" disp="{{ r.externalImagesBlocked }}"/> external images are shown as links. </source>
+        <target> <ph id="0" equiv="INTERPOLATION" disp="{{ r.externalImagesBlocked }}"/> externe Bilder werden als Links angezeigt. </target>
+      </segment>
+    </unit>
+    <unit id="route.packages.title">
+      <notes>
+        <note category="location">src/app/features/packages/packages.routes.ts:24</note>
+      </notes>
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="route.packages.detail.title">
+      <notes>
+        <note category="location">src/app/features/packages/packages.routes.ts:29</note>
+      </notes>
+      <segment>
+        <source>Package</source>
+        <target>Paket</target>
+      </segment>
+    </unit>
+    <unit id="setup.heading">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:2,4</note>
+      </notes>
+      <segment>
+        <source>Client setup</source>
+        <target>Client-Einrichtung</target>
+      </segment>
+    </unit>
+    <unit id="setup.intro">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:5,9</note>
+      </notes>
+      <segment>
+        <source> Choose your package manager and a repository. You get the configuration and the commands that point the client at trove. Nothing is changed on the server.
+</source>
+        <target> Wählen Sie Ihren Paketmanager und ein Repository. Sie erhalten die Konfiguration und die Befehle, die den Client auf trove ausrichten. Auf dem Server wird nichts geändert.
+</target>
+      </segment>
+    </unit>
+    <unit id="setup.step.format">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:16,17</note>
+      </notes>
+      <segment>
+        <source>Package type</source>
+        <target>Pakettyp</target>
+      </segment>
+    </unit>
+    <unit id="setup.no-formats">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:18,20</note>
+      </notes>
+      <segment>
+        <source>No package type with setup instructions is available yet.</source>
+        <target>Es ist noch kein Pakettyp mit Einrichtungsanleitung verfügbar.</target>
+      </segment>
+    </unit>
+    <unit id="setup.step.client">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:39,40</note>
+      </notes>
+      <segment>
+        <source>Client</source>
+        <target>Client</target>
+      </segment>
+    </unit>
+    <unit id="setup.step.repository">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:59,60</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+        <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="setup.no-repositories">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:61,63</note>
+      </notes>
+      <segment>
+        <source>You can read no repository of this package type.</source>
+        <target>Sie können kein Repository dieses Pakettyps lesen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.recommended">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:78,80</note>
+      </notes>
+      <segment>
+        <source>recommended</source>
+        <target>empfohlen</target>
+      </segment>
+    </unit>
+    <unit id="setup.step.credentials">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:91,92</note>
+        <note category="location">src/app/features/setup/client-setup.html:100,101</note>
+      </notes>
+      <segment>
+        <source>Credentials</source>
+        <target>Zugangsdaten</target>
+      </segment>
+    </unit>
+    <unit id="setup.anonymous">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:93,96</note>
+      </notes>
+      <segment>
+        <source> You are not signed in. A repository that can be read without credentials needs none, so the snippets contain no authentication. </source>
+        <target> Sie sind nicht angemeldet. Ein Repository, das ohne Zugangsdaten lesbar ist, braucht keine; die Snippets enthalten daher keine Authentifizierung. </target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.env">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:105,106</note>
+      </notes>
+      <segment>
+        <source>Reference an environment variable</source>
+        <target>Auf eine Umgebungsvariable verweisen</target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.env-hint">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:107,108</note>
+      </notes>
+      <segment>
+        <source> The snippets read the token from the variable TROVE_TOKEN. No secret appears on this page. </source>
+        <target> Die Snippets lesen den Token aus der Variable TROVE_TOKEN. Auf dieser Seite erscheint kein Geheimnis. </target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.create">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:114,115</note>
+      </notes>
+      <segment>
+        <source>Create a token for this setup</source>
+        <target>Token für diese Einrichtung erstellen</target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.create-hint">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:116,117</note>
+      </notes>
+      <segment>
+        <source> A personal token that may read this repository only. It is shown once and written into the snippets. </source>
+        <target> Ein persönlicher Token, der nur dieses Repository lesen darf. Er wird einmal angezeigt und in die Snippets geschrieben. </target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.paste">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:123,124</note>
+      </notes>
+      <segment>
+        <source>Use a token I already have</source>
+        <target>Einen vorhandenen Token verwenden</target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.paste-hint">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:125,126</note>
+      </notes>
+      <segment>
+        <source> The value stays in this browser. It is checked here and never sent to the server. </source>
+        <target> Der Wert bleibt in diesem Browser. Er wird hier geprüft und nie an den Server gesendet. </target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.env-link">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:133,137</note>
+      </notes>
+      <segment>
+        <source>Create a token to put into the variable</source>
+        <target>Token für die Variable erstellen</target>
+      </segment>
+    </unit>
+    <unit id="setup.cred.with-publish">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:141,143</note>
+      </notes>
+      <segment>
+        <source>The token may also publish to the deployment target of this repository</source>
+        <target>Der Token darf auch am Veröffentlichungsziel dieses Repositorys veröffentlichen</target>
+      </segment>
+    </unit>
+    <unit id="setup.token.once">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:150,151</note>
+      </notes>
+      <segment>
+        <source>This token is shown once.</source>
+        <target>Dieser Token wird nur einmal angezeigt.</target>
+      </segment>
+    </unit>
+    <unit id="setup.token.once-text">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:152,153</note>
+      </notes>
+      <segment>
+        <source> It is written into the snippets below. Leaving this page discards it; you can create another. </source>
+        <target> Er steht in den Snippets weiter unten. Beim Verlassen dieser Seite wird er verworfen; Sie können einen neuen erstellen. </target>
+      </segment>
+    </unit>
+    <unit id="setup.token.create">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:169,170</note>
+      </notes>
+      <segment>
+        <source> Create token </source>
+        <target> Token erstellen </target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.label">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:177,178</note>
+      </notes>
+      <segment>
+        <source>Token</source>
+        <target>Token</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.hide">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:197,198</note>
+      </notes>
+      <segment>
+        <source>Hide</source>
+        <target>Verbergen</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.show">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:199,200</note>
+      </notes>
+      <segment>
+        <source>Show</source>
+        <target>Anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.ok">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:206,208</note>
+      </notes>
+      <segment>
+        <source>The value looks like a trove token. It is written into the snippets.</source>
+        <target>Der Wert sieht aus wie ein trove-Token. Er wird in die Snippets geschrieben.</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.prefix">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:209,211</note>
+      </notes>
+      <segment>
+        <source>A trove token starts with trv_pat_, trv_sat_ or trv_cit_.</source>
+        <target>Ein trove-Token beginnt mit trv_pat_, trv_sat_ oder trv_cit_.</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.length">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:212,214</note>
+      </notes>
+      <segment>
+        <source>A trove token has 57 characters. The value is shorter or longer, maybe cut off.</source>
+        <target>Ein trove-Token hat 57 Zeichen. Der Wert ist kürzer oder länger, vielleicht abgeschnitten.</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.alphabet">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:215,217</note>
+      </notes>
+      <segment>
+        <source>A trove token holds only letters and digits after its prefix.</source>
+        <target>Ein trove-Token enthält nach seinem Präfix nur Buchstaben und Ziffern.</target>
+      </segment>
+    </unit>
+    <unit id="setup.paste.checksum">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:218,220</note>
+      </notes>
+      <segment>
+        <source>The checksum does not match. A character is probably wrong or missing.</source>
+        <target>Die Prüfsumme stimmt nicht. Vermutlich ist ein Zeichen falsch oder fehlt.</target>
+      </segment>
+    </unit>
+    <unit id="setup.result">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:232,233</note>
+      </notes>
+      <segment>
+        <source>Snippets for</source>
+        <target>Snippets für</target>
+      </segment>
+    </unit>
+    <unit id="setup.pending-token">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:239,240</note>
+      </notes>
+      <segment>
+        <source>Until a token is set, the snippets show this placeholder where it will go:</source>
+        <target>Solange kein Token gesetzt ist, zeigen die Snippets diesen Platzhalter an der Stelle, an die er kommt:</target>
+      </segment>
+    </unit>
+    <unit id="setup.tab.configure">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:245</note>
+      </notes>
+      <segment>
+        <source>Configure</source>
+        <target>Konfigurieren</target>
+      </segment>
+    </unit>
+    <unit id="setup.tab.install">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:252</note>
+      </notes>
+      <segment>
+        <source>Install</source>
+        <target>Installieren</target>
+      </segment>
+    </unit>
+    <unit id="setup.tab.publish">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:259</note>
+      </notes>
+      <segment>
+        <source>Publish</source>
+        <target>Veröffentlichen</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.no-target">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:264,266</note>
+      </notes>
+      <segment>
+        <source> This virtual repository has no default deployment target, so there is nothing to publish to through it. Publish to one of its local repositories instead. </source>
+        <target> Dieses virtuelle Repository hat kein Standard-Veröffentlichungsziel, deshalb gibt es darüber nichts zu veröffentlichen. Veröffentlichen Sie stattdessen in eines seiner lokalen Repositories. </target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.members">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:269,271</note>
+      </notes>
+      <segment>
+        <source>Open the repository to see its members</source>
+        <target>Repository öffnen, um seine Mitglieder zu sehen</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.denied">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:274,276</note>
+      </notes>
+      <segment>
+        <source> You cannot publish to this repository: it is read only, or you do not hold the deploy permission on it. </source>
+        <target> Sie können in dieses Repository nicht veröffentlichen: Es ist schreibgeschützt, oder Sie haben dafür nicht die Berechtigung deploy. </target>
+      </segment>
+    </unit>
+    <unit id="setup.target-file">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:294</note>
+      </notes>
+      <segment>
+        <source>File</source>
+        <target>Datei</target>
+      </segment>
+    </unit>
+    <unit id="setup.download">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:302,304</note>
+      </notes>
+      <segment>
+        <source>Download</source>
+        <target>Herunterladen</target>
+      </segment>
+    </unit>
+    <unit id="setup.copy">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:166</note>
+      </notes>
+      <segment>
+        <source>Copy snippet</source>
+        <target>Snippet kopieren</target>
+      </segment>
+    </unit>
+    <unit id="setup.copy-token">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:167</note>
+      </notes>
+      <segment>
+        <source>Copy token</source>
+        <target>Token kopieren</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.read-only">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:201</note>
+      </notes>
+      <segment>
+        <source>Read only</source>
+        <target>Nur lesen</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.by-target">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:203</note>
+      </notes>
+      <segment>
+        <source>Publishing goes to its default deployment target</source>
+        <target>Veröffentlichen geht an das Standard-Veröffentlichungsziel</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.yes">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:206</note>
+      </notes>
+      <segment>
+        <source>You can publish</source>
+        <target>Sie können veröffentlichen</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.no">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:207</note>
+      </notes>
+      <segment>
+        <source>You cannot publish</source>
+        <target>Sie können nicht veröffentlichen</target>
+      </segment>
+    </unit>
+    <unit id="setup.token.description">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:244</note>
+      </notes>
+      <segment>
+        <source>Client setup: <ph id="0" equiv="client" disp="setup.client"/>, <ph id="1" equiv="repository" disp="repository"/>, <ph id="2" equiv="date" disp="new Date().toISOString().slice(0, 10)"/></source>
+        <target>Client-Einrichtung: <ph id="0" equiv="client" disp="setup.client"/>, <ph id="1" equiv="repository" disp="repository"/>, <ph id="2" equiv="date" disp="new Date().toISOString().slice(0, 10)"/></target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.npmrc">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:36</note>
+      </notes>
+      <segment>
+        <source>Save this as .npmrc in your project. It sends every request for packages to this repository and signs in with the token.</source>
+        <target>Speichern Sie dies als .npmrc in Ihrem Projekt. Alle Paketanfragen gehen dann an dieses Repository, die Anmeldung erfolgt mit dem Token.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.npmrc-scoped">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:40</note>
+      </notes>
+      <segment>
+        <source>Use this variant to take only the packages of one scope from this repository. All other packages still come from npm&apos;s default registry.</source>
+        <target>Mit dieser Variante kommen nur die Pakete eines Scopes aus diesem Repository. Alle anderen Pakete kommen weiterhin aus der Standard-Registry von npm.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.npm-cli">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:42</note>
+      </notes>
+      <segment>
+        <source>Writes the same settings into your user configuration file ~/.npmrc. Your shell fills in the token, so it is stored in that file.</source>
+        <target>Schreibt dieselben Einstellungen in Ihre Benutzerkonfiguration ~/.npmrc. Ihre Shell setzt den Token ein, er steht danach in dieser Datei.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.yarnrc">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:44</note>
+      </notes>
+      <segment>
+        <source>Save this as .yarnrc.yml in your project. Yarn fills in the token variable itself.</source>
+        <target>Speichern Sie dies als .yarnrc.yml in Ihrem Projekt. Yarn setzt die Token-Variable selbst ein.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:49</note>
+      </notes>
+      <segment>
+        <source>Installs a package through this repository once the client is configured.</source>
+        <target>Installiert ein Paket über dieses Repository, sobald der Client eingerichtet ist.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.publish-flag">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:53</note>
+      </notes>
+      <segment>
+        <source>Publishes the package in the current directory to the repository that receives uploads.</source>
+        <target>Veröffentlicht das Paket im aktuellen Verzeichnis in das Repository, das Uploads annimmt.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.publish-berry">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:55</note>
+      </notes>
+      <segment>
+        <source>Add this to .yarnrc.yml, then run yarn npm publish.</source>
+        <target>Fügen Sie dies zu .yarnrc.yml hinzu und führen Sie dann yarn npm publish aus.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.gitlab-generic">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:57</note>
+      </notes>
+      <segment>
+        <source>For npm 10, pnpm 10 on npm 10 and Yarn 1. A pipeline step exchanges the job&apos;s ID token for a short-lived trove token and revokes it again as its last step.</source>
+        <target>Für npm 10, pnpm 10 auf npm 10 und Yarn 1. Ein Pipeline-Schritt tauscht das ID-Token des Jobs gegen einen kurzlebigen trove-Token und widerruft ihn als letzten Schritt wieder.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.gitlab-native">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:59</note>
+      </notes>
+      <segment>
+        <source>For npm 11.5.1 and later, pnpm 11 and 12 and Yarn 4. The client exchanges the job&apos;s ID token itself.</source>
+        <target>Für npm 11.5.1 und neuer, pnpm 11 und 12 sowie Yarn 4. Der Client tauscht das ID-Token des Jobs selbst.</target>
+      </segment>
+    </unit>
+    <unit id="route.setup.title">
+      <notes>
+        <note category="location">src/app/features/setup/setup.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Client setup</source>
+        <target>Client-Einrichtung</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

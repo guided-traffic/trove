@@ -188,6 +188,14 @@ npm:
     retry_window: 10m                # default; 0s to 24h, 0s turns the acknowledged retry off
   abbreviated_time: true             # default (R-NPM-011)
   document_max_age: 0s               # default; 0s to 24h (R-NPM-013)
+ui:
+  readme:
+    max_source_bytes: 512KiB         # default; 1KiB to 16MiB, a longer README is cut and flagged (R-UI-008)
+    external_image_origins: []       # default; exact https origins whose README images are shown, the img-src of the UI's CSP; an origin of this installation is refused
+    # external_image_origins: ["https://img.shields.io"]   # example
+  client_setup:
+    token_env_var: TROVE_TOKEN       # default; the variable the credentials=env snippets read the token from (R-API-030)
+    token_ttl: 720h                  # default; the lifetime the setup dialog asks for, at most auth.tokens.pat.max_ttl
 config_as_code:
   secrets_dir: /etc/trove/cac-secrets  # default; where a secretRef {"file": name} is read (R-REPO-033, R-OPS-029)
 ```

@@ -21,6 +21,7 @@ type fake struct {
 	remote RemoteAdapter
 	virt   VirtualAdapter
 	expo   ExposureAdapter
+	view   ViewAdapter
 }
 
 func (f fake) Descriptor() Descriptor { return f.d }
@@ -33,6 +34,7 @@ func (fake) PackageDocumentPath(string) (Path, bool) { return Path{}, false }
 func (f fake) Remote() RemoteAdapter                 { return f.remote }
 func (f fake) Virtual() VirtualAdapter               { return f.virt }
 func (f fake) Exposure() ExposureAdapter             { return f.expo }
+func (f fake) View() ViewAdapter                     { return f.view }
 
 func valid(id string) Descriptor {
 	return Descriptor{
@@ -342,5 +344,27 @@ func TestBaseWriteErrorIsProblemJSON(t *testing.T) {
 	var b Base
 	if !reflect.DeepEqual(b.IngestOptions(nil), IngestOptions{}) || b.VersionGroup(VersionRef{}) != "" || b.Remote() != nil || b.Virtual() != nil || b.Indexes() != nil || b.Exposure() != nil || b.SetupTemplates() != nil {
 		t.Fatal("Base is not neutral")
+	}
+}
+
+type noView struct{ ViewAdapter }
+
+// TestR_API_029_ViewAdapterNeedsPackageNames: a format with a package view must have
+// package names, the one fact the view's identity (format and name) rests on.
+func TestR_API_029_ViewAdapterNeedsPackageNames(t *testing.T) {
+	d := valid("viewer")
+	if err := Validate(fake{d: d, view: noView{}}); err == nil || !strings.Contains(err.Error(), "package view and no package names") {
+		t.Fatalf("%v", err)
+	}
+	d.PackageNames = true
+	d.Names = identity{}
+	if err := Validate(fake{d: d, view: noView{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(fake{d: valid("plain")}); err != nil {
+		t.Fatalf("a format without a view: %v", err)
+	}
+	if (Base{}).View() != nil {
+		t.Fatal("Base has a view")
 	}
 }

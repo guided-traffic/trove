@@ -411,7 +411,7 @@ func (a *App) startClient() error {
 	if err != nil {
 		return err
 	}
-	ui, err := webui.New(webui.Options{Locales: uiLocales(), DefaultLocale: uiDefaultLocale})
+	ui, err := webui.New(webui.Options{Locales: uiLocales(), DefaultLocale: uiDefaultLocale, ImageOrigins: cfg.UI.Readme.ExternalImageOrigins})
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)
 	}
@@ -426,8 +426,8 @@ func (a *App) startClient() error {
 			Auth: a.authServices(), AuditStore: a.auditStoreForAPI(), Authz: a.authzServices(),
 			// The endpoint and exposure-rule operations (R-EP-016, wire_exposure.go).
 			Endpoints:    a.endpointServices(),
-			Repositories: a.repositoryAPI(),
-			Files:        part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
+			Repositories: a.repositoryAPI(), Packages: a.packagesAPI(),
+			Files: part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
 			Cache:      a.cacheAPI(),
 			Resolution: a.resolutionExplainer(),
 		})

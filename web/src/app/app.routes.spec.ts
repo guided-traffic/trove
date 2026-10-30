@@ -11,6 +11,8 @@ import { seriousViolations } from './testing/axe';
 const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/login', 'Sign in'],
   ['/logged-out', 'Signed out'],
+  ['/packages', 'Packages'],
+  ['/setup', 'Client setup'],
   ['/browse', 'Browse'],
   ['/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],
   ['/profile', 'Profile'],
@@ -75,6 +77,16 @@ describe('route map', () => {
     const route = TestBed.inject(Router).routerState.snapshot.root.firstChild?.firstChild?.firstChild;
     expect(route?.params['repo']).toBe('npm-local');
     expect(route?.params['path']).toBe('@team-a/ui/-/ui-1.0.0.tgz');
+  });
+
+  it('R-UI-003 R-UI-007 /packages/{format}/{name…} captures the format and the scoped name with its slash, shows the name as heading and passes the accessibility check', async () => {
+    const root = await open('/packages/npm/@team-a/ui?tab=metadata');
+    const route = TestBed.inject(Router).routerState.snapshot.root.firstChild?.firstChild?.firstChild;
+    expect(route?.params['format']).toBe('npm');
+    expect(route?.params['name']).toBe('@team-a/ui');
+    expect(root.querySelector('main h1')?.textContent?.trim()).toBe('@team-a/ui');
+    expect(document.title).toBe('Package – trove');
+    expect(await seriousViolations(root)).toEqual([]);
   });
 
   it('R-UI-003 /admin/settings opens the authentication settings', async () => {

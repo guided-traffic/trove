@@ -1,0 +1,145 @@
+.intro {
+  max-inline-size: 60ch;
+  margin-block: 0 var(--trove-space-4);
+}
+
+.steps {
+  display: grid;
+  gap: var(--trove-space-4);
+  margin: 0 0 var(--trove-space-5);
+  padding: 0;
+  list-style: none;
+  max-inline-size: 48rem;
+
+  fieldset {
+    margin: 0;
+    padding: var(--trove-space-3) var(--trove-space-4);
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-surface-raised);
+  }
+
+  legend,
+  .step-title {
+    padding-inline: var(--trove-space-1);
+    font: var(--mat-sys-title-medium);
+  }
+
+  .step-title {
+    margin: 0;
+  }
+}
+
+.step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  margin-inline-end: var(--trove-space-1);
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--trove-accent);
+  color: var(--mat-sys-on-primary);
+  font-size: 0.8125rem;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2) var(--trove-space-4);
+
+  &.vertical {
+    flex-direction: column;
+  }
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+}
+
+.choice-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.secondary {
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+.badge {
+  padding: 0 var(--trove-space-2);
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: var(--mat-sys-corner-extra-small);
+  font-size: 0.75rem;
+}
+
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+
+  .text-input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+}
+
+.once {
+  margin-block: var(--trove-space-3);
+  padding: var(--trove-space-3);
+  border: 1px solid var(--trove-status-warn);
+  border-radius: var(--trove-radius-m);
+
+  p {
+    margin: 0;
+  }
+}
+
+.token-line {
+  display: flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+  margin-block-start: var(--trove-space-2);
+}
+
+.token-value {
+  overflow-wrap: anywhere;
+}
+
+.result {
+  max-inline-size: 60rem;
+}
+
+.tab {
+  padding-block: var(--trove-space-4);
+}
+
+.snippet {
+  margin-block-end: var(--trove-space-4);
+
+  .why,
+  .target {
+    margin-block: 0 var(--trove-space-2);
+  }
+}
+
+.command {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  pre {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+}
+
+.snippet-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}

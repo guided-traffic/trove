@@ -39,6 +39,7 @@ type Config struct {
 
 	// The M2 sections. proxy (above) gained its engine keys in outbound.go.
 	NPM NPM `yaml:"npm"`
+	UI  UI  `yaml:"ui"`
 
 	// ConfigAsCode holds secrets_dir, which the secret references of M2 use.
 	ConfigAsCode AsCode `yaml:"config_as_code"`

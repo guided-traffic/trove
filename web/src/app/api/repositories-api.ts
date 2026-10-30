@@ -45,6 +45,12 @@ export function repositoryUrl(key: string): string {
 export abstract class RepositoriesApi {
   /** `GET /api/v1/formats`; the only source of the classes a format offers (R-UI-021). */
   abstract formats(): Promise<readonly FormatDescriptor[]>;
+  /**
+   * The `baseUrl` member of the same answer: the configured base URL of the endpoint the page was
+   * served from, or `null` when none is configured (Q-UI-75). Every caller that may list the formats
+   * may read it.
+   */
+  abstract baseUrl(): Promise<string | null>;
   /** One page fetcher over the summary view; a new filter set is a new fetcher (cursor binding). */
   abstract list(filters: RepositoryFilters): PageFetcher<RepositorySummary>;
   /** Every readable repository, for pickers and the tree root. */
@@ -67,6 +73,10 @@ export class HttpRepositoriesApi extends RepositoriesApi {
 
   async formats(): Promise<readonly FormatDescriptor[]> {
     return (await this.client.get('/api/v1/formats')).body.formats;
+  }
+
+  async baseUrl(): Promise<string | null> {
+    return (await this.client.get('/api/v1/formats')).body.baseUrl;
   }
 
   list(filters: RepositoryFilters): PageFetcher<RepositorySummary> {

@@ -145,11 +145,14 @@ describe('Repository creation wizard', () => {
     expect(t).not.toContain(location.origin);
   });
 
-  it('R-REPO-002 R-UI-021 a caller without settings:read gets the base URL from the addresses of the repositories it may see', async () => {
+  it('R-REPO-002 R-UI-021 a caller with repositories:write-config but without settings:read and without a readable repository still sees the client address (Q-UI-75)', async () => {
     const r = await renderScreen(RepositoryWizard, {
       capabilities: ['repositories:write-config'],
       setup: (get) => {
-        (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM];
+        const fake = get(RepositoriesApi) as FakeRepositoriesApi;
+        fake.formatsResult = [GENERIC_FORMAT, FAKE_NPM];
+        fake.repositories = [];
+        fake.listAll = async () => [];
         (get(SystemApi) as FakeSystemApi).infoResult = sampleInfo({
           baseUrl: 'https://must-not-be-asked.example',
         });

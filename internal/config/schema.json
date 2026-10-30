@@ -2904,6 +2904,58 @@
       },
       "type": "object"
     },
+    "ui": {
+      "additionalProperties": false,
+      "properties": {
+        "client_setup": {
+          "additionalProperties": false,
+          "properties": {
+            "token_env_var": {
+              "default": "TROVE_TOKEN",
+              "description": "Name of the environment variable that snippets with credentials=env read the token from.",
+              "maxLength": 64,
+              "type": "string",
+              "x-trove-env": "TROVE_UI_CLIENT_SETUP_TOKEN_ENV_VAR"
+            },
+            "token_ttl": {
+              "default": "720h",
+              "description": "Lifetime the setup dialog asks for when it creates a token; at most auth.tokens.pat.max_ttl.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_UI_CLIENT_SETUP_TOKEN_TTL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "readme": {
+          "additionalProperties": false,
+          "properties": {
+            "external_image_origins": {
+              "default": [],
+              "description": "Exact https origins (https://host[:port], no path, no wildcard) whose images a README may show. Every other external image is shown as a link. The same list becomes the img-src of the UI's Content-Security-Policy.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "x-trove-env": "TROVE_UI_README_EXTERNAL_IMAGE_ORIGINS"
+            },
+            "max_source_bytes": {
+              "default": "512KiB",
+              "description": "Largest README source that is rendered; a longer one is cut and the answer says so.",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_UI_README_MAX_SOURCE_BYTES",
+              "x-trove-type": "bytes"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "valkey": {
       "additionalProperties": false,
       "properties": {

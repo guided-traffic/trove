@@ -1,0 +1,43 @@
+.install {
+  padding: var(--trove-space-4);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+
+  h2 {
+    margin-block: 0 var(--trove-space-3);
+    font: var(--mat-sys-title-medium);
+  }
+}
+
+.pickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-3);
+  margin-block-end: var(--trove-space-3);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  min-inline-size: 0;
+}
+
+.command {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  pre {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    overflow-x: auto;
+  }
+}
+
+.expander,
+.setup-link {
+  margin-block: var(--trove-space-2) 0;
+}

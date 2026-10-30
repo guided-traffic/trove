@@ -18,6 +18,9 @@ import { DraftPolicyExplainer, PolicyExplainer } from './policy-explainer';
 import { HttpSessionsApi, SessionsApi } from './sessions-api';
 import { HttpTokensApi, TokensApi } from './tokens-api';
 // <<< M1 ui-b
+// >>> M2 ui-packages
+import { ClientSetupApi, HttpClientSetupApi, HttpPackagesApi, PackagesApi } from './packages-api';
+// <<< M2 ui-packages
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -46,5 +49,9 @@ export function provideApiServices(): Provider[] {
     { provide: AuditApi, useClass: HttpAuditApi },
     { provide: JobsApi, useClass: HttpJobsApi },
     // <<< M1 ui-a
+    // >>> M2 ui-packages
+    { provide: PackagesApi, useClass: HttpPackagesApi },
+    { provide: ClientSetupApi, useClass: HttpClientSetupApi },
+    // <<< M2 ui-packages
   ];
 }

@@ -1,0 +1,290 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@pkg.list.heading">Packages</h1>
+  <a mat-button routerLink="/setup" i18n="@@pkg.list.setup">Set up a client</a>
+</header>
+
+@if (memory.available()) {
+  <nav class="view-tabs" aria-label="Package views" i18n-aria-label="@@pkg.views.label">
+    <a
+      routerLink="/packages"
+      [queryParams]="{ tab: null }"
+      queryParamsHandling="merge"
+      [attr.aria-current]="activeTab() === 'all' ? 'page' : null"
+      i18n="@@pkg.views.all"
+      >All packages</a
+    >
+    <a
+      routerLink="/packages"
+      [queryParams]="{ tab: 'recent' }"
+      queryParamsHandling="merge"
+      [attr.aria-current]="activeTab() === 'recent' ? 'page' : null"
+      i18n="@@pkg.views.recent"
+      >Recently viewed</a
+    >
+    <a
+      routerLink="/packages"
+      [queryParams]="{ tab: 'views' }"
+      queryParamsHandling="merge"
+      [attr.aria-current]="activeTab() === 'views' ? 'page' : null"
+      i18n="@@pkg.views.saved"
+      >Saved views</a
+    >
+  </nav>
+}
+
+@switch (activeTab()) {
+  @case ('recent') {
+    @if (memory.recent().length === 0) {
+      <p class="empty" i18n="@@pkg.recent.empty">You have not opened a package yet.</p>
+    } @else {
+      <ul class="plain-list">
+        @for (p of memory.recent(); track p.format + '/' + p.name) {
+          <li>
+            <span class="type-cell">
+              <span class="material-icons" aria-hidden="true">{{ formatIcon(p.format) }}</span>
+              <span translate="no">{{ formatLabel(p.format) }}</span>
+            </span>
+            <a [routerLink]="commands(p.format, p.name)" translate="no">{{ p.name }}</a>
+          </li>
+        }
+      </ul>
+    }
+  }
+  @case ('views') {
+    <form class="save-view" (submit)="$event.preventDefault(); saveView()">
+      <label class="field">
+        <span class="field-label" i18n="@@pkg.views.name">Name of the view</span>
+        <input
+          class="text-input"
+          type="text"
+          autocomplete="off"
+          maxlength="64"
+          [value]="viewName()"
+          (input)="viewName.set($any($event.target).value)"
+        />
+      </label>
+      <button
+        mat-stroked-button
+        type="submit"
+        [disabled]="!viewName().trim() || memory.views().length >= 8"
+        i18n="@@pkg.views.save"
+      >
+        Save the current filters and sort
+      </button>
+    </form>
+    @if (memory.views().length >= 8) {
+      <p class="hint" i18n="@@pkg.views.limit">You can keep at most 8 saved views. Delete one to save another.</p>
+    }
+    @if (memory.views().length === 0) {
+      <p class="empty" i18n="@@pkg.views.empty">You have no saved views.</p>
+    } @else {
+      <ul class="plain-list">
+        @for (v of memory.views(); track v.id) {
+          <li>
+            @if (renaming() === v.id) {
+              <input
+                class="text-input"
+                type="text"
+                maxlength="64"
+                aria-label="New name"
+                i18n-aria-label="@@pkg.views.rename-field"
+                [value]="renameText()"
+                (input)="renameText.set($any($event.target).value)"
+                (keydown.enter)="finishRename(v)"
+              />
+              <button mat-button type="button" (click)="finishRename(v)" i18n="@@pkg.views.rename-save">Save name</button>
+            } @else {
+              <a routerLink="/packages" [queryParams]="v.query">{{ v.name }}</a>
+              @if (memory.defaultView()?.id === v.id) {
+                <span class="badge" i18n="@@pkg.views.default">default</span>
+              }
+              <button mat-button type="button" (click)="startRename(v)" i18n="@@pkg.views.rename">Rename</button>
+              @if (memory.defaultView()?.id === v.id) {
+                <button mat-button type="button" (click)="memory.makeDefault(null)" i18n="@@pkg.views.unset-default">
+                  Remove default
+                </button>
+              } @else {
+                <button mat-button type="button" (click)="memory.makeDefault(v.id)" i18n="@@pkg.views.make-default">
+                  Make default
+                </button>
+              }
+              <button mat-button type="button" (click)="memory.deleteView(v.id)" i18n="@@pkg.views.delete">Delete</button>
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+  @default {
+    @if (chips().length > 0) {
+      <ul class="chip-row" aria-label="Applied filters" i18n-aria-label="@@pkg.chips.label">
+        @for (c of chips(); track c.key) {
+          <li>
+            <span class="chip">
+              <span>{{ c.label }}</span>
+              <button type="button" (click)="removeChip(c)" [attr.aria-label]="removeLabel(c.label)">
+                <span class="material-icons" aria-hidden="true">close</span>
+              </button>
+            </span>
+          </li>
+        }
+      </ul>
+    }
+    <div class="list-layout" [class.panel-open]="panelOpen()">
+      <div class="list-main">
+        <div class="list-toolbar">
+          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+        </div>
+
+        <trove-data-table
+          [caption]="tableCaption"
+          [columns]="columns"
+          [sort]="tableSort()"
+          [loaded]="list.loaded()"
+          [loading]="list.loading()"
+          [error]="list.error()"
+          [empty]="list.items().length === 0"
+          [emptyText]="filtered() ? emptyFilteredText : emptyText"
+          [hasMore]="list.hasMore()"
+          (sortChange)="sortBy($event)"
+          (more)="list.more()"
+          (retry)="list.more()"
+        >
+          @for (row of list.items(); track row.id) {
+            <tr>
+              <td>
+                <span class="type-cell">
+                  <span class="material-icons" aria-hidden="true">{{ formatIcon(row.format) }}</span>
+                  <span translate="no">{{ formatLabel(row.format) }}</span>
+                </span>
+              </td>
+              <th scope="row">
+                <a [routerLink]="commands(row.format, row.name)" translate="no">{{ row.name }}</a>
+              </th>
+              <td translate="no">{{ row.latestVersion }}</td>
+              <td>
+                <span class="ellipsis" [attr.title]="row.description">{{ row.description || '–' }}</span>
+              </td>
+              <td>
+                <time [attr.datetime]="row.createdAt">{{ row.createdAt | date: 'mediumDate' }}</time>
+              </td>
+              <td>
+                <time [attr.datetime]="row.updatedAt" [attr.title]="row.updatedAt | date: 'medium'">{{
+                  since(row.updatedAt)
+                }}</time>
+              </td>
+              <td class="num">{{ row.versionCount | number }}</td>
+              <td class="num">{{ row.repositories.length | number }}</td>
+              <td class="num">{{ row.downloadCount | number }}</td>
+            </tr>
+          }
+        </trove-data-table>
+        @if (list.loaded() && list.items().length === 0) {
+          @if (filtered()) {
+            <p>
+              <button mat-stroked-button type="button" (click)="clearFilters()" i18n="@@pkg.list.clear">
+                Clear all filters
+              </button>
+            </p>
+          } @else {
+            <p>
+              <a routerLink="/setup" i18n="@@pkg.list.empty-setup">Set up a client to publish the first package</a>
+            </p>
+          }
+        }
+      </div>
+
+      <trove-filter-panel
+        #panel
+        class="list-side"
+        [(open)]="panelOpen"
+        [activeCount]="activeCount()"
+        [applyLabel]="applyLabel"
+        (apply)="submitFilters()"
+        (clearAll)="clearFilters()"
+      >
+        <trove-filter-category i18n-label="@@pkg.filter.type" label="Package type" [active]="formatNames().length > 0" [expanded]="formatNames().length > 0">
+          @for (f of formatOptions(); track f.name) {
+            <label class="check-row">
+              <input
+                type="checkbox"
+                [checked]="stagedFormats().includes(f.name)"
+                (change)="stageFormat(f.name, $any($event.target).checked)"
+              />
+              <span translate="no">{{ f.displayName }}</span>
+            </label>
+          }
+        </trove-filter-category>
+        <trove-filter-category i18n-label="@@pkg.filter.repository" label="Repository" [active]="repositoryNames().length > 0" [expanded]="repositoryNames().length > 0">
+          <div class="check-list">
+            @for (r of repositoryOptions(); track r) {
+              <label class="check-row">
+                <input
+                  type="checkbox"
+                  [checked]="stagedRepositories().includes(r)"
+                  (change)="stageRepository(r, $any($event.target).checked)"
+                />
+                <span translate="no">{{ r }}</span>
+              </label>
+            }
+          </div>
+        </trove-filter-category>
+        <trove-filter-category i18n-label="@@pkg.filter.text" label="Name or description" [active]="!!q()" [expanded]="!!q()">
+          <input
+            class="text-input"
+            type="search"
+            autocomplete="off"
+            aria-label="Name or description"
+            i18n-aria-label="@@pkg.filter.text"
+            [value]="search()"
+            (input)="search.set($any($event.target).value)"
+          />
+        </trove-filter-category>
+        <trove-filter-category i18n-label="@@pkg.filter.keyword" label="Keyword" [active]="!!keyword()" [expanded]="!!keyword()">
+          <input
+            class="text-input"
+            type="search"
+            autocomplete="off"
+            aria-label="Keyword"
+            i18n-aria-label="@@pkg.filter.keyword"
+            [value]="stagedKeyword()"
+            (input)="stagedKeyword.set($any($event.target).value)"
+          />
+        </trove-filter-category>
+        <trove-filter-category i18n-label="@@pkg.filter.created" label="Created" [active]="!!period()" [expanded]="!!period()">
+          <select
+            class="select-input"
+            aria-label="Created"
+            i18n-aria-label="@@pkg.filter.created"
+            (change)="stagedPeriod.set($any($event.target).value)"
+          >
+            <option value="" [selected]="!stagedPeriod()" i18n="@@pkg.filter.any">Any time</option>
+            @for (p of periods; track p.value) {
+              <option [value]="p.value" [selected]="stagedPeriod() === p.value">{{ p.label }}</option>
+            }
+          </select>
+          @if (stagedPeriod() === 'custom') {
+            <label class="field">
+              <span class="field-label" i18n="@@pkg.filter.from">From</span>
+              <input
+                class="text-input"
+                type="date"
+                [value]="stagedFrom()"
+                (input)="stagedFrom.set($any($event.target).value)"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label" i18n="@@pkg.filter.to">To (included)</span>
+              <input
+                class="text-input"
+                type="date"
+                [value]="stagedTo()"
+                (input)="stagedTo.set($any($event.target).value)"
+              />
+            </label>
+          }
+        </trove-filter-category>
+      </trove-filter-panel>
+    </div>
+  }
+}

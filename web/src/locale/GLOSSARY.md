@@ -44,3 +44,11 @@ before using a new term in a German text.
 | package, package name, owner (of a package) | Paket, Paketname, Eigentümer |
 | release (a package name) | zurückgeben (not "freigeben", which renders exposure) |
 | cache, upstream (of a remote repository) | Cache, Upstream |
+| package type | Pakettyp |
+| version (of a package) | Version |
+| publish (a package) | veröffentlichen |
+| install (a package) | installieren |
+| client setup, snippet | Client-Einrichtung, Snippet |
+| deployment target | Veröffentlichungsziel |
+| README | README |
+| recently viewed, saved view | Zuletzt angesehen, gespeicherte Ansicht |

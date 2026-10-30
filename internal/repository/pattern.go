@@ -322,6 +322,9 @@ func NewAdmission(subject PatternSubject, include, exclude []string) (*Admission
 	return a, nil
 }
 
+// restricts reports whether either list holds a pattern; a nil Admission has none.
+func (a *Admission) restricts() bool { return a != nil && len(a.include)+len(a.exclude) > 0 }
+
 // Admits reports whether a canonical path (or a normalized name) is admitted:
 // it matches at least one include pattern, if there are any, and no exclude
 // pattern. A nil Admission admits everything.

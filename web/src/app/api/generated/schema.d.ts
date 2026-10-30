@@ -1329,8 +1329,9 @@ export interface paths {
          * @description The format catalog (R-REPO-003): for each format the classes the implementation accepts, its
          *     layout, the client address template, the cache periods and the facts that decide which
          *     members of a repository document apply. The list of classes is the single source of truth
-         *     for the create form: a class that is not listed answers `422 unsupported_class`. Any caller;
-         *     an anonymous caller only where anonymous access is on, else `401`.
+         *     for the create form: a class that is not listed answers `422 unsupported_class`. The answer also
+         *     carries the `baseUrl` of the endpoint the request arrived on. Any caller; an anonymous caller
+         *     only where anonymous access is on, else `401`.
          */
         get: operations["listFormats"];
         put?: never;
@@ -1732,6 +1733,203 @@ export interface paths {
          *     `versions` is absent.
          */
         post: operations["checkExposure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List packages
+         * @description Packages across repositories (R-API-029), with cursor pagination (R-API-010). A package is
+         *     listed when at least one of its versions is visible to the caller, and every member of an
+         *     entry (`latestVersion`, `repositories`, `versionCount`, `downloadCount`, `createdAt`,
+         *     `updatedAt`) is computed from the visible versions only, so a hidden version leaks neither its
+         *     number nor its existence. `format` and `repository` repeat for OR; a virtual repository
+         *     expands to its members; a remote repository contributes only cached versions. `q` matches
+         *     the name and the description case-insensitively, `namePrefix` the start of the name,
+         *     `keyword` one keyword exactly. `createdFrom` (inclusive) and `createdTo` (exclusive) bound
+         *     the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
+         *     descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
+         *     The filter runs in SQL. A sort field or filter this document does not list answers
+         *     `400 malformed_request`.
+         */
+        get: operations["listPackages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve a package name
+         * @description Resolves a format and a name to the package (R-API-029): npm names as stored (`@team-a/ui`),
+         *     NuGet IDs case-insensitively. The name travels as a query parameter, so a scoped name needs no
+         *     path escaping. `404` when no visible version of that package exists, the same answer as for a
+         *     package that does not exist.
+         */
+        get: operations["lookupPackage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a package
+         * @description The summary of a package (R-API-029), computed from the versions visible to the caller. The
+         *     `ETag` is a strong tag over the representation; it changes when a visible version appears,
+         *     goes or is downloaded.
+         */
+        get: operations["getPackage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the versions of a package
+         * @description The versions of a package that are visible to the caller (R-API-029), with cursor pagination.
+         *     `prerelease` keeps pre-releases (`true`) or stable versions (`false`) by the format's version
+         *     rules (SemVer pre-release tags for npm, SemVer 2.0 labels for NuGet); without it both are
+         *     listed. `repository` (repeated) keeps the versions a repository holds; a virtual repository
+         *     expands to its members. `sort=-version` orders by the format's version precedence, newest
+         *     first; the default is `-publishedAt`.
+         */
+        get: operations["listPackageVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a version of a package
+         * @description The details of one visible version (R-API-029): the format-specific `metadata`, the
+         *     repositories that hold it, its files with their SHA-256 and download URLs, the download count
+         *     and whether a README exists. The `ETag` is a strong tag over the representation.
+         */
+        get: operations["getPackageVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/packages/{packageId}/versions/{version}/readme": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the rendered README of a version
+         * @description The README of a visible version as sanitized HTML (R-API-029, R-UI-008). The server renders
+         *     and sanitizes; the client binds the HTML and never renders Markdown itself. `404` when the
+         *     version has no README (`hasReadme` is `false`) or is not visible. The `ETag` is a strong tag
+         *     over the README source, the renderer version and the external image origins, so a changed
+         *     origin list changes it.
+         */
+        get: operations["getPackageVersionReadme"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/client-setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client setup snippets of a repository
+         * @description The snippets that configure a package-manager client for a repository, install a package and
+         *     publish to it (R-API-030). The server fills the public base URL, the repository key, the
+         *     package-manager endpoint URL (`registryUrl`, with its trailing slash), its scheme-less form
+         *     (`endpointPath`, npm's per-registry credential key) and the caller's name. It never fills a
+         *     token: with `credentials=placeholder` a snippet holds the literal `{{token}}`, which the
+         *     browser replaces; with `credentials=env` it holds the environment-variable reference of the
+         *     client's syntax (`${TROVE_TOKEN}` for npm and Yarn, `%TROVE_TOKEN%` for `nuget.config`;
+         *     the name is `ui.client_setup.token_env_var`); with `credentials=none` it holds no
+         *     authentication line. With `package` and `version` the install snippets name that version.
+         *     Values placed in shell commands are single-quoted unless they match
+         *     `^[A-Za-z0-9@/._+:=-]+$`, values placed in XML are escaped. Needs `read` on the repository
+         *     (`404` otherwise, like a missing repository); the publish snippets are present only when the
+         *     caller holds `deploy` on the repository that receives the publish (`publishTarget`). A virtual
+         *     repository without a default deployment target has no publish snippets and `publishTarget:
+         *     null`. The answer never matches `trv_(pat|sat|cit)_`.
+         */
+        get: operations["getClientSetup"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3284,6 +3482,15 @@ export interface components {
         };
         FormatList: {
             formats: components["schemas"]["FormatDescriptor"][];
+            /**
+             * @description The base URL of the endpoint the request arrived on (`server.base_url`, or the base URL of the
+             *     endpoint), an origin without a trailing slash; the address a client of a repository is
+             *     configured with is this origin plus a format's `protocolBasePath`. `null` when none is
+             *     configured: the address is never taken from the `Host` of the request. It is no secret and is
+             *     readable by every caller that may call this operation, so a screen needs no other permission
+             *     to show a client address (Q-UI-75).
+             */
+            baseUrl: string | null;
         };
         /**
          * @description A package format of this build (R-ARCH-010): the names of `GET /api/v1/formats`. The four enums of
@@ -3647,6 +3854,163 @@ export interface components {
             /** @description SHA-256 over the mode and the ID, revision and state of every stored rule of the endpoint for the repository (R-EP-018). */
             exposureFingerprint: string;
             warnings: string[];
+        };
+        /**
+         * @description A package as the caller sees it (R-API-029): every member is computed from the versions the
+         *     caller may read. `latestVersion` is the highest visible stable version, or the highest visible
+         *     pre-release while no stable version is visible.
+         */
+        PackageSummary: {
+            /** @description Server-generated and opaque. */
+            id: string;
+            /** @description The names of `GET /api/v1/formats`. */
+            format: string;
+            /** @description The name as the format stores it; NuGet IDs in their original casing. */
+            name: string;
+            /** @description The description of the latest version. */
+            description: string | null;
+            latestVersion: string;
+            keywords: string[];
+            /** @description The keys of the repositories that hold a visible version. */
+            repositories: string[];
+            /**
+             * Format: date-time
+             * @description When the first visible version was published.
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description When the latest visible version was published.
+             */
+            updatedAt: string;
+            /**
+             * Format: int64
+             * @description The number of visible versions.
+             */
+            versionCount: number;
+            /**
+             * Format: int64
+             * @description The downloads of the visible versions, summed.
+             */
+            downloadCount: number;
+        };
+        PackageList: {
+            items: components["schemas"]["PackageSummary"][];
+            nextCursor: string | null;
+        };
+        PackageVersionSummary: {
+            version: string;
+            /** @description By the format's version rules. */
+            prerelease: boolean;
+            /** Format: date-time */
+            publishedAt: string;
+            /**
+             * Format: int64
+             * @description The size of the version's files, summed.
+             */
+            sizeBytes: number;
+            /** @description The keys of the repositories that hold this version and that the caller may read. */
+            repositories: string[];
+            /** Format: int64 */
+            downloadCount: number;
+        };
+        PackageVersionList: {
+            items: components["schemas"]["PackageVersionSummary"][];
+            nextCursor: string | null;
+        };
+        PackageVersionRepository: {
+            key: string;
+            /** @enum {string} */
+            class: "local" | "remote" | "virtual";
+            /** Format: date-time */
+            publishedAt: string;
+        };
+        PackageFile: {
+            path: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            sha256: string;
+            /** @description Absolute, built on the public base URL. */
+            downloadUrl: string;
+        };
+        PackageVersion: {
+            packageId: string;
+            format: string;
+            name: string;
+            version: string;
+            prerelease: boolean;
+            /** Format: date-time */
+            publishedAt: string;
+            /** @description SPDX identifiers or the license expression the package declares; empty when it declares none. */
+            licenses: string[];
+            /** Format: int64 */
+            sizeBytes: number;
+            /** Format: int64 */
+            downloadCount: number;
+            /** @description Whether `readme` answers 200; the UI uses it to choose the default tab without a probing request. */
+            hasReadme: boolean;
+            /**
+             * @description Format-specific, owned by the format page. For npm the members the UI reads are
+             *     `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
+             *     `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
+             *     and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
+             *     `deprecated` (string or null). A member that does not apply is absent.
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+            repositories: components["schemas"]["PackageVersionRepository"][];
+            files: components["schemas"]["PackageFile"][];
+        };
+        PackageReadme: {
+            /**
+             * @description The type of the source; `html` is always sanitized HTML.
+             * @enum {string}
+             */
+            contentType: "text/markdown";
+            html: string;
+            /** @description The source or the rendered HTML exceeded a limit of R-UI-008. */
+            truncated: boolean;
+            /**
+             * Format: int32
+             * @description The number of external images replaced by links.
+             */
+            externalImagesBlocked: number;
+        };
+        /**
+         * @description One snippet. The `id` is stable and names the explanation the UI shows
+         *     (`<client>.<tab>.<name>`, for example `npm.configure.npmrc`); the text is the UI's.
+         */
+        ClientSnippet: {
+            id: string;
+            /** @enum {string} */
+            tab: "configure" | "install" | "publish";
+            /** @description The file the snippet belongs in (`.npmrc`, `.yarnrc.yml`); null for a command. */
+            fileName: string | null;
+            /** @enum {string} */
+            language: "ini" | "yaml" | "json" | "shell" | "xml" | "text";
+            content: string;
+        };
+        ClientSetup: {
+            repository: string;
+            format: string;
+            client: string;
+            /** @enum {string} */
+            credentials: "placeholder" | "env" | "none";
+            /** @description The package-manager endpoint URL of INV-6, absolute, with its trailing slash. */
+            registryUrl: string;
+            /** @description `registryUrl` without its scheme (`//host/path/`), the key npm matches credentials by. */
+            endpointPath: string;
+            /** @description The caller's name; null for an anonymous caller. */
+            username: string | null;
+            /** @description The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target. */
+            publishTarget: string | null;
+            /**
+             * Format: int64
+             * @description The lifetime the setup dialog asks for when it creates a token (`ui.client_setup.token_ttl`, bounded by the maximum of R-AUTH-040).
+             */
+            tokenTtlSeconds: number;
+            snippets: components["schemas"]["ClientSnippet"][];
         };
         CacheInvalidateRequest: {
             /**
@@ -4144,6 +4508,10 @@ export interface components {
         /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
         IdempotencyKey: string;
         JobId: string;
+        /** @description The server-generated package identifier (R-API-029). */
+        PackageId: string;
+        /** @description The version string, percent-encoded. */
+        PackageVersionPath: string;
     };
     requestBodies: never;
     headers: {
@@ -7030,7 +7398,8 @@ export interface operations {
                      *           "pinsAndClaims": false,
                      *           "caps": false
                      *         }
-                     *       ]
+                     *       ],
+                     *       "baseUrl": "https://trove.example.com"
                      *     }
                      */
                     "application/json": components["schemas"]["FormatList"];
@@ -8303,6 +8672,394 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listPackages: {
+        parameters: {
+            query?: {
+                /** @description Repeat the parameter for several formats (`npm`, `nuget`, …). */
+                format?: string[];
+                /** @description Repeat the parameter for several repository keys. */
+                repository?: string[];
+                /** @description Case-insensitive substring of the name or the description. */
+                q?: string;
+                namePrefix?: string;
+                keyword?: string;
+                /** @description Inclusive lower bound of the creation time of the first visible version. */
+                createdFrom?: string;
+                /** @description Exclusive upper bound of the creation time of the first visible version. */
+                createdTo?: string;
+                sort?: "name" | "-name" | "createdAt" | "-createdAt" | "updatedAt" | "-updatedAt";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of packages. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "pkg_01JBQ6V7S3K9",
+                     *           "format": "npm",
+                     *           "name": "@team-a/ui",
+                     *           "description": "Shared UI components",
+                     *           "latestVersion": "1.4.0",
+                     *           "keywords": [
+                     *             "ui",
+                     *             "components"
+                     *           ],
+                     *           "repositories": [
+                     *             "npm-local",
+                     *             "npm-all"
+                     *           ],
+                     *           "createdAt": "2026-09-02T08:00:12.201Z",
+                     *           "updatedAt": "2026-10-20T09:12:44.512Z",
+                     *           "versionCount": 3,
+                     *           "downloadCount": 1832
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PackageList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    lookupPackage: {
+        parameters: {
+            query: {
+                format: string;
+                name: string;
+            };
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The package. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageSummary"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackage: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The package. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageSummary"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listPackageVersions: {
+        parameters: {
+            query?: {
+                prerelease?: boolean;
+                /** @description Repeat the parameter for several repository keys. */
+                repository?: string[];
+                sort?: "-publishedAt" | "publishedAt" | "-version" | "version";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of versions. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "version": "1.4.0",
+                     *           "prerelease": false,
+                     *           "publishedAt": "2026-10-20T09:12:44.512Z",
+                     *           "sizeBytes": 48213,
+                     *           "repositories": [
+                     *             "npm-local",
+                     *             "npm-all"
+                     *           ],
+                     *           "downloadCount": 410
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PackageVersionList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "packageId": "pkg_01JBQ6V7S3K9",
+                     *       "format": "npm",
+                     *       "name": "@team-a/ui",
+                     *       "version": "1.4.0",
+                     *       "prerelease": false,
+                     *       "publishedAt": "2026-10-20T09:12:44.512Z",
+                     *       "licenses": [
+                     *         "MIT"
+                     *       ],
+                     *       "sizeBytes": 48213,
+                     *       "downloadCount": 410,
+                     *       "hasReadme": true,
+                     *       "metadata": {
+                     *         "distTags": {
+                     *           "latest": "1.4.0"
+                     *         },
+                     *         "dependencies": {
+                     *           "lit": "^3.1.0"
+                     *         },
+                     *         "homepage": "https://example.com/team-a/ui"
+                     *       },
+                     *       "repositories": [
+                     *         {
+                     *           "key": "npm-local",
+                     *           "class": "local",
+                     *           "publishedAt": "2026-10-20T09:12:44.512Z"
+                     *         },
+                     *         {
+                     *           "key": "npm-all",
+                     *           "class": "virtual",
+                     *           "publishedAt": "2026-10-20T09:12:44.512Z"
+                     *         }
+                     *       ],
+                     *       "files": [
+                     *         {
+                     *           "path": "@team-a/ui/-/ui-1.4.0.tgz",
+                     *           "sizeBytes": 48213,
+                     *           "sha256": "5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567",
+                     *           "downloadUrl": "https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PackageVersion"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageVersionReadme: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The server-generated package identifier (R-API-029). */
+                packageId: components["parameters"]["PackageId"];
+                /** @description The version string, percent-encoded. */
+                version: components["parameters"]["PackageVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The README. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "contentType": "text/markdown",
+                     *       "html": "<h1>@team-a/ui</h1>\n<p>Shared UI components.</p>",
+                     *       "truncated": false,
+                     *       "externalImagesBlocked": 0
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PackageReadme"];
+                };
+            };
+            304: components["responses"]["NotModified"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getClientSetup: {
+        parameters: {
+            query: {
+                /** @description The client the snippets are for; the values a format offers are its own (`npm`, `pnpm`, `yarn`, `yarn-classic` for npm). An unknown value answers `400 malformed_request`. */
+                client: string;
+                credentials?: "placeholder" | "env" | "none";
+                /** @description A package name; the install snippets are specific to it. */
+                package?: string;
+                /** @description A version of `package`; ignored without `package`. */
+                version?: string;
+                /** @description An npm scope (`@team-a`); adds the scoped variant of the registry configuration. */
+                scope?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The snippets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "repository": "npm-all",
+                     *       "format": "npm",
+                     *       "client": "npm",
+                     *       "credentials": "placeholder",
+                     *       "registryUrl": "https://trove.example.com/api/npm/npm-all/",
+                     *       "endpointPath": "//trove.example.com/api/npm/npm-all/",
+                     *       "username": "alice",
+                     *       "publishTarget": "npm-local",
+                     *       "tokenTtlSeconds": 2592000,
+                     *       "snippets": [
+                     *         {
+                     *           "id": "npm.configure.npmrc",
+                     *           "tab": "configure",
+                     *           "fileName": ".npmrc",
+                     *           "language": "ini",
+                     *           "content": "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken={{token}}\n"
+                     *         },
+                     *         {
+                     *           "id": "npm.install",
+                     *           "tab": "install",
+                     *           "fileName": null,
+                     *           "language": "shell",
+                     *           "content": "npm install @team-a/ui@1.4.0"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ClientSetup"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

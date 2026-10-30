@@ -68,6 +68,17 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 | [internal/app/wire_formats.go](../../internal/app/wire_formats.go) | The wiring: hooks and files seam at step 8, Host and dispatcher at step 9, the data-port bindings, the catalog freeze |
 | [internal/files/formats.go](../../internal/files/formats.go) | `files.Formats`, the seam the generic layer asks a format through (`ServeCheck` is called in `Stat`; `Classify` is declared for the exposure coordinate of R-EP-014) |
 
+## The package view
+
+A format that has package screens (R-API-029) returns a `formats.ViewAdapter` from `View()`; `Base.View()` is nil, and a format without one is not
+listed on the screens. The adapter orders the versions (`Compare`, `Prerelease`), reads what the screens show of a version beyond the generic rows
+(`Describe`: description, keywords, licenses, the README flag, the metadata and, when asked, the README), answers the two searches that need the format's
+data (`Find`) and names the stored versions it does not serve (`Withheld`). It runs no SQL: it reaches its tables through the data port the host hands it
+(`formats.DataPorts`, the part of `Host` that is `FormatData`). `Validate` refuses a view without package names. The read model that calls the adapter, and
+the bridge to it (`formathost.NewViewAdapters`), are in [packages.md](packages.md). To give a format a view: implement the five methods in `view.go` of the
+format, add the statements to the format's data package and the matching methods to its port, and add the port interface the adapter asserts (`viewPort` in
+[npm view.go](../../internal/formats/npm/view.go)).
+
 ## The registry
 
 `formats.Register(f)` (called from `internal/formats/all`) validates the format, puts its facts into `catalog.Default()` and keeps the format

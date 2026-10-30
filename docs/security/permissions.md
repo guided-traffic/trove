@@ -58,6 +58,15 @@ the same key is not covered by the old key selector (the policy reports `inert`)
   repository or the name exists, and decided before the owner reference is resolved, so a refused caller cannot probe for
   principals; reading the owners is a read (404). A CI token never changes owners (403 `ci_token_restricted`, before any
   lookup): a pipeline runs its dependencies' install scripts, which must not be able to hand a package to another project.
+- The package screens' operations (R-API-029) count and list only what the caller may read, and the filter is part of the statement
+  that counts: the decision point classifies each repository for the caller (`authz.ReadScoper`, [visible.go](../../internal/authz/visible.go))
+  and the statements of [package_view.sql](../../internal/meta/postgres/queries/package_view.sql) take the keys of the repositories read
+  whole and the readable `repository, package, version` rows as data. No aggregate (`versionCount`, `downloadCount`, `createdAt`,
+  `updatedAt`, `repositories`, `latestVersion`) and no `ETag` is computed from a version the caller may not read; a dist-tag in the details
+  names a version only if the caller may read it. A package, a version or a README the caller may not read, a package `id` that is
+  none and one that names nothing all answer the same `404` (`TestR_API_029_ListCountsOnlyWhatTheCallerMayRead`). The classification is
+  checked against `DecideOn` for every subject, endpoint, repository, package and version of a fixture
+  (`TestR_API_029_ReadScopeAgreesWithTheDecisionPoint`). On an endpoint with exposure rules a repository is never classified as read whole.
 - `authz.hide_existence: false` (R-AUTHZ-017) turns the refusal of a read of an existing repository into 403. It is a
   troubleshooting switch; the endpoint-exposure 404 and the anonymous 401 do not change.
 
@@ -235,3 +244,14 @@ would refuse with 403 `package_owned_by_other_owner` (`TestR_NPM_017_RawDeleteUn
 route, so the removal is recorded and cannot be repeated with other bytes; the bytes of the version are gone. Live today on every npm local repository with ownership enforced, for
 principals that hold `delete` without owning the name; what makes it real is a `delete` grant on a name another team owns, which the ownership rule exists to make safe. Closing it needs the
 generic layer to ask `Ownership.EnforceTx` for a coordinate with a package name, in the transaction of the removal.
+
+### H-299 · The cost of a package list for a caller with row-level grants depends on versions the caller cannot read
+
+Live today for a caller whose read of a repository is narrowed by a package pattern, a path pattern, a token scope with elements or an
+endpoint with exposure rules (`authz.ReadRows`), on every operation of R-API-029. Before the statements run, the service lists the
+versions of those repositories (at most 200 000) and asks the decision point about each, so the time of an answer grows with the
+versions in the repository, hidden ones included, and the answer is `400` above the bound whatever the caller may read of it. What
+it reveals is an order of magnitude of the size of a repository the caller can read in part; what makes it real is a caller who can
+measure the time of its own requests and who has such a grant. A caller with an unrestricted read of a repository (`ReadAll`) pays
+nothing for the versions of other repositories. Closing it needs the pattern set compiled into the statement; Q-API-165 names the
+condition for doing so.

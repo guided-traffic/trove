@@ -2009,6 +2009,21 @@ Acceptance criteria:
 - A lint test over the generated snippets fails if any contains `registry=…:_authToken` or an
   unkeyed credential line.
 
+**The package view of npm** (a part of R-NPM-041: the same screens show the snippets and the packages). The package screens
+(api-and-ui.md R-API-029) read npm through the format's view adapter (Q-API-166). Versions
+order by SemVer precedence, build metadata included as the last resort so that no two strings compare equal; a
+pre-release is a version with a pre-release tag. The `metadata` of a version holds, from its stored manifest and
+only where the member is of the documented type: `distTags` (the package's tags, limited to versions the caller
+may read), `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies` and `engines` (name to
+string), `authors` (the `author` and the `contributors` as `Name <email> (url)`), `homepage`, `repositoryUrl` (the
+`repository` string or its `url`), `bugsUrl` (the `bugs` string or its `url`) and `deprecated` (the stored
+deprecation message). `licenses` is the `license` member (an SPDX expression, or the `type` of a legacy object) and
+the `type`s of the legacy `licenses` list; `description` and `keywords` are the manifest's, the keywords
+without blanks and non-string entries. `q` matches a description case-insensitively as a substring and `keyword` a
+keyword exactly. A version tombstoned and not removed (a restore's replay, R-NPM-047) is withheld and appears
+nowhere. The README is the stored README text of the version; the setup snippets of this page are rendered by the
+API with the client ids `npm`, `pnpm`, `yarn` and `yarn-classic` (Q-UI-77).
+
 ### R-NPM-042 · Yarn Berry tarball URLs and lockfiles
 Priority: **MVP** · Covers: PKG-NPM-053
 

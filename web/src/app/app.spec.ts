@@ -83,7 +83,7 @@ describe('App shell', () => {
   it('R-UI-002 shows only the entries whose capability the caller holds', async () => {
     const { root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
     const links = [...root.querySelectorAll('nav a .nav-label')].map((a) => a.textContent?.trim());
-    expect(links).toEqual(['Browse', 'Audit log']);
+    expect(links).toEqual(['Packages', 'Browse', 'Audit log']);
   });
 
   it('R-UI-004 a missing session sends the caller to /login with the route as returnTo', async () => {

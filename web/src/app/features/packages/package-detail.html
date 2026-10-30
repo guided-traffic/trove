@@ -1,0 +1,214 @@
+<header class="page-header">
+  <h1 tabindex="-1" translate="no">{{ name() }}</h1>
+  <span class="type-badge">
+    <span class="material-icons" aria-hidden="true">inventory_2</span>
+    <span translate="no">{{ format() }}</span>
+  </span>
+  <a mat-button routerLink="/packages" i18n="@@pkg.detail.back">All packages</a>
+</header>
+
+@if (loadFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="summary.reload()" />
+} @else if (!detail()) {
+  <p role="status" i18n="@@pkg.loading">Loading.</p>
+} @else if (detail(); as d) {
+  <section class="pkg-header" aria-label="Package facts" i18n-aria-label="@@pkg.facts">
+    <dl class="facts">
+      <dt i18n="@@pkg.fact.version">Version</dt>
+      <dd>
+        <span class="version-picker">
+          <input
+            class="text-input"
+            type="text"
+            list="pkg-versions"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Version"
+            i18n-aria-label="@@pkg.version.picker"
+            translate="no"
+            [value]="selected()"
+            (focus)="$any($event.target).select()"
+            (change)="chooseVersion($event)"
+          />
+          <datalist id="pkg-versions">
+            @for (v of options(); track v.version) {
+              <option [value]="v.version"></option>
+            }
+          </datalist>
+          <label class="check-row">
+            <input type="checkbox" [checked]="includePrereleases()" (change)="togglePrereleases($event)" />
+            <span i18n="@@pkg.version.prereleases">Include pre-releases</span>
+          </label>
+        </span>
+      </dd>
+      <dt i18n="@@pkg.fact.published">Published</dt>
+      <dd>
+        <time [attr.datetime]="d.publishedAt">{{ d.publishedAt | date: 'medium' }}</time>
+      </dd>
+      <dt i18n="@@pkg.fact.licenses">Licenses</dt>
+      <dd translate="no">{{ d.licenses.length > 0 ? d.licenses.join(', ') : '–' }}</dd>
+      <dt i18n="@@pkg.fact.downloads">Downloads</dt>
+      <dd>{{ d.downloadCount | number }}</dd>
+      <dt i18n="@@pkg.fact.repositories">Repositories</dt>
+      <dd>
+        <ul class="chips">
+          @for (r of d.repositories; track r.key) {
+            <li translate="no">{{ r.key }}</li>
+          }
+        </ul>
+      </dd>
+    </dl>
+    @if (deprecated(); as why) {
+      <p class="banner-warning" role="note">
+        <span class="material-icons inline warn" aria-hidden="true">warning</span>
+        <span
+          ><strong i18n="@@pkg.deprecated">Deprecated.</strong> <span translate="no">{{ why }}</span></span
+        >
+      </p>
+    }
+  </section>
+
+  <div class="pkg-layout">
+    <div class="pkg-install">
+      <trove-install-panel [format]="format()" [name]="name()" [version]="d" />
+    </div>
+
+    <div class="pkg-tabs">
+      <mat-tab-group animationDuration="0ms" [selectedIndex]="activeIndex()" (selectedIndexChange)="selectTab($event)">
+        @for (t of tabs(); track t.id) {
+          <mat-tab [label]="t.label">
+            <div class="tab">
+              @switch (t.id) {
+                @case ('readme') {
+                  @if (readmeFailure(); as f) {
+                    <trove-error-notice [error]="f" (retry)="readme.reload()" />
+                  } @else if (readme.isLoading()) {
+                    <p role="status" i18n="@@pkg.loading">Loading.</p>
+                  } @else {
+                    <trove-package-readme [readme]="readme.hasValue() ? (readme.value() ?? null) : null" />
+                  }
+                }
+                @case ('metadata') {
+                  @if (!hasMetadata()) {
+                    <p class="empty" i18n="@@pkg.meta.none">This version declares no further metadata.</p>
+                  }
+                  @if (links().length > 0) {
+                    <h2 i18n="@@pkg.meta.links">Links</h2>
+                    <dl class="facts">
+                      @for (l of links(); track l.label) {
+                        <dt>{{ l.label }}</dt>
+                        <dd translate="no">
+                          @if (l.href; as href) {
+                            <a [href]="href" [attr.rel]="externalRel" target="_blank">{{ l.text }}</a>
+                            <span class="material-icons inline" aria-hidden="true">open_in_new</span>
+                            <span class="visually-hidden" i18n="@@pkg.meta.external">(opens another site)</span>
+                          } @else {
+                            {{ l.text }}
+                          }
+                        </dd>
+                      }
+                    </dl>
+                  }
+                  @if (authors().length > 0) {
+                    <h2 i18n="@@pkg.meta.authors">Authors</h2>
+                    <ul class="plain" translate="no">
+                      @for (a of authors(); track a) {
+                        <li>{{ a }}</li>
+                      }
+                    </ul>
+                  }
+                  @if (distTags().length > 0) {
+                    <h2 i18n="@@pkg.meta.dist-tags">Distribution tags</h2>
+                    <dl class="facts" translate="no">
+                      @for (t of distTags(); track t[0]) {
+                        <dt>{{ t[0] }}</dt>
+                        <dd>{{ t[1] }}</dd>
+                      }
+                    </dl>
+                  }
+                  @for (g of dependencyGroups(); track g.label) {
+                    <h2>{{ g.label }}</h2>
+                    <dl class="facts" translate="no">
+                      @for (e of g.entries; track e[0]) {
+                        <dt>{{ e[0] }}</dt>
+                        <dd>{{ e[1] }}</dd>
+                      }
+                    </dl>
+                  }
+                  @if (engines().length > 0) {
+                    <h2 i18n="@@pkg.meta.engines">Required runtimes</h2>
+                    <dl class="facts" translate="no">
+                      @for (e of engines(); track e[0]) {
+                        <dt>{{ e[0] }}</dt>
+                        <dd>{{ e[1] }}</dd>
+                      }
+                    </dl>
+                  }
+                }
+                @case ('files') {
+                  <trove-data-table [caption]="tableCaptionFiles" [columns]="fileColumns" [empty]="d.files.length === 0">
+                    @for (f of d.files; track f.path) {
+                      <tr>
+                        <th scope="row" translate="no">{{ f.path }}</th>
+                        <td class="num" [attr.title]="f.sizeBytes + ' B'">{{ size(f.sizeBytes) }}</td>
+                        <td>
+                          <code class="ellipsis" translate="no" [attr.title]="f.sha256">{{ f.sha256 }}</code>
+                          <trove-copy-button [value]="f.sha256" [label]="copySha" />
+                        </td>
+                        <td>
+                          <a mat-button [href]="f.downloadUrl" download i18n="@@pkg.file.download-link">Download</a>
+                        </td>
+                      </tr>
+                    }
+                  </trove-data-table>
+                }
+                @case ('repositories') {
+                  <trove-data-table [caption]="tableCaptionRepositories" [columns]="repositoryColumns" [empty]="d.repositories.length === 0">
+                    @for (r of d.repositories; track r.key) {
+                      <tr>
+                        <th scope="row" translate="no">{{ r.key }}</th>
+                        <td>{{ classLabels[r.class] }}</td>
+                        <td>
+                          <time [attr.datetime]="r.publishedAt">{{ r.publishedAt | date: 'medium' }}</time>
+                        </td>
+                        <td>
+                          <a mat-button [routerLink]="['/browse', r.key]" i18n="@@pkg.repo.show-in-browser">Show in browser</a>
+                        </td>
+                      </tr>
+                    }
+                  </trove-data-table>
+                }
+                @case ('versions') {
+                  <trove-data-table [caption]="tableCaptionVersions" [columns]="versionColumns" [empty]="all().length === 0">
+                    @for (v of all(); track v.version) {
+                      <tr>
+                        <th scope="row">
+                          <a
+                            [routerLink]="[]"
+                            [queryParams]="{ version: v.version }"
+                            queryParamsHandling="merge"
+                            translate="no"
+                            >{{ v.version }}</a
+                          >
+                          @if (v.prerelease) {
+                            <span class="badge" i18n="@@pkg.badge.prerelease">pre-release</span>
+                          }
+                        </th>
+                        <td>
+                          <time [attr.datetime]="v.publishedAt">{{ v.publishedAt | date: 'medium' }}</time>
+                        </td>
+                        <td class="num" [attr.title]="v.sizeBytes + ' B'">{{ size(v.sizeBytes) }}</td>
+                        <td translate="no">{{ v.repositories.join(', ') }}</td>
+                        <td class="num">{{ v.downloadCount | number }}</td>
+                      </tr>
+                    }
+                  </trove-data-table>
+                }
+              }
+            </div>
+          </mat-tab>
+        }
+      </mat-tab-group>
+    </div>
+  </div>
+}

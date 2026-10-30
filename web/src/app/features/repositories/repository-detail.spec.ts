@@ -149,13 +149,13 @@ describe('Repository edit form', () => {
     expect(text(r.root)).not.toContain(location.origin);
   });
 
-  it('R-REPO-002 R-UI-021 without settings:read and without any readable address the page shows no client address instead of the page origin', async () => {
+  it('R-REPO-002 R-UI-021 a server without a configured base URL leaves the client address out instead of showing the page origin', async () => {
     const r = await renderScreen(RepositoryDetail, {
       inputs: { key: 'generic-local' },
       capabilities: ['repositories:read-config', 'repositories:write-config'],
       setup: (get) => {
         const fake = get(RepositoriesApi) as FakeRepositoriesApi;
-        fake.listAll = async () => [];
+        fake.baseUrlResult = null;
       },
     });
     expect(text(r.root)).not.toContain(location.origin);

@@ -326,7 +326,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 
 | Document | What it holds |
 |---|---|
-| [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md) |
+| [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md) |
 | [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, endpoints and exposure, repository model, file transfer, audit |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, the supported versions and the pointer to the known gaps |
 | [docs/spec/](docs/spec/README.md) | Target design: owner constraints, invariants `INV-1` to `INV-20`, requirements `R-<AREA>-nnn`, open gaps `H-<n>` |
@@ -1015,6 +1015,13 @@ api:
     anonymous: {requests_per_second: 5, burst: 20}     # default (requests without credentials, per address)
 repositories:
   lookup_wait: 5s                       # default; at least 100ms: wait for the change-log poll on a key the snapshot does not know
+ui:
+  readme:
+    max_source_bytes: 512KiB            # default; 1KiB to 16MiB: a longer README is cut and flagged `truncated`
+    external_image_origins: []          # default: every external README image is shown as a link; example: ["https://img.shields.io"]; exact https origins, no path, no wildcard, none of this installation's own origins; they also become the img-src of the UI's Content-Security-Policy
+  client_setup:
+    token_env_var: TROVE_TOKEN          # default; the variable the credentials=env setup snippets read the token from
+    token_ttl: 720h                     # default; the lifetime the setup dialog asks for; at most auth.tokens.pat.max_ttl
 ```
 
 </details>
@@ -1198,7 +1205,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/formats` | `listFormats` | public |
+| `GET /api/v1/formats` | `listFormats` | public; also carries `baseUrl`, the configured base URL of the endpoint (`null` when none is configured) |
 | `GET /api/v1/repositories` | `listRepositories` | public |
 | `POST /api/v1/repositories` | `createRepository` | `repositories:write-config` |
 | `GET /api/v1/repositories/{key}` | `getRepository` | public |
@@ -1223,6 +1230,18 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `HEAD /files/{repoKey}/{path}` | `headFile` | action `read` on `path.repoKey` |
 | `PUT /files/{repoKey}/{path}` | `deployFile` | action `deploy` on `path.repoKey` |
 | `DELETE /files/{repoKey}/{path}` | `deleteFile` | action `delete` on `path.repoKey` |
+
+**packages**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/packages` | `listPackages` | public; lists and counts only the versions the caller may read |
+| `GET /api/v1/packages/lookup` | `lookupPackage` | public; as above |
+| `GET /api/v1/packages/{packageId}` | `getPackage` | public; as above |
+| `GET /api/v1/packages/{packageId}/versions` | `listPackageVersions` | public; as above |
+| `GET /api/v1/packages/{packageId}/versions/{version}` | `getPackageVersion` | public; as above |
+| `GET /api/v1/packages/{packageId}/versions/{version}/readme` | `getPackageVersionReadme` | public; as above |
+| `GET /api/v1/repositories/{repoKey}/client-setup` | `getClientSetup` | action `read` on `path.repoKey`; the publish snippets need `deploy` on the publish target |
 
 **endpoints**
 

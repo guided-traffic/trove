@@ -26,7 +26,9 @@ export interface CrumbSpec {
  * - a route with a string `title` adds a step with that title;
  * - a parameter segment (`:key`) adds a step with the parameter's value, so a detail screen reads
  *   "Repositories > my-repo";
- * - the file tree's matcher route adds one step per path segment.
+ * - the file tree's matcher route adds one step per path segment;
+ * - a matcher route with `data.crumbParam` adds one step with that parameter's value (a package
+ *   name such as `@team-a/ui`, whose slash belongs to the name).
  *
  * A trail of one step repeats the page title and is not shown.
  */
@@ -76,7 +78,11 @@ export function collect(root: ActivatedRouteSnapshot): Crumb[] {
     }
 
     const title = typeof config?.title === 'string' ? config.title : undefined;
-    if (config && config.path === undefined && config.matcher) {
+    const crumbParam = config?.data?.['crumbParam'] as string | undefined;
+    if (config && config.path === undefined && config.matcher && crumbParam) {
+      // A matcher route whose parameter names the thing (a package name with its slash): one step.
+      add({ label: route.params[crumbParam] ?? crumbParam, commands: [...before, ...own], literal: true });
+    } else if (config && config.path === undefined && config.matcher) {
       // The file tree: the first segment is the repository, the rest is the path inside it.
       own.forEach((segment, i) => add({ label: segment, commands: [...before, ...own.slice(0, i + 1)], literal: true }));
     } else if (config && title && config.path !== undefined) {

@@ -305,7 +305,14 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 	}
 	out := struct {
 		Formats []descriptor `json:"formats"`
+		BaseURL *string      `json:"baseUrl"`
 	}{Formats: []descriptor{}}
+	// The configured base URL of the endpoint, never one built from the Host header
+	// (Q-UI-75): a caller needs no permission to learn the address it was given.
+	if info := httpserver.InfoFrom(r.Context()); info.BaseURLSource == "config" && info.BaseURL != "" {
+		b := strings.TrimSuffix(info.BaseURL, "/")
+		out.BaseURL = &b
+	}
 	for _, d := range formats.Descriptors() {
 		x := descriptor{
 			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Layout: d.Layout, DefaultExtraHosts: append([]string{}, d.DefaultExtraHosts...),

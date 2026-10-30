@@ -96,6 +96,12 @@ func (r Repository) Admits(path string, folder bool) bool {
 	return r.adm.Admits(path)
 }
 
+// Restricts reports whether the repository has include or exclude patterns, that is,
+// whether Admits can answer false for some name or path. A listing that counts the
+// versions of a repository without asking Admits about each is right only for a
+// repository that does not.
+func (r Repository) Restricts() bool { return r.adm.restricts() }
+
 // Reader is the read interface other packages use. It answers from the
 // replica's snapshot, which the change area repo_config keeps current.
 type Reader interface {

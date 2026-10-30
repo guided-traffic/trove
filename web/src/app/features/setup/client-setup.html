@@ -1,0 +1,305 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@setup.heading">Client setup</h1>
+</header>
+<p class="intro" i18n="@@setup.intro">
+  Choose your package manager and a repository. You get the configuration and the commands that point the
+  client at trove. Nothing is changed on the server.
+</p>
+
+@if (loadFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="answer.reload()" />
+}
+
+<ol class="steps">
+  <li>
+    <fieldset>
+      <legend><span class="step-no">1</span> <span i18n="@@setup.step.format">Package type</span></legend>
+      @if (formatOptions().length === 0 && formats.hasValue()) {
+        <p class="empty" i18n="@@setup.no-formats">No package type with setup instructions is available yet.</p>
+      }
+      <div class="choices">
+        @for (f of formatOptions(); track f.name) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="format"
+              [value]="f.name"
+              [checked]="f.name === activeFormat()"
+              (change)="pickFormat(f.name)"
+            />
+            <span translate="no">{{ f.displayName }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+  </li>
+
+  <li>
+    <fieldset>
+      <legend><span class="step-no">2</span> <span i18n="@@setup.step.client">Client</span></legend>
+      <div class="choices">
+        @for (c of clients(); track c.id) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="client"
+              [value]="c.id"
+              [checked]="c.id === activeClient()"
+              (change)="pick({ client: c.id })"
+            />
+            <span translate="no">{{ c.label }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+  </li>
+
+  <li>
+    <fieldset>
+      <legend><span class="step-no">3</span> <span i18n="@@setup.step.repository">Repository</span></legend>
+      @if (repositoryOptions().length === 0 && allRepositories.hasValue()) {
+        <p class="empty" i18n="@@setup.no-repositories">You can read no repository of this package type.</p>
+      }
+      <div class="choices vertical">
+        @for (r of repositoryOptions(); track r.key) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="repository"
+              [value]="r.key"
+              [checked]="r.key === activeRepository()"
+              (change)="pick({ repository: r.key })"
+            />
+            <span class="choice-text">
+              <span translate="no"><strong>{{ r.key }}</strong></span>
+              <span class="secondary">
+                {{ labelOfClass(r.class) }}
+                @if (r.class === 'virtual') {
+                  <span class="badge" i18n="@@setup.recommended">recommended</span>
+                }
+                – {{ publishHint(r) }}
+              </span>
+            </span>
+          </label>
+        }
+      </div>
+    </fieldset>
+  </li>
+
+  @if (anonymous()) {
+    <li>
+      <h2 class="step-title"><span class="step-no">4</span> <span i18n="@@setup.step.credentials">Credentials</span></h2>
+      <p i18n="@@setup.anonymous">
+        You are not signed in. A repository that can be read without credentials needs none, so the snippets
+        contain no authentication.
+      </p>
+    </li>
+  } @else {
+    <li>
+      <fieldset>
+        <legend><span class="step-no">4</span> <span i18n="@@setup.step.credentials">Credentials</span></legend>
+        <div class="choices vertical">
+          <label class="choice">
+            <input type="radio" name="credentials" value="env" [checked]="mode() === 'env'" (change)="setMode('env')" />
+            <span class="choice-text">
+              <span i18n="@@setup.cred.env">Reference an environment variable</span>
+              <span class="secondary" i18n="@@setup.cred.env-hint">
+                The snippets read the token from the variable TROVE_TOKEN. No secret appears on this page.
+              </span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="credentials" value="create" [checked]="mode() === 'create'" (change)="setMode('create')" />
+            <span class="choice-text">
+              <span i18n="@@setup.cred.create">Create a token for this setup</span>
+              <span class="secondary" i18n="@@setup.cred.create-hint">
+                A personal token that may read this repository only. It is shown once and written into the snippets.
+              </span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="credentials" value="paste" [checked]="mode() === 'paste'" (change)="setMode('paste')" />
+            <span class="choice-text">
+              <span i18n="@@setup.cred.paste">Use a token I already have</span>
+              <span class="secondary" i18n="@@setup.cred.paste-hint">
+                The value stays in this browser. It is checked here and never sent to the server.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        @if (mode() === 'env') {
+          <p>
+            <a routerLink="/profile/tokens" i18n="@@setup.cred.env-link">Create a token to put into the variable</a>
+          </p>
+        }
+
+        @if (mode() === 'create') {
+          @if (canOfferPublish()) {
+            <label class="check-row">
+              <input type="checkbox" [checked]="withPublish()" (change)="withPublish.set($any($event.target).checked)" />
+              <span i18n="@@setup.cred.with-publish">The token may also publish to the deployment target of this repository</span>
+            </label>
+          }
+          @if (createFailure(); as f) {
+            <trove-error-notice [error]="f" />
+          }
+          @if (createdToken(); as value) {
+            <div class="once" role="status">
+              <p>
+                <strong i18n="@@setup.token.once">This token is shown once.</strong>
+                <span i18n="@@setup.token.once-text">
+                  It is written into the snippets below. Leaving this page discards it; you can create another.
+                </span>
+              </p>
+              <p class="token-line">
+                <code translate="no" class="token-value">{{ value }}</code>
+                <trove-copy-button [value]="value" [label]="copyTokenLabel" />
+              </p>
+            </div>
+          } @else {
+            <p>
+              <button
+                mat-flat-button
+                type="button"
+                [disabled]="creating() || !activeRepository() || !setup()"
+                (click)="createToken()"
+                i18n="@@setup.token.create"
+              >
+                Create token
+              </button>
+            </p>
+          }
+        }
+
+        @if (mode() === 'paste') {
+          <div class="field">
+            <label class="field-label" for="setup-token" i18n="@@setup.paste.label">Token</label>
+            <div class="secret-row">
+              <input
+                id="setup-token"
+                class="text-input"
+                [type]="reveal() ? 'text' : 'password'"
+                autocomplete="off"
+                spellcheck="false"
+                [attr.aria-invalid]="pasteShape() !== null && pasteShape() !== 'ok'"
+                aria-describedby="setup-token-state"
+                [value]="pasted()"
+                (input)="onPaste($any($event.target).value)"
+              />
+              <button
+                mat-button
+                type="button"
+                [attr.aria-pressed]="reveal()"
+                (click)="reveal.set(!reveal())"
+              >
+                @if (reveal()) {
+                  <ng-container i18n="@@setup.paste.hide">Hide</ng-container>
+                } @else {
+                  <ng-container i18n="@@setup.paste.show">Show</ng-container>
+                }
+              </button>
+            </div>
+            <div id="setup-token-state" aria-live="polite">
+              @switch (pasteShape()) {
+                @case ('ok') {
+                  <p class="hint" i18n="@@setup.paste.ok">The value looks like a trove token. It is written into the snippets.</p>
+                }
+                @case ('prefix') {
+                  <p class="field-error" i18n="@@setup.paste.prefix">A trove token starts with trv_pat_, trv_sat_ or trv_cit_.</p>
+                }
+                @case ('length') {
+                  <p class="field-error" i18n="@@setup.paste.length">A trove token has 57 characters. The value is shorter or longer, maybe cut off.</p>
+                }
+                @case ('alphabet') {
+                  <p class="field-error" i18n="@@setup.paste.alphabet">A trove token holds only letters and digits after its prefix.</p>
+                }
+                @case ('checksum') {
+                  <p class="field-error" i18n="@@setup.paste.checksum">The checksum does not match. A character is probably wrong or missing.</p>
+                }
+              }
+            </div>
+          </div>
+        }
+      </fieldset>
+    </li>
+  }
+</ol>
+
+@if (setup(); as s) {
+  <section class="result" aria-labelledby="setup-result">
+    <h2 id="setup-result">
+      <ng-container i18n="@@setup.result">Snippets for</ng-container>&ngsp;<span translate="no">{{ s.repository }}</span>
+    </h2>
+    @if (needsToken()) {
+      <p class="banner-warning" role="note">
+        <span class="material-icons inline warn" aria-hidden="true">info</span>
+        <span>
+          <ng-container i18n="@@setup.pending-token">Until a token is set, the snippets show this placeholder where it will go:</ng-container>&ngsp;<code translate="no">{{ placeholder }}</code>
+        </span>
+      </p>
+    }
+    <mat-tab-group animationDuration="0ms">
+      <mat-tab label="Configure" i18n-label="@@setup.tab.configure">
+        <div class="tab">
+          @for (sn of byTab().configure; track sn.id) {
+            <ng-container *ngTemplateOutlet="snippet; context: { $implicit: sn }" />
+          }
+        </div>
+      </mat-tab>
+      <mat-tab label="Install" i18n-label="@@setup.tab.install">
+        <div class="tab">
+          @for (sn of byTab().install; track sn.id) {
+            <ng-container *ngTemplateOutlet="snippet; context: { $implicit: sn }" />
+          }
+        </div>
+      </mat-tab>
+      <mat-tab label="Publish" i18n-label="@@setup.tab.publish">
+        <div class="tab">
+          @if (byTab().publish.length === 0) {
+            @if (isVirtual()) {
+              <p i18n="@@setup.publish.no-target">
+                This virtual repository has no default deployment target, so there is nothing to publish to through
+                it. Publish to one of its local repositories instead.
+              </p>
+              @if (canReadConfig()) {
+                <p>
+                  <a [routerLink]="['/admin/repositories', s.repository]" i18n="@@setup.publish.members">Open the repository to see its members</a>
+                </p>
+              }
+            } @else {
+              <p i18n="@@setup.publish.denied">
+                You cannot publish to this repository: it is read only, or you do not hold the deploy permission on it.
+              </p>
+            }
+          }
+          @for (sn of byTab().publish; track sn.id) {
+            <ng-container *ngTemplateOutlet="snippet; context: { $implicit: sn }" />
+          }
+        </div>
+      </mat-tab>
+    </mat-tab-group>
+  </section>
+}
+
+<ng-template #snippet let-sn>
+  <div class="snippet">
+    @if (explanation(sn.id); as why) {
+      <p class="why">{{ why }}</p>
+    }
+    @if (sn.fileName) {
+      <p class="target">
+        <span i18n="@@setup.target-file">File</span>: <code translate="no">{{ sn.fileName }}</code>
+      </p>
+    }
+    <div class="command">
+      <pre class="code-block" translate="no" tabindex="0">{{ sn.content }}</pre>
+      <div class="snippet-actions">
+        <trove-copy-button [value]="sn.content" [label]="copyLabel" />
+        @if (sn.fileName) {
+          <button mat-button type="button" (click)="download(sn)" i18n="@@setup.download">Download</button>
+        }
+      </div>
+    </div>
+  </div>
+</ng-template>

@@ -1,0 +1,64 @@
+// Not encapsulated: the HTML is bound at run time, so its elements carry no Angular scope
+// attribute, and every rule is scoped by the component's element instead.
+trove-package-readme {
+  display: block;
+
+  .readme-note {
+    margin-block: 0 var(--trove-space-3);
+    padding: var(--trove-space-2) var(--trove-space-3);
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-surface-raised);
+  }
+
+  .readme {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+
+    :is(h1, h2, h3, h4, h5, h6) {
+      margin-block: var(--trove-space-4) var(--trove-space-2);
+      line-height: 1.25;
+    }
+
+    :is(pre, code, kbd, samp) {
+      font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 0.875em;
+    }
+
+    pre {
+      overflow-x: auto;
+      padding: var(--trove-space-3);
+      border: 1px solid var(--trove-border);
+      border-radius: var(--trove-radius-m);
+      background: var(--trove-surface-raised);
+    }
+
+    :not(pre) > code {
+      padding: 0 var(--trove-space-1);
+      border-radius: var(--mat-sys-corner-extra-small);
+      background: var(--trove-surface-raised);
+    }
+
+    blockquote {
+      margin-inline: 0;
+      padding-inline-start: var(--trove-space-3);
+      border-inline-start: 3px solid var(--trove-border);
+    }
+
+    img {
+      max-inline-size: 100%;
+      height: auto;
+    }
+
+    table {
+      display: block;
+      overflow-x: auto;
+      border-collapse: collapse;
+    }
+
+    :is(th, td) {
+      padding: var(--trove-space-1) var(--trove-space-3);
+      border: 1px solid var(--trove-border);
+    }
+  }
+}

@@ -116,6 +116,14 @@ func (a *Access) Readable(ctx context.Context, keys []string) ([]string, error) 
 	return a.D.ReadableOn(ctx, a.Index(), a.Subject, keys)
 }
 
+// ReadableAnonymously filters repository keys to those an anonymous caller on the
+// same endpoint may read, on the request's index: whether a repository needs a
+// credential (R-API-030). The endpoint ceiling and the runtime switch of
+// anonymous access apply as for any anonymous request.
+func (a *Access) ReadableAnonymously(ctx context.Context, keys []string) ([]string, error) {
+	return a.D.ReadableOn(ctx, a.Index(), authz.Subject{Anonymous: true, Endpoint: a.Subject.Endpoint}, keys)
+}
+
 // Exposed filters repository keys to those the subject's endpoint exposes.
 func (a *Access) Exposed(keys []string) []string {
 	return a.D.ExposedOn(a.Index(), a.Subject, keys)

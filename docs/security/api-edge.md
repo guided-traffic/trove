@@ -94,3 +94,14 @@ Live today when `api.cors.allowed_origins` is not empty, for every allowed origi
 no data, and it opens nothing else; what is not bounded is the number of preflights a client sends, which only the in-flight limit of
 the listener stops. What makes it real: an allowed origin, or a script that sets the `Origin` header, sending preflights in a loop. Nothing in the
 rate-limit classes counts them; an operator who needs a bound sets one at the ingress.
+
+### H-298 · A README is rendered on every request without a tag and a rendering that runs over its time limit is not stopped
+
+Live today on `GET /api/v1/packages/{packageId}/versions/{version}/readme` for every caller who may read a version with a README.
+The renderer (`internal/packages/readme`) bounds the source (`ui.readme.max_source_bytes`, 512 KiB by default), the HTML (1 MiB) and
+the time (two seconds), but the Markdown and HTML libraries cannot be cancelled: a rendering that exceeds the time is abandoned and its
+goroutine runs to the end of its input, and nothing is cached, so a client that sends no `If-None-Match` pays a rendering each time.
+What makes it real: a publisher who may write a README that is slow to render (deeply nested constructs up to the source limit) and a
+reader, or a loop of readers, who request it without a tag; the work is bounded per request by the input size and not by the number of
+requests, which only the rate-limit classes of R-API-016 count. The cache table of R-API-029 (Q-API-167) would bound the work to one rendering
+per source and policy.

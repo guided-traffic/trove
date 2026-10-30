@@ -1026,6 +1026,11 @@ type Format interface {
 	// Exposure filters documents per endpoint; nil makes the format unservable on an endpoint with
 	// exposure rules (endpoints.md R-EP-018). It is the one source of the format's exposure facts.
 	Exposure() ExposureAdapter
+	// View is nil for a format without package screens (api-and-ui.md R-API-029). The adapter orders the
+	// format's versions, says what a pre-release is, and reads, through the format's data port, what the
+	// generic rows do not hold: description, keywords, licenses, README and format-specific metadata
+	// (Q-API-166). It runs no SQL; Validate refuses a view without package names.
+	View() ViewAdapter
 
 	// SetupTemplates returns the client setup templates (text/template) used by api-and-ui.md R-API-033.
 	SetupTemplates() []SetupTemplate

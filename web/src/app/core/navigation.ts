@@ -38,7 +38,12 @@ export const NAV_AREAS: readonly NavArea[] = [
   {
     id: 'content',
     label: $localize`:@@nav.group.content:Packages and files`,
-    entries: [{ kind: 'item', route: '/browse', icon: 'folder_open', label: $localize`:@@nav.browse:Browse` }],
+    entries: [
+      // >>> M2 ui-packages
+      { kind: 'item', route: '/packages', icon: 'category', label: $localize`:@@nav.packages:Packages` },
+      // <<< M2 ui-packages
+      { kind: 'item', route: '/browse', icon: 'folder_open', label: $localize`:@@nav.browse:Browse` },
+    ],
   },
   {
     id: 'admin',

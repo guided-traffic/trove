@@ -121,6 +121,34 @@ the declarations are in `api/openapi.yaml` (Q-AUTH-43).
   `TestR_AUTH_029_ARevocationAndADerivationAtTheSameTime`, `TestR_AUTH_027_ARevokedTokenStillCachedMintsNothing`). Revoking all tokens of a
   principal locks the principal row a create locks.
 
+## Tokens in the browser: the client setup page
+
+The page [client-setup.ts](../../web/src/app/features/setup/client-setup.ts) (R-UI-016, Q-UI-74) turns the placeholder `{{token}}` of a
+setup answer into a token, which is the one place where the UI handles a token value it did not just receive from the creating call.
+
+- **The server never fills a token.** The setup answer carries `{{token}}`, `${<ui.client_setup.token_env_var>}` or no authentication line, by the request's
+  `credentials` (R-API-030). The templates have no field a token could come from (`formats.SetupData`), a `package`, `version` or `scope` in the
+  shape of a token is refused with `400` instead of being echoed, and every snippet is checked for `trv_(pat|sat|cit)_` before it is sent
+  ([packages_api.go](../../internal/api/v1/packages_api.go); `TestR_API_030_ClientSetupNeverHoldsAToken`, 144 answers over every client, mode and
+  caller). The addresses are built on the configured base URL, never on the `Host` of the request: without a base URL the operation answers `503`. The browser replaces the placeholder in the component (`fillToken`, a literal replacement) and nowhere else.
+- **One owner, no copy.** A created or pasted value is a private signal of the page component. It is in no service, no URL and no
+  `localStorage`, `sessionStorage` or IndexedDB (`client-setup.spec.ts` scans both storage areas); choosing another repository or another
+  way of signing in, and leaving the route, set it to `null`.
+- **A pasted value is never sent.** It is checked in the browser for prefix, length, alphabet and the CRC-32 of the token format
+  ([token-shape.ts](../../web/src/app/features/setup/token-shape.ts), the test vector of R-AUTH-022); a value that fails the check does not
+  reach the snippets and no request is made for it. The check is no security measure: it catches a mistyped paste.
+- **A created token is scoped and short-lived.** The page asks for a personal token with `read` on the chosen repository, optionally
+  `read` and `deploy` on the setup answer's `publishTarget`, and the lifetime `ui.client_setup.token_ttl` (the answer's `tokenTtlSeconds`),
+  through the ordinary token operation: the recent-authentication rule above applies, and the value is shown once.
+- **A file with a token leaves through a Blob URL** that is revoked right after the click.
+- **The install command panel (R-UI-009) asks for `credentials=none`**, so a command copied from a package page cannot contain a token.
+- **README HTML is bound, not trusted.** The README component ([package-readme.ts](../../web/src/app/features/packages/package-readme.ts),
+  Q-UI-71) binds server HTML with `[innerHTML]` under Angular's sanitizer and the document's Trusted Types policy, removes a link target that
+  is not a fragment, `http`, `https` or `mailto`, removes an image source that is not `https` or a path of this origin, and puts
+  `rel="nofollow noopener noreferrer"` on every link that leaves trove (`package-readme.spec.ts` carries the vectors). The server-side sanitizer
+  of R-UI-008 is the first layer ([render.go](../../internal/packages/readme/render.go): goldmark, bluemonday with the allowlist, a pass for links, images,
+  checkboxes and heading anchors; `TestR_UI_008_XSSCorpusRendersNothingExecutable`); this page describes the browser's part.
+
 ## What this does not cover
 
 ### H-82 · Rejected credentials of one address are counted together
@@ -170,3 +198,10 @@ address of a company's egress fills the budget, and the sign-ins from that addre
 no token and gains nothing but the denial. A trusted-proxy list with the real client address, and `starts_per_address` sized for the
 largest office, are the mitigations; a separate budget for the revocation would remove the coupling.
 
+### H-297 · A token on the setup page is readable by anything that runs in the page until the page is left
+
+A created token is shown in the page (once, with a copy button) and a pasted one sits in a password field; both are in the document
+until the user leaves the route or changes the repository. The protection is the document's policy (no inline script, Trusted Types,
+`script-src 'self'`, [internal/webui/csp.go](../../internal/webui/csp.go)) and the component-local handling above. A browser extension,
+a script that the policy lets through, and a shoulder surfer are outside it. Creating the token with the narrow scope and the short
+lifetime of the page limits what such a reader gets.

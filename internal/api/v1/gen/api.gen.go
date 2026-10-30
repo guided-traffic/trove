@@ -115,6 +115,78 @@ func (e ChildKind) Valid() bool {
 	}
 }
 
+// Defines values for ClientSetupCredentials.
+const (
+	ClientSetupCredentialsEnv         ClientSetupCredentials = "env"
+	ClientSetupCredentialsNone        ClientSetupCredentials = "none"
+	ClientSetupCredentialsPlaceholder ClientSetupCredentials = "placeholder"
+)
+
+// Valid indicates whether the value is a known member of the ClientSetupCredentials enum.
+func (e ClientSetupCredentials) Valid() bool {
+	switch e {
+	case ClientSetupCredentialsEnv:
+		return true
+	case ClientSetupCredentialsNone:
+		return true
+	case ClientSetupCredentialsPlaceholder:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientSnippetLanguage.
+const (
+	Ini   ClientSnippetLanguage = "ini"
+	Json  ClientSnippetLanguage = "json"
+	Shell ClientSnippetLanguage = "shell"
+	Text  ClientSnippetLanguage = "text"
+	Xml   ClientSnippetLanguage = "xml"
+	Yaml  ClientSnippetLanguage = "yaml"
+)
+
+// Valid indicates whether the value is a known member of the ClientSnippetLanguage enum.
+func (e ClientSnippetLanguage) Valid() bool {
+	switch e {
+	case Ini:
+		return true
+	case Json:
+		return true
+	case Shell:
+		return true
+	case Text:
+		return true
+	case Xml:
+		return true
+	case Yaml:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientSnippetTab.
+const (
+	Configure ClientSnippetTab = "configure"
+	Install   ClientSnippetTab = "install"
+	Publish   ClientSnippetTab = "publish"
+)
+
+// Valid indicates whether the value is a known member of the ClientSnippetTab enum.
+func (e ClientSnippetTab) Valid() bool {
+	switch e {
+	case Configure:
+		return true
+	case Install:
+		return true
+	case Publish:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EncryptionKeyCanary.
 const (
 	EncryptionKeyCanaryAbsent EncryptionKeyCanary = "absent"
@@ -595,6 +667,42 @@ func (e PackageOwnersState) Valid() bool {
 	case PackageOwnersStateReleased:
 		return true
 	case PackageOwnersStateUnclaimed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageReadmeContentType.
+const (
+	Textmarkdown PackageReadmeContentType = "text/markdown"
+)
+
+// Valid indicates whether the value is a known member of the PackageReadmeContentType enum.
+func (e PackageReadmeContentType) Valid() bool {
+	switch e {
+	case Textmarkdown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageVersionRepositoryClass.
+const (
+	PackageVersionRepositoryClassLocal   PackageVersionRepositoryClass = "local"
+	PackageVersionRepositoryClassRemote  PackageVersionRepositoryClass = "remote"
+	PackageVersionRepositoryClassVirtual PackageVersionRepositoryClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the PackageVersionRepositoryClass enum.
+func (e PackageVersionRepositoryClass) Valid() bool {
+	switch e {
+	case PackageVersionRepositoryClassLocal:
+		return true
+	case PackageVersionRepositoryClassRemote:
+		return true
+	case PackageVersionRepositoryClassVirtual:
 		return true
 	default:
 		return false
@@ -1594,6 +1702,60 @@ func (e ListGroupsParamsSort) Valid() bool {
 	}
 }
 
+// Defines values for ListPackagesParamsSort.
+const (
+	ListPackagesParamsSortCreatedAt      ListPackagesParamsSort = "createdAt"
+	ListPackagesParamsSortMinusCreatedAt ListPackagesParamsSort = "-createdAt"
+	ListPackagesParamsSortMinusName      ListPackagesParamsSort = "-name"
+	ListPackagesParamsSortMinusUpdatedAt ListPackagesParamsSort = "-updatedAt"
+	ListPackagesParamsSortName           ListPackagesParamsSort = "name"
+	ListPackagesParamsSortUpdatedAt      ListPackagesParamsSort = "updatedAt"
+)
+
+// Valid indicates whether the value is a known member of the ListPackagesParamsSort enum.
+func (e ListPackagesParamsSort) Valid() bool {
+	switch e {
+	case ListPackagesParamsSortCreatedAt:
+		return true
+	case ListPackagesParamsSortMinusCreatedAt:
+		return true
+	case ListPackagesParamsSortMinusName:
+		return true
+	case ListPackagesParamsSortMinusUpdatedAt:
+		return true
+	case ListPackagesParamsSortName:
+		return true
+	case ListPackagesParamsSortUpdatedAt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPackageVersionsParamsSort.
+const (
+	ListPackageVersionsParamsSortMinusPublishedAt ListPackageVersionsParamsSort = "-publishedAt"
+	ListPackageVersionsParamsSortMinusVersion     ListPackageVersionsParamsSort = "-version"
+	ListPackageVersionsParamsSortPublishedAt      ListPackageVersionsParamsSort = "publishedAt"
+	ListPackageVersionsParamsSortVersion          ListPackageVersionsParamsSort = "version"
+)
+
+// Valid indicates whether the value is a known member of the ListPackageVersionsParamsSort enum.
+func (e ListPackageVersionsParamsSort) Valid() bool {
+	switch e {
+	case ListPackageVersionsParamsSortMinusPublishedAt:
+		return true
+	case ListPackageVersionsParamsSortMinusVersion:
+		return true
+	case ListPackageVersionsParamsSortPublishedAt:
+		return true
+	case ListPackageVersionsParamsSortVersion:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListPermissionPoliciesParamsSort.
 const (
 	ListPermissionPoliciesParamsSortMinusName ListPermissionPoliciesParamsSort = "-name"
@@ -1678,6 +1840,27 @@ func (e ListCacheEntriesParamsKind) Valid() bool {
 	case ListCacheEntriesParamsKindArtifact:
 		return true
 	case ListCacheEntriesParamsKindMetadata:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetClientSetupParamsCredentials.
+const (
+	GetClientSetupParamsCredentialsEnv         GetClientSetupParamsCredentials = "env"
+	GetClientSetupParamsCredentialsNone        GetClientSetupParamsCredentials = "none"
+	GetClientSetupParamsCredentialsPlaceholder GetClientSetupParamsCredentials = "placeholder"
+)
+
+// Valid indicates whether the value is a known member of the GetClientSetupParamsCredentials enum.
+func (e GetClientSetupParamsCredentials) Valid() bool {
+	switch e {
+	case GetClientSetupParamsCredentialsEnv:
+		return true
+	case GetClientSetupParamsCredentialsNone:
+		return true
+	case GetClientSetupParamsCredentialsPlaceholder:
 		return true
 	default:
 		return false
@@ -2037,6 +2220,51 @@ type ChildrenPage struct {
 	NextCursor *string `json:"nextCursor"`
 }
 
+// ClientSetup defines model for ClientSetup.
+type ClientSetup struct {
+	Client      string                 `json:"client"`
+	Credentials ClientSetupCredentials `json:"credentials"`
+
+	// EndpointPath `registryUrl` without its scheme (`//host/path/`), the key npm matches credentials by.
+	EndpointPath string `json:"endpointPath"`
+	Format       string `json:"format"`
+
+	// PublishTarget The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
+	PublishTarget *string `json:"publishTarget"`
+
+	// RegistryUrl The package-manager endpoint URL of INV-6, absolute, with its trailing slash.
+	RegistryUrl string          `json:"registryUrl"`
+	Repository  string          `json:"repository"`
+	Snippets    []ClientSnippet `json:"snippets"`
+
+	// TokenTtlSeconds The lifetime the setup dialog asks for when it creates a token (`ui.client_setup.token_ttl`, bounded by the maximum of R-AUTH-040).
+	TokenTtlSeconds int64 `json:"tokenTtlSeconds"`
+
+	// Username The caller's name; null for an anonymous caller.
+	Username *string `json:"username"`
+}
+
+// ClientSetupCredentials defines model for ClientSetup.Credentials.
+type ClientSetupCredentials string
+
+// ClientSnippet One snippet. The `id` is stable and names the explanation the UI shows
+// (`<client>.<tab>.<name>`, for example `npm.configure.npmrc`); the text is the UI's.
+type ClientSnippet struct {
+	Content string `json:"content"`
+
+	// FileName The file the snippet belongs in (`.npmrc`, `.yarnrc.yml`); null for a command.
+	FileName *string               `json:"fileName"`
+	Id       string                `json:"id"`
+	Language ClientSnippetLanguage `json:"language"`
+	Tab      ClientSnippetTab      `json:"tab"`
+}
+
+// ClientSnippetLanguage defines model for ClientSnippet.Language.
+type ClientSnippetLanguage string
+
+// ClientSnippetTab defines model for ClientSnippet.Tab.
+type ClientSnippetTab string
+
 // CreateTokenRequest defines model for CreateTokenRequest.
 type CreateTokenRequest struct {
 	Description string     `json:"description"`
@@ -2373,6 +2601,13 @@ type FormatDescriptorPatternSubject string
 
 // FormatList defines model for FormatList.
 type FormatList struct {
+	// BaseUrl The base URL of the endpoint the request arrived on (`server.base_url`, or the base URL of the
+	// endpoint), an origin without a trailing slash; the address a client of a repository is
+	// configured with is this origin plus a format's `protocolBasePath`. `null` when none is
+	// configured: the address is never taken from the `Host` of the request. It is no secret and is
+	// readable by every caller that may call this operation, so a screen needs no other permission
+	// to show a client address (Q-UI-75).
+	BaseUrl *string            `json:"baseUrl"`
 	Formats []FormatDescriptor `json:"formats"`
 }
 
@@ -2672,6 +2907,21 @@ type OwnedPackageList struct {
 	NextCursor *string        `json:"nextCursor"`
 }
 
+// PackageFile defines model for PackageFile.
+type PackageFile struct {
+	// DownloadUrl Absolute, built on the public base URL.
+	DownloadUrl string `json:"downloadUrl"`
+	Path        string `json:"path"`
+	Sha256      string `json:"sha256"`
+	SizeBytes   int64  `json:"sizeBytes"`
+}
+
+// PackageList defines model for PackageList.
+type PackageList struct {
+	Items      []PackageSummary `json:"items"`
+	NextCursor *string          `json:"nextCursor"`
+}
+
 // PackageOwner One owner of a name.
 type PackageOwner struct {
 	AddedAt time.Time `json:"addedAt"`
@@ -2711,6 +2961,115 @@ type PackageOwners struct {
 
 // PackageOwnersState defines model for PackageOwners.State.
 type PackageOwnersState string
+
+// PackageReadme defines model for PackageReadme.
+type PackageReadme struct {
+	// ContentType The type of the source; `html` is always sanitized HTML.
+	ContentType PackageReadmeContentType `json:"contentType"`
+
+	// ExternalImagesBlocked The number of external images replaced by links.
+	ExternalImagesBlocked int32  `json:"externalImagesBlocked"`
+	Html                  string `json:"html"`
+
+	// Truncated The source or the rendered HTML exceeded a limit of R-UI-008.
+	Truncated bool `json:"truncated"`
+}
+
+// PackageReadmeContentType The type of the source; `html` is always sanitized HTML.
+type PackageReadmeContentType string
+
+// PackageSummary A package as the caller sees it (R-API-029): every member is computed from the versions the
+// caller may read. `latestVersion` is the highest visible stable version, or the highest visible
+// pre-release while no stable version is visible.
+type PackageSummary struct {
+	// CreatedAt When the first visible version was published.
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Description The description of the latest version.
+	Description *string `json:"description"`
+
+	// DownloadCount The downloads of the visible versions, summed.
+	DownloadCount int64 `json:"downloadCount"`
+
+	// Format The names of `GET /api/v1/formats`.
+	Format string `json:"format"`
+
+	// Id Server-generated and opaque.
+	Id            string   `json:"id"`
+	Keywords      []string `json:"keywords"`
+	LatestVersion string   `json:"latestVersion"`
+
+	// Name The name as the format stores it; NuGet IDs in their original casing.
+	Name string `json:"name"`
+
+	// Repositories The keys of the repositories that hold a visible version.
+	Repositories []string `json:"repositories"`
+
+	// UpdatedAt When the latest visible version was published.
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// VersionCount The number of visible versions.
+	VersionCount int64 `json:"versionCount"`
+}
+
+// PackageVersion defines model for PackageVersion.
+type PackageVersion struct {
+	DownloadCount int64         `json:"downloadCount"`
+	Files         []PackageFile `json:"files"`
+	Format        string        `json:"format"`
+
+	// HasReadme Whether `readme` answers 200; the UI uses it to choose the default tab without a probing request.
+	HasReadme bool `json:"hasReadme"`
+
+	// Licenses SPDX identifiers or the license expression the package declares; empty when it declares none.
+	Licenses []string `json:"licenses"`
+
+	// Metadata Format-specific, owned by the format page. For npm the members the UI reads are
+	// `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
+	// `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
+	// and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
+	// `deprecated` (string or null). A member that does not apply is absent.
+	Metadata     map[string]interface{}     `json:"metadata"`
+	Name         string                     `json:"name"`
+	PackageId    string                     `json:"packageId"`
+	Prerelease   bool                       `json:"prerelease"`
+	PublishedAt  time.Time                  `json:"publishedAt"`
+	Repositories []PackageVersionRepository `json:"repositories"`
+	SizeBytes    int64                      `json:"sizeBytes"`
+	Version      string                     `json:"version"`
+}
+
+// PackageVersionList defines model for PackageVersionList.
+type PackageVersionList struct {
+	Items      []PackageVersionSummary `json:"items"`
+	NextCursor *string                 `json:"nextCursor"`
+}
+
+// PackageVersionRepository defines model for PackageVersionRepository.
+type PackageVersionRepository struct {
+	Class       PackageVersionRepositoryClass `json:"class"`
+	Key         string                        `json:"key"`
+	PublishedAt time.Time                     `json:"publishedAt"`
+}
+
+// PackageVersionRepositoryClass defines model for PackageVersionRepository.Class.
+type PackageVersionRepositoryClass string
+
+// PackageVersionSummary defines model for PackageVersionSummary.
+type PackageVersionSummary struct {
+	DownloadCount int64 `json:"downloadCount"`
+
+	// Prerelease By the format's version rules.
+	Prerelease  bool      `json:"prerelease"`
+	PublishedAt time.Time `json:"publishedAt"`
+
+	// Repositories The keys of the repositories that hold this version and that the caller may read.
+	Repositories []string `json:"repositories"`
+
+	// SizeBytes The size of the version's files, summed.
+	SizeBytes int64  `json:"sizeBytes"`
+	Version   string `json:"version"`
+}
 
 // PatternLists The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted.
 type PatternLists struct {
@@ -3894,6 +4253,12 @@ type JobId = openapi_types.UUID
 // Limit defines model for Limit.
 type Limit = int
 
+// PackageId defines model for PackageId.
+type PackageId = string
+
+// PackageVersionPath defines model for PackageVersionPath.
+type PackageVersionPath = string
+
 // BadRequest RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type BadRequest = Problem
 
@@ -4133,6 +4498,81 @@ type ListOwnedPackagesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListPackagesParams defines parameters for ListPackages.
+type ListPackagesParams struct {
+	// Format Repeat the parameter for several formats (`npm`, `nuget`, …).
+	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
+
+	// Repository Repeat the parameter for several repository keys.
+	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Q Case-insensitive substring of the name or the description.
+	Q          *string `form:"q,omitempty" json:"q,omitempty"`
+	NamePrefix *string `form:"namePrefix,omitempty" json:"namePrefix,omitempty"`
+	Keyword    *string `form:"keyword,omitempty" json:"keyword,omitempty"`
+
+	// CreatedFrom Inclusive lower bound of the creation time of the first visible version.
+	CreatedFrom *time.Time `form:"createdFrom,omitempty" json:"createdFrom,omitempty"`
+
+	// CreatedTo Exclusive upper bound of the creation time of the first visible version.
+	CreatedTo *time.Time              `form:"createdTo,omitempty" json:"createdTo,omitempty"`
+	Sort      *ListPackagesParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListPackagesParamsSort defines parameters for ListPackages.
+type ListPackagesParamsSort string
+
+// LookupPackageParams defines parameters for LookupPackage.
+type LookupPackageParams struct {
+	Format string `form:"format" json:"format"`
+	Name   string `form:"name" json:"name"`
+
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// GetPackageParams defines parameters for GetPackage.
+type GetPackageParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// ListPackageVersionsParams defines parameters for ListPackageVersions.
+type ListPackageVersionsParams struct {
+	Prerelease *bool `form:"prerelease,omitempty" json:"prerelease,omitempty"`
+
+	// Repository Repeat the parameter for several repository keys.
+	Repository *[]string                      `form:"repository,omitempty" json:"repository,omitempty"`
+	Sort       *ListPackageVersionsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListPackageVersionsParamsSort defines parameters for ListPackageVersions.
+type ListPackageVersionsParamsSort string
+
+// GetPackageVersionParams defines parameters for GetPackageVersion.
+type GetPackageVersionParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// GetPackageVersionReadmeParams defines parameters for GetPackageVersionReadme.
+type GetPackageVersionReadmeParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
 // ListPermissionPoliciesParams defines parameters for ListPermissionPolicies.
 type ListPermissionPoliciesParams struct {
 	// Principal A principal reference.
@@ -4293,6 +4733,25 @@ type PutRepositoryClaimsParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
 	IfMatch IfMatch `json:"If-Match"`
 }
+
+// GetClientSetupParams defines parameters for GetClientSetup.
+type GetClientSetupParams struct {
+	// Client The client the snippets are for; the values a format offers are its own (`npm`, `pnpm`, `yarn`, `yarn-classic` for npm). An unknown value answers `400 malformed_request`.
+	Client      string                           `form:"client" json:"client"`
+	Credentials *GetClientSetupParamsCredentials `form:"credentials,omitempty" json:"credentials,omitempty"`
+
+	// Package A package name; the install snippets are specific to it.
+	Package *string `form:"package,omitempty" json:"package,omitempty"`
+
+	// Version A version of `package`; ignored without `package`.
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
+
+	// Scope An npm scope (`@team-a`); adds the scoped variant of the registry configuration.
+	Scope *string `form:"scope,omitempty" json:"scope,omitempty"`
+}
+
+// GetClientSetupParamsCredentials defines parameters for GetClientSetup.
+type GetClientSetupParamsCredentials string
 
 // DeleteItemParams defines parameters for DeleteItem.
 type DeleteItemParams struct {
@@ -4849,6 +5308,24 @@ type ServerInterface interface {
 	// ListOwnedPackages List the names an identity owns
 	// (GET /api/v1/package-owners)
 	ListOwnedPackages(w http.ResponseWriter, r *http.Request, params ListOwnedPackagesParams)
+	// ListPackages List packages
+	// (GET /api/v1/packages)
+	ListPackages(w http.ResponseWriter, r *http.Request, params ListPackagesParams)
+	// LookupPackage Resolve a package name
+	// (GET /api/v1/packages/lookup)
+	LookupPackage(w http.ResponseWriter, r *http.Request, params LookupPackageParams)
+	// GetPackage Read a package
+	// (GET /api/v1/packages/{packageId})
+	GetPackage(w http.ResponseWriter, r *http.Request, packageId PackageId, params GetPackageParams)
+	// ListPackageVersions List the versions of a package
+	// (GET /api/v1/packages/{packageId}/versions)
+	ListPackageVersions(w http.ResponseWriter, r *http.Request, packageId PackageId, params ListPackageVersionsParams)
+	// GetPackageVersion Read a version of a package
+	// (GET /api/v1/packages/{packageId}/versions/{version})
+	GetPackageVersion(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, params GetPackageVersionParams)
+	// GetPackageVersionReadme Read the rendered README of a version
+	// (GET /api/v1/packages/{packageId}/versions/{version}/readme)
+	GetPackageVersionReadme(w http.ResponseWriter, r *http.Request, packageId PackageId, version PackageVersionPath, params GetPackageVersionReadmeParams)
 	// ListPermissionPolicies List permission policies
 	// (GET /api/v1/permission-policies)
 	ListPermissionPolicies(w http.ResponseWriter, r *http.Request, params ListPermissionPoliciesParams)
@@ -4906,6 +5383,9 @@ type ServerInterface interface {
 	// PutRepositoryClaims Replace the manual namespace claims of a repository
 	// (PUT /api/v1/repositories/{repoKey}/claims)
 	PutRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, params PutRepositoryClaimsParams)
+	// GetClientSetup Client setup snippets of a repository
+	// (GET /api/v1/repositories/{repoKey}/client-setup)
+	GetClientSetup(w http.ResponseWriter, r *http.Request, repoKey string, params GetClientSetupParams)
 	// DeleteItem Delete a file or folder
 	// (DELETE /api/v1/repositories/{repoKey}/items)
 	DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params DeleteItemParams)
@@ -6498,6 +6978,485 @@ func (siw *ServerInterfaceWrapper) ListOwnedPackages(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListPackages operation middleware
+func (siw *ServerInterfaceWrapper) ListPackages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPackagesParams
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "namePrefix" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "namePrefix", r.URL.Query(), &params.NamePrefix, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "namePrefix"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "namePrefix", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "keyword" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "keyword", r.URL.Query(), &params.Keyword, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "keyword"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyword", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "createdFrom" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "createdFrom", r.URL.Query(), &params.CreatedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "createdFrom"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "createdFrom", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "createdTo" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "createdTo", r.URL.Query(), &params.CreatedTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "createdTo"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "createdTo", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPackages(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LookupPackage operation middleware
+func (siw *ServerInterfaceWrapper) LookupPackage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LookupPackageParams
+
+	// ------------- Required query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LookupPackage(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackage operation middleware
+func (siw *ServerInterfaceWrapper) GetPackage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackage(w, r, packageId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPackageVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListPackageVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPackageVersionsParams
+
+	// ------------- Optional query parameter "prerelease" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "prerelease", r.URL.Query(), &params.Prerelease, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "prerelease"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "prerelease", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPackageVersions(w, r, packageId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVersion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version PackageVersionPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageVersionParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVersion(w, r, packageId, version, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageVersionReadme operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageVersionReadme(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId PackageId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version PackageVersionPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPackageVersionReadmeParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageVersionReadme(w, r, packageId, version, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPermissionPolicies operation middleware
 func (siw *ServerInterfaceWrapper) ListPermissionPolicies(w http.ResponseWriter, r *http.Request) {
 
@@ -7587,6 +8546,100 @@ func (siw *ServerInterfaceWrapper) PutRepositoryClaims(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutRepositoryClaims(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetClientSetup operation middleware
+func (siw *ServerInterfaceWrapper) GetClientSetup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetClientSetupParams
+
+	// ------------- Required query parameter "client" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "credentials" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "credentials", r.URL.Query(), &params.Credentials, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "credentials"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "credentials", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "package" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "scope" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope", r.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetClientSetup(w, r, repoKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10052,6 +11105,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.PatchExposureRule)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules/{name}", wrapper.ReplaceExposureRule)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/check-exposure", wrapper.CheckExposure)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages", wrapper.ListPackages)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/lookup", wrapper.LookupPackage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}", wrapper.GetPackage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions", wrapper.ListPackageVersions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}", wrapper.GetPackageVersion)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/readme", wrapper.GetPackageVersionReadme)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/client-setup", wrapper.GetClientSetup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/upstream-test", wrapper.TestRepositoryUpstream)

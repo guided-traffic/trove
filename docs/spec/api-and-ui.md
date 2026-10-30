@@ -1241,7 +1241,7 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients and settings schema (R-ARCH-008, R-ARCH-010) | authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients and settings schema (R-ARCH-008, R-ARCH-010), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
 | GET | `/api/v1/repositories` | List; filters `class`, `format`, `q`, `state`, `project`; `view` | readable repositories; configuration fields only with `repositories:read-config` or `manage` |
 | POST | `/api/v1/repositories` | Create | `admin` or `repository-admin` role; project administrators per R-AUTHZ-026 |
 | GET | `/api/v1/repositories/{key}` | Read; full configuration for `manage` and `repositories:read-config` | `read` |
@@ -1432,10 +1432,10 @@ remain as their owners define them.)
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/packages` | Packages; filters `format`, `repository`, `q` (name and description), `namePrefix`, `keyword`, `createdFrom` / `createdTo` (first version); `sort` `name`, `-updatedAt` | visible versions (below); anonymous where allowed |
+| GET | `/api/v1/packages` | Packages; filters `format`, `repository` (both repeatable), `q` (name and description), `namePrefix`, `keyword`, `createdFrom` / `createdTo` (first visible version); `sort` `name`, `createdAt`, `updatedAt` and their descending forms (default `name`) | visible versions (below); anonymous where allowed |
 | GET | `/api/v1/packages/lookup?format=npm&name=@team-a/ui` | Resolve a name to the package | as list |
 | GET | `/api/v1/packages/{packageId}` | Package summary | as list |
-| GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt`, `-version` | as list |
+| GET | `/api/v1/packages/{packageId}/versions` | Versions; filters `prerelease`, `repository`; `sort` `-publishedAt` (default), `publishedAt`, `-version`, `version` (the format's version precedence) | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}` | Version details | as list |
 | GET | `/api/v1/packages/{packageId}/versions/{version}/readme` | Sanitized README HTML | as list |
 
@@ -1448,11 +1448,46 @@ remain as their owners define them.)
   leaks neither its number nor its existence. The filter runs in SQL.
 - A virtual repository in the `repository` filter expands to its members. Remote repositories
   contribute only cached versions; this endpoint never queries an upstream.
-- Version details contain `metadata` (a format-specific object whose schema the format page owns),
-  `repositories` (`[{"key", "class", "publishedAt"}]`), `files`
-  (`[{"path", "sizeBytes", "sha256", "downloadUrl"}]`) and `downloadCount`.
+- Version details contain `packageId`, `format`, `name`, `version`, `prerelease`, `publishedAt`, `licenses`
+  (declared SPDX identifiers or expression, `[]` when none), `sizeBytes`, `downloadCount`, `hasReadme` (whether
+  the `readme` answer is 200, so the UI chooses its default tab without a probing request), `metadata` (a
+  format-specific object whose schema the format page owns), `repositories`
+  (`[{"key", "class", "publishedAt"}]`) and `files` (`[{"path", "sizeBytes", "sha256", "downloadUrl"}]`).
+  The members of npm's `metadata` that the UI reads are `distTags`, `dependencies`, `devDependencies`,
+  `peerDependencies`, `optionalDependencies`, `engines` (name to string), `authors`, `homepage`,
+  `repositoryUrl`, `bugsUrl` and `deprecated`; a member that does not apply is absent (Q-API-159).
+- The `versions` list entries hold `version`, `prerelease`, `publishedAt`, `sizeBytes`, `repositories`
+  (keys the caller may read) and `downloadCount`. The details and the README answer carry a strong `ETag`
+  and honour `If-None-Match`; the README tag covers the README source, the renderer version and the hash of
+  the image origin list.
+- The visibility filter is decided per repository by the decision point and passed into the statements that
+  count (Q-API-165): a caller who may read only some versions of a package sees a `versionCount`,
+  `downloadCount`, `createdAt`, `updatedAt`, `repositories` and `latestVersion` computed from those, in the list, in
+  the package summary and in the version list. A request that would need the decision point to decide more than
+  200 000 versions one by one answers `400` and asks for a narrower filter; it never answers a partial set. On an
+  endpoint with exposure rules (R-EP-014) the same rule applies to the exposed packages and versions, and a
+  dist-tag in the `metadata` names a version only when the caller may read it. A version of a name that the
+  include and exclude patterns of its repository do not admit (R-REPO-005) is not served, and so is not listed
+  or counted for any caller. A package, a version or a
+  README the caller may not read answers the `404` of one that does not exist, and so does an id that is none.
+- The package `id` is `pkg_` and the lower-case base32 of the format, a NUL and the normalized name (Q-API-164):
+  opaque to clients, no secret and no capability. `lookup` resolves a name by the format's name rule; a name the
+  rule refuses is a `404`. A sort or a filter the document does not list answers `400`; a cursor of another sort
+  or filter answers `400 invalid_cursor` (R-API-010). Package names order bytewise, so the order and the keyset of
+  a cursor do not depend on the locale of the database. Remote repositories contribute their cached versions only,
+  and a version the format withholds (npm: a tombstoned one, R-NPM-047) is not counted anywhere.
+- What the generic rows do not hold - description, keywords, licenses, the README and the `metadata` - comes from
+  the format's view adapter over its data port (Q-API-166); the order of versions and the pre-release rule are the
+  format's (SemVer precedence for npm). `latestVersion` is the highest visible stable version, or the highest visible
+  pre-release while no stable version is visible. The `downloadUrl` of a file is the protocol URL of the repository
+  that holds it where the format has a protocol, else its `/files/` URL, built on the configured base URL of the
+  endpoint and never on the `Host` of the request.
+- The package summary, the version details and the README carry a strong `ETag` (a hash of the representation sent
+  for the details and the summary, so two callers who see different versions never share one) and answer `304`
+  for `If-None-Match`. The README tag is computed from its source, the renderer version and the hash of the
+  origin list before the rendering, so a request that holds it costs no rendering (Q-API-167).
 - README answer: `{"contentType": "text/markdown", "html": "<h1>…</h1>", "truncated": false, "externalImagesBlocked": 2}`;
-  404 when the version has none. Rendering and sanitizing follow R-UI-008; README extraction (npm
+  404 when the version has none, with the answer of a version that is not visible. Rendering and sanitizing follow R-UI-008; README extraction (npm
   `readme` field or `README.md` in the tarball, NuGet `<readme>` file in the package) is owned by
   the format pages.
 - Formats added in P1 use the same endpoints: Maven coordinates as `name=group:artifact`
@@ -1467,11 +1502,18 @@ remain as their owners define them.)
   "latestVersion": "1.4.0",
   "keywords": ["ui", "components"],
   "repositories": ["npm-local", "npm-all"],
-  "updatedAt": "2026-10-20T09:12:44.512Z"
+  "createdAt": "2026-09-02T08:00:12.201Z",
+  "updatedAt": "2026-10-20T09:12:44.512Z",
+  "versionCount": 3,
+  "downloadCount": 1832
 }
 ```
 
-Data model:
+`createdAt` is the publication time of the first visible version, `updatedAt` that of the latest visible one;
+`versionCount` and `downloadCount` count visible versions only (Q-API-159).
+
+Data model (not built: the README is rendered on demand and its tag is computed from the three inputs below, Q-API-167;
+the table is added when a profile asks for it):
 
 ```sql
 CREATE TABLE package_readme_cache (
@@ -1495,21 +1537,43 @@ Acceptance criteria:
 ### R-API-030 · Client setup snippets
 Priority: **MVP** · Covers: UI-023
 
-`GET /api/v1/repositories/{key}/client-setup?client=` returns the snippets of a repository
-(permission `read`; publish snippets only with `deploy` on the target). This page owns the
-endpoint; the format registry of R-ARCH-010 in [architecture.md](architecture.md) feeds it, and
-the format pages contribute the templates. Rules the UI relies on:
+`GET /api/v1/repositories/{repoKey}/client-setup` returns the snippets of a repository (permission `read`;
+publish snippets only with `deploy` on the target). Query: `client` (required; the clients a format offers, for
+npm `npm`, `pnpm`, `yarn` for Yarn 2 and later, `yarn-classic`; an unknown value answers `400 malformed_request`
+naming the clients the format serves, Q-UI-77),
+`credentials` (`placeholder`, the default, `env` or `none`), `package` and `version` (the install snippets name
+them), `scope` (an npm scope; adds the scoped registry variant). The answer holds `repository`, `format`,
+`client`, `credentials`, `registryUrl`, `endpointPath`, `username`, `publishTarget`, `tokenTtlSeconds` and
+`snippets` of `{id, tab, fileName, language, content}`, `tab` being `configure`, `install` or `publish`
+(Q-API-160). This page owns the endpoint; the format registry of R-ARCH-010 in
+[architecture.md](architecture.md) feeds it, and the format pages contribute the templates. Rules the UI relies
+on:
 
 - The server fills the public base URL, the repository key, the package-manager endpoint URL of
   INV-6, the scheme-less endpoint path (npm's per-registry credential key) and the caller's name.
   With `package` and `version` the install snippets are specific to that version.
-- The server never fills a token. Snippets contain the placeholder `{{token}}`, replaced in the
-  browser (R-UI-016), or the environment-variable reference of the client's syntax
-  (`${TROVE_TOKEN}` for npm and Yarn, `%TROVE_TOKEN%` for `nuget.config`) when the request
-  carries `credentials=env`. The variable name is `ui.client_setup.token_env_var`.
+- The server never fills a token. With `credentials=placeholder` snippets contain the placeholder
+  `{{token}}`, replaced in the browser (R-UI-016); with `credentials=env` they hold the
+  environment-variable reference of the client's syntax (`${TROVE_TOKEN}` for npm and Yarn,
+  `%TROVE_TOKEN%` for `nuget.config`); with `credentials=none` they hold no authentication line (an
+  anonymous caller, and the install command panel of R-UI-009). The variable name is
+  `ui.client_setup.token_env_var`. `tokenTtlSeconds` is `ui.client_setup.token_ttl` in seconds, the lifetime
+  the setup dialog asks for when it creates a token.
 - Every snippet has a stable `id`; the human-readable explanation lives in the UI, translated per
-  `id` (R-UI-045).
-- A virtual repository without a default deployment target has no publish snippets.
+  `id` (R-UI-045). The `id` is `<client>.<tab>[.<name>]`; the scoped variant of a configure snippet appends
+  `-scoped` to its name.
+- The credential mode, the package and the quoting are the API's, not the template's (Q-API-168): the template
+  spells the token as `${TROVE_TOKEN}` and the package as `<package>` and receives the functions `shell` and `xml`.
+  A `package`, `version` or `scope` above 256 bytes, with a control character or in the shape of a token is
+  refused with `400`. The operation answers `503` while no base URL is configured for the endpoint, because
+  an address built from the `Host` of the request would end in a file the user copies. The publish snippets and
+  `publishTarget` need `deploy` on the repository that receives the publish: the repository itself when local, the
+  deployment target of a virtual one, none for a remote one. Whether the snippets send the credential before
+  being challenged (`RequiresAuth`) follows whether an anonymous caller on the same endpoint may read the
+  repository; it is off for `credentials=none`. The npm templates contribute the configure and install snippets
+  (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet.
+- A virtual repository without a default deployment target has no publish snippets and `publishTarget: null`;
+  a caller without `deploy` on the target gets no publish snippets either.
 - Values substituted into shell commands (package names, versions, repository keys) MUST be
   single-quoted, with embedded single quotes escaped, unless they match
   `^[A-Za-z0-9@/._+:=-]+$`; values substituted into XML snippets MUST be XML-escaped. Legacy npm
@@ -1521,8 +1585,8 @@ Configuration:
 ```yaml
 ui:
   client_setup:
-    token_env_var: TROVE_TOKEN   # default (proposed)
-    token_ttl: 720h               # default (proposed), expiry of tokens created by the setup dialog
+    token_env_var: TROVE_TOKEN   # default; an environment variable name, at most 64 characters
+    token_ttl: 720h               # default; expiry of tokens created by the setup dialog, at most auth.tokens.pat.max_ttl
 ```
 
 Acceptance criteria:
@@ -2490,16 +2554,18 @@ Priority: **MVP** · Covers: UI-008, ART-048
 - The list uses the shared data table and the shared filter panel of R-UI-002 (Q-UI-68): the
   filters below are the panel's categories, the sort control is a column header, "Load more" is the
   table's.
-- Start page, backed by R-API-029. Filters: format (multi-select), repository (multi-select), text
-  (`q`), keyword, created period (last 7, 30, 90 days, custom). Applied filters appear as removable
-  chips and live in the URL.
-- Table: name with format label (icon plus text, never icon alone), latest version, one-line
-  description, updated (relative, with the absolute time in a `<time datetime>` element), number of
-  repositories. Sort by name or recently updated.
+- Start page, backed by R-API-029. Filters, as the categories of the panel: package type (multi-select),
+  repository (multi-select), name or description (`q`), keyword, created period (last 7, 30, 90 days,
+  custom; a custom end day is included). Applied filters appear as removable chips and live in the URL.
+- Table: type (icon plus text, never icon alone), name, latest version, one-line description, first
+  created, updated (relative, with the absolute time in a `<time datetime>` element and its title),
+  number of versions, number of repositories, downloads (Q-UI-72). Sortable by name, first created and
+  updated; every other column carries a help text instead. Every sort is the server's (R-API-029).
 - Paging with an explicit "Load more" button; no infinite scroll.
 - Tabs: all packages; recently viewed (last 10 opened, browser storage keyed by user); saved views
-  (at most 8, browser storage; rename, delete, make default). Browser storage access is wrapped so
-  that blocked storage only hides these tabs.
+  (at most 8, browser storage; rename, delete, make default; a list opened without any query applies the
+  default view once). Browser storage access is wrapped so that blocked storage only hides these tabs.
+  The tab is the `tab` query parameter.
 - Each row is a link, so it opens in a new tab with the usual browser gestures.
 - Empty states: no packages at all (link to client setup); no match (clear filters).
 
@@ -2512,14 +2578,18 @@ Acceptance criteria:
 ### R-UI-007 · Package details and versions
 Priority: **MVP** · Covers: UI-009, ART-049
 
-- `/packages/{format}/{name…}` resolves through `GET /api/v1/packages/lookup`.
+- `/packages/{format}/{name…}` resolves through `GET /api/v1/packages/lookup`; the name keeps its slash
+  as a path separator (`/packages/npm/@team-a/ui`) and is one breadcrumb step (Q-UI-73). The selected
+  version is the `version` query parameter, the open tab the `tab` parameter, the pre-release switch
+  `prerelease=true`.
 - Header: name, format, selected version (default: the latest stable visible version; the latest
   pre-release when no stable one exists), published time, licenses, download count, the
   repositories that contain it.
 - Version selector: combobox with type-to-filter and an "include pre-releases" switch that follows
   the format's version rules (npm SemVer pre-release tags, NuGet SemVer 2.0 pre-release labels). An
   "All versions" tab lists versions with published time, size, repositories and downloads.
-- Tabs: README (default when present, R-UI-008); Metadata (format-specific: npm dist-tags and
+- Tabs: README (default when the version has one, `hasReadme`; a version without one has no README
+  tab and the README is not requested, R-UI-008); Metadata (format-specific: npm dist-tags and
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
   link with an external-link marker); Files (files of the version with size, SHA-256 copy button,
   download); Repositories (each with "show in browser"); Owners (R-API-048, P1); Builds (P1).
@@ -2571,12 +2641,25 @@ client.
   2 seconds; beyond that the README is truncated with a notice. These limits come on top of the
   limits for untrusted package content of R-ARCH-028.
 - The client binds the HTML with `[innerHTML]`, so Angular's sanitizer runs a second time; the
-  Trusted Types CSP of R-UI-001 is the third layer.
-- In-page links to `#user-content-…` scroll within the README; code blocks scroll horizontally.
+  Trusted Types CSP of R-UI-001 is the third layer. That second layer removes every `id` and `name`
+  and does not know `vbscript:`; the component therefore finishes the job after binding: it drops a link
+  target that is not a fragment, `http`, `https` or `mailto`, drops an image whose source is neither
+  `https` nor a path of this origin, sets `rel="nofollow noopener noreferrer"` and no `target` on every
+  link that leaves trove, and derives the anchor `user-content-<slug>` of every heading itself, with the
+  rule of the server's renderer (lower case, punctuation removed, spaces to hyphens, a repeated name
+  numbered `-1`, `-2`), so that the table-of-contents links the server wrote resolve (Q-UI-71). The server
+  and the component implement one rule, JavaScript's `trim`, `\s` and `toLowerCase`, and test one corpus
+  (Q-UI-76).
+- In-page links to `#user-content-…` scroll within the README and never navigate (the document's
+  `<base href>` would turn a bare fragment into a navigation to the UI root); code blocks scroll
+  horizontally and take focus.
 - Libraries (pinned once in `go.mod`): [goldmark](https://github.com/yuin/goldmark) for Markdown
   and [bluemonday](https://github.com/microcosm-cc/bluemonday) for sanitizing.
 - External image origins (Q-UI-6) are exact `https` origins (scheme, host, optional port; no
-  path, no wildcard), validated at start-up; an invalid entry stops start-up. The same list feeds
+  path, no wildcard), validated at start-up; an invalid entry stops start-up, and so does an entry that
+  is an origin of this installation (`server.base_url`, `additional_base_urls`, an endpoint's `base_url`):
+  an image from it would make the viewer's browser send authenticated requests to trove. Images of files
+  embedded in the package (rendered through `LinkBuilder`) are P1 (R-ARCH-029) and not built. The same list feeds
   the sanitizer and the CSP `img-src` of R-UI-001, so the two can never disagree. Because the
   rendered HTML depends on the list, the README cache of R-API-029 stores the list's hash and
   re-renders when it changes.
@@ -2590,8 +2673,8 @@ Configuration:
 ```yaml
 ui:
   readme:
-    max_source_bytes: 524288          # default (proposed), 512 KiB
-    external_image_origins: []        # default (proposed): every external image becomes a link
+    max_source_bytes: 512KiB          # default; 1KiB to 16MiB
+    external_image_origins: []        # default: every external image becomes a link
     # external_image_origins: ["https://img.shields.io", "https://gitlab.example.com"]   # example
 ```
 
@@ -2615,8 +2698,10 @@ Priority: **MVP** · Covers: UI-010
 - Client picker per format (npm, pnpm, Yarn; .NET CLI, NuGet CLI, `PackageReference` XML); a
   repository picker when the version exists in more than one repository (default: a virtual
   repository containing it, else the first local one).
-- The command comes from the install snippets of R-API-030 with package and version. A copy button
-  copies it; a live region announces "Copied".
+- The command comes from the install snippet of R-API-030 with package and version, requested with
+  `credentials=none` (the install command carries no credentials). A copy button copies it; a live
+  region announces "Copied". The client picker lists the clients of the format that the UI has
+  instructions for (Q-UI-70).
 - npm and NuGet install commands carry no credentials; the panel links to client setup for
   configuring the client once.
 - Commands longer than three lines are collapsed with an expander.
@@ -2780,8 +2865,9 @@ Acceptance criteria:
 ### R-UI-016 · Client setup dialog
 Priority: **MVP** · Covers: UI-021, UI-022, UI-023
 
-- Route `/setup`, reachable from the user menu, a repository row, a repository node in the browser,
-  the package details and empty states.
+- Route `/setup` (`?format=&client=&repository=`, so a link opens the page prepared), reachable from the
+  user menu, a repository row, a repository node in the browser, the package details (the install panel
+  links to it with the repository and client chosen there) and empty states.
 - One page with progressive steps:
   1. format (npm and NuGet in the MVP; further formats appear as they ship, from
      `GET /api/v1/formats`);
@@ -2794,12 +2880,15 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
        (R-API-030 `credentials=env`); no secret appears on screen; a link leads to creating a token.
      - **Create a token for this setup**: creates a personal token (R-API-032) described as "Client
        setup: <client>, <repository>, <date>", scoped to the chosen repository with `read` (plus
-       `deploy` when the user wants the publish tab and holds `deploy`), expiring after
-       `ui.client_setup.token_ttl` (bounded by the PAT maximum of R-AUTH-040). Recent authentication
-       applies. The token is shown once and embedded in the snippets.
+       `read` and `deploy` on the `publishTarget` of the setup answer when the user ticks the publish
+       option, which exists only while the answer names a target), expiring after `tokenTtlSeconds` of
+       the setup answer, which is `ui.client_setup.token_ttl` (bounded by the PAT maximum of R-AUTH-040).
+       Recent authentication applies. The token is shown once and embedded in the snippets; choosing
+       another repository or another way of signing in discards it (Q-UI-74).
      - **Use a token I already have**: a password-type field with a reveal toggle; pasting is
-       allowed. The value stays in the browser; the UI checks its prefix and its CRC32 checksum
-       (INV-8) locally and never sends it to the server.
+       allowed. The value stays in the browser; the UI checks its prefix, its length, its alphabet
+       and its CRC32 checksum (INV-8, R-AUTH-022) locally, says which check failed, writes only a value
+       that passes into the snippets, and never sends it to the server.
   5. tabs Configure, Install, Publish with the snippets; each snippet shows its target file name
      and has a copy button; whole configuration files (`.npmrc`, `nuget.config`) can be downloaded.
      For npm, the Publish tab also holds the GitLab CI snippet in its two labelled variants
@@ -4886,7 +4975,153 @@ The repository wizard and the repository page built the client address of a repo
 
 **Rationale:** (a) alone fails a caller the screens are built for (R-AUTHZ-010 gives `repositories:write-config` without `settings:read`), (b) alone has no answer for the wizard, and (d) is the better end state, but it is an API change that the defect does not need. The development agent revisits this when a public member of the base URL exists: `ServerAddress` then reads it, and (c)'s derivation is deleted. The gap that remains today is the wizard of a caller with `repositories:write-config` but neither `settings:read` nor a readable repository: its review shows an en dash for the client address.
 
+**Revisit (done):** [Q-UI-75](#q-ui-75--the-base-url-is-a-member-of-the-formats-answer) added the public member (`baseUrl` of `GET /api/v1/formats`); `ServerAddress` reads it, the derivation from the repository addresses and the call to the installation facts are deleted, and the gap above is closed.
+
 **Applied in the spec:** none (R-REPO-002's address is unchanged); [web-ui.md](../developer/web-ui.md#the-base-url-rule).
+
+### Q-UI-70 · Which clients the install panel and the setup page offer, and where the snippet texts live
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-009 and R-UI-016 name the clients (npm, pnpm, Yarn Berry, Yarn Classic; .NET CLI, NuGet CLI, Visual Studio, `nuget.config`). R-API-030 lets the server own the snippets and the UI own the explanations, by `id`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The UI lists clients per format in one table and the server rejects what it does not know | `features/setup/clients.ts` | A client the server cannot serve never shows; the explanations are translated in the UI | A new client needs a UI release as well as a server one |
+| (b) The format descriptor lists its clients | A member of `GET /api/v1/formats` | Both halves change together | A change of the format contract for display data, owned by the repository work package |
+| (c) The UI hard-codes npm only | No table | Smallest | No path to NuGet; a second place to edit later |
+
+**Choice:** (a). The table has one entry, npm, with the four clients of R-UI-017 (`npm`, `pnpm`, `yarn`, `yarn-classic`; Q-UI-77 corrected the spelling of Yarn 2 and later); NuGet's clients arrive with the NuGet format. A format that is in the format catalog but not in the table is not offered by the setup page, and the install panel says that there are no instructions yet. The explanation of a snippet is looked up by its `id` (`snippetExplanation`) and is an English source text with a German translation like every other text; an unknown `id` shows the snippet without a sentence. The install panel preselects a virtual repository that holds the version, else the first local one, as R-UI-009 says, and links to `/setup?repository=&client=` with its choice.
+
+**Rationale:** The server must not send prose (R-API-030), and the UI must not parse the snippets. A table in the UI is the smaller coupling of the two. The development agent revisits this when the NuGet format ships: if its clients differ per installation (a Visual Studio entry only where the V2 protocol is on), (b) becomes the better home.
+
+**Applied in the spec:** R-UI-009 (client picker lists the clients the UI has instructions for).
+
+### Q-UI-71 · The README component finishes what Angular's sanitizer leaves
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-008 lets the server sanitize and the client bind with `[innerHTML]`, with Angular's sanitizer as the second layer. Reading what that layer actually does showed two gaps: it removes every `id` and `name` (so a `#user-content-…` anchor written by the server's renderer would never exist in the page), and it does not know `vbscript:`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Trust the two layers as they are | Bind the HTML | No client code | The table-of-contents links of a README are dead; the second layer does not cover `vbscript:` (which no current browser executes, but the rule of R-UI-008 lists it) |
+| (b) Bypass the sanitizer with a trusted-HTML value | `bypassSecurityTrustHtml` | The server's ids survive | Forbidden by R-UI-001 and the lint rule; the second layer is gone |
+| (c) Bind with the sanitizer, then finish in the component | Walk the bound element once after render: drop disallowed link targets and image sources, set `rel`, derive the heading anchors, keep fragments in the page | Keeps both layers; the added rules are small and testable | The slug rule exists twice (server and client) and must agree |
+
+**Choice:** (c). After binding, the component removes the `href` of an `a` whose target is not a fragment, `http`, `https` or `mailto`; removes an `img` whose source is neither `https` nor a path of this origin; sets `rel="nofollow noopener noreferrer"` and no `target` on every link that leaves trove; gives every heading `id="user-content-<slug>"` (lower case, letters, digits, `_` and `-` kept, spaces to hyphens, a repeated name numbered); and handles a click on a `#user-content-…` link by scrolling inside the README and never navigating. It never builds HTML. The server's renderer must derive the anchors of its table-of-contents links with the same rule (the function `headingSlug` documents it); where the server's links and the client's anchors disagree, the link is dead and no more.
+
+**Rationale:** The client-side finishing can only remove or add attributes of a tree that both layers already cleaned; it cannot introduce a script. Deriving the anchors in the client is the only way to have them at all under the second layer. The development agent revisits this when the server's renderer exists: if it emits ids that Angular's sanitizer keeps (it does not today), the derivation is deleted.
+
+**Applied in the spec:** R-UI-008 (the client-side finishing, the in-page link behaviour).
+
+### Q-UI-72 · The packages list: tabs, the default view and the created period
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-006 asks for three tabs (all, recently viewed, saved views), a default view, filters in the URL and a created period. It does not say where the tab lives, when a default view applies, or how a "last 30 days" view stays right tomorrow.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The tab is the `tab` query parameter; saved views store the query parameters; a default view applies once to an empty query | State in the URL, as the filters | Reload, link and back button keep the tab; saved views are links; the default never overrides a link the user followed | A view stored with `period=30` keeps meaning "30 days", which is the intent |
+| (b) Tabs are component state | Local signals | Simplest | A link cannot open "Recently viewed"; reload loses it |
+| (c) Saved views store absolute dates | `createdFrom` as a date | Reproducible | A view saved as "last 7 days" would go stale the next day |
+
+**Choice:** (a). Per signed-in principal, browser storage holds the ten last packages opened (`format`, `name`) and at most eight saved views (`id`, name, query) with the id of the default (`trove.packages.<name>`, non-secret, R-UI-043). A relative period is stored as `period=7|30|90` and turned into `createdFrom` when the request is made; a custom period is two days, the end day included (the API's `createdTo` is exclusive, so the request adds one day). Blocked storage, or no signed-in principal, hides the two tabs and ignores `tab=recent|views`. The default view applies once per page load, only when the query has no filter, sort or tab.
+
+**Rationale:** Anything the user could want to send to a colleague belongs in the URL; anything that is a personal shortcut belongs in browser storage and must disappear without it (R-UI-006). The columns first created, versions and downloads of the owner's reference are shown because the API now carries them (Q-API-159); security scanning is not, because trove has no such data. The development agent revisits this if saved views should follow a user across browsers: that needs a server-side preference (R-API-021), which is a contract change.
+
+**Applied in the spec:** R-UI-006 (columns, sortable columns, the `tab` parameter, the default view).
+
+### Q-UI-73 · The package route is a matcher, and its breadcrumb is one step
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-003 gives `/packages/{format}/{name…}`; the name of an npm package may contain one slash (`@team-a/ui`) and the breadcrumb trail of the shell is derived from the route configuration (Q-UI-68).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A matcher route: first segment the format, the rest the name | `packageMatcher` | The path reads like the registry's own; a deep link works; the matcher keeps the slash inside the name | A matcher route has no `path`, so the trail needs a hint |
+| (b) A route per depth (`:format/:name` and `:format/:scope/:name`) | Two routes | Plain routes | Maven (`group:artifact`) and later names need more routes; two components to bind |
+| (c) The name percent-encoded in one segment | `/packages/npm/%40team-a%2Fui` | One route | Unreadable URLs; `%2F` in a path is refused by proxies |
+
+**Choice:** (a). The file tree's matcher already produces one breadcrumb step per segment; the route data `crumbParam` names a parameter whose value becomes one step instead (a package name is one thing, whatever its slashes). The step links to the page itself; the area steps are "Packages and files" (a name) and "Packages" (the list).
+
+**Rationale:** The trail's job is to answer "where am I"; `@team-a` alone is not a place in trove. The development agent revisits this if scopes become a screen of their own.
+
+**Applied in the spec:** R-UI-007 (the name keeps its slash and is one breadcrumb step).
+
+### Q-UI-74 · What the setup page does with a token
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-016 and R-UI-043 allow three kinds of credentials in the snippets and forbid a token in any shared place. The page has to turn a placeholder into a token without the token travelling.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One component holds the token in a private signal; composes the snippets from the server's text in a `computed`; discards the token on a change of repository or mode and when the component is destroyed | The page's own state | No shared state, no storage, no URL; the server never sees a pasted value | The token disappears on reload, by design |
+| (b) A setup service keeps the token for the steps | A root service | Survives navigation inside the page | A token in a shared service is the thing R-UI-043 forbids |
+| (c) The server composes the snippets with the token | The token goes up and comes back | No client work | The server must never fill a token (R-API-030) |
+
+**Choice:** (a). `fillToken` replaces every `{{token}}` literally (a `$&` in a token means nothing). A pasted value is checked in the browser for prefix, length, alphabet and the CRC-32 of INV-8 (`checkTokenShape`, tested with the test vector of R-AUTH-022 and with a flip of every character), the field is a password input with a reveal toggle, `autocomplete="off"` and `spellcheck="false"`; only a value that passes reaches the snippets; no request is made for it. "Create a token" asks for a personal token with the description "Client setup: <client>, <repository>, <date>", the scope `read` on the chosen repository (and `read` plus `deploy` on the setup answer's `publishTarget` when the user ticks the publish option), and the lifetime `tokenTtlSeconds`; it keeps one `Idempotency-Key` per setup and handles the lost-answer case (409 `token_already_issued`) as the token screen does. The token is shown once in a status region with a copy button. A file with a token is offered through a Blob URL revoked right after the click.
+
+**Rationale:** The token is the page's secret; the cheapest way to keep it from leaking is to give it one owner that dies with the route. The CRC check is not a security measure (R-AUTH-022): it catches a truncated paste before the user writes a broken file. The development agent revisits this if the dialog form (R-UI-029's one-time display) becomes a shared component: then this page uses it and its own display of the created token is deleted.
+
+**Applied in the spec:** R-UI-016 (credentials step, the pasted-token checks, the created token's scope and lifetime).
+
+### Q-UI-75 · The base URL is a member of the formats answer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-UI-69 chose to derive the client address from the repository addresses for a caller without `settings:read` and named the gap that remained: the wizard of a caller with `repositories:write-config` who may neither read the installation facts nor any repository showed an en dash for the client address. It also named the end state: a public member of the base URL, after which the derivation is deleted. The client setup of R-API-030 needs the same address for every caller who may read a repository, including a caller whose only readable repository is not in the first page of the list.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `baseUrl` in `GET /api/v1/authz/me` | The answer about the caller carries the address | One call at sign-in | The operation is the caller's own rights; an address is not one; an anonymous caller gets a different, shorter answer |
+| (b) `baseUrl` in `GET /api/v1/formats` | The format catalog carries the base URL its path templates are joined with | The two halves of a client address (`protocolBasePath` and the base) arrive in one answer that every caller may read and that every screen building an address already asks for; no new operation | The catalog is a list of formats, and gains a member that is not about a format |
+| (c) A new operation `GET /api/v1/system/base-url` | A resource of its own | A clean place | Another operation, another permission declaration and another fake for three lines of data |
+| (d) Keep the derivation of Q-UI-69 | No API change | Nothing to do | The gap stays; a caller with a first page of repositories it may not match gets no address |
+
+**Choice:** (b). `FormatList` gains the required member `baseUrl`: the configured base URL of the endpoint the request arrived on (`server.base_url`, or the base URL of the further endpoint), an origin without a trailing slash, or `null` when none is configured. The member is read from the request's resolved information only when its source is the configuration; an address built from the `Host` of the request (development only) is never handed out. `ServerAddress.baseUrl()` reads it through `RepositoriesApi.baseUrl()`; the derivation from repository addresses, the call to the installation facts and the dependency on `settings:read` are deleted. A `null` is not remembered.
+
+**Rationale:** The base URL is no secret: it is the address every client of every repository is configured with, and `GET /api/v1/formats` is open to every caller that may use the UI at all. Putting it next to `protocolBasePath` makes the join the only thing a screen does. The development agent revisits this when a format-independent public information operation exists (login options already are one, before sign-in); the member then moves there.
+
+**Applied in the spec:** R-API-022 (the row of `GET /api/v1/formats`: the `baseUrl` member); [web-ui.md](../developer/web-ui.md#the-base-url-rule). Closes the gap named in Q-UI-69.
+
+### Q-UI-76 · One rule for the heading anchors, checked on both sides by one corpus
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The server writes the table-of-contents links of a README as `#user-content-<slug>` (R-UI-008) and the component derives the anchor of every heading again, because Angular's sanitizer removes every `id` (Q-UI-71). Two implementations of one rule in two languages differ in the corners: JavaScript's `trim`, `\s` and `toLowerCase` are not Go's `TrimSpace`, `unicode.IsSpace` and `strings.ToLower` (U+0085 is white space for Go and not for JavaScript, U+FEFF the other way round; Go has no final-sigma rule and maps U+0130 to a plain `i`). A heading with one of them gets an anchor that the table of contents does not point to.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both sides use their language's functions | Ordinary Go and TypeScript | Least code | The two differ for white space and for case, silently |
+| (b) The server writes the anchors and the component keeps them | No second derivation | One rule | Angular's sanitizer removes the `id`; the component cannot keep what it never receives, unless the sanitizer is bypassed, which R-UI-008 forbids |
+| (c) The server implements JavaScript's functions and both sides test one corpus | `jsSpace`, `jsLower` and `finalSigma` in `internal/packages/readme`; the same 35-entry table in the Go test and in the component's spec | The rule is the browser's, because the browser has the last word; a difference fails a test on the side that moved | Forty lines of Go that restate parts of ECMAScript |
+
+**Choice:** (c). `readme.HeadingSlug` trims and lower-cases the way JavaScript does and replaces what JavaScript's `\s` matches by a hyphen; the table `slugCorpus` (`internal/packages/readme/render_test.go`) and `SLUG_CORPUS` (`web/src/app/features/packages/package-readme.spec.ts`) hold the same headings with the anchors that Node.js 26 produced; a change to the rule or to either table is made in both.
+
+**Rationale:** A table of contents whose links miss their headings is a defect users see on the first README with a non-ASCII heading. The corpus costs one table, and the Greek and Turkish corners it contains are the ones a text function of another language gets wrong. The development agent revisits this when the component stops deriving the anchors (a sanitizer that keeps `user-content-` ids).
+
+**Applied in the spec:** R-UI-008 (the heading rule in the bullet on the component's finishing pass).
+
+### Q-UI-77 · The client ids of the setup screens are the format's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-030 and Q-UI-70 spelled the clients of npm `npm`, `pnpm`, `yarn-berry` and `yarn-classic`. The npm format registers `npm`, `pnpm`, `yarn` and `yarn-classic` as its clients (`Descriptor.Clients`) and as the `Client` of its setup templates (R-NPM-041), and the setup answer is rendered from those templates.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The server accepts `yarn-berry` and maps it to `yarn` | An alias table | The UI stays as written | A second spelling of every client forever; the format owns its client ids |
+| (b) The UI uses the format's ids | `yarn` for Yarn 2 and later; the label stays "Yarn Berry (2 and later)" | One spelling; the snippet ids (`yarn.configure.yarnrc`) already are `yarn…` | A rename in the UI table, its explanations and its fakes |
+
+**Choice:** (b). The client ids are the format's own; the UI's table of clients per format (Q-UI-70) lists `npm`, `pnpm`, `yarn` and `yarn-classic`, and an unknown value answers `400 malformed_request` naming the clients the format serves.
+
+**Rationale:** The format page is the source of its client list (R-API-030); the UI table only decides what the pickers offer. The development agent revisits this when a format's client id needs a display name the UI cannot derive from the server (the catalog already carries `DisplayName` per client).
+
+**Applied in the spec:** R-API-030 (the client list of npm), R-UI-017.
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 
@@ -5276,6 +5511,189 @@ regression. The development agent would revisit this when the decision point off
 holder; then the step begins for every operation that is not public and the handler's own `Begin` goes.
 
 **Applied in the spec:** R-API-008 (a bullet).
+
+### Q-API-159 · What the package list, the version list and the version details carry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-029 named the operations and a package example (`id`, `format`, `name`, `description`, `latestVersion`, `keywords`, `repositories`, `updatedAt`) but not the members of a version, the sort fields, or what the list screen of R-UI-006 shows beyond the example. The UI (the shared list table of Q-UI-68, the package page of R-UI-007) is written against the contract, so the members have to be fixed before the read model exists.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the example's members | List: the eight members; versions and details by the format page | No decision now | The list cannot show first created, versions and downloads; every format page would invent its own version shape; the UI could not be written against a contract |
+| (b) One summary shape for list, lookup and read; a version summary for the list and a version for the details; the format-specific part in `metadata` | `PackageSummary` adds `createdAt`, `versionCount`, `downloadCount`; `PackageVersionSummary` and `PackageVersion` as in the OpenAPI document; `hasReadme` on the version; sort by `name`, `createdAt`, `updatedAt` | One shape per concept; the table of R-UI-006 is fed by the list alone; a version page needs two calls (summary, details) and a README call only when `hasReadme` | Counts and dates are aggregates over the visible versions, which the read model must compute in SQL for every page |
+| (c) A `fields` or `expand` parameter | The client asks for what it needs | Small answers | Sparse field selection is not offered in v1 (R-API-011); two representations to test per resource |
+
+**Choice:** (b). Every aggregate (`latestVersion`, `repositories`, `versionCount`, `downloadCount`, `createdAt`, `updatedAt`) is computed from the versions the caller may read, so a hidden version leaks neither its number nor its existence (R-API-029). `latestVersion` is the highest visible stable version, or the highest visible pre-release while none is stable. The sort fields are `name`, `createdAt` and `updatedAt` with their descending forms, because the screen's sortable columns are exactly those; the version list sorts by `-publishedAt` (default), `publishedAt`, `-version` and `version`, the last two by the format's version precedence, which the page needs to find "the latest stable version" without reading every version. `hasReadme` exists so that the page chooses its default tab, and requests the README, with the details alone. The package-ownership data of R-UI-007's Owners tab stays with its own work (R-API-048, P1).
+
+**Rationale:** The list screen of the owner's design reference shows first created, versions and downloads, and the API can give them at no extra call; leaving them out would have meant a request per row. Version precedence is the one place where the client cannot do the work itself: a list of 400 versions comes in pages, and sorting a page does not find the maximum. The development agent revisits this when the first format with a different version model (Maven coordinates, container tags; API-094, API-109, API-110) needs a member that does not fit `PackageVersion`; the answer would be a member in `metadata`, not a new shape.
+
+**Applied in the spec:** R-API-029: the operations table (sort values), the version details and version list members, the package example and the sentence on `createdAt`, `versionCount` and `downloadCount`; `api/openapi.yaml`, block `M2 packages`.
+
+### Q-API-160 · The client setup answer: credential modes, tabs and snippet ids
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-030 described the endpoint in prose: `?client=`, the placeholder `{{token}}`, the environment reference with `credentials=env`, snippet `id`s, and rules for quoting. The UI needs three further things: a way to ask for snippets without any authentication line (an anonymous caller; the install panel of R-UI-009), the grouping of snippets into the tabs of R-UI-016, and the lifetime for the token the dialog creates.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `credentials` takes `placeholder`, `env` or `none`; each snippet names its tab, file and language; the answer carries `tokenTtlSeconds` | The contract of the OpenAPI document | The UI groups, labels and downloads without knowing any format; one request per choice; the lifetime comes from the configuration key the spec already names | Three modes to implement per template |
+| (b) The UI strips authentication lines itself | Server sends only the `placeholder` form | One mode fewer | The UI would parse client syntax (ini, yaml, xml), the one thing the server owns (R-API-030); any change of a template breaks the stripping |
+| (c) The UI knows the tab of each snippet by its `id` | A table in the UI | A smaller answer | A new snippet needs a UI release; a format page could not add a snippet alone |
+
+**Choice:** (a). Snippets have `id` (`<client>.<tab>.<name>`, stable), `tab` (`configure`, `install`, `publish`), `fileName` (null for a command), `language` and `content`. Besides the snippets the answer holds `registryUrl` (with its trailing slash), `endpointPath` (the scheme-less form that is npm's credential key), `username`, `publishTarget` and `tokenTtlSeconds`. The explanation of each snippet is the UI's, translated per `id` (R-UI-045); an `id` the UI does not know shows its snippet without a sentence. The permission declaration is the action form `read` on the repository, so a caller who may not read it gets the `404` of a missing repository (R-AUTHZ-016); the publish snippets and `publishTarget` follow the caller's `deploy` on the target and are absent otherwise.
+
+**Rationale:** (a) keeps the one rule of R-API-030 that matters for security: the server never sees or sends a token, and the browser's only operation is replacing a literal. `credentials=none` is what lets the install panel of R-UI-009 stay free of credentials by construction. The development agent revisits this when NuGet's `nuget.config` and the .NET CLI snippets arrive and need a member that does not fit (a per-snippet `scope`, for example).
+
+**Applied in the spec:** R-API-030: query and answer description, the three credential modes, `publishTarget` and `tokenTtlSeconds`; R-UI-009 (`credentials=none`).
+
+### Q-API-161 · An operation of the published contract that is not built answers 501 `not_implemented`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The UI of the packages area is built before the package read model and the format contract exist. The generated server interface forces a handler for every operation of the document.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave the operations out of the document until they are built | The UI is written against a hand-made type | No stub | The document is the contract (R-API-002); the UI types could not be generated; the two halves would diverge |
+| (b) Document them and answer `501` with the problem code `not_implemented` | `internal/api/v1/packages_api.go` | The UI is generated from the real contract; a stub is visible and cannot be mistaken for an empty result; the route check of R-API-002 stays whole | One more status in the document for these operations |
+| (c) Answer an empty `200` | An empty list | The screens render without an error state | An empty list is a lie: it says "no package" for an installation that has packages |
+
+**Choice:** (b). The stub writes the problem document of R-API-009 itself, because `internal/errs` has no kind for 501 and no finished operation answers it; `not_implemented` is not an error code of the catalog and the UI shows "This server does not provide this function yet." for it. Each stub is replaced by its implementation, not extended. The smoke test of R-API-002 accepts exactly this answer for documented operations and no other 5xx. The seven operations carry `501` in their responses (`#/components/responses/NotImplemented`); the response goes when the last stub does.
+
+**Rationale:** A stub that is honest is cheaper than a hand-made type that drifts. The development agent revisits this when the work package that implements the operations lands: the stubs, `NotImplemented`, the `501` references and the smoke test's exception are deleted together.
+
+**Revisit (done):** the seven operations are implemented; the stubs, `notImplemented`, `codeNotImplemented`, the `501` responses and `#/components/responses/NotImplemented` of the document, the exception in the smoke test of R-API-002 and the UI's message for `not_implemented` are deleted.
+
+**Applied in the spec:** R-API-029 (the sentence on `501` until the read model exists).
+
+### Q-API-162 · Permission declarations and the reserved name `lookup` of the package operations
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The `x-trove-permission` declaration of an operation is enforced before its handler (R-API-008). The package operations are not about one repository: a package is visible when any of its versions is, and the answer is filtered in SQL (R-API-029).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `{public: true}` and the filter in the handler | The repository list pattern | The decision is per version, which only the read model can make; anonymous callers work where anonymous read is on; the answer for a caller who may see nothing is an empty list or a `404` | The declaration alone says nothing about the filtering; a missing filter would be a leak that the declaration cannot catch |
+| (b) `{authenticated: true}` | Any signed-in principal | Simple | Anonymous read (R-UI-004, R-API-029 "anonymous where allowed") would not work |
+| (c) A capability such as `packages:read` | A new system capability | Visible in the document | A capability that grants nothing by itself: the decision is still per repository and package (INV-9); it would only add a second place to keep in step |
+
+**Choice:** (a) for the six package operations, and the action form `read` on `path.repoKey` for the client setup operation. `lookup` is a reserved name of `{packageId}` (R-API-004): `GET /api/v1/packages/lookup` is a literal next to the key, so the parameter schema lists it in `x-trove-reserved-names`, which the document check demands; package identifiers (`pkg_…`) can never be `lookup`.
+
+**Rationale:** The same reasoning as for `GET /api/v1/repositories`: the declaration admits the caller, the read model filters, and a hidden package is a `404` identical to a missing one. The implementation test is therefore the one of R-API-029's second acceptance criterion (a caller who reads only one repository sees only its versions), and it belongs to the work package that writes the read model. The development agent revisits this if a package operation gains a write form (ownership, R-API-048), which gets an action declaration on its repository.
+
+**Applied in the spec:** none; the declarations are in the OpenAPI document.
+
+### Q-API-163 · The version details, the README and their tags
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-029 states that the README answer is `404` when the version has none. The page needs to know whether to ask, and a README is the largest answer of the area.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Ask and treat a `404` as "none" | No flag | No new member | A request per version page that fails by design; a console error in the browser for every package without a README |
+| (b) `hasReadme` on the version details | The page asks only when it is `true` | No failing request; the default tab is known with the details | A member the read model must keep true; a `true` that is followed by a `404` (the README was removed between the two calls) is handled as "none" |
+| (c) Inline the README in the details | One call | Fewer calls | Every version call carries up to 1 MiB; the tag of the details would change with the image policy |
+
+**Choice:** (b). The details and the README carry strong `ETag`s and honour `If-None-Match` (R-API-012); the README's tag covers the source hash, the renderer version and the hash of the external image origins, the three inputs of the cache row in R-API-029, so a changed origin list changes it. The README answer is `{contentType: text/markdown, html, truncated, externalImagesBlocked}`; `contentType` names the source, the HTML is always sanitized HTML.
+
+**Rationale:** A failing request by design is noise for the operator and for the user's console; the flag costs one boolean. The UI treats a `404` for a README it asked for as "none" anyway, so a stale flag is harmless. The development agent revisits this when README extraction for NuGet (`<readme>` file) differs enough that the flag cannot be computed from metadata alone.
+
+**Applied in the spec:** R-API-029 (the version details and the README answer).
+
+### Q-API-164 · A package id is derived from the format and the normalized name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-029 names `id` (`pkg_01JBQ6V7S3K9` in the example) and addresses a package by it. The generic package rows are per repository (`packages (repo_id, name)`), so the package of the API, which spans repositories, has no row of its own: the same name in `npm-local` and `npm-team` is one package of the view and two rows of the store.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A table of package ids | A new table, an id per (format, name), written on the first publish | Ids that look like the example | A write path in every format's publish for the sake of a read model; an id that a restore or a second installation does not reproduce; a row whose lifetime follows no repository |
+| (b) A hash of format and name | `pkg_` and a digest | Fixed length | Not reversible, so every request with an id needs a table that maps it back |
+| (c) The format and the name, encoded | `pkg_` and the lower-case base32 of `<format> NUL <name>` | Needs no table; the same on every replica, after a restore and on a second installation; resolves by decoding | Not short (a 214-character name is a 350-character id); anyone who knows the name can compute the id |
+
+**Choice:** (c). `view.ID` and `view.ParseID` (`internal/packages/view/id.go`); the alphabet is `[a-z2-7]`, inside the pattern `^pkg_[0-9A-Za-z]+$` of the document. The id is opaque to clients and is no secret and no capability: it names a package, it does not grant the right to read it. An id that decodes to a package the caller may not read answers the `404` of an id that names nothing, so the id reveals nothing that the name did not. A string that does not decode is the same `404`.
+
+**Rationale:** An id that needs a table needs a write in every format, and the view is a read model. The length is the price; names are bounded (npm: 214 characters) and the id travels in a path segment. The development agent revisits this when a format has names above what a path segment carries (Maven coordinates, container image names): the id then becomes a digest with a lookup row written by the same code that writes the package.
+
+**Applied in the spec:** R-API-029 (what an id is).
+
+### Q-API-165 · The visibility filter is decided per repository and passed into the statement
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-029 requires that every aggregate of the list counts only versions the caller may read and that the filter runs in SQL. What a caller may read is decided by the grant index in memory (grants with package and path patterns, the token scope, `content:bypass`, the endpoint's exposure rules with version ranges), not by a table PostgreSQL could join.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) List, then filter | Read the packages and their counts, then drop what the caller may not read | Simple | A count includes hidden versions; the version number of a hidden latest version leaks through the aggregate; the page sizes are wrong |
+| (b) Decide every version in Go, count in Go | Read every version row, ask the decision point per row | Always right | A list of ten packages reads every version of the installation |
+| (c) Classify the repositories, pass the classification as data | Per repository: all (every package and version of it may be read), none, or rows (decide row by row); the statement takes the keys of the first group and the readable rows of the third | The common case (a reader of whole repositories) is one array of keys; the per-row work is limited to repositories where a grant or a ceiling narrows | Needs a classification that is exactly as strict as the decision point, and a bound on the rows decided in Go |
+| (d) Mirror the grants into a table | A materialised grant table joined in SQL | The database does the filtering | A second copy of the decision point; it must follow the exposure ranges of every format |
+
+**Choice:** (c). `authz.ReadScoper.ReadScopeOn` (`internal/authz/visible.go`) returns a `ReadScope` for the request's index: `Shape(key)` is `ReadAll` only when an unrestricted read grant (or `content:bypass`) holds, the token scope does not narrow and the endpoint exposes everything; `ReadNone` for a repository the index does not know, a virtual one (it holds no rows; it shows its members' rows) and one without a read grant; `ReadRows` otherwise. `MayRead(repo, package, version)` is `DecideOn` without the audit event and the denial counters. `view.Service.Scope` lists the versions of the `ReadRows` repositories (at most `DefaultMaxRows`, 200 000; more answers `400`, never a partial set), asks `MayRead` of each and passes the keys of `ReadAll` and the readable `repo, package, version` triples to the statements of `package_view.sql` as arrays. A test (`TestR_API_029_ReadScopeAgreesWithTheDecisionPoint`) checks the classification against `DecideOn` over every subject, endpoint, repository, package and version of a fixture. A repository with include or exclude patterns is never read whole: its versions are decided row by row, with the patterns (`Topology.Admits`) in front of the grant. A virtual repository is shown in a version's `repositories` only when the caller may read it and one of its members holds the version.
+
+**Rationale:** (c) makes the filter part of the statement that counts, so no aggregate can include a hidden version, and keeps the cost proportional to what a narrowed caller can see. The bound turns "too broad" into a refusal that says so. The development agent revisits this when an installation has callers with package-narrowed grants on repositories with more than 200 000 versions: the per-row decision then moves into the statement as a compiled pattern set.
+
+**Applied in the spec:** R-API-029 (the visibility rule and its bound); [security: permissions](../security/permissions.md).
+
+### Q-API-166 · The format reaches the view data through an adapter on its data port
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The package list shows a description and keywords, the details show licenses, the metadata of the format and the README. npm writes no generic attributes for them: they are in `npm_versions` (the manifest, the README, the deprecation) and `npm_packages` (the dist-tags). The generic rows give names, versions, counts, times, sizes, downloads and files.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Attributes set at publish | `OnCommit` writes description, keywords, licenses into `package_versions.attributes` | The generic query reads everything; no adapter | A copy of the manifest in a second place that every edit path must keep equal (deprecate, the tombstone replay, a restore); the README and the metadata do not fit; data the format already holds twice |
+| (b) A `ViewAdapter` on the format contract that reads through the format's data port | `Format.View()` returns `Compare`, `Prerelease`, `Describe`, `Find` and `Withheld`; npm implements them in `internal/formats/npm/view.go` over `internal/formatdata/npm/view.go`; `internal/formathost` bridges to the domain package `internal/packages/view` | One source of truth; R-ARCH-008 holds (no SQL in the format, the statements are in the data port); the format also owns the order of its versions and what a pre-release is; a format without an adapter has no package screens and fails nothing | One more method on the contract (it is frozen only at the end of M3, Q-ARCH-213); the adapter is asked in batches |
+| (c) Generic SQL over the format's JSON | The view reads `npm_versions.manifest` itself | No contract change | The core would know npm's tables; the second format breaks it |
+
+**Choice:** (b). `formats.ViewAdapter` (`internal/formats/view.go`): `Compare` and `Prerelease` order the versions (SemVer precedence for npm; the core never compares version strings); `Describe` reads description, keywords, licenses, the README flag, the metadata and, when asked, the README for versions, with the visible set of the package so that the dist-tags name no hidden version; `Find` answers the `q` and `keyword` filters over the format's data (the core intersects the ids with what the caller may read); `Withheld` lists the stored versions the format does not serve (npm: tombstoned, R-NPM-047), which the view never counts. `Validate` refuses a format with a view and no package names. `Base.View()` is nil.
+
+**Rationale:** The metadata of a version is the format's; copying it into generic attributes would make every writer responsible for two copies. The adapter keeps the read model free of any format and gives a second format one place to say what its packages look like. The development agent revisits this when the batch reads of a list page show up in a profile: the adapter then gets a summary table maintained in the publish transaction.
+
+**Applied in the spec:** [architecture.md](architecture.md) (the format contract, `View`); [formats/npm.md](formats/npm.md) (the view); R-API-029 (the members that come from the format).
+
+### Q-API-167 · The README is rendered on the server on demand and not cached yet
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-029 puts the README renderer on the server and sketches a table `package_readme_cache` (source hash, renderer version, image policy hash, HTML). R-UI-008 sets the limits: the source at most `ui.readme.max_source_bytes`, the HTML at most 1 MiB, the rendering at most two seconds.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Render on demand, tag from the inputs | The strong `ETag` is a hash of the source, the renderer version and the hash of the origin list; a request that holds the tag costs no rendering | No table, no invalidation; a changed policy changes the tag without a migration | A client that sends no tag pays a rendering every time |
+| (b) The cache table now | Render once per (version, inputs) | One rendering per README | A table written on a read path, a job that prunes it, a migration, and a row per README per policy |
+| (c) Render at publish | The HTML in the version row | No rendering on read | The renderer version is then a data migration |
+
+**Choice:** (a). `readme.Renderer` (`internal/packages/readme`) is goldmark with the GitHub-style extensions and raw HTML, bluemonday with the allowlist of R-UI-008, and a pass over the parsed result for what an allowlist cannot say: the links (an absolute `http`, `https` or `mailto` address keeps its target and gets `rel="nofollow noopener noreferrer"`; a fragment stays; anything else is reduced to its text), the images (an `https` image of a listed origin stays, an image of trove's own origin or a relative or other source is dropped, every other becomes a link "External image: <alt>" and is counted), disabled checkboxes, and the heading anchors (Q-UI-76). A source above the limit is cut; an HTML above 1 MiB is re-rendered from a proportionally shorter source; a rendering above two seconds is abandoned for the escaped text; each sets `truncated`. A list of origins that names an origin of the installation is refused at start-up. The cache table of R-API-029 is not built: its three inputs are the parts of the tag, and the table is added when a profile asks for it (H-298).
+
+**Rationale:** The browser keeps the answer by its tag; the server renders for a first view and for a changed policy. The development agent revisits this when README requests dominate the CPU of a replica, or when the abandoned renderings of H-298 show up in a profile: the table then holds the HTML and the abandoned work is bounded by it.
+
+**Applied in the spec:** R-API-029 (the data model block is marked as not built), R-UI-008 (configuration, the origin check).
+
+### Q-API-168 · Client setup: templates produce the structure, the API produces the credential mode, the package and the quoting
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-030 asks for three credential modes (`placeholder`, `env`, `none`), the package of an install snippet, shell and XML quoting, and addresses from the configured base URL. The npm templates of R-NPM-041 are `text/template` over `SetupData`, which has no credential field, and always spell the credential as `${TROVE_TOKEN}`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every template implements the modes | Three variants per snippet | Each format is in control | Three copies of every file template; every format re-implements quoting |
+| (b) The API rewrites the rendered text | The template spells the token as the literal `formats.SetupTokenRef` and the package as `formats.SetupPackageRef`; the API replaces the first by the placeholder or the configured variable (`ui.client_setup.token_env_var`) or drops the lines that hold it, and the second by the quoted package | The modes and the quoting exist once; a template stays one text; `RequiresAuth` is cleared for `none` so that an always-auth switch goes with the credential | The template and the API share two literals |
+| (c) The UI strips and substitutes | The server sends the `env` form | Nothing on the server | The UI would parse client syntax (Q-API-160) |
+
+**Choice:** (b). The templates also get the functions `shell` and `xml` for values they place in a command or in XML. A package name or version above 256 bytes, with a control character or in the shape of a token (`trv_(pat|sat|cit)_`) is refused with `400`, so that the answer cannot echo a token it was handed; every snippet is checked against the shape again before it is sent. The addresses are built on the configured base URL of the endpoint the request arrived on; without one the operation answers `503`, because an address from the `Host` of the request would end in a file the user copies. `requiresAuth` of the templates is true unless an anonymous caller on the same endpoint may read the repository. The publish tab is rendered only for a caller who holds `deploy` on the publish target (the repository itself when local, the deploy target of a virtual one, none for a remote one) and `publishTarget` names it. The snippet id is `<client>.<section>[.<name>]`, with `-scoped` appended to the name of the scoped variant of a configure snippet. The npm templates contribute configure and install snippets (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet, so the publish tab is empty for npm until they are (the API renders them where a format supplies them).
+
+**Rationale:** The mode and the quoting are the security-relevant part of the operation and belong in one place with one test (`TestR_API_030_*`, the integration tests over every client, mode and caller). The development agent revisits this when the first format needs a credential in a place that is not a line (NuGet's `nuget.config` element): the literal then becomes a typed marker.
+
+**Applied in the spec:** R-API-030 (clients, `503` without a base URL, token refusal, the publish tab); [formats/npm.md](formats/npm.md) (the templates).
 
 ### Q-API-136 · One rule for the top-level code of an error
 

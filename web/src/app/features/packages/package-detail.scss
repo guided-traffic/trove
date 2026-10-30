@@ -1,0 +1,102 @@
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  padding: 0 var(--trove-space-2);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--mat-sys-corner-full);
+  font-size: 0.8125rem;
+
+  .material-icons {
+    font-size: 1rem;
+  }
+}
+
+.pkg-header {
+  margin-block-end: var(--trove-space-4);
+}
+
+.version-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    padding: 0 var(--trove-space-2);
+    border: 1px solid var(--trove-border);
+    border-radius: var(--mat-sys-corner-full);
+    font-size: 0.8125rem;
+  }
+}
+
+.badge {
+  margin-inline-start: var(--trove-space-2);
+  padding: 0 var(--trove-space-2);
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: var(--mat-sys-corner-extra-small);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.plain {
+  margin: 0;
+  padding-inline-start: var(--trove-space-4);
+}
+
+.tab {
+  padding-block: var(--trove-space-4);
+
+  h2 {
+    margin-block: var(--trove-space-4) var(--trove-space-2);
+    font: var(--mat-sys-title-medium);
+
+    &:first-child {
+      margin-block-start: 0;
+    }
+  }
+}
+
+// One column: the install panel sits above the tabs, so the command never lies below a long
+// README. From 60rem of content width the panel moves to the right and stays in view (Q-UI-3).
+.pkg-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--trove-space-4);
+  align-items: start;
+}
+
+.pkg-install {
+  min-inline-size: 0;
+}
+
+.pkg-tabs {
+  min-inline-size: 0;
+}
+
+@container content (min-width: 60rem) {
+  .pkg-layout {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+  }
+
+  .pkg-install {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    inset-block-start: var(--trove-space-3);
+  }
+
+  .pkg-tabs {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}

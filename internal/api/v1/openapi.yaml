@@ -81,6 +81,11 @@ tags:
       the bound of the grant index.
   # <<< M1 endpoints
   #
+  # >>> M2 packages
+  - name: packages
+    description: Packages across repositories, their versions, files and rendered READMEs (R-API-029); the client setup snippets of a repository are in the repositories tag (R-API-030).
+  # <<< M2 packages
+  #
   # >>> M2 proxy
   # <<< M2 proxy
   #
@@ -3607,8 +3612,9 @@ paths:
         The format catalog (R-REPO-003): for each format the classes the implementation accepts, its
         layout, the client address template, the cache periods and the facts that decide which
         members of a repository document apply. The list of classes is the single source of truth
-        for the create form: a class that is not listed answers `422 unsupported_class`. Any caller;
-        an anonymous caller only where anonymous access is on, else `401`.
+        for the create form: a class that is not listed answers `422 unsupported_class`. The answer also
+        carries the `baseUrl` of the endpoint the request arrived on. Any caller; an anonymous caller
+        only where anonymous access is on, else `401`.
       x-trove-permission:
         public: true
       responses:
@@ -3633,6 +3639,7 @@ paths:
                     priorityMembers: false
                     pinsAndClaims: false
                     caps: false
+                baseUrl: https://trove.example.com
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "429":
@@ -5190,6 +5197,480 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M1 endpoints
   #
+  # >>> M2 packages
+  /api/v1/packages:
+    get:
+      operationId: listPackages
+      tags: [packages]
+      summary: List packages
+      description: |
+        Packages across repositories (R-API-029), with cursor pagination (R-API-010). A package is
+        listed when at least one of its versions is visible to the caller, and every member of an
+        entry (`latestVersion`, `repositories`, `versionCount`, `downloadCount`, `createdAt`,
+        `updatedAt`) is computed from the visible versions only, so a hidden version leaks neither its
+        number nor its existence. `format` and `repository` repeat for OR; a virtual repository
+        expands to its members; a remote repository contributes only cached versions. `q` matches
+        the name and the description case-insensitively, `namePrefix` the start of the name,
+        `keyword` one keyword exactly. `createdFrom` (inclusive) and `createdTo` (exclusive) bound
+        the creation time of the first visible version. `sort` takes one field, a leading `-` sorts
+        descending; the default is `name`. An anonymous caller sees what anonymous holds `read` on.
+        The filter runs in SQL. A sort field or filter this document does not list answers
+        `400 malformed_request`.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: format
+          in: query
+          description: Repeat the parameter for several formats (`npm`, `nuget`, …).
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: repository
+          in: query
+          description: Repeat the parameter for several repository keys.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: q
+          in: query
+          description: Case-insensitive substring of the name or the description.
+          schema:
+            type: string
+        - name: namePrefix
+          in: query
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: createdFrom
+          in: query
+          description: Inclusive lower bound of the creation time of the first visible version.
+          schema:
+            type: string
+            format: date-time
+        - name: createdTo
+          in: query
+          description: Exclusive upper bound of the creation time of the first visible version.
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, -name, createdAt, -createdAt, updatedAt, -updatedAt]
+            default: name
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of packages.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageList"
+              example:
+                items:
+                  - id: pkg_01JBQ6V7S3K9
+                    format: npm
+                    name: "@team-a/ui"
+                    description: Shared UI components
+                    latestVersion: 1.4.0
+                    keywords: [ui, components]
+                    repositories: [npm-local, npm-all]
+                    createdAt: "2026-09-02T08:00:12.201Z"
+                    updatedAt: "2026-10-20T09:12:44.512Z"
+                    versionCount: 3
+                    downloadCount: 1832
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/lookup:
+    get:
+      operationId: lookupPackage
+      tags: [packages]
+      summary: Resolve a package name
+      description: |
+        Resolves a format and a name to the package (R-API-029): npm names as stored (`@team-a/ui`),
+        NuGet IDs case-insensitively. The name travels as a query parameter, so a scoped name needs no
+        path escaping. `404` when no visible version of that package exists, the same answer as for a
+        package that does not exist.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The package.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageSummary"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+    get:
+      operationId: getPackage
+      tags: [packages]
+      summary: Read a package
+      description: |
+        The summary of a package (R-API-029), computed from the versions visible to the caller. The
+        `ETag` is a strong tag over the representation; it changes when a visible version appears,
+        goes or is downloaded.
+      x-trove-permission:
+        public: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The package.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageSummary"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+    get:
+      operationId: listPackageVersions
+      tags: [packages]
+      summary: List the versions of a package
+      description: |
+        The versions of a package that are visible to the caller (R-API-029), with cursor pagination.
+        `prerelease` keeps pre-releases (`true`) or stable versions (`false`) by the format's version
+        rules (SemVer pre-release tags for npm, SemVer 2.0 labels for NuGet); without it both are
+        listed. `repository` (repeated) keeps the versions a repository holds; a virtual repository
+        expands to its members. `sort=-version` orders by the format's version precedence, newest
+        first; the default is `-publishedAt`.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: prerelease
+          in: query
+          schema:
+            type: boolean
+        - name: repository
+          in: query
+          description: Repeat the parameter for several repository keys.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [-publishedAt, publishedAt, -version, version]
+            default: -publishedAt
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of versions.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageVersionList"
+              example:
+                items:
+                  - version: 1.4.0
+                    prerelease: false
+                    publishedAt: "2026-10-20T09:12:44.512Z"
+                    sizeBytes: 48213
+                    repositories: [npm-local, npm-all]
+                    downloadCount: 410
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions/{version}:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+      - $ref: "#/components/parameters/PackageVersionPath"
+    get:
+      operationId: getPackageVersion
+      tags: [packages]
+      summary: Read a version of a package
+      description: |
+        The details of one visible version (R-API-029): the format-specific `metadata`, the
+        repositories that hold it, its files with their SHA-256 and download URLs, the download count
+        and whether a README exists. The `ETag` is a strong tag over the representation.
+      x-trove-permission:
+        public: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The version.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageVersion"
+              example:
+                packageId: pkg_01JBQ6V7S3K9
+                format: npm
+                name: "@team-a/ui"
+                version: 1.4.0
+                prerelease: false
+                publishedAt: "2026-10-20T09:12:44.512Z"
+                licenses: [MIT]
+                sizeBytes: 48213
+                downloadCount: 410
+                hasReadme: true
+                metadata:
+                  distTags: {latest: 1.4.0}
+                  dependencies: {lit: ^3.1.0}
+                  homepage: https://example.com/team-a/ui
+                repositories:
+                  - {key: npm-local, class: local, publishedAt: "2026-10-20T09:12:44.512Z"}
+                  - {key: npm-all, class: virtual, publishedAt: "2026-10-20T09:12:44.512Z"}
+                files:
+                  - path: "@team-a/ui/-/ui-1.4.0.tgz"
+                    sizeBytes: 48213
+                    sha256: 5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567
+                    downloadUrl: https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/packages/{packageId}/versions/{version}/readme:
+    parameters:
+      - $ref: "#/components/parameters/PackageId"
+      - $ref: "#/components/parameters/PackageVersionPath"
+    get:
+      operationId: getPackageVersionReadme
+      tags: [packages]
+      summary: Read the rendered README of a version
+      description: |
+        The README of a visible version as sanitized HTML (R-API-029, R-UI-008). The server renders
+        and sanitizes; the client binds the HTML and never renders Markdown itself. `404` when the
+        version has no README (`hasReadme` is `false`) or is not visible. The `ETag` is a strong tag
+        over the README source, the renderer version and the external image origins, so a changed
+        origin list changes it.
+      x-trove-permission:
+        public: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The README.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageReadme"
+              example:
+                contentType: text/markdown
+                html: "<h1>@team-a/ui</h1>\n<p>Shared UI components.</p>"
+                truncated: false
+                externalImagesBlocked: 0
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/client-setup:
+    get:
+      operationId: getClientSetup
+      tags: [repositories]
+      summary: Client setup snippets of a repository
+      description: |
+        The snippets that configure a package-manager client for a repository, install a package and
+        publish to it (R-API-030). The server fills the public base URL, the repository key, the
+        package-manager endpoint URL (`registryUrl`, with its trailing slash), its scheme-less form
+        (`endpointPath`, npm's per-registry credential key) and the caller's name. It never fills a
+        token: with `credentials=placeholder` a snippet holds the literal `{{token}}`, which the
+        browser replaces; with `credentials=env` it holds the environment-variable reference of the
+        client's syntax (`${TROVE_TOKEN}` for npm and Yarn, `%TROVE_TOKEN%` for `nuget.config`;
+        the name is `ui.client_setup.token_env_var`); with `credentials=none` it holds no
+        authentication line. With `package` and `version` the install snippets name that version.
+        Values placed in shell commands are single-quoted unless they match
+        `^[A-Za-z0-9@/._+:=-]+$`, values placed in XML are escaped. Needs `read` on the repository
+        (`404` otherwise, like a missing repository); the publish snippets are present only when the
+        caller holds `deploy` on the repository that receives the publish (`publishTarget`). A virtual
+        repository without a default deployment target has no publish snippets and `publishTarget:
+        null`. The answer never matches `trv_(pat|sat|cit)_`.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+      parameters:
+        - name: repoKey
+          in: path
+          required: true
+          description: The repository key (R-REPO-002).
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        - name: client
+          in: query
+          required: true
+          description: The client the snippets are for; the values a format offers are its own (`npm`, `pnpm`, `yarn`, `yarn-classic` for npm). An unknown value answers `400 malformed_request`.
+          schema:
+            type: string
+        - name: credentials
+          in: query
+          schema:
+            type: string
+            enum: [placeholder, env, none]
+            default: placeholder
+        - name: package
+          in: query
+          description: A package name; the install snippets are specific to it.
+          schema:
+            type: string
+        - name: version
+          in: query
+          description: A version of `package`; ignored without `package`.
+          schema:
+            type: string
+        - name: scope
+          in: query
+          description: An npm scope (`@team-a`); adds the scoped variant of the registry configuration.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The snippets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientSetup"
+              example:
+                repository: npm-all
+                format: npm
+                client: npm
+                credentials: placeholder
+                registryUrl: https://trove.example.com/api/npm/npm-all/
+                endpointPath: //trove.example.com/api/npm/npm-all/
+                username: alice
+                publishTarget: npm-local
+                tokenTtlSeconds: 2592000
+                snippets:
+                  - id: npm.configure.npmrc
+                    tab: configure
+                    fileName: .npmrc
+                    language: ini
+                    content: "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken={{token}}\n"
+                  - id: npm.install
+                    tab: install
+                    fileName: null
+                    language: shell
+                    content: npm install @team-a/ui@1.4.0
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M2 packages
+  #
   # >>> M2 proxy
   /api/v1/repositories/{repoKey}/cache/invalidate:
     post:
@@ -5968,6 +6449,25 @@ components:
       schema:
         type: string
         format: uuid
+    # >>> M2 packages
+    PackageId:
+      name: packageId
+      in: path
+      required: true
+      description: The server-generated package identifier (R-API-029).
+      schema:
+        type: string
+        pattern: "^pkg_[0-9A-Za-z]+$"
+        x-trove-reserved-names: [lookup]
+    PackageVersionPath:
+      name: version
+      in: path
+      required: true
+      description: The version string, percent-encoded.
+      schema:
+        type: string
+    # <<< M2 packages
+    #
   responses:
     Unauthenticated:
       description: The request carries no valid credential.
@@ -8071,12 +8571,21 @@ components:
           type: boolean
     FormatList:
       type: object
-      required: [formats]
+      required: [formats, baseUrl]
       properties:
         formats:
           type: array
           items:
             $ref: "#/components/schemas/FormatDescriptor"
+        baseUrl:
+          type: [string, "null"]
+          description: |
+            The base URL of the endpoint the request arrived on (`server.base_url`, or the base URL of the
+            endpoint), an origin without a trailing slash; the address a client of a repository is
+            configured with is this origin plus a format's `protocolBasePath`. `null` when none is
+            configured: the address is never taken from the `Host` of the request. It is no secret and is
+            readable by every caller that may call this operation, so a screen needs no other permission
+            to show a client address (Q-UI-75).
     # >>> WP2.1 formats
     FormatName:
       type: string
@@ -8712,6 +9221,247 @@ components:
           items:
             type: string
     # <<< M1 endpoints
+    #
+    # >>> M2 packages
+    PackageSummary:
+      type: object
+      description: |
+        A package as the caller sees it (R-API-029): every member is computed from the versions the
+        caller may read. `latestVersion` is the highest visible stable version, or the highest visible
+        pre-release while no stable version is visible.
+      required: [id, format, name, description, latestVersion, keywords, repositories, createdAt, updatedAt, versionCount, downloadCount]
+      properties:
+        id:
+          type: string
+          pattern: "^pkg_[0-9A-Za-z]+$"
+          description: Server-generated and opaque.
+        format:
+          type: string
+          description: The names of `GET /api/v1/formats`.
+        name:
+          type: string
+          description: The name as the format stores it; NuGet IDs in their original casing.
+        description:
+          type: [string, "null"]
+          description: The description of the latest version.
+        latestVersion:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        repositories:
+          type: array
+          description: The keys of the repositories that hold a visible version.
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+          description: When the first visible version was published.
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the latest visible version was published.
+        versionCount:
+          type: integer
+          format: int64
+          description: The number of visible versions.
+        downloadCount:
+          type: integer
+          format: int64
+          description: The downloads of the visible versions, summed.
+    PackageList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageSummary"
+        nextCursor:
+          type: [string, "null"]
+    PackageVersionSummary:
+      type: object
+      required: [version, prerelease, publishedAt, sizeBytes, repositories, downloadCount]
+      properties:
+        version:
+          type: string
+        prerelease:
+          type: boolean
+          description: By the format's version rules.
+        publishedAt:
+          type: string
+          format: date-time
+        sizeBytes:
+          type: integer
+          format: int64
+          description: The size of the version's files, summed.
+        repositories:
+          type: array
+          description: The keys of the repositories that hold this version and that the caller may read.
+          items:
+            type: string
+        downloadCount:
+          type: integer
+          format: int64
+    PackageVersionList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageVersionSummary"
+        nextCursor:
+          type: [string, "null"]
+    PackageVersionRepository:
+      type: object
+      required: [key, class, publishedAt]
+      properties:
+        key:
+          type: string
+        class:
+          type: string
+          enum: [local, remote, virtual]
+        publishedAt:
+          type: string
+          format: date-time
+    PackageFile:
+      type: object
+      required: [path, sizeBytes, sha256, downloadUrl]
+      properties:
+        path:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        downloadUrl:
+          type: string
+          description: Absolute, built on the public base URL.
+    PackageVersion:
+      type: object
+      required: [packageId, format, name, version, prerelease, publishedAt, licenses, sizeBytes, downloadCount, hasReadme, metadata, repositories, files]
+      properties:
+        packageId:
+          type: string
+        format:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        prerelease:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+        licenses:
+          type: array
+          description: SPDX identifiers or the license expression the package declares; empty when it declares none.
+          items:
+            type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        downloadCount:
+          type: integer
+          format: int64
+        hasReadme:
+          type: boolean
+          description: Whether `readme` answers 200; the UI uses it to choose the default tab without a probing request.
+        metadata:
+          type: object
+          additionalProperties: true
+          description: |
+            Format-specific, owned by the format page. For npm the members the UI reads are
+            `distTags` (tag to version), `dependencies`, `devDependencies`, `peerDependencies` and
+            `optionalDependencies` (name to range), `authors` (strings), `homepage`, `repositoryUrl`
+            and `bugsUrl` (strings as the package declares them), `engines` (name to range) and
+            `deprecated` (string or null). A member that does not apply is absent.
+        repositories:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageVersionRepository"
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageFile"
+    PackageReadme:
+      type: object
+      required: [contentType, html, truncated, externalImagesBlocked]
+      properties:
+        contentType:
+          type: string
+          enum: [text/markdown]
+          description: The type of the source; `html` is always sanitized HTML.
+        html:
+          type: string
+        truncated:
+          type: boolean
+          description: The source or the rendered HTML exceeded a limit of R-UI-008.
+        externalImagesBlocked:
+          type: integer
+          format: int32
+          description: The number of external images replaced by links.
+    ClientSnippet:
+      type: object
+      description: |
+        One snippet. The `id` is stable and names the explanation the UI shows
+        (`<client>.<tab>.<name>`, for example `npm.configure.npmrc`); the text is the UI's.
+      required: [id, tab, fileName, language, content]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9-]+(\\.[a-z0-9-]+){1,3}$"
+        tab:
+          type: string
+          enum: [configure, install, publish]
+        fileName:
+          type: [string, "null"]
+          description: The file the snippet belongs in (`.npmrc`, `.yarnrc.yml`); null for a command.
+        language:
+          type: string
+          enum: [ini, yaml, json, shell, xml, text]
+        content:
+          type: string
+    ClientSetup:
+      type: object
+      required: [repository, format, client, credentials, registryUrl, endpointPath, username, publishTarget, tokenTtlSeconds, snippets]
+      properties:
+        repository:
+          type: string
+        format:
+          type: string
+        client:
+          type: string
+        credentials:
+          type: string
+          enum: [placeholder, env, none]
+        registryUrl:
+          type: string
+          description: The package-manager endpoint URL of INV-6, absolute, with its trailing slash.
+        endpointPath:
+          type: string
+          description: "`registryUrl` without its scheme (`//host/path/`), the key npm matches credentials by."
+        username:
+          type: [string, "null"]
+          description: The caller's name; null for an anonymous caller.
+        publishTarget:
+          type: [string, "null"]
+          description: The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
+        tokenTtlSeconds:
+          type: integer
+          format: int64
+          description: The lifetime the setup dialog asks for when it creates a token (`ui.client_setup.token_ttl`, bounded by the maximum of R-AUTH-040).
+        snippets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientSnippet"
+    # <<< M2 packages
     #
     # >>> M2 proxy
     CacheInvalidateRequest:

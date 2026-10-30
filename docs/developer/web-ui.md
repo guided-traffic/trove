@@ -11,7 +11,7 @@ with folding groups and an icon rail and a drawer below, breadcrumbs, banner are
 [Shell, design tokens and the list components](#shell-design-tokens-and-the-list-components)), the HTTP layer, the session handling and every
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
 screen with its jobs screen, the repository list, wizard and edit form, the file tree, the endpoint screens with the exposure rule editor and
-the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)); the other routed M1 screens are placeholders with their final
+the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
 [R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
 [R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 and Q-UI-68 (shell and list layout) on the same page.
@@ -136,6 +136,44 @@ mux.Handle("/ui/", h) // do not strip the prefix
 
 Every screen has a loading, an empty, an error and a filled state, covered by component specs that run axe (no serious or critical violation).
 Decisions: Q-UI-14 (forms), Q-UI-15 (`ui.*` constants), Q-UI-16 (upload), Q-UI-17 (tree), Q-UI-18 (repositories), Q-UI-19 (endpoints, audit, status).
+
+## Package screens and client setup
+
+R-UI-006 to R-UI-009, R-UI-016 and R-UI-017 against the contract of R-API-029 and R-API-030, which the server implements
+([packages.md](packages.md)); the component specs run against the generated types and the fakes of
+[fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts), and the Playwright journeys against the real server. The clients are the
+format's own ids (`npm`, `pnpm`, `yarn`, `yarn-classic`, Q-UI-77).
+
+| Route | Component | Services | Notes |
+|---|---|---|---|
+| `/packages` | [package-list](../../web/src/app/features/packages/package-list.ts) | `PackagesApi`, `RepositoriesApi`, `PackageMemory` | Shared data table and filter panel; columns type, name, latest version, description, first created, updated (relative, absolute in `datetime` and the title), versions, repositories, downloads; sortable: name, first created, updated, as the API sorts; filters package type, repository, name or description, keyword, created period; chips; tabs All, Recently viewed, Saved views (`tab`) |
+| `/packages/{format}/{name…}` | [package-detail](../../web/src/app/features/packages/package-detail.ts) | `PackagesApi` | `packageMatcher` in [packages.routes.ts](../../web/src/app/features/packages/packages.routes.ts); `lookup`, then the versions (all pages, newest first by version), then the selected version; `?version=`, `?tab=`, `?prerelease=true`; header facts, version combobox, tabs README (only with `hasReadme`), Metadata, Files, Repositories, All versions; install panel above the tabs and, from 60 rem of content width, in a sticky right column |
+| (inside the package page) | [install-panel](../../web/src/app/features/packages/install-panel.ts) | `ClientSetupApi` | Client and repository pickers; the install snippet with `credentials=none`; copy; collapsed above three lines; link to `/setup` |
+| (inside the package page) | [package-readme](../../web/src/app/features/packages/package-readme.ts) | none | Binds the server's sanitized HTML; finishes it (below) |
+| `/setup` | [client-setup](../../web/src/app/features/setup/client-setup.ts) | `ClientSetupApi`, `RepositoriesApi`, `TokensApi`, `SessionStore` | Steps package type, client, repository, credentials; tabs Configure, Install, Publish; `?format=&client=&repository=` |
+
+Files by purpose: [clients.ts](../../web/src/app/features/setup/clients.ts) (the clients per format and the explanation by snippet `id`),
+[token-shape.ts](../../web/src/app/features/setup/token-shape.ts) (prefix, length, alphabet and CRC-32 of a pasted token),
+[package-links.ts](../../web/src/app/features/packages/package-links.ts) (`safeHttpUrl`: only `http` and `https` metadata links become links; `packageCommands`),
+[package-memory.ts](../../web/src/app/features/packages/package-memory.ts) (recent packages and saved views in browser storage per principal),
+[format-size.ts](../../web/src/app/features/packages/format-size.ts), [format-time.ts](../../web/src/app/features/packages/format-time.ts).
+
+**Rules the screens follow.**
+
+- *Sorting and filtering are the server's.* The list screen sorts and filters nothing; a column is sortable only where `PackageSort` of
+  [packages-api.ts](../../web/src/app/api/packages-api.ts) names it. Every change of filter or sort restarts the cursor walk.
+- *The setup page owns its token* (R-UI-043, Q-UI-74). The token is a private signal of the component; `fillToken` replaces `{{token}}` literally; a
+  pasted value that fails `checkTokenShape` never reaches the snippets; choosing another repository or credential mode, and leaving the route, clears it.
+  The specs scan both storage areas and the URL. Security note: [tokens-and-credentials.md](../security/tokens-and-credentials.md#tokens-in-the-browser-the-client-setup-page).
+- *The README component finishes the HTML* (Q-UI-71). Angular's sanitizer removes every `id` and `name`, so the component derives `user-content-<slug>`
+  from each heading with `headingSlug`; the server's renderer uses the same rule for its table-of-contents links
+  (`readme.HeadingSlug`), and both tests carry one corpus of 35 headings (Q-UI-76: a change of the rule is made in both). The CSP lists the image origins
+  of `ui.readme.external_image_origins` ([csp.go](../../internal/webui/csp.go)); the component keeps an `https` image or a path of this origin and removes
+  anything else.
+- *Metadata links* (`homepage`, `repositoryUrl`, `bugsUrl`) become links only for `http` and `https`, with `rel="nofollow noopener noreferrer"`.
+- *Breadcrumbs.* A matcher route with `data.crumbParam` adds one step with that parameter (`@team-a/ui`); see `collect` in
+  [breadcrumbs.ts](../../web/src/app/core/breadcrumbs.ts).
+- *New texts.* Snippet explanations are `$localize` texts keyed by the snippet's stable `id`; a snippet with an unknown `id` is shown without one.
 
 ## Conventions that CI enforces
 
@@ -303,16 +341,16 @@ The themes are the ones of [R-API-021](../spec/api-and-ui.md): `color-scheme: li
 ### The base URL rule
 
 Every address the UI shows or copies as a client address, and the `curl` text of the repository forms, is built from the **server's configured base
-URL**, never from `location` (Q-UI-69). [ServerAddress](../../web/src/app/core/server-address.ts) answers `baseUrl()`:
-
-1. a holder of `settings:read` gets `baseUrl` from `GET /api/v1/system/info`;
-2. any other caller gets it from the first readable repository whose absolute `addresses` entry ends in the format's `protocolBasePath` with its
-   key (`protocolPath`); the part before the suffix is the base;
-3. neither answers: `null`, and the screen shows no address (the review step of the repository wizard an en dash) instead of a wrong one.
+URL**, never from `location` (Q-UI-69, Q-UI-75). [ServerAddress](../../web/src/app/core/server-address.ts) answers `baseUrl()` from the `baseUrl` member of
+`GET /api/v1/formats` (`RepositoriesApi.baseUrl()`), which every caller that may use the UI can read: no permission, no readable repository and no second
+request is needed. The server fills it from the configured base URL of the endpoint the page was served from, and never from a `Host` header;
+`null` means that none is configured, and the screen shows no address (the review step of the repository wizard an en dash) instead of a wrong one. A
+`null` or a failed read is not remembered.
 
 `clientAddress(baseUrl, format, key)` and `apiAddress(baseUrl, path)` in [repository-model.ts](../../web/src/app/features/repositories/repository-model.ts)
 build the strings. Lists and the consumer view show the absolute `addresses` of the server unchanged. A spec that proves the rule renders a screen under
-jsdom's own origin and asserts that the shown address carries the fake's configured base URL and not `location.origin`.
+jsdom's own origin and asserts that the shown address carries the fake's configured base URL and not `location.origin`
+([server-address.spec.ts](../../web/src/app/core/server-address.spec.ts) also covers a caller with `repositories:write-config` and nothing else).
 
 ## Identity, token and permission screens
 
@@ -403,7 +441,7 @@ Conventions these screens follow:
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
   expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
   settings and policy editors and the catalog editors keep and restore their non-secret drafts (see above).
-- The top bar has the repository search only. The global search over packages and files, the project filter, the help link and the keyboard-shortcut switch are P1 entries of R-UI-002; the packages list and package details (R-UI-006 to R-UI-009) arrive with their API and reuse the data table and the filter panel. The sidebar shows no version or footer text, because no API the browser may read carries the version.
+- The top bar has the repository search only. The global search over packages and files, the project filter, the help link and the keyboard-shortcut switch are P1 entries of R-UI-002; the packages list and details (R-UI-006 to R-UI-009) are built against the contract and reuse the data table and the filter panel. The sidebar shows no version or footer text, because no API the browser may read carries the version.
 - The jobs list of the system area (`/admin/system/jobs`) and the older tables of the detail screens (role bindings, group members, exposure rules, job table) still use their own `table.data` markup; they move to the data table when their screens are next touched.
 - Forms: the identity, token, settings and policy forms use plain signals with `TextField` and `SelectField` (Q-UI-20), the catalog forms plain signals with native controls (Q-UI-14); in both the server's field errors by JSON pointer carry the validation, and the client checks only what saves a round trip. Signal Forms with validators derived from the OpenAPI constraints are not used.
 - Browser-mode component tests and contract mocks. Of the Playwright tier, reflow at 320 CSS px, focus order across navigations, Firefox and WebKit, the client-setup journey with real `npm` and `dotnet` commands and the claim tester arrive with the screens and formats they need; the journeys of the M1 subset exist ([e2e.md](e2e.md#browser-journeys)).
@@ -411,3 +449,4 @@ Conventions these screens follow:
 - npm 11 prints `allow-scripts` warnings for the install scripts of `esbuild`, `lmdb`,
   `msgpackr-extract` and `@parcel/watcher`. Build, test and lint pass without running them; if a
   later npm turns the warning into an error, approve the scripts in the workspace configuration.
+- Packages and client setup: the NuGet clients (.NET CLI, NuGet CLI, Visual Studio, `nuget.config`) wait for the NuGet format; the Owners and Builds tabs of the package page (P1), the native-exchange GitLab variant (R-NPM-022, P1) and the Playwright journey with a real `npm install` (R-UI-016) are not built. The version combobox is a native input with a `datalist`, not an ARIA combobox. The wizard of a caller who holds neither `settings:read` nor any readable repository shows no client address (Q-UI-69).

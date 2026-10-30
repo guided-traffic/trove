@@ -146,6 +146,12 @@ type Options struct {
 	Repositories RepositoryServices
 	// <<< M1 repository
 
+	// >>> M2 packages
+	// Packages are the services of the package operations (packages_api.go); a
+	// zero value answers them with 503.
+	Packages PackageServices
+	// <<< M2 packages
+
 	// >>> M1 files
 	// Files is the files service behind the items operations (items_api.go); nil
 	// disables them with 503.

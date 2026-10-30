@@ -113,6 +113,8 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `getEncryptionStatus` | `GET /api/v1/system/encryption` | `settings:read` |
 | `listFormats` | `GET /api/v1/formats` | public; 401 for an anonymous caller while anonymous access is off ([repositories.md](repositories.md#http-operations)) |
 | `listRepositories`, `getRepository` | `GET /api/v1/repositories`, `/{key}` | public; the handler decides what the caller sees (R-AUTHZ-016) |
+| `listPackages`, `lookupPackage`, `getPackage`, `listPackageVersions`, `getPackageVersion`, `getPackageVersionReadme` | `GET /api/v1/packages`, `/lookup`, `/{packageId}`, `/{packageId}/versions`, `/{packageId}/versions/{version}`, `…/readme` | public; the read model filters by what the caller may read (Q-API-162, Q-API-165); [packages.md](packages.md) |
+| `getClientSetup` | `GET /api/v1/repositories/{repoKey}/client-setup` | `{action: read, repository: path.repoKey}`; the publish snippets also need `deploy` on the target ([packages.md](packages.md#client-setup)) |
 | `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository` | `POST`, `PUT`, `PATCH`, `DELETE` on `/api/v1/repositories` and `/{key}` | `repositories:write-config` |
 | `getRepositoryClaims`, `putRepositoryClaims` | `/api/v1/repositories/{repoKey}/claims` | `{action: read\|manage, repository: path.repoKey}`; a global claim also needs `repositories:write-config`, asked in the handler ([virtual.md](virtual.md)) |
 | `getItem`, `deleteItem`, `listChildren`, `getItemStats` | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats` | `{action: read\|delete, repository: path.repoKey, path: query.path}` ([files.md](files.md)) |
@@ -122,6 +124,24 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 engine ([authorization.md](authorization.md)): `system.bootstrap_anonymous_read` opens `settings:read` for `GET /api/v1/system/info` and `GET /api/v1/system/replicas` (Q-AUTHZ-71) to anonymous callers on the **default endpoint only**, and only
 while that endpoint admits anonymous requests; a further endpoint that serves `api` answers 401 (Q-OPS-36). The route
 check at start compares the document with the registered and the dropped patterns of each endpoint that serves `api`.
+
+## Packages and client setup operations
+
+The contract of R-API-029 and R-API-030 is in the document's block `M2 packages` (tag `packages`, the `PackageSummary`, `PackageList`,
+`PackageVersionSummary`, `PackageVersionList`, `PackageVersion`, `PackageFile`, `PackageReadme`, `ClientSetup` and `ClientSnippet` schemas, the parameters
+`PackageId` and `PackageVersionPath`). The admin UI is generated from it. The decisions are Q-API-159 to Q-API-168. The implementation, the read model
+behind it, the README renderer and the setup snippets are described in [packages.md](packages.md); this page keeps the conventions the handlers rely on.
+
+[packages_api.go](../../internal/api/v1/packages_api.go) implements the seven operations on `Options.Packages` (`PackageServices`, filled by
+[wire_packages.go](../../internal/app/wire_packages.go)). A replica without the read model (the shell profile, no database, no decision point) answers
+them `503 unavailable`: never an empty list, because an empty list says "no package". Every operation is declared `public` (Q-API-162) and
+decides in the handler; the client setup declares `{action: read, repository: path.repoKey}`.
+
+- the lists use `ParseList`: the sorts and filters of the document, a cursor bound to the filter fingerprint, an unknown parameter or sort answering
+  `400`; the cursor values are the sort values of the last item and the tie-breakers (name and format; version);
+- the summary, the details and the README answer a strong `ETag` through `NotModified`; the summary and the details hash the bytes they send, the README
+  hashes its inputs so that a request that holds the tag renders nothing;
+- `GET /api/v1/formats` carries the `baseUrl` member (Q-UI-75), filled from the request's resolved information only when its source is the configuration.
 
 ## Conventions every resource inherits (WP1.6)
 

@@ -22,9 +22,28 @@ type SetupTemplate struct {
 	// File is the target file when the snippet is file content: ".npmrc".
 	File string
 	// Template is text/template over [SetupData]; it never receives a token
-	// (R-API-030).
+	// (R-API-030). The functions shell and xml quote a value for a shell command
+	// and for an XML text or attribute (R-API-030); a value of SetupData that a
+	// template places in such a context goes through them.
+	//
+	// The credential is the one literal [SetupTokenRef], and the placeholder of
+	// the package to install is [SetupPackageRef]. The API rewrites both after the
+	// template ran, by the credential mode of the request and by the package asked
+	// for, so that no template implements the three modes or the quoting.
 	Template string
 }
+
+// SetupTokenRef is how a setup template spells the reference to the token, exactly:
+// the environment variable the client expands itself. The API replaces it by the
+// reference of the configured variable (credentials=env), by the placeholder the
+// browser fills in (credentials=placeholder), or drops the line that holds it
+// (credentials=none).
+const SetupTokenRef = "${TROVE_TOKEN}" //nolint:gosec // a reference to an environment variable, not a credential
+
+// SetupPackageRef is how an install template spells the package to install. The
+// API replaces it by the quoted name and version when the request names a package,
+// and leaves it in place otherwise.
+const SetupPackageRef = "<package>"
 
 // SetupData is the only data a setup template sees. It has no credential field,
 // so a template that names one fails to execute (kit check 8).

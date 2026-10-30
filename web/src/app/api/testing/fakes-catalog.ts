@@ -76,6 +76,9 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
 export class FakeRepositoriesApi extends RepositoriesApi {
   formatsResult: readonly FormatDescriptor[] = [GENERIC_FORMAT];
   formatsError: ApiError | null = null;
+  /** The `baseUrl` of the formats answer. */
+  baseUrlResult: string | null = 'https://trove.example.net';
+  baseUrlCalls = 0;
   repositories: Repository[] = [
     {
       key: 'generic-local',
@@ -117,6 +120,12 @@ export class FakeRepositoriesApi extends RepositoriesApi {
   override async formats(): Promise<readonly FormatDescriptor[]> {
     if (this.formatsError) throw this.formatsError;
     return this.formatsResult;
+  }
+
+  override async baseUrl(): Promise<string | null> {
+    this.baseUrlCalls++;
+    if (this.formatsError) throw this.formatsError;
+    return this.baseUrlResult;
   }
 
   private summaries(filters: RepositoryFilters): RepositorySummary[] {

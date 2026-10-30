@@ -45,6 +45,20 @@ export const routes: Routes = [
         data: { crumbs: [area.content, { label: $localize`:@@nav.browse:Browse`, link: true }] satisfies CrumbSpec[] },
         loadChildren: () => import('./features/browse/browse.routes').then((m) => m.BROWSE_ROUTES),
       },
+      // >>> M2 ui-packages
+      {
+        path: 'packages',
+        data: {
+          crumbs: [area.content, { label: $localize`:@@nav.packages:Packages`, link: true }] satisfies CrumbSpec[],
+        },
+        loadChildren: () =>
+          import('./features/packages/packages.routes').then((m) => m.PACKAGES_ROUTES),
+      },
+      {
+        path: 'setup',
+        loadChildren: () => import('./features/setup/setup.routes').then((m) => m.SETUP_ROUTES),
+      },
+      // <<< M2 ui-packages
       {
         path: 'profile',
         data: { crumbs: [{ label: $localize`:@@route.profile.title:Profile`, link: true }] satisfies CrumbSpec[] },

@@ -265,6 +265,18 @@ Tests: `remote/remote_test.go` and `merge/merge_test.go` (with `FuzzRewrite`, `F
 document equal the local renderings), conformance checks 4 and 5, and in [test/integration/npm](../../test/integration/npm/) `remote_test.go`, `remote_marks_test.go`, `virtual_test.go`, `exposure_virtual_test.go`
 against [test/npmstub](../../test/npmstub/) in the test process (`remote_env_test.go` builds the repositories).
 
+## The package view
+
+[view.go](../../internal/formats/npm/view.go) is npm's `ViewAdapter` (R-API-029, Q-API-166). Order and pre-release are SemVer's (`semver.CompareBuild`; two
+strings never compare equal). `describeManifest` reads the stored manifest of a version for the screens and leaves out every member whose type is not the
+documented one: description and keywords (summary); `license` or the legacy `licenses`; `dependencies`, `devDependencies`, `peerDependencies`,
+`optionalDependencies`, `engines`; `author` and `contributors` as "Name <email> (url)"; `homepage`, `repository.url`, `bugs.url`; the deprecation message; and the
+dist-tags of the package, restricted to versions the caller may read. The reads are in
+[formatdata/npm/view.go](../../internal/formatdata/npm/view.go) over [npm_view.sql](../../internal/meta/postgres/queries/npm_view.sql): the summaries, the
+details with the README on request, the two searches (description contains text case-insensitively; keywords contain a keyword exactly) and the tombstoned
+versions that `Withheld` reports (R-NPM-047). The tests are `TestR_API_029_NPM*` ([view_test.go](../../internal/formats/npm/view_test.go)) and the
+integration area `test/integration/packages`.
+
 ## Identity
 
 `handleWhoami` answers `{"username": principalName(rq)}` (`sa:<name>`, `ci:<name>` for those kinds), `handlePing` answers `{}`; both are 401 for a subject without a name (anonymous, or a token the chain no longer

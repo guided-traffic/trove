@@ -144,6 +144,9 @@ type Format interface {
 	Indexes() IndexBuilder
 	// Exposure is nil for a format that is not exposable (R-EP-018).
 	Exposure() ExposureAdapter
+	// View is nil for a format without package screens (R-API-029): the adapter
+	// reads what the generic rows do not hold and orders the versions.
+	View() ViewAdapter
 
 	// SetupTemplates are the client setup snippets (R-API-033).
 	SetupTemplates() []SetupTemplate
@@ -263,6 +266,9 @@ func Validate(f Format) error {
 		if dim := x.Dimensions(); (dim.Packages || dim.Versions || dim.Tags) && !d.PackageNames {
 			return fmt.Errorf("%q narrows exposure by package, version or tag and has no package names", id)
 		}
+	}
+	if f.View() != nil && !d.PackageNames {
+		return fmt.Errorf("%q has a package view and no package names", id)
 	}
 	return checkRoutes(f, d)
 }
