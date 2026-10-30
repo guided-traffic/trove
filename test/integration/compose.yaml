@@ -1,5 +1,5 @@
-# Integration stack, TLS on every connection (INV-20): PostgreSQL 16 (the floor
-# version, hostssl only), PgBouncer in transaction mode (TLS in, verify-full out),
+# Integration stack, TLS on every connection (INV-20): PostgreSQL 18 (the newest
+# supported version; the floor 16 is not run here, see R-HA-013), hostssl only, PgBouncer in transaction mode (TLS in, verify-full out),
 # Valkey with a replica and three Sentinels over TLS only, and SeaweedFS as the
 # HTTPS-only S3 store. The certificates come from certs.sh, mounted at /certs. Started by test/integration/up.sh, which sets the variables
 # below from tools/versions.env.
@@ -29,6 +29,8 @@ services:
       POSTGRES_PASSWORD: trove-it
       POSTGRES_DB: trove
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      # The PostgreSQL 18 image defaults to /var/lib/postgresql/18/docker; the tmpfs below is the data directory.
+      PGDATA: /var/lib/postgresql/data
     entrypoint: ["/conf/postgres.sh"]
     command:
       - postgres

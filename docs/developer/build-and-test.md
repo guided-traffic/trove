@@ -137,7 +137,7 @@ the stack, because Sentinel rewrote the configuration of the data nodes.
 
 | Service | Container | Host address | Notes |
 |---|---|---|---|
-| PostgreSQL 16 (the floor version) | `trove-it-postgres` | `127.0.0.1:15432` | user `trove`, database `trove`, superuser; data on tmpfs; TLS only (`hostssl`) |
+| PostgreSQL 18 (the version under test, Q-ARCH-219) | `trove-it-postgres` | `127.0.0.1:15432` | user `trove`, database `trove`, superuser; data on tmpfs (`PGDATA` set in the compose file); TLS only (`hostssl`) |
 | PgBouncer | `trove-it-pgbouncer` | `127.0.0.1:16432` | `pool_mode = transaction`, a catch-all database entry, `max_prepared_statements = 100`; the admin console is the database `pgbouncer`; TLS in (`require`) and out (`verify-full`) |
 | Valkey primary, replica | `trove-it-valkey-primary`, `trove-it-valkey-replica` | `127.0.0.1:16379`, `:16380` | `port 0`, `tls-port`, `tls-replication yes`, ACL file with the users below |
 | Sentinels | `trove-it-valkey-sentinel-{1,2,3}` | `127.0.0.1:26381` to `:26383` | TLS only, password-protected, monitor name `trove`, quorum 2, `down-after-milliseconds 3000` |
@@ -211,7 +211,7 @@ keep verifying. Pass a short `days` to test expiry. A test shells out to the scr
 root, as the Valkey tests do with `docker`.
 
 The smoke tests in [test/integration/smoke](../../test/integration/smoke) check one thing per
-dependency: PostgreSQL 16 direct (including a session advisory lock), PgBouncer in transaction mode,
+dependency: PostgreSQL 18 direct (including a session advisory lock), PgBouncer in transaction mode,
 Valkey discovery through Sentinel over TLS with the ACL user, TLS-only ports, the example ACL rule
 (`ACL LOG` stays empty, commands outside the rule are refused), two forced failovers that a host-side
 client follows, and put, get and versioning in SeaweedFS with the AWS SDK. The failover test returns the

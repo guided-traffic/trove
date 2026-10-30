@@ -1027,6 +1027,13 @@ older server (`server_version_num < 160000`) with a message naming the version f
 [PostgreSQL versioning page](https://www.postgresql.org/support/versioning/): 14 ends 2026-11-12,
 15 on 2027-11-11, 16 on 2028-11-09, 17 on 2029-11-08, 18 on 2030-11-14.
 
+- **Version under test (Q-ARCH-219).** The integration tier of CI and the dev profile run PostgreSQL
+  18.6 (`tools/versions.env`, [compose.yaml](../../test/integration/compose.yaml)). No CI run starts a
+  real server of 16 or 17, so the floor and the line after it are not verified against a server, and
+  the refusal below `server_version_num` 160000 (`internal/meta/postgres/preflight.go`) has no test in the
+  repository. The CI matrix over every supported version is not built yet: until it is, support of 16 and
+  17 is what this page states, not what CI has run. Next step: a 16 leg of the integration tier and a test
+  of the refusal, decided with the owner (Q-ARCH-219 option (c)).
 - A new major version joins the support list once it is generally available and the CI matrix
   passes on it. PostgreSQL 19 is at release candidate stage; its general availability is planned
   for 2026-11-19 ([RC 1 announcement](https://www.postgresql.org/about/news/postgresql-19-rc-1-released-3409/),
@@ -5759,7 +5766,7 @@ is pinned. The development agent would revisit the edge if the Ingress path cann
 **Applied in the spec:** R-HA-051 and the local profile describe the same mechanisms; no requirement text changed.
 
 **Owner decision, 2026-10-29 (revisits this question).** The edge of the local profile is the owner's controller, HAProxy
-Ingress: the chart `haproxy-ingress` at the owner's pin of 0.15.3 in the owner's own cluster base, with the annotation prefix
+Ingress: the chart `haproxy-ingress` at the owner's pin in the owner's own cluster base. The owner moved that pin from 0.15.3 to 0.16.3 on 2026-10-30, so the dev edge keeps mirroring production; the controller image of 0.16.3 runs HAProxy 2.8.31 (0.15.3 ran 2.6.25; both read from the images), and `helm template` of the 0.16.3 chart with the dev values (Helm 4.3.1) keeps the two replicas, the PodDisruptionBudget with `minAvailable: 1`, the NodePorts 30080 and 30443, the control-plane placement and the default IngressClass, while the pod no longer automounts the ServiceAccount token into the pod: it is mounted only into the controller container (a projected volume), as the chart documents. The controller, which watches Ingresses through the API, still has its token. The annotation prefix
 `haproxy-ingress.github.io/`. Choice (a) therefore names HAProxy Ingress instead of Traefik, and the Traefik pins of the
 profile are withdrawn when the profile switches. The scatter profile keeps its purpose (one request, one backend) and moves
 to HAProxy's keys: a round-robin balance, and no upstream keep-alive through `option http-server-close` in a backend

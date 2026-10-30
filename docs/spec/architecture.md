@@ -5775,6 +5775,36 @@ Q-NPM-45 already states, and the one-version rule is re-decided on the page that
 **Applied in the spec:** [npm.md](formats/npm.md) (Q-NPM-45 names 26.13.0 and its verification); `web/.nvmrc` and `tools/versions.env`
 hold the pins; [docs/developer/e2e.md](../developer/e2e.md) and [perf/README.md](../../perf/README.md) name the version.
 
+### Q-ARCH-219 · Which PostgreSQL version does the integration tier and the dev profile run?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Renovate proposed PostgreSQL 18.6 for the integration stack (`docker.io/library/postgres`) and for the dev profile
+(`ghcr.io/cloudnative-pg/postgresql`). Both pins were 16.15, the floor of R-HA-013 (Q-HA-2). Three integration tests asserted
+`server_version_num` in the 16 range (`test/integration/postgres/migrate_test.go`, `env_test.go`, `test/integration/smoke/postgres_test.go`).
+R-HA-013 requires every supported version (16, 17, 18) to be covered by the CI matrix, and CI covers one version today. The owner's
+instruction of 2026-10-30 is to take all pending changes, and the coordinator chose option (b) on that basis. The digests
+were resolved on 2026-10-30: `postgres:18.6` `sha256:979bccfd…`, `cloudnative-pg/postgresql:18.6-standard-trixie` `sha256:39add80f…`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep 16 | Both pins stay at 16.15; the floor is what CI runs | The floor is what CI runs against a real server; no test changes | 18 is supported (R-HA-013) and no CI run uses it; the Renovate pull requests stay open |
+| (b) Move to 18 (chosen) | The integration stack and the dev profile run 18.6; the three assertions name 18; the floor is no longer run against a real server | One version in every environment (the one-version rule); the newest supported line is what CI exercises; `PGDATA` moves to the tmpfs path the stack already uses | 16 and 17 have no real-server run in CI until the matrix exists; the refusal below 16 has no test |
+| (c) A 16 and an 18 leg | Two integration legs, one per version, both in CI | Covers every supported version, as R-HA-013 requires | Two PostgreSQL versions in use, against the one-version rule, unless the owner grants a matrix exception; a second stack in the compose file |
+
+**Choice:** (b). The stack, the dev profile and the assertions move to 18.6 in one change.
+
+**Rationale:** The one-version rule is binding: when two versions of a dependency are in use, the newer one goes everywhere, and
+(c) would put 16 and 18 in use at once. The owner's instruction names the same direction. The cost is real and is recorded on
+R-HA-013 ("Version under test"): the floor is no longer exercised by a real server, and the refusal below 160000 has no test.
+The development agent would revisit the choice when one of these happens: the owner grants an exception that allows a matrix, so (c)
+is built with a 16 leg and the refusal test; a feature of the spec needs a PostgreSQL version that the stack does not run; or
+PostgreSQL 18 leaves support (2030-11-14, as R-HA-013 records).
+
+**Applied in the spec:** R-HA-013 (the "Version under test" bullet names the gap); `test/integration/compose.yaml` (the header and
+`PGDATA`); `tools/versions.env` (`INTEGRATION_POSTGRES_IMAGE`, `DEV_CNPG_POSTGRES_IMAGE`); the three assertions; the pages of
+[developer](../developer/build-and-test.md) and [local profile](../developer/local-profile.md) name 18.
+
 ## What this does not cover
 
 ### H-1 · Format code runs in-process without isolation

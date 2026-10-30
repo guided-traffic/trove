@@ -42,7 +42,7 @@ func (db *DB) SystemFacts(ctx context.Context) (SystemFacts, error) {
 	return f, nil
 }
 
-// ServerVersion returns the PostgreSQL server version string (for example "16.15").
+// ServerVersion returns the PostgreSQL server version string (for example "18.6").
 func (db *DB) ServerVersion(ctx context.Context) (string, error) {
 	var version string
 	err := db.Read(ctx, func(c q.DBTX) error {

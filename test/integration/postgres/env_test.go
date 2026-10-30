@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package postgres tests the PostgreSQL layer against the integration stack:
-// PostgreSQL 16 direct and through PgBouncer in transaction mode.
+// PostgreSQL 18 direct and through PgBouncer in transaction mode.
 package postgres
 
 import (

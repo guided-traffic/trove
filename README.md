@@ -334,7 +334,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/decisions.md](docs/decisions.md) | Architecture decision records |
 | [docs/features/](docs/features/README.md) | The feature catalog that the spec covers |
 | [Full reference](#-full-reference) | Every command, configuration key, system endpoint and Helm value of this README |
-| Upstream | [Go](https://go.dev/doc/), [PostgreSQL 16](https://www.postgresql.org/docs/16/), [Valkey Sentinel](https://valkey.io/topics/sentinel/), [Helm](https://helm.sh/docs/), [kind](https://kind.sigs.k8s.io/), [CloudNativePG](https://cloudnative-pg.io/documentation/), [HAProxy Ingress](https://haproxy-ingress.github.io/), [cert-manager](https://cert-manager.io/docs/), [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) |
+| Upstream | [Go](https://go.dev/doc/), [PostgreSQL 18](https://www.postgresql.org/docs/18/), [Valkey Sentinel](https://valkey.io/topics/sentinel/), [Helm](https://helm.sh/docs/), [kind](https://kind.sigs.k8s.io/), [CloudNativePG](https://cloudnative-pg.io/documentation/), [HAProxy Ingress](https://haproxy-ingress.github.io/), [cert-manager](https://cert-manager.io/docs/), [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) |
 
 The production platform is the owner's stack: guided-traffic operators, and the upstream projects they run on. The chart consumes
 them and does not bundle them:

@@ -333,7 +333,7 @@ end-to-end reports.
   answers `200` on `:8081/readyz`. `GET /api/v1/system/replicas` lists two replicas with role
   `web` and two with role `worker`, and `GET /api/v1/system/ping` answers `OK` through the Ingress
   (R-HA-002). R-HA-051's `npm ping` criterion moves to M2.
-- **E0.4** On an empty PostgreSQL 16, the floor version (Q-HA-2), the migration Job creates the
+- **E0.4** On an empty PostgreSQL 18, the version under test (Q-ARCH-219; the floor is 16, Q-HA-2), the migration Job creates the
   schema. If two migration Jobs start at once, one applies the migrations and the other waits on
   the advisory lock, then exits with nothing to do. A migration that fails on purpose leaves the
   running replicas serving and makes `helm upgrade` fail. This is the "Migration failure" row of

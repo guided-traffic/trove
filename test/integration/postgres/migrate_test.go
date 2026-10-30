@@ -19,11 +19,11 @@ import (
 func TestMigrateEmptyDatabase(t *testing.T) {
 	st := getStack(t)
 
-	t.Run("R-ARCH-026 on an empty PostgreSQL 16 the runner creates the schema", func(t *testing.T) {
+	t.Run("R-ARCH-026 on an empty PostgreSQL 18 the runner creates the schema", func(t *testing.T) {
 		name, admin := st.newDatabase(t)
 		cfg := st.config(t, name)
-		if v := scalar[int](t, admin, "SELECT current_setting('server_version_num')::int"); v < 160000 || v >= 170000 {
-			t.Fatalf("the integration tier runs the floor version 16, server_version_num = %d", v)
+		if v := scalar[int](t, admin, "SELECT current_setting('server_version_num')::int"); v < 180000 || v >= 190000 {
+			t.Fatalf("the integration tier runs PostgreSQL 18, server_version_num = %d", v)
 		}
 
 		res, err := postgres.Migrate(ctxT(t, 60*time.Second), cfg, opts(nil))

@@ -43,8 +43,8 @@ func TestPostgresDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server_version_num %q: %v", raw, err)
 	}
-	if num < 160000 || num >= 170000 {
-		t.Fatalf("server_version_num = %d, the integration tier runs PostgreSQL 16 (the floor version)", num)
+	if num < 180000 || num >= 190000 {
+		t.Fatalf("server_version_num = %d, the integration tier runs PostgreSQL 18", num)
 	}
 
 	var one int

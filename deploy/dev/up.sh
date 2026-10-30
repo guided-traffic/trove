@@ -92,7 +92,7 @@ digest_of() { printf '%s\n' "${1##*@}"; }
 
 task_haproxy() {
   # The chart's image values take a tag; "tag@digest" pins it by digest.
-  local ref="${DEV_HAPROXY_INGRESS_IMAGE#quay.io/}"           # jcmoraisjr/haproxy-ingress:v0.15.3@sha256:...
+  local ref="${DEV_HAPROXY_INGRESS_IMAGE#quay.io/}"           # jcmoraisjr/haproxy-ingress:v0.16.3@sha256:...
   local repo="${ref%%:*}" tag="${ref#*:}"
   helm --kube-context "$CTX" upgrade --install haproxy-ingress haproxy-ingress --repo https://haproxy-ingress.github.io/charts \
     --version "$DEV_HAPROXY_INGRESS_CHART_VERSION" -n ingress-controller --create-namespace -f "$DEV_DIR/haproxy-values.yaml" \
