@@ -2,8 +2,23 @@ apiVersion: v1
 entries:
   trove:
   - apiVersion: v2
+    appVersion: 0.3.1
+    created: "2026-10-30T05:22:38.660742112Z"
+    description: trove, an artifact repository manager for package formats, as a web
+      and a worker Deployment.
+    digest: a609d748e2a502711c9dbef2ce2fd2862088ecd2ff5e654d75ac2faef002f356
+    home: https://github.com/guided-traffic/trove
+    kubeVersion: '>=1.30.0-0'
+    name: trove
+    sources:
+    - https://github.com/guided-traffic/trove
+    type: application
+    urls:
+    - https://guided-traffic.github.io/trove/trove-0.3.1.tgz
+    version: 0.3.1
+  - apiVersion: v2
     appVersion: 0.3.0
-    created: "2026-10-30T03:48:12.993868532Z"
+    created: "2026-10-30T05:22:38.659179806Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: 1767bb4f91eb7258cc99de93f0ee1436013fa481eb84b393f3c9bf017a89042f
@@ -18,7 +33,7 @@ entries:
     version: 0.3.0
   - apiVersion: v2
     appVersion: 0.2.0
-    created: "2026-10-30T03:48:12.991894288Z"
+    created: "2026-10-30T05:22:38.657776943Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: bfa538f776ba3f3fa55abfd576b2f16cc3b525537dd2bd985e384f84b5bee96a
@@ -33,7 +48,7 @@ entries:
     version: 0.2.0
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-10-30T03:48:12.989797813Z"
+    created: "2026-10-30T05:22:38.65603121Z"
     description: trove, an artifact repository manager for package formats, as a web
       and a worker Deployment.
     digest: a901e8644b4b37b1a235da888b8c215453e28decb6a7c8c4ece503d26586fe08
@@ -46,4 +61,4 @@ entries:
     urls:
     - https://guided-traffic.github.io/trove/trove-0.1.1.tgz
     version: 0.1.1
-generated: "2026-10-30T03:48:12.987799542Z"
+generated: "2026-10-30T05:22:38.654160051Z"
