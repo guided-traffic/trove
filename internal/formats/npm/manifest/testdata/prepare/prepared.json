@@ -1,0 +1,185 @@
+{
+  "plain": {
+    "name": "plain",
+    "version": "1.0.0",
+    "dependencies": {
+      "react": "^19.0.0"
+    }
+  },
+  "string bin on a scoped name": {
+    "name": "@acme/ui",
+    "version": "1.0.0",
+    "bin": {
+      "ui": "cli.js"
+    }
+  },
+  "array bin": {
+    "name": "arr",
+    "version": "1.0.0",
+    "bin": {
+      "a.js": "bin/a.js",
+      "b.js": "bin/b.js"
+    }
+  },
+  "object bin with odd keys and targets": {
+    "name": "obj",
+    "version": "1.0.0",
+    "bin": {
+      "other": "bin/y.js",
+      "tool": "x.js"
+    }
+  },
+  "directories.bin": {
+    "name": "dirbin",
+    "version": "1.0.0",
+    "bin": {
+      "sub": "tools/sub",
+      "a": "tools/a",
+      "b": "tools/sub/b"
+    }
+  },
+  "bundledDependencies true": {
+    "name": "bd",
+    "version": "1.0.0",
+    "dependencies": {
+      "a": "1",
+      "b": "2"
+    },
+    "bundleDependencies": [
+      "a",
+      "b"
+    ]
+  },
+  "bundleDependencies object": {
+    "name": "bd2",
+    "version": "1.0.0",
+    "dependencies": {
+      "a": "1",
+      "c": "*"
+    },
+    "bundleDependencies": [
+      "a",
+      "c"
+    ]
+  },
+  "bundled name missing from dependencies": {
+    "name": "bd3",
+    "version": "1.0.0",
+    "dependencies": {
+      "ghost": "*"
+    },
+    "bundleDependencies": [
+      "ghost"
+    ]
+  },
+  "bundleDependencies false": {
+    "name": "bd4",
+    "version": "1.0.0"
+  },
+  "version with v prefix": {
+    "name": "spaced",
+    "version": "1.0.0"
+  },
+  "version loose": {
+    "name": "loose",
+    "version": "1.2.3-beta"
+  },
+  "binding.gyp without install": {
+    "name": "gyp",
+    "version": "1.0.0",
+    "scripts": {
+      "install": "node-gyp rebuild"
+    }
+  },
+  "binding.gyp with preinstall": {
+    "name": "gyp2",
+    "version": "1.0.0",
+    "scripts": {
+      "preinstall": "echo"
+    }
+  },
+  "other gyp file": {
+    "name": "gyp3",
+    "version": "1.0.0",
+    "scripts": {
+      "install": "node-gyp rebuild"
+    }
+  },
+  "gypfile false": {
+    "name": "gyp4",
+    "version": "1.0.0"
+  },
+  "node_modules/.bin script prefix": {
+    "name": "scr",
+    "version": "1.0.0",
+    "scripts": {
+      "postinstall": "tsc",
+      "install": "x",
+      "test": "t"
+    }
+  },
+  "github dependency": {
+    "name": "gh",
+    "version": "1.0.0",
+    "dependencies": {
+      "a": "github:user/repo",
+      "b": "github:user/repo",
+      "c": "git+https://github.com/user/repo.git",
+      "d": "git+ssh://git@github.com/user/repo.git#v1",
+      "e": "git+https://gitlab.com/g/s/r.git",
+      "f": "^1.2.3",
+      "g": "latest"
+    }
+  },
+  "dependencies as array": {
+    "name": "darr",
+    "version": "1.0.0",
+    "dependencies": {
+      "a": "^1.0.0",
+      "b": ">=2",
+      "c": ""
+    }
+  },
+  "dependencies as string": {
+    "name": "dstr",
+    "version": "1.0.0",
+    "dependencies": {
+      "a": "1",
+      "b": "2"
+    },
+    "optionalDependencies": {
+      "o": "^3"
+    }
+  },
+  "optional listed in dependencies": {
+    "name": "opt",
+    "version": "1.0.0",
+    "dependencies": {
+      "o": "^1"
+    },
+    "optionalDependencies": {
+      "o": "^1"
+    }
+  },
+  "peer dependencies and meta": {
+    "name": "peer",
+    "version": "1.0.0",
+    "peerDependencies": {
+      "react": "*"
+    },
+    "peerDependenciesMeta": {
+      "react": {
+        "optional": true
+      }
+    },
+    "os": [
+      "linux"
+    ],
+    "cpu": [
+      "x64"
+    ],
+    "engines": {
+      "node": ">=18"
+    }
+  }
+}

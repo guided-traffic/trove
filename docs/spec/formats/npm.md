@@ -444,10 +444,24 @@ Processing:
      normalization. npm's and Yarn 2+'s packers write clean
      `package/…` names (pacote's `prefix: 'package/'`, Yarn's `ppath.join('package', file)`);
      the publish criteria below confirm it for every gate row;
+   - further archive rules, so that two readers cannot resolve the archive differently (Q-NPM-18),
+     each answering 400 `npm_bad_publish`: the file is one gzip member, with no byte after it, and
+     the tar archive ends in nothing but zero padding; an entry is a regular file, a directory, a
+     symbolic link or a hard link (no device, FIFO, sparse file or PAX global header); a name is
+     valid UTF-8 without control characters; a symbolic link has a relative target that stays
+     inside the package, a hard link names another entry below the same first component, and no
+     entry lies below a link; no entry lies below a regular file, and no regular file has the
+     install path of a folder; no top-level entry differs from `package.json` only in letter case
+     (a case-insensitive file system would install it over the manifest);
    - reading stops at `npm.publish.max_unpacked_size` or `npm.publish.max_tar_entries` (413). Both
-     bound a streaming pass that counts entries and sums their sizes without keeping content;
-     `package.json` and every other entry read into memory stay within the limits of
-     [architecture.md](../architecture.md) R-ARCH-028;
+     bound a streaming pass that counts entries and sums their sizes without keeping content, and
+     it additionally bounds what a stream can cost (Q-NPM-17): the decompressed bytes (a header
+     that declares more than the limit is refused before its content is inflated, and a stream
+     that inflates beyond it is cut off), the bytes of entry names kept, a name of more than
+     1,024 bytes, and a gzip header of more than 64 KiB. `package.json` is read into memory only
+     within the limits of [architecture.md](../architecture.md) R-ARCH-028: 1 MiB (413 when the
+     header declares more, before a byte is read), a JSON nesting depth of 64, and a compression
+     ratio of 100:1 (413). The README is read up to 64 KiB, the rest is skipped;
    - manifest consistency (`npm.publish.manifest_consistency`, Q-NPM-6): `dependencies`,
      `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundleDependencies`,
      `bin`, `os`, `cpu`, `engines` and the scripts `preinstall`, `install`, `postinstall` MUST be
@@ -461,7 +475,9 @@ Processing:
      applies the union of these steps, each idempotent, to **both** sides and compares the results;
      the stored manifest stays the request's (below). The steps that touch the compared fields:
      - `name` trimmed and `version` cleaned as semver's loose `clean()` does (`v1.2.3` becomes
-       `1.2.3`), also for the `name` and `version` check above;
+       `1.2.3`), also for the `name` and `version` check above; a `name` or `version` of the
+       tarball's `package.json` that differs from the request's answers 400
+       `npm_manifest_mismatch` in `reject` and in `warn` mode alike (Q-NPM-19);
      - `bundledDependencies` renamed to `bundleDependencies`; `true` expanded to the names of
        `dependencies`; an object reduced to its keys; `false`, an empty list and absence equal;
        non-string members dropped; a bundled name missing from `dependencies` added there with
@@ -481,6 +497,15 @@ Processing:
        Optional dependencies are not copied into `dependencies`: `@npmcli/package-json` no longer
        does that;
      - `engines` given as an array of `"<engine> <range>"` strings turned into an object (Yarn 1).
+
+     Three conventions complete the steps (Q-NPM-19). A compared field that is absent, `null`,
+     an empty object, an empty array or the empty string equals an absent one, and the
+     `bundleDependencies` list is compared sorted and without duplicates: none of these changes
+     what a client installs. A hosted-git range is written in the canonical form of
+     hosted-git-info's `toString()` for `github`, `gitlab`, `bitbucket` and `sourcehut`
+     (`user/repo` becomes `github:user/repo`, `https://github.com/user/repo` becomes
+     `git+https://github.com/user/repo.git`, `git@github.com:user/repo.git` becomes
+     `git+ssh://git@github.com/user/repo.git`); any other range stays as it is.
 
      With `warn` a mismatch is audited and accepted. A false rejection found later is fixed by
      adding the missing step, never by dropping the field from the check. A step may only erase
@@ -580,6 +605,11 @@ Acceptance criteria:
   answers 400 `npm_bad_publish`; so do one whose `package/package.json` is a symbolic link, one
   whose entries are named `./package/…`, and one holding both `package/package.json` and
   `other/package.json`.
+- A tarball with a symbolic link to `../../etc/passwd`, a hard link to `other/package.json`, an
+  entry below a link, a PAX global header, a `Package.json` next to `package.json`, bytes after
+  its gzip stream or data after its tar end blocks answers 400 `npm_bad_publish`; a tarball
+  whose `package.json` declares 2 GiB answers 413 `npm_too_large` without reading or allocating
+  it, and so does one whose `package.json` compresses by more than 100:1.
 
 ### R-NPM-008 · Version immutability and tombstones
 Priority: **MVP** · Covers: PKG-NPM-016
@@ -3052,6 +3082,110 @@ sets (`semver.ParseForExposure`).
 
 **Applied in the spec:** R-NPM-048 (version ranges: strict mode, `includePrerelease`, the bound).
 Code: `semver.Validate`, `semver.ParseForExposure`, `semver.Options`.
+
+### Q-NPM-17 · Limits of the streaming tarball pass and of manifest reading
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-ARCH-028 gives the limits of an entry read into memory (1 MiB, 100:1) and lets a format add a
+streaming pass with its own finite limits. R-NPM-007 names two of them. A stream can still cost
+more than those two bound: a tiny gzip that inflates for minutes, a header that declares a size
+the stream never delivers, a million-entry name table, a JSON document nested 100,000 deep.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The two limits of R-NPM-007 only | `max_unpacked_size` and `max_tar_entries` on the declared sizes and the entry count | Nothing to explain | The declared size is not what is inflated (a padded or PAX-heavy stream costs more); entry names are kept without a bound; a gzip header may be megabytes; no depth limit on JSON |
+| (b) Those two plus a bound on every resource the pass touches | Decompressed bytes capped at `max_unpacked_size + max_tar_entries × 2 KiB + 1 MiB`; a declared size over the limit refused before inflation; names of at most 1,024 bytes and at most 32 MiB kept; a gzip header of at most 64 KiB; `package.json` 1 MiB, depth 64, 100:1 with a 128 KiB allowance; README 64 KiB; compressed bytes capped as the publish body is | Every byte count the pass can reach is finite, and the 2 GiB `package.json` of the conformance kit is refused by its header | Six constants to maintain; the ratio check is approximate |
+| (c) Add a whole-stream compression ratio | (b) plus a ratio over all entries | Cuts an inflation bomb early | A package of generated or sparse data legitimately compresses by 1,000:1; `max_unpacked_size` already bounds the CPU a bomb gets, and the request deadline cuts it off |
+
+**Choice:** (b).
+
+**Rationale:** (b) is the only option where each of memory, CPU and bookkeeping has its own number,
+so a limit that is reached names itself in the error (413 `npm_too_large`, or 400
+`npm_bad_publish` for a JSON depth, which no honest client produces). The per-entry ratio applies
+where R-ARCH-028 puts it, to the entry read into memory. Its allowance of 128 KiB covers
+the inflater reading ahead of the entry (the compressed position is measured per entry, and a
+small entry may already be paid for), and with the 1 MiB cap it still refuses a `package.json` of
+zeros. The defaults of `max_unpacked_size` (2 GiB) and `max_tar_entries` (100,000) stay the
+configuration's (R-NPM-007). The development agent would revisit the constants if a real package
+of the public registry exceeds one of them, or if a bomb crafted below them costs a replica
+more than its deadline allows.
+
+**Applied in the spec:** R-NPM-007 step 3 (the bullet on reading limits), the acceptance
+criterion on oversize and over-ratio `package.json`. Code: `internal/formats/npm/tarball`
+(`Limits`) and `internal/formats/npm/manifest` (`Limits`).
+
+### Q-NPM-18 · Tarball archives that two readers could resolve differently
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-007 refuses duplicates, unclean names, two first components and a non-regular
+`package.json`. A tar archive offers more room for ambiguity than that: a global PAX header
+changes later entries in some readers, a sparse file expands to zeros that no byte count
+shows, links can redirect a later write, a file system without case sensitivity installs
+`Package.json` over `package.json`, and a second gzip member or trailing bytes are read by some
+decompressors and ignored by others.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The rules of R-NPM-007 only | Everything else is accepted if Go's reader accepts it | No false rejection | The manifest trove checks need not be the one a client installs |
+| (b) Refuse every archive feature a reader could resolve differently, allow in-tree links | One gzip member and no trailing bytes; zero padding only after the tar end; no PAX global header, sparse file, device or FIFO; UTF-8 names without control characters; a link that stays inside the package; nothing below a link or a file; no case variant of `package.json` | The check and the install see one archive; each rule closes a named variant | A rare archive from an unusual packer is refused with a message that names the entry |
+| (c) Refuse every link | No link of any kind | Simplest to explain | `npm pack` and Yarn write none, but other packers do, and pacote ignores links anyway; the refusal would break a package npm installs |
+
+**Choice:** (b).
+
+**Rationale:** The rule behind R-NPM-007 is that the validator must read what the installer
+installs. (b) applies it to every feature the standard library reader resolves in a way another
+reader may not (verified on 2026-10-30 in node-tar 7.5.16 `parse.js`: a global extended
+header is passed to the header of every later entry, while Go's reader ignores it; the
+other features follow the tar formats, not a client run). Links that stay inside the package are accepted because pacote skips them and a
+refusal would change nothing for npm, while a link that leaves the package or a write through
+a link is the shape of an extraction attack on the extractors that do follow links. The case
+rule covers `package.json` only: a general case-fold collision check would refuse packages that
+carry `Makefile` and `makefile`, which install differently on each platform but do not decide
+what trove checks. Unicode normalization collisions are not checked (standard library only);
+this is the residual of the rule. The development agent would revisit (b) if a gate-row client
+publishes an archive it refuses.
+
+**Applied in the spec:** R-NPM-007 step 3 (the bullet on further archive rules) and its
+acceptance criterion. Code: `internal/formats/npm/tarball`.
+
+### Q-NPM-19 · How the manifest normalization is built and verified
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-NPM-6 chose to compare both manifests after the union of the clients' steps and left their
+implementation open. The steps must follow npm exactly where a difference would reject a
+package that npm itself published, and must stay idempotent.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A port of the steps, replayed against npm's own `prepare()` | One function per step on a generic JSON tree; a committed corpus (`testdata/prepare/corpus.json`) is run through `@npmcli/package-json` by `generate.js` and the result stored; the test requires that npm's output and the raw `package.json` compare equal | The model is checked against the program that produces the request manifests; a missing step shows as a failing corpus case | The expectation file is generated outside the build and must be regenerated when npm changes a step |
+| (b) A list of tolerated differences | Compare raw and subtract known differences by field | Little code | Every client change is a new exception; it does not model the added `node-gyp rebuild` script |
+| (c) Run npm's code | Shell out to node | Exact | A JavaScript runtime in the replica; untrusted input into it |
+
+**Choice:** (a).
+
+**Rationale:** The corpus caught a difference while the code was written: npm lists the
+folders below `directories.bin` as bin entries, which a port from reading the source had missed.
+It runs on every `go test`, so a step that drifts from npm fails there. Beyond npm's steps, three conventions keep the comparison from rejecting what
+installs identically: an empty or absent compared field is the same, the bundled list is
+compared as a set, and a hosted-git range is written in the canonical form of
+hosted-git-info for the four hosts the spec names (verified against its 9.0.3 on 80 ranges,
+one of which, `github:u`, npm writes as `github:null/u` and trove leaves alone). A `name` or
+`version` mismatch between request and tarball is `npm_manifest_mismatch` in both modes,
+because it is not an install-relevant field that `warn` may accept but the identity of the
+version. `hasInstallScript` is stored only when true, as the registry does, and
+`_hasShrinkwrap` always. What is **not verified**: Yarn 1's steps (the `binding.gyp` rule and
+`engines` arrays) follow the spec text, since no Yarn runs in the development environment;
+`directories.bin` cannot see an empty folder of the source tree, which npm lists; the
+gist host and ranges that need percent-decoding stay unchanged. The development agent would
+revisit (a) if the fixture corpus of the gate rows shows a rejection no step explains, which is
+the revisit condition of Q-NPM-6, or if more than a handful of steps are missing.
+
+**Applied in the spec:** R-NPM-007 step 3 (the name and version bullet, the three
+conventions after the step list). Code: `internal/formats/npm/manifest`; corpus:
+`internal/formats/npm/manifest/testdata/prepare/`.
 
 ### Q-NPM-41 · Where the test upstream gets its packages
 

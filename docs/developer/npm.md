@@ -1,8 +1,8 @@
 # npm format
 
 The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This page grows with the format: each work package adds
-its section under "Package layout" and its own heading. Today it describes the two leaf libraries every other part of the
-format builds on, package names and versions. The format package itself (`internal/formats/npm`, routes, publish, documents,
+its section under "Package layout" and its own heading. Today it describes the four leaf libraries every other part of the
+format builds on: package names and versions, manifests and tarballs. The format package itself (`internal/formats/npm`, routes, publish, documents,
 remote and virtual repositories, exposure) is *planned* and not built yet.
 
 ## Package layout
@@ -11,13 +11,13 @@ remote and virtual repositories, exposure) is *planned* and not built yet.
 internal/formats/npm/
 ├── name/      package names: lookup rules, new-name rules, the canonical form, the look-alike fold     (built)
 ├── semver/    SemVer 2.0.0 versions, node-semver ranges and their pre-release rule, dist-tag names     (built)
-├── manifest/  publish manifest normalization and the consistency compare                               (planned)
-├── tarball/   streaming validation of a package tarball                                                (planned)
+├── manifest/  publish manifest normalization and the consistency compare                               (built)
+├── tarball/   streaming validation of a package tarball                                                (built)
 └── ...        the format, its store port, publish, documents, remote, merge, exposure                  (planned)
 ```
 
-The sub-packages are leaves: the standard library and [internal/errs](../../internal/errs/) only, no sibling and no format
-contract. The format import rule of R-ARCH-008 ([archtest](../../internal/archtest/imports.go)) allows exactly that inside a
+The sub-packages are leaves: the standard library and [internal/errs](../../internal/errs/) only (and, for `tarball`, its
+sibling `manifest`), no format contract. The format import rule of R-ARCH-008 ([archtest](../../internal/archtest/imports.go)) allows exactly that inside a
 format's own tree, so a leaf that grows an import of another layer fails `go test ./internal/archtest/...`.
 
 ## Names and versions
@@ -114,3 +114,135 @@ go test ./internal/formats/npm/name/   -run '^$' -fuzz FuzzName  -fuzztime 2m
 
 If you change `tokens.go` or the rewriting in `range.go`, compare against node-semver on a few ten thousand generated ranges before
 you trust the corpus alone; the corpus pins known cases, a differential run finds the ones nobody thought of.
+
+## Manifests and tarballs
+
+A publish carries two descriptions of one package: the version manifest in the request body and the
+`package.json` inside the tarball. R-NPM-007 requires that the tarball is what an installer would
+extract, and that the two descriptions agree on everything that changes what is installed or run. The two
+packages implement exactly that; neither opens a connection or touches a store.
+
+### Request path through the libraries
+
+```mermaid
+flowchart LR
+    body[publish body] --> pub[publish scanner<br/>planned, WP2.4-A]
+    pub -->|decoded tarball stream| tb[tarball.Validate]
+    pub -->|version manifest bytes| mp[manifest.Parse]
+    tb -->|Result: package.json, Facts, digests| cmp
+    mp --> cmp[manifest.CheckIdentity<br/>manifest.CheckConsistency]
+    cmp --> st[manifest.Stored]
+```
+
+Callers outside these packages: none yet. The publish path (WP2.4-A) streams the attachment into the spool
+and into `tarball.Validate` in the same pass, parses the version manifest with `manifest.Parse`, and
+compares with `CheckIdentity` and `CheckConsistency` (`Mismatches` in `warn` mode).
+
+### `manifest`
+
+| File | Responsibility |
+|---|---|
+| [manifest.go](../../internal/formats/npm/manifest/manifest.go) | `Manifest` (generic JSON tree, numbers kept as `json.Number`), `Limits`, `Read`, `Parse`, `Decode`, the depth scan, the three error constructors and their codes |
+| [version.go](../../internal/formats/npm/manifest/version.go) | `CleanVersion`: semver's loose `clean()` |
+| [steps.go](../../internal/formats/npm/manifest/steps.go) | One function per normalization step, `Facts` |
+| [gitspec.go](../../internal/formats/npm/manifest/gitspec.go) | `CanonicalGitSpec`: hosted-git ranges in npm's canonical form |
+| [compare.go](../../internal/formats/npm/manifest/compare.go) | `Normalize` (the union, in dependency order), `Mismatches`, `CheckConsistency`, `CheckIdentity` |
+| [stored.go](../../internal/formats/npm/manifest/stored.go) | `Stored`: the request manifest with server-controlled fields replaced, `HasInstallScript` |
+
+Steps (R-NPM-007 step 3), each tested alone and each idempotent:
+
+| Function | Does |
+|---|---|
+| `NormalizeName`, `NormalizeVersion` | trim the name; clean the version |
+| `NormalizeDependencies` | string and array forms to objects; drop non-string ranges; canonical hosted-git ranges |
+| `NormalizeBundleDependencies` | rename, expand `true`, reduce an object, add missing names with `*`, sort |
+| `NormalizeBin` | string/array to object; base-name keys; clean targets; `directories.bin` from `Facts` |
+| `NormalizeScripts`, `AddGypInstall` | strip `node_modules/.bin/`; add `node-gyp rebuild` by npm's and Yarn 1's rules |
+| `NormalizeEngines` | array form to object (Yarn 1) |
+
+Bounded reading: `Read` takes at most `max+1` bytes, so a 2 GiB source costs about 1 MiB; `Parse` refuses
+an oversize or too deeply nested document (default 1 MiB, depth 64) before the decoder allocates a node.
+Errors are `*errs.Error` with the native npm codes `npm_bad_publish` (400), `npm_manifest_mismatch` (400) and
+`npm_too_large` (413). The codes are strings of these packages; registering them in `internal/errs` (the
+problem catalog) belongs to the protocol layer.
+
+### `tarball`
+
+| File | Responsibility |
+|---|---|
+| [tarball.go](../../internal/formats/npm/tarball/tarball.go) | `Validate`, `Limits`, `Result`; the reader stack; the walker with the path, link and duplicate rules |
+
+`Validate(ctx, r, limits)` reads a gzip-compressed tar once. The reader stack, outermost first: a source
+reader (context, compressed-bytes cap, count) feeds a tee into SHA-1 and SHA-512, then a buffered reader and a
+byte counter (compressed position for the ratio check, and a 64 KiB guard while the gzip header is parsed),
+then `compress/gzip` with multistream off, then a reader that caps the inflated bytes, then `archive/tar`. The
+walker looks at each header and reads content only for `package.json` (1 MiB) and the first top-level README
+(64 KiB). Everything else is skipped by the tar reader, which still inflates it, so the inflation cap is what
+bounds the cost of a bomb. After the last entry the rest of the inflated stream must be zero padding, the gzip
+trailer is verified, and nothing may follow the gzip member.
+
+What a walk records: `Facts.Files` (install paths of regular files, for `binding.gyp`, `*.gyp` and
+`directories.bin`), file count and unpacked size (`dist.fileCount`, `dist.unpackedSize`), `HasShrinkwrap`, the
+README, the parsed `package.json`, the digests of the compressed bytes. Memory is proportional to the entry
+names (capped at 32 MiB of bookkeeping) plus 1 MiB for the manifest, not to the tarball.
+
+The limits and the reasons for each are in [Q-NPM-17](../spec/formats/npm.md#q-npm-17--limits-of-the-streaming-tarball-pass-and-of-manifest-reading);
+the archive rules in [Q-NPM-18](../spec/formats/npm.md#q-npm-18--tarball-archives-that-two-readers-could-resolve-differently).
+
+### Tests
+
+| Tier | Where | What it proves |
+|---|---|---|
+| Table tests | `*_test.go`, names start with the requirement ID | every step; every path rule; every limit with a crafted input (a 2 GiB declared `package.json`, JSON nested 100,000 deep, a gzip bomb, a ratio bomb) |
+| Differential corpus | [testdata/prepare/](../../internal/formats/npm/manifest/testdata/prepare/) | the manifest npm's own `prepare()` produces and the raw `package.json` compare equal under `Normalize` |
+| Fuzz | `FuzzManifest`, `FuzzTarball` | no panic; limits hold; `Normalize` idempotent; every accepted tarball satisfies the path invariants and the digests match |
+
+Crafted archives are built in the test by code ([build_test.go](../../internal/formats/npm/tarball/build_test.go));
+no large blob is committed. Fuzz regressions live in `testdata/fuzz/` and replay on every `go test`.
+
+Run the fuzz targets for two minutes each:
+
+```sh
+go test -run '^$' -fuzz '^FuzzManifest$' -fuzztime 2m ./internal/formats/npm/manifest/
+go test -run '^$' -fuzz '^FuzzTarball$'  -fuzztime 2m ./internal/formats/npm/tarball/
+```
+
+### Extension checklists
+
+Add a normalization step:
+
+1. Add a failing case to [corpus.json](../../internal/formats/npm/manifest/testdata/prepare/corpus.json) that shows the
+   rejection (a manifest and the files of the tarball).
+2. Regenerate the expectation from the npm that ships the step (the script and its arguments are at the top of
+   [generate.js](../../internal/formats/npm/manifest/testdata/prepare/generate.js)); commit `prepared.json`.
+3. Write the step as a function in `steps.go` that mutates one manifest, is idempotent and leaves what it does
+   not understand alone; call it in `Normalize` in dependency order.
+4. Add a table test for the step in `steps_test.go` (the helper `runStep` also runs it twice).
+5. If it touches a field that is not compared yet, add the field to `comparedFields` in `compare.go`.
+6. Update the step list in R-NPM-007 and, when it is a deviation, a decision block.
+
+Add a tarball rule:
+
+1. Put the check where the information is available: header-only rules in `walker.entry`, tree rules in
+   `walker.place`, whole-stream rules in `Validate`.
+2. Add a crafted archive to `TestPathRules`, `TestLinks` or `TestStreamErrors`, and a seed to `FuzzTarball`.
+3. Document the rule in R-NPM-007 step 3 and in [Q-NPM-18](../spec/formats/npm.md#q-npm-18--tarball-archives-that-two-readers-could-resolve-differently).
+
+### Security notes
+
+- Every byte `tarball.Validate` and `manifest.Parse` see is publisher-controlled. Entry names are never used
+  as file-system paths, nothing is unpacked, and a name in an error message is cut to 80 bytes.
+- The rules that exist so that the validated manifest is the installed one (duplicates, unclean names,
+  case variants of `package.json`, links, global PAX headers) are listed in R-NPM-007; each has a test that
+  would fail if the rule were removed.
+- The comparison of `scripts.preinstall`, `install` and `postinstall` is what stops a manifest that shows no
+  install script from publishing a tarball that has one.
+
+### What is not verified
+
+- Yarn 1's normalization steps (`binding.gyp` rule, `engines` arrays) follow the specification text; no Yarn runs
+  in the development environment.
+- `directories.bin` cannot see an empty folder of the source tree, which npm lists as a bin entry.
+- Hosted-git ranges for the gist host and ranges that need percent-decoding are left unchanged.
+- Unicode normalization collisions between entry names are not checked.
+- The ratio check is approximate by design (a 128 KiB allowance for the inflater's read-ahead).

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"scripts\":{\"ihstall\":\"node_modules/.bin/x\"},\"engines\":[\"node >=1\"],\"directories\":{\"bin\":\"0\"}}")
