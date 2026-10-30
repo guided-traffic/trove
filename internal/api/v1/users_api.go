@@ -131,7 +131,7 @@ func (s *Server) CreateUser(w http.ResponseWriter, r *http.Request, _ gen.Create
 	}
 	c := s.caller(r)
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		u, err := s.o.Auth.Manager.CreateUser(principal.Join(ctx, tx), c, principal.NewUser{
+		u, err := s.o.Auth.Manager.CreateUserTx(ctx, tx, c, principal.NewUser{
 			Name: in.Username, Email: derefString(in.Email), DisplayName: derefString(in.DisplayName), Identities: pending,
 		})
 		if err != nil {

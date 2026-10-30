@@ -83,6 +83,7 @@ synthetic violation and asserts that the offending edge is named.
 | pgx only in `meta/postgres` and `cluster`; valkey-go only in `cluster`; the AWS SDK only in `blob/s3` | R-ARCH-002 | `CheckImportBans` |
 | `database/sql` and the pgx stdlib adapter nowhere | R-ARCH-026 | `CheckImportBans` |
 | Formats import no infrastructure package | R-ARCH-008 | `CheckModuleImportBans` |
+| `internal/api/login` never imports `internal/api/v1` (edges inside one layer: the list `moduleBans` in [imports.go](../../internal/archtest/imports.go)) | R-ARCH-002 | `CheckModuleBans` |
 | `http.Client{` and `net.Dial` only in `internal/outbound` and `_test.go` files | R-ARCH-002, R-ARCH-022 | `CheckOutbound` |
 | No package-level variable of map, slice, pointer or `sync.Map` type outside `cache`, `cluster`, `observability` and the start-up registries | R-ARCH-032 | `CheckPackageState` |
 | Nothing below `internal/blob` imports the Valkey client or uses a session-level advisory lock | R-STOR-046 | `CheckStorageValkey`, `CheckSourceBans` |

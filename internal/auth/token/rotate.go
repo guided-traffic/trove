@@ -41,24 +41,60 @@ type RotateRequest struct {
 // reason rotated when the overlap is 0. Expired and revoked tokens answer 404,
 // CI tokens 403 ci_token_restricted.
 func (s *Service) Rotate(ctx context.Context, r RotateRequest) (Created, error) {
-	if r.OverlapSeconds < 0 || time.Duration(r.OverlapSeconds)*time.Second > maxOverlap {
-		return Created{}, errs.E(errs.Invalid, errs.CodeValidation, "overlapSeconds must be between 0 and 86400.")
+	if err := checkOverlap(r); err != nil {
+		return Created{}, err
 	}
 	old, err := s.Get(ctx, r.ID)
 	if err != nil {
 		return Created{}, err
 	}
+	sp, err := s.prepareRotate(ctx, r, old)
+	if err != nil {
+		return Created{}, err
+	}
+	return s.insert(ctx, sp)
+}
+
+// RotateTx is [Service.Rotate] inside the caller's transaction, with the rules of
+// [Service.CreateTx]: the token it reads, its successor, the end of the
+// predecessor and the audit events belong to tx.
+func (s *Service) RotateTx(ctx context.Context, tx meta.Tx, r RotateRequest) (Created, error) {
+	if err := checkOverlap(r); err != nil {
+		return Created{}, err
+	}
+	old, err := s.getTx(ctx, tx, r.ID)
+	if err != nil {
+		return Created{}, err
+	}
+	sp, err := s.prepareRotate(ctx, r, old)
+	if err != nil {
+		return Created{}, err
+	}
+	created, err := s.insertTx(ctx, tx, sp)
+	return created, principal.DBErr("token.rotate", err)
+}
+
+func checkOverlap(r RotateRequest) error {
+	if r.OverlapSeconds < 0 || time.Duration(r.OverlapSeconds)*time.Second > maxOverlap {
+		return errs.E(errs.Invalid, errs.CodeValidation, "overlapSeconds must be between 0 and 86400.")
+	}
+	return nil
+}
+
+// prepareRotate checks the rules that follow from the token's own data and
+// resolves the successor's lifetime; it writes nothing.
+func (s *Service) prepareRotate(ctx context.Context, r RotateRequest, old Record) (insertSpec, error) {
 	switch {
 	case old.State != "active":
-		return Created{}, principal.NotFound("The token")
+		return insertSpec{}, principal.NotFound("The token")
 	case old.Type == TypeCIT:
-		return Created{}, forbidden(errs.CodeCITokenRestricted, "A CI token cannot be rotated.")
+		return insertSpec{}, forbidden(errs.CodeCITokenRestricted, "A CI token cannot be rotated.")
 	case r.Self && !old.SelfRotatable:
-		return Created{}, forbidden(errs.CodeForbidden, "The token was not created with selfRotatable.")
+		return insertSpec{}, forbidden(errs.CodeForbidden, "The token was not created with selfRotatable.")
 	}
 	eff, err := s.o.Settings.Effective(ctx)
 	if err != nil {
-		return Created{}, err
+		return insertSpec{}, err
 	}
 	now := s.o.Now()
 	def, maxTTL := eff.PATDefaultTTL, eff.PATMaxTTL
@@ -74,13 +110,13 @@ func (s *Service) Rotate(ctx context.Context, r RotateRequest) (Created, error) 
 	}
 	if r.Parent != nil {
 		if r.Parent.Type == TypeCIT {
-			return Created{}, forbidden(errs.CodeCITokenRestricted, "A CI token cannot rotate tokens.")
+			return insertSpec{}, forbidden(errs.CodeCITokenRestricted, "A CI token cannot rotate tokens.")
 		}
 		if !old.Scope.Within(r.Parent.Scope) {
-			return Created{}, forbidden(errs.CodeDerivationExceedsParent, "The scope is broader than the presenting token's.")
+			return insertSpec{}, forbidden(errs.CodeDerivationExceedsParent, "The scope is broader than the presenting token's.")
 		}
 		if r.Parent.ExpiresAt != nil && (life.nonExpiring || now.Add(life.ttl).After(*r.Parent.ExpiresAt)) {
-			return Created{}, forbidden(errs.CodeDerivationExceedsParent, "The new token would outlive the presenting token.")
+			return insertSpec{}, forbidden(errs.CodeDerivationExceedsParent, "The new token would outlive the presenting token.")
 		}
 	}
 	// The successor keeps the lineage of the token it replaces, so revoking the
@@ -98,11 +134,11 @@ func (s *Service) Rotate(ctx context.Context, r RotateRequest) (Created, error) 
 		// Rotation hands out a new personal token, so the group restriction of a
 		// create applies (R-AUTH-017).
 		if err := s.checkPATAllowed(ctx, old.Owner.ID); err != nil {
-			return Created{}, err
+			return insertSpec{}, err
 		}
 	}
 	overlap := time.Duration(r.OverlapSeconds) * time.Second
-	return s.insert(ctx, insertSpec{
+	return insertSpec{
 		req: CreateRequest{
 			Caller: r.Caller, Type: old.Type, OwnerID: old.Owner.ID, Description: old.Description, SelfRotatable: old.SelfRotatable,
 		},
@@ -111,7 +147,7 @@ func (s *Service) Rotate(ctx context.Context, r RotateRequest) (Created, error) 
 		afterInsert: func(ctx context.Context, tx meta.Tx, qs *q.Queries, created Record) error {
 			return s.endPredecessor(ctx, tx, qs, r.Caller, old.ID, overlap, created)
 		},
-	})
+	}, nil
 }
 
 // endPredecessor applies the overlap to the rotated token in the transaction

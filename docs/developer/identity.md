@@ -224,8 +224,11 @@ need are `v1.AuthServices` ([auth_services.go](../../internal/api/v1/auth_servic
 How the pieces fit:
 
 - **Idempotent creates are one transaction with the idempotency row.** `Idempotency.Do` hands the operation a transaction; the handler passes
-  `principal.Join(ctx, tx)` to the manager or the token service, whose database is a `principal.Joinable`, so their `InTx` and `Read`
-  use that transaction (Q-AUTH-46). A token create sets `Outcome.SecretID`: the stored outcome has no body, and a replay is
+  calls the `Tx` form of the manager or the token service inside it: `Manager.CreateUserTx`, `CreateGroupTx`,
+  `CreateServiceAccountTx`, `Service.CreateTx` and `RotateTx` (`…Tx(ctx, tx, …)`, Q-AUTH-46, Q-AUTH-174). The methods without `Tx` open
+  their own transaction and call the same body; a `Tx` form writes, records its change and its audit event, and reads the record it
+  returns on `tx`, so a later write of the same transaction sees the principal rows of the earlier one and a rollback takes all of
+  them away. Only the creates and rotations the API makes idempotent have a `Tx` form. A token create sets `Outcome.SecretID`: the stored outcome has no body, and a replay is
   `409 token_already_issued` with the token ID.
 - **The caller's rights that depend on the data are decided in the handler.** The authorization step has checked the declaration; the
   handlers add the rules of the specification that need the record: the owner of a token, the derivation rule (`presenting` builds the

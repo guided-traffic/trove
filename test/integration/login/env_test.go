@@ -35,6 +35,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
+	loginapi "github.com/guided-traffic/trove/internal/api/login"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
@@ -280,31 +281,30 @@ func (e *env) newReplica(name string, auth config.Auth, wait bool) *replica {
 		t.Fatal(err)
 	}
 	out := outbound.New(config.Outbound{TLS: config.OutboundTLS{CAFiles: []string{e.caPEM}, MinVersion: "1.2"}})
-	login, err := oidc.New(ctx, oidc.Options{
+	svc, err := oidc.New(ctx, oidc.Options{
 		DB: db, Sessions: store, Provisioner: e.prov, Audit: e.audit, Log: quiet, Metrics: authMetrics,
 		Clients: func(purpose string) *http.Client { return out.Client(purpose, outbound.WithTimeout(10*time.Second)) },
 		BaseURL: e.baseURL, Auth: auth,
-		Problem:    func(w http.ResponseWriter, r *http.Request, err error) { errs.Write(w, r, err, "", quiet) },
-		ClientAddr: addr, Source: source, Origin: origin,
 	})
 	if err != nil {
 		t.Fatalf("oidc.New(%s): %v", name, err)
 	}
-	if err := login.Start(ctx); err != nil {
+	if err := svc.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if wait && len(auth.OIDC.Providers) > 0 {
-		if err := login.WaitDiscovered(ctx); err != nil {
+		if err := svc.WaitDiscovered(ctx); err != nil {
 			t.Fatalf("discovery on %s: %v", name, err)
 		}
 	}
-	rep := &replica{name: name, db: db, changes: changes, sessions: store, login: login, mux: http.NewServeMux()}
-	rep.mux.HandleFunc(oidc.RouteStart, login.HandleStart)
-	rep.mux.HandleFunc(oidc.RouteCallback, login.HandleCallback)
-	rep.mux.HandleFunc(oidc.RouteLogout, login.HandleLogout)
-	rep.mux.HandleFunc(oidc.RouteLocalLogin, login.HandleLocalLogin)
+	rep := &replica{name: name, db: db, changes: changes, sessions: store, login: svc, mux: http.NewServeMux()}
+	edge := loginapi.New(svc, store, loginapi.Options{ClientAddr: addr, Source: source, Origin: origin})
+	rep.mux.HandleFunc(loginapi.RouteStart, edge.HandleStart)
+	rep.mux.HandleFunc(loginapi.RouteCallback, edge.HandleCallback)
+	rep.mux.HandleFunc(loginapi.RouteLogout, edge.HandleLogout)
+	rep.mux.HandleFunc(loginapi.RouteLocalLogin, edge.HandleLocalLogin)
 	if e.realAPI {
-		h := e.apiHandler(name, db, changes, caches, reg, store, login, authMetrics, auth)
+		h := e.apiHandler(name, db, changes, caches, reg, store, svc, authMetrics, auth)
 		rep.mux.Handle("/api/v1/", h)
 		rep.mux.Handle("/files/", h) // mounted by e.extend when a test adds the raw file path
 	} else {
@@ -336,7 +336,7 @@ func (e *env) newReplica(name string, auth config.Auth, wait bool) *replica {
 	t.Cleanup(func() {
 		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = login.Stop(sctx)
+		_ = svc.Stop(sctx)
 		_ = changes.Stop(sctx)
 		db.Close()
 	})

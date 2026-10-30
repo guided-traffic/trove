@@ -10,6 +10,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/principal"
@@ -27,11 +28,12 @@ import (
 // composition root fills it; a nil Manager disables the identity operations with
 // 503 unavailable instead of a panic, a nil Sessions the session operations.
 type AuthServices struct {
-	// Manager is the write side of the principal table. Its database is a
-	// principal.Joinable, so an idempotent create is one transaction with its
-	// idempotency row.
+	// Manager is the write side of the principal table. An idempotent create
+	// calls its ...Tx forms inside the transaction of the idempotency row
+	// (R-API-014).
 	Manager *principal.Manager
-	// Tokens is the token service; its database is the same Joinable.
+	// Tokens is the token service; an idempotent create or rotation calls its
+	// ...Tx forms the same way.
 	Tokens *token.Service
 	// Settings is the runtime authentication settings store.
 	Settings *token.SettingsStore
@@ -94,7 +96,7 @@ func (s *Server) identityReady(w http.ResponseWriter, r *http.Request) bool {
 func (s *Server) caller(r *http.Request) principal.Caller {
 	p := httpserver.PrincipalFrom(r.Context())
 	return principal.Caller{
-		Actor:  ActorFrom(p),
+		Actor:  edge.ActorFrom(p),
 		Source: auditSource(r),
 		RoleHolders: func(ctx context.Context) error {
 			if s.o.Access == nil {

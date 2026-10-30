@@ -221,6 +221,27 @@ func TestFormatImportAllowlist(t *testing.T) {
 	})
 }
 
+func TestModuleBans(t *testing.T) {
+	t.Run("R-ARCH-002 the login routes importing the management API name the edge, also from a subpackage", func(t *testing.T) {
+		vs := CheckModuleBans(mod, []Package{
+			pkg("internal/api/login", "internal/api/v1"),
+			pkg("internal/api/login/page", "internal/api/v1/gen"),
+		})
+		wantEdge(t, vs, "R-ARCH-002", "internal/api/login", "internal/api/v1")
+		wantEdge(t, vs, "R-ARCH-002", "internal/api/login/page", "internal/api/v1/gen")
+		if len(vs) != 2 {
+			t.Fatalf("want exactly the two edges, got %v", Strings(vs))
+		}
+	})
+	t.Run("R-ARCH-002 the login routes importing the login domain, the session store, the shell and the edge conversions pass, and the management API may import them", func(t *testing.T) {
+		wantClean(t, CheckModuleBans(mod, []Package{
+			pkg("internal/api/login", "internal/auth/oidc", "internal/auth/session", "internal/httpserver", "internal/api/edge", "internal/errs"),
+			pkg("internal/api/v1", "internal/api/login", "internal/api/edge", "internal/auth/oidc"),
+			pkg("internal/app", "internal/api/login", "internal/api/v1"),
+		}))
+	})
+}
+
 func TestStateExemption(t *testing.T) {
 	t.Run("R-ARCH-032 the exemption is the exact package, not its subtree", func(t *testing.T) {
 		for _, ok := range []string{"internal/formats", "internal/formats/catalog", "internal/meta", "internal/backup/tables", "internal/jobs", "internal/errs", "internal/secrets", "internal/cache", "internal/cluster", "internal/observability", "test/integration/coordination", "internal/archtest"} {
@@ -480,6 +501,7 @@ func TestRealTree(t *testing.T) {
 		all = append(all, CheckLayers(module, pkgs)...)
 		all = append(all, CheckImportBans(pkgs)...)
 		all = append(all, CheckModuleImportBans(module, pkgs)...)
+		all = append(all, CheckModuleBans(module, pkgs)...)
 		all = append(all, CheckStorageValkey(pkgs)...)
 		wantClean(t, all)
 	})

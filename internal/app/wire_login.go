@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/login"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/session"
@@ -57,7 +58,7 @@ func (a *App) wireLogin(ctx context.Context) error {
 	if a.m1.flowStarts != nil {
 		flowStarts = takeLimiter{a.m1.flowStarts}
 	}
-	login, err := oidc.New(ctx, oidc.Options{
+	svc, err := oidc.New(ctx, oidc.Options{
 		DB: a.database(), Sessions: a.m1.sessions, Provisioner: a.m1.provisioner, Audit: a.auditRecorder(),
 		Clients: func(purpose string) *http.Client {
 			return a.out.Client(purpose, outbound.WithTimeout(10*time.Second))
@@ -65,15 +66,14 @@ func (a *App) wireLogin(ctx context.Context) error {
 		Log: a.log, Metrics: a.m1.authMetrics,
 		BaseURL: cfg.Server.BaseURL, Auth: cfg.Auth,
 		Limiter: flowStarts, MaxPendingFlows: cfg.Auth.RateLimit.MaxPendingFlows,
-		Problem: httpserver.Problem, ClientAddr: clientAddrString, Source: eventSource, Origin: requestOrigin,
 	})
 	if err != nil {
 		return err
 	}
-	if err := a.startComponent(ctx, login); err != nil {
+	if err := a.startComponent(ctx, svc); err != nil {
 		return err
 	}
-	a.m1.login = login
+	a.m1.login = svc
 	return nil
 }
 
@@ -90,27 +90,13 @@ func (t takeLimiter) Allow(ctx context.Context, bucket string) (bool, time.Durat
 // (R-AUTH-005, R-AUTH-006, R-AUTH-013, R-AUTH-014). They belong to the ui
 // family, so an endpoint whose surface lacks ui drops them (R-EP-005).
 func (a *App) registerLogin(router *httpserver.Router) {
-	l := a.m1.login
-	router.HandleFunc(oidc.RouteStart, l.HandleStart)
-	router.HandleFunc(oidc.RouteCallback, l.HandleCallback)
-	router.HandleFunc(oidc.RouteLogout, l.HandleLogout)
-	router.HandleFunc(oidc.RouteLocalLogin, l.HandleLocalLogin)
+	login.New(a.m1.login, a.m1.sessions, login.Options{}).Register(router)
 }
 
 // requestOrigin is the origin of the base URL the chain resolved for the
 // request's endpoint (R-AUTH-012).
 func requestOrigin(r *http.Request) string {
 	return session.NormalizeOrigin(httpserver.InfoFrom(r.Context()).BaseURL)
-}
-
-// clientAddrString is the client address after the trusted-proxy rule
-// (R-ARCH-006) as the login keys its limiter and its events by it; empty when the
-// chain resolved none.
-func clientAddrString(r *http.Request) string {
-	if c := clientAddr(r); c.IsValid() {
-		return c.String()
-	}
-	return ""
 }
 
 // eventSource is the source of an audit event (R-AUTH-041).

@@ -31,6 +31,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -397,11 +398,11 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		recent = seen
 	}
 	r.tokens = token.NewService(token.ServiceOptions{
-		DB: principal.Joinable{DB: r.db}, Notifier: r.changes, Recorder: r.recorder, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
+		DB: r.db, Notifier: r.changes, Recorder: r.recorder, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
 		Tokens: r.tokenCfg, Recent: recent, Metrics: metrics, Log: quiet,
-		Scope: token.ScopeOptions{Action: func(string) bool { return true }, SystemItem: func(s string) bool { return s == "identities:read" }},
+		Scope: scope.Options{Action: func(string) bool { return true }, SystemItem: func(s string) bool { return s == "identities:read" }},
 	})
-	r.manager = principal.NewManager(principal.ManagerOptions{DB: principal.Joinable{DB: r.db}, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass"})
+	r.manager = principal.NewManager(principal.ManagerOptions{DB: r.db, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass"})
 	r.provisioner = principal.NewProvisioner(principal.ProvisionerOptions{
 		DB: r.db, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass", Metrics: metrics,
 	})

@@ -60,47 +60,76 @@ type MemberResult struct {
 // CreateGroup creates a group with origin admin (R-AUTH-018). An unknown member
 // answers 404 and nothing is created.
 func (m *Manager) CreateGroup(ctx context.Context, c Caller, in NewGroup) (Group, error) {
-	if !ValidGroupName(in.Name) {
-		return Group{}, errs.E(errs.Invalid, errs.CodeValidation, "The group name does not match ^[a-z0-9][a-z0-9._-]{0,127}$.")
+	if err := checkNewGroup(in); err != nil {
+		return Group{}, err
 	}
+	var g Group
+	err := m.db.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		g, err = m.createGroup(ctx, tx, c, in)
+		return err
+	})
+	if err != nil {
+		return Group{}, DBErr("principal.CreateGroup", err)
+	}
+	return g, nil
+}
+
+// CreateGroupTx is [Manager.CreateGroup] inside the caller's transaction, with the
+// same rules as [Manager.CreateUserTx]: the group, its memberships, their
+// changes, the audit event and the record it returns belong to tx.
+func (m *Manager) CreateGroupTx(ctx context.Context, tx meta.Tx, c Caller, in NewGroup) (Group, error) {
+	if err := checkNewGroup(in); err != nil {
+		return Group{}, err
+	}
+	g, err := m.createGroup(ctx, tx, c, in)
+	return g, DBErr("principal.CreateGroup", err)
+}
+
+func checkNewGroup(in NewGroup) error {
+	if !ValidGroupName(in.Name) {
+		return errs.E(errs.Invalid, errs.CodeValidation, "The group name does not match ^[a-z0-9][a-z0-9._-]{0,127}$.")
+	}
+	return nil
+}
+
+// createGroup writes the group in tx and returns the record as tx sees it.
+func (m *Manager) createGroup(ctx context.Context, tx meta.Tx, c Caller, in NewGroup) (Group, error) {
 	origin := in.Origin
 	if origin == "" {
 		origin = "admin"
 	}
 	id := NewID()
-	err := m.db.InTx(ctx, func(tx meta.Tx) error {
-		qs := Queries(tx)
-		rows, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindGroup), Name: in.Name, CreatedBy: c.Actor.ID})
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A group with this name exists.")
-		}
-		if err := qs.IdentityInsertGroup(ctx, q.IdentityInsertGroupParams{ID: id, Description: in.Description, AutoJoin: in.AutoJoin, Origin: origin}); err != nil {
-			return err
-		}
-		var changes []memberChange
-		for _, ref := range in.Members {
-			mid, kind, err := memberRef(ctx, qs, ref)
-			if err != nil {
-				return err
-			}
-			changes = append(changes, memberChange{id: mid, name: ref, kind: kind, add: true, source: "manual"})
-		}
-		if err := m.changeMembers(ctx, tx, qs, c, groupInfo{id: id, name: in.Name}, changes); err != nil {
-			return err
-		}
-		return m.record(ctx, tx, audit.Event{
-			Type: audit.EventGroupCreated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
-			Subject: audit.Subject{Kind: "group", ID: id, Name: in.Name},
-			Details: details(map[string]any{"origin": origin, "autoJoin": in.AutoJoin, "members": in.Members}),
-		})
-	})
+	qs := Queries(tx)
+	rows, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindGroup), Name: in.Name, CreatedBy: c.Actor.ID})
 	if err != nil {
-		return Group{}, DBErr("principal.CreateGroup", err)
+		return Group{}, err
 	}
-	return m.GetGroup(ctx, in.Name)
+	if len(rows) == 0 {
+		return Group{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, "A group with this name exists.")
+	}
+	if err := qs.IdentityInsertGroup(ctx, q.IdentityInsertGroupParams{ID: id, Description: in.Description, AutoJoin: in.AutoJoin, Origin: origin}); err != nil {
+		return Group{}, err
+	}
+	var changes []memberChange
+	for _, ref := range in.Members {
+		mid, kind, err := memberRef(ctx, qs, ref)
+		if err != nil {
+			return Group{}, err
+		}
+		changes = append(changes, memberChange{id: mid, name: ref, kind: kind, add: true, source: "manual"})
+	}
+	if err := m.changeMembers(ctx, tx, qs, c, groupInfo{id: id, name: in.Name}, changes); err != nil {
+		return Group{}, err
+	}
+	if err := m.record(ctx, tx, audit.Event{
+		Type: audit.EventGroupCreated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
+		Subject: audit.Subject{Kind: "group", ID: id, Name: in.Name},
+		Details: details(map[string]any{"origin": origin, "autoJoin": in.AutoJoin, "members": in.Members}),
+	}); err != nil {
+		return Group{}, err
+	}
+	return loadGroup(ctx, qs, in.Name)
 }
 
 func groupFrom(id, name, desc string, autoJoin bool, origin string, created time.Time, members, revision int64) Group {
@@ -111,26 +140,33 @@ func groupFrom(id, name, desc string, autoJoin bool, origin string, created time
 func (m *Manager) GetGroup(ctx context.Context, name string) (Group, error) {
 	var g Group
 	err := m.db.Read(ctx, func(db q.DBTX) error {
-		rows, err := q.New(db).IdentityGetGroup(ctx, name)
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return ErrNotFound
-		}
-		r := rows[0]
-		g = groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision)
-		roles, err := q.New(db).IdentityGroupRoles(ctx, r.ID)
-		if err != nil {
-			return err
-		}
-		g.Roles = orEmpty(roles)
-		return nil
+		var err error
+		g, err = loadGroup(ctx, q.New(db), name)
+		return err
 	})
-	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped above
+	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped by loadGroup
 		return Group{}, NotFound("The group")
 	}
 	return g, DBErr("principal.GetGroup", err)
+}
+
+// loadGroup reads the group and its roles; ErrNotFound when there is none.
+func loadGroup(ctx context.Context, qs *q.Queries, name string) (Group, error) {
+	rows, err := qs.IdentityGetGroup(ctx, name)
+	if err != nil {
+		return Group{}, err
+	}
+	if len(rows) == 0 {
+		return Group{}, ErrNotFound
+	}
+	r := rows[0]
+	g := groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision)
+	roles, err := qs.IdentityGroupRoles(ctx, r.ID)
+	if err != nil {
+		return Group{}, err
+	}
+	g.Roles = orEmpty(roles)
+	return g, nil
 }
 
 // GroupFilter filters ListGroups.

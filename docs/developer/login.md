@@ -11,11 +11,13 @@ What to have in mind first:
   in `oidc_login_flow`, the session in `ui_session`, the lockout and rotation hold in `auth_lockout`. A replica keeps nothing a
   later request needs, apart from caches and the provider documents it fetched itself (R-AUTH-042). Nothing of the login is ever
   read from or written to Valkey.
-- **Two packages.** [internal/auth/session](../../internal/auth/session) creates, validates and ends sessions and implements
+- **Three packages.** [internal/auth/session](../../internal/auth/session) creates, validates and ends sessions and implements
   `session.Validator`, which the identity area's authentication stage calls for every request with the cookie.
-  [internal/auth/oidc](../../internal/auth/oidc) holds the providers, the browser routes and the break-glass account. Both are
-  domain packages: they import no driver (every query parameter is a plain Go type, [login.sql](../../internal/meta/postgres/queries/login.sql))
-  and no edge package (the composition root hands them the problem writer, the client address and the event source).
+  [internal/auth/oidc](../../internal/auth/oidc) holds the providers, the flow of the browser login and the break-glass account.
+  Both are domain packages: they import no driver (every query parameter is a plain Go type, [login.sql](../../internal/meta/postgres/queries/login.sql))
+  and no edge package, and `oidc.Service` takes plain inputs and returns plain outputs and errors (Q-AUTH-175).
+  [internal/api/login](../../internal/api/login) is the edge: the four routes under `/auth/` parse the request, check the origin,
+  call the domain, and write cookies, redirects, problems and the error page. It may not import `internal/api/v1` (architecture test).
 - **Ages, not clocks.** The session read returns ages against the database's `now()` (seconds since `last_seen_at`, seconds left
   to `absolute_expires_at`), and the replica turns them into deadlines on its own monotonic clock. No replica compares its wall
   clock with the database's or with another replica's.
@@ -32,17 +34,18 @@ What to have in mind first:
 | [session/changes.go](../../internal/auth/session/changes.go) | The cache `auth_sessions` and its `OnChange`; the payloads this package writes into the change area `auth` |
 | [session/cleanup.go](../../internal/auth/session/cleanup.go) | The maintenance task `session-cleanup` (R-AUTH-043), registered in `jobs.Default` |
 | [session/errors.go](../../internal/auth/session/errors.go), [metrics.go](../../internal/auth/session/metrics.go) | `Problem` (401 `session_expired`, 403 `csrf_failed`), `ReauthenticationRequired`; the session metrics |
-| [oidc/service.go](../../internal/auth/oidc/service.go) | `Service` (a component: `Start` runs the discovery loops and the password watcher), `CheckBaseURL`, `LoginOptions`, `SafeReturnTo`, the route patterns, the pending-flow count |
+| [oidc/service.go](../../internal/auth/oidc/service.go) | `Service` (a component: `Start` runs the discovery loops and the password watcher), `CheckBaseURL`, `LoginOptions`, `SafeReturnTo`, `LoggedOutPath`, `allow` (the flow-start limit), the pending-flow count |
 | [oidc/provider.go](../../internal/auth/oidc/provider.go) | `Provider`: discovery and its checks, refresh with backoff, the JWK Set and the throttled refetch for an unknown `kid`, the client secret file |
-| [oidc/flow.go](../../internal/auth/oidc/flow.go) | `HandleStart`, `HandleCallback` with the steps of R-AUTH-006, the code exchange, userinfo, the re-authentication check, the login events |
+| [oidc/flow.go](../../internal/auth/oidc/flow.go) | `StartFlow`, `Callback` with the steps of R-AUTH-006 and `*LoginFailure` for a login that ended without a session, the code exchange, userinfo, the re-authentication check, the login events |
 | [oidc/jws.go](../../internal/auth/oidc/jws.go), [idtoken.go](../../internal/auth/oidc/idtoken.go) | The minimal JWS verifier (Q-AUTH-31) and the ID-token claim checks; the reason codes |
 | [oidc/claims.go](../../internal/auth/oidc/claims.go) | Claim paths, the username rule, the group claim and its missing reasons, the group rules, the gates |
-| [oidc/logout.go](../../internal/auth/oidc/logout.go) | `HandleLogout` and the RP-initiated logout URL |
-| [oidc/breakglass.go](../../internal/auth/oidc/breakglass.go), [argon.go](../../internal/auth/oidc/argon.go) | The break-glass user row, the local login, the lockout, the verification slots, the rotation hold; Argon2id and the PHC string |
-| [oidc/page.go](../../internal/auth/oidc/page.go) | The error page of a failed login |
+| [oidc/logout.go](../../internal/auth/oidc/logout.go) | `Logout` (the redirect and `auth.logout`) and the RP-initiated logout URL |
+| [oidc/breakglass.go](../../internal/auth/oidc/breakglass.go), [argon.go](../../internal/auth/oidc/argon.go) | The break-glass user row, `AdmitLocalLogin` and `LocalLogin`, the lockout, the verification slots, the rotation hold; Argon2id and the PHC string |
+| [api/login/login.go](../../internal/api/login/login.go) | `Handler` and `New`, the route patterns, `Register`, the four handlers: provider ID, `state`, `code`, `error`, the cookies and the form of the local login in; cookies, redirects and problems out; the origin check of the local login (R-AUTH-012); `Options` for the client address, the event source and the origin (defaults from the endpoint's chain) |
+| [api/login/page.go](../../internal/api/login/page.go) | The error page of a failed login and the status of each failure (400, 500, 502, 503) |
 | [config/login.go](../../internal/config/login.go) | The keys `auth.oidc`, `auth.login_page`, `auth.sessions`, `auth.break_glass`, their defaults and rules |
 | [audit/events_login.go](../../internal/audit/events_login.go) | The `auth.*` event types |
-| [app/wire_login.go](../../internal/app/wire_login.go) | The wiring at step 8 in two steps (`wireSessions` before the identity area, `wireLogin` after it) and the routes in `startClient` (login markers of [app.go](../../internal/app/app.go)) |
+| [app/wire_login.go](../../internal/app/wire_login.go) | The wiring at step 8 in two steps (`wireSessions` before the identity area, `wireLogin` after it) and `registerLogin`, which builds the `login.Handler` and puts its routes on an endpoint's router in `startClient` (login markers of [app.go](../../internal/app/app.go)) |
 | [cmd/trove/admin_login.go](../../cmd/trove/admin_login.go) | `trove admin break-glass status\|unlock\|end-sessions`, `trove admin sessions end`; the command environment (database, change log, audit writer, session store) |
 | [cmd/trove/admin_identity.go](../../cmd/trove/admin_identity.go) | `trove admin service-account create`, `token create\|revoke`, `user disable` (R-AUTH-015): the identity area's manager and token service over the command's own connection; `--admin` binds the role through `authz.Service.BindAdmin` |
 
@@ -50,14 +53,14 @@ What to have in mind first:
 
 | Flow | What happens | Where |
 |---|---|---|
-| Start | `state`, `nonce`, verifier from `crypto/rand`; their hashes and the verifier in one `INSERT`; the binding cookie reused when present; 302 | `HandleStart` |
+| Start | `state`, `nonce`, verifier from `crypto/rand`; their hashes and the verifier in one `INSERT`; the binding cookie reused when present; 302 | `login.Handler.HandleStart`, `Service.StartFlow` |
 | Callback step 1 | `DELETE … RETURNING` of the flow, committed alone before the first outbound call | `takeFlow` |
 | Steps 2 to 5 | provider of the flow, binding hash, `iss`, the IdP's `error` | `checkResponse` |
 | Steps 6 to 8 | code exchange, ID token, userinfo; each call 10 s through the outbound client | `exchange`, `validateIDToken`, `userinfo` |
-| Step 10 | mapping and gates, then `Provisioner.SignIn` (its transaction), then `Store.Create` (another, Q-AUTH-32) | `callback` |
+| Step 10 | mapping and gates, then `Provisioner.SignIn` (its transaction), then `Store.Create` (another, Q-AUTH-32) | `callback`; the edge sets the cookies and redirects, a `*LoginFailure` becomes the error page |
 | Validation | cache while the poll is fresh, otherwise a shared query; deadlines from the row; touch every 60 s | `Store.Validate` |
-| Logout | CSRF checks, the end and its change in one transaction, cookies cleared, `redirectTo` | `HandleLogout`, `Store.Logout` |
-| Local login | origin, lockout row, reserve the attempt (`ReserveLockoutAttempt`), slot, Argon2id, then a lock on the threshold failure (`LockOnLockoutFailure`) or, after a second read of the lock, reset and session (Q-AUTH-171) | `HandleLocalLogin` |
+| Logout | CSRF checks, the end and its change in one transaction, cookies cleared, `redirectTo` | `login.Handler.HandleLogout`, `Store.Logout`, `Service.Logout` |
+| Local login | origin (edge), flow-start limit and usable account (`AdmitLocalLogin`, Q-AUTH-176), the body (edge), lockout row, reserve the attempt (`ReserveLockoutAttempt`), slot, Argon2id, then a lock on the threshold failure (`LockOnLockoutFailure`) or, after a second read of the lock, reset and session (Q-AUTH-171) | `login.Handler.HandleLocalLogin`, `Service.LocalLogin` |
 | Rotation | the watcher sees the file change, opens the hold and ends the break-glass sessions, then switches | `BreakGlass.CheckRotation` |
 
 ## Seams to the other areas
@@ -127,8 +130,8 @@ so `trove admin config validate` does not report it.
 
 | Tier | Where | What |
 |---|---|---|
-| Unit | `internal/auth/oidc`, `internal/auth/session`, `internal/config/login_test.go`, `internal/app/wire_login_test.go` | JWS and key confusion, the ID-token table, claim mapping and group rules, `return_to`, Argon2id and the plaintext rule, slots; cookies, CSRF, change payloads; configuration rules; the route table |
-| Integration | [test/integration/login](../../test/integration/login) | A fake OpenID Provider over TLS ([fakeidp_test.go](../../test/integration/login/fakeidp_test.go)) with switches for every failure of R-AUTH-006, and two or three in-process replicas behind a dispatcher that sends every request to the next one, without Valkey; a fake provisioner writes the principal rows (the real one is covered by [test/integration/identity](../../test/integration/identity)); the break-glass and identity-command tests ([admin_test.go](../../test/integration/login/admin_test.go)) run `trove admin` as a binary |
+| Unit | `internal/auth/oidc`, `internal/api/login`, `internal/auth/session`, `internal/config/login_test.go`, `internal/app/wire_login_test.go` | JWS and key confusion, the ID-token table, claim mapping and group rules, `return_to`, Argon2id and the plaintext rule, slots, the domain calls (`StartFlow`, `Callback`, `Logout`, `AdmitLocalLogin`); the edge without a database (unknown provider, the origin and admission order of the local login, the error page and its status); cookies, CSRF, change payloads; configuration rules; the route table |
+| Integration | [test/integration/login](../../test/integration/login) | A fake OpenID Provider over TLS ([fakeidp_test.go](../../test/integration/login/fakeidp_test.go)) with switches for every failure of R-AUTH-006, and two or three in-process replicas (each mounts the real `login.Handler` over its `oidc.Service`, with the test's own client-address, source and origin functions) behind a dispatcher that sends every request to the next one, without Valkey; a fake provisioner writes the principal rows (the real one is covered by [test/integration/identity](../../test/integration/identity)); the break-glass and identity-command tests ([admin_test.go](../../test/integration/login/admin_test.go)) run `trove admin` as a binary |
 | Integration, HTTP | [api_test.go](../../test/integration/login/api_test.go), [api_env_test.go](../../test/integration/login/api_env_test.go) | with `env.realAPI` the replicas mount the real management API (the production chain, the real stage with the session validator, the real decision point; [test/integration/idapi](../../test/integration/idapi)) instead of the two stand-in routes: the login journey over HTTP on alternating replicas with no Valkey (login options, sign in, `whoami`, a write with and without the CSRF header, the session list and its ends, recent authentication, logout) and the break-glass unlock through the API; every answer is validated against the document |
 | Integration, E1.5 | [e1_5_test.go](../../test/integration/login/e1_5_test.go) | every event type that exit criterion E1.5 names through the real routes on the `realAPI` harness with the fake provider and a real audit writer behind the spy (`spy.next`): a login, a failed login (wrong nonce), a token creation (twice) and revocation, a policy change and a denied deploy (`PUT /files/…` with a token; the files handler gets a blob store that is never reached); each is found through `GET /api/v1/audit/events?action=…` and in the log stream, and the denied deploy names the repository, the action and the caller. The extra services come in through `env.extend` (`idapi.Components.Options` and `Routes`) |
 

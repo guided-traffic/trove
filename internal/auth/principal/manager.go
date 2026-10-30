@@ -190,50 +190,81 @@ type NewUser struct {
 // (R-AUTH-016). A reserved username answers 422 reserved_name, an invalid one
 // 400 username_invalid, an existing one 409.
 func (m *Manager) CreateUser(ctx context.Context, c Caller, in NewUser) (User, error) {
+	if err := m.checkNewUser(in); err != nil {
+		return User{}, err
+	}
+	var u User
+	err := m.db.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		u, err = m.createUser(ctx, tx, c, in)
+		return err
+	})
+	if err != nil {
+		return User{}, DBErr("principal.CreateUser", err)
+	}
+	return u, nil
+}
+
+// CreateUserTx is [Manager.CreateUser] inside the caller's transaction: the user,
+// its change, its audit event and the record it returns belong to tx and commit
+// or roll back with it. The management API makes an idempotent create one
+// transaction with its idempotency row that way (R-API-014). The caller owns the
+// transaction; a retry of it runs the call again from the start.
+func (m *Manager) CreateUserTx(ctx context.Context, tx meta.Tx, c Caller, in NewUser) (User, error) {
+	if err := m.checkNewUser(in); err != nil {
+		return User{}, err
+	}
+	u, err := m.createUser(ctx, tx, c, in)
+	return u, DBErr("principal.CreateUser", err)
+}
+
+func (m *Manager) checkNewUser(in NewUser) error {
 	if ReservedUserName(in.Name, m.reserved...) {
-		return User{}, errs.E(errs.Invalid, "reserved_name", "The username is reserved.",
+		return errs.E(errs.Invalid, "reserved_name", "The username is reserved.",
 			errs.WithFields(errs.FieldError{Pointer: "/username", Code: "reserved_name", Detail: "reserved"}))
 	}
 	if !ValidUserName(in.Name, m.reserved...) {
-		return User{}, errs.E(errs.Invalid, errs.CodeUsernameInvalid, "The username does not match ^[a-z0-9][a-z0-9._@+-]{0,127}$.")
+		return errs.E(errs.Invalid, errs.CodeUsernameInvalid, "The username does not match ^[a-z0-9][a-z0-9._@+-]{0,127}$.")
 	}
+	return nil
+}
+
+// createUser writes the user in tx and returns the record as tx sees it.
+func (m *Manager) createUser(ctx context.Context, tx meta.Tx, c Caller, in NewUser) (User, error) {
 	origin := in.Origin
 	if origin == "" {
 		origin = "admin"
 	}
 	id := NewID()
-	err := m.db.InTx(ctx, func(tx meta.Tx) error {
-		qs := Queries(tx)
-		rows, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindUser), Name: in.Name, CreatedBy: c.Actor.ID})
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A user with this name exists.")
-		}
-		if err := qs.IdentityInsertUser(ctx, q.IdentityInsertUserParams{
-			ID: id, Email: in.Email, EmailVerified: in.EmailVerified, DisplayName: in.DisplayName, Origin: origin,
-		}); err != nil {
-			return err
-		}
-		for _, pi := range in.Identities {
-			if _, err := qs.IdentityInsertIdentity(ctx, q.IdentityInsertIdentityParams{UserID: id, ProviderID: pi.Provider, Issuer: pi.Issuer}); err != nil {
-				return err
-			}
-		}
-		if err := m.applyAutoJoin(ctx, qs, id); err != nil {
-			return err
-		}
-		return m.record(ctx, tx, audit.Event{
-			Type: audit.EventUserCreated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
-			Subject: audit.Subject{Kind: "user", ID: id, Name: in.Name},
-			Details: details(map[string]string{"source": sourceOf(c)}),
-		})
-	})
+	qs := Queries(tx)
+	rows, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindUser), Name: in.Name, CreatedBy: c.Actor.ID})
 	if err != nil {
-		return User{}, DBErr("principal.CreateUser", err)
+		return User{}, err
 	}
-	return m.GetUser(ctx, in.Name)
+	if len(rows) == 0 {
+		return User{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, "A user with this name exists.")
+	}
+	if err := qs.IdentityInsertUser(ctx, q.IdentityInsertUserParams{
+		ID: id, Email: in.Email, EmailVerified: in.EmailVerified, DisplayName: in.DisplayName, Origin: origin,
+	}); err != nil {
+		return User{}, err
+	}
+	for _, pi := range in.Identities {
+		if _, err := qs.IdentityInsertIdentity(ctx, q.IdentityInsertIdentityParams{UserID: id, ProviderID: pi.Provider, Issuer: pi.Issuer}); err != nil {
+			return User{}, err
+		}
+	}
+	if err := m.applyAutoJoin(ctx, qs, id); err != nil {
+		return User{}, err
+	}
+	if err := m.record(ctx, tx, audit.Event{
+		Type: audit.EventUserCreated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
+		Subject: audit.Subject{Kind: "user", ID: id, Name: in.Name},
+		Details: details(map[string]string{"source": sourceOf(c)}),
+	}); err != nil {
+		return User{}, err
+	}
+	return loadUser(ctx, qs, in.Name)
 }
 
 // applyAutoJoin gives a new user the auto memberships of R-AUTH-019.

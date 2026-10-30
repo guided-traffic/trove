@@ -5,13 +5,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/guided-traffic/trove/internal/auth/oidc"
+	"github.com/guided-traffic/trove/internal/api/login"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
 func TestLoginRoutes(t *testing.T) {
-	routes := []string{oidc.RouteStart, oidc.RouteCallback, oidc.RouteLogout, oidc.RouteLocalLogin}
+	routes := []string{login.RouteStart, login.RouteCallback, login.RouteLogout, login.RouteLocalLogin}
 	ok := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	router := func(t *testing.T, surface ...string) *httpserver.Router {
 		ep, err := httpserver.NewEndpoint(config.ResolvedEndpoint{Name: "default", Default: true, Surface: surface}, nil)

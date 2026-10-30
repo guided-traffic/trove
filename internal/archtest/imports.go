@@ -166,3 +166,45 @@ func CheckStorageValkey(pkgs []Package) []Violation {
 	sortViolations(out)
 	return out
 }
+
+// moduleBan forbids the packages under from to import the packages under
+// forbidden, both module-relative. importBans matches external paths only; this
+// is the list for edges inside the module that the layer table cannot express
+// because both ends lie in the same layer.
+type moduleBan struct {
+	rule      string
+	from      []string
+	forbidden []string
+	why       string
+}
+
+func moduleBans() []moduleBan {
+	return []moduleBan{
+		{
+			rule:      "R-ARCH-002",
+			from:      []string{"internal/api/login"},
+			forbidden: []string{"internal/api/v1"},
+			why:       "the browser login routes are an entry point of their own; they share conversions through internal/api/edge and never import the management API",
+		},
+	}
+}
+
+// CheckModuleBans implements moduleBans: it names every import of a forbidden
+// package from a package under a banned tree.
+func CheckModuleBans(module string, pkgs []Package) []Violation {
+	var out []Violation
+	for _, p := range pkgs {
+		for _, ban := range moduleBans() {
+			if !underAny(p.Rel, ban.from) {
+				continue
+			}
+			for _, imp := range p.Imports {
+				if target := rel(module, imp); target != imp && underAny(target, ban.forbidden) {
+					out = append(out, Violation{Rule: ban.rule, From: p.Rel, To: target, Detail: ban.why})
+				}
+			}
+		}
+	}
+	sortViolations(out)
+	return out
+}

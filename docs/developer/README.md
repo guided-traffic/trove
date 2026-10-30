@@ -119,6 +119,7 @@ trove/
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
 │   ├── api/edge/             # request-to-domain conversions every entry point shares: SubjectFrom (with the endpoint), Access (the request's index)
+│   ├── api/login/            # the browser login routes under /auth/ (edge of internal/auth/oidc): cookies, redirects, the error page
 │   ├── api/rawfiles/         # the /files/ handler (edge of internal/files)
 │   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
 │   │                         # rate limits); gen/ is generated (oapi-codegen); apitest/ validates responses against the document

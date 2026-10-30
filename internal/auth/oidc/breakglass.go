@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -53,9 +51,6 @@ func Unlock(ctx context.Context, db meta.Runner, rec audit.Recorder, actor audit
 // slotWait is how long a local login waits for a verification slot before it
 // answers 503 server_busy (R-AUTH-014).
 const slotWait = time.Second
-
-// maxLoginBody bounds the local-login request.
-const maxLoginBody = 8 << 10
 
 // BreakGlass is the one local account (R-AUTH-014) on a replica that serves the
 // client listener. The password lives in a mounted file, never in PostgreSQL;
@@ -270,111 +265,103 @@ func (b *BreakGlass) openHold(ctx context.Context) error {
 	})
 }
 
-// loginRequest is the body of POST /auth/local/login.
-type loginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+// LocalLoginInput is one sign-in attempt of the break-glass account, already parsed
+// by the edge (POST /auth/local/login).
+type LocalLoginInput struct {
+	Username, Password string
+	// SessionCookie is the session cookie the request presented; a session it
+	// names is replaced.
+	SessionCookie string
+	ClientAddr    string
+	UserAgent     string
+	// Source is the audit source of the request.
+	Source audit.Source
 }
 
-// HandleLocalLogin is POST /auth/local/login (R-AUTH-014). It answers 204 with
-// the session cookies, 401 invalid_credentials, 403 local_login_disabled, 429
-// for the lockout or the flow-start limit, and 503 during a rotation hold or
-// while the verification slots are taken.
-func (s *Service) HandleLocalLogin(w http.ResponseWriter, r *http.Request) {
-	b := s.bg
-	if !session.SameOrigin(r, s.origin(r)) {
-		s.o.Problem(w, r, errs.E(errs.Forbidden, errs.CodeCSRFFailed, "The local login must come from the trove UI (Origin or Sec-Fetch-Site)."))
-		return
+// AdmitLocalLogin is what a request of POST /auth/local/login passes before its
+// body is read (R-AUTH-014): the flow-start limit of the client address
+// (R-AUTH-038) and the account being usable. 429 rate_limited and 403
+// local_login_disabled are its refusals.
+func (s *Service) AdmitLocalLogin(ctx context.Context, clientAddr string) error {
+	if err := s.allow(ctx, clientAddr); err != nil {
+		return err
 	}
-	if !s.allow(w, r) {
-		return
+	if s.bg == nil || !s.bg.usable() {
+		return errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
 	}
-	if b == nil || !b.usable() {
-		s.o.Problem(w, r, errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled."))
-		return
-	}
-	var req loginRequest
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxLoginBody))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		s.o.Problem(w, r, errs.E(errs.Invalid, errs.CodeInvalid, "The body must be {\"username\": …, \"password\": …}."))
-		return
-	}
-	if err := b.login(w, r, req); err != nil {
-		s.o.Problem(w, r, err)
-	}
+	return nil
 }
 
-func (s *Service) origin(r *http.Request) string {
-	if s.o.Origin != nil {
-		return s.o.Origin(r)
+// LocalLogin verifies the attempt and creates the session (R-AUTH-014). The
+// errors are 401 invalid_credentials, 403 local_login_disabled, 429 for the
+// lockout, and 503 during a rotation hold or while the verification slots are
+// taken; the caller has passed [Service.AdmitLocalLogin].
+func (s *Service) LocalLogin(ctx context.Context, in LocalLoginInput) (session.Created, error) {
+	if s.bg == nil {
+		return session.Created{}, errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
 	}
-	return session.NormalizeOrigin(s.o.BaseURL)
+	return s.bg.login(ctx, in)
 }
 
 // login runs one attempt: the lockout row first (every attempt reads it), then
 // one Argon2id verification, which runs for unknown usernames too, so the
 // answer time does not reveal the account name.
-func (b *BreakGlass) login(w http.ResponseWriter, r *http.Request, req loginRequest) error {
-	ctx := r.Context()
+func (b *BreakGlass) login(ctx context.Context, in LocalLoginInput) (session.Created, error) {
 	if err := b.checkLockout(ctx); err != nil {
-		return err
+		return session.Created{}, err
 	}
 	b.mu.RLock()
 	pw := b.pw
 	b.mu.RUnlock()
 	if pw == nil {
-		return errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
+		return session.Created{}, errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
 	}
 	// The attempt is counted before it is verified, so attempts in parallel (on
 	// this replica or on others) cannot all be verified before the failure that
 	// locks the account has committed (R-AUTH-038).
 	if err := b.reserveAttempt(ctx); err != nil {
-		return err
+		return session.Created{}, err
 	}
-	ok, err := b.verify(ctx, pw, req)
+	ok, err := b.verify(ctx, pw, in)
 	if err != nil {
 		b.releaseAttempt(ctx)
-		return err
+		return session.Created{}, err
 	}
 	if !ok {
-		if err := b.recordFailure(ctx, r); err != nil {
-			return err
+		if err := b.recordFailure(ctx, in.Source); err != nil {
+			return session.Created{}, err
 		}
-		matched := subtle.ConstantTimeCompare([]byte(req.Username), []byte(b.cfg.Username)) == 1
-		b.audit(r, audit.Failure, "invalid_credentials", "", matched)
+		matched := subtle.ConstantTimeCompare([]byte(in.Username), []byte(b.cfg.Username)) == 1
+		b.audit(ctx, in.Source, audit.Failure, "invalid_credentials", "", matched)
 		b.s.m.Attempt("breakglass", "failure", "invalid_credentials")
-		return errs.E(errs.Unauthenticated, errs.CodeInvalidCredentials, "The username or the password is wrong.")
+		return session.Created{}, errs.E(errs.Unauthenticated, errs.CodeInvalidCredentials, "The username or the password is wrong.")
 	}
 	// A failure that locked the account while this password was verified wins: the
 	// right guess does not log in through a lock that has been committed.
 	if err := b.checkLockout(ctx); err != nil {
-		return err
+		return session.Created{}, err
 	}
 	if err := b.s.o.DB.Read(ctx, func(db q.DBTX) error { return q.New(db).ResetLockoutFailures(ctx, LockoutKey) }); err != nil {
-		return postgres.Unavailable(err)
+		return session.Created{}, postgres.Unavailable(err)
 	}
 	created, err := b.s.o.Sessions.Create(ctx, session.NewSession{
-		PrincipalID: b.userID, BreakGlass: true, ClientAddr: b.s.clientAddr(r), UserAgent: r.UserAgent(),
-		ReplaceCookie: session.CookieValue(r, session.CookieSession),
+		PrincipalID: b.userID, BreakGlass: true, ClientAddr: in.ClientAddr, UserAgent: in.UserAgent,
+		ReplaceCookie: in.SessionCookie,
 	})
 	if errors.Is(err, session.ErrPrincipalNotActive) {
-		return errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
+		return session.Created{}, errs.E(errs.Forbidden, errs.CodeLocalLoginDisabled, "The local login is disabled.")
 	}
 	if err != nil {
-		return postgres.Unavailable(err)
+		return session.Created{}, postgres.Unavailable(err)
 	}
-	b.audit(r, audit.Success, "", created.ID, true)
+	b.audit(ctx, in.Source, audit.Success, "", created.ID, true)
 	b.s.m.Attempt("breakglass", "success", "")
 	details, _ := json.Marshal(map[string]string{"method": "breakglass", "session_id": created.ID})
 	b.s.o.Audit.Record(ctx, audit.Event{
 		Type: audit.EventAuthLoginSucceeded, Actor: audit.Actor{Kind: "break_glass", ID: b.userID, Name: b.cfg.Username},
-		Outcome: audit.Success, Source: b.s.source(r), Details: details,
+		Outcome: audit.Success, Source: in.Source, Details: details,
 	})
-	session.SetCookies(w, created.Secret, created.CSRF)
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+	return created, nil
 }
 
 // checkLockout reads the auth_lockout row: a lock answers 429 even for the
@@ -408,7 +395,7 @@ func (b *BreakGlass) checkLockout(ctx context.Context) error {
 // verify runs the Argon2id verification in one of the replica's slots. An
 // attempt that gets no slot within 1 s answers 503 server_busy (R-AUTH-014):
 // each verification holds at least 64 MiB.
-func (b *BreakGlass) verify(ctx context.Context, pw *password, req loginRequest) (bool, error) {
+func (b *BreakGlass) verify(ctx context.Context, pw *password, in LocalLoginInput) (bool, error) {
 	t := time.NewTimer(slotWait)
 	defer t.Stop()
 	select {
@@ -420,8 +407,8 @@ func (b *BreakGlass) verify(ctx context.Context, pw *password, req loginRequest)
 		return false, ctx.Err()
 	}
 	defer func() { <-b.slots }()
-	passOK := pw.matches(req.Password)
-	nameOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(b.cfg.Username)) == 1
+	passOK := pw.matches(in.Password)
+	nameOK := subtle.ConstantTimeCompare([]byte(in.Username), []byte(b.cfg.Username)) == 1
 	return passOK && nameOK, nil
 }
 
@@ -463,7 +450,7 @@ func (b *BreakGlass) releaseAttempt(ctx context.Context) {
 // recordFailure locks the account when the failed attempt brought the count to the
 // threshold and, when it does, writes auth.breakglass.locked in the same
 // transaction (R-AUTH-038). The count itself was taken by reserveAttempt.
-func (b *BreakGlass) recordFailure(ctx context.Context, r *http.Request) error {
+func (b *BreakGlass) recordFailure(ctx context.Context, src audit.Source) error {
 	l := b.cfg.Lockout
 	err := b.s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		ptx, ok := postgres.Unwrap(tx)
@@ -479,7 +466,7 @@ func (b *BreakGlass) recordFailure(ctx context.Context, r *http.Request) error {
 		details, _ := json.Marshal(map[string]any{"severity": "high", "failures": rows[0].Failures, "locked_until": rows[0].LockedUntil.Time.UTC().Format(time.RFC3339)})
 		return b.s.o.Audit.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventAuthBreakGlassLocked, Actor: audit.Actor{Kind: "anonymous"}, Outcome: audit.Success,
-			Source: b.s.source(r), Subject: audit.Subject{Kind: "user", ID: b.userID, Name: b.cfg.Username}, Details: details,
+			Source: src, Subject: audit.Subject{Kind: "user", ID: b.userID, Name: b.cfg.Username}, Details: details,
 		})
 	})
 	if err != nil {
@@ -492,7 +479,7 @@ func (b *BreakGlass) recordFailure(ctx context.Context, r *http.Request) error {
 // failure alike (R-AUTH-014). It records whether the presented username was the
 // account's, never the presented value: a password typed into the username
 // field would otherwise land in the audit trail. The password never is recorded.
-func (b *BreakGlass) audit(r *http.Request, outcome audit.Outcome, reason, sessionID string, usernameMatched bool) {
+func (b *BreakGlass) audit(ctx context.Context, src audit.Source, outcome audit.Outcome, reason, sessionID string, usernameMatched bool) {
 	d := map[string]any{"severity": "high", "usernameMatched": usernameMatched}
 	if sessionID != "" {
 		d["session_id"] = sessionID
@@ -502,8 +489,8 @@ func (b *BreakGlass) audit(r *http.Request, outcome audit.Outcome, reason, sessi
 	if outcome == audit.Success {
 		actor = audit.Actor{Kind: "break_glass", ID: b.userID, Name: b.cfg.Username}
 	}
-	b.s.o.Audit.Record(r.Context(), audit.Event{
-		Type: audit.EventAuthBreakGlassLogin, Actor: actor, Outcome: outcome, Reason: reason, Source: b.s.source(r),
+	b.s.o.Audit.Record(ctx, audit.Event{
+		Type: audit.EventAuthBreakGlassLogin, Actor: actor, Outcome: outcome, Reason: reason, Source: src,
 		Subject: audit.Subject{Kind: "user", ID: b.userID, Name: b.cfg.Username}, Details: details,
 	})
 }

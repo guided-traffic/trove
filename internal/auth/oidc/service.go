@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"os"
 	"slices"
@@ -23,18 +22,9 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
-// The browser routes of the login (R-AUTH-005, R-AUTH-006, R-AUTH-013,
-// R-AUTH-014). They lie outside /api/v1/ in the ui family of R-EP-005; the
-// composition root registers them through httpserver.Router.
-const (
-	RouteStart      = "GET /auth/oidc/{providerId}/start"
-	RouteCallback   = "GET /auth/oidc/{providerId}/callback"
-	RouteLogout     = "POST /auth/logout"
-	RouteLocalLogin = "POST /auth/local/login"
-)
-
 // LoggedOutPath is where every logout ends; the post-logout redirect URI is the
-// base URL plus this path (R-AUTH-003, R-AUTH-013).
+// base URL plus this path (R-AUTH-003, R-AUTH-013). The browser routes that lead
+// here live in internal/api/login.
 const LoggedOutPath = "/ui/logged-out"
 
 // flowTTL is the lifetime of a login flow and of its binding cookie
@@ -81,18 +71,13 @@ type Options struct {
 	MaxPendingFlows int
 	// Getenv reads the variable of client_secret_env; nil is os.Getenv.
 	Getenv func(string) string
-
-	// The edge functions of the composition root: problem+json with the request
-	// ID, the client address the chain resolved (R-ARCH-006), the event source,
-	// and the base URL's origin for the origin check (R-AUTH-012).
-	Problem    func(http.ResponseWriter, *http.Request, error)
-	ClientAddr func(*http.Request) string
-	Source     session.SourceFunc
-	Origin     func(*http.Request) string
 }
 
 // Service is the login of one replica that serves the client listener: the
-// providers, the browser routes and the break-glass sign-in. Every step of a
+// providers, the flow of the browser login and the break-glass sign-in. It takes
+// plain inputs and returns plain outputs or errors; the browser routes that parse
+// the request and write cookies, redirects and pages are in internal/api/login.
+// Every step of a
 // flow reads its state from PostgreSQL, so consecutive requests may reach any
 // replica (R-AUTH-042).
 type Service struct {
@@ -148,9 +133,6 @@ func New(ctx context.Context, o Options) (*Service, error) {
 	}
 	if o.MaxPendingFlows <= 0 {
 		o.MaxPendingFlows = DefaultMaxPendingFlows
-	}
-	if o.Problem == nil {
-		o.Problem = func(w http.ResponseWriter, r *http.Request, err error) { errs.Write(w, r, err, "", nil) }
 	}
 	log := o.Log
 	if log == nil {
@@ -310,34 +292,18 @@ func SafeReturnTo(v string) string {
 	return v
 }
 
-// clientAddr is the address the chain resolved, "" outside the chain.
-func (s *Service) clientAddr(r *http.Request) string {
-	if s.o.ClientAddr == nil {
-		return ""
-	}
-	return s.o.ClientAddr(r)
-}
-
-func (s *Service) source(r *http.Request) audit.Source {
-	if s.o.Source != nil {
-		return s.o.Source(r)
-	}
-	return audit.Source{UserAgent: r.UserAgent()}
-}
-
-// allow applies auth.flow_starts to the client address (R-AUTH-038). Without a
-// limiter every request proceeds.
-func (s *Service) allow(w http.ResponseWriter, r *http.Request) bool {
+// allow applies auth.flow_starts to the client address the chain resolved
+// (R-AUTH-038). Without a limiter every request proceeds.
+func (s *Service) allow(ctx context.Context, clientAddr string) error {
 	if s.o.Limiter == nil {
-		return true
+		return nil
 	}
-	ok, retry := s.o.Limiter.Allow(r.Context(), auth.AddressBucket(s.clientAddr(r)))
+	ok, retry := s.o.Limiter.Allow(ctx, auth.AddressBucket(clientAddr))
 	if ok {
-		return true
+		return nil
 	}
 	s.m.RateLimited("flow_starts")
-	s.o.Problem(w, r, errs.E(errs.RateLimited, errs.CodeRateLimited, "Too many login attempts from this address; retry later.", errs.WithRetryAfter(retry)))
-	return false
+	return errs.E(errs.RateLimited, errs.CodeRateLimited, "Too many login attempts from this address; retry later.", errs.WithRetryAfter(retry))
 }
 
 // pendingFull reports whether max_pending_flows unexpired browser and

@@ -11,6 +11,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -24,7 +25,7 @@ import (
 // (R-AUTH-024): the actions and system capabilities of the authorization area,
 // its validators for the three pattern dimensions, and the configured endpoint
 // names. The administration commands that mint tokens use them too.
-func TokenScopeOptions(cfg *config.Config) token.ScopeOptions {
+func TokenScopeOptions(cfg *config.Config) scope.Options {
 	items := map[string]bool{}
 	for _, c := range authz.Capabilities() {
 		items[string(c)] = true
@@ -37,7 +38,7 @@ func TokenScopeOptions(cfg *config.Config) token.ScopeOptions {
 	for _, n := range endpointNames(cfg) {
 		endpoints[n] = true
 	}
-	return token.ScopeOptions{
+	return scope.Options{
 		Action:     func(s string) bool { return acts[s] },
 		SystemItem: func(s string) bool { return items[s] },
 		Endpoint:   func(n string) bool { return endpoints[n] },
@@ -93,18 +94,14 @@ func (a *App) wireIdentity() error {
 	if err != nil {
 		return err
 	}
-	// The manager and the token service join the transaction of an idempotent
-	// create of the management API (principal.Join), so a retry with the same key
-	// finds the change and its stored outcome together.
-	joinable := principal.Joinable{DB: db}
 	tokens := token.NewService(token.ServiceOptions{
-		DB: joinable, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
+		DB: db, Notifier: changes, Recorder: rec, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
 		Tokens: cfg.Tokens, Recent: recent, Metrics: metrics, Log: a.log.With("component", "tokens"),
 		Scope: TokenScopeOptions(a.cfg),
 	})
 	breakGlass := cfg.BreakGlass.Username // reserved: no OIDC login and no user can take the name (R-AUTH-007)
 	manager := principal.NewManager(principal.ManagerOptions{
-		DB: joinable, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Authz: authz.NewPrincipalHook(changes),
+		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Authz: authz.NewPrincipalHook(changes),
 	})
 	provisioner := principal.NewProvisioner(principal.ProvisionerOptions{
 		DB: db, Notifier: changes, Recorder: rec, BreakGlassName: breakGlass, Metrics: metrics, Authz: authz.NewPrincipalHook(changes),

@@ -2,8 +2,6 @@ package oidc
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -17,12 +15,10 @@ func (b *bucketRecorder) Allow(_ context.Context, bucket string) (bool, time.Dur
 
 func TestR_AUTH_038_FlowStartsCountAnIPv6NetworkAsOneAddress(t *testing.T) {
 	rec := &bucketRecorder{}
-	addr := ""
-	s := &Service{o: Options{Limiter: rec, ClientAddr: func(*http.Request) string { return addr }}}
+	s := &Service{o: Options{Limiter: rec}}
 	for _, a := range []string{"2001:db8:5:6::1", "2001:db8:5:6::2:3", "198.51.100.4"} {
-		addr = a
-		if !s.allow(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/auth/oidc/corp/start", nil)) {
-			t.Fatal("refused")
+		if err := s.allow(context.Background(), a); err != nil {
+			t.Fatalf("refused: %v", err)
 		}
 	}
 	if len(rec.seen) != 3 || rec.seen[0] != "2001:db8:5:6::/64" || rec.seen[1] != rec.seen[0] || rec.seen[2] != "198.51.100.4" {

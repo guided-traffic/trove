@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -24,7 +25,7 @@ import (
 // idempotent replay of such a create answers 409 token_already_issued, because
 // the value is not stored.
 
-func toScope(sc token.Scope) gen.TokenScope {
+func toScope(sc scope.Scope) gen.TokenScope {
 	grants := make([]gen.TokenScopeGrant, 0, len(sc.Repositories))
 	for _, g := range sc.Repositories {
 		out := gen.TokenScopeGrant{Repositories: orEmptyStrings(g.Repositories), Actions: []gen.TokenScopeGrantActions{}}
@@ -46,7 +47,7 @@ func toScope(sc token.Scope) gen.TokenScope {
 	return out
 }
 
-func toPatterns(p token.Patterns) *gen.TokenScopePatterns {
+func toPatterns(p scope.Patterns) *gen.TokenScopePatterns {
 	if len(p.Include)+len(p.Exclude) == 0 {
 		return nil
 	}
@@ -214,10 +215,10 @@ func tokenIssued(id string) error {
 
 // issue runs a token creation behind the Idempotency-Key and answers 201 with the
 // value. The secret never goes into the stored outcome.
-func (s *Server) issue(w http.ResponseWriter, r *http.Request, body []byte, run func(ctx context.Context) (token.Created, error)) {
+func (s *Server) issue(w http.ResponseWriter, r *http.Request, body []byte, run func(ctx context.Context, tx meta.Tx) (token.Created, error)) {
 	err := s.idem.Do(w, r, body, IdempotentOp{
 		Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-			created, err := run(principal.Join(ctx, tx))
+			created, err := run(ctx, tx)
 			if err != nil {
 				return Outcome{}, identityErr(err)
 			}
@@ -265,7 +266,9 @@ func (s *Server) CreateToken(w http.ResponseWriter, r *http.Request, _ gen.Creat
 		Caller: s.caller(r), Type: token.TypePAT, OwnerID: p.ID, Description: in.Description, Scope: scope, TTL: requestTTL(in),
 		SelfRotatable: in.SelfRotatable != nil && *in.SelfRotatable, Via: via(p), Parent: parent,
 	}
-	s.issue(w, r, body, func(ctx context.Context) (token.Created, error) { return s.o.Auth.Tokens.Create(ctx, req) })
+	s.issue(w, r, body, func(ctx context.Context, tx meta.Tx) (token.Created, error) {
+		return s.o.Auth.Tokens.CreateTx(ctx, tx, req)
+	})
 }
 
 func refuseBreakGlass(p httpserver.Principal) error {
@@ -329,7 +332,9 @@ func (s *Server) CreateServiceAccountToken(w http.ResponseWriter, r *http.Reques
 		Caller: s.caller(r), Type: token.TypeSAT, OwnerID: sa.ID, Description: in.Description, Scope: scope, TTL: requestTTL(in),
 		SelfRotatable: in.SelfRotatable != nil && *in.SelfRotatable, Via: via(p), Admin: admin && !derived, Parent: parent,
 	}
-	s.issue(w, r, body, func(ctx context.Context) (token.Created, error) { return s.o.Auth.Tokens.Create(ctx, req) })
+	s.issue(w, r, body, func(ctx context.Context, tx meta.Tx) (token.Created, error) {
+		return s.o.Auth.Tokens.CreateTx(ctx, tx, req)
+	})
 }
 
 // holdsCapability reports whether the caller holds a capability, as the
@@ -665,7 +670,9 @@ func (s *Server) RotateToken(w http.ResponseWriter, r *http.Request, id string, 
 		return
 	}
 	req := token.RotateRequest{Caller: s.caller(r), ID: rec.ID, OverlapSeconds: overlap, Parent: parent}
-	s.issue(w, r, body, func(ctx context.Context) (token.Created, error) { return s.o.Auth.Tokens.Rotate(ctx, req) })
+	s.issue(w, r, body, func(ctx context.Context, tx meta.Tx) (token.Created, error) {
+		return s.o.Auth.Tokens.RotateTx(ctx, tx, req)
+	})
 }
 
 // rotationParent decides who may rotate a token and returns the presenting token
@@ -713,5 +720,7 @@ func (s *Server) RotateCurrentToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := token.RotateRequest{Caller: s.caller(r), ID: p.Credential.TokenID, OverlapSeconds: overlap, Self: true}
-	s.issue(w, r, body, func(ctx context.Context) (token.Created, error) { return s.o.Auth.Tokens.Rotate(ctx, req) })
+	s.issue(w, r, body, func(ctx context.Context, tx meta.Tx) (token.Created, error) {
+		return s.o.Auth.Tokens.RotateTx(ctx, tx, req)
+	})
 }

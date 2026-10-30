@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -53,12 +54,11 @@ func (e *env) apiHandler(name string, db *postgres.DB, changes *cluster.Changes,
 	settings := token.NewSettingsStore(token.SettingsOptions{
 		DB: db, Notifier: changes, Recorder: e.audit, Cache: caches, Gate: gate, Tokens: tokenCfg, Anonymous: authCfg.Anonymous,
 	})
-	joinable := principal.Joinable{DB: db}
 	tokens := token.NewService(token.ServiceOptions{
-		DB: joinable, Notifier: changes, Recorder: e.audit, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
-		Tokens: tokenCfg, Metrics: metrics, Log: quiet, Scope: token.ScopeOptions{Action: func(string) bool { return true }, SystemItem: func(string) bool { return true }},
+		DB: db, Notifier: changes, Recorder: e.audit, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
+		Tokens: tokenCfg, Metrics: metrics, Log: quiet, Scope: scope.Options{Action: func(string) bool { return true }, SystemItem: func(string) bool { return true }},
 	})
-	manager := principal.NewManager(principal.ManagerOptions{DB: joinable, Notifier: changes, Recorder: e.audit, BreakGlassName: authCfg.BreakGlass.Username})
+	manager := principal.NewManager(principal.ManagerOptions{DB: db, Notifier: changes, Recorder: e.audit, BreakGlassName: authCfg.BreakGlass.Username})
 	stage := auth.New(auth.Options{
 		Tokens: tokens, Sessions: store, Principals: principals, Settings: settings,
 		Limiter:      auth.NewLocalLimiter(300, time.Minute, nil, nil),

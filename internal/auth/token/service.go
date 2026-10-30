@@ -10,6 +10,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
@@ -41,7 +42,7 @@ type ServiceOptions struct {
 	// ceilings), the limits per principal, the cache TTL and the retention.
 	Tokens config.AuthTokens
 	// Scope are the cross-area checks of scope validation.
-	Scope ScopeOptions
+	Scope scope.Options
 	// Recent is the throttle-exemption marker store; nil disables markers.
 	Recent  RecentTokens
 	Metrics *principal.Metrics
@@ -91,7 +92,7 @@ type Record struct {
 	Hint             string
 	Owner            Owner
 	Description      string
-	Scope            Scope
+	Scope            scope.Scope
 	SelfRotatable    bool
 	CreatedAt        time.Time
 	CreatedBy        string
@@ -164,19 +165,46 @@ func forbidden(code, detail string) error { return errs.E(errs.Forbidden, code, 
 // owner's principal row before it counts the owner's active tokens, so
 // concurrent creates on different replicas cannot exceed the limit.
 func (s *Service) Create(ctx context.Context, r CreateRequest) (Created, error) {
-	if r.Type != TypePAT && r.Type != TypeSAT {
-		return Created{}, errs.E(errs.Invalid, errs.CodeValidation, "Only personal and service-account tokens are created here.")
-	}
-	if n := utf8.RuneCountInString(r.Description); n < 1 || n > 1024 {
-		return Created{}, errs.E(errs.Invalid, errs.CodeDescriptionRequired, "A description of 1 to 1024 characters is required.")
-	}
-	scope, err := ParseScope(r.Scope, s.o.Scope)
+	sp, err := s.prepareCreate(ctx, r)
 	if err != nil {
 		return Created{}, err
+	}
+	return s.insert(ctx, sp)
+}
+
+// CreateTx is [Service.Create] inside the caller's transaction: the token row, its
+// lineage locks, its audit event and the record it returns belong to tx and commit
+// or roll back with it. The management API makes an idempotent create one
+// transaction with its idempotency row that way (R-API-014). The checks before
+// the write (the settings, the allowed groups) read the cached settings and
+// principal stores, which no row of tx can change; the owner lock, the count and
+// the lineage run on tx. The caller owns the transaction; a retry of it runs the
+// call again from the start with a new secret.
+func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, r CreateRequest) (Created, error) {
+	sp, err := s.prepareCreate(ctx, r)
+	if err != nil {
+		return Created{}, err
+	}
+	created, err := s.insertTx(ctx, tx, sp)
+	return created, principal.DBErr("token.create", err)
+}
+
+// prepareCreate validates a creation and resolves its scope and lifetime; it
+// writes nothing.
+func (s *Service) prepareCreate(ctx context.Context, r CreateRequest) (insertSpec, error) {
+	if r.Type != TypePAT && r.Type != TypeSAT {
+		return insertSpec{}, errs.E(errs.Invalid, errs.CodeValidation, "Only personal and service-account tokens are created here.")
+	}
+	if n := utf8.RuneCountInString(r.Description); n < 1 || n > 1024 {
+		return insertSpec{}, errs.E(errs.Invalid, errs.CodeDescriptionRequired, "A description of 1 to 1024 characters is required.")
+	}
+	sc, err := scope.Parse(r.Scope, s.o.Scope)
+	if err != nil {
+		return insertSpec{}, err
 	}
 	eff, err := s.o.Settings.Effective(ctx)
 	if err != nil {
-		return Created{}, err
+		return insertSpec{}, err
 	}
 	now := s.o.Now()
 	def, maxTTL := eff.PATDefaultTTL, eff.PATMaxTTL
@@ -185,27 +213,27 @@ func (s *Service) Create(ctx context.Context, r CreateRequest) (Created, error) 
 	}
 	var parentExpires *time.Time
 	if r.Parent != nil {
-		if err := checkDerivation(r, scope); err != nil {
-			return Created{}, err
+		if err := checkDerivation(r, sc); err != nil {
+			return insertSpec{}, err
 		}
 		parentExpires = r.Parent.ExpiresAt
 	}
 	life, err := resolveLifetime(r.Type, r.TTL, now, def, maxTTL, s.o.Tokens.SAT.AllowNonExpiring, r.Admin, r.Parent != nil, parentExpires)
 	if err != nil {
-		return Created{}, err
+		return insertSpec{}, err
 	}
 	if r.Parent != nil && parentExpires != nil && !life.nonExpiring && now.Add(life.ttl).After(*parentExpires) {
-		return Created{}, forbidden(errs.CodeDerivationExceedsParent, "The new token would outlive the presenting token.")
+		return insertSpec{}, forbidden(errs.CodeDerivationExceedsParent, "The new token would outlive the presenting token.")
 	}
 	if r.Type == TypePAT {
 		if err := s.checkPATAllowed(ctx, r.OwnerID); err != nil {
-			return Created{}, err
+			return insertSpec{}, err
 		}
 	}
-	return s.insert(ctx, insertSpec{
-		req: r, scope: scope, life: life, maxActive: s.maxActive(r.Type), via: r.Via,
+	return insertSpec{
+		req: r, scope: sc, life: life, maxActive: s.maxActive(r.Type), via: r.Via,
 		derivedFrom: derivedID(r.Parent), capMicros: capMicros(parentExpires), presented: derivedID(r.Parent),
-	})
+	}, nil
 }
 
 func derivedID(p *Info) string {
@@ -224,14 +252,14 @@ func (s *Service) maxActive(t Type) int {
 
 // checkDerivation applies the derivation rule of R-AUTH-027 that does not need
 // the lifetime: type, owner and scope.
-func checkDerivation(r CreateRequest, scope Scope) error {
+func checkDerivation(r CreateRequest, sc scope.Scope) error {
 	p := r.Parent
 	switch {
 	case p.Type == TypeCIT:
 		return forbidden(errs.CodeCITokenRestricted, "A CI token cannot create tokens.")
 	case r.Type != p.Type || r.OwnerID != p.Owner.ID:
 		return forbidden(errs.CodeForbidden, "A token creates tokens of its own type and owner only.")
-	case !scope.Within(p.Scope):
+	case !sc.Within(p.Scope):
 		return forbidden(errs.CodeDerivationExceedsParent, "The scope is broader than the presenting token's.")
 	}
 	return nil
@@ -257,7 +285,7 @@ func (s *Service) checkPATAllowed(ctx context.Context, ownerID string) error {
 
 type insertSpec struct {
 	req       CreateRequest
-	scope     Scope
+	scope     scope.Scope
 	life      lifetime
 	maxActive int
 	via       string
@@ -334,10 +362,25 @@ func (sp insertSpec) lineageCheck(ctx context.Context, qs *q.Queries) (int64, er
 }
 
 func (s *Service) insert(ctx context.Context, sp insertSpec) (Created, error) {
+	var created Created
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		var err error
+		created, err = s.insertTx(ctx, tx, sp)
+		return err
+	})
+	if err != nil {
+		return Created{}, principal.DBErr("token.create", err)
+	}
+	return created, nil
+}
+
+// insertTx writes the token in tx. The secret is generated here, so a retried
+// transaction never reuses one.
+func (s *Service) insertTx(ctx context.Context, tx meta.Tx, sp insertSpec) (Created, error) {
 	r := sp.req
 	secret, err := Generate(r.Type)
 	if err != nil {
-		return Created{}, principal.DBErr("token.generate", err)
+		return Created{}, err
 	}
 	hash := Hash(secret)
 	id := principal.NewID()
@@ -345,73 +388,69 @@ func (s *Service) insert(ctx context.Context, sp insertSpec) (Created, error) {
 	if sp.life.nonExpiring {
 		ttl = -1
 	}
-	var rec Record
-	err = s.o.DB.InTx(ctx, func(tx meta.Tx) error {
-		qs := principal.Queries(tx)
-		owner, err := lockOwner(ctx, qs, r.OwnerID, r.Type)
-		if err != nil {
-			return err
-		}
-		capAt, err := sp.lineageCheck(ctx, qs)
-		if err != nil {
-			return err
-		}
-		n, err := qs.IdentityCountActiveTokens(ctx, q.IdentityCountActiveTokensParams{PrincipalID: r.OwnerID, Type: string(r.Type)})
-		if err != nil {
-			return err
-		}
-		if sp.rotatedFrom != "" {
-			// The predecessor is live (lineageCheck) and counted; its successor
-			// replaces it, so a rotation goes over the limit by its own overlap
-			// at most, never by a chain of overlapping rotations.
-			n--
-		}
-		if int(n) >= sp.maxActive {
-			return errs.E(errs.Conflict, errs.CodeTokenLimitReached, "The principal holds the maximum number of active tokens.")
-		}
-		row, err := qs.IdentityInsertToken(ctx, q.IdentityInsertTokenParams{
-			ID: id, Type: string(r.Type), SecretSha256: hash[:], Hint: Hint(secret), PrincipalID: r.OwnerID,
-			Description: r.Description, Scope: string(sp.scope.Marshal()), SelfRotatable: r.SelfRotatable,
-			CreatedBy: r.Caller.Actor.ID, CreatedVia: sp.via, TtlSecs: ttl, CapMicros: capAt, RotatedFrom: sp.rotatedFrom, DerivedFrom: sp.derivedFrom,
-		})
-		if err != nil {
-			return err
-		}
-		rec = Record{
-			ID: id, Type: r.Type, Hint: Hint(secret), Owner: owner, Description: r.Description, Scope: sp.scope,
-			SelfRotatable: r.SelfRotatable, CreatedAt: row.CreatedAt.Time, CreatedBy: r.Caller.Actor.ID, CreatedVia: sp.via,
-			RotatedFrom: sp.rotatedFrom, DerivedFrom: sp.derivedFrom, State: "active",
-		}
-		if row.ExpiresAt.Valid {
-			t := row.ExpiresAt.Time
-			rec.ExpiresAt = &t
-		}
-		if sp.afterInsert != nil {
-			if err := sp.afterInsert(ctx, tx, qs, rec); err != nil {
-				return err
-			}
-		}
-		var exp any
-		if rec.ExpiresAt != nil {
-			exp = rec.ExpiresAt.UTC().Format(time.RFC3339)
-		}
-		d := map[string]any{
-			"type": string(r.Type), "owner": owner.Ref(), "scope": json.RawMessage(sp.scope.Marshal()),
-			"expiresAt": exp, "createdVia": sp.via, "description": r.Description,
-		}
-		if sp.derivedFrom != "" {
-			d["derivedFrom"] = sp.derivedFrom
-		}
-		if sp.rotatedFrom != "" {
-			d["rotatedFrom"] = sp.rotatedFrom
-		}
-		return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
-			Type: audit.EventTokenCreated, Outcome: audit.Success, Actor: r.Caller.Actor, Source: r.Caller.Source,
-			Subject: audit.Subject{Kind: "token", ID: id, Name: rec.Hint}, Details: mustJSON(d),
-		})
+	qs := principal.Queries(tx)
+	owner, err := lockOwner(ctx, qs, r.OwnerID, r.Type)
+	if err != nil {
+		return Created{}, err
+	}
+	capAt, err := sp.lineageCheck(ctx, qs)
+	if err != nil {
+		return Created{}, err
+	}
+	n, err := qs.IdentityCountActiveTokens(ctx, q.IdentityCountActiveTokensParams{PrincipalID: r.OwnerID, Type: string(r.Type)})
+	if err != nil {
+		return Created{}, err
+	}
+	if sp.rotatedFrom != "" {
+		// The predecessor is live (lineageCheck) and counted; its successor
+		// replaces it, so a rotation goes over the limit by its own overlap
+		// at most, never by a chain of overlapping rotations.
+		n--
+	}
+	if int(n) >= sp.maxActive {
+		return Created{}, errs.E(errs.Conflict, errs.CodeTokenLimitReached, "The principal holds the maximum number of active tokens.")
+	}
+	row, err := qs.IdentityInsertToken(ctx, q.IdentityInsertTokenParams{
+		ID: id, Type: string(r.Type), SecretSha256: hash[:], Hint: Hint(secret), PrincipalID: r.OwnerID,
+		Description: r.Description, Scope: string(sp.scope.Marshal()), SelfRotatable: r.SelfRotatable,
+		CreatedBy: r.Caller.Actor.ID, CreatedVia: sp.via, TtlSecs: ttl, CapMicros: capAt, RotatedFrom: sp.rotatedFrom, DerivedFrom: sp.derivedFrom,
 	})
 	if err != nil {
-		return Created{}, principal.DBErr("token.create", err)
+		return Created{}, err
+	}
+	rec := Record{
+		ID: id, Type: r.Type, Hint: Hint(secret), Owner: owner, Description: r.Description, Scope: sp.scope,
+		SelfRotatable: r.SelfRotatable, CreatedAt: row.CreatedAt.Time, CreatedBy: r.Caller.Actor.ID, CreatedVia: sp.via,
+		RotatedFrom: sp.rotatedFrom, DerivedFrom: sp.derivedFrom, State: "active",
+	}
+	if row.ExpiresAt.Valid {
+		t := row.ExpiresAt.Time
+		rec.ExpiresAt = &t
+	}
+	if sp.afterInsert != nil {
+		if err := sp.afterInsert(ctx, tx, qs, rec); err != nil {
+			return Created{}, err
+		}
+	}
+	var exp any
+	if rec.ExpiresAt != nil {
+		exp = rec.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	d := map[string]any{
+		"type": string(r.Type), "owner": owner.Ref(), "scope": json.RawMessage(sp.scope.Marshal()),
+		"expiresAt": exp, "createdVia": sp.via, "description": r.Description,
+	}
+	if sp.derivedFrom != "" {
+		d["derivedFrom"] = sp.derivedFrom
+	}
+	if sp.rotatedFrom != "" {
+		d["rotatedFrom"] = sp.rotatedFrom
+	}
+	if err := s.o.Recorder.RecordTx(ctx, tx, audit.Event{
+		Type: audit.EventTokenCreated, Outcome: audit.Success, Actor: r.Caller.Actor, Source: r.Caller.Source,
+		Subject: audit.Subject{Kind: "token", ID: id, Name: rec.Hint}, Details: mustJSON(d),
+	}); err != nil {
+		return Created{}, err
 	}
 	return Created{Record: rec, Secret: secret}, nil
 }
@@ -448,13 +487,13 @@ func lockOwner(ctx context.Context, qs *q.Queries, ownerID string, t Type) (Owne
 	return Owner{ID: p.ID, Kind: want, Name: p.Name}, nil
 }
 
-func recordFrom(id, typ, hint, ownerID, ownerKind, ownerName, desc string, scope []byte, selfRot bool, created time.Time,
+func recordFrom(id, typ, hint, ownerID, ownerKind, ownerName, desc string, rawScope []byte, selfRot bool, created time.Time,
 	createdBy, via string, expires, revoked time.Time, expiresValid, revokedValid bool, revokedBy, reason, rotatedFrom, derivedFrom string,
 	lastUsed time.Time, lastUsedValid bool, addr string, expired bool, ci []byte,
 ) Record {
-	sc, err := ParseStoredScope(scope)
+	sc, err := scope.ParseStored(rawScope)
 	if err != nil {
-		sc = Scope{}
+		sc = scope.Scope{}
 	}
 	r := Record{
 		ID: id, Type: Type(typ), Hint: hint, Owner: Owner{ID: ownerID, Kind: principal.Kind(ownerKind), Name: ownerName},
@@ -490,16 +529,9 @@ func (s *Service) Get(ctx context.Context, id string) (Record, error) {
 	var rec Record
 	found := false
 	err := s.o.DB.Read(ctx, func(db q.DBTX) error {
-		rows, err := q.New(db).IdentityTokenRow(ctx, id)
-		if err != nil || len(rows) == 0 {
-			return err
-		}
-		r := rows[0]
-		rec = recordFrom(r.ID, r.Type, r.Hint, r.OwnerID, r.OwnerKind, r.OwnerName, r.Description, r.Scope, r.SelfRotatable,
-			r.CreatedAt.Time, r.CreatedBy, r.CreatedVia, r.ExpiresAt.Time, r.RevokedAt.Time, r.ExpiresAt.Valid, r.RevokedAt.Valid,
-			r.RevokedBy, r.RevocationReason, r.RotatedFrom, r.DerivedFrom, r.LastUsedAt.Time, r.LastUsedAt.Valid, r.LastUsedAddr, r.Expired, r.CiContext)
-		found = true
-		return nil
+		var err error
+		rec, found, err = getOn(ctx, q.New(db), id)
+		return err
 	})
 	if err != nil {
 		return Record{}, principal.DBErr("token.get", err)
@@ -508,6 +540,32 @@ func (s *Service) Get(ctx context.Context, id string) (Record, error) {
 		return Record{}, principal.NotFound("The token")
 	}
 	return rec, nil
+}
+
+// getTx is [Service.Get] on the caller's transaction.
+func (s *Service) getTx(ctx context.Context, tx meta.Tx, id string) (Record, error) {
+	if !principal.IsID(id) {
+		return Record{}, principal.NotFound("The token")
+	}
+	rec, found, err := getOn(ctx, principal.Queries(tx), id)
+	if err != nil {
+		return Record{}, principal.DBErr("token.get", err)
+	}
+	if !found {
+		return Record{}, principal.NotFound("The token")
+	}
+	return rec, nil
+}
+
+func getOn(ctx context.Context, qs *q.Queries, id string) (Record, bool, error) {
+	rows, err := qs.IdentityTokenRow(ctx, id)
+	if err != nil || len(rows) == 0 {
+		return Record{}, false, err
+	}
+	r := rows[0]
+	return recordFrom(r.ID, r.Type, r.Hint, r.OwnerID, r.OwnerKind, r.OwnerName, r.Description, r.Scope, r.SelfRotatable,
+		r.CreatedAt.Time, r.CreatedBy, r.CreatedVia, r.ExpiresAt.Time, r.RevokedAt.Time, r.ExpiresAt.Valid, r.RevokedAt.Valid,
+		r.RevokedBy, r.RevocationReason, r.RotatedFrom, r.DerivedFrom, r.LastUsedAt.Time, r.LastUsedAt.Valid, r.LastUsedAddr, r.Expired, r.CiContext), true, nil
 }
 
 // ListFilter filters List (R-AUTH-028).

@@ -4573,22 +4573,24 @@ resource of another area picks a different shape.
 
 ### Q-AUTH-46 · An idempotent create is one transaction with its idempotency row
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Choice (b) of the
+first decision was replaced by (a) in M2 (Q-AUTH-174).
 
 `Idempotency.Do` (R-API-014) gives the operation a transaction in which it inserts the idempotency row, and the identity services open
 their own transactions: the audit event, the change message and the limit check of a token create have to commit with the change.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Every service method takes the transaction | `CreateUser(ctx, tx, …)` and so on | Explicit | The callers of the CLI, the provisioner and the tests change; two signatures per method |
-| (b) The context joins the transaction (chosen) | `principal.Join(ctx, tx)`; the manager and the token service run on `principal.Joinable`, whose `InTx` and `Read` use the joined transaction | The domain code is untouched; a read after a write of the same call sees it | A context value changes what a database call means; only the API sets it |
+| (a) The creating methods take the transaction (chosen) | `Manager.CreateUserTx(ctx, tx, …)`, `CreateGroupTx`, `CreateServiceAccountTx`, `Service.CreateTx`, `RotateTx`; the methods without `Tx` open a transaction and call them | Explicit, the pattern of `repository.Service.CreateTx`; a read after a write of the same call sees it because the `Tx` form reads on the transaction; nothing in the context changes what a database call means | Two entry points per method; the callers that need the transaction (the idempotent creates) name it |
+| (b) The context joins the transaction | `principal.Join(ctx, tx)`; the manager and the token service run on `principal.Joinable`, whose `InTx` and `Read` use the joined transaction | The domain code is untouched | A context value changes what a database call means; only the API sets it; the reader cannot see from the call that it is part of a transaction |
 | (c) Two transactions | The change commits, then the row | No change | A crash between them repeats the change on the retry, and a token would be created twice |
 
-**Choice:** (b). A replay of a create that issued a token value answers `409 token_already_issued` with the token ID, because the value is
+**Choice:** (a). A replay of a create that issued a token value answers `409 token_already_issued` with the token ID, because the value is
 stored nowhere (`Outcome.SecretID`).
 
 **Rationale:** the change, its event and its idempotency row commit or roll back together, with the retry of the outer transaction around
-the whole call. The development agent would revisit this if a second area needs the same and a shared form in `meta` is better.
+the whole call. The callers outside the API (the command line, the provisioner, the tests) keep the methods without `Tx`. Q-AUTH-174
+records the details of the flip. The development agent would revisit this if a third area needs the same and a shared form in `meta` is better.
 
 **Applied in the spec:** none; [identity.md](../developer/identity.md).
 
@@ -4756,6 +4758,83 @@ without configuration. A 401 still carries a challenge (RFC 9110). The developme
 client starts sending Fetch Metadata, or when (c) is wanted for download links.
 
 **Applied in the spec:** R-AUTH-002 (challenge table, acceptance criterion). Code: `auth.challenge`, `auth.fromBrowser`.
+
+### Q-AUTH-174 · The identity writes take the caller's transaction (Tx forms)
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTH-46 chose a context that joins the transaction (`principal.Join`, `principal.Joinable`). The format contract and the
+repository area use the explicit form (`repository.Service.CreateTx`), and four call sites of the management API relied on the hidden one.
+Two points of the flip are not given by Q-AUTH-46: what a `Tx` form returns, and which reads of a token create run on the transaction.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `…Tx` for exactly the calls the API makes idempotent, reading the returned record on the transaction (chosen) | `CreateUserTx`, `CreateGroupTx`, `CreateServiceAccountTx`, `Service.CreateTx`, `Service.RotateTx`; the record is read with the queries bound to the transaction; the owner lock, the active count and the lineage of a token run on it | Small; every idempotent create of the API is covered; the returned record is what the transaction wrote, also when the outer transaction is retried | Every further call that becomes idempotent adds a `Tx` form |
+| (b) A `Tx` form of every write of the manager and the token service | Twenty or so methods twice | One rule | Code nobody calls; each form is a surface to keep equal to its twin |
+| (c) Keep the joining context and rename it | No change in the call sites | Nothing to rewrite | The reason of Q-AUTH-46 stays: a context value changes what a database call means |
+
+**Choice:** (a). `RotateTx` is part of it because `rotateToken` and `rotateCurrentToken` are idempotent creates of a token value too. The
+checks before the first write of a token create (the effective settings, `auth.tokens.pat.allowed_groups`) read the cached settings and
+principal stores, which no row of the transaction can change, so they stay on those stores; the first write is the owner lock. A
+rotation reads the token it rotates on the transaction. The secret of a token is generated inside the `Tx` form, so a retried
+transaction never reuses one. Errors leave a `Tx` form as the domain's errors (`errs`), as before, so the handler maps them unchanged.
+
+**Rationale:** the flip removes `principal.Join`, `principal.Joinable` and the second meaning of `InTx` and `Read`. The development agent
+would revisit this if a path needs a domain read outside the transaction after a joined write (there is none), or if a third area needs
+the same, when a shared form in `meta` becomes worth it.
+
+**Applied in the spec:** Q-AUTH-46; [identity.md](../developer/identity.md).
+
+### Q-AUTH-175 · The browser login routes are an edge package over plain calls of the login domain
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `oidc.Service` wrote the cookies, redirects, problems and the error page of `/auth/` itself, and got the edge functions
+(problem writer, client address, event source, origin) injected as options. A domain package that renders HTML and holds
+`http.ResponseWriter` cannot be tested without HTTP and cannot be reused by a second entry point.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/api/login` parses and writes; `oidc.Service` takes plain inputs and returns plain outputs and errors (chosen) | `StartFlow`, `Callback`, `Logout`, `AdmitLocalLogin`, `LocalLogin`; a failed login is a `*oidc.LoginFailure` the edge renders as the page; every other failure is a problem the edge writes | The domain tests need no HTTP; the page template and the cookies are in one place; the edge imports `httpserver` and the domain does not need to | Two packages for one flow; the inputs are copied between them |
+| (b) Keep the handlers in `oidc`, move only the template | Smaller | The injected edge functions stay | The domain keeps `http.ResponseWriter` |
+| (c) Put the routes into `internal/api/v1` | One edge package | The login is not part of the management API (`/auth/` lies outside `/api/v1/`, in the ui family of R-EP-005) | `v1` grows by a second family |
+
+**Choice:** (a). The domain methods are `StartFlow` and not `Start`, because `Service.Start` is the component's lifecycle call.
+`session.Store.Logout` reads the request (cookie and both CSRF checks of R-AUTH-012), so the edge calls it and hands the result
+(`session.LoggedOut`) to `Service.Logout`, which works out the end-session URL and records `auth.logout`. `oidc.Options` loses `Problem`,
+`ClientAddr`, `Source` and `Origin`; the edge `login.Options` has the three conversions with the defaults of the endpoint's chain
+(client address, event source, the origin of the base URL). The route patterns move to `internal/api/login`; `oidc.LoggedOutPath` stays,
+because the domain builds the post-logout redirect URI from it (R-AUTH-003). `internal/api/login` may not import `internal/api/v1`
+(architecture test, R-ARCH-002).
+
+**Rationale:** the flow keeps every assertion of the HTTP level (`test/integration/login`), and the domain level gains tests without a
+server. The development agent would revisit this if a second entry point of the login appears (a command-line login that is not the
+device flow), which would be a third caller of the same domain calls.
+
+**Applied in the spec:** R-AUTH-005, R-AUTH-006, R-AUTH-013, R-AUTH-014 (no change of behavior); [login.md](../developer/login.md).
+
+### Q-AUTH-176 · The local login is admitted before its body is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `POST /auth/local/login` checks, in this order, the origin (R-AUTH-012), the flow-start limit of the client address
+(R-AUTH-038), whether the account is usable, and only then reads the body. The order is observable: a request over the limit, or one to a
+disabled login, never reaches the JSON decoder, so garbage in the body does not turn a `429` or a `403` into a `400`, and an address over
+the limit does not make trove read bodies. With the split of Q-AUTH-175 the body belongs to the edge and the limit and the account to
+the domain.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The edge decodes, the domain admits and verifies in one call | `LocalLogin(ctx, in)` checks the limit and the account | One call | A bad body answers `400` before a `429` or `403`; trove reads and parses bodies of limited addresses |
+| (b) The domain offers `AdmitLocalLogin` before the body and `LocalLogin` after it (chosen) | The edge: origin check, `AdmitLocalLogin`, decode, `LocalLogin` | The observable order of the specification stays; the origin check stays at the edge, where the request is | A second public call the edge must make in order |
+| (c) The domain takes a decode callback | `LocalLogin(ctx, addr, decode)` | One call, the order inside | A closure over the request in a domain call; harder to test |
+
+**Choice:** (b). `LocalLogin` does not count the limit again: the limiter is the take form and counts every request it is asked about.
+
+**Rationale:** R-AUTH-014 and R-AUTH-038 fix the answers, and the answers depend on the order. The development agent would revisit this if
+the limiter moves to the chain as a stage, when `AdmitLocalLogin` shrinks to the account check.
+
+**Applied in the spec:** R-AUTH-014 (no change of behavior); [login.md](../developer/login.md).
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

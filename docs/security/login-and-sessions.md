@@ -1,7 +1,8 @@
 # Login and sessions
 
 Status: implemented in M1 (WP1.1) for the browser login through OpenID Connect, the server-side UI session, CSRF, logout and
-the break-glass account, in [internal/auth/oidc](../../internal/auth/oidc) and [internal/auth/session](../../internal/auth/session).
+the break-glass account, in [internal/auth/oidc](../../internal/auth/oidc) (the flow), [internal/api/login](../../internal/api/login)
+(the routes under `/auth/`: cookies, redirects, the error page, the origin check) and [internal/auth/session](../../internal/auth/session).
 The authentication stage that reads the session cookie on every request belongs to the identity area and calls
 [`session.Validator`](../../internal/auth/session/session.go); the provisioner that creates users and synchronizes groups is the
 identity area's too ([`principal.Provisioner`](../../internal/auth/principal/principal.go)). Requirements: R-AUTH-003 to R-AUTH-015,
@@ -49,7 +50,7 @@ lock or a rotation reaches every replica.
 
 ## Checks a login passes
 
-- **Start** ([flow.go](../../internal/auth/oidc/flow.go), `HandleStart`): a known provider whose discovery succeeded; the
+- **Start** ([flow.go](../../internal/auth/oidc/flow.go), `StartFlow`; the route is `HandleStart` in [login.go](../../internal/api/login/login.go)): a known provider whose discovery succeeded; the
   pending-flow count under `max_pending_flows`; for `purpose=reauth` a live session; `state`, `nonce` and verifier from
   `crypto/rand`; `return_to` reduced to a `/ui/` path ([service.go](../../internal/auth/oidc/service.go), `SafeReturnTo`).
 - **Rate limits** ([service.go](../../internal/auth/oidc/service.go), `allow` and `pendingFull`): `GET /auth/oidc/{providerId}/start`
@@ -93,7 +94,10 @@ lock or a rotation reaches every replica.
 whose SHA-256 is the session's (constant-time compare) and an `Origin` equal to the base URL's origin, or no `Origin` and
 `Sec-Fetch-Site: same-origin`; `null` and both headers absent are refused. The local login applies the origin rule alone.
 `POST /auth/logout` passes both; `GET /auth/logout` is not routed and answers 405. The error page and the redirects send
-`Cache-Control: no-store`; the error page also `frame-ancestors 'none'`.
+`Cache-Control: no-store`; the error page also `frame-ancestors 'none'`. The local login's origin check is made at the edge
+([login.go](../../internal/api/login/login.go), `HandleLocalLogin`), before anything else; the flow-start limit and the usable-account check
+(`AdmitLocalLogin`, Q-AUTH-176) come before the body is read, so a request over the limit or to a disabled login never reaches the JSON
+decoder. The tests `TestR_AUTH_014_LocalLoginEdge` pin the order.
 
 ## The break-glass account
 
@@ -162,7 +166,7 @@ default says enabled and finds out during the outage that needs it.
 
 ### H-210 · Anyone who reaches the local login can keep the break-glass account locked
 
-Stage: `POST /auth/local/login` ([breakglass.go](../../internal/auth/oidc/breakglass.go)). Subject: the recovery path. Live
+Stage: `POST /auth/local/login` ([login.go](../../internal/api/login/login.go), [breakglass.go](../../internal/auth/oidc/breakglass.go)). Subject: the recovery path. Live
 whenever the break-glass account is enabled. The lockout counts every failure, from any address, because it guards the one
 password in the system (R-AUTH-038); five wrong passwords lock the account for `lockout.duration`, and during the lock the right
 password gets `429` as well. Someone who sends five guesses every 15 minutes keeps the account locked for as long as they like;

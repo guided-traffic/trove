@@ -33,61 +33,96 @@ type NewServiceAccount struct {
 
 // CreateServiceAccount creates a service account (R-AUTH-020).
 func (m *Manager) CreateServiceAccount(ctx context.Context, c Caller, in NewServiceAccount) (ServiceAccount, error) {
-	if !ValidServiceAccountName(in.Name) {
-		return ServiceAccount{}, errs.E(errs.Invalid, errs.CodeValidation, "The service-account name does not match ^[a-z0-9][a-z0-9-]{1,62}$.")
+	if err := m.checkNewServiceAccount(in); err != nil {
+		return ServiceAccount{}, err
 	}
-	if in.Admin && m.admin == nil {
-		return ServiceAccount{}, ErrAdminBinding
-	}
-	id := NewID()
+	var sa ServiceAccount
 	err := m.db.InTx(ctx, func(tx meta.Tx) error {
-		qs := Queries(tx)
-		rows, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindServiceAccount), Name: in.Name, CreatedBy: c.Actor.ID})
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A service account with this name exists.")
-		}
-		if err := qs.IdentityInsertServiceAccount(ctx, q.IdentityInsertServiceAccountParams{ID: id, Description: in.Description}); err != nil {
-			return err
-		}
-		if in.Admin {
-			if err := m.admin.BindAdmin(ctx, tx, id, c.Actor.ID); err != nil {
-				return err
-			}
-		}
-		return m.record(ctx, tx, audit.Event{
-			Type: audit.EventSACreated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
-			Subject: audit.Subject{Kind: "service_account", ID: id, Name: in.Name},
-			Details: details(map[string]any{"source": sourceOf(c), "admin": in.Admin}),
-		})
+		var err error
+		sa, err = m.createServiceAccount(ctx, tx, c, in)
+		return err
 	})
 	if err != nil {
 		return ServiceAccount{}, DBErr("principal.CreateServiceAccount", err)
 	}
-	return m.GetServiceAccount(ctx, in.Name)
+	return sa, nil
+}
+
+// CreateServiceAccountTx is [Manager.CreateServiceAccount] inside the caller's
+// transaction, with the same rules as [Manager.CreateUserTx]; the administrator
+// binding of the Admin option is part of tx too.
+func (m *Manager) CreateServiceAccountTx(ctx context.Context, tx meta.Tx, c Caller, in NewServiceAccount) (ServiceAccount, error) {
+	if err := m.checkNewServiceAccount(in); err != nil {
+		return ServiceAccount{}, err
+	}
+	sa, err := m.createServiceAccount(ctx, tx, c, in)
+	return sa, DBErr("principal.CreateServiceAccount", err)
+}
+
+func (m *Manager) checkNewServiceAccount(in NewServiceAccount) error {
+	if !ValidServiceAccountName(in.Name) {
+		return errs.E(errs.Invalid, errs.CodeValidation, "The service-account name does not match ^[a-z0-9][a-z0-9-]{1,62}$.")
+	}
+	if in.Admin && m.admin == nil {
+		return ErrAdminBinding
+	}
+	return nil
+}
+
+// createServiceAccount writes the account in tx and returns the record as tx sees it.
+func (m *Manager) createServiceAccount(ctx context.Context, tx meta.Tx, c Caller, in NewServiceAccount) (ServiceAccount, error) {
+	id := NewID()
+	qs := Queries(tx)
+	rows, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindServiceAccount), Name: in.Name, CreatedBy: c.Actor.ID})
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	if len(rows) == 0 {
+		return ServiceAccount{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, "A service account with this name exists.")
+	}
+	if err := qs.IdentityInsertServiceAccount(ctx, q.IdentityInsertServiceAccountParams{ID: id, Description: in.Description}); err != nil {
+		return ServiceAccount{}, err
+	}
+	if in.Admin {
+		if err := m.admin.BindAdmin(ctx, tx, id, c.Actor.ID); err != nil {
+			return ServiceAccount{}, err
+		}
+	}
+	if err := m.record(ctx, tx, audit.Event{
+		Type: audit.EventSACreated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
+		Subject: audit.Subject{Kind: "service_account", ID: id, Name: in.Name},
+		Details: details(map[string]any{"source": sourceOf(c), "admin": in.Admin}),
+	}); err != nil {
+		return ServiceAccount{}, err
+	}
+	return loadServiceAccount(ctx, qs, in.Name)
 }
 
 // GetServiceAccount returns the account, or a 404.
 func (m *Manager) GetServiceAccount(ctx context.Context, name string) (ServiceAccount, error) {
 	var sa ServiceAccount
 	err := m.db.Read(ctx, func(db q.DBTX) error {
-		rows, err := q.New(db).IdentityGetServiceAccount(ctx, name)
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return ErrNotFound
-		}
-		r := rows[0]
-		sa = ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time}
-		return nil
+		var err error
+		sa, err = loadServiceAccount(ctx, q.New(db), name)
+		return err
 	})
-	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped above
+	if err == ErrNotFound { //nolint:errorlint // sentinel returned unwrapped by loadServiceAccount
 		return ServiceAccount{}, NotFound("The service account")
 	}
 	return sa, DBErr("principal.GetServiceAccount", err)
+}
+
+// loadServiceAccount reads the account; ErrNotFound when there is none.
+func loadServiceAccount(ctx context.Context, qs *q.Queries, name string) (ServiceAccount, error) {
+	rows, err := qs.IdentityGetServiceAccount(ctx, name)
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	if len(rows) == 0 {
+		return ServiceAccount{}, ErrNotFound
+	}
+	r := rows[0]
+	return ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time}, nil
 }
 
 // ListServiceAccounts lists service accounts ordered by name; after is the name

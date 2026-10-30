@@ -20,7 +20,7 @@ func TestR_AUTH_014_VerificationSlots(t *testing.T) {
 		b.slots <- struct{}{} // the replica's only slot is taken
 		defer func() { <-b.slots }()
 		start := time.Now()
-		ok, err := b.verify(context.Background(), pw, loginRequest{Username: "admin", Password: "correct-horse-batt-1"})
+		ok, err := b.verify(context.Background(), pw, LocalLoginInput{Username: "admin", Password: "correct-horse-batt-1"})
 		e, isErr := errs.As(err)
 		if ok || !isErr || e.Code != errs.CodeServerBusy || e.RetryAfter != time.Second {
 			t.Fatalf("ok %v err %v", ok, err)
@@ -31,11 +31,11 @@ func TestR_AUTH_014_VerificationSlots(t *testing.T) {
 	})
 
 	t.Run("R-AUTH-014 the verification runs for an unknown username too and fails", func(t *testing.T) {
-		ok, err := b.verify(context.Background(), pw, loginRequest{Username: "nobody", Password: "correct-horse-batt-1"})
+		ok, err := b.verify(context.Background(), pw, LocalLoginInput{Username: "nobody", Password: "correct-horse-batt-1"})
 		if ok || err != nil {
 			t.Fatalf("ok %v err %v", ok, err)
 		}
-		if ok, err := b.verify(context.Background(), pw, loginRequest{Username: "admin", Password: "correct-horse-batt-1"}); !ok || err != nil {
+		if ok, err := b.verify(context.Background(), pw, LocalLoginInput{Username: "admin", Password: "correct-horse-batt-1"}); !ok || err != nil {
 			t.Fatalf("the right credentials: ok %v err %v", ok, err)
 		}
 	})

@@ -73,7 +73,7 @@ func (s *Server) CreateGroup(w http.ResponseWriter, r *http.Request, _ gen.Creat
 	}
 	c := s.caller(r)
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		g, err := s.o.Auth.Manager.CreateGroup(principal.Join(ctx, tx), c, principal.NewGroup{
+		g, err := s.o.Auth.Manager.CreateGroupTx(ctx, tx, c, principal.NewGroup{
 			Name: in.Name, Description: derefString(in.Description), AutoJoin: in.AutoJoin != nil && *in.AutoJoin, Members: deref(in.Members),
 		})
 		if err != nil {
@@ -281,7 +281,7 @@ func (s *Server) CreateServiceAccount(w http.ResponseWriter, r *http.Request, _ 
 	}
 	c := s.caller(r)
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		a, err := s.o.Auth.Manager.CreateServiceAccount(principal.Join(ctx, tx), c, principal.NewServiceAccount{Name: in.Name, Description: derefString(in.Description)})
+		a, err := s.o.Auth.Manager.CreateServiceAccountTx(ctx, tx, c, principal.NewServiceAccount{Name: in.Name, Description: derefString(in.Description)})
 		if err != nil {
 			return Outcome{}, identityErr(err)
 		}

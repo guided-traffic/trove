@@ -33,7 +33,7 @@ func TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch(t *testing.T) {
 	e.serviceAccount("ci-bot")
 	e.repo("virt-a", "virtual", "generic", "")
 	manager := principal.NewManager(principal.ManagerOptions{
-		DB: principal.Joinable{DB: a.db}, Notifier: a.changes, Recorder: a.rec, Authz: authz.NewPrincipalHook(a.changes),
+		DB: a.db, Notifier: a.changes, Recorder: a.rec, Authz: authz.NewPrincipalHook(a.changes),
 	})
 	repos, err := repository.NewService(repository.Options{
 		Runner: a.db, Catalog: catalog.Default(), Recorder: a.rec, Notifier: a.changes, Hooks: authz.NewPolicyHook(a.changes),
