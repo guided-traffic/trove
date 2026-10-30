@@ -77,6 +77,7 @@ func (s *Store) Open(ctx context.Context, it Item, rng *Range) (io.ReadCloser, e
 func (s *Store) Children(ctx context.Context, repo RepoRef, cq ChildrenQuery, visible Visibility) (ChildrenPage, error)
 func (s *Store) Delete(ctx context.Context, spec DeleteSpec) (DeleteResult, error)
 func (s *Store) RunDeleteJob(ctx context.Context, run *jobs.Run) error
+func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error
 func (s *Store) DownloadStats(ctx context.Context, itemID int64) (DownloadStats, error)
 func (s *Store) Served(ctx context.Context, e ServedEvent)
 
@@ -131,6 +132,11 @@ statement of at most 5,000 files, one `artifact.deleted` per file is written, th
 checked in full before the job `items-delete` is queued (the highest id the check saw is `DeleteArgs.MaxID`, Q-STOR-143), and the job
 removes files in batches of `storage.delete.batch_size`, each batch in its own transaction with its own hook call, then the folders.
 The job decides nothing. A hook that fails stops the batch, rolls it back, and the job is retried.
+
+`Store.RemoveIn` is the same removal inside a transaction of the caller, for a format's route that removes the files of a version together with its own rows
+(`PackageWriter.DeleteItems`, [formats.md](formats.md), [npm.md](npm.md)): it lists the files of the given paths (a folder path takes its subtree), removes them by id, tells
+`Hooks.OnItemsRemoved` in the caller's transaction, writes the `artifact.deleted` events and removes the implicit folders that stay empty. It checks nothing and queues no job: the caller
+has decided every path and bounds their number.
 
 ## Tests
 

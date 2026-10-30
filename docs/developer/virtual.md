@@ -239,7 +239,9 @@ for the first format with a latest-version request) collect one document per mem
 | Fill rule | the cache's `Load` (R-ARCH-018): a result computed while one of the three areas changed is served and not stored |
 
 `PackageChanged` is the payload that a publisher of a local change (the `OnCommit` of a format's writer, after its commit) and the remote engine
-(after a refresh with new content) publish on the signal area `metadata_changed`. Nobody publishes it yet; the engine is correct without it.
+(after a refresh with new content) publish on the signal area `metadata_changed`. A format cannot import the engine, so `formats.PackageChanged` spells the same payload
+(a test in `internal/formathost` pins the two); the npm format attaches it with `PackageWriter.Notify` to every change of the rows of a local package (publish, tag change, unpublish, restore).
+The remote engine does not publish it yet; the engine is correct without it.
 
 ### The contract of a format's merge
 

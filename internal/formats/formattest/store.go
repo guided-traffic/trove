@@ -360,6 +360,54 @@ func (w *writer) AutoClaim(context.Context, string) (formats.AutoClaimResult, er
 	return formats.AutoClaimResult{Reason: "disabled"}, nil
 }
 
+// DeleteItems removes the files at the paths, a folder's subtree included, and runs
+// OnItemsRemoved in this transaction with a writer bound to no request, as the
+// production Host does for the hook of an item store.
+func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ...string) error {
+	if w.rq == nil {
+		return errs.E(errs.Internal, errs.CodeInternal, "A writer bound to no request removes no items.")
+	}
+	if repo.ID != w.h.ref.ID {
+		return errs.E(errs.Internal, errs.CodeInternal, "formattest: the repository is not the host's")
+	}
+	ev := formats.ItemsEvent{Repo: w.h.ref, Reason: "delete", Actor: w.rq.Subject.ID, Data: w.h.opts.Data}
+	w.h.mu.Lock()
+	for _, rec := range w.h.sortedItems() {
+		if rec.removed || !coveredBy(rec.ref.Path, paths) {
+			continue
+		}
+		rec.removed = true
+		w.tx.undo = append(w.tx.undo, func() { rec.removed = false })
+		ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version})
+	}
+	w.h.mu.Unlock()
+	if len(ev.Items) == 0 {
+		return nil
+	}
+	ev.Packages = &writer{h: w.h, tx: w.tx, prefix: w.prefix}
+	return w.h.f.OnItemsRemoved(ctx, w.tx, ev)
+}
+
+// coveredBy reports whether the path is one of the paths or below one of them.
+func coveredBy(p string, paths []string) bool {
+	for _, q := range paths {
+		if p == q || strings.HasPrefix(p, q+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// sortedItems lists the item records by path. The caller holds the Host's lock.
+func (h *Host) sortedItems() []*itemRec {
+	out := make([]*itemRec, 0, len(h.items))
+	for _, rec := range h.items {
+		out = append(out, rec)
+	}
+	slices.SortFunc(out, func(a, b *itemRec) int { return strings.Compare(a.ref.Path, b.ref.Path) })
+	return out
+}
+
 func (w *writer) Notify(area string, payload any) error {
 	if area == "" {
 		return errs.E(errs.Internal, errs.CodeInternal, "formattest: a notification has an area")

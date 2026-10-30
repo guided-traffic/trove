@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/guided-traffic/trove/internal/api/dispatch"
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
@@ -60,7 +61,10 @@ type formatHostArea struct {
 // wiring). The npm port records its events with the replica's audit recorder and
 // the source of the request in the context.
 func formatPorts(db meta.Runner, rec audit.Recorder) (map[formats.ID]any, error) {
-	st, err := npm.New(npm.Options{DB: db, Recorder: rec, Source: httpserver.SourceFrom})
+	st, err := npm.New(npm.Options{
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
+	})
 	if err != nil {
 		return nil, fmt.Errorf("formats: npm data port: %w", err)
 	}

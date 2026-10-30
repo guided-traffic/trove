@@ -126,6 +126,18 @@ func retryAfterSeconds(d time.Duration) string {
 	return strconv.FormatInt(s, 10)
 }
 
+// notFound is the answer for a resource that does not exist and for one the caller
+// may not see: the same bytes either way (R-AUTHZ-016).
+func notFound() *errs.Error {
+	return errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
+}
+
+// unauthenticated is the 401 of an endpoint that needs an authenticated caller; the
+// challenge is the default of R-NPM-004.
+func unauthenticated() *errs.Error {
+	return errs.E(errs.Unauthenticated, errs.CodeUnauthenticated, "This endpoint requires an authenticated caller.")
+}
+
 // notImplemented is the answer to an npm operation trove does not implement: 404
 // for a GET, PUT or DELETE and 501 for a POST (R-NPM-001, R-NPM-043), so npm's
 // fetch layer, which retries a GET and a PUT on any 5xx but never a POST, fails

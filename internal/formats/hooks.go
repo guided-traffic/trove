@@ -2,8 +2,11 @@ package formats
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
@@ -259,10 +262,32 @@ type PackageWriter interface {
 	// what it did, which the audit event of the publish records. A writer bound to
 	// no request answers errs.Internal.
 	AutoClaim(ctx context.Context, name string) (AutoClaimResult, error)
+	// DeleteItems removes the files at the canonical paths of repo permanently, as
+	// R-STOR-018 removes them, in this transaction and as the actor of the request
+	// the writer is bound to; a path of a folder removes its subtree, a path that
+	// holds nothing is skipped. OnItemsRemoved runs for the removed files in this
+	// transaction, so a format that removes a version does its side rows there and
+	// a raw delete through /files/ takes the same road. A writer bound to no request
+	// answers errs.Internal. The caller has decided the action on every path.
+	DeleteItems(ctx context.Context, repo RepoRef, paths ...string) error
 	// Notify attaches a notification to the transaction: a change area writes its
 	// change-log row in it, a signal area is published after the commit
 	// (R-ARCH-018). A rollback sends neither.
 	Notify(area string, payload any) error
 	// Enqueue enqueues a job in the transaction (R-ARCH-016).
 	Enqueue(ctx context.Context, j JobSpec) error
+}
+
+// PackageChanged is the payload a format attaches, with PackageWriter.Notify, to the
+// signal area metadata_changed after a change of the rows of a package of a local
+// repository: the virtual engine drops the merged documents that contain the
+// package early (R-REPO-020). Nothing depends on it for correctness; the engine
+// validates every entry by rev_seq.
+//
+// The payload is "<repository id>:<hex SHA-256 of the normalized name>"; the virtual
+// engine parses it (virtual.PackageChanged is the same function, which the contract
+// may not import: a test of internal/formathost pins the two together).
+func PackageChanged(repoID int64, name string) string {
+	sum := sha256.Sum256([]byte(name))
+	return strconv.FormatInt(repoID, 10) + ":" + hex.EncodeToString(sum[:])
 }

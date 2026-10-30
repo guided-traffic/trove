@@ -79,6 +79,87 @@ ON CONFLICT (repo_id, name, version) DO UPDATE SET source = npm_tombstones.sourc
 RETURNING integrity;
 
 -- >>> M2 npm-read
--- The reads of package documents and dist-tags (R-NPM-010, R-NPM-015, R-NPM-016) are
--- added here.
+-- The reads of package documents, dist-tags and tarball state (R-NPM-010, R-NPM-014,
+-- R-NPM-015, R-NPM-016, R-NPM-017, R-NPM-047).
+
+-- name: NPMLocalDocument :many
+-- The rows of a package document in one statement, so the revision, the tags and the
+-- versions belong to one snapshot (R-NPM-010, R-ARCH-012). A version is in the document
+-- when it is neither trashed nor tombstoned: a version a restore's replay withheld is
+-- stored and tombstoned (R-NPM-047). The README is read only of the version the latest
+-- tag points to. A package whose versions are all gone yields one row with an empty
+-- version; a package without an npm row yields none.
+SELECT p.id AS package_id,
+       p.rev_seq,
+       p.created_at,
+       n.modified_at,
+       n.dist_tags::text AS dist_tags,
+       COALESCE(pv.version, '')::text AS version,
+       COALESCE(nv.manifest::text, '')::text AS manifest,
+       COALESCE(nv.deprecated, '')::text AS deprecated,
+       COALESCE(nv.published_at, p.created_at)::timestamptz AS published_at,
+       CASE WHEN pv.version = n.dist_tags ->> 'latest' THEN COALESCE(nv.readme, '') ELSE '' END::text AS readme,
+       CASE WHEN pv.version = n.dist_tags ->> 'latest' THEN COALESCE(nv.readme_filename, '') ELSE '' END::text AS readme_filename
+  FROM packages p
+  JOIN npm_packages n ON n.package_id = p.id
+  LEFT JOIN package_versions pv ON pv.package_id = p.id AND pv.trashed_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+  LEFT JOIN npm_versions nv ON nv.version_id = pv.id
+ WHERE p.repo_id = sqlc.arg(repo_id)::bigint AND p.name = sqlc.arg(name)::text
+ ORDER BY pv.id;
+
+-- name: NPMLocalVersion :many
+-- One version of a document, named by its number or by a dist-tag (R-NPM-014), with the
+-- tags and the revision of the same snapshot. No row: the package or the version is not
+-- in the document.
+SELECT p.id AS package_id,
+       p.rev_seq,
+       p.created_at,
+       n.modified_at,
+       n.dist_tags::text AS dist_tags,
+       pv.version,
+       nv.manifest::text AS manifest,
+       COALESCE(nv.deprecated, '')::text AS deprecated,
+       nv.published_at
+  FROM packages p
+  JOIN npm_packages n ON n.package_id = p.id
+  JOIN package_versions pv ON pv.package_id = p.id AND pv.trashed_at IS NULL
+  JOIN npm_versions nv ON nv.version_id = pv.id
+ WHERE p.repo_id = sqlc.arg(repo_id)::bigint AND p.name = sqlc.arg(name)::text
+   AND (pv.version = sqlc.arg(version)::text OR pv.version = n.dist_tags ->> sqlc.arg(tag)::text)
+   AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version);
+
+-- name: NPMDistTags :many
+-- The dist-tags of a package with its revision, and whether the document holds a
+-- version. No row: the package has no npm row.
+SELECT p.rev_seq,
+       n.dist_tags::text AS dist_tags,
+       EXISTS (
+           SELECT 1 FROM package_versions pv
+            WHERE pv.package_id = p.id AND pv.trashed_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+       )::boolean AS has_versions
+  FROM packages p
+  JOIN npm_packages n ON n.package_id = p.id
+ WHERE p.repo_id = sqlc.arg(repo_id)::bigint AND p.name = sqlc.arg(name)::text;
+
+-- name: NPMLiveVersions :many
+-- The versions of a locked package that its document holds, in publish order: not
+-- trashed, not tombstoned. The unpublish and the tag writes decide on these.
+SELECT pv.id, pv.version
+  FROM package_versions pv
+  JOIN packages p ON p.id = pv.package_id
+ WHERE pv.package_id = sqlc.arg(package_id)::bigint AND pv.trashed_at IS NULL
+   AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+ ORDER BY pv.id;
+
+-- name: NPMDeleteTombstone :execrows
+-- Removes the tombstone of a version that is stored again with the integrity the
+-- tombstone holds (a restore from the trash can, R-NPM-008): the same bytes come back,
+-- never new ones.
+DELETE FROM npm_tombstones t
+ USING package_versions pv, npm_versions nv
+ WHERE pv.id = sqlc.arg(version_id)::bigint AND nv.version_id = pv.id
+   AND t.repo_id = sqlc.arg(repo_id)::bigint AND t.name = sqlc.arg(name)::text AND t.version = pv.version
+   AND t.integrity = nv.integrity;
 -- <<< M2 npm-read

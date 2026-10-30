@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
@@ -79,6 +80,8 @@ type writerDeps struct {
 	changes  Changer
 	signals  Signaler
 	enqueuer Jobs
+	// remove removes items in the transaction; set for the writer of Host.Write.
+	remove ItemRemover
 }
 
 // writer implements formats.PackageWriter over the package rows of a transaction.
@@ -189,6 +192,18 @@ func (w *writer) AutoClaim(ctx context.Context, name string) (formats.AutoClaimR
 		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: w.req.Subject.Endpoint,
 	}
 	return w.d.auto.AutoClaimTx(ctx, w.tx, *w.req.Repo, name, by)
+}
+
+// DeleteItems removes the files at the canonical paths of a repository in this
+// transaction, as the actor of the request this writer is bound to (R-STOR-018).
+func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ...string) error {
+	if w.req == nil || w.d.remove == nil {
+		return errs.E(errs.Internal, errs.CodeInternal, "Items are removed for a request through Host.Write; this writer cannot.")
+	}
+	return w.d.remove.RemoveIn(ctx, w.tx, items.RemoveSpec{
+		Repo:  items.RepoRef{ID: repo.ID, Key: repo.Key, Class: string(repo.Class), Format: string(repo.Format)},
+		Paths: paths, Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: w.req.Subject.Endpoint,
+	})
 }
 
 // Notify attaches the notification to the transaction as its area's class says:

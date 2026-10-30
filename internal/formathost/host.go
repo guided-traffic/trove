@@ -37,6 +37,15 @@ type ItemOps interface {
 
 var _ ItemOps = (*items.Store)(nil)
 
+// ItemRemover removes files in the transaction of the caller; *items.Store implements
+// it. The host reaches it through the package writer of [Host.Write] (a format's
+// route that removes a version) and reports a writer that has none.
+type ItemRemover interface {
+	RemoveIn(ctx context.Context, tx meta.Tx, spec items.RemoveSpec) error
+}
+
+var _ ItemRemover = (*items.Store)(nil)
+
 // Deps are what the host and the storage hooks share: the registry of formats, the
 // data ports and the seams the package writer calls. An absent seam makes the
 // matching call refuse or, for a signal, do nothing (see its documentation).
@@ -206,6 +215,9 @@ func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx format
 		w, err := h.o.writerFor(tx, rq, rq.Repo.Format)
 		if err != nil {
 			return err
+		}
+		if rm, ok := h.o.Items.(ItemRemover); ok {
+			w.(*writer).d.remove = rm
 		}
 		if err := fn(tx, w); err != nil {
 			return err

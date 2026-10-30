@@ -3,7 +3,6 @@ package npm
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -11,10 +10,8 @@ import (
 )
 
 // buildRoutes is the whole endpoint map of R-NPM-001, written once with the name of
-// every handler, so that the work packages that build documents, tarballs,
-// dist-tags, unpublish and the identity endpoints add handler files and never edit
-// this table. A route whose handler is not built yet answers 501 in the native
-// error shape (handlers_*.go).
+// every handler, so that a work package that adds a handler adds a handler file and
+// never edits this table (handlers_*.go).
 //
 // The classes of the table are all classes of the format: until the format lists
 // the remote and the virtual class, a repository is local. Writes will then name
@@ -163,11 +160,4 @@ func (f *Format) handleRoot(_ context.Context, _ *formats.Request, w http.Respon
 // handleDeferred answers the endpoints npm defines and trove does not implement.
 func (f *Format) handleDeferred(_ context.Context, rq *formats.Request, _ http.ResponseWriter) error {
 	return notImplemented(rq.Method)
-}
-
-// pendingHandler is the answer of a route whose handler is built by a later work
-// package: 501 in the native error shape, which the clients treat as a failure of
-// that operation alone.
-func pendingHandler(what string) error {
-	return errs.E(errs.NotImplemented, errs.CodeNPMNotImplemented, strings.TrimSpace(what)+" is not available yet.")
 }

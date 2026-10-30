@@ -1,10 +1,10 @@
 # npm format
 
 The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This page grows with the format: each work package adds
-its section. Built today: the format itself (routes, classification, error shape, setup snippets), the publish of a version to a local
-repository, the data port and its PostgreSQL implementation, and the four leaf libraries every part builds on. Planned and not built:
-package documents, tarball downloads, dist-tags, unpublish, whoami and ping (their routes answer 501 until then), and the remote and
-virtual classes, merge and exposure.
+its section. Built today: the format itself (routes, classification, error shape, setup snippets), the local repository end to end
+(publish, the package documents and their validators, tarball downloads, dist-tags, unpublish, whoami and ping, the serve-time check and the
+removal hooks), the data port and its PostgreSQL implementation, and the leaf libraries every part builds on. Planned and not built:
+deprecate (R-NPM-018, `PUT` without an attachment answers 501), the remote and virtual classes, merge and exposure.
 
 ## Package layout
 
@@ -17,13 +17,21 @@ internal/formats/npm/
 ├── errors.go        WriteError: the native error body, the 401 challenge, the access-log fields npm-command and npm-session
 ├── publish.go       the publish handler (F1), Inspect, the acknowledged retry, the shadow check
 ├── hooks.go         OnCommit of a tarball and of a provenance bundle; claim(), the ownership helper of every write
+├── hooks_remove.go  OnItemsRemoved (the unpublish of a version), OnItemsRestored, removeVersions
+├── servecheck.go    ServeCheck: a tombstoned or withheld version is 404 on the tarball route and on /files/
+├── handlers_document.go  GET {name}, {name}/{ref}: validator, rendition cache, rendering; ?write=true
+├── handlers_tarball.go   GET {name}/-/{file}: the item with the headers of an immutable file
+├── handlers_disttags.go  the dist-tag read and writes
+├── handlers_unpublish.go the three unpublish requests
+├── handlers_identity.go  whoami and ping
+├── handlers_deprecate.go the metadata PUT; answers 501 until deprecate is built (R-NPM-018)
 ├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
 ├── store.go         the data port (Store), with marked blocks for the work packages that add to it
 ├── bind.go          Format.Bind: the settings and the metrics of one replica, kept per Host
 ├── rev.go           Rev: the _rev of a document and the rev of a write (R-NPM-009)
 ├── setup.go         the client setup snippets (R-NPM-041)
-├── handlers_*.go    the handlers another work package builds; each answers 501 in the native shape until then
 ├── name/  semver/  manifest/  tarball/   the leaf libraries (below)
+├── document/        the renderings (full, abbreviated, single version), the ETag, content negotiation, gzip; a leaf
 ├── publish/         the streaming reader of the request body and the checks of R-NPM-007 step 3 that need no state
 ├── rows/            the values of the data port: a leaf the format and the data package share
 └── npmtest/         the in-memory twin of the data port, for the conformance kit and tests without PostgreSQL
@@ -54,12 +62,12 @@ do with any other package of the format.
 | Route (`npm.` prefix) | Method, path below the registry URL | Kind, action | Handler | State |
 |---|---|---|---|---|
 | `root` | GET `` | computed, read | `handleRoot` | built (200 `{}`) |
-| `document.get`, `version.get` | GET `{name}`, `{name}/{ref}` | metadata, read | `handleDocument`, `handleVersion` | 501 until the documents are built |
-| `tarball.get` | GET `{name}/-/{file}` | download, read | `handleTarball` | 501 |
+| `document.get`, `version.get` | GET `{name}`, `{name}/{ref}` | metadata, read | `handleDocument`, `handleVersion` | built |
+| `tarball.get` | GET `{name}/-/{file}` | download, read | `handleTarball` | built |
 | `publish` | PUT `{name}` | upload, deploy | `handlePublish` | built |
-| `unpublish.put`, `unpublish.delete`, `unpublish.tarball` | PUT, DELETE `{name}/-rev/{rev}`, DELETE `{name}/-/{file}/-rev/{rev}` | delete, delete | `handleUnpublish*` | 501 |
-| `disttags.get`, `disttag.put`, `disttag.delete` | GET `-/package/{name}/dist-tags`, PUT, DELETE `…/{tag}` | metadata read; admin deploy | `handleDistTags`, `handleDistTagSet`, `handleDistTagDelete` | 501 |
-| `ping`, `whoami` | GET `-/ping`, `-/whoami` | computed, read | `handlePing`, `handleWhoami` | 501 |
+| `unpublish.put`, `unpublish.delete`, `unpublish.tarball` | PUT, DELETE `{name}/-rev/{rev}`, DELETE `{name}/-/{file}/-rev/{rev}` | delete, delete | `handleUnpublish*` | built |
+| `disttags.get`, `disttag.put`, `disttag.delete` | GET `-/package/{name}/dist-tags`, PUT, DELETE `…/{tag}` | metadata read; admin deploy | `handleDistTags`, `handleDistTagSet`, `handleDistTagDelete` | built |
+| `ping`, `whoami` | GET `-/ping`, `-/whoami` | computed, read | `handlePing`, `handleWhoami` | built |
 | `deferred.get`, `.put`, `.delete`, `.post` | every path of the families npm defines and trove does not implement | computed or admin, read | `handleDeferred` | built (404; 501 for POST) |
 
 The deferred families (R-NPM-043) are one matcher (`matchDeferred`): `-/user`, `-/v1`, `-/npm`, `-/org`, `-/team`, `-/all`, `-/external`, `-/stage` and `-/package/{name}/access|visibility|collaborators`.
@@ -108,6 +116,89 @@ flowchart TD
   (deploy) and `opUnpublish` (delete). The handlers of dist-tags, unpublish and deprecation call it under the package row lock.
 - **What is deliberately not done:** a provenance bundle is stored, linked and not read; a refused publish stores nothing except a bundle-less version when the second commit fails (Q-NPM-22); an upload through `/files/` to an npm repository is refused (Q-NPM-24).
 
+## Documents
+
+`GET {name}` and `GET {name}/{ref}` (R-NPM-009 to R-NPM-014, flow F2). A document is never stored: it is rendered from the rows of one statement and cached per replica
+under a key that holds everything it depends on (Q-NPM-10, Q-NPM-26).
+
+```mermaid
+flowchart TD
+    A[authorize read on the name] --> B[Packages.Package: packages.rev_seq, one indexed lookup]
+    B --> C{package row?}
+    C -->|no| N[404]
+    C -->|yes| D[ETag from the inputs, no rendering]
+    D --> E{If-None-Match matches?}
+    E -->|yes| F[304: ETag, Vary, Cache-Control]
+    E -->|no| G{rendition cache: key with rev_seq, variant, encoding, base URL, endpoint, exposure, settings, render version}
+    G -->|hit| H[200 from the cached bytes]
+    G -->|miss| I[Store.LocalDocument: rev_seq, tags, versions, README in one statement]
+    I --> J{a live version?}
+    J -->|no| N
+    J -->|yes| K[render, keyed and validated by the revision of the rows read]
+    K --> H
+```
+
+| Question | Answer |
+|---|---|
+| Which form? | `document.Negotiate(Accept)`: abbreviated when `application/vnd.npm.install-v1+json` has a higher q than `application/json` (a wildcard counts for `application/json`); `?write=true` is the full form whatever Accept says |
+| What is in the ETag? | `document.Inputs.ETag()`: repository, package, `rev_seq`, variant, base URL, endpoint, exposure fingerprint, `config_version` and `npm.abbreviated_time`, and `document.RenderVersion` (npmRenderVersion), length-prefixed and hashed; weak. No input is per replica |
+| What must I do when I change the bytes a rendering produces? | Increment `document.RenderVersion` in the same change, or a replica of the old release and one of the new share a validator for different bytes |
+| Where are the links? | In the cached bytes. `Options.TarballPrefix` is `Links(rq).Path(name + "/-") + "/"`, built from the response base URL, which is in the key and the ETag (WP2.9 adds endpoint and exposure to the same key; they are in it already) |
+| What is cached? | The identity form; the gzip form is made from it once. Each entry starts with the 8 bytes of `time.modified`, so `Last-Modified` needs no query |
+| Why is `If-Modified-Since` ignored? | A date can validate bytes that differ (R-NPM-013); the handler never reads it |
+| What does `?write=true` do? | Reads the rows in the request, renders the full document with its `_rev`, never caches it, no ETag, `Cache-Control: no-store` |
+| What is in the versions? | The stored manifest with `dist.tarball` added, `deprecated` from the column, no `readme`; SemVer order (Q-NPM-31) |
+
+[document](../../internal/formats/npm/document/): `FullDocument`, `AbbreviatedDocument`, `VersionDocument` (one version, exactly the entry of the full document), `Negotiate`, `Inputs.ETag`, `IfNoneMatch`,
+`AcceptsGzip`, `Gzip`. Rendering 1,000 versions takes about 21 ms (`BenchmarkR_NPM_010_RenderThousandVersions`); over the integration stack a miss takes 40 to 60 ms and a hit 3 ms.
+
+## Tarballs and the serve-time check
+
+`handleTarball` finds the version in the file name (`VersionOfFile`, canonical or 404), authorizes `read` on the package and version, looks the item up at the canonical path and hands it to
+`Items().Serve`, which runs `ServeCheck`, the strong ETag, the conditionals, Range and the statistics of R-STOR-012. The handler adds one thing: `immutableWriter` sets
+`Cache-Control: private, max-age=31536000, immutable` on the status line of a 200, 206 or 304 (Q-NPM-28).
+
+`ServeCheck` ([servecheck.go](../../internal/formats/npm/servecheck.go)) runs for every stored item the core serves, `/files/` included. For a local repository it classifies the path and, for a tarball or a
+bundle of a version, asks `Store.Tombstoned`: a tombstoned or withheld version is the 404 of a missing resource. It keeps no state; a tombstone written on any replica refuses the next request on every other.
+
+## Dist-tags
+
+`handleDistTags` reads the tag map (`Store.DistTags`, 404 for a package without a document). The writes (`handleDistTagSet`, `handleDistTagDelete`) authorize `deploy`, check that the package row exists
+(a write never creates a package), then in `Host.Write`: `EnsureLocked`, `f.claim(opDistTag)`, the live versions (`Store.LiveVersions`), the tags under the lock (`Store.Tags`), the change, `BumpRevision`
+(the clock for `modified_at`), `Store.SetTag` or `DeleteTag` (which write the audit event) and the `metadata_changed` notification. A write that changes nothing writes nothing (Q-NPM-29). The tag rules
+(`semver.ValidateTag`, `tagsAfterRemoval`) are in [tags.go](../../internal/formats/npm/tags.go).
+
+## Unpublish
+
+```mermaid
+sequenceDiagram
+    participant C as npm
+    participant H as handleUnpublishPut
+    participant W as Host.Write (one transaction)
+    participant I as items.RemoveIn
+    participant K as OnItemsRemoved
+    C->>H: GET name?write=true, then PUT name/-rev/rev with the document
+    H->>H: versionsOfBody: only the keys of versions, streamed
+    H->>W: authorize delete, then EnsureLocked
+    W->>W: claim(opUnpublish), LiveVersions, remove = live minus body
+    W->>W: nothing to remove: 200 with the current rev; rev stale: 409
+    W->>I: DeleteItems(tarball and bundle path of each version)
+    I->>K: the removed items, in this transaction
+    K->>K: tags without the versions, Tombstone (integrity, journal entry), version rows deleted, BumpRevision, notify
+    W-->>C: 200 {ok, rev}
+    C->>H: DELETE name/-/file.tgz/-rev/rev: 200, nothing changes
+```
+
+`OnItemsRemoved` ([hooks_remove.go](../../internal/formats/npm/hooks_remove.go)) is the whole unpublish; the route only decides and removes the files. It therefore also serves a raw delete through `/files/`.
+`removeVersions` takes versions out of a locked package: tags first (the format holds the SemVer order), then `Store.Tombstone` for the versions the document holds, then `TrashOrDeleteVersion`. A version
+that is stored and tombstoned (withheld, R-NPM-047) loses its row and keeps its tombstone. The route calls `removeVersions` itself for a version whose files were not there. `OnItemsRestored` clears the
+tombstone of a version that is stored again with the integrity the tombstone holds, and gives a package without `latest` the highest version (the trash can is P1; the kit drives it).
+
+## Identity
+
+`handleWhoami` answers `{"username": principalName(rq)}` (`sa:<name>`, `ci:<name>` for those kinds), `handlePing` answers `{}`; both are 401 for a subject without a name (anonymous, or a token the chain no longer
+accepts), with the default challenge of `WriteError` (Q-NPM-29).
+
 ## The store port
 
 `Store` ([store.go](../../internal/formats/npm/store.go)) is the interface the format declares (`Descriptor.DataPort`); [internal/formatdata/npm](../../internal/formatdata/npm/store.go) implements it and
@@ -122,19 +213,27 @@ complete tag map.
 | `Publish` | tombstone check, the npm row (`ON CONFLICT DO NOTHING`, then locked; no row of its own means the unique `(repo_id, name_fold)` refused a look-alike: 400), the version row, the tags, `modified_at = greatest(modified_at + 1 ms, clock)`, `npm.publish` |
 | `RecordRetry`, `RecordMismatch` | the audit event of an acknowledged retry; the asynchronous mismatch event |
 | `SetTag`, `DeleteTag`, `Tombstone` | stored tags and `npm.dist_tag.*`; the tombstone with the integrity of the version row, the tags, `npm.unpublish` with its journal entry (`repositoryId`, `package`, `version`, `integrity`, `actorId`) |
+| `LocalDocument`, `LocalVersion` | one statement each (`NPMLocalDocument`, `NPMLocalVersion`): `rev_seq`, `created_at`, `modified_at`, the tags, the versions that are neither trashed nor tombstoned with manifest, deprecation and publish time, the README of the version `latest` points to |
+| `DistTags` | the tags with their revision; found only when the document holds a version |
+| `LiveVersions` | under the row lock: the versions the document holds, in publish order |
+| `Tombstoned` | one lookup, for `ServeCheck` |
+| `ClearTombstone` | a restore: removes the tombstone when the stored version has the integrity it holds |
 
-Add to the port in the `>>> M2 npm-read` and `>>> M2 npm-remote` blocks of `store.go` and `npm_local.sql`/`npm_remote.sql`; add the method to the twin in `npmtest` in the same change. The README text and the manifest are
+Add to the port in the `>>> M2 npm-read` and `>>> M2 npm-remote` blocks of `store.go` and `npm_local.sql`/`npm_remote.sql` (the reads of the local class are in [read.go](../../internal/formatdata/npm/read.go)); add the method to the twin in `npmtest` in the same change.
+The twin reads the revision of a document from `Store.Revisions`, which a test binds to the kit Host's `RevSeq`, because the database reads `packages.rev_seq` in the same statement. The README text and the manifest are
 cleaned for the columns (valid UTF-8, no NUL, 64 KiB) in `Publish`.
 
 ## Tests
 
 | Tier | Where | Proves |
 |---|---|---|
+| Unit, handlers | [handlers_test.go](../../internal/formats/npm/handlers_test.go), [conditional_test.go](../../internal/formats/npm/conditional_test.go), [mutations_test.go](../../internal/formats/npm/mutations_test.go), [identity_test.go](../../internal/formats/npm/identity_test.go) | the handlers over the kit's in-memory Host and the twin: the document (`TestR_NPM_010_*`, `TestR_NPM_011_*`), the write-read (`TestR_NPM_009_*`), validators and cache headers (`TestR_NPM_013_*`), the rendition cache (`TestR_ARCH_012_RenditionCache`), tarballs (`TestR_NPM_015_*`), `ServeCheck` (`TestR_NPM_047_*`), tags (`TestR_NPM_016_*`), unpublish (`TestR_NPM_017_*`), restore (`TestR_NPM_008_*`), whoami and ping (`TestR_NPM_019_*`) |
+| Unit, rendering | [document](../../internal/formats/npm/document/) | the three renderings, the order, the ETag inputs, negotiation, the benchmark for 1,000 versions |
 | Unit | [internal/formats/npm](../../internal/formats/npm/) `*_test.go` | the route table and every status (`TestR_NPM_001_RouteTable`, `TestR_NPM_043_UnimplementedEndpointsAnswerPredictably`), classification (`TestR_NPM_003_Classification`), the error shape over all routes and all statuses (R-NPM-005), no `otp` (R-NPM-004), the access-log fields and the metrics, the hook's order and refusals with a fake writer, the dist-tag rules, the snippet lint (R-NPM-041) |
-| Conformance | `TestR_ARCH_010_Conformance` | the ten checks of the kit; checks 4 and 5 are skipped with a reason until the remote and virtual classes exist, and the kit refuses the skip then |
+| Conformance | `TestR_ARCH_010_Conformance` | the ten checks of the kit; check 7 over every document, tarball, tag and identity route (a subject is set in `HostOptions.Subject`), check 9 over a change case for publish, tag set and remove, the unpublish `PUT` and `DELETE` and the removal hook; checks 4 and 5 are skipped with a reason until the remote and virtual classes exist, and the kit refuses the skip then |
 | Scanner | [publish](../../internal/formats/npm/publish/) | the body rules, the 96 MiB streaming bound, `FuzzPublishScanner` |
 | Fuzz | `FuzzMatch` (own, escaped-path properties), `FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzPublishScanner` | no panic, canonical names, classified errors |
-| Integration | [test/integration/npm](../../test/integration/npm/) | against PostgreSQL and the object store, with replicas started through `app.New` (`testenv.NewStack`, `Start`, `Do`): publish rows and item, tags and the latest guard, immutability, the retry on another replica and after an edge reset, concurrent publishes of two versions, of one new name and of look-alike names, ownership races, auto claim, archive rules, limits, a slow 200 MiB publish (no connection idle in a transaction, bounded heap), the route contract over the real chain, the access log, metrics and the store's writes |
+| Integration | [test/integration/npm](../../test/integration/npm/) | against PostgreSQL and the object store, with replicas started through `app.New` (`testenv.NewStack`, `Start`, `Do`): publish rows and item, tags and the latest guard, immutability, the retry on another replica and after an edge reset, concurrent publishes of two versions, of one new name and of look-alike names, ownership races, auto claim, archive rules, limits, a slow 200 MiB publish (no connection idle in a transaction, bounded heap), the route contract over the real chain, the access log, metrics and the store's writes; [documents_test.go](../../test/integration/npm/documents_test.go): publish then view on another of three replicas 100 times with Valkey reachable and unreachable, 50 iterations of publish, tag and unpublish, validators and `304` on every replica, the clock rules, 1,000 versions; [mutations_test.go](../../test/integration/npm/mutations_test.go): the tarball, tag writes, the unpublish sequence with its tombstone and journal entry, stale revisions and the retry, a raw delete, withheld versions, concurrent writes of all kinds, whoami and ping |
 
 ```sh
 go test ./internal/formats/npm/...
@@ -147,6 +246,10 @@ set -a; . .dev/integration/env; set +a; go test -count=1 -p 1 -tags integration 
 
 - The order in which libnpmpublish, pnpm and Yarn write the members of the body (the scanner does not assume one).
 - Publish with pnpm, Yarn 1 and Yarn 2+: no client runs in the development environment (the e2e work package does).
+- The revocation criterion of R-NPM-019 (`npm ping` fails on every replica within 2 s of a revocation) is not tested here: the authentication stage's bound is tested in the identity area (R-AUTH-023); ping and whoami answer 401 for the subject that stage produces.
+- The restore's replay (`trove admin npm reinstate`, the journal) does not exist yet; the withheld state is written by hand in `TestR_NPM_047_WithheldVersionsAreNotServed`. `OnItemsRestored` is driven through the kit only: the trash can is P1.
+- Compression of documents is tested with gzip only; a client that sends another coding gets the identity form.
+- Publish, `npm view`, `npm unpublish`, `npm dist-tag`, `pnpm` and Yarn against the documents: no client runs in the development environment (the e2e work package does).
 - The `repo` metric label is `_other` for every repository until a component feeds `observability.CappedLabels` the repository keys.
 
 ## Names and versions

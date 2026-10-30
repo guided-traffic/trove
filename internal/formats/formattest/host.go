@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -58,6 +59,9 @@ type HostOptions struct {
 	Resolver formats.Resolver
 	// RestoredAt is system_state restored_at.
 	RestoredAt time.Time
+	// Subject is who acts on every request the Host builds; the zero value is a
+	// subject without a name, which is neither anonymous nor authenticated.
+	Subject authz.Subject
 }
 
 // Host is the in-memory implementation of formats.Host: an item store, the
@@ -395,7 +399,7 @@ func (h *Host) NewRequest(ctx context.Context, method, escapedPath string, body 
 	}
 	return &formats.Request{
 		Request: hr, Repo: h.repo, Route: route, Params: params, Path: clean, Escaped: escapedPath,
-		Host: h, Log: slog.New(slog.DiscardHandler),
+		Subject: h.opts.Subject, Host: h, Log: slog.New(slog.DiscardHandler),
 	}, nil
 }
 
@@ -411,7 +415,7 @@ func (h *Host) bareRequest(ctx context.Context, method, escapedPath string) *for
 	clean, _ := repository.CleanPath(escapedPath)
 	return &formats.Request{
 		Request: hr, Repo: h.repo, Route: &formats.Route{Name: "formattest"}, Path: clean, Escaped: escapedPath,
-		Host: h, Log: slog.New(slog.DiscardHandler),
+		Subject: h.opts.Subject, Host: h, Log: slog.New(slog.DiscardHandler),
 	}
 }
 

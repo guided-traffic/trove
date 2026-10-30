@@ -121,6 +121,10 @@ The item store ([items.md](items.md)) runs `items.Hooks` inside the transaction 
 3. It calls `OnCommit` (with `Origin` upload or fill, the inspection and payload of an upload, `Replaced`) or `OnItemsRemoved` (each removed item with the
    version it belonged to).
 
+A route that removes the files of a version calls `PackageWriter.DeleteItems(repo, paths...)` from inside `Host.Write`: the host's writer hands the paths to
+`items.Store.RemoveIn` in the same transaction, which tells `OnItemsRemoved` there, so the route's checks and the format's side rows commit with the removal (npm: [npm.md](npm.md), Q-NPM-27).
+Only the writer of a request removes (`formathost.ItemRemover` on the host's item store); the writer of a hook answers `errs.Internal`.
+
 The writer is bound to the request when the commit came through `Host.Ingest().Commit`; a fill or the `items-delete` job has no request, so `Claim` and `AutoClaim`
 refuse there. The sync delete and every batch of the delete job run the removal hook, which is how a delete of an npm folder through `/files/` raises `rev_seq`.
 

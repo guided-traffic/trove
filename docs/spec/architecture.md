@@ -1282,10 +1282,15 @@ type PackageWriter interface {
 	// namespace auto claim (R-REPO-023) and returns what it did, which the audit event of the publish
 	// records. Both refuse until the composition root binds the rule
 	// (Q-ARCH-215). Notify attaches a notification to the transaction (R-ARCH-018); Enqueue a job (R-ARCH-016).
+	// A change of the rows of a local package attaches PackageChanged(repoID, name) to the signal area
+	// metadata_changed, which the virtual engine reads to drop merged documents early (R-REPO-020).
 	Claim(ctx context.Context, t Target, w OwnershipWrite) error
 	AutoClaim(ctx context.Context, name string) (AutoClaimResult, error) // Created, Pattern; or the Reason: disabled, covered, skipped, limit
 	Notify(area string, payload any) error
 	Enqueue(ctx context.Context, j JobSpec) error
+	// DeleteItems removes the files at the paths permanently (R-STOR-018), in this transaction and as the
+	// actor of the request; OnItemsRemoved runs for them in it (npm: formats/npm.md Q-NPM-27).
+	DeleteItems(ctx context.Context, repo RepoRef, paths ...string) error
 }
 ```
 

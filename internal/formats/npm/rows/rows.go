@@ -144,3 +144,41 @@ type TombstoneInput struct {
 	// Audit is the audit context of the request; the journal entry names By.
 	Audit Audit
 }
+
+// LocalPackage is what a package document renders from (R-NPM-010): the rows of
+// one package read in one statement, so the revision, the dist-tags and the
+// versions are those of one snapshot. Versions lists the versions the document
+// holds, those that are neither trashed nor tombstoned.
+type LocalPackage struct {
+	PackageID int64
+	// RevSeq is packages.rev_seq as the statement read it.
+	RevSeq int64
+	// CreatedAt is packages.created_at and ModifiedAt npm_packages.modified_at,
+	// both from PostgreSQL's clock (R-NPM-012).
+	CreatedAt, ModifiedAt time.Time
+	Tags                  map[string]string
+	Versions              []LocalVersion
+	// Readme and ReadmeFilename are those of the version the latest tag points to.
+	Readme, ReadmeFilename string
+}
+
+// LocalVersion is one version of a document: its stored manifest (R-NPM-007), the
+// deprecation message ("" for none) and the publish time.
+type LocalVersion struct {
+	Version     string
+	Manifest    []byte
+	Deprecated  string
+	PublishedAt time.Time
+}
+
+// LiveVersion is a version a document holds, with the id of its version row.
+type LiveVersion struct {
+	ID      int64
+	Version string
+}
+
+// LocalTags are the dist-tags of a package with the revision they were read at.
+type LocalTags struct {
+	RevSeq int64
+	Tags   map[string]string
+}

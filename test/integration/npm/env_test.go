@@ -25,9 +25,14 @@ type env struct {
 
 // newEnv creates the installation. The replicas are started by the test, because the
 // settings a test changes (the limits of a publish, the retry window) are per replica.
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvOpts(t, false) }
+
+// newEnvOpts is newEnv with the stack's Valkey in use (valkey) or unreachable, which is
+// the state "Valkey stopped" (R-NPM-046): the replicas of the tests that do not ask
+// for it run without.
+func newEnvOpts(t *testing.T, valkey bool) *env {
 	t.Helper()
-	st := testenv.NewStack(t, testenv.StackOptions{Name: "npm"})
+	st := testenv.NewStack(t, testenv.StackOptions{Name: "npm", Valkey: valkey})
 	e := &env{t: t, st: st}
 	e.alice, e.bob, e.carol = st.User("alice"), st.User("bob"), st.User("carol")
 	st.Repository("npm-local", "local", "npm", `{"local":{"packageOwnership":"enforce"}}`)
@@ -112,6 +117,18 @@ func (e *env) tags(repo, name string) map[string]string {
 func (e *env) events(typ, pkgName, reason string) int64 {
 	e.t.Helper()
 	return e.st.Number(`SELECT count(*) FROM audit_event WHERE action = $1 AND path = $2 AND ($3 = '' OR reason = $3)`, typ, pkgName, reason)
+}
+
+// get sends a GET of a path below the repository's registry URL.
+func (e *env) get(r *testenv.Replica, repo, path, token string, hdr ...string) testenv.Answer {
+	e.t.Helper()
+	return e.st.Do(r, "GET", "/api/npm/"+repo+"/"+path, token, nil, hdr...)
+}
+
+// send sends a request with a path below the repository's registry URL.
+func (e *env) send(r *testenv.Replica, method, repo, path, token string, body any, hdr ...string) testenv.Answer {
+	e.t.Helper()
+	return e.st.Do(r, method, "/api/npm/"+repo+"/"+path, token, body, hdr...)
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }

@@ -54,8 +54,28 @@ type Store interface {
 	Tombstone(ctx context.Context, tx formats.Tx, in rows.TombstoneInput) (integrity string, err error)
 
 	// >>> M2 npm-read
-	// The reads of package documents, dist-tags and tarball state (R-NPM-010,
-	// R-NPM-015, R-NPM-016) are declared here.
+
+	// LocalDocument reads, outside a transaction and in one statement, the rows a
+	// package document renders from: the revision, the tags, the versions that are
+	// neither trashed nor tombstoned and the README of the version latest points to
+	// (R-NPM-010). found is false for a package that holds no such version.
+	LocalDocument(ctx context.Context, repoID int64, name string) (rows.LocalPackage, bool, error)
+	// LocalVersion reads the one version a document holds under a number or, when
+	// version is empty, under the dist-tag tag (R-NPM-014); the package it returns
+	// holds that version alone.
+	LocalVersion(ctx context.Context, repoID int64, name, version, tag string) (rows.LocalPackage, bool, error)
+	// DistTags reads the dist-tags of a package with the revision they were read at;
+	// found is false when the package holds no version (R-NPM-016).
+	DistTags(ctx context.Context, repoID int64, name string) (rows.LocalTags, bool, error)
+	// LiveVersions lists the versions of a package under its row lock that its
+	// document holds, in publish order. Unpublish and the tag writes decide on them.
+	LiveVersions(ctx context.Context, tx formats.Tx, packageID int64) ([]rows.LiveVersion, error)
+	// Tombstoned reports whether a version number was unpublished, moved out or
+	// withheld by a restore's replay: the serve-time check (R-NPM-015, R-NPM-047).
+	Tombstoned(ctx context.Context, repoID int64, name, version string) (bool, error)
+	// ClearTombstone removes the tombstone of a version row that is stored again with
+	// the integrity the tombstone holds (a restore from the trash can, R-NPM-008).
+	ClearTombstone(ctx context.Context, tx formats.Tx, repoID int64, name string, versionID int64) (bool, error)
 	// <<< M2 npm-read
 
 	// >>> M2 npm-remote

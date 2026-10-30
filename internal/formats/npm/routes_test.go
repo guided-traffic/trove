@@ -175,28 +175,6 @@ func TestR_NPM_043_UnimplementedEndpointsAnswerPredictably(t *testing.T) {
 	}
 }
 
-func TestR_NPM_001_PendingHandlersAnswer501InTheNativeShape(t *testing.T) {
-	f := New()
-	for _, c := range []struct{ method, path string }{
-		{"GET", "lodash"},
-		{"GET", "lodash/1.0.0"},
-		{"GET", "lodash/-/lodash-1.0.0.tgz"},
-		{"PUT", "lodash/-rev/3-abc"},
-		{"DELETE", "lodash/-rev/3-abc"},
-		{"DELETE", "lodash/-/lodash-1.0.0.tgz/-rev/3-abc"},
-		{"GET", "-/package/lodash/dist-tags"},
-		{"PUT", "-/package/lodash/dist-tags/next"},
-		{"DELETE", "-/package/lodash/dist-tags/next"},
-		{"GET", "-/ping"},
-		{"GET", "-/whoami"},
-	} {
-		w := serve(t, f, request(t, f, &fakeHost{}, c.method, c.path, ""))
-		if w.Code != 501 || errorBodyOf(t, w).Code != "npm_not_implemented" {
-			t.Errorf("%s %s: %d %s", c.method, c.path, w.Code, w.Body.String())
-		}
-	}
-}
-
 func TestR_NPM_005_ErrorShapeOverAllRoutes(t *testing.T) {
 	f := New()
 	denied := &fakeHost{authorize: func(*formats.Request, formats.Target) error {

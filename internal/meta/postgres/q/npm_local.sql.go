@@ -11,6 +11,77 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const nPMDeleteTombstone = `-- name: NPMDeleteTombstone :execrows
+DELETE FROM npm_tombstones t
+ USING package_versions pv, npm_versions nv
+ WHERE pv.id = $1::bigint AND nv.version_id = pv.id
+   AND t.repo_id = $2::bigint AND t.name = $3::text AND t.version = pv.version
+   AND t.integrity = nv.integrity
+`
+
+type NPMDeleteTombstoneParams struct {
+	VersionID int64
+	RepoID    int64
+	Name      string
+}
+
+// Removes the tombstone of a version that is stored again with the integrity the
+// tombstone holds (a restore from the trash can, R-NPM-008): the same bytes come back,
+// never new ones.
+func (q *Queries) NPMDeleteTombstone(ctx context.Context, arg NPMDeleteTombstoneParams) (int64, error) {
+	result, err := q.db.Exec(ctx, nPMDeleteTombstone, arg.VersionID, arg.RepoID, arg.Name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const nPMDistTags = `-- name: NPMDistTags :many
+SELECT p.rev_seq,
+       n.dist_tags::text AS dist_tags,
+       EXISTS (
+           SELECT 1 FROM package_versions pv
+            WHERE pv.package_id = p.id AND pv.trashed_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+       )::boolean AS has_versions
+  FROM packages p
+  JOIN npm_packages n ON n.package_id = p.id
+ WHERE p.repo_id = $1::bigint AND p.name = $2::text
+`
+
+type NPMDistTagsParams struct {
+	RepoID int64
+	Name   string
+}
+
+type NPMDistTagsRow struct {
+	RevSeq      int64
+	DistTags    string
+	HasVersions bool
+}
+
+// The dist-tags of a package with its revision, and whether the document holds a
+// version. No row: the package has no npm row.
+func (q *Queries) NPMDistTags(ctx context.Context, arg NPMDistTagsParams) ([]NPMDistTagsRow, error) {
+	rows, err := q.db.Query(ctx, nPMDistTags, arg.RepoID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NPMDistTagsRow{}
+	for rows.Next() {
+		var i NPMDistTagsRow
+		if err := rows.Scan(&i.RevSeq, &i.DistTags, &i.HasVersions); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nPMInsertPackage = `-- name: NPMInsertPackage :execrows
 
 INSERT INTO npm_packages (package_id, repo_id, name_fold, modified_at)
@@ -130,6 +201,200 @@ func (q *Queries) NPMInsertVersion(ctx context.Context, arg NPMInsertVersionPara
 		arg.PublishedAt,
 	)
 	return err
+}
+
+const nPMLiveVersions = `-- name: NPMLiveVersions :many
+SELECT pv.id, pv.version
+  FROM package_versions pv
+  JOIN packages p ON p.id = pv.package_id
+ WHERE pv.package_id = $1::bigint AND pv.trashed_at IS NULL
+   AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+ ORDER BY pv.id
+`
+
+type NPMLiveVersionsRow struct {
+	ID      int64
+	Version string
+}
+
+// The versions of a locked package that its document holds, in publish order: not
+// trashed, not tombstoned. The unpublish and the tag writes decide on these.
+func (q *Queries) NPMLiveVersions(ctx context.Context, packageID int64) ([]NPMLiveVersionsRow, error) {
+	rows, err := q.db.Query(ctx, nPMLiveVersions, packageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NPMLiveVersionsRow{}
+	for rows.Next() {
+		var i NPMLiveVersionsRow
+		if err := rows.Scan(&i.ID, &i.Version); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nPMLocalDocument = `-- name: NPMLocalDocument :many
+
+SELECT p.id AS package_id,
+       p.rev_seq,
+       p.created_at,
+       n.modified_at,
+       n.dist_tags::text AS dist_tags,
+       COALESCE(pv.version, '')::text AS version,
+       COALESCE(nv.manifest::text, '')::text AS manifest,
+       COALESCE(nv.deprecated, '')::text AS deprecated,
+       COALESCE(nv.published_at, p.created_at)::timestamptz AS published_at,
+       CASE WHEN pv.version = n.dist_tags ->> 'latest' THEN COALESCE(nv.readme, '') ELSE '' END::text AS readme,
+       CASE WHEN pv.version = n.dist_tags ->> 'latest' THEN COALESCE(nv.readme_filename, '') ELSE '' END::text AS readme_filename
+  FROM packages p
+  JOIN npm_packages n ON n.package_id = p.id
+  LEFT JOIN package_versions pv ON pv.package_id = p.id AND pv.trashed_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+  LEFT JOIN npm_versions nv ON nv.version_id = pv.id
+ WHERE p.repo_id = $1::bigint AND p.name = $2::text
+ ORDER BY pv.id
+`
+
+type NPMLocalDocumentParams struct {
+	RepoID int64
+	Name   string
+}
+
+type NPMLocalDocumentRow struct {
+	PackageID      int64
+	RevSeq         int64
+	CreatedAt      pgtype.Timestamptz
+	ModifiedAt     pgtype.Timestamptz
+	DistTags       string
+	Version        string
+	Manifest       string
+	Deprecated     string
+	PublishedAt    pgtype.Timestamptz
+	Readme         string
+	ReadmeFilename string
+}
+
+// >>> M2 npm-read
+// The reads of package documents, dist-tags and tarball state (R-NPM-010, R-NPM-014,
+// R-NPM-015, R-NPM-016, R-NPM-017, R-NPM-047).
+// The rows of a package document in one statement, so the revision, the tags and the
+// versions belong to one snapshot (R-NPM-010, R-ARCH-012). A version is in the document
+// when it is neither trashed nor tombstoned: a version a restore's replay withheld is
+// stored and tombstoned (R-NPM-047). The README is read only of the version the latest
+// tag points to. A package whose versions are all gone yields one row with an empty
+// version; a package without an npm row yields none.
+func (q *Queries) NPMLocalDocument(ctx context.Context, arg NPMLocalDocumentParams) ([]NPMLocalDocumentRow, error) {
+	rows, err := q.db.Query(ctx, nPMLocalDocument, arg.RepoID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NPMLocalDocumentRow{}
+	for rows.Next() {
+		var i NPMLocalDocumentRow
+		if err := rows.Scan(
+			&i.PackageID,
+			&i.RevSeq,
+			&i.CreatedAt,
+			&i.ModifiedAt,
+			&i.DistTags,
+			&i.Version,
+			&i.Manifest,
+			&i.Deprecated,
+			&i.PublishedAt,
+			&i.Readme,
+			&i.ReadmeFilename,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nPMLocalVersion = `-- name: NPMLocalVersion :many
+SELECT p.id AS package_id,
+       p.rev_seq,
+       p.created_at,
+       n.modified_at,
+       n.dist_tags::text AS dist_tags,
+       pv.version,
+       nv.manifest::text AS manifest,
+       COALESCE(nv.deprecated, '')::text AS deprecated,
+       nv.published_at
+  FROM packages p
+  JOIN npm_packages n ON n.package_id = p.id
+  JOIN package_versions pv ON pv.package_id = p.id AND pv.trashed_at IS NULL
+  JOIN npm_versions nv ON nv.version_id = pv.id
+ WHERE p.repo_id = $1::bigint AND p.name = $2::text
+   AND (pv.version = $3::text OR pv.version = n.dist_tags ->> $4::text)
+   AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+`
+
+type NPMLocalVersionParams struct {
+	RepoID  int64
+	Name    string
+	Version string
+	Tag     string
+}
+
+type NPMLocalVersionRow struct {
+	PackageID   int64
+	RevSeq      int64
+	CreatedAt   pgtype.Timestamptz
+	ModifiedAt  pgtype.Timestamptz
+	DistTags    string
+	Version     string
+	Manifest    string
+	Deprecated  string
+	PublishedAt pgtype.Timestamptz
+}
+
+// One version of a document, named by its number or by a dist-tag (R-NPM-014), with the
+// tags and the revision of the same snapshot. No row: the package or the version is not
+// in the document.
+func (q *Queries) NPMLocalVersion(ctx context.Context, arg NPMLocalVersionParams) ([]NPMLocalVersionRow, error) {
+	rows, err := q.db.Query(ctx, nPMLocalVersion,
+		arg.RepoID,
+		arg.Name,
+		arg.Version,
+		arg.Tag,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NPMLocalVersionRow{}
+	for rows.Next() {
+		var i NPMLocalVersionRow
+		if err := rows.Scan(
+			&i.PackageID,
+			&i.RevSeq,
+			&i.CreatedAt,
+			&i.ModifiedAt,
+			&i.DistTags,
+			&i.Version,
+			&i.Manifest,
+			&i.Deprecated,
+			&i.PublishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const nPMReadTags = `-- name: NPMReadTags :many

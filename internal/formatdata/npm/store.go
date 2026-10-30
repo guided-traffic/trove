@@ -42,6 +42,11 @@ type Options struct {
 	Recorder audit.Recorder
 	// Source gives the source of an audit event for the request in ctx; nil gives none.
 	Source func(ctx context.Context) audit.Source
+	// Actor gives the actor of the request in ctx. A hook that learns of a removal
+	// from the item store (an unpublish, a raw delete) knows the principal's id and
+	// nothing else; the actor of the request completes the event. nil keeps what the
+	// format passed.
+	Actor func(ctx context.Context) audit.Actor
 }
 
 // Store implements the data port of the npm format.
@@ -275,7 +280,25 @@ func (s *Store) event(ctx context.Context, typ string, a rows.Audit, pkg string,
 	if s.o.Source != nil {
 		ev.Source = s.o.Source(ctx)
 	}
+	if ev.Actor.Kind == "" {
+		ev.Actor = s.actorOf(ctx, a.Actor.ID)
+	}
 	return ev, nil
+}
+
+// actorOf completes the actor of an event the format could not describe: the actor of
+// the request when it is the principal with that id, else a user with that id, else
+// none.
+func (s *Store) actorOf(ctx context.Context, id string) audit.Actor {
+	if s.o.Actor != nil {
+		if a := s.o.Actor(ctx); a.Kind != "" && (id == "" || a.ID == id) {
+			return a
+		}
+	}
+	if id == "" {
+		return audit.Actor{Kind: "anonymous"}
+	}
+	return audit.Actor{Kind: "user", ID: id}
 }
 
 // clean makes text fit a text column: valid UTF-8, no NUL, at most max bytes cut at

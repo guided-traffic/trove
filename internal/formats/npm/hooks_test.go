@@ -96,6 +96,11 @@ func (w *fakeWriter) Notify(area string, payload any) error {
 }
 func (w *fakeWriter) Enqueue(context.Context, formats.JobSpec) error { return nil }
 
+func (w *fakeWriter) DeleteItems(context.Context, formats.RepoRef, ...string) error {
+	w.note("DeleteItems")
+	return nil
+}
+
 // fakeStore records the rows a hook hands the data port.
 type fakeStore struct {
 	Store
@@ -168,7 +173,7 @@ func TestR_NPM_007_OnCommitOfAFirstPublish(t *testing.T) {
 		in.Tags["latest"] != "1.2.0" || in.LatestKept || in.Claim != `created "@acme/ui"` {
 		t.Fatalf("rows %+v", in)
 	}
-	if pc.rev != 3 || pc.pkg != 42 || len(w.notes) != 1 || w.notes[0] != "metadata_changed:@acme/ui" {
+	if pc.rev != 3 || pc.pkg != 42 || len(w.notes) != 1 || w.notes[0] != "metadata_changed:"+formats.PackageChanged(7, "@acme/ui") {
 		t.Fatalf("result rev %d pkg %d notes %v", pc.rev, pc.pkg, w.notes)
 	}
 }
@@ -262,7 +267,7 @@ func TestR_NPM_007_OnCommitOfAProvenanceBundle(t *testing.T) {
 		if err := f.OnCommit(context.Background(), nil, ev(w, sc)); err != nil {
 			t.Fatal(err)
 		}
-		if got := strings.Join(w.calls, " "); got != "EnsureLocked Versions Claim LinkItem BumpRevision" || sc.rev != 3 {
+		if got := strings.Join(w.calls, " "); got != "EnsureLocked Versions Claim LinkItem BumpRevision Notify" || sc.rev != 3 {
 			t.Fatalf("calls %q rev %d", got, sc.rev)
 		}
 	})

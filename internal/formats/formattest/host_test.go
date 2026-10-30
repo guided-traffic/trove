@@ -275,6 +275,65 @@ func TestR_ARCH_009_IngestAndItems(t *testing.T) {
 	})
 }
 
+// TestR_ARCH_009_DeleteItemsOfThePackageWriter: the writer of a request removes the files
+// at the paths and a folder's subtree, OnItemsRemoved runs in the same transaction, a
+// failure plays the removal backwards, and a writer bound to no request removes nothing.
+func TestR_ARCH_009_DeleteItemsOfThePackageWriter(t *testing.T) {
+	ctx := context.Background()
+	h := newHost(t)
+	for _, v := range []string{"1.0.0", "1.1.0"} {
+		if err := testformat.Publish(ctx, h, "left-pad", v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rq, err := h.NewRequest(ctx, http.MethodPut, "left-pad/-/left-pad-1.0.0.tgz", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := h.RevSeq("left-pad")
+	t.Run("a failing function leaves every file", func(t *testing.T) {
+		err := h.Write(ctx, rq, func(_ formats.Tx, w formats.PackageWriter) error {
+			if err := w.DeleteItems(ctx, h.Ref(), "left-pad/-/left-pad-1.0.0.tgz"); err != nil {
+				return err
+			}
+			return errors.New("refused after the removal")
+		})
+		if err == nil {
+			t.Fatal("no error")
+		}
+		if _, ok, _ := h.Items().Stat(ctx, h.Ref(), formats.Path{Path: "left-pad/-/left-pad-1.0.0.tgz"}); !ok || h.RevSeq("left-pad") != before {
+			t.Fatalf("the removal was not undone (rev %d, was %d)", h.RevSeq("left-pad"), before)
+		}
+	})
+	t.Run("a file and a folder's subtree are removed, the hook runs in the transaction", func(t *testing.T) {
+		err := h.Write(ctx, rq, func(_ formats.Tx, w formats.PackageWriter) error {
+			return w.DeleteItems(ctx, h.Ref(), "left-pad/-/left-pad-1.0.0.tgz", "no/such/file")
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, _ := h.Items().Stat(ctx, h.Ref(), formats.Path{Path: "left-pad/-/left-pad-1.0.0.tgz"}); ok {
+			t.Fatal("the file is stored")
+		}
+		if h.RevSeq("left-pad") <= before {
+			t.Fatal("the hook did not raise the revision")
+		}
+		if err := h.Write(ctx, rq, func(_ formats.Tx, w formats.PackageWriter) error { return w.DeleteItems(ctx, h.Ref(), "left-pad") }); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, _ := h.Items().Stat(ctx, h.Ref(), formats.Path{Path: "left-pad/-/left-pad-1.1.0.tgz"}); ok {
+			t.Fatal("the subtree is stored")
+		}
+	})
+	t.Run("a writer bound to no request removes nothing", func(t *testing.T) {
+		err := h.Seed(ctx, func(w formats.PackageWriter) error { return w.DeleteItems(ctx, h.Ref(), "left-pad") })
+		var e *errs.Error
+		if !errors.As(err, &e) || e.Kind != errs.Internal {
+			t.Fatalf("%v", err)
+		}
+	})
+}
+
 func TestR_ARCH_009_LinksRenditionsEngines(t *testing.T) {
 	ctx := context.Background()
 	h := newHost(t)

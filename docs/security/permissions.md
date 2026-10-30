@@ -224,3 +224,14 @@ not refused (Q-AUTHZ-70, option c). Live whenever an administrator group is sync
 break-glass administrator is disabled; what makes it real is a change of the group at the identity provider, by mistake or by
 someone who administers the provider but not trove. R-HA-054 reports an installation without an administrator; recovery is
 the break-glass administrator or `trove admin`.
+
+### H-290 · A raw delete of an npm tarball through `/files/` asks no ownership question
+
+The npm routes that change a package ask the ownership question (R-AUTHZ-018) under the package row lock: publish, dist-tag writes and the unpublish
+requests ([npm.md](../developer/npm.md)). A `DELETE /files/<npm local>/<name>/-/<file>.tgz` is decided by the generic layer on the action `delete` and the repository's
+patterns, and the removal hook that unpublishes the version runs with a writer bound to no request, which cannot ask (`Claim` answers `errs.Internal`). A principal that holds `delete`
+on the package's coordinates but is not an owner of the name, and holds neither `manage` nor `content:bypass`, can therefore unpublish a version through `/files/` that the route
+would refuse with 403 `package_owned_by_other_owner` (`TestR_NPM_017_RawDeleteUnpublishes`, subtest H-290). The tombstone, the tags, the revision and the audit event are written as for the
+route, so the removal is recorded and cannot be repeated with other bytes; the bytes of the version are gone. Live today on every npm local repository with ownership enforced, for
+principals that hold `delete` without owning the name; what makes it real is a `delete` grant on a name another team owns, which the ownership rule exists to make safe. Closing it needs the
+generic layer to ask `Ownership.EnforceTx` for a coordinate with a package name, in the transaction of the removal.

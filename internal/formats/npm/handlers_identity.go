@@ -7,13 +7,32 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 )
 
-// whoami and ping (R-NPM-019). The handlers are built with the documents; until then
-// the routes answer 501. principalName (publish.go) is the rendering of R-AUTH-033.
+// whoami and ping (R-NPM-019, flow F7). Both need an authenticated subject: a request
+// that carries no credential, or one that no longer authenticates (a revoked token
+// is anonymous to the chain), answers 401 with the challenge of R-NPM-004. Nothing is
+// cached here: the authentication stage reads its token and principal caches within
+// the bound of R-ARCH-018, so a revocation is in force on every replica at once.
 
-func (f *Format) handlePing(context.Context, *formats.Request, http.ResponseWriter) error {
-	return pendingHandler("ping")
+// authenticated reports whether the request carries an identity.
+func authenticated(rq *formats.Request) bool {
+	return !rq.Subject.Anonymous && rq.Subject.Name != ""
 }
 
-func (f *Format) handleWhoami(context.Context, *formats.Request, http.ResponseWriter) error {
-	return pendingHandler("whoami")
+// handlePing is GET -/ping: 200 {}. The query write=true npm adds is ignored.
+func (f *Format) handlePing(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if !authenticated(rq) {
+		return unauthenticated()
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	return writeJSON(w, http.StatusOK, struct{}{})
+}
+
+// handleWhoami is GET -/whoami: 200 {"username": <name>} with the name as R-AUTH-033
+// renders it (principalName).
+func (f *Format) handleWhoami(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if !authenticated(rq) {
+		return unauthenticated()
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	return writeJSON(w, http.StatusOK, map[string]string{"username": principalName(rq)})
 }

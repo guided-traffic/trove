@@ -678,7 +678,8 @@ Priority: **MVP** · Covers: PKG-NPM-057
   the attempt that already committed; without this rule it would fail with 409 although its
   effect is in force. No change is lost by it, because the request changes nothing.
 - `GET {name}?write=true` MUST return the full document regardless of `Accept`, read from
-  PostgreSQL inside the request, without `_attachments`. On a virtual repository it returns the
+  PostgreSQL inside the request, without `_attachments`; it carries no ETag and `Cache-Control:
+  no-store` (Q-NPM-26). On a virtual repository it returns the
   deployment target's own document (R-NPM-029). A read-modify-write client (`npm deprecate`,
   `npm unpublish`) may send its read and its write to different replicas; both see the same
   `packages.rev_seq`, because neither reads it from a replica's memory (INV-18).
@@ -742,8 +743,9 @@ Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
   manifest or, if absent, from the tarball's first top-level `README*` file, cut at 64 KiB. The
   README is extracted once, at publish (R-NPM-007 step 5, `npm_versions.readme`), so a rendering
   on any replica reads rows only and never fetches a tarball from the object store.
-  `maintainers` lists the distinct principal names that published the versions present, without
-  e-mail; it is informational (ownership is R-AUTHZ-018).
+  `maintainers` lists the distinct principal names that published the versions present, by name and
+  without e-mail; it is informational (ownership is R-AUTHZ-018). The versions and the `time` map
+  are in SemVer order, and no version object carries a `readme` (Q-NPM-31).
 - An unknown package, or one without a live version, answers 404.
 
 Acceptance criteria:
@@ -854,7 +856,8 @@ Priority: **MVP** · Covers: PKG-NPM-032
   `time.modified` to the snapshot while clients may hold later dates from the old installation,
   and a member, permission or setting change, or a new `npmRenderVersion`, changes the bytes
   without a new date. A date could therefore validate bytes that differ, on one replica or
-  across a restore. Every package document carries an ETag, which a client's HTTP cache sends back
+  across a restore. Every package document carries an ETag (the `?write=true` read of R-NPM-009
+  excepted), which a client's HTTP cache sends back
   as `If-None-Match` (Yarn 2+ does, R-NPM-042; npm and pnpm revalidate through the HTTP caches of
   their fetch layers, PKG-NPM-032); a client that sends only a date receives 200, which costs
   bytes, never correctness.
@@ -885,9 +888,11 @@ Priority: **MVP** · Covers: PKG-NPM-032
   max-age=<npm.document_max_age>, must-revalidate`. They are always `private`: a merged document
   depends on the caller's readable members (R-AUTHZ-009 rule 4), and a shared HTTP cache must
   never hand one caller's view to another.
-- Tarballs MUST carry a strong `ETag` (`"sha256:<hex>"`) and `Cache-Control: max-age=31536000,
-  immutable`, `public` only if the anonymous principal may read the package there, else `private`.
-  Ranges and conditional requests on tarballs follow [storage.md](../storage.md) R-STOR-012.
+- Tarballs MUST carry a strong `ETag` and `Cache-Control: private, max-age=31536000, immutable`.
+  The ETag is the one of [storage.md](../storage.md) R-STOR-012, `"<sha256 hex>"`, the same on
+  `/files/` and on the npm route; the response is always `private`, because the anonymous
+  principal's read cannot be asked at response time (Q-NPM-28). Ranges and conditional requests on
+  tarballs follow R-STOR-012.
 - Responses MAY be compressed per `Accept-Encoding`.
 
 Configuration (`trove.yaml`):
@@ -927,7 +932,8 @@ Priority: **MVP** · Covers: PKG-NPM-062
 - Local: the item at the canonical path, streamed per R-STOR-012 (`HEAD`, single ranges,
   conditional requests); trashed or tombstoned versions answer 404, a version that a restore's
   replay withheld (stored, tombstoned, R-NPM-047) included, and so does `/files` for their items
-  (R-NPM-003); deprecated versions are served normally.
+  (R-NPM-003); both by `ServeCheck`, which reads the tombstone (Q-NPM-28). Deprecated versions are
+  served normally.
 - Remote: R-NPM-025. Virtual: resolved by R-REPO-019; the member that serves the tarball is the
   one whose version entry the merged document carries (R-REPO-020, R-NPM-030), so the bytes match
   the advertised `dist.integrity`. npm, pnpm and Yarn abort with `EINTEGRITY` on any mismatch.
@@ -971,7 +977,8 @@ Priority: **MVP** · Covers: PKG-NPM-021, PKG-NPM-031
   without `latest`, or with a tag that points to a removed version.
 - Remote repositories serve the upstream's tags; writes answer 405. Virtual repositories merge
   (R-NPM-031) and route writes (R-NPM-029).
-- Every change increments `packages.rev_seq` and emits an audit event.
+- Every change increments `packages.rev_seq` and emits an audit event; a write that changes nothing
+  (the tag points to that version already) answers 200 and does neither (Q-NPM-29).
 
 Configuration (`npm` section of a local repository):
 
@@ -1003,7 +1010,7 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
 | Method | Path | Body | Effect | Response |
 |---|---|---|---|---|
 | PUT | `{name}/-rev/{rev}` | full document without the versions to remove | Each live version absent from `versions` is deleted through [storage.md](../storage.md) R-STOR-018 (to the trash can from P1, permanently in the MVP) and tombstoned | 200 `{"ok": true, "rev": "<new rev>"}`; 400 if `versions` is missing or names a version trove does not hold; 409 stale rev, unless the request changes nothing (R-NPM-009) |
-| DELETE | `{name}/-/{file}.tgz/-rev/{rev}` | — | No-op for a version already removed by the `PUT` (npm sends it next) | 200; 400 if the version is still live |
+| DELETE | `{name}/-/{file}.tgz/-rev/{rev}` | — | No-op for a version already removed by the `PUT` (npm sends it next); the revision is not compared (Q-NPM-30) | 200; 400 `npm_bad_publish` if the version is still live |
 | DELETE | `{name}/-rev/{rev}` | — | Every live version deleted and tombstoned; all dist-tags removed | 200; 409 stale rev, unless every version is already removed (R-NPM-009) |
 
 - On the `PUT` path trove applies removals only: dist-tags are recomputed by R-NPM-016, not taken
@@ -1011,7 +1018,9 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
   maintainer update, PKG-NPM-022) answers 400 `npm_bad_publish` with "maintainer lists are not
   supported; ownership is managed in trove".
 - A raw `DELETE /files/<npm local>/<tarball path>` (R-STOR-018) unpublishes that version the same
-  way (`OnItemsRemoved`).
+  way (`OnItemsRemoved`). So does the `PUT` and the `DELETE` above: they remove the files of the
+  versions through the package writer in the transaction that checked ownership and the revision,
+  and the same hook writes the tombstone, the tags and the audit event (Q-NPM-27).
 - Remote repositories answer 405; their cached items are removed through the cache API of
   [repositories-and-proxy.md](../repositories-and-proxy.md). Virtual repositories route to the
   deployment target (R-NPM-029). No time window applies.
@@ -1056,7 +1065,7 @@ Priority: **MVP** · Covers: PKG-NPM-011, PKG-NPM-058
 | Method | Path | Response | Permission |
 |---|---|---|---|
 | GET | `-/whoami` | 200 `{"username": "<name>"}`, the name rendered per R-AUTH-033 (user name, `sa:<name>`, `ci:<CI issuer name>/<mapping name>`); 401 for anonymous callers | authenticated subject (R-AUTHZ-007) |
-| GET | `-/ping` (query `write=true` accepted and ignored) | 200 `{}` | authenticated subject (R-AUTHZ-007) |
+| GET | `-/ping` (query `write=true` accepted and ignored) | 200 `{}`; 401 for anonymous callers, also where the repository is anonymously readable (Q-NPM-29) | authenticated subject (R-AUTHZ-007) |
 
 Acceptance criteria:
 
@@ -2451,6 +2460,8 @@ Acceptance criteria (fixture of [endpoints.md](../endpoints.md) R-EP-012, with `
   writes no row, so it cannot be used to replace a version or move a tag (Q-NPM-11). A stale
   revision succeeds only for a request that changes nothing (R-NPM-009), so it cannot overwrite a
   concurrent change.
+- **Unpublish through `/files/`.** The unpublish routes ask the ownership question under the package row lock; a raw delete of a tarball through `/files/` removes the version the same
+  way and asks none, because the generic layer decides it and the removal hook has no request (Q-NPM-27, [permissions.md](../../security/permissions.md) H-290).
 - **Takedowns and restores.** Unpublishes made after a backup's snapshot are re-applied from the
   journal after a restore by withholding the version, which deletes nothing, so a forged journal
   entry cannot destroy restored content (R-NPM-047, Q-NPM-12). Upstream withdrawals made after the
@@ -3353,6 +3364,155 @@ reason `retry_acknowledged`. The metric label is `repo`, capped by the repositor
 the format asks the limiter and is correct once it is fed.
 
 **Applied in the spec:** R-NPM-005 (501 stands for the not-implemented kind), R-NPM-007 step 4, R-NPM-044 (outcome, label). Code: `internal/errs`, `internal/audit/events_npm.go`, `internal/formats/npm/{routes.go,bind.go}`.
+
+### Q-NPM-26 · How a package document is rendered, cached and validated
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NPM-10 fixed where documents are cached (per replica, in process, under keys every replica reads from PostgreSQL). Left open was what the cached bytes are: R-NPM-010
+puts absolute `dist.tarball` links into the document, and the response base URL differs per endpoint and host (R-EP-003). The rendition cache of the core keys by base URL, endpoint and exposure
+fingerprint already ([architecture.md](../architecture.md) R-ARCH-018, `formats.RenditionKey`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Cache the rendered bytes with their links | The key holds the base URL, the endpoint and the exposure fingerprint; the bytes hold the absolute links | A hit is a copy of bytes; the validator and the key are the same tuple (R-NPM-013); nothing is rewritten per request | One entry per base URL and endpoint of a package revision |
+| (b) Cache the bytes with a placeholder for the registry URL and substitute at serve time | The key has no base URL | One entry for all base URLs | A second pass over megabytes on every hit; a placeholder can collide with package content; cached bytes are not the served bytes |
+| (c) Render on every request | No rendition cache for npm | No cache state | 40 to 60 ms per request for 1,000 versions against 3 ms; the load of Yarn 2+, which revalidates documents on every install, falls on the renderer |
+
+**Choice:** (a). Rendering is a pure function of one snapshot: the revision, the tags, the versions and the README of the version `latest` points to are read in one statement
+(`NPMLocalDocument`), because an entry keyed by a revision must hold the rows of that revision. Each request reads `packages.rev_seq` (one indexed lookup), derives the ETag from it without
+rendering, answers `304` on a match, and otherwise takes the rendering from the cache or renders and stores it. When the rows read are newer than the lookup, the rendering is keyed and
+validated by the revision of its own rows. The cache holds the identity form; the gzip form is made from it once and cached under the encoding. An entry starts with the
+`time.modified` of its rows (8 bytes), so `Last-Modified` costs no query on a hit. A document above an eighth of `cache.rendition_bytes` is rendered per request, as the core's cache rule says.
+`GET {name}?write=true` is read from PostgreSQL in the request and never cached; it carries `Cache-Control: no-store` and no ETag, because a client that writes needs the revision of the
+moment and must not revalidate it.
+
+**Rationale:** (a) keeps the one tuple of R-NPM-013 for the validator and the key, and the links in the bytes are those the base URL of the request produced. Measured on the development machine:
+rendering 1,000 versions of 2.7 MiB takes 21 ms (benchmark `BenchmarkR_NPM_010_RenderThousandVersions`); over the integration stack a miss takes 37 to 62 ms, a hit 3 ms, a `304` less than that.
+The development agent would revisit this if the reference load test (R-HA-050) shows memory of the rendition cache as the limit, since every base URL and endpoint multiplies the entries of a hot package.
+
+**Applied in the spec:** R-NPM-009 (the write-read has no validator), R-NPM-010 (one snapshot), R-NPM-013 (the cached bytes hold the links; the key holds the base URL; the gzip form shares the validator).
+Code: `internal/formats/npm/{handlers_document.go,document/}`, `internal/formatdata/npm/read.go`.
+
+### Q-NPM-27 · How an unpublish removes a version
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-017 deletes each removed version "through storage.md R-STOR-018" and tombstones it; R-NPM-008 wants the tombstone to outlive the version and its items; a raw delete of a tarball
+through `/files/` must unpublish "the same way" (`OnItemsRemoved`). The format contract had no way for a format's route to remove items, and the item store removes in a transaction of its own.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The route removes the files through the package writer, in its transaction; `OnItemsRemoved` does the rest | New `PackageWriter.DeleteItems`; the item store removes the files in the caller's transaction and calls the hook there | One transaction holds the ownership check, the revision compare, the removal of the files, the tombstone, the tags and the audit event; a raw delete takes the same road | One more method in the contract (`internal/formats`, `internal/formathost`, the kit) and one in the item store |
+| (b) The route tombstones and deletes the version row; the files stay stored | Only `Tombstone` and `TrashOrDeleteVersion` | No contract change | The bytes of every unpublished version stay in the object store and in `/files/` listings; R-STOR-018 is not met; storage usage never falls |
+| (c) The route calls the item store's own delete first | `Items.Delete` in its transaction, then the format's | No contract change | Two transactions: the ownership check and the revision compare are not atomic with the removal, and a hook that locks the package row waits for the route's lock |
+
+**Choice:** (a). `PackageWriter.DeleteItems(repo, paths...)` removes the files permanently (folders go with their subtree, empty implicit folders above them are cleaned) as the actor of the
+request, and `OnItemsRemoved` runs for them in the same transaction with a writer bound to no request. For npm, the removal of a tarball is the unpublish of its version: tags are recomputed
+without it (R-NPM-016), the tombstone is written with the integrity of the version row, the version row is deleted (trashed when the reason is `trash`, P1) and `rev_seq` is raised once, with
+the audit event and the journal entry of Q-NPM-12. The removal of a bundle alone raises the revision and removes no version. A version that is stored and not in the document (withheld by a
+replay) loses its row and keeps its tombstone: this is the administrator's confirmation of R-NPM-047. A removal that no principal asked for records the nil UUID as the actor of the tombstone,
+because the column is a non-null UUID; the journal entry then carries it as `actorId`. A route that removed all files of a version but found the version still live, because the files were not
+there, removes the version all the same.
+
+**Rationale:** (a) is the only option in which the rule of R-NPM-017 "ownership and the current `{rev}` inside the write transaction" and the rule of R-NPM-008 "the tombstone is written with the
+removal" hold together, and it gives `/files/` the road for free. The item store's hook already ran inside the removal transaction, so the hook of a format needed no new place to run. The
+contract is not frozen before the end of M3 (Q-ARCH-213), so the method was added to every implementation of the writer in the same change. Ownership for a raw delete is the generic layer's
+(a coordinate with a package name is checked there); the hook decides none.
+The development agent would revisit this if a second format needs to remove items outside a package it owns, or when the trash can (R-STOR-022) lands and restores need the path of the removal.
+
+**Applied in the spec:** R-NPM-017 (the removal is one transaction), R-NPM-008, [architecture.md](../architecture.md) R-ARCH-009 (the writer's method). Code: `internal/items/delete.go`
+(`RemoveIn`), `internal/formathost/writer.go`, `internal/formats/hooks.go`, `internal/formats/formattest/store.go`, `internal/formats/npm/{handlers_unpublish.go,hooks_remove.go}`.
+
+### Q-NPM-28 · The tarball response and the serve-time check
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-013 asks tarballs for the strong ETag `"sha256:<hex>"` and `Cache-Control: max-age=31536000, immutable`, `public` only if the anonymous principal may read the package. R-STOR-012 fixes
+the ETag of every stored file at `"<sha256 hex>"` and the core sets `Cache-Control: no-cache` (`private, no-cache` for an authenticated request). R-NPM-015 has the tarball route and `/files/`
+refuse tombstoned and withheld versions.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the core's ETag; set `private, max-age=31536000, immutable` on the status line | The format wraps the response writer and sets Cache-Control for 200, 206 and 304 | One validator on `/files/` and on the npm route (the acceptance criterion of R-NPM-015 wants the same ETag on both); clients keep a tarball a year without a request | The format overrides a header of the core's serving |
+| (b) Rewrite the ETag to `"sha256:<hex>"` | As the page says | Matches the page | Two validators for one file; the core's conditional handling compares the other form |
+| (c) Keep both headers of the core | Nothing set | No override | Every install revalidates every tarball |
+| (d) `public` when the anonymous principal may read | A decision per response for the anonymous subject | Shared caches may keep public packages | The host has no call for another subject's decision; a policy change would not reach a cache that holds the response |
+
+**Choice:** (a), always `private`. The ETag stays `"<sha256 hex>"`, which is strong and the same on every route and replica. `ServeCheck` reads the tombstone through the data port (one indexed
+lookup per served file, no state in the replica) and answers the 404 of a missing resource for the tarball and the bundle of a tombstoned version. It runs for local repositories only; the
+remote class adds its own marks.
+
+**Rationale:** Immutability under a number is the property clients and proxies can use; `private` keeps a shared cache from handing a file to a caller the policies exclude. (d) would need a
+decision that nothing outside the decision point should make.
+The development agent would revisit `public` if the host gains a way to ask what the anonymous principal may read.
+
+**Applied in the spec:** R-NPM-013 (the tarball bullet), R-NPM-015, R-NPM-047. Code: `internal/formats/npm/{handlers_tarball.go,servecheck.go}`.
+
+### Q-NPM-29 · Dist-tag writes and the identity endpoints
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-016 and R-NPM-019 leave open what a tag write that changes nothing does, what the body is, and who counts as authenticated for `ping`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A write that changes nothing writes nothing | A tag already at the version answers 200, raises no revision, writes no audit event | `rev_seq` and the validator move only with a change; a retry is harmless | A caller cannot use a tag write to force a new validator |
+| (b) Every write raises the revision | | Simple | A retried `npm dist-tag add` invalidates every cached document and writes an audit event for nothing |
+
+**Choice:** (a). The body is a JSON string holding a canonical version (400 `npm_invalid_version` otherwise); the tag follows `semver.ValidateTag` (400 `npm_invalid_tag`); the version must be one
+the document holds (400 `npm_invalid_tag`); the answer is `{"ok": true}`. The ownership question is asked under the package row lock with the action `deploy` and `firstVersion=false`, before the
+version is looked up, so a caller who does not own the name gets 403 whatever the body says. A write never creates a package: an unknown name is 404 before the transaction takes any lock.
+`ping` and `whoami` need an identity: an anonymous request, and one whose token the authentication stage no longer accepts (it is anonymous to the chain), get 401 with the challenge of R-NPM-004,
+also on a repository that anonymous callers may read. Both answer `Cache-Control: no-store`, and `ping` ignores its query.
+
+**Rationale:** R-NPM-019 names the "authenticated subject" for both endpoints and the acceptance criterion needs `npm ping` to fail after a revocation on every replica; an endpoint that answers
+200 to the anonymous subject could not.
+The development agent would revisit this if a client is found that pings an anonymously readable registry without credentials and treats a 401 as a failure.
+
+**Applied in the spec:** R-NPM-016 (a write that changes nothing), R-NPM-019 (anonymous callers). Code: `internal/formats/npm/{handlers_disttags.go,handlers_identity.go}`.
+
+### Q-NPM-30 · The rules of the unpublish requests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-009 and R-NPM-017 define the stale-revision rule and the three requests; the details that decide behavior under retries and replays are open.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decide on the document's versions under the lock | The baseline of a `PUT` is the versions the document holds (not trashed, not tombstoned), read under the package row lock; the revision is compared only when something would be removed | A stale retry that removes nothing is a 200 on every replica; a withheld version (stored and tombstoned) is never removed by a client's `PUT`, which does not list it | Two reads under the lock |
+| (b) Decide on the stored versions | The baseline is every version row | One read | A client's `PUT` would remove a withheld version it never saw; an administrator's confirmation (R-NPM-047) would be an accident |
+| (c) Compare the revision first | Stale means 409 | Simple | The retry of a request whose answer was lost fails (R-NPM-009) |
+
+**Choice:** (a). In detail: the body is read as a stream and only the keys of `versions` are kept (a document of 1,000 versions is megabytes; 128 MiB bounds it, 413 beyond); a body without a
+`versions` object, a duplicate `versions` member or a version the document does not hold is 400 `npm_bad_publish`; the answer is `{"ok": true, "rev": "<current rev>"}`, the new one after a
+removal. `DELETE {name}/-/{file}.tgz/-rev/{rev}` compares no revision, because it changes nothing: 200 when the version is not in the document, 400 `npm_bad_publish` when it is. A package that
+has no row is 404 and none is created. The package row stays after the last version, so `rev_seq` never decreases.
+
+**Rationale:** (a) is what makes the retry rule of R-NPM-009 true on any replica, and it keeps the replay's withholding (R-NPM-047) from being undone by an ordinary client.
+The development agent would revisit the 400 for a still-published version if a client is found that sends the tarball `DELETE` before the document `PUT`.
+
+**Applied in the spec:** R-NPM-009, R-NPM-017 (the answers). Code: `internal/formats/npm/handlers_unpublish.go`.
+
+### Q-NPM-31 · What the documents derive from the rows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-010 lists the members of the full document and where they come from; a few derivations are not spelled out.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Derive from the rows, in a fixed order, without per-version READMEs | `versions` and `time` in SemVer order; `deprecated` from the column; `readme` of the version `latest` points to (the manifest's, else the tarball's) and no `readme` in any version object; `maintainers` from the `_npmUser` of the versions present, by name; `time.created` from `packages.created_at` | The bytes depend on the rows alone, so every replica renders the same document; 1,000 versions do not carry up to 64 MiB of READMEs | A client that reads `versions[v].readme` finds none (the public registry strips it as well) |
+| (b) Keep what the stored manifests hold | Publish order, READMEs as published | No derivation | The bytes depend on the order of the rows and on what each client sent |
+
+**Choice:** (a). The abbreviated document has the members of R-NPM-011 and `dist` complete; the single-version document is the entry of the full document of the same revision, found by a
+canonical number or by a dist-tag (a tag is never a valid version, so the two cannot be mistaken); an unknown reference is 404. A version whose `deprecated` column is empty has no `deprecated`
+member, whatever the stored manifest says.
+
+**Rationale:** Equal bytes on every replica are what lets the ETag be a function of the inputs (R-NPM-013).
+The development agent would revisit the README rule if a client is found that reads it from the version objects.
+
+**Applied in the spec:** R-NPM-010, R-NPM-011, R-NPM-014. Code: `internal/formats/npm/document/`.
 
 ### Q-NPM-41 · Where the test upstream gets its packages
 

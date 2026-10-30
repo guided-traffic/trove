@@ -443,3 +443,56 @@ func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, 
 		return cleanAncestors(ctx, qs, a.RepoID, ParentOf(a.Path))
 	})
 }
+
+// RemoveSpec is the removal of files inside a transaction of the caller.
+type RemoveSpec struct {
+	Repo RepoRef
+	// Paths are canonical paths of files, or of folders whose subtree goes; a path
+	// that holds nothing is skipped.
+	Paths    []string
+	Actor    audit.Actor
+	Source   audit.Source
+	Endpoint string
+}
+
+// RemoveIn removes the files at the paths of spec permanently, in the transaction
+// of the caller, as [Store.Delete] removes a subtree: the storage hook learns of
+// the removed files in this transaction, their events are written, and the
+// implicit folders that stay empty go. The caller decided every path before (a
+// format's route has authorized the action on its package); this checks nothing,
+// and it never queues a job, so the caller bounds the number of paths.
+func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error {
+	qs, err := queries(tx)
+	if err != nil {
+		return err
+	}
+	var rows []subtreeRow
+	seen := map[int64]bool{}
+	for _, p := range spec.Paths {
+		if p == "" {
+			return errs.E(errs.Invalid, errs.CodeInvalidPath, "The repository root cannot be removed as an item.")
+		}
+		found, err := subtree(ctx, qs, spec.Repo.ID, p, false)
+		if err != nil {
+			return err
+		}
+		for _, r := range found {
+			if !seen[r.ID] {
+				seen[r.ID] = true
+				rows = append(rows, r)
+			}
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, spec.Repo, rows); err != nil {
+		return err
+	}
+	for _, p := range spec.Paths {
+		if err := cleanAncestors(ctx, qs, spec.Repo.ID, ParentOf(p)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
