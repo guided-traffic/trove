@@ -26,7 +26,7 @@ completes. The beta release is the release that closes phase 7.
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.3.0` | 🟢 |
-| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | ⚪ |
+| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | 🟡 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
 | [6 · HA, backup, Helm](#phase-6--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | — | ⚪ |
@@ -142,8 +142,8 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](../spec/formats/npm.md)
 
 **Engines shared by all registries**
-- ⚪ Contract hardening from the M1 architecture review, before the format contract freezes ([roadmap WP2.0](../coverage/roadmap.md#m2--npm))
-- ⚪ Format contract and conformance kit
+- 🟡 Contract hardening from the M1 architecture review, before the format contract freezes ([roadmap WP2.0](../coverage/roadmap.md#m2--npm))
+- 🟡 Format contract and conformance kit
 - ⚪ Proxy engine: upstream settings, request collapsing through Valkey, metadata and negative caches, stale metadata while the upstream is down
 - ⚪ Virtual engine: member order, merged metadata, deployment target, namespace claims, protection against dependency confusion
 
