@@ -186,8 +186,10 @@ spans carry statements with placeholders only.
 All outbound HTTP goes through [internal/outbound](../../internal/outbound). Its factory adds, per request:
 `User-Agent: trove/<version>`, a client span, a `traceparent` only with `tracing.propagate_to_upstreams`, one
 `log: upstream` record (R-OPS-011: `purpose`, `repo`, `subscription`, scrubbed `url`, `status`, `error`,
-`request_bytes`, `response_bytes`, `duration_ms` including the body, `attempt`, `on_behalf_of`; pass the last two
-with `outbound.WithCall`, extra fields with `outbound.WithLogAttrs`) and the families
+`request_bytes`, `response_bytes`, `duration_ms` including the body, `attempt`, `on_behalf_of`, `collapsed_waiters`;
+pass `on_behalf_of`, `attempt`, `repo`, `collapsed_waiters` and, for `purpose=remote`, `flight_role` and `cache_status`
+with `outbound.WithCall` (`CollapsedWaiters` and `CacheStatus` are functions read when the request completes, because
+waiters join while the body streams), extra fields with `outbound.WithLogAttrs`) and the families
 `trove_outbound_requests_total{kind,code}`, `trove_outbound_request_duration_seconds{kind}` and
 `trove_outbound_egress_denied_total{kind}`, where `kind` is the purpose.
 
@@ -201,6 +203,8 @@ The factory (`outbound.New(cfg.Proxy.Outbound, opts...)`; call `Err()` at start-
 | proxy | `WithProxyURL(url, bypass...)`, or `proxy.outbound.proxy_from_environment`; behind a proxy trove resolves and checks the target itself first (the proxy's own connection is unchecked, H-6) |
 | timeouts | connect 10 s, TLS handshake 10 s, response headers 30 s; overall 30 s for `oidc_discovery`, `jwks`, `webhook`, none for `remote` and `objectstore`; `WithSocketTimeout` maps a remote's socket timeout |
 | redirects | at most 5 hops (`WithMaxRedirects`), `https` to `http` refused, `WithRedirectCheck` for format rules |
+| source address | `WithLocalPrefix(prefix, list)` binds every connection to the first address of `list` (default `outbound.LocalAddrs`, the interface addresses) inside `prefix`; enumerated when the client is built and on the first dial after the last enumeration is `outbound.LocalRefresh` (60 s) old; no address inside the prefix fails the request with `errors.Is(err, outbound.ErrSourceNetworkUnavailable)` (502 `source_network_unavailable`, not a circuit failure); a failing lister keeps the last good address (Q-ARCH-198). The egress check still runs |
+| credentials per hop | `WithHopPolicy(p)`: `p.Decorate(req, hop)` runs on a copy of every request, hop 0 and each redirect, and sets or removes the credentials and custom headers for the host of `req.URL`. `CredentialPolicy{Origin, SendCredentials, ForwardOnRedirect, Headers}` is the policy of a remote: origin and `sendCredentials` patterns always, other hosts only on a redirect hop with `ForwardOnRedirect`; it removes `Authorization` and every key of `Headers()` elsewhere, so the caller never sets them itself. As a `ClientCertPolicy` it scopes `WithClientCertificate` the same way (Q-ARCH-199) |
 | compression | not transparent: callers choose `Accept-Encoding` |
 
 The trust stores report `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total` and

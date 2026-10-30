@@ -18,6 +18,7 @@ type roundTripper struct {
 	purpose string
 	attrs   []slog.Attr
 	base    http.RoundTripper
+	hop     HopPolicy
 }
 
 // CloseIdleConnections lets http.Client.CloseIdleConnections reach the pool.
@@ -31,13 +32,20 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 	ctx := req.Context()
 	out := req.Clone(ctx)
+	if rt.hop != nil {
+		hop := hopOf(req)
+		rt.hop.Decorate(out, hop)
+		if cp, ok := rt.hop.(ClientCertPolicy); ok {
+			out = out.WithContext(withCertAllowed(ctx, cp.AllowClientCertificate(out, hop)))
+		}
+	}
 	if out.Header.Get("User-Agent") == "" {
 		out.Header.Set("User-Agent", rt.f.userAgent())
 	}
 	endSpan := func(int, error) {}
 	if rt.f.tracer != nil {
 		var sctx context.Context
-		sctx, endSpan = rt.f.tracer.StartClient(ctx, req.Method, req.URL)
+		sctx, endSpan = rt.f.tracer.StartClient(out.Context(), req.Method, req.URL)
 		out = out.WithContext(sctx)
 		rt.f.tracer.Inject(sctx, out.Header)
 	}
@@ -101,12 +109,26 @@ func (r *record) finish(status int, respBytes int64, err error) {
 		for _, a := range r.rt.attrs {
 			have[a.Key] = true
 		}
+		if r.call.Repo != "" {
+			attrs = append(attrs, slog.String("repo", r.call.Repo))
+			have["repo"] = true
+		}
+		attrs = append(attrs, nullable("collapsed_waiters", r.call.CollapsedWaiters != nil, func() any { return r.call.CollapsedWaiters() }))
+		if r.rt.purpose == PurposeRemote {
+			attrs = append(attrs,
+				nullable("flight_role", r.call.FlightRole != "", func() any { return r.call.FlightRole }),
+				nullable("cache_status", r.call.CacheStatus != nil && r.call.CacheStatus() != "", func() any { return r.call.CacheStatus() }))
+		}
 		for _, k := range []string{"repo", "subscription"} {
 			if !have[k] {
 				attrs = append(attrs, slog.Any(k, nil))
 			}
 		}
-		attrs = append(attrs, r.rt.attrs...)
+		for _, a := range r.rt.attrs {
+			if a.Key != "repo" || r.call.Repo == "" {
+				attrs = append(attrs, a)
+			}
+		}
 		level := slog.LevelInfo
 		if errors.Is(err, ErrEgressDenied) {
 			level = slog.LevelWarn // a security event (R-REPO-038)
@@ -154,4 +176,12 @@ func componentOf(purpose string) string {
 		return "storage"
 	}
 	return "proxy"
+}
+
+// nullable is the attribute key with the value, or null when there is none.
+func nullable(key string, ok bool, v func() any) slog.Attr {
+	if !ok {
+		return slog.Any(key, nil)
+	}
+	return slog.Any(key, v())
 }

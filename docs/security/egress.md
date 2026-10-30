@@ -76,6 +76,28 @@ IPv6 addresses are refused before it is consulted, so an allow entry cannot open
 - The pod's other outbound paths: database, Valkey and Sentinel connections have their own addresses from configuration and are not
   checked by this policy. Their egress is the one of the pod network ([H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only)).
 
+## Which hosts receive credentials
+
+A remote repository's credentials, its custom headers and its client certificate go to the upstream origin and to the hosts of
+`extraHosts` entries with `sendCredentials: true`, and to other origins of a redirect chain only with `forwardAuthOnRedirect`
+([R-REPO-033](../spec/repositories-and-proxy.md), [R-REPO-039](../spec/repositories-and-proxy.md), Q-ARCH-199). The rule is enforced
+in the client's round tripper, once per request and per redirect hop ([hop.go](../../internal/outbound/hop.go), `CredentialPolicy`),
+not by the caller:
+
+| Request | Credentials and custom headers | Client certificate |
+|---|---|---|
+| to the origin (scheme, host and port equal) | sent | presented |
+| to a host matching a `sendCredentials` pattern | sent | presented |
+| redirect to any other origin, `forwardAuthOnRedirect: false` | removed | not presented |
+| redirect to any other origin, `forwardAuthOnRedirect: true` | sent | presented |
+| first request to any other host | removed, whatever the flag says | not presented |
+
+`net/http` copies the headers of the first request to every redirect and strips only a few of them on a change of domain; the
+policy removes `Authorization` and every credential or custom header it knows on every hop and sets them again only where the
+table allows, so a header that is not one of the standard sensitive ones does not travel. The certificate is withheld in the TLS
+handshake from the decision stored in the request context ([factory.go](../../internal/outbound/factory.go), `certGetter`).
+Pre-signed object-storage redirects therefore receive nothing by default.
+
 ## What this does not cover
 
 ### H-78 · The NAT64 check knows only the well-known prefix

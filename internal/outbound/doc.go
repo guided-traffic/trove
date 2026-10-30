@@ -10,5 +10,7 @@
 // response-header timeouts, a redirect policy, outbound proxies, the
 // User-Agent trove/<version>, W3C trace context propagation (only with
 // tracing.propagate_to_upstreams), the upstream request log (R-OPS-011) and
-// the outbound metrics.
+// the outbound metrics. A remote repository's client adds WithLocalPrefix (the
+// source address of R-REPO-024) and WithHopPolicy (which hosts receive credentials,
+// custom headers and the client certificate on each redirect hop, R-REPO-039).
 package outbound

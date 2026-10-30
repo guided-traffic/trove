@@ -1353,6 +1353,9 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
   - A value that is not a CIDR prefix answers 422 `invalid_source_network`. A prefix that holds a
     single address (`/32`, `/128`) is stored with the warning `source_network_single_address`,
     because it can fit one pod only.
+  - The enumeration happens when the client is built and on the first dial after the last one is 60 s old;
+    a failing enumeration keeps the last good address, and one that finds no address in the prefix drops
+    it (Q-ARCH-198).
   - The upstream test reports the local address the probing replica bound, or
     `source_network_unavailable`.
 
@@ -2309,6 +2312,10 @@ Priority: **MVP** · Covers: RMT-012
   other origins of the redirect chain. The default matters: many registries redirect downloads to
   pre-signed object-storage URLs, which reject an extra `Authorization` header and must not receive
   the credential anyway.
+- The client certificate follows the same rule as the credentials: it is presented only on connections to
+  those hosts. The first request to a host that is neither the upstream origin nor a `sendCredentials`
+  host never carries credentials, also with `forwardAuthOnRedirect`, which widens redirect hops only
+  (Q-ARCH-199).
 - The entry is stored under the original request key; the final URL is recorded as `upstream_url`.
   Redirect responses themselves are not cached.
 

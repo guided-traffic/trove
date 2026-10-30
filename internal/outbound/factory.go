@@ -167,6 +167,8 @@ type clientSettings struct {
 	egress         bool
 	logAttrs       []slog.Attr
 	trust          *tlsfiles.Reloader // WithRootCAs; nil means the factory's
+	local          *localBinder       // WithLocalPrefix
+	hop            HopPolicy          // WithHopPolicy
 }
 
 // WithTimeout sets the client's overall timeout including the body. The default
@@ -259,7 +261,7 @@ func (f *Factory) Client(purpose string, opts ...ClientOption) *http.Client {
 	for _, o := range opts {
 		o(&s)
 	}
-	rt := &roundTripper{f: f, purpose: purpose, attrs: s.logAttrs}
+	rt := &roundTripper{f: f, purpose: purpose, attrs: s.logAttrs, hop: s.hop}
 	if f.setupErr != nil {
 		rt.base = failing{err: fmt.Errorf("outbound client unavailable: %w", f.setupErr)}
 	} else {
@@ -301,8 +303,12 @@ func (f *Factory) transport(purpose string, s clientSettings, roots *x509.CertPo
 	if s.egress {
 		dialer.Control = f.policy.control(onDeny)
 	}
+	dial := dialer.DialContext
+	if s.local != nil {
+		dial = s.local.dialFunc(dialer)
+	}
 	tr := &http.Transport{
-		DialContext:           dialer.DialContext,
+		DialContext:           dial,
 		TLSHandshakeTimeout:   s.tlsHandshake,
 		ResponseHeaderTimeout: s.responseHeader,
 		IdleConnTimeout:       s.idleConn,
@@ -316,6 +322,10 @@ func (f *Factory) transport(purpose string, s clientSettings, roots *x509.CertPo
 			MinVersion:   f.minVersion,
 			Certificates: s.clientCert,
 		},
+	}
+	if _, ok := s.hop.(ClientCertPolicy); ok && len(s.clientCert) > 0 {
+		tr.TLSClientConfig.Certificates = nil
+		tr.TLSClientConfig.GetClientCertificate = certGetter(s.clientCert)
 	}
 	proxy := s.proxy
 	if proxy == nil && !s.direct && f.cfg.ProxyFromEnvironment {
@@ -366,10 +376,25 @@ type failing struct{ err error }
 func (f failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, f.err }
 
 // Call carries facts about the caller into the upstream log of the requests made
-// with the returned context.
+// with the returned context (R-OPS-011, R-REPO-047).
 type Call struct {
 	OnBehalfOf string // principal whose request caused the call; "" means system
 	Attempt    int    // attempt number of a retried call; 0 means 1
+	// Repo is the remote repository key; it replaces the repo field of
+	// WithLogAttrs when set.
+	Repo string
+	// FlightRole is the role of the request in a fetch flight: leader,
+	// follower, waiter, or probe for a shadowing check. It is logged for
+	// purpose remote only; "" logs null.
+	FlightRole string
+	// CollapsedWaiters returns how many concurrent misses on this replica the
+	// fetch served. It is read when the request completes, because waiters join
+	// while the body streams; nil logs null.
+	CollapsedWaiters func() int
+	// CacheStatus returns the Cache-Status value of the response to the client,
+	// read when the request completes; logged for purpose remote only, nil or ""
+	// logs null.
+	CacheStatus func() string
 }
 
 type callKey struct{}

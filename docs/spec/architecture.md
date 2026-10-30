@@ -4966,6 +4966,46 @@ reader that is slower than the margin allows must be served to the end (then the
 
 **Applied in the spec:** R-ARCH-024 step 5; [../developer/e2e.md](../developer/e2e.md#findings-of-the-suite) finding 5.
 
+### Q-ARCH-198 · Source-address binding of a remote's connections
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-024 binds a remote's upstream connections to the first interface address inside `sourceNetwork`, enumerated at start and every 60 s, and forbids a fallback to the kernel's choice. The text leaves open who enumerates (a goroutine or the dial path), what a failing enumeration means, and what a replica does when the address it enumerated has gone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Background goroutine per client | Each bound client starts a ticker that re-enumerates every 60 s | The dial path never enumerates | A goroutine to stop for every client that the upstream-client cache replaces; the lifetime of a client is not visible to the factory |
+| (b) Enumeration on the dial path once the last one is 60 s old (chosen) | The option enumerates once when the client is built; a dial that finds the result 60 s old enumerates again, under a mutex | No goroutine, no lifetime; an idle client costs nothing; the interface lister is a plain injected function | One dial per minute and client pays for the enumeration |
+| (c) Enumerate on every dial | No cache | Always current | A netlink call per connection, on the path that opens one connection per fetch |
+
+Failure of the enumeration itself: the last good address is kept (a lister that fails says nothing about the address), and a client that never had one answers `ErrSourceNetworkUnavailable` with the lister's error joined. A successful enumeration without an address in the prefix drops the address at once: the address is gone, and using it would leave through an interface the upstream's firewall rejects. The prefix is masked before use, IPv4-mapped interface addresses are matched as IPv4, and the first match in interface order wins.
+
+**Choice:** (b).
+
+**Rationale:** The connection pool of a client outlives single requests, but a client is rebuilt whenever the remote's settings change, so a goroutine per client needs a close path that the factory does not have. The cost of (b) is bounded by the 60 s interval. Revisit if replicas show dial latency spikes at the interval, or if a lister can block for long: then (a) with an explicit `Close` on the cached client.
+
+**Applied in the spec:** R-REPO-024 `sourceNetwork` bullets name the lazy re-enumeration and the failing-lister rule; the engine (WP2.2-B) counts `trove_remote_source_network_unavailable_total` and rate-limits the log line where it sees `outbound.ErrSourceNetworkUnavailable`.
+
+### Q-ARCH-199 · Where the credential decision of each hop is made
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-033, R-REPO-036 and R-REPO-039 send credentials, custom headers and the client certificate only to the upstream origin and `sendCredentials` hosts, and to other origins of a redirect chain only with `forwardAuthOnRedirect`. `net/http` copies the headers of the first request to every redirect and strips only `Authorization`, `Cookie` and `WWW-Authenticate` when the domain changes; it also strips `Authorization` on a hop to another domain that is allowed to have it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The caller sets the headers and a redirect check removes them | The engine puts credentials on the request; `CheckRedirect` deletes them on a foreign hop | No new interface | The first request and the redirect are decided in two places; a hop to a `sendCredentials` host loses the `Authorization` that `net/http` stripped; a forgotten header leaks |
+| (b) The client decides on every hop in its round tripper (chosen) | `WithHopPolicy(p)`: the round tripper calls `p.Decorate(req, hop)` on a copy of every request it sends, `hop` counted from the `Response` links that `net/http` sets on redirect requests. `CredentialPolicy` is the implementation for a remote: it removes `Authorization` and every key of its `Headers()` and sets them again only where the host may have them | One place; the caller never puts a credential on a request; a secret that rotates is read per request; the hop number needs no state | The caller must not set `Authorization` itself (the policy removes it) |
+| (c) One client per host | A client per origin, credentials baked in | No policy object | A redirect has to be followed by the engine itself, and the limit, the scheme rule and the egress rules of the client no longer apply to the chain |
+
+The client certificate is a connection property, not a header. A policy that also implements `ClientCertPolicy` scopes it: the round tripper puts the decision for the hop in the request context, and the client certificate callback of the TLS configuration (`GetClientCertificate`, which sees the handshake context) presents none where it is false. A connection is pooled per host and the decision depends on the host and the policy only, so a pooled connection never carries a decision of another hop. The first request to a host that is neither the origin nor a `sendCredentials` host never carries credentials, also with `forwardAuthOnRedirect`; the flag widens redirect hops only. Origins compare scheme, lower-case host and effective port; `sendCredentials` hosts match by `path.Match` on the lower-case host name, ignoring the port.
+
+**Choice:** (b).
+
+**Rationale:** The rule has to hold for the first request, for each redirect and for the TLS handshake, and only the round tripper sees all three. The redirect limit, the `https` to `http` refusal and the egress check stay where they were, in `CheckRedirect` and the dialer. Revisit if a format needs a credential that depends on the response of a previous hop (a token handshake): that belongs to the format plug-in's own requests, each of which passes through `Decorate` as hop 0.
+
+**Applied in the spec:** R-REPO-039 states that the client certificate follows the same rule as the credentials and that `forwardAuthOnRedirect` widens redirect hops only.
+
 ## What this does not cover
 
 ### H-1 · Format code runs in-process without isolation
