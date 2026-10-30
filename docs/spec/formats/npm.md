@@ -149,16 +149,18 @@ Priority: **MVP** · Covers: PKG-NPM-003, PKG-NPM-004
   name (scoped as `@scope/name`) is the package name of the request descriptor
   ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-003) and the coordinate of
   [authorization.md](../authorization.md) R-AUTHZ-005.
-- A decoded name with an empty, `.` or `..` segment, a NUL byte, a backslash, a `%` or more than
-  one `/` MUST be rejected with 400 before any lookup. No npm name contains `%`; a name that still
+- A decoded name with an empty, `.` or `..` segment, a NUL byte or another control character,
+  a backslash, a `%`, more than one `/`, bytes that are not valid UTF-8, more than 512 bytes, or
+  the single character `-` MUST be rejected with 400 before any lookup (Q-NPM-14). No npm name contains `%`; a name that still
   carries one after the single decoding step is a second layer of escapes aimed at an upstream
   ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-025).
 - Names of **newly published** packages (R-NPM-007, R-NPM-036) MUST satisfy npm's rules for new
   names ([validate-npm-package-name](https://github.com/npm/validate-npm-package-name)): 1 to 214
   characters including the scope; lower case; URL-safe (each of scope and name unchanged by
-  `encodeURIComponent`); none of `~'!()*`; no leading `.` or `_`; no leading or trailing
-  whitespace; not a Node.js core module name; not `node_modules` or `favicon.ico`. Violations
-  answer 400.
+  `encodeURIComponent`); none of `~'!()*`; neither the scope nor the name starts with `.`, `_` or
+  `-` (Q-NPM-14); no leading or trailing whitespace; an unscoped name is not a Node.js core module
+  name, `node_modules` or `favicon.ico`. Violations answer 400. The implementation is
+  [internal/formats/npm/name](../../../internal/formats/npm/name/name.go).
 - A new name that equals an existing name of the same local repository once both are lower-cased
   and stripped of `-`, `_` and `.`, without being that name, MUST be rejected with 400. This keeps
   look-alikes from appearing next to an internal package; remote and virtual repositories serve
@@ -410,7 +412,8 @@ Processing:
    - `name` equals the decoded path name and satisfies R-NPM-002;
    - `versions` holds exactly one entry, `dist-tags` exactly one entry pointing to it; the tag is
      not a valid SemVer range and matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`;
-   - the version is valid SemVer 2.0.0 and equal to its canonical form without build metadata;
+   - the version is valid SemVer 2.0.0 and equal to its canonical form without build metadata
+     (`semver.Parse` on the version after `semver.Clean`, Q-NPM-15);
    - exactly one attachment ends in `.tgz`, its decoded length equals `length`; at most one more,
      ending in `.sigstore` (stored, not interpreted; PKG-NPM-024 is deferred);
    - `dist.integrity` and `dist.shasum`: at least one present; every `sha512` entry of the SRI
@@ -911,7 +914,8 @@ Priority: **MVP** · Covers: PKG-NPM-021, PKG-NPM-031
 | DELETE | `-/package/{name}/dist-tags/{tag}` | — | 200 `{"ok": true}`; 400 for `latest`; 404 unknown tag | `deploy`, ownership |
 
 - Tag names follow R-NPM-007's rule; a tag that is a valid SemVer range (`1.x`, `v1.4`) is rejected,
-  matching the clients' own check.
+  matching the clients' own check (`semver.ValidateTag`; strict range syntax, as `npm dist-tag add`
+  tests it, Q-NPM-15).
 - `latest` cannot be deleted; it can be moved to any live version, older ones included (moving it
   back after a broken release is legitimate).
 - A publish applies the tag of its body. **Latest guard** (`npm.latestGuard`): when a publish
@@ -2332,7 +2336,11 @@ document and before compression:
 - **Validators.** The ETag of R-NPM-013 includes the endpoint and its exposure fingerprint, so a
   rule change makes every cached copy of the document fail revalidation.
 - **Version ranges** in rules use node-semver range syntax; `ValidateRange` refuses what npm's own
-  range parser refuses, and pre-releases follow `prereleases`, not the range's pre-release rule.
+  range parser refuses in its strict mode, never the loose mode that dependency specifiers use, and
+  pre-releases follow `prereleases`, not the range's pre-release rule: a range is evaluated with
+  node-semver's `includePrerelease`, so `>=2.0.0 <4` contains `2.1.0-beta` and not `4.0.0-rc.1`,
+  and the rule's `prereleases` flag decides whether a pre-release is exposed. A range of more than
+  4096 bytes is refused (Q-NPM-16; `semver.ParseForExposure`).
 
 Acceptance criteria (fixture of [endpoints.md](../endpoints.md) R-EP-012, with `latest` on 2.1.0 and
 `next` on 2.1.0-rc.1 in `npm-internal`):
@@ -2916,6 +2924,134 @@ revalidates the document first.
 acceptance criterion); R-NPM-044 (the metric); the revisit of Q-NPM-2; H-33 and H-51; the Security
 notes. Cross-page: [backup-and-restore.md](../backup-and-restore.md) R-BAK-022 (formats read
 `system_state.restored_at`).
+
+### Q-NPM-14 · Package-name rules the reference validator leaves open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-002 names validate-npm-package-name as the rule for new names and lists what a lookup refuses,
+but four points are left to the implementation ([internal/formats/npm/name](../../../internal/formats/npm/name/name.go)):
+whether a looked-up name has a length bound and may hold control characters; whether the leading
+character rule reaches the scope and the part after it; whether a leading `-` is refused; and what
+the look-alike fold covers. Verified on 2026-10-30 by reading validate-npm-package-name 8.0.0 and
+running it on 110 names: it tests a leading `.` and `_` on the whole string (so `@a/_b` and `@_a/b`
+pass) and a leading `.` on the part after the scope, it refuses a leading `-`, and it counts capitals,
+`~'!()*`, more than 214 characters and core-module names as reasons a name is not valid for new
+packages. Not verified: whether the public registry accepts `@a/_b`; the validator is the client-side
+rule, and trove cannot ask the registry.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Mirror the validator exactly | New names pass exactly when the validator says so; a lookup refuses only the R-NPM-002 list | No name a client's own check accepts is ever refused by trove | `@a/_b`, `@_a/b` and `@-a/b` pass although the unscoped `_b` does not: an accident of where the validator tests the start of the string, not a rule anyone chose. A lookup name can hold control characters and any length |
+| (b) The validator, with the leading rule on every part, plus lookup hygiene | A new name's scope and name each start with a letter or digit; a lookup also refuses control characters, bytes that are not UTF-8, a name of more than 512 bytes and the single character `-` | One rule for scoped and unscoped names; a name that cannot be a path segment, a log line or a metric label never reaches a lookup; the bound keeps client-chosen names from growing cache and store keys | Refuses `@a/_b`-style names the client-side validator lets through (none known to exist; not verified) |
+| (c) As (b), and lookups also refuse capitals | Legacy mixed-case names are not served | Names become uniformly lower case | Breaks `npm view JSONStream` through a remote, which R-NPM-002 requires |
+
+**Choice:** (b).
+
+**Rationale:**
+- The leading-character rule exists so a name cannot be taken for a hidden file, a private module or
+  an option. Those readings apply to the scope and to the name alike, so (a)'s exemption of the
+  second part is an accident; (b) states the rule once.
+- The lookup bound of 512 bytes is not an npm rule. It is twice the longest name a new package may
+  have and exists to bound key sizes; no upstream name longer than 214 characters is known.
+  Control characters and invalid UTF-8 cannot belong to a package name that a client typed in a URL.
+- The fold removes `-`, `_` and `.` from the whole canonical name, scope included, and lower-cases
+  ASCII only. R-NPM-002 describes "the name" and the column `name_fold`; a scope that differs only
+  by those characters is the same look-alike risk. Names that pass the new-name rules are ASCII, so
+  nothing is lost, and an ASCII-only mapping is stable across PostgreSQL locales.
+- The development agent would revisit this if a customer must publish a name that (b) refuses and the
+  public registry is shown to accept it (relax the rule for the second part first), or if an
+  upstream name longer than 512 bytes appears.
+
+**Applied in the spec:** R-NPM-002 (the lookup list and the new-name rule). Code: `name.Parse`,
+`name.ParseEscaped`, `name.ValidateNew`, `name.Fold`.
+
+### Q-NPM-15 · Which version grammar applies where, and how identifiers compare
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-007 requires a published version to be valid SemVer 2.0.0 and equal to its canonical form, and
+to be cleaned the way npm's `clean()` does before it is compared with the tarball's manifest.
+node-semver, which every npm client calls, is more tolerant than the specification: its strict
+parser trims the text and accepts a leading `v`; its loose parser accepts `=`, spaces, leading zeros
+and a pre-release without a hyphen; its range test for a dist-tag name (R-NPM-016) is strict. Its
+comparison turns a numeric pre-release identifier into a floating-point number, so two identifiers
+above 2^53 can compare equal although they differ. Verified on 2026-10-30 against node-semver
+7.8.5 (source read, and run on 40,000 version texts and 20,000 compared pairs: no difference except
+as stated below).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) node-semver's strict grammar everywhere | One parser; `v1.2.3` and ` 1.2.3 ` are versions | Exactly what clients accept | A published version `v1.2.3` would have two texts for one version; the "equal to its canonical form" check of R-NPM-007 could not be stated |
+| (b) Three entry points | `Parse`: SemVer 2.0.0 as written, for what trove decides (a published version after `Clean`, a tag's value). `ParseNode(s, loose)`: node-semver's own parse, for versions that arrive in upstream documents and file names. `Clean`: npm's `clean()`. Loose only on request, no caller yet | Each place uses the grammar its requirement states; loose mode exists for a later caller and is verified now | Three names to choose from; the developer page says which to use |
+| (c) SemVer 2.0.0 only | An upstream version with a `v` is not a version | Simplest | A remote repository would drop upstream versions that every client installs |
+
+Exact comparison: the pre-release rule of SemVer 2.0.0 compares numeric identifiers as numbers of any
+size. The package compares them exactly (by length, then digit by digit) instead of converting to a
+float. The two agree on every identifier up to 2^53; above it node-semver cannot order versions it
+sees as different.
+
+**Choice:** (b), with exact numeric comparison.
+
+**Rationale:**
+- A requirement states a grammar once; (b) gives each requirement the entry point that implements
+  it, and no caller has to remember which string was already cleaned.
+- Exact comparison keeps one total order consistent with SemVer 2.0.0 item 11, where a float
+  conversion makes `1.0.0-9007199254740993` equal to `1.0.0-9007199254740992`. Nobody publishes such
+  versions; the difference exists only so that sorting never depends on rounding.
+- A numeric pre-release identifier of at least 2^53-1 keeps its text, as in node-semver; in loose mode
+  its leading zeros are kept too, so a version never changes meaning between parses.
+- The dist-tag test uses the strict range grammar because the client that sets a tag
+  (`npm dist-tag add`) tests it strictly; a tag valid in one and rejected in the other would be set
+  by one client and be unusable for another.
+- The development agent would revisit this if an upstream registry serves versions the strict entry
+  points refuse and clients install them (the remote would then need the loose entry point).
+
+**Applied in the spec:** R-NPM-007 step 3 (the version check names `Clean` and `Parse`); R-NPM-016
+(the tag rule names `ValidateTag`). Code: `semver.Parse`, `semver.ParseNode`, `semver.Clean`,
+`semver.Compare`, `semver.ValidateTag`.
+
+### Q-NPM-16 · Version ranges of exposure rules: strictness, pre-releases, bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-048 says `ValidateRange` refuses what npm's own range parser refuses, and that pre-releases
+follow the rule's `prereleases` flag, not the range's pre-release rule. Three points are open: which
+mode of npm's parser is "its own", how a range is evaluated so that the flag decides, and whether
+a range has a size bound. Verified on 2026-10-30 against node-semver 7.8.5 and npm-package-arg
+(`semver.validRange(spec, true)`, line 462 of `lib/npa.js` in the current release): npm itself
+reads dependency specifiers in loose mode, and its loose mode drops a comparator it cannot parse
+instead of refusing the range; for example `>=2.0.0 <4..0` is refused in strict mode and becomes
+`>=2.0.0` in loose mode. Without `includePrerelease`, `>=2.0.0 <4` does not contain `2.1.0-beta`; with
+it, it does, and `4.0.0-rc.1` stays outside because the x-range's ceiling is `<4.0.0-0`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Loose acceptance, node's pre-release rule | A rule accepts what a dependency specifier accepts | Same text as in a `package.json` | A typo silently widens a rule: the ceiling of `>=2.0.0 <4..0` is dropped, and everything from 2.0.0 up is exposed. With node's pre-release rule `prereleases: true` exposes nothing the range does not name with a pre-release, so the flag does not do what R-EP-012 says |
+| (b) Strict acceptance, node's pre-release rule | Typos are refused | No silent widening | The `prereleases` flag still has no effect on `>=2.0.0 <4`, so a rule cannot expose `2.1.0-beta` by any setting |
+| (c) Strict acceptance, evaluation with `includePrerelease`, the flag decides | A range is a numeric interval; whether a pre-release inside it is exposed is the rule's `prereleases` flag | One place decides pre-releases, as R-EP-012 states; typos are refused; the ceiling `<4` still excludes the pre-releases of 4.0.0 | A rule's range does not behave like the same text in `npm install` for pre-releases (it is wider); the admin UI must say so |
+
+**Choice:** (c), with a bound of 4096 bytes on the range text, and acceptance checked in both option
+sets (`semver.ParseForExposure`).
+
+**Rationale:**
+- Exposure is a ceiling (R-EP-012): a rule that exposes more than its author wrote is a leak, and a
+  rule that is refused is a visible error. That is why (a) is out, whatever dependency specifiers do.
+- R-EP-012 gives the rule two independent dimensions, `range` and `prereleases`. Only (c) makes both
+  mean something.
+- Desugaring differs between the two option sets only at the largest version numbers (an upper bound
+  of `<=1.0.9007199254740991` needs 2^53 once pre-releases are included, which no version can
+  represent), so a range is accepted only if it parses in both; the rule then never meets a range it
+  can save and cannot evaluate.
+- node-semver has no size bound. A rule is typed by an administrator; 4096 bytes is far above any
+  rule and keeps parsing cost independent of what an API client sends. Only text that node-semver
+  would also parse and is longer than that is refused.
+- The development agent would revisit this if administrators need a range that only loose mode
+  accepts (they can then be shown the strict form of it) or if the rule dialog shows the evaluated
+  range and the difference to `npm install` for pre-releases turns out to surprise people.
+
+**Applied in the spec:** R-NPM-048 (version ranges: strict mode, `includePrerelease`, the bound).
+Code: `semver.Validate`, `semver.ParseForExposure`, `semver.Options`.
 
 ### Q-NPM-41 · Where the test upstream gets its packages
 

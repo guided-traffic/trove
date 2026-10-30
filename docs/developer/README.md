@@ -57,6 +57,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings; the counting npm test upstream and its corpus |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
+| [npm.md](npm.md) | The npm format: package names and versions (the leaf libraries `name` and `semver`); the rest of the format is added as it is built |
 | [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission |
