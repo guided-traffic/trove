@@ -1,11 +1,14 @@
 package httpserver
 
+import "github.com/guided-traffic/trove/internal/auth/scope"
+
 // This file holds the seam between the authentication stage (R-ARCH-005 step 6)
 // and everything behind it: the value the chain stores in the request context.
 // It is a plain value type of the edge layer. The domain packages (internal/auth,
 // internal/authz) are below this layer and cannot import it; they define their
 // own richer types, and the composition root and internal/api/v1 convert at the
-// seam (docs/developer/m1-contracts.md).
+// seam (docs/developer/m1-contracts.md). The one type they share is the token
+// scope, a leaf of its own (internal/auth/scope).
 
 // PrincipalKind is what kind of identity a request was authenticated as
 // (R-AUTHZ-002). The values are stable: they appear in audit events.
@@ -62,36 +65,6 @@ type GroupRef struct {
 	Name string
 }
 
-// Patterns is an include and exclude list of globs (R-AUTHZ-005).
-type Patterns struct {
-	Include []string
-	Exclude []string
-}
-
-// ScopeGrant is one element of a token scope's repository part (R-AUTH-024).
-type ScopeGrant struct {
-	// Repositories are keys or patterns.
-	Repositories []string
-	Packages     Patterns
-	Paths        Patterns
-	// Actions are the repository actions of R-AUTHZ-006.
-	Actions []string
-}
-
-// Scope is the ceiling a token puts on its owner's rights: effective rights are
-// the owner's grants at use time intersected with the scope (R-AUTH-024,
-// R-AUTHZ-013). It never grants anything. Builds join with P1.
-type Scope struct {
-	// Inherit admits every repository right of the owner.
-	Inherit bool
-	// Admin lets the token exercise the owner's system roles.
-	Admin bool
-	// Repositories are the restricted grants when Inherit is false.
-	Repositories []ScopeGrant
-	// System lists system capabilities (R-AUTHZ-010) from the closed list of R-AUTH-025.
-	System []string
-}
-
 // Credential is what proved the principal. The zero value is the anonymous
 // request. It holds IDs and states, never a token value, hash or session secret
 // (R-AUTH-041).
@@ -102,13 +75,12 @@ type Credential struct {
 	// TokenID and TokenType identify the token (MethodBearer, MethodBasic, MethodAPIKey).
 	TokenID   string
 	TokenType TokenType
-	// Scope is the token's ceiling. Nil means there is none: sessions and the
-	// break-glass session are bounded by the principal's own rights only.
-	Scope *Scope
-	// Endpoints are the endpoint names the token is valid on (R-EP-011); empty
-	// means unbound. The stage has already refused a token on another endpoint,
-	// so the field is for audit and for the decision point.
-	Endpoints []string
+	// Scope is the token's ceiling: the owner's grants at use time intersected
+	// with it (R-AUTH-024, R-AUTHZ-013); it never grants anything. Nil means there
+	// is none: sessions and the break-glass session are bounded by the
+	// principal's own rights only. Its Endpoints bind the token to endpoint names
+	// (R-EP-011); the stage has already refused a token on another endpoint.
+	Scope *scope.Scope
 	// BasicUsername is the username of a Basic credential, recorded for
 	// diagnostics and otherwise ignored (R-AUTH-001).
 	BasicUsername string

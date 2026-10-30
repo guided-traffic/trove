@@ -34,7 +34,7 @@ internal/
 │   └── oidc/                    domain WP1.1  providers, login flow, callback, break-glass
 ├── authz/                       domain WP1.3  authz.go: Subject, Coordinate, Decision, Authorizer (contract); the engine
 ├── repository/                  domain WP1.4  repository.go: Repository, Class, Reader (contract); store, snapshot
-├── api/v1/subject.go            edge   SubjectFrom, NewAccess: the one conversion Principal -> Subject (WP1.3 and WP1.6 keep it)
+├── api/v1/subject.go            edge   SubjectFrom(ctx), ActorFrom: delegates to api/edge, where the one conversion Principal -> Subject lives (WP2.0)
 ├── app/m1.go, m1_convert.go     app    m1Wiring (components by area), authenticate/access selection, Result -> Principal
 └── config/m1.go                 leaf   the empty sections Auth, Authz, API, Repositories with markers
 ```
@@ -58,7 +58,7 @@ Rules that follow:
 - `authz` never imports package `auth` (only `auth/principal` and `auth/token`), and no domain package imports
   `httpserver`. The edge type and the domain type are converted at two places only: `principalFromResult`
   ([m1_convert.go](../../internal/app/m1_convert.go)) from `auth.Result` to `httpserver.Principal`, and
-  `v1.SubjectFrom` ([subject.go](../../internal/api/v1/subject.go)) from `httpserver.Principal` to `authz.Subject`.
+  `edge.SubjectFrom` ([subject.go](../../internal/api/edge/subject.go); `v1.SubjectFrom(ctx)` delegates) from `httpserver.Principal` and the listener's endpoint to `authz.Subject`.
   Extend both when a field is added to either side.
 - `httpserver.Principal` carries no administrator flag. Whether the caller holds a capability is decided by
   `authz` from role bindings, the credential's `Scope` and the principal `Kind` (break-glass holds `admin`
@@ -70,11 +70,11 @@ Rules that follow:
 
 | Type | File | Defined by contract | Owner of the implementation |
 |---|---|---|---|
-| `httpserver.Principal`, `Credential`, `Scope`, `ScopeGrant`, `GroupRef`, `PrincipalKind`, `AuthMethod`, `TokenType`, `AnonymousPrincipal()` | [principal.go](../../internal/httpserver/principal.go) | the value the chain stores; `Anonymous` stays, `Name` stays | WP1.2 fills it |
+| `httpserver.Principal`, `Credential` (its `Scope` is the `*scope.Scope` of [internal/auth/scope](../../internal/auth/scope/scope.go)), `GroupRef`, `PrincipalKind`, `AuthMethod`, `TokenType`, `AnonymousPrincipal()` | [principal.go](../../internal/httpserver/principal.go) | the value the chain stores; `Anonymous` stays, `Name` stays | WP1.2 fills it |
 | `auth.Authenticator`, `Result`, `Credential`, `EndpointRules`, `Method` | [auth.go](../../internal/auth/auth.go) | the authentication stage: credential sources and precedence of R-AUTH-001 to a `Result` or a 401 | WP1.2 (stage), WP1.9 (`EndpointRules` content, R-EP-010) |
 | `principal.Store`, `Principal`, `Kind`, `Status`, `GroupRef`, `ErrNotFound` | [principal.go](../../internal/auth/principal/principal.go) | read side of the principal table, cache-backed | WP1.2 |
 | `principal.Provisioner`, `LoginClaims`, `GroupClaimState`, `ErrUsernameTaken`, `ErrNotProvisioned`, `ErrUserDisabled`, `ErrUsernameInvalid` | same, [errors.go](../../internal/auth/principal/errors.go) | the seam login -> identity: just-in-time user, group sync, `user.*` events in its own transaction. `LoginClaims` carries the identity key (`Issuer`, `Subject`), the mapped values, `Groups` (trove group names the provider's rules mapped) and the provider policy (`GroupSync`, `ClaimState`, `KeepOnMissing`, `CreateGroups`, `JIT`, `SyncUsername`, `Source`); a refused sign-in is one of the four errors, which the login maps to its failure reasons (Q-AUTH-21, Q-AUTH-36) | WP1.2 implements, WP1.1 calls |
-| `token.Validator`, `Info`, `Scope`, `ScopeGrant`, `Type`, `Err*` | [token.go](../../internal/auth/token/token.go) | validation of a presented token (R-AUTH-023), scope as a ceiling | WP1.2 |
+| `token.Validator`, `Info`, `Scope` and `ScopeGrant` (aliases of the `scope` leaf), `Type`, `Err*` | [token.go](../../internal/auth/token/token.go) | validation of a presented token (R-AUTH-023), scope as a ceiling | WP1.2 |
 | `session.Validator`, `Info`, `ErrInvalid`, `ErrCSRF` | [session.go](../../internal/auth/session/session.go) | resolves the session cookie, applies CSRF (R-AUTH-012); `session.Problem` maps both errors to 401 `session_expired` and 403 `csrf_failed`. WP1.1 added `AuthMethod`, `ProviderID`, `AuthenticatedAt` and `AuthenticatedWithin` (R-AUTH-011) to `Info`. `app.m1.sessions` is the `*session.Store` (set by `wireSessions` before `wireIdentity`), whose `EndForPrincipal` ends a user's sessions on a caller's transaction | WP1.1 |
 | `authz.Authorizer` (`Decide`, `Readable`, `Require`), `Subject`, `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`, `RequestKind` | [authz.go](../../internal/authz/authz.go) | the decision point; action constants of R-AUTHZ-006, capability names of R-AUTHZ-010 | WP1.3 |
 | `repository.Repository`, `Class`, `Reader`, `KeyPattern`, `ReservedKeys()` | [repository.go](../../internal/repository/repository.go) | the read model and the lookup by key | WP1.4 |
@@ -96,7 +96,7 @@ request ─► chain stage 6 (httpserver.Chain.Authenticate)
        ─► handler
             management API: authorizingMux -> Server.decide -> v1.Access.Require(ctx, permission)
                               v1.NewAccess -> authz.Authorizer.Require(ctx, SubjectFrom(principal), permission)
-            files / formats: sub := v1.SubjectFrom(httpserver.PrincipalFrom(ctx))
+            files / formats: sub := edge.SubjectFrom(r)   (carries the listener's endpoint)
                               authz.Authorizer.Decide(ctx, sub, Coordinate{...}) -> Decision
                               Allow | DenyUnauthenticated 401 | DenyHidden 404 | DenyVisible 403 | DenyStale 503 | DenyEpochUnknown 412 (R-AUTHZ-016)
 ```
@@ -117,8 +117,8 @@ Changes WP1.3 made to the contracts above (see [authorization.md](authorization.
 |---|---|
 | `authz.Outcome` | `DenyEpochUnknown` (412 `authz_epoch_unknown`) appended after `DenyStale` |
 | `authz.Decision` | `Target` (the coordinate as the caller sent it) and `Sources` (policy names or `role:admin`) added; `Err()`, `Status()` and `Allowed()` are in [errors.go](../../internal/authz/errors.go) |
-| `authz.Authorizer` implementation | `*authz.Engine` also offers `Begin`/`DecideOn` (one index per request), `Check`, `Effective` and `RecordAllowed`; `authz.NotFound()` is the one 404 for hidden and missing resources |
-| `httpserver.Principal` | `MinEpoch int64`, the parsed `Trove-Authz-Min-Epoch` of an authenticated request (Q-AUTHZ-17); `v1.SubjectFrom` copies it |
+| `authz.Authorizer` implementation | `*authz.Engine` is also the `authz.Decider` (`Begin` and the `…On` forms: one index per request, Q-AUTHZ-159), and offers `Check`, `Effective` and `RecordAllowed`; `authz.NotFound()` is the one 404 for hidden and missing resources |
+| `httpserver.Principal` | `MinEpoch int64`, the parsed `Trove-Authz-Min-Epoch` of an authenticated request (Q-AUTHZ-17); `edge.SubjectFrom` copies it |
 | `v1.Access` | unchanged; `v1.ActionAccess` (`RequireAction`) is the optional second interface that `v1.NewAccess` implements for the action form |
 | `m1Wiring` | `authzEngine` and `anonymousAccess func() bool` (set by identity before the authz wiring; nil: off) in the authz marker |
 | `permission` strings of `Require` | capability names, and `role:<role>` for the role form |
@@ -308,7 +308,7 @@ Changes to the contracts above; the page of the area is [endpoints.md](endpoints
 |---|---|
 | `authz.Ceiling` | `Admits(x *Index, c Coordinate, a Action)`: the ceiling is evaluated on the index the request decides on, because the exposure rules are compiled into it. `ExposureCeiling` (built from the configured modes) is the implementation; `NoCeiling` stays |
 | `authz.Coordinate` | `Version` (a coordinate that names one version) and `Addressed` (the repository the client named when `Repository` is a consulted member) added; exposure is decided on `Addressed`, else `Repository` |
-| request endpoint | `authz.WithEndpoint(ctx, name)` and `authz.EndpointOf(ctx)`: stage 7 of every endpoint's chain sets it; `Decide`, `DecideOn`, `Readable` and `Check` take the endpoint from the context and ignore `Coordinate.Endpoint` when it is set. A content route needs no endpoint code of its own |
+| request endpoint | `authz.Subject.Endpoint`: `edge.SubjectFrom` copies the listener's endpoint (Q-EP-20 (b)); every decision reads the ceiling from the subject. `WithEndpoint`, `EndpointOf` and `Coordinate.Endpoint` are gone; a content route needs no endpoint code of its own, and only `internal/authz` and `internal/api/edge` may build a `Subject` (archtest R-EP-013) |
 | `authz.Engine` | the ceiling runs first in `evaluate`, before the repository lookup; the families `trove_exposure_hidden_total` and `trove_exposure_rules` are registered when the ceiling names endpoints; `authz.denied` fills the event's `Endpoint` column |
 | `authz.Snapshot` | `Exposure []q.EndpointsExposureBuildRow`, read in the build's snapshot |
 | `auth.EndpointRules` | `Refused func(*http.Request, Refusal)` and the type `Refusal` (`RefusedTokenType`, `RefusedTokenBinding`, `RefusedAnonymous`); the stage calls it for each endpoint refusal. `endpointRules` in `m1_convert.go` fills every field from the configuration |

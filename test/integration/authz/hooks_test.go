@@ -10,27 +10,10 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/formats"
 	_ "github.com/guided-traffic/trove/internal/formats/all" // registers every format
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/repository"
 )
-
-// testCatalog is the format catalog the composition root builds from the
-// registry (the part the model of these tests needs).
-type testCatalog struct{}
-
-func (testCatalog) Format(name string) (repository.FormatInfo, bool) {
-	f, ok := formats.Lookup(name)
-	if !ok {
-		return repository.FormatInfo{}, false
-	}
-	d := f.Descriptor()
-	info := repository.FormatInfo{Name: string(d.ID), Layout: d.Layout, ProtocolBasePath: d.ProtocolBasePath, PackageNames: d.PackageNames}
-	for _, c := range d.Classes {
-		info.Classes = append(info.Classes, repository.Class(c.String()))
-	}
-	return info, true
-}
 
 // TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch extends the
 // completeness test to the writes of the identity and repository areas that
@@ -53,7 +36,7 @@ func TestR_AUTHZ_028_IdentityAndRepositoryWritesAdvanceTheEpoch(t *testing.T) {
 		DB: principal.Joinable{DB: a.db}, Notifier: a.changes, Recorder: a.rec, Authz: authz.NewPrincipalHook(a.changes),
 	})
 	repos, err := repository.NewService(repository.Options{
-		Runner: a.db, Catalog: testCatalog{}, Recorder: a.rec, Notifier: a.changes, Hooks: authz.NewPolicyHook(a.changes),
+		Runner: a.db, Catalog: catalog.Default(), Recorder: a.rec, Notifier: a.changes, Hooks: authz.NewPolicyHook(a.changes),
 	})
 	if err != nil {
 		t.Fatal(err)

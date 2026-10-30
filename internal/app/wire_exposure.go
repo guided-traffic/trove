@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -28,7 +29,7 @@ func (a *App) exposureCeiling() *authz.ExposureCeiling {
 		for _, e := range a.cfg.Server.ResolveEndpoints() {
 			modes[e.Name] = e.Exposure
 		}
-		a.m1.exposureCeiling = authz.NewExposureCeiling(modes, nil)
+		a.m1.exposureCeiling = authz.NewExposureCeiling(modes, catalog.Default())
 	}
 	return a.m1.exposureCeiling
 }
@@ -111,14 +112,14 @@ func (a *App) wireEndpointLimits(ls *cluster.LimiterSet) {
 	}
 }
 
-// endpointStage is stage 7 of an endpoint's chain (R-ARCH-005): it puts the
-// endpoint's name into the request context for the decision point, so every
-// Decide and Readable of the request applies that endpoint's exposure whatever
-// a coordinate names (R-EP-013, R-EP-014); then the endpoint's rate-limit class
-// (R-EP-015); then the stage of the management API (CORS, the classes of
-// R-API-016). The parts are read when the chain is built, after step 8.
+// endpointStage is stage 7 of an endpoint's chain (R-ARCH-005): the endpoint's
+// rate-limit class (R-EP-015), then the stage of the management API (CORS, the
+// classes of R-API-016). It does not hand the endpoint to the decision point:
+// the subject of a request carries it from the listener's endpoint, which the
+// chain stored at step 1 (edge.SubjectFrom, R-EP-013, Q-EP-20). The parts are
+// read when the chain is built, after step 8.
 func (a *App) endpointStage(rt *endpointRuntime) func(http.Handler) http.Handler {
-	api, limit, name := a.m1.rateLimit, a.m1.endpointLimits[rt.cfg.Name], rt.cfg.Name
+	api, limit := a.m1.rateLimit, a.m1.endpointLimits[rt.cfg.Name]
 	return func(next http.Handler) http.Handler {
 		h := next
 		if api != nil {
@@ -128,7 +129,7 @@ func (a *App) endpointStage(rt *endpointRuntime) func(http.Handler) http.Handler
 			h = limit(h)
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(w, r.WithContext(withRequestPath(authz.WithEndpoint(r.Context(), name), r.URL.Path)))
+			h.ServeHTTP(w, r.WithContext(withRequestPath(r.Context(), r.URL.Path)))
 		})
 	}
 }

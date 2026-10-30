@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -81,8 +82,10 @@ func (m multiHooks) OnDelete(ctx context.Context, tx meta.Tx, c Caller, r Reposi
 
 // Options configure [NewService].
 type Options struct {
-	Runner   meta.Runner
-	Catalog  FormatCatalog
+	Runner meta.Runner
+	// Catalog is the format catalog the model validates against (R-REPO-003);
+	// nil is catalog.Default.
+	Catalog  *catalog.Registry
 	Recorder audit.Recorder
 	Notifier Notifier
 	Jobs     JobEnqueuer
@@ -102,7 +105,7 @@ type Options struct {
 // uses the snapshot of [Reader].
 type Service struct {
 	run   meta.Runner
-	cat   FormatCatalog
+	cat   *catalog.Registry
 	rec   audit.Recorder
 	notif Notifier
 	jobs  JobEnqueuer
@@ -116,8 +119,6 @@ func NewService(o Options) (*Service, error) {
 	switch {
 	case o.Runner == nil:
 		return nil, errors.New("repository: no transaction runner")
-	case o.Catalog == nil:
-		return nil, errors.New("repository: no format catalog")
 	case o.Notifier == nil:
 		return nil, errors.New("repository: no change notifier")
 	}
@@ -131,16 +132,19 @@ func NewService(o Options) (*Service, error) {
 		o.DeleteBatch = 5000
 	}
 	return &Service{
-		run: o.Runner, cat: o.Catalog, rec: o.Recorder, notif: o.Notifier, jobs: o.Jobs,
+		run: o.Runner, cat: catalog.Or(o.Catalog), rec: o.Recorder, notif: o.Notifier, jobs: o.Jobs,
 		hooks: o.Hooks, log: o.Log, batch: o.DeleteBatch,
 	}, nil
 }
 
 // Caller is who acts and from where; it goes into the audit event and, as the
-// principal id, into created_by and updated_by.
+// principal id, into created_by and updated_by. Endpoint is the endpoint the
+// request arrived on, for the events a hook records on the way (the audit
+// recorder fills the column from the event alone); empty outside a request.
 type Caller struct {
-	Actor  audit.Actor
-	Source audit.Source
+	Actor    audit.Actor
+	Source   audit.Source
+	Endpoint string
 }
 
 // principalID returns the actor id when it is a uuid and "" otherwise (a break-glass

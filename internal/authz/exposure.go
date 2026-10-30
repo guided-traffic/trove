@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -85,42 +86,6 @@ type ExposureRule struct {
 	Warnings []string
 }
 
-// ExposureVersioning is the version part of a format's exposure adapter
-// (R-EP-018): the format's range syntax and its notion of a pre-release.
-type ExposureVersioning interface {
-	// ValidateRange checks one range in the format's native syntax.
-	ValidateRange(expr string) error
-	// Prerelease reports whether a normalized version is a pre-release; ok is
-	// false for a string that is not a version of the format.
-	Prerelease(version string) (pre, ok bool)
-	// InRange reports whether a normalized version lies in a validated range.
-	InRange(version, expr string) bool
-}
-
-// ExposureFormat says what exposure rules may narrow for the repositories of one
-// format (R-EP-012, R-EP-018). The zero value is a format without exposure
-// support: an endpoint with exposure rules exposes nothing of it and a rule for
-// one of its repositories is refused (fail closed).
-type ExposureFormat struct {
-	Exposable bool
-	// Packages, Versions and Tags say whether the format has package names,
-	// versions and tags; a rule that narrows a dimension the format lacks is
-	// refused with 422 dimension_not_supported.
-	Packages, Versions, Tags bool
-	// Versioning parses versions and ranges; required when Versions is true.
-	Versioning ExposureVersioning
-}
-
-// DefaultExposureFormats is the format support of this build: generic
-// repositories are exposed through paths alone (R-EP-014); a format reaches the
-// list when its page states its filter (R-EP-018).
-func DefaultExposureFormats(format string) ExposureFormat {
-	if format == repository.FormatGeneric {
-		return ExposureFormat{Exposable: true}
-	}
-	return ExposureFormat{}
-}
-
 // ruleDims is the stored form of a rule's dimensions, one JSON column each.
 type ruleDims struct {
 	Packages    PatternLists
@@ -183,22 +148,22 @@ func decodeDims(packages, paths, versions string, prereleases bool, tags string)
 	return d, nil
 }
 
-// compileRule compiles the dimensions of one rule with the case rule of the
+// compileRule compiles the dimensions of one rule with the name rule of the
 // repository's format (R-AUTHZ-005).
-func compileRule(id, name string, revision int64, enabled bool, d ruleDims, fold bool) (*compiledRule, error) {
+func compileRule(id, name string, revision int64, enabled bool, d ruleDims, names catalog.Names) (*compiledRule, error) {
 	r := &compiledRule{id: id, name: name, revision: revision, enabled: enabled, prereleases: d.Prereleases}
 	var err error
-	if r.packages, err = compileSet(dimPackage, d.Packages.Include, d.Packages.Exclude, fold); err != nil {
+	if r.packages, err = compileSet(dimPackage, d.Packages.Include, d.Packages.Exclude, names); err != nil {
 		return nil, fmt.Errorf("packages: %w", err)
 	}
-	if r.paths, err = compileSet(dimPath, d.Paths.Include, d.Paths.Exclude, false); err != nil {
+	if r.paths, err = compileSet(dimPath, d.Paths.Include, d.Paths.Exclude, nil); err != nil {
 		return nil, fmt.Errorf("paths: %w", err)
 	}
 	// Versions and tags are names: the package-name glob without case folding.
-	if r.versions, err = compileSet(dimPackage, d.Versions.Include, d.Versions.Exclude, false); err != nil {
+	if r.versions, err = compileSet(dimPackage, d.Versions.Include, d.Versions.Exclude, nil); err != nil {
 		return nil, fmt.Errorf("versions: %w", err)
 	}
-	if r.tags, err = compileSet(dimPackage, d.DistTags.Include, d.DistTags.Exclude, false); err != nil {
+	if r.tags, err = compileSet(dimPackage, d.DistTags.Include, d.DistTags.Exclude, nil); err != nil {
 		return nil, fmt.Errorf("distTags: %w", err)
 	}
 	if d.Versions.Range != nil {
@@ -212,7 +177,7 @@ func compileRule(id, name string, revision int64, enabled bool, d ruleDims, fold
 // index does not know (deleted since) is left out; a rule that does not compile
 // passed validation when written, so this signals a corrupt row: it is logged and
 // left out, which only hides content.
-func buildExposure(rows []q.EndpointsExposureBuildRow, byID map[int64]*repoInfo, log *slog.Logger) map[string]*endpointExposure {
+func buildExposure(rows []q.EndpointsExposureBuildRow, byID map[int64]*repoInfo, reg *catalog.Registry, log *slog.Logger) map[string]*endpointExposure {
 	out := map[string]*endpointExposure{}
 	for _, row := range rows {
 		repo := byID[row.RepoID]
@@ -222,7 +187,7 @@ func buildExposure(rows []q.EndpointsExposureBuildRow, byID map[int64]*repoInfo,
 		d, err := decodeDims(row.Packages, row.Paths, row.Versions, row.Prereleases, row.DistTags)
 		var cr *compiledRule
 		if err == nil {
-			cr, err = compileRule(row.ID, row.Name, row.Revision, row.Enabled, d, foldFor(repo.Format))
+			cr, err = compileRule(row.ID, row.Name, row.Revision, row.Enabled, d, namesIn(reg, repo.Format))
 		}
 		if err != nil {
 			log.Error("authz: exposure rule skipped, it does not compile", "endpoint", row.Endpoint, "rule", row.Name, "err", err)
@@ -286,7 +251,7 @@ func reasonOfStage(s int) string {
 // package, no path) passes every pattern: listed items are filtered per item
 // (R-EP-012). An item with a version needs the format's versioning; without it
 // the version cannot be judged and the rule refuses (fail closed).
-func (r *compiledRule) evaluate(it exposureItem, v ExposureVersioning) int {
+func (r *compiledRule) evaluate(it exposureItem, v catalog.Versioning) int {
 	if it.pkg == "" && it.path == "" {
 		return stageExposed
 	}
@@ -320,7 +285,7 @@ func (r *compiledRule) evaluate(it exposureItem, v ExposureVersioning) int {
 
 // admits reports whether at least one enabled rule of the list admits the item:
 // rules add up like grants, and an exclude wins inside a rule only (R-EP-012).
-func admitsItem(rules []*compiledRule, it exposureItem, v ExposureVersioning) bool {
+func admitsItem(rules []*compiledRule, it exposureItem, v catalog.Versioning) bool {
 	for _, r := range rules {
 		if r.enabled && r.evaluate(it, v) == stageExposed {
 			return true
@@ -332,7 +297,7 @@ func admitsItem(rules []*compiledRule, it exposureItem, v ExposureVersioning) bo
 // explainItem says why an item is exposed or hidden: the first rule by name that
 // exposes it, else rule_disabled when a disabled rule would, else the reason of
 // the rule that came furthest (the first by name among equals), else no_rule.
-func explainItem(rules []*compiledRule, it exposureItem, v ExposureVersioning) (exposed bool, rule, reason string) {
+func explainItem(rules []*compiledRule, it exposureItem, v catalog.Versioning) (exposed bool, rule, reason string) {
 	if len(rules) == 0 {
 		return false, "", ExposureNoRule
 	}
@@ -378,25 +343,33 @@ func fingerprint(mode string, rules []*compiledRule) string {
 // admits reads that an enabled rule of the addressed repository admits and no
 // write (Q-EP-9). An endpoint name the configuration does not hold is treated as
 // mode rules (fail closed); a coordinate without an endpoint (a job, a command)
-// has no ceiling.
+// has no ceiling. What a format lets a rule narrow is the format's catalog entry
+// ([catalog.Exposure]); a format the catalog does not know is not exposable.
 type ExposureCeiling struct {
-	modes   map[string]string
-	formats func(string) ExposureFormat
+	modes map[string]string
+	reg   *catalog.Registry
 }
 
 // NewExposureCeiling builds the ceiling from the configured endpoints' modes
-// (name to "all" or "rules") and the format support; nil formats means
-// DefaultExposureFormats.
-func NewExposureCeiling(modes map[string]string, formats func(string) ExposureFormat) *ExposureCeiling {
-	if formats == nil {
-		formats = DefaultExposureFormats
-	}
+// (name to "all" or "rules") and the format catalog; nil reg means
+// catalog.Default.
+func NewExposureCeiling(modes map[string]string, reg *catalog.Registry) *ExposureCeiling {
 	m := make(map[string]string, len(modes))
 	for k, v := range modes {
 		m[k] = v
 	}
-	return &ExposureCeiling{modes: m, formats: formats}
+	return &ExposureCeiling{modes: m, reg: catalog.Or(reg)}
 }
+
+// exposure returns what rules may narrow for a format; the zero value (not
+// exposable) for a format the catalog does not know.
+func (e *ExposureCeiling) exposure(format string) catalog.Exposure {
+	en, _ := e.reg.Lookup(format)
+	return en.Exposure
+}
+
+// names returns the name rule of a format, nil when it has none.
+func (e *ExposureCeiling) names(format string) catalog.Names { return namesIn(e.reg, format) }
 
 // Mode returns the exposure mode of an endpoint; an endpoint the configuration
 // does not hold is mode rules.
@@ -419,8 +392,8 @@ func (e *ExposureCeiling) Endpoints() []string {
 }
 
 // Admits implements [Ceiling].
-func (e *ExposureCeiling) Admits(x *Index, c Coordinate, a Action) CeilingVerdict {
-	if c.Endpoint == "" || e.Mode(c.Endpoint) == ExposureModeAll {
+func (e *ExposureCeiling) Admits(x *Index, endpoint string, c Coordinate, a Action) CeilingVerdict {
+	if endpoint == "" || e.Mode(endpoint) == ExposureModeAll {
 		return CeilingAdmits
 	}
 	if a != Read {
@@ -434,11 +407,11 @@ func (e *ExposureCeiling) Admits(x *Index, c Coordinate, a Action) CeilingVerdic
 	if r == nil {
 		return CeilingHidesRead
 	}
-	f := e.formats(r.Format)
+	f := e.exposure(r.Format)
 	if !f.Exposable {
 		return CeilingHidesRead
 	}
-	ee := x.exposure[c.Endpoint]
+	ee := x.exposure[endpoint]
 	if ee == nil {
 		return CeilingHidesRead
 	}

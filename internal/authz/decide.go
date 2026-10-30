@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
-	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -67,15 +68,15 @@ func targetOf(c Coordinate) string {
 // Decide implements [Authorizer]: it decides every action of the coordinate on
 // the compiled index and refuses with the outcome of R-AUTHZ-016.
 //
-// Every call takes the installed index at that moment. A request that decides
-// several coordinates (the members of a virtual repository, a copy) calls
-// [Engine.Begin] once and [Engine.DecideOn] for each coordinate, so that all of
-// them are decided on one index (R-AUTHZ-015 `index.ForRequest`).
+// Every call takes the installed index at that moment, so it is for a job or a
+// command. A request that decides several coordinates (the members of a virtual
+// repository, a copy) calls [Engine.Begin] once and [Engine.DecideOn] for each
+// coordinate, so that all of them are decided on one index (R-AUTHZ-015
+// `index.ForRequest`).
 func (e *Engine) Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
-	c = onEndpoint(ctx, c)
 	idx, refused := e.begin(ctx, sub, c.Repository)
 	if refused != nil {
-		e.count(*refused, c)
+		e.count(*refused, sub, c)
 		e.audit(ctx, sub, c, *refused)
 		return *refused
 	}
@@ -100,7 +101,7 @@ func (e *Engine) Begin(ctx context.Context, sub Subject, keys ...string) (*Index
 // known to the index (R-ARCH-011 step 2, R-API-052), then the index is taken.
 func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index, *Decision) {
 	for _, key := range keys {
-		if err := e.Know(ctx, key); err != nil {
+		if err := e.know(ctx, key); err != nil {
 			d := Decision{Outcome: DenyStale, Reason: ReasonStale}
 			return nil, &d
 		}
@@ -108,26 +109,44 @@ func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index
 	return e.forRequest(ctx, sub)
 }
 
+// Know implements [Decider]: a request that learns a repository key after Begin
+// (the member of a virtual repository, the target of a copy) has the index
+// brought up to it when the index it decides on does not hold the key, and
+// decides everything after on the index returned. An index that holds the key
+// is returned as it is.
+func (e *Engine) Know(ctx context.Context, idx *Index, sub Subject, key string) (*Index, error) {
+	if idx != nil && idx.repo(key) != nil {
+		return idx, nil
+	}
+	if err := e.know(ctx, key); err != nil {
+		return nil, Decision{Outcome: DenyStale, Reason: ReasonStale}.Err()
+	}
+	next, refused := e.forRequest(ctx, sub)
+	if refused != nil {
+		return nil, refused.Err()
+	}
+	return next, nil
+}
+
 // DecideOn decides a coordinate on the index Begin returned. Requests in flight
 // finish on the index they started with, so a swap of the installed index never
 // changes the decisions of one request (R-AUTHZ-028).
 func (e *Engine) DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
-	c = onEndpoint(ctx, c)
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
-		e.count(*refused, c)
+		e.count(*refused, sub, c)
 		e.audit(ctx, sub, c, *refused)
 		return *refused
 	}
 	start := time.Now()
 	d := e.evaluate(idx, sub, c)
 	e.m.eval.Observe(time.Since(start).Seconds())
-	e.count(d, c)
+	e.count(d, sub, c)
 	e.audit(ctx, sub, c, d)
 	return d
 }
 
-func (e *Engine) count(d Decision, c Coordinate) {
+func (e *Engine) count(d Decision, sub Subject, c Coordinate) {
 	outcome := "deny"
 	if d.Outcome == Allow {
 		outcome = "allow"
@@ -138,7 +157,7 @@ func (e *Engine) count(d Decision, c Coordinate) {
 	}
 	e.m.decisions.WithLabelValues(outcome, d.Reason, action).Inc()
 	if d.Reason == ReasonExposure || d.Reason == ReasonEndpointReadOnly {
-		e.m.exposureHidden(c.Endpoint, "request")
+		e.m.exposureHidden(sub.Endpoint, "request")
 	}
 }
 
@@ -239,7 +258,7 @@ func (e *Engine) capabilities(idx *Index, sub Subject) capSet {
 // scopeAdmits applies the repository part of a token scope as a ceiling
 // (R-AUTHZ-013): inherit admits everything; otherwise an element must match the
 // coordinate and list the action. A malformed element admits nothing.
-func (e *Engine) scopeAdmits(sc *token.Scope, a Action, r *repoInfo, repoLevel bool, pkg, path string) bool {
+func (e *Engine) scopeAdmits(sc *scope.Scope, a Action, r *repoInfo, repoLevel bool, pkg, path string) bool {
 	if sc == nil || sc.Inherit {
 		return true
 	}
@@ -251,11 +270,11 @@ func (e *Engine) scopeAdmits(sc *token.Scope, a Action, r *repoInfo, repoLevel b
 		if !e.compile.selectorsMatch(el.Repositories, r.repoView) {
 			continue
 		}
-		pkgs, err := e.compile.set(dimPackage, el.Packages.Include, el.Packages.Exclude, foldFor(r.Format))
+		pkgs, err := e.compile.set(dimPackage, el.Packages.Include, el.Packages.Exclude, r.Format, e.namesOf(r.Format))
 		if err != nil {
 			continue
 		}
-		paths, err := e.compile.set(dimPath, el.Paths.Include, el.Paths.Exclude, false)
+		paths, err := e.compile.set(dimPath, el.Paths.Include, el.Paths.Exclude, "", nil)
 		if err != nil {
 			continue
 		}
@@ -358,7 +377,7 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 	target := r
 	var sources []string
 	if r.Class == repository.Virtual {
-		ok, reason, by := e.allowedAction(st, Read, r, Coordinate{Repository: c.Repository, Endpoint: c.Endpoint, Addressed: c.Addressed})
+		ok, reason, by := e.allowedAction(st, Read, r, Coordinate{Repository: c.Repository, Addressed: c.Addressed})
 		if !ok {
 			if reason == ReasonNoGrant || reason == ReasonScope {
 				reason = ReasonVirtualGate
@@ -415,12 +434,12 @@ func (e *Engine) ceilingRefuses(idx *Index, sub Subject, c Coordinate, actions [
 		return Decision{}, false
 	}
 	for _, a := range actions {
-		if a != Read && cl.Admits(idx, c, a) == CeilingReadOnly {
+		if a != Read && cl.Admits(idx, sub.Endpoint, c, a) == CeilingReadOnly {
 			return e.refusal(sub, c, nil, ReasonEndpointReadOnly, a, epoch), true
 		}
 	}
 	for _, a := range actions {
-		switch cl.Admits(idx, c, a) {
+		switch cl.Admits(idx, sub.Endpoint, c, a) {
 		case CeilingAdmits:
 		case CeilingReadOnly:
 			return e.refusal(sub, c, nil, ReasonEndpointReadOnly, a, epoch), true
@@ -495,33 +514,38 @@ func dedupStrings(in []string) []string {
 }
 
 // Readable implements [Authorizer]: the keys the subject may read, in the order
-// given (R-AUTHZ-016: a listing contains only what the subject may read). It
-// decides at repository level, so patterns of a grant do not narrow it
-// (R-AUTHZ-005). On an endpoint with exposure rules (the endpoint of ctx, see
-// [WithEndpoint]) a repository without an enabled rule is left out as well
-// (R-EP-014). A refusal to decide (503, 412) is returned as an error.
+// given (R-AUTHZ-016: a listing contains only what the subject may read), on the
+// installed index. A refusal to decide (503, 412) is returned as an error.
 func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]string, error) {
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
 	}
-	sub, refused = e.withAnonymous(ctx, sub)
+	return e.ReadableOn(ctx, idx, sub, keys)
+}
+
+// ReadableOn implements [Decider]. It decides at repository level, so patterns
+// of a grant do not narrow it (R-AUTHZ-005). On an endpoint with exposure rules
+// (the subject's endpoint) a repository without an enabled rule is left out as
+// well (R-EP-014). An anonymous subject while anonymous access is off reads
+// nothing; a switch that cannot be read is a refusal to decide (503).
+func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []string) ([]string, error) {
+	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
 	}
 	if sub.Anonymous && sub.anon != anonOn {
 		return nil, nil
 	}
-	endpoint := EndpointOf(ctx)
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
-		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}, Endpoint: endpoint})
+		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
 		switch {
 		case d.Outcome == Allow:
 			out = append(out, k)
 		case d.Reason == ReasonExposure:
 			// An item removed from a listing by exposure (R-EP-014, R-EP-009).
-			e.m.exposureHidden(endpoint, "item")
+			e.m.exposureHidden(sub.Endpoint, "item")
 		}
 	}
 	return out, nil
@@ -541,6 +565,12 @@ func (e *Engine) Require(ctx context.Context, sub Subject, permission string) er
 		e.auditCapability(ctx, sub, permission, *refused)
 		return refused.Err()
 	}
+	return e.RequireOn(ctx, idx, sub, permission)
+}
+
+// RequireOn implements [Decider]: [Engine.Require] on the index the request
+// decides on.
+func (e *Engine) RequireOn(ctx context.Context, idx *Index, sub Subject, permission string) error {
 	start := time.Now()
 	d := e.requireOn(idx, sub, permission)
 	e.m.eval.Observe(time.Since(start).Seconds())
@@ -565,7 +595,13 @@ func (e *Engine) Holds(ctx context.Context, sub Subject, permission string) (boo
 	if refused != nil {
 		return false, refused.Err()
 	}
-	return e.requireOn(idx, sub, permission).Outcome == Allow, nil
+	return e.HoldsOn(idx, sub, permission), nil
+}
+
+// HoldsOn implements [Decider]: [Engine.Holds] on the index the request decides
+// on.
+func (e *Engine) HoldsOn(idx *Index, sub Subject, permission string) bool {
+	return e.requireOn(idx, sub, permission).Outcome == Allow
 }
 
 func (e *Engine) requireOn(idx *Index, sub Subject, permission string) Decision {
@@ -613,31 +649,54 @@ const MaxChecks = 100
 // asked about itself, and the server enforces every operation regardless. The
 // second result is the epoch of the index that answered.
 func (e *Engine) Check(ctx context.Context, sub Subject, items []CheckItem) ([]bool, int64, error) {
-	if sub.Anonymous {
-		return nil, 0, Unauthenticated()
-	}
-	if len(items) > MaxChecks {
-		return nil, 0, errs.E(errs.Invalid, errs.CodeValidation, fmt.Sprintf("A call holds at most %d checks.", MaxChecks),
-			errs.WithFields(errs.FieldError{Pointer: "/checks", Code: "too_many", Detail: fmt.Sprintf("at most %d", MaxChecks)}))
+	if err := checkInput(sub, items); err != nil {
+		return nil, 0, err
 	}
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
 		return nil, 0, refused.Err()
 	}
+	out, err := e.CheckOn(idx, sub, items)
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, idx.label.AuthzEpoch, nil
+}
+
+// checkInput refuses what no index could answer: an anonymous caller and more
+// checks than a call may carry.
+func checkInput(sub Subject, items []CheckItem) error {
+	if sub.Anonymous {
+		return Unauthenticated()
+	}
+	if len(items) > MaxChecks {
+		return errs.E(errs.Invalid, errs.CodeValidation, fmt.Sprintf("A call holds at most %d checks.", MaxChecks),
+			errs.WithFields(errs.FieldError{Pointer: "/checks", Code: "too_many", Detail: fmt.Sprintf("at most %d", MaxChecks)}))
+	}
+	return nil
+}
+
+// CheckOn implements [Decider]: [Engine.Check] on the index the request decides
+// on, under the ceiling of the subject's endpoint. The epoch of the answer is
+// idx.Epoch().
+func (e *Engine) CheckOn(idx *Index, sub Subject, items []CheckItem) ([]bool, error) {
+	if err := checkInput(sub, items); err != nil {
+		return nil, err
+	}
 	out := make([]bool, len(items))
 	for i, it := range items {
 		if !it.Action.Valid() {
-			return nil, 0, errs.E(errs.Invalid, errs.CodeValidation, fmt.Sprintf("%q is not a repository action.", it.Action),
+			return nil, errs.E(errs.Invalid, errs.CodeValidation, fmt.Sprintf("%q is not a repository action.", it.Action),
 				errs.WithFields(errs.FieldError{Pointer: fmt.Sprintf("/checks/%d/action", i), Code: errs.CodeInvalidAction, Detail: "not one of the six actions"}))
 		}
 		kind := KindMetadata
 		if it.Action != Read {
 			kind = KindWrite
 		}
-		d := e.evaluate(idx, sub, onEndpoint(ctx, Coordinate{Repository: it.Repository, Package: it.Package, Path: it.Path, Kind: kind, Actions: []Action{it.Action}}))
+		d := e.evaluate(idx, sub, Coordinate{Repository: it.Repository, Package: it.Package, Path: it.Path, Kind: kind, Actions: []Action{it.Action}})
 		out[i] = d.Outcome == Allow
 	}
-	return out, idx.label.AuthzEpoch, nil
+	return out, nil
 }
 
 // Effective returns the capabilities, roles and principal set of the subject
@@ -726,19 +785,24 @@ func (c *patternCache) selectorsMatch(texts []string, r repoView) bool {
 	return false
 }
 
-// set compiles one dimension's lists, from the cache when seen before.
-func (c *patternCache) set(dim dimension, include, exclude []string, fold bool) (globSet, error) {
+// set compiles one dimension's lists, from the cache when seen before. format
+// names the format whose name rule (names) folds the package dimension; it is
+// part of the cache key, because two formats fold differently.
+func (c *patternCache) set(dim dimension, include, exclude []string, format string, names catalog.Names) (globSet, error) {
 	if len(include) == 0 && len(exclude) == 0 {
 		return globSet{}, nil
 	}
-	key := fmt.Sprintf("%d|%t|%q|%q", dim, fold, include, exclude)
+	if names == nil {
+		format = ""
+	}
+	key := fmt.Sprintf("%d|%s|%q|%q", dim, format, include, exclude)
 	c.mu.RLock()
 	g := c.res[key]
 	c.mu.RUnlock()
 	if g != nil {
 		return *g, nil
 	}
-	got, err := compileSet(dim, include, exclude, fold)
+	got, err := compileSet(dim, include, exclude, names)
 	if err != nil {
 		return globSet{}, err
 	}

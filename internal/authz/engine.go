@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -62,6 +63,10 @@ type Options struct {
 	// Repositories is the snapshot reader the decision point asks for a repository
 	// its index does not hold yet ([Engine.Know]); nil asks nobody.
 	Repositories repository.Reader
+	// Formats is the format catalog: the name rule of a format folds the names and
+	// patterns of its repositories (R-AUTHZ-005). Nil is catalog.Default. It is
+	// the registry the Ceiling reads as well.
+	Formats *catalog.Registry
 	// Recorder records the audit events; nil discards them.
 	Recorder audit.Recorder
 	// Replica names this replica in audit details.
@@ -70,8 +75,9 @@ type Options struct {
 	Metrics prometheus.Registerer
 }
 
-// Engine is the decision point of one replica: it implements [Authorizer] on a
-// compiled grant index and keeps the index current through the change log.
+// Engine is the decision point of one replica: it implements [Decider] and
+// [Authorizer] on a compiled grant index and keeps the index current through the
+// change log.
 type Engine struct {
 	o   Options
 	log *slog.Logger
@@ -105,7 +111,10 @@ type Engine struct {
 	once   sync.Once
 }
 
-var _ Authorizer = (*Engine)(nil)
+var (
+	_ Decider    = (*Engine)(nil)
+	_ Authorizer = (*Engine)(nil)
+)
 
 // watchInterval is how often the engine compares the change log's applied
 // epochs with its index. The comparison reads memory only.
@@ -129,6 +138,7 @@ func New(o Options) (*Engine, error) {
 	if o.RetryBudget <= 0 {
 		o.RetryBudget = 30 * time.Second
 	}
+	o.Formats = catalog.Or(o.Formats)
 	if o.EpochPollInterval > 0 && o.Config.Cache.MaxStaleness < config.MinAuthzStaleness*o.EpochPollInterval {
 		return nil, fmt.Errorf("authz.cache.max_staleness (%s) is below %d times cluster.epoch_poll_interval (%s)",
 			o.Config.Cache.MaxStaleness, config.MinAuthzStaleness, o.EpochPollInterval)
@@ -161,6 +171,9 @@ func New(o Options) (*Engine, error) {
 	return e, nil
 }
 
+// namesOf returns the name rule of a format, nil when it has none.
+func (e *Engine) namesOf(format string) catalog.Names { return namesIn(e.o.Formats, format) }
+
 // Name implements the composition root's Component.
 func (e *Engine) Name() string { return "authz" }
 
@@ -176,7 +189,7 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.cancel()
 		return fmt.Errorf("building the grant index: %w", err)
 	}
-	e.install(BuildIndex(snap, e.log), false, TriggerStartup, time.Since(start))
+	e.install(BuildIndex(snap, e.o.Formats, e.log), false, TriggerStartup, time.Since(start))
 	e.o.Changes.AddListener(e)
 	e.wg.Add(3)
 	go e.buildLoop()
@@ -330,7 +343,7 @@ func (e *Engine) buildOnce(trigger string, read Label) {
 		return
 	}
 	e.fails.Store(0)
-	e.install(BuildIndex(snap, e.log), needFlush, trigger, time.Since(start))
+	e.install(BuildIndex(snap, e.o.Formats, e.log), needFlush, trigger, time.Since(start))
 }
 
 // install swaps a finished index in. A build is installed only if its epochs are
@@ -477,7 +490,7 @@ func (e *Engine) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	e.install(BuildIndex(snap, e.log), true, TriggerMinEpoch, time.Since(start))
+	e.install(BuildIndex(snap, e.o.Formats, e.log), true, TriggerMinEpoch, time.Since(start))
 	return nil
 }
 

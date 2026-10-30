@@ -13,13 +13,13 @@ import (
 // pointer or sync.Map type is permitted (R-ARCH-032): the caches and the
 // cluster state, the observability primitives, and the registries that are
 // filled once at start-up and frozen: formats, jobs, errs, secrets, the
-// revision registry of meta, the table registry of backup and the event
-// registry of audit. The match is the exact package, never its subtree: a subpackage such as internal/meta/postgres
+// revision registry of meta, the table registry of backup, the event
+// registry of audit and the format catalog. The match is the exact package, never its subtree: a subpackage such as internal/meta/postgres
 // or a format package has to earn its own row.
 func statePackages() []string {
 	return []string{
 		"internal/cache", "internal/cluster", "internal/observability",
-		"internal/formats", "internal/jobs", "internal/errs", "internal/secrets",
+		"internal/formats", "internal/formats/catalog", "internal/jobs", "internal/errs", "internal/secrets",
 		"internal/meta", "internal/backup/tables", "internal/audit",
 	}
 }

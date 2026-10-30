@@ -95,8 +95,10 @@ One fact per line; each links to the page that explains it.
   the lockout or the rotation hold applies ([login.md](login.md), Q-AUTH-171 and Q-AUTH-14).
 - **Token request:** a `Bearer` value `trv_pat_…` or `trv_sat_…` is hashed and looked up; the auth caches answer
   while the change log is fresh; the scope is intersected with the subject's permissions ([identity.md](identity.md)).
-- **Decision:** the endpoint and the action go to `authz`, which denies by default; the grant index is per replica and
-  a request may name the epoch it must see with `Trove-Authz-Min-Epoch` ([authorization.md](authorization.md)).
+- **Decision:** the subject (who, and the endpoint the listener accepted the request on, which fixes the exposure ceiling)
+  and the action go to `authz`, which denies by default; the request takes the grant index once and asks every question
+  of it; the index is per replica and a request may name the epoch it must see with `Trove-Authz-Min-Epoch`
+  ([authorization.md](authorization.md)).
 - **Raw upload:** `PUT /files/{repoKey}/{path}` is decided before the body is read; the body is spooled and digested,
   then the commit writes the item ([files.md](files.md)).
 
@@ -116,14 +118,15 @@ trove/
 ├── api/openapi.yaml          # OpenAPI 3.1 source of truth; go generate copies it into internal/api/v1
 ├── internal/
 │   ├── app/                  # composition root: components per role, start and stop order
+│   ├── api/edge/             # request-to-domain conversions every entry point shares: SubjectFrom (with the endpoint), Access (the request's index)
 │   ├── api/rawfiles/         # the /files/ handler (edge of internal/files)
 │   ├── api/v1/               # management API handlers and the conventions (paging, ETag, merge patch, idempotency, CORS,
 │   │                         # rate limits); gen/ is generated (oapi-codegen); apitest/ validates responses against the document
 │   ├── archtest/             # layer, import, state and source rules, tested on fixtures in testdata/
 │   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
 │   ├── auth/                 # the authentication stage and the failed-credential throttle; principal/ (users, groups,
-│   │                         # service accounts, provisioner), token/ (format, store, scopes, lifetime, revocation), session/ (UI sessions, CSRF, the
-│   │                         # session cache), oidc/ (providers, login flow, callback, break-glass)
+│   │                         # service accounts, provisioner), token/ (format, store, lifetime, revocation), scope/ (the scope value type, a leaf),
+│   │                         # session/ (UI sessions, CSRF, the session cache), oidc/ (providers, login flow, callback, break-glass)
 │   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
@@ -142,7 +145,8 @@ trove/
 │   ├── outbound/             # the one HTTP client factory and the egress address policy
 │   ├── repository/           # repository model: service, snapshot reader, validation, patterns, deletion job
 │   ├── files/                # raw transfer service: deploy, download, folders, items, deletes, statistics
-│   ├── formats/              # format contract and registry; generic/ (raw files), all/ registers every format
+│   ├── formats/              # format contract and registry; catalog/ (the facts of every format, a leaf), generic/ (raw files),
+│   │                         # all/ registers every format
 │   ├── secrets/              # key ring and sealed-column registry
 │   ├── tools/coverage/       # the requirement coverage generator (docs/coverage)
 │   └── webui/                # go:embed of the Angular build; dist/index.html is the committed placeholder

@@ -86,7 +86,7 @@ func parseSelector(s string) (selector, error) {
 		if !keyGlobRE.MatchString(base) {
 			return selector{}, fmt.Errorf("selector %q is not a repository key pattern", s)
 		}
-		re, err := compileName(strings.ReplaceAll(base, "**", "*"), false)
+		re, err := compileName(strings.ReplaceAll(base, "**", "*"), nil)
 		if err != nil {
 			return selector{}, fmt.Errorf("selector %q: %w", s, err)
 		}

@@ -859,17 +859,18 @@ state; it reads the compiled grant index of R-AUTHZ-028 in the replica's memory,
 Ownership rows are read inside the write transaction (R-AUTHZ-018).
 
 ```go
-// Decide runs for every coordinate of a request; the request proceeds only if every
-// coordinate is allowed. The resolver of R-REPO-019 calls MemberUsable per member.
-func Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
-    // One index per request: the first call waits while the index is staler than
-    // authz.cache.max_staleness or below Trove-Authz-Min-Epoch (R-AUTHZ-028, R-AUTHZ-032);
-    // later calls of the same request return the same index. An epoch the database never
-    // reached was answered 412 before the first Decide.
-    idx, err := index.ForRequest(ctx)
-    if err != nil {
-        return Deny(ReasonStale)                                    // answered 503 authz_stale
-    }
+// Begin takes the index a request decides on, once (Q-AUTHZ-159): it waits while the index is
+// staler than authz.cache.max_staleness or below Trove-Authz-Min-Epoch (R-AUTHZ-028,
+// R-AUTHZ-032), after making the keys of the repositories the request names known to it
+// (R-ARCH-011 step 2). An epoch the database never reached is answered 412; a stale index 503
+// authz_stale.
+func Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error) { /* index.ForRequest */ }
+
+// DecideOn runs for every coordinate of a request on the index Begin returned; the request
+// proceeds only if every coordinate is allowed. The resolver of R-REPO-019 calls MemberUsable
+// per member. Every other per-request question has the same form (ReadableOn, ExposedOn,
+// PathsAllowedOn, RequireOn, HoldsOn, CheckOn), so one request is answered on one index.
+func DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision {
     if sub.Anonymous && !settings.AnonymousAccess() {               // R-AUTH-037
         return Deny(ReasonUnauthenticated)
     }
@@ -897,7 +898,7 @@ func Decide(ctx context.Context, sub Subject, c Coordinate) Decision {
 }
 
 func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
-    if !idx.Exposure(c.Endpoint).Admits(a, c.Addressed, c) {        // endpoints.md R-EP-013: every subject,
+    if !idx.Exposure(sub.Endpoint).Admits(a, c.Addressed, c) {      // endpoints.md R-EP-013: every subject,
         return false                                                // decided on the addressed repository
     }
     if sub.Capabilities().Has(ContentBypass) {                      // roles as admitted by the scope
@@ -952,7 +953,7 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
         return false                                                // skipped silently
     }
     if m.Class == Remote && m.NeedsUpstream(mc) {                   // uncached, or expired metadata
-        return c.Endpoint.CacheFill &&                              // endpoints.md R-EP-019
+        return sub.Endpoint.CacheFill &&                            // the cache-fill policy of the subject's endpoint, endpoints.md R-EP-019
             Allowed(sub, idx, m.PopulateAction, mc)                 // otherwise the cache only
     }
     return true
@@ -974,9 +975,12 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
   `deny.scope` when a grant would allow the action but a ceiling does not,
   `deny.triggering-user` when only the triggering-user bound refuses, and `deny.no-grant`
   otherwise.
-- The coordinate carries the request's endpoint and its addressed repository, the one the client
-  named; `WithRepo` changes neither, so exposure is decided on the addressed repository while grants
-  are decided per member ([endpoints.md](endpoints.md) Q-EP-11). The exposure rules are part of the
+- The subject carries the endpoint the request arrived on (`Subject.Endpoint`, set by the one
+  conversion from the listener's endpoint, never by a caller; [endpoints.md](endpoints.md) Q-EP-20) and
+  the coordinate the addressed repository, the one the client named; `WithRepo` changes neither,
+  so exposure is decided on the addressed repository while grants are decided per member
+  ([endpoints.md](endpoints.md) Q-EP-11). A decision keeps its endpoint's ceiling on whatever
+  context it runs, and a subject without an endpoint (a job, a command) has no ceiling. The exposure rules are part of the
   compiled index and follow its staleness rules (R-AUTHZ-028). On an endpoint with `exposure: all`
   the first check of `Allowed` admits everything, so every decision on the default endpoint stays as
   this page describes it.
@@ -3246,7 +3250,8 @@ A repository created through another replica is not in the grant index of this o
 **Choice:** (b).
 
 **Rationale:** a decision that must see the repository should not depend on the caller remembering. The development agent would
-revisit this when the engine and the reader share a request-scoped handle (architecture review item 5).
+revisit this when the engine and the reader share a request-scoped handle (architecture review item 5). That condition is met by
+Q-AUTHZ-159: the request's holder begins with the keys and learns later ones through `Know`.
 
 **Applied in the spec:** none (R-ARCH-011 step 2 and R-API-052 are met by it).
 
@@ -3268,6 +3273,36 @@ request's context and is read once per request, an error is 503 `authz_stale`.
 probe must be counted.
 
 **Applied in the spec:** the `message` trigger of `trove_authz_index_rebuilds_total` is used as R-OPS-008 lists it.
+
+### Q-AUTHZ-159 · A request takes its index once and carries it in a holder
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-015 says "one index per request" (`index.ForRequest`), but only `Begin` and `DecideOn` honoured it. `Decide`,
+`Readable`, `Require`, `Check`, `Exposed` and `PathsAllowed` each took the installed index at their own moment, so the shared step
+of the management API and the handler behind it, or a listing and the deploy that follows it, could be answered on two indexes
+and disagree about one request after a swap (R-AUTHZ-028).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A holder in the request context for the management API, the index in the request for formats | `authz.Decider` offers the `…On` form of every question; `edge.Access` holds the subject, the index and the decider; the shared step begins once and stores it with `edge.WithAccess`; the format dispatcher passes the index explicitly | The generated handlers keep their fixed signatures; losing the holder costs a second index and never a ceiling, because the ceiling travels in the subject (Q-EP-20) | A context value that a handler can lose |
+| (b) Explicit only | Every handler receives the index | No context value | A wrapper type around every generated handler |
+| (c) The engine keeps the index in the context | `ForRequest(ctx)` as the pseudo-code reads | One lookup | The decision point reads request state from a context it does not own, and a detached context has none |
+
+**Choice:** (a). `Decider` is `Begin`, `Know`, `DecideOn`, `ReadableOn`, `ExposedOn`, `PathsAllowedOn`, `RequireOn`, `HoldsOn`,
+`CheckOn` and `RecordAllowed`; `*Engine` implements it. `Authorizer` and `Prober` stay as the forms of a caller without a request
+to share an index with, a job or a command: each call is `Begin` and the matching `…On` form. `ReadableOn`, `PathsAllowedOn`,
+`RequireOn` and `CheckOn` return an error because the anonymous switch of R-AUTH-037 is read on the request's context inside the
+form and an unreadable switch is 503, not an empty list. `Know` advances a request to a newer index when it learns a key the
+index does not hold (R-ARCH-011 step 2); the index only moves forward.
+
+**Rationale:** one request, one index is a consistency property: two decisions of a request never disagree because the grants
+changed between them. It is not a security property, so it may live in a context value. The development agent would revisit this
+if a request fans out so widely that a shared holder becomes contended, or if `Authorizer` keeps a caller that is a request
+(then it moves to the holder).
+
+**Applied in the spec:** R-AUTHZ-015 (the pseudo-code begins once and decides with `DecideOn`); Q-AUTHZ-133 (its revisit
+condition, the request-scoped handle, is met).
 
 ## What this does not cover
 

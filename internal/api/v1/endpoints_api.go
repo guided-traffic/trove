@@ -593,18 +593,15 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 	writeJSON(w, r, http.StatusOK, checkResultOf(res))
 }
 
-// requireRead decides read on the repository for the caller, on the request's
-// endpoint (R-AUTHZ-015); the refusal is that of R-AUTHZ-016.
+// requireRead decides read on the repository for the caller, under the ceiling of
+// the endpoint the subject carries (R-AUTHZ-015); the refusal is that of R-AUTHZ-016.
 func (s *Server) requireRead(ctx context.Context, repo string) error {
 	a := s.o.Endpoints.Authorizer
 	if a == nil {
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}
 	c := authz.Coordinate{Repository: repo, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
-	if ep := httpserver.EndpointFrom(ctx); ep != nil {
-		c.Endpoint = ep.Name()
-	}
-	return a.Decide(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), c).Err()
+	return a.Decide(ctx, SubjectFrom(ctx), c).Err()
 }
 
 func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {

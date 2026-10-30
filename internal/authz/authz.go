@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
-	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
+	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -52,20 +54,25 @@ const (
 	EndpointsWrite        Capability = "endpoints:write"
 )
 
-// RequestKind is the request kind of the request descriptor (R-REPO-003).
-type RequestKind string
+// RequestKind is the request kind of the request descriptor (R-REPO-003); the
+// catalog owns the type, so a format and the decision point name one.
+type RequestKind = catalog.RequestKind
 
 // The request kinds.
 const (
-	KindArtifact RequestKind = "artifact"
-	KindMetadata RequestKind = "metadata"
-	KindSearch   RequestKind = "search"
-	KindWrite    RequestKind = "write"
+	KindArtifact = catalog.KindArtifact
+	KindMetadata = catalog.KindMetadata
+	KindSearch   = catalog.KindSearch
+	KindWrite    = catalog.KindWrite
+	KindOther    = catalog.KindOther
 )
 
 // Subject is what authentication hands to authorization for one request
-// (Model at a glance): who, which groups, and the ceiling the credential puts
-// on them. It is built by internal/api/v1 from httpserver.Principal.
+// (Model at a glance): who, which groups, the ceiling the credential puts on
+// them, and the endpoint the request arrived on. It is built by
+// internal/api/edge.SubjectFrom from httpserver.Principal and the listener's
+// endpoint; the architecture test refuses a Subject built anywhere else
+// (R-EP-013, Q-EP-20).
 //
 // Whether the subject holds a system role is not a field: Decide and Require
 // derive it from role bindings, the scope and Kind (a break-glass subject holds
@@ -81,7 +88,15 @@ type Subject struct {
 	// Mappings are CI identity mapping references (M4).
 	Mappings []string
 	// Scope is the credential's ceiling; nil means none (sessions).
-	Scope *token.Scope
+	Scope *scope.Scope
+	// Endpoint is the name of the endpoint whose listener accepted the request
+	// (R-EP-002). It selects the exposure ceiling of every decision on this
+	// subject (R-EP-013, Q-EP-20 (b)), so a decision keeps the ceiling of the
+	// request on a detached context, in a collapsed single-flight and in a
+	// fanned-out probe alike: the subject travels with the decision, the context
+	// may not. Empty only for a subject no request carries (a job, a command, a
+	// test), which has no ceiling. Nothing reads it from request data.
+	Endpoint string
 	// TokenID and SessionID identify the credential for audit.
 	TokenID   string
 	SessionID string
@@ -121,11 +136,6 @@ type Coordinate struct {
 	Version string
 	// Actions are the actions the operation needs, e.g. {Deploy, Overwrite}.
 	Actions []Action
-	// Endpoint is the name of the endpoint the request arrived on; it selects the
-	// exposure ceiling (R-EP-013). The endpoint of the request context
-	// ([WithEndpoint]) replaces it, so a caller cannot decide a request of one
-	// endpoint under the ceiling of another.
-	Endpoint string
 	// Addressed is the repository the client named when Repository is a member
 	// that resolution consults (R-AUTHZ-015 WithRepo); empty means Repository.
 	// Exposure is decided on the addressed repository (Q-EP-11).
@@ -173,11 +183,63 @@ type Decision struct {
 	Sources []string
 }
 
-// Authorizer is the decision point. The implementation is WP1.3's.
+// Decider is the decision point as a request uses it (R-AUTHZ-015
+// `index.ForRequest`): a request takes its index once with Begin and asks every
+// question of it with the …On forms, so all of them are answered on one index
+// and a swap of the installed index never changes the decisions of one request
+// (R-AUTHZ-028). The ceiling of the subject's endpoint is applied by every
+// question (R-EP-013); the context carries deadlines and cancellation, never
+// authority. *Engine implements it.
+//
+// The edge holds the index and the subject of a request in internal/api/edge
+// (Access); a format receives them in its request. Jobs and commands, which
+// have no request to share an index with, use the [Authorizer] forms.
+type Decider interface {
+	// Begin returns the index a request decides on: it waits for a confirmed
+	// index or for the epoch of Trove-Authz-Min-Epoch, and first makes the keys
+	// known (R-ARCH-011 step 2, R-API-052). The error is the refusal: 503
+	// authz_stale or 412 authz_epoch_unknown.
+	Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error)
+	// Know advances a request to a newer index when it learns a key the index
+	// does not hold (R-ARCH-011 step 2); the request decides every later question
+	// on the index returned. An index that holds the key is returned as it is.
+	Know(ctx context.Context, idx *Index, sub Subject, key string) (*Index, error)
+	// DecideOn decides every action of the coordinate (R-AUTHZ-015); the request
+	// proceeds only if it is allowed. The caller turns a refusal into the status
+	// of R-AUTHZ-016.
+	DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision
+	// ReadableOn filters repository keys to those the subject may read, in the
+	// order given, for listings and search (R-AUTHZ-016). An error is a refusal to
+	// decide.
+	ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []string) ([]string, error)
+	// ExposedOn filters repository keys to those the subject's endpoint exposes
+	// for read, whatever the subject's grants (R-EP-014, Q-EP-12).
+	ExposedOn(idx *Index, sub Subject, keys []string) []string
+	// PathsAllowedOn decides one action for many paths of one repository, the
+	// listing form of DecideOn; it writes no audit event.
+	PathsAllowedOn(ctx context.Context, idx *Index, sub Subject, base Coordinate, a Action, paths []string) ([]bool, error)
+	// RequireOn checks a system capability for a management operation (R-API-008):
+	// 401 for an anonymous subject, 403 otherwise; it runs before any lookup.
+	RequireOn(ctx context.Context, idx *Index, sub Subject, permission string) error
+	// HoldsOn reports whether the subject holds a permission as RequireOn would
+	// decide it, as a question: nothing is audited or counted as a denial.
+	HoldsOn(idx *Index, sub Subject, permission string) bool
+	// CheckOn evaluates the subject's own rights for up to MaxChecks coordinates
+	// (R-AUTHZ-023); it audits nothing.
+	CheckOn(idx *Index, sub Subject, items []CheckItem) ([]bool, error)
+	// RecordAllowed records an allowed write or populate in the transaction of the
+	// change (R-AUTHZ-029), with the decision the writer acted on.
+	RecordAllowed(ctx context.Context, tx meta.Tx, sub Subject, c Coordinate, d Decision) error
+}
+
+// Authorizer is the decision point for a caller that has no request to share an
+// index with, a job or a command: each call takes the installed index at that
+// moment, as Begin and the matching …On form of [Decider] would. A request
+// handler uses [Decider].
 type Authorizer interface {
-	// Decide runs for every coordinate of a request; the request proceeds only
-	// if every coordinate is allowed (R-AUTHZ-015). The caller turns a refusal
-	// into the status of R-AUTHZ-016.
+	// Decide runs for every coordinate of an operation; it proceeds only if every
+	// coordinate is allowed (R-AUTHZ-015). The caller turns a refusal into the
+	// status of R-AUTHZ-016.
 	Decide(ctx context.Context, sub Subject, c Coordinate) Decision
 	// Readable filters repository keys to those the subject may read, for
 	// listings and search (R-AUTHZ-016: listings contain only what the subject

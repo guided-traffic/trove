@@ -16,23 +16,23 @@ Milestone M1 implements the local class of the generic format only; remote and v
 
 | File | Responsibility |
 |---|---|
-| [repository.go](../../internal/repository/repository.go) | the shared contract: `Repository`, `Class`, `Lifecycle`, `Reader`, `KeyPattern`, `ReservedKeys()`; `Repository.Admits` |
+| [repository.go](../../internal/repository/repository.go) | the shared contract: `Repository`, `Class` (the catalog's), `Lifecycle`, `Reader`, `KeyPattern`, `ReservedKeys()`; `Repository.Admits` |
 | [document.go](../../internal/repository/document.go) | `Document` and `Settings` (the configuration document of R-REPO-004), `DecodeDocument` (strict: unknown and duplicate members), `MergePatch` (RFC 7396), `ConsumerView` |
 | [validate.go](../../internal/repository/validate.go) | `validate`: every rule of R-REPO-008 in one pass; the error shape (one violation under its own code, several under `validation_failed`) |
 | [key.go](../../internal/repository/key.go), [path.go](../../internal/repository/path.go) | `ValidKeyShape`, `IsReservedKey`; `CleanPath` (R-ARCH-005) |
-| [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `Pattern.Match`, `Admission` (include and exclude lists, folder admission) |
-| [format.go](../../internal/repository/format.go) | `FormatInfo` and `FormatCatalog`: what the model needs of a format, without importing `internal/formats` |
+| [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `PatternSubject` (the catalog's), `Pattern.Match`, `Admission` (include and exclude lists, folder admission) |
 | [store.go](../../internal/repository/store.go) | rows to `Repository` and `Document`; the sqlc `queries(tx)` seam; fail-closed load of an undecodable row |
 | [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, the `Hooks` seam (`OnUpdated`, `OnDelete`, `MultiHooks`); a stale version is `errs.Stale` |
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
 | [codes.go](../../internal/repository/codes.go) | codes of other areas that the validation names as strings |
-| [formats/formats.go](../../internal/formats/formats.go) | `Descriptor`, `Format`, `RequestDescriptor`, `Register`, `Lookup`, `Descriptors` |
+| [formats/catalog/catalog.go](../../internal/formats/catalog/catalog.go) | the format catalog (a leaf): `Facts`, `Names`, `Exposure`, `Entry`, `Registry`, `Default` |
+| [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the name rule and the exposure facts), `Format`, `RequestDescriptor`, `Register` (fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types |
 | [formats/generic/generic.go](../../internal/formats/generic/generic.go) | the generic format: descriptor and request classification |
 | [formats/all/all.go](../../internal/formats/all/all.go) | registers every format; the composition root imports it |
 | [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted` |
-| [app/wire_repository.go](../../internal/app/wire_repository.go) | the format catalog adapter, `wireRepository` (reader and service), the job kind registration |
+| [app/wire_repository.go](../../internal/app/wire_repository.go) | `wireRepository` (reader and service, both on `catalog.Default()`), the job kind registration |
 
 ## Request path: reader
 
@@ -117,23 +117,29 @@ suffix, `withoutActivity`) (Q-API-156).
 
 ## Formats
 
-The format catalog is `formats.Register` at compile time (`formats/all`). `repository.FormatInfo` is derived from the
-descriptor by `formatCatalog` in `app/wire_repository.go`; the model validates class, layout and the members that only
-some formats have (`PackageNames`, `PriorityMembers`, `PinsAndClaims`, `Caps`) against it. The generic format sets none
+The format catalog is [internal/formats/catalog](../../internal/formats/catalog/catalog.go), a leaf: `formats.Register`
+(called at compile time by `formats/all`) puts the facts of a format into `catalog.Default()`, and the model reads them there.
+`ReaderOptions.Catalog` and `Options.Catalog` take a `*catalog.Registry`; nil is the process registry, so a test passes a
+registry of its own (see `testCatalog` in [validate_test.go](../../internal/repository/validate_test.go)). There is no
+mirror of the facts in this package or in the composition root. The model validates class, layout and the members that only
+some formats have (`PackageNames`, `PriorityMembers`, `PinsAndClaims`, `Caps`) against the entry. The decision point reads
+the same entry for the package-name rule and the exposure facts (`catalog.Names`, `catalog.Exposure`). The generic format sets none
 of them, so `priorityMember`, `local.packageOwnership`, `ownershipDomain`, `autoClaim` and `local.caps` answer
 `not_applicable` (R-GENERIC-008).
 
 `formats.Format` is a skeleton: `Descriptor()` and `Describe(method, path, folder)`, the request descriptor of R-REPO-003.
 The routes, storage hooks, remote and virtual adapters and the conformance kit of R-ARCH-008 and R-ARCH-010 join it with
 the first format that needs them (npm, M2), bumping `ContractVersion`. A format imports nothing but `internal/formats`,
-`errs`, `config` and `observability` (archtest R-ARCH-008); `formats/all` may import every format.
+`internal/formats/catalog`, `errs`, `config` and `observability` (archtest R-ARCH-008); `formats/all` may import every format.
 
 ### How to add a format
 
 1. Write its spec page under `docs/spec/formats/` (prefix, Covers, Decisions, What this does not cover) and add the page
    to the table in [spec/README.md](../spec/README.md).
 2. Add `internal/formats/<id>` implementing `formats.Format` with a `Descriptor` whose `Classes` list only what is
-   implemented; add a line to the tree of R-ARCH-003.
+   implemented; a format with package names declares `Names` (the one normaliser: grants, token scopes, exposure rules
+   and repository patterns fold names and patterns with it) and, to be exposable on an endpoint, an `Exposure`; add a
+   line to the tree of R-ARCH-003.
 3. Register it in [formats/all/all.go](../../internal/formats/all/all.go).
 4. Add its settings to `repository.Settings` as a member named after the format (a strict document refuses a member the
    struct does not know) and its validation to `validate.go`.
@@ -147,8 +153,8 @@ backslash or any control character, more than 4096 bytes in total or 255 in a se
 reported as `Folder`. Decoding first and splitting after means `%2e%2e` and `..%2f` are as dead as `..`.
 
 `CompilePattern(subject, p)` implements the syntax of R-AUTHZ-005 for both subjects. The package owns the matcher because
-`authz` imports `repository`, not the other way round; the authorization area should call `CompilePattern` rather than
-keep a second copy (R-REPO-005: "a pattern copied between them selects the same names"). `Admission` holds both lists of
+`authz` imports `repository`, not the other way round; the authorization area calls `CompilePattern` rather than
+keeping a second copy (R-REPO-005: "a pattern copied between them selects the same names"). `Admission` holds both lists of
 a repository, compiled once when the snapshot is built; `Repository.Admits(path, folder)` is what the files transfer calls.
 
 ## Configuration

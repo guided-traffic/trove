@@ -1,16 +1,15 @@
-package token
+package scope
 
 import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
 func TestR_AUTH_024_ParseScope(t *testing.T) {
-	opts := ScopeOptions{Action: func(a string) bool {
+	opts := Options{Action: func(a string) bool {
 		return slices.Contains([]string{"read", "annotate", "deploy", "overwrite", "delete", "manage"}, a)
 	}, SystemItem: func(s string) bool { return s == "identities:read" }, Endpoint: func(n string) bool { return n == "default" || n == "customers" }}
 	ok := map[string]string{
@@ -24,7 +23,7 @@ func TestR_AUTH_024_ParseScope(t *testing.T) {
 	}
 	for name, doc := range ok {
 		t.Run(name, func(t *testing.T) {
-			if _, err := ParseScope([]byte(doc), opts); err != nil {
+			if _, err := Parse([]byte(doc), opts); err != nil {
 				t.Fatalf("%v", err)
 			}
 		})
@@ -46,14 +45,14 @@ func TestR_AUTH_024_ParseScope(t *testing.T) {
 	}
 	for name, doc := range bad {
 		t.Run(name, func(t *testing.T) {
-			_, err := ParseScope([]byte(doc), opts)
+			_, err := Parse([]byte(doc), opts)
 			if e, isErr := errs.As(err); !isErr || e.Code != errs.CodeInvalidScope || e.Status() != 400 {
 				t.Fatalf("err = %v, want 400 invalid_scope", err)
 			}
 		})
 	}
 	t.Run("R-AUTH-024 no system item is accepted without a checker", func(t *testing.T) {
-		if _, err := ParseScope([]byte(`{"system":["identities:read"]}`), ScopeOptions{}); err == nil {
+		if _, err := Parse([]byte(`{"system":["identities:read"]}`), Options{}); err == nil {
 			t.Fatal("accepted")
 		}
 	})
@@ -61,33 +60,33 @@ func TestR_AUTH_024_ParseScope(t *testing.T) {
 
 func TestR_AUTH_024_MarshalRoundTrip(t *testing.T) {
 	doc := `{"inherit":false,"admin":false,"repositories":[{"repositories":["npm-local"],"packages":{"include":["@acme/*"]},"actions":["read"]}],"system":[]}`
-	s, err := ParseScope([]byte(doc), ScopeOptions{Action: func(string) bool { return true }})
+	s, err := Parse([]byte(doc), Options{Action: func(string) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := string(s.Marshal()); got != doc {
 		t.Fatalf("Marshal = %s", got)
 	}
-	back, err := ParseStoredScope(s.Marshal())
+	back, err := ParseStored(s.Marshal())
 	if err != nil || len(back.Repositories) != 1 || back.Repositories[0].Packages.Include[0] != "@acme/*" {
 		t.Fatalf("%+v %v", back, err)
 	}
-	if got := string(DefaultScope().Marshal()); got != `{"inherit":true,"admin":false,"repositories":[],"system":[]}` {
+	if got := string(Default().Marshal()); got != `{"inherit":true,"admin":false,"repositories":[],"system":[]}` {
 		t.Fatalf("default scope renders as %s", got)
 	}
 }
 
 func TestR_AUTH_027_ScopeWithin(t *testing.T) {
-	read := Scope{Repositories: []ScopeGrant{{Repositories: []string{"npm-local"}, Actions: []string{"read", "deploy"}}}}
+	read := Scope{Repositories: []Grant{{Repositories: []string{"npm-local"}, Actions: []string{"read", "deploy"}}}}
 	cases := []struct {
 		name          string
 		child, parent Scope
 		want          bool
 	}{
 		{"an equal scope", read, read, true},
-		{"fewer actions", Scope{Repositories: []ScopeGrant{{Repositories: []string{"npm-local"}, Actions: []string{"read"}}}}, read, true},
-		{"more actions", Scope{Repositories: []ScopeGrant{{Repositories: []string{"npm-local"}, Actions: []string{"read", "delete"}}}}, read, false},
-		{"another repository", Scope{Repositories: []ScopeGrant{{Repositories: []string{"npm-other"}, Actions: []string{"read"}}}}, read, false},
+		{"fewer actions", Scope{Repositories: []Grant{{Repositories: []string{"npm-local"}, Actions: []string{"read"}}}}, read, true},
+		{"more actions", Scope{Repositories: []Grant{{Repositories: []string{"npm-local"}, Actions: []string{"read", "delete"}}}}, read, false},
+		{"another repository", Scope{Repositories: []Grant{{Repositories: []string{"npm-other"}, Actions: []string{"read"}}}}, read, false},
 		{"inherit under a restricted token", Scope{Inherit: true}, read, false},
 		{"restricted under inherit", read, Scope{Inherit: true}, true},
 		{"admin kept", Scope{Inherit: true, Admin: true}, Scope{Inherit: true, Admin: true}, true},
@@ -102,65 +101,6 @@ func TestR_AUTH_027_ScopeWithin(t *testing.T) {
 		t.Run("R-AUTH-027 "+c.name, func(t *testing.T) {
 			if got := c.child.Within(c.parent); got != c.want {
 				t.Fatalf("Within = %v, want %v", got, c.want)
-			}
-		})
-	}
-}
-
-func i64(v int64) *int64 { return &v }
-
-func TestR_AUTH_026_ResolveLifetime(t *testing.T) {
-	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
-	def, maxTTL := 2160*time.Hour, 8760*time.Hour
-	at := func(d time.Duration) *time.Time { v := now.Add(d); return &v }
-	code := func(err error) string {
-		if e, ok := errs.As(err); ok {
-			return e.Code
-		}
-		return ""
-	}
-	cases := []struct {
-		name     string
-		typ      Type
-		req      TTLRequest
-		allowNE  bool
-		admin    bool
-		derived  bool
-		parent   *time.Time
-		wantCode string
-		wantTTL  time.Duration
-		wantNE   bool
-	}{
-		{name: "neither applies the default", typ: TypePAT, wantTTL: def},
-		{name: "ttlSeconds", typ: TypePAT, req: TTLRequest{Seconds: i64(3600)}, wantTTL: time.Hour},
-		{name: "expiresAt", typ: TypePAT, req: TTLRequest{ExpiresAt: at(2 * time.Hour)}, wantTTL: 2 * time.Hour},
-		{name: "both are invalid_ttl", typ: TypePAT, req: TTLRequest{Seconds: i64(3600), ExpiresAt: at(time.Hour)}, wantCode: "invalid_ttl"},
-		{name: "negative is invalid_ttl", typ: TypePAT, req: TTLRequest{Seconds: i64(-5)}, wantCode: "invalid_ttl"},
-		{name: "30 is invalid_ttl", typ: TypePAT, req: TTLRequest{Seconds: i64(30)}, wantCode: "invalid_ttl"},
-		{name: "60 is the shortest", typ: TypePAT, req: TTLRequest{Seconds: i64(60)}, wantTTL: time.Minute},
-		{name: "expiresAt 30 s ahead is invalid_ttl", typ: TypePAT, req: TTLRequest{ExpiresAt: at(30 * time.Second)}, wantCode: "invalid_ttl"},
-		{name: "above the maximum", typ: TypePAT, req: TTLRequest{Seconds: i64(40000000)}, wantCode: "ttl_exceeds_maximum"},
-		{name: "an expiresAt above the maximum", typ: TypePAT, req: TTLRequest{ExpiresAt: at(maxTTL + time.Hour)}, wantCode: "ttl_exceeds_maximum"},
-		{name: "the maximum itself", typ: TypePAT, req: TTLRequest{Seconds: i64(int64(maxTTL / time.Second))}, wantTTL: maxTTL},
-		{name: "a PAT is never non-expiring", typ: TypePAT, req: TTLRequest{Seconds: i64(0)}, allowNE: true, admin: true, wantCode: "non_expiring_not_allowed"},
-		{name: "a SAT needs the configuration", typ: TypeSAT, req: TTLRequest{Seconds: i64(0)}, admin: true, wantCode: "non_expiring_not_allowed"},
-		{name: "a SAT needs an administrator", typ: TypeSAT, req: TTLRequest{Seconds: i64(0)}, allowNE: true, wantCode: "non_expiring_restricted"},
-		{name: "a non-expiring SAT", typ: TypeSAT, req: TTLRequest{Seconds: i64(0)}, allowNE: true, admin: true, wantNE: true},
-		{name: "never under the derivation rule", typ: TypeSAT, req: TTLRequest{Seconds: i64(0)}, allowNE: true, admin: true, derived: true, wantCode: "non_expiring_not_allowed"},
-		{name: "the default is capped at the presenting token's expiry", typ: TypePAT, derived: true, parent: at(24 * time.Hour), wantTTL: 24 * time.Hour},
-		{name: "a creation path with its own default", typ: TypePAT, req: TTLRequest{Default: 15 * time.Minute}, wantTTL: 15 * time.Minute},
-	}
-	for _, c := range cases {
-		t.Run("R-AUTH-026 "+c.name, func(t *testing.T) {
-			got, err := resolveLifetime(c.typ, c.req, now, def, maxTTL, c.allowNE, c.admin, c.derived, c.parent)
-			if c.wantCode != "" {
-				if code(err) != c.wantCode {
-					t.Fatalf("err = %v, want %s", err, c.wantCode)
-				}
-				return
-			}
-			if err != nil || got.nonExpiring != c.wantNE || (!c.wantNE && got.ttl != c.wantTTL) {
-				t.Fatalf("got %+v, %v; want ttl %s non-expiring %v", got, err, c.wantTTL, c.wantNE)
 			}
 		})
 	}

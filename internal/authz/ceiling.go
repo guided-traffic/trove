@@ -14,16 +14,17 @@ import "context"
 // epochs (R-EP-012, R-AUTHZ-028). [ExposureCeiling] is the implementation of the
 // endpoints area; tests may supply their own.
 //
-// The coordinate carries the endpoint of the request and the repository the
-// client addressed; exposure is decided on the addressed repository while grants
-// are decided per member (endpoints.md Q-EP-11).
+// The endpoint is the one the subject carries ([Subject.Endpoint], R-EP-013,
+// Q-EP-20), and the coordinate carries the repository the client addressed;
+// exposure is decided on the addressed repository while grants are decided per
+// member (endpoints.md Q-EP-11).
 type Ceiling interface {
-	// Admits reports whether the exposure of c.Endpoint admits action a. When it
-	// does not, the result says whether the refusal is that of a read, which
-	// answers 404 byte-identical to a missing resource (deny.exposure), or that of
-	// a write on an endpoint with exposure rules, which answers 403
-	// endpoint_read_only (deny.endpoint_read_only).
-	Admits(x *Index, c Coordinate, a Action) CeilingVerdict
+	// Admits reports whether the exposure of the endpoint admits action a on the
+	// coordinate. When it does not, the result says whether the refusal is that of
+	// a read, which answers 404 byte-identical to a missing resource
+	// (deny.exposure), or that of a write on an endpoint with exposure rules, which
+	// answers 403 endpoint_read_only (deny.endpoint_read_only).
+	Admits(x *Index, endpoint string, c Coordinate, a Action) CeilingVerdict
 }
 
 // CeilingVerdict is the answer of a Ceiling.
@@ -43,37 +44,10 @@ const (
 type NoCeiling struct{}
 
 // Admits admits.
-func (NoCeiling) Admits(*Index, Coordinate, Action) CeilingVerdict { return CeilingAdmits }
-
-// endpointKey is the context key of the request's endpoint name.
-type endpointKey struct{}
-
-// WithEndpoint returns ctx carrying the name of the endpoint the request arrived
-// on. The composition root sets it for every request of an endpoint's chain, from
-// the listener (R-EP-002); Decide, DecideOn, Readable and Check then apply that
-// endpoint's ceiling whatever endpoint a coordinate names, so no caller can
-// forget it or choose another (R-EP-013, R-EP-014).
-func WithEndpoint(ctx context.Context, name string) context.Context {
-	return context.WithValue(ctx, endpointKey{}, name)
-}
-
-// EndpointOf returns the endpoint name WithEndpoint stored, "" outside a request
-// of an endpoint (a job, a command).
-func EndpointOf(ctx context.Context) string {
-	s, _ := ctx.Value(endpointKey{}).(string)
-	return s
-}
-
-// onEndpoint applies the endpoint of the request context to a coordinate.
-func onEndpoint(ctx context.Context, c Coordinate) Coordinate {
-	if ep := EndpointOf(ctx); ep != "" {
-		c.Endpoint = ep
-	}
-	return c
-}
+func (NoCeiling) Admits(*Index, string, Coordinate, Action) CeilingVerdict { return CeilingAdmits }
 
 // ExposureFilter is implemented by an [Authorizer] that applies the exposure
-// ceiling alone: the repository keys the request's endpoint exposes for read,
+// ceiling alone: the repository keys the subject's endpoint exposes for read,
 // whatever the subject's grants. A holder of repositories:read-config lists and
 // reads repositories it holds no read grant on, but on an endpoint with
 // exposure rules no more than the endpoint exposes, as the ceiling binds every
@@ -82,26 +56,35 @@ type ExposureFilter interface {
 	Exposed(ctx context.Context, sub Subject, keys []string) ([]string, error)
 }
 
-// Exposed implements [ExposureFilter] on the index the request decides on. A
-// refusal to decide (503, 412) is returned as an error.
+// Exposed implements [ExposureFilter] on the installed index. A refusal to
+// decide (503, 412) is returned as an error.
 func (e *Engine) Exposed(ctx context.Context, sub Subject, keys []string) ([]string, error) {
-	endpoint := EndpointOf(ctx)
-	cl := e.o.Ceiling
-	if cl == nil || endpoint == "" {
+	if e.o.Ceiling == nil || sub.Endpoint == "" {
 		return keys, nil
 	}
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
 	}
+	return e.ExposedOn(idx, sub, keys), nil
+}
+
+// ExposedOn implements [Decider]: the keys the subject's endpoint exposes for
+// read on the index the request decides on. A subject without an endpoint (a job,
+// a command) has no ceiling and sees every key.
+func (e *Engine) ExposedOn(idx *Index, sub Subject, keys []string) []string {
+	cl := e.o.Ceiling
+	if cl == nil || sub.Endpoint == "" {
+		return keys
+	}
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
-		c := Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}, Endpoint: endpoint}
-		if cl.Admits(idx, c, Read) == CeilingAdmits {
+		c := Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}}
+		if cl.Admits(idx, sub.Endpoint, c, Read) == CeilingAdmits {
 			out = append(out, k)
 			continue
 		}
-		e.m.exposureHidden(endpoint, "item")
+		e.m.exposureHidden(sub.Endpoint, "item")
 	}
-	return out, nil
+	return out
 }

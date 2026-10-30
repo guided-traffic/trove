@@ -78,7 +78,7 @@ func (s *Server) anonymousGate(ctx context.Context) error {
 
 // repositoryCaller is the actor and the origin of a write, for the audit event.
 func repositoryCaller(r *http.Request) repository.Caller {
-	return repository.Caller{Actor: ActorFrom(httpserver.PrincipalFrom(r.Context())), Source: auditSource(r)}
+	return repository.Caller{Actor: ActorFrom(httpserver.PrincipalFrom(r.Context())), Source: auditSource(r), Endpoint: SubjectFrom(r.Context()).Endpoint}
 }
 
 // repositoryRep is the representation of a repository: the configuration document
@@ -316,7 +316,7 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 			x.DefaultUpstreamURL = &u
 		}
 		for _, c := range d.Classes {
-			x.Classes = append(x.Classes, c.String())
+			x.Classes = append(x.Classes, string(c))
 		}
 		out.Formats = append(out.Formats, x)
 	}
@@ -441,7 +441,7 @@ func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f
 	for i, st := range rows {
 		keys[i] = st.Document.Key
 	}
-	visible, err := s.visibleKeys(ctx, keys, cfg)
+	visible, err := s.visibleKeys(ctx, SubjectFrom(ctx), keys, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -458,13 +458,12 @@ func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f
 	return kept, nil
 }
 
-// visibleKeys filters repository keys for the caller of ctx. A holder of
+// visibleKeys filters repository keys for the subject of the request. A holder of
 // repositories:read-config needs no read grant, but the exposure ceiling of the
 // request's endpoint binds it like every subject (R-EP-013, Q-EP-12): config
 // selects the view, never what the endpoint shows.
-func (s *Server) visibleKeys(ctx context.Context, keys []string, cfg bool) ([]string, error) {
+func (s *Server) visibleKeys(ctx context.Context, sub authz.Subject, keys []string, cfg bool) ([]string, error) {
 	az := s.o.Repositories.Authz
-	sub := SubjectFrom(httpserver.PrincipalFrom(ctx))
 	if !cfg {
 		if az == nil {
 			return nil, unavailable("The authorization state")
@@ -474,7 +473,7 @@ func (s *Server) visibleKeys(ctx context.Context, keys []string, cfg bool) ([]st
 	if xf, ok := az.(authz.ExposureFilter); ok {
 		return xf.Exposed(ctx, sub, keys)
 	}
-	if authz.EndpointOf(ctx) != "" {
+	if sub.Endpoint != "" {
 		// A request of an endpoint and no decision point that applies its ceiling.
 		return nil, unavailable("The authorization state")
 	}
@@ -545,10 +544,7 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 			return
 		}
 		c := authz.Coordinate{Repository: key, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
-		if ep := httpserver.EndpointFrom(ctx); ep != nil {
-			c.Endpoint = ep.Name()
-		}
-		if d := s.o.Repositories.Authz.Decide(ctx, SubjectFrom(httpserver.PrincipalFrom(ctx)), c); !d.Allowed() {
+		if d := s.o.Repositories.Authz.Decide(ctx, SubjectFrom(ctx), c); !d.Allowed() {
 			httpserver.Problem(w, r, d.Err())
 			return
 		}
@@ -556,7 +552,7 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 		// The ceiling binds a configuration reader too, before the lookup, so a
 		// repository the endpoint does not expose answers like a missing one
 		// (R-EP-013, R-EP-014).
-		exposed, err := s.visibleKeys(ctx, []string{key}, true)
+		exposed, err := s.visibleKeys(ctx, SubjectFrom(ctx), []string{key}, true)
 		if err != nil {
 			httpserver.Problem(w, r, err)
 			return

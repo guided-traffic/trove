@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
 // ID is the format name.
@@ -22,17 +23,22 @@ type Format struct{}
 
 var _ formats.Format = Format{}
 
-// Descriptor returns the catalog entry of R-GENERIC-001.
+// Descriptor returns the catalog entry of R-GENERIC-001. Generic repositories are
+// exposed on an endpoint through paths alone (R-EP-014): they have no package
+// names, versions or tags to narrow.
 func (Format) Descriptor() formats.Descriptor {
 	notFound := 1800
 	return formats.Descriptor{
-		ID:                        ID,
-		DisplayName:               "Generic",
-		Classes:                   []formats.Class{formats.Local},
-		Layout:                    Layout,
-		ProtocolBasePath:          "/files/{key}/",
-		DefaultNotFoundTTLSeconds: &notFound,
-		PatternSubject:            formats.SubjectPath,
+		Facts: catalog.Facts{
+			ID:                        ID,
+			DisplayName:               "Generic",
+			Classes:                   []formats.Class{formats.Local},
+			Layout:                    Layout,
+			ProtocolBasePath:          "/files/{key}/",
+			DefaultNotFoundTTLSeconds: &notFound,
+			PatternSubject:            formats.SubjectPath,
+		},
+		Exposure: catalog.Exposure{Exposable: true},
 	}
 }
 

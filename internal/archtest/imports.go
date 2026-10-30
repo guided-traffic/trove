@@ -66,6 +66,7 @@ func CheckImportBans(pkgs []Package) []Violation {
 
 // formatAllowed is what a format package may import from this module (R-ARCH-008,
 // R-ARCH-009): the format contract (internal/formats itself), its own tree, the
+// format catalog (the name rule and the exposure versioning it declares), the
 // error kinds, the configuration types it reads, and the observability
 // primitives. Everything else a format needs comes through Host. The match is the
 // exact package, so a sibling format, the object store, the job queue, the cache
@@ -75,7 +76,7 @@ func CheckImportBans(pkgs []Package) []Violation {
 // revision column (internal/meta) gets that row added here, with the requirement
 // that justifies it.
 func formatAllowed() []string {
-	return []string{"internal/formats", "internal/errs", "internal/config", "internal/observability"}
+	return []string{"internal/formats", "internal/formats/catalog", "internal/errs", "internal/config", "internal/observability"}
 }
 
 // formatRoot is the tree of the format plug-ins and their contract.

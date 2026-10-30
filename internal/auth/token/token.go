@@ -19,31 +19,6 @@ const (
 	TypeCIT Type = "cit" // trv_cit_
 )
 
-// Patterns is an include and exclude list of globs (R-AUTHZ-005).
-type Patterns struct {
-	Include []string
-	Exclude []string
-}
-
-// ScopeGrant is one element of the repository part of a scope.
-type ScopeGrant struct {
-	Repositories []string
-	Packages     Patterns
-	Paths        Patterns
-	Actions      []string
-}
-
-// Scope is the validated scope of a token (R-AUTH-024). It narrows the owner's
-// rights and never widens them. Builds join with P1.
-type Scope struct {
-	Inherit      bool
-	Admin        bool
-	Repositories []ScopeGrant
-	System       []string
-	// Endpoints binds the token to endpoint names (R-EP-011); empty means unbound.
-	Endpoints []string
-}
-
 // Info is what a successful validation yields: the token row's facts and the
 // active owner. It holds no secret, no hash and no token value.
 type Info struct {

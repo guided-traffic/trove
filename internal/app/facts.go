@@ -11,7 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
-	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
@@ -63,13 +63,13 @@ func (f configFacts) Facts(ctx context.Context) (v1.Facts, error) {
 	return out, nil
 }
 
-// formatNames lists the formats the format registry serves, sorted by ID: the
+// formatNames lists the formats the format catalog holds, sorted by ID: the
 // formats of GET /api/v1/system/version and /system/info (R-OPS-002, R-OPS-004).
 func formatNames() []string {
-	ds := formats.Descriptors()
-	out := make([]string, len(ds))
-	for i, d := range ds {
-		out[i] = string(d.ID)
+	es := catalog.Default().List()
+	out := make([]string, len(es))
+	for i, e := range es {
+		out[i] = string(e.ID)
 	}
 	return out
 }

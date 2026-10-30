@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
-	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -625,5 +625,5 @@ func TestR_AUTHZ_023_CheckForTheCaller(t *testing.T) {
 }
 
 func tokenScopOf(s Subject) Subject {
-	return tokenScop(s, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npm-all"}, Actions: []string{"read"}}}})
+	return tokenScop(s, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all"}, Actions: []string{"read"}}}})
 }

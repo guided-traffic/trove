@@ -327,7 +327,7 @@ func (s *Service) allowedPaths(ctx context.Context, c Caller, repoKey string, a 
 		kind = authz.KindWrite
 	}
 	if s.paths != nil {
-		return s.paths.PathsAllowed(ctx, c.Subject, authz.Coordinate{Repository: repoKey, Endpoint: c.Endpoint, Kind: kind}, a, paths)
+		return s.paths.PathsAllowed(ctx, c.Subject, authz.Coordinate{Repository: repoKey, Kind: kind}, a, paths)
 	}
 	out := make([]bool, len(paths))
 	for i, p := range paths {

@@ -3,16 +3,19 @@ package repository
 import (
 	"context"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
-// Class is the class of a repository (R-REPO-001). It is fixed at creation.
-type Class string
+// Class is the class of a repository (R-REPO-001). It is fixed at creation. The
+// catalog owns the type, so a format and the repository model name one.
+type Class = catalog.Class
 
 // The classes.
 const (
-	Local   Class = "local"
-	Remote  Class = "remote"
-	Virtual Class = "virtual"
+	Local   = catalog.Local
+	Remote  = catalog.Remote
+	Virtual = catalog.Virtual
 )
 
 // FormatGeneric is the format of the generic local repository that M1 proves

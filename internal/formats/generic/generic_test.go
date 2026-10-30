@@ -23,6 +23,11 @@ func TestDescriptor(t *testing.T) {
 			t.Fatal("the generic format has no package names, priority members, pins, claims or caps")
 		}
 	})
+	t.Run("R-EP-014 generic is exposed through paths alone", func(t *testing.T) {
+		if x := d.Exposure; !x.Exposable || x.Packages || x.Versions || x.Tags || x.Versioning != nil || d.Names != nil {
+			t.Fatalf("exposure = %+v, names = %v", x, d.Names)
+		}
+	})
 }
 
 func TestDescribe(t *testing.T) {

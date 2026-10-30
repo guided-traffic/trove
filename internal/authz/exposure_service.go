@@ -10,6 +10,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -159,7 +160,7 @@ func (s *ExposureService) ruleOf(r ruleRow) (ExposureRule, error) {
 
 func (s *ExposureService) warnings(endpoint, format string, in ExposureRuleInput) []string {
 	out := []string{}
-	f := s.o.Ceiling.formats(format)
+	f := s.o.Ceiling.exposure(format)
 	if f.Packages && len(in.Paths.Include)+len(in.Paths.Exclude) > 0 {
 		out = append(out, WarnPathPatternsOnPackageFormat)
 	}
@@ -241,7 +242,7 @@ func (s *ExposureService) Get(ctx context.Context, endpoint, name string) (Expos
 // AdmitsPackage reports whether a rule's package patterns admit a name, with the
 // format's case rule: the package filter of the rule list (R-EP-016).
 func (s *ExposureService) AdmitsPackage(r ExposureRule, pkg string) bool {
-	set, err := compileSet(dimPackage, r.Packages.Include, r.Packages.Exclude, foldFor(r.Format))
+	set, err := compileSet(dimPackage, r.Packages.Include, r.Packages.Exclude, s.o.Ceiling.names(r.Format))
 	return err == nil && set.match(pkg, true)
 }
 
@@ -298,7 +299,7 @@ func validateSyntax(in ExposureRuleInput, prefix string) []ProblemField {
 			}
 		}
 	}
-	name := func(p string) error { _, err := compileName(p, false); return err }
+	name := func(p string) error { _, err := compileName(p, nil); return err }
 	path := func(p string) error { _, err := compilePath(p); return err }
 	checkList("/packages/include", in.Packages.Include, name)
 	checkList("/packages/exclude", in.Packages.Exclude, name)
@@ -321,7 +322,7 @@ func (s *ExposureService) validateForFormat(in ExposureRuleInput, format, prefix
 	add := func(ptr, code, detail string) {
 		ps = append(ps, ProblemField{Pointer: prefix + ptr, Code: code, Detail: detail})
 	}
-	f := s.o.Ceiling.formats(format)
+	f := s.o.Ceiling.exposure(format)
 	if !f.Exposable {
 		add("/repository", errs.CodeFormatNotExposable, fmt.Sprintf("the format %q cannot be served on an endpoint with exposure rules", format))
 		return ps
@@ -435,7 +436,7 @@ func changedMembers(before, after ExposureRuleInput) []string {
 // exposureEvent builds the audit event of a rule change. Updated and deleted
 // events carry the journal entry of R-EP-020: the rule's ID, endpoint, name and
 // repository ID, and for an update the states before and after.
-func exposureEvent(ctx context.Context, name string, actor Subject, r ExposureRule, before, after *exposureState, changes []string, epoch int64, cause string) audit.Event {
+func exposureEvent(name string, actor Subject, r ExposureRule, before, after *exposureState, changes []string, epoch int64, cause string) audit.Event {
 	details := map[string]any{"endpoint": r.Endpoint, "name": r.Name, "repository": r.Repository, "epoch": epoch, "revision": r.Revision}
 	if before != nil {
 		details["before"] = before
@@ -452,7 +453,7 @@ func exposureEvent(ctx context.Context, name string, actor Subject, r ExposureRu
 	ev := audit.Event{
 		Type: name, Actor: actorOf(actor), Outcome: audit.Success,
 		Subject:    audit.Subject{Kind: "exposure_rule", ID: r.ID, Name: r.Endpoint + "/" + r.Name},
-		Repository: r.Repository, Endpoint: EndpointOf(ctx), Details: mustJSON(details),
+		Repository: r.Repository, Endpoint: actor.Endpoint, Details: mustJSON(details),
 	}
 	ev.Actor.TokenID = actor.TokenID
 	switch name {
@@ -530,7 +531,7 @@ func (s *ExposureService) Create(ctx context.Context, tx meta.Tx, actor Subject,
 		if onEpoch != nil {
 			onEpoch(epoch)
 		}
-		return s.o.Recorder.RecordTx(ctx, tx, exposureEvent(ctx, EventExposureCreated, actor, out, nil, stateOfRule(out.ExposureRuleInput), nil, epoch, ""))
+		return s.o.Recorder.RecordTx(ctx, tx, exposureEvent(EventExposureCreated, actor, out, nil, stateOfRule(out.ExposureRuleInput), nil, epoch, ""))
 	})
 	return out, nil
 }
@@ -595,7 +596,7 @@ func (s *ExposureService) Replace(ctx context.Context, actor Subject, endpoint, 
 		before, after := stateOfRule(current.ExposureRuleInput), stateOfRule(out.ExposureRuleInput)
 		changes := changedMembers(current.ExposureRuleInput, out.ExposureRuleInput)
 		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-			return s.o.Recorder.RecordTx(ctx, tx, exposureEvent(ctx, EventExposureUpdated, actor, out, before, after, changes, epoch, ""))
+			return s.o.Recorder.RecordTx(ctx, tx, exposureEvent(EventExposureUpdated, actor, out, before, after, changes, epoch, ""))
 		})
 		return nil
 	})
@@ -643,7 +644,7 @@ func (s *ExposureService) Delete(ctx context.Context, actor Subject, endpoint, n
 		}
 		before := stateOfRule(current.ExposureRuleInput)
 		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-			return s.o.Recorder.RecordTx(ctx, tx, exposureEvent(ctx, EventExposureDeleted, actor, current, before, nil, nil, epoch, "api"))
+			return s.o.Recorder.RecordTx(ctx, tx, exposureEvent(EventExposureDeleted, actor, current, before, nil, nil, epoch, "api"))
 		})
 		return nil
 	})
@@ -716,7 +717,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 			return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("No repository %q exists.", in.Repository))
 		}
 		repo := repos[0]
-		f := s.o.Ceiling.formats(repo.Format)
+		f := s.o.Ceiling.exposure(repo.Format)
 		var ps []ProblemField
 		switch {
 		case !f.Exposable:
@@ -734,7 +735,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 			return err
 		}
 		var stored []*compiledRule
-		fold := foldFor(repo.Format)
+		names := s.o.Ceiling.names(repo.Format)
 		for _, r := range rows {
 			if r.RepoID != repo.ID {
 				continue
@@ -743,7 +744,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 			if err != nil {
 				return err
 			}
-			cr, err := compileRule(r.ID, r.Name, r.Revision, r.Enabled, d, fold)
+			cr, err := compileRule(r.ID, r.Name, r.Revision, r.Enabled, d, names)
 			if err != nil {
 				return err
 			}
@@ -751,7 +752,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		}
 		rules := stored
 		if in.Draft != nil {
-			if rules, err = s.withDraft(ctx, qs, stored, *in.Draft, repo.Key, fold); err != nil {
+			if rules, err = s.withDraft(ctx, qs, stored, *in.Draft, repo.Key, names); err != nil {
 				return err
 			}
 		}
@@ -785,7 +786,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 
 // withDraft validates the draft of the rule editor and puts it in place of the
 // stored rule of its name, or adds it.
-func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored []*compiledRule, draft ExposureRuleInput, repoKey string, fold bool) ([]*compiledRule, error) {
+func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored []*compiledRule, draft ExposureRuleInput, repoKey string, names catalog.Names) ([]*compiledRule, error) {
 	rr, err := s.resolve(ctx, qs, draft, "/rule")
 	if err != nil {
 		return nil, err
@@ -793,7 +794,7 @@ func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored [
 	if rr.in.Repository != repoKey {
 		return nil, problemError([]ProblemField{{Pointer: "/rule/repository", Code: errs.CodeValidation, Detail: "the draft rule must belong to the repository of the check"}})
 	}
-	cr, err := compileRule("draft", rr.in.Name, 0, rr.in.Enabled, rr.dims, fold)
+	cr, err := compileRule("draft", rr.in.Name, 0, rr.in.Enabled, rr.dims, names)
 	if err != nil {
 		return nil, err
 	}

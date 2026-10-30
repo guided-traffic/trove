@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
@@ -55,15 +56,23 @@ func TestR_EP_010_EndpointRulesFromConfiguration(t *testing.T) {
 
 func ptrTo[T any](v T) *T { return &v }
 
-func TestR_EP_013_EndpointStagePutsTheEndpointIntoTheContext(t *testing.T) {
+// TestR_EP_013_EndpointStageLeavesTheEndpointToTheSubject: stage 7 no longer hands
+// the endpoint to the decision point through the context (Q-EP-20 (b)); it keeps
+// the request path for the bridge, and the subject takes the endpoint from the
+// listener's chain (edge.SubjectFrom, tested in internal/api/edge).
+func TestR_EP_013_EndpointStageLeavesTheEndpointToTheSubject(t *testing.T) {
 	a := &App{}
-	var seen string
+	var path, endpoint string
 	h := a.endpointStage(&endpointRuntime{cfg: config.ResolvedEndpoint{Name: "customers"}})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		seen = authz.EndpointOf(r.Context())
+		path, _ = r.Context().Value(requestPathKey{}).(string)
+		endpoint = edge.SubjectFrom(r).Endpoint
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/files/generic-local/x", nil))
-	if seen != "customers" {
-		t.Fatalf("the decision point would see endpoint %q", seen)
+	if path != "/files/generic-local/x" {
+		t.Fatalf("the bridge would see the path %q", path)
+	}
+	if endpoint != "" {
+		t.Fatalf("stage 7 handed endpoint %q to the subject; only the listener's chain sets it", endpoint)
 	}
 }
 

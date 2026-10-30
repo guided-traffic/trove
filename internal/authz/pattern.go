@@ -2,16 +2,17 @@ package authz
 
 import (
 	"fmt"
-	"strings"
 	"unicode/utf8"
 
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // The pattern syntax of R-AUTHZ-005 is the one of R-REPO-005, and one compiler
 // implements it: [repository.CompilePattern] (Q-AUTHZ-25). Package-name patterns
 // use the subject "name", path patterns "path"; this file adds only what a grant
-// needs on top: the limits, the NuGet case folding and the include and exclude
+// needs on top: the limits, the folding of a name with the rule of its format
+// (the catalog's one normaliser, [catalog.Names]) and the include and exclude
 // semantics of a resource set.
 
 // Limits of R-AUTHZ-005. The length is counted in characters; the compiler
@@ -21,22 +22,34 @@ const (
 	maxPatternCount = 256
 )
 
-// FormatNuGet is the format whose package names compare case-insensitively
-// (R-AUTHZ-005): patterns and names are lower-cased by the same rule.
-const FormatNuGet = "nuget"
+// fold normalizes a package name or a package-name pattern with the rule of its
+// format (R-AUTHZ-005): names and patterns are folded by the same function, so
+// "Acme.*" and "ACME.Core" meet in the form the format compares. A nil rule (a
+// format without package names, a format the catalog does not know) folds
+// nothing, and a string the rule does not take for a name stays as it is.
+func fold(names catalog.Names, s string) string {
+	if names == nil {
+		return s
+	}
+	if n, ok := names.Normalize(s); ok {
+		return n
+	}
+	return s
+}
 
-// foldFor reports whether package names of the format compare case-insensitively.
-func foldFor(format string) bool { return format == FormatNuGet }
+// namesIn returns the name rule of a format in the catalog; nil for a format
+// without package names and for one the catalog does not know.
+func namesIn(reg *catalog.Registry, format string) catalog.Names {
+	e, _ := reg.Lookup(format)
+	return e.Names
+}
 
-// compileName compiles a package-name glob (R-AUTHZ-005).
-func compileName(pattern string, fold bool) (*repository.Pattern, error) {
+// compileName compiles a package-name glob (R-AUTHZ-005) folded with names.
+func compileName(pattern string, names catalog.Names) (*repository.Pattern, error) {
 	if err := checkLength(pattern); err != nil {
 		return nil, err
 	}
-	if fold {
-		pattern = strings.ToLower(pattern)
-	}
-	return repository.CompilePattern(repository.SubjectName, pattern)
+	return repository.CompilePattern(repository.SubjectName, fold(names, pattern))
 }
 
 // compilePath compiles a path pattern (R-AUTHZ-005).
@@ -57,7 +70,7 @@ func checkLength(p string) error {
 
 // ValidatePackagePattern reports why a package-name pattern is invalid, nil if
 // it is valid (R-AUTHZ-005).
-func ValidatePackagePattern(p string) error { _, err := compileName(p, false); return err }
+func ValidatePackagePattern(p string) error { _, err := compileName(p, nil); return err }
 
 // ValidatePathPattern reports why a path pattern is invalid, nil if it is valid.
 func ValidatePathPattern(p string) error { _, err := compilePath(p); return err }
@@ -83,15 +96,19 @@ const (
 type globSet struct {
 	include []*repository.Pattern
 	exclude []*repository.Pattern
-	fold    bool
+	names   catalog.Names
 }
 
-// compileSet compiles an include and an exclude list of one dimension.
-func compileSet(dim dimension, include, exclude []string, fold bool) (globSet, error) {
-	g := globSet{fold: fold && dim == dimPackage}
+// compileSet compiles an include and an exclude list of one dimension; names is
+// the name rule of the package dimension and is ignored for paths.
+func compileSet(dim dimension, include, exclude []string, names catalog.Names) (globSet, error) {
+	g := globSet{}
+	if dim == dimPackage {
+		g.names = names
+	}
 	compile := func(p string) (*repository.Pattern, error) {
 		if dim == dimPackage {
-			return compileName(p, g.fold)
+			return compileName(p, g.names)
 		}
 		return compilePath(p)
 	}
@@ -117,9 +134,7 @@ func compileSet(dim dimension, include, exclude []string, fold bool) (globSet, e
 // value matches an exclude); a non-empty one requires a value that matches an
 // include and no exclude.
 func (g globSet) match(v string, present bool) bool {
-	if g.fold {
-		v = strings.ToLower(v)
-	}
+	v = fold(g.names, v)
 	if len(g.include) == 0 {
 		return !present || !g.excluded(v)
 	}

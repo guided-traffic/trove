@@ -36,7 +36,7 @@ func (s *Server) policies() (*authz.Service, error) {
 }
 
 // caller is the subject of the request, for the actor of an audit event.
-func caller(r *http.Request) authz.Subject { return SubjectFrom(httpserver.PrincipalFrom(r.Context())) }
+func caller(r *http.Request) authz.Subject { return SubjectFrom(r.Context()) }
 
 // setEpoch puts the epoch a write produced in Trove-Authz-Epoch (R-AUTHZ-032).
 // authz.HeaderEpoch is the one name of the header and this the one setter: a write

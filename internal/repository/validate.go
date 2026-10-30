@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
 // validation collects the violations of one document, so that a request reports
@@ -25,24 +26,24 @@ func (v *validation) add(pointer, code, detail string) {
 // pass. create adds the key rules, which do not apply to an update because the
 // key cannot change. It returns the format entry (zero when the format is
 // unknown) and sets d.Layout to the format's layout.
-func validate(cat FormatCatalog, d *Document, create bool) (FormatInfo, *validation) {
+func validate(cat *catalog.Registry, d *Document, create bool) (catalog.Entry, *validation) {
 	v := &validation{}
 	if create {
 		if fe := checkKey(d.Key); fe != nil {
 			v.fields = append(v.fields, *fe)
 		}
 	}
-	info, known := cat.Format(d.Format)
+	info, known := cat.Lookup(d.Format)
 	if !known {
 		v.add("/format", errs.CodeUnknownFormat, fmt.Sprintf("format %q is not in the format catalog", d.Format))
 	}
-	classOK := validClass(d.Class)
+	classOK := d.Class.Valid()
 	if !classOK {
 		v.add("/class", errs.CodeUnsupportedClass, fmt.Sprintf("class %q is not local, remote or virtual", d.Class))
 	}
 	if known && classOK && !info.Supports(d.Class) {
 		v.add("/class", errs.CodeUnsupportedClass,
-			fmt.Sprintf("the %s format does not support %s repositories", info.Name, d.Class))
+			fmt.Sprintf("the %s format does not support %s repositories", info.ID, d.Class))
 		classOK = false
 	}
 	if known {
@@ -51,7 +52,7 @@ func validate(cat FormatCatalog, d *Document, create bool) (FormatInfo, *validat
 			d.Layout = info.Layout
 		default:
 			v.add("/layout", errs.CodeUnsupportedLayout,
-				fmt.Sprintf("the %s format has the layout %q and no other", info.Name, info.Layout))
+				fmt.Sprintf("the %s format has the layout %q and no other", info.ID, info.Layout))
 			d.Layout = info.Layout
 		}
 	}
@@ -95,7 +96,7 @@ func validatePatterns(v *validation, subject PatternSubject, pointer string, lis
 // validateSections checks the members that depend on the class and the format:
 // a class section that does not match the class, and the members that the
 // format does not support, answer not_applicable (R-REPO-004, R-GENERIC-008).
-func validateSections(v *validation, info FormatInfo, d *Document) {
+func validateSections(v *validation, info catalog.Entry, d *Document) {
 	na := func(pointer, why string) { v.add(pointer, errs.CodeNotApplicable, why) }
 	if d.Class != Remote && len(d.Remote) > 0 {
 		na("/remote", "the remote section applies to remote repositories")
@@ -108,7 +109,7 @@ func validateSections(v *validation, info FormatInfo, d *Document) {
 		case d.Class == Virtual:
 			na("/priorityMember", "priority members are local and remote repositories")
 		case !info.PriorityMembers:
-			na("/priorityMember", fmt.Sprintf("the %s format has no priority members", info.Name))
+			na("/priorityMember", fmt.Sprintf("the %s format has no priority members", info.ID))
 		}
 	}
 	if d.Local != nil {
@@ -133,13 +134,13 @@ func validByteLimit(raw json.RawMessage) bool {
 	return err == nil
 }
 
-func validateLocal(v *validation, info FormatInfo, d *Document, na func(pointer, why string)) {
+func validateLocal(v *validation, info catalog.Entry, d *Document, na func(pointer, why string)) {
 	if d.Class != Local {
 		na("/local", "the local section applies to local repositories")
 		return
 	}
 	l := d.Local
-	own := fmt.Sprintf("the %s format has no package names, so ownership and claims have nothing to act on", info.Name)
+	own := fmt.Sprintf("the %s format has no package names, so ownership and claims have nothing to act on", info.ID)
 	if l.PackageOwnership != nil {
 		switch {
 		case !info.PackageNames:
@@ -155,7 +156,7 @@ func validateLocal(v *validation, info FormatInfo, d *Document, na func(pointer,
 		na("/local/autoClaim", own)
 	}
 	if len(l.Caps) > 0 && !info.Caps {
-		na("/local/caps", fmt.Sprintf("the %s format has no version groups, so caps have nothing to count", info.Name))
+		na("/local/caps", fmt.Sprintf("the %s format has no version groups, so caps have nothing to count", info.ID))
 	}
 }
 

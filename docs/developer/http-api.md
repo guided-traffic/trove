@@ -28,7 +28,7 @@ The contract is [api/openapi.yaml](../../api/openapi.yaml) (OpenAPI 3.1, R-API-0
 | Paths | Full path in the document (`/api/v1/system/ping`), so the generated ServeMux pattern is `GET /api/v1/system/ping` |
 | Errors | `httpserver.Problem(w, r, err)` with an `*errs.Error`; never write an error body by hand. The wire members are those of `errs.Problem`: `type`, `title`, `status`, `detail`, `instance`, `code`, `requestId`, `errors` |
 | JSON | `writeJSON` in `handlers.go`: `application/json; charset=utf-8`, UTC times with `Z`, empty collections as `[]`, "no value" as `null` |
-| Caller | `httpserver.PrincipalFrom(ctx)`: kind, ID, name, groups and the credential that proved it (method, token ID and type, scope ceiling, endpoint binding); never read credentials from headers. Ask authorization with `v1.SubjectFrom(principal)`, see [m1-contracts.md](m1-contracts.md) |
+| Caller | `httpserver.PrincipalFrom(ctx)`: kind, ID, name, groups and the credential that proved it (method, token ID and type, scope ceiling, endpoint binding); never read credentials from headers. Ask authorization with `edge.SubjectFrom(r)` (`v1.SubjectFrom(ctx)` delegates): it carries the principal, the epoch and the listener's endpoint, see [m1-contracts.md](m1-contracts.md) |
 | Permission check | done before the handler by the authorization step of [authorize.go](../../internal/api/v1/authorize.go), from the operation's declaration; a handler adds a check only where the decision depends on the request body (R-API-008) |
 | Base URL | `httpserver.InfoFrom(ctx).BaseURL`, never `Host` |
 | Authorization table | `Document.Operations()` maps the route pattern to the declarations, each decoded into an `Operation.Requirement` at load |

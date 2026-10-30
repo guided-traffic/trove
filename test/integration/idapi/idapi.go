@@ -108,18 +108,11 @@ func principalOf(res auth.Result) httpserver.Principal {
 		Credential: httpserver.Credential{
 			Method: httpserver.AuthMethod(res.Credential.Method), SessionID: res.Credential.SessionID,
 			TokenID: res.Credential.TokenID, TokenType: httpserver.TokenType(res.Credential.TokenType),
+			Scope: res.Credential.Scope,
 		},
 	}
 	for _, g := range res.Groups {
 		p.Groups = append(p.Groups, httpserver.GroupRef{ID: g.ID, Name: g.Name})
-	}
-	if sc := res.Credential.Scope; sc != nil {
-		out := httpserver.Scope{Inherit: sc.Inherit, Admin: sc.Admin, System: sc.System}
-		for _, g := range sc.Repositories {
-			out.Repositories = append(out.Repositories, httpserver.ScopeGrant{Repositories: g.Repositories, Actions: g.Actions})
-		}
-		p.Credential.Scope = &out
-		p.Credential.Endpoints = sc.Endpoints
 	}
 	return p
 }

@@ -215,6 +215,7 @@ flowchart LR
     API["api/v1"]
     UI["webui<br/>embedded Angular build"]
     FM["formats<br/>npm, nuget, ..."]
+    CT["formats/catalog<br/>format facts, name rule, exposure (leaf)"]
     RP["repository<br/>snapshot, routing"]
     VT["virtual<br/>per-caller resolution, merged cache"]
     PX["proxy<br/>freshness, negative cache, collapse"]
@@ -250,6 +251,9 @@ flowchart LR
   FM --> VT
   VT --> RP
   VT --> PX
+  FM --> CT
+  RP --> CT
+  AZ --> CT
   API --> RP
   API --> JB
   RP --> MT
@@ -278,7 +282,9 @@ flowchart LR
 | httpserver | `internal/httpserver` | Listeners, top-level routing, middleware, client address | R-ARCH-005, R-ARCH-006 |
 | auth | `internal/auth/{oidc,session,token,ciexchange}` | Principal resolution, OIDC login, tokens, CI exchange | [identity-and-authentication.md](identity-and-authentication.md), [gitlab-ci-oidc.md](gitlab-ci-oidc.md) |
 | authz | `internal/authz` | Permission decisions | [authorization.md](authorization.md) |
-| api | `internal/api/v1` | Management REST API | [api-and-ui.md](api-and-ui.md) |
+| scope | `internal/auth/scope` | The value type of a token's scope (leaf), shared by the stage, the token service and the decision point | R-AUTH-024 |
+| catalog | `internal/formats/catalog` | The format catalog (leaf): every format's facts, its package-name rule and its exposure facts; `repository` and `authz` read it | R-REPO-003, R-AUTHZ-005, Q-ARCH-188 |
+| api | `internal/api/v1`, `internal/api/edge` | Management REST API; the conversions every HTTP entry point shares (the request to the `authz.Subject`, the holder of a request's index) | [api-and-ui.md](api-and-ui.md), R-AUTHZ-015 |
 | webui | `internal/webui` | Embedded Angular build | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004 |
 | formats | `internal/formats`, `internal/formats/<id>` | Package protocols behind the plug-in contract | R-ARCH-008 to R-ARCH-010; [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
 | repository | `internal/repository` | Repository model and snapshot, request classification, caller-independent routing of virtual repositories (members, claims, pin rules) | [repositories-and-proxy.md](repositories-and-proxy.md) |
@@ -316,10 +322,10 @@ Normative rules:
   and Valkey, as R-ARCH-030 assigns each mechanism (INV-12). The catalog's per-node peer address
   (HA-006) therefore does not exist in trove.
 - Imports form layers:
-  1. Edge: `httpserver`, `api/v1`, `webui`, format handlers.
+  1. Edge: `httpserver`, `api/v1`, `api/edge`, `webui`, format handlers.
   2. Domain: `repository`, `files`, `proxy`, `authz`, `auth`, `jobs`, `audit`, `backup`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`. Every layer may import them, and they import only each other.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `auth/scope`. Every layer may import them, and they import only each other.
 
   No lower layer imports a higher one. Format packages reach storage only through the host interface
   (R-ARCH-009), so the diagram has no arrow from `formats` to `blob`.
@@ -443,12 +449,15 @@ trove/
 │   ├── api/v1/                  # management API handlers
 │   │   └── gen/                 # oapi-codegen output: models, std-http-server interface (generated, committed)
 │   ├── api/rawfiles/            # the /files/ handler (R-API-025)
+│   ├── api/edge/                # request-to-domain conversions every entry point shares: Subject, Access (Q-ARCH-205)
 │   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
+│   ├── auth/scope/              # the token scope value type (leaf layer)
 │   ├── authz/
 │   ├── repository/              # model, snapshot, CleanPath, classification, routing of virtual repositories (members, claims, pins)
 │   ├── files/                   # items: raw deploy, download, delete, listing, statistics (R-STOR-007 to R-STOR-018)
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
+│   │   ├── catalog/             # the format catalog: facts, name rule, exposure (leaf layer, Q-ARCH-188)
 │   │   ├── formattest/          # conformance kit, in-memory Host
 │   │   ├── generic/
 │   │   ├── npm/
@@ -4599,9 +4608,8 @@ handles, so the host interface is the only path to storage (R-ARCH-009). The com
 place where all layers are visible, which is where the registration belongs.
 
 **Applied in the spec:** R-ARCH-002: the layer list has the leaf layer and names `blob` as infrastructure;
-the diagram has no arrow from `formats` to `blob`. Open: the archtest rule still admits the root package
-`internal/blob` for formats, and the format rule is a denylist (architecture review A2); the spec states
-the target.
+the diagram has no arrow from `formats` to `blob`. The archtest rule for format packages is an
+allowlist that does not admit `internal/blob` (R-ARCH-008).
 
 ### Q-ARCH-29 · What the scheduler enqueues on each tick
 
@@ -4994,6 +5002,62 @@ reader that is slower than the margin allows must be served to the end (then the
 
 **Applied in the spec:** R-ARCH-024 step 5; [../developer/e2e.md](../developer/e2e.md#findings-of-the-suite) finding 5.
 
+### Q-ARCH-188 · The format catalog is a leaf package that every consumer reads, not a copy in each layer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the facts of a format (classes, layout, pattern subject, package names, priority members, pins, caps) were declared in
+`formats.Descriptor` and mirrored three times: `repository.FormatInfo` with `repository.FormatCatalog` (and a second `Class` and
+`PatternSubject`), the adapter `app.formatCatalog`, and a fourth copy in the files integration environment. The decision point
+named NuGet's case folding, the literals `"npm"` and `"nuget"` and the exposure facts of the generic format itself. `repository` and
+`authz` are domain packages and `internal/formats` is edge, so they cannot import the format contract.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/formats/catalog`, a leaf; consumers take a `*catalog.Registry`, nil is `catalog.Default()` | The format declares its facts once, `formats.Register` puts them into the catalog, `repository` and `authz` read them there; tests build a registry of their own | One declaration, no mirror; the facts sit next to the formats that declare them; a test shares no state and imports no format | A new leaf package; a nil option reaches the process registry silently |
+| (b) `internal/catalog`, top level | The same, one level up | Short path | Reads as a product catalog; the formats' own tree is where a contributor looks |
+| (c) A global registry only | `formats.Lookup` everywhere | No injection | The domain layer cannot import it; tests share state and depend on each other's registrations |
+
+**Choice:** (a). The leaf holds `ID`, `Class`, `PatternSubject`, `RequestKind`, `Facts`, the one package-name normaliser (`Names`),
+the exposure facts (`Exposure`, `Versioning`) and the `Registry` (`Register`, `Lookup`, `List`, `Freeze`, `NormalizeName`). It imports
+nothing of this module. `formats.Register` derives the entry from the format and is the only production registration; a format
+that has package names declares the normaliser, and grants, token scopes, exposure rules and repository patterns fold a name and a
+pattern with it. A format the catalog does not know folds nothing and is not exposable (fail closed).
+
+**Rationale:** the facts and the rule that folds a name are the same for every layer, so they are declared once and read, never
+copied. The injection is what lets a test of the decision point name a case-insensitive format without importing one. The development
+agent would revisit this if a fact needs the request types of the contract (then it stays in `internal/formats`), or if a second
+process-wide registry becomes necessary (then the nil default is the first thing to remove).
+
+**Applied in the spec:** R-ARCH-002 (the leaf list, the component table and the diagram) and R-ARCH-003 (the tree); Q-ARCH-28 loses
+its stale remark. The contract sketch of R-ARCH-008 to R-ARCH-010 follows when the contract is written (WP2.1).
+
+### Q-ARCH-189 · Shared value types are declared once in a leaf and named by alias, never mirrored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: besides the format facts, the token scope existed three times (`token.Scope`, `httpserver.Scope` and the conversion back to
+`token.Scope` in the subject), `authz.RequestKind` repeated `formats.RequestKind`, and `repository.Class` repeated `formats.Class`
+(a string against a number). Every copy needed a conversion at a seam, and a field added to one was lost at the next conversion.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One declaration in a leaf, other packages alias or use it | `catalog.Class`, `PatternSubject`, `RequestKind` with aliases in `formats`, `repository` and `authz`; `internal/auth/scope` with `scope.Scope` used by the stage, `httpserver`, `token` and `authz` | No mirror, no conversion; a call site keeps its spelling through an alias | An alias hides where a type comes from |
+| (b) Allow `authz` and `repository` to be imported by format packages | A format names the domain types | No alias | A format could call `NewService` or build an `Engine`; the layers meet in the contract |
+| (c) Copies owned by each layer | As before | No new package | The drift this decision removes |
+
+**Choice:** (a). The scope leaf holds `Scope`, `Grant`, `Patterns`, `Options`, `Default`, `Parse`, `ParseStored`, `Marshal` and
+`Within`; `httpserver.Credential.Scope` is a `*scope.Scope` and its separate `Endpoints` field is gone (the binding is
+`Scope.Endpoints`). The names `Action`, `Path` and a narrow authorization `Target` reach a format as aliases in the contract in
+the same way when the contract is written (WP2.1). The token package keeps `Scope`, `ScopeGrant`, `Patterns`, `ScopeOptions`,
+`DefaultScope`, `ParseScope` and `ParseStoredScope` as aliases and one-line forwards, so the identity area compiles unchanged
+while it is being changed; the file is deleted when no caller spells them.
+
+**Rationale:** a type that crosses a layer boundary is declared where both sides can import it. The development agent would
+revisit this if an alias causes a wrong import in a format package, which the architecture test names.
+
+**Applied in the spec:** R-ARCH-002 and R-ARCH-003 (the `auth/scope` leaf).
+
 ### Q-ARCH-190 · The M2 tables ship as three expand-only migrations before any package that uses them
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5186,6 +5250,30 @@ The client certificate is a connection property, not a header. A policy that als
 **Rationale:** The rule has to hold for the first request, for each redirect and for the TLS handshake, and only the round tripper sees all three. The redirect limit, the `https` to `http` refusal and the egress check stay where they were, in `CheckRedirect` and the dialer. Revisit if a format needs a credential that depends on the response of a previous hop (a token handshake): that belongs to the format plug-in's own requests, each of which passes through `Decorate` as hop 0.
 
 **Applied in the spec:** R-REPO-039 states that the client certificate follows the same rule as the credentials and that `forwardAuthOnRedirect` widens redirect hops only.
+
+### Q-ARCH-205 · One edge package for the conversions every HTTP entry point shares
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `v1.SubjectFrom` is the one place that builds an `authz.Subject`, and the raw `/files/` routes import the management API
+for it, for `CallerFrom` and for the JSON helpers. The format dispatcher will need the same conversion and the holder of a request's
+index (Q-AUTHZ-159).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/api/edge`: conversions, the access holder, later content responses | One package that `rawfiles`, the dispatcher and `v1` import and that imports none of them | No entry point imports another; the one place that builds a subject has a package of its own, which the architecture test names | A package to keep small |
+| (b) Two packages, conversions and content | Split by kind | Smaller units | More imports, no gain |
+| (c) Keep them in `httpserver` | The shell holds them | No new package | `httpserver` would import `authz` and `audit` types it does not own |
+
+**Choice:** (a). `edge.SubjectFrom(r)` and `edge.SubjectOf(ctx)` build the subject from the caller and the listener's endpoint,
+`edge.ActorFrom` the audit actor, and `edge.Access` (`Begin`, `WithAccess`, `AccessFrom`, `Resolve`) holds the subject, the index
+and the decider of a request. `v1.SubjectFrom(ctx)` and `v1.ActorFrom` delegate.
+
+**Rationale:** the packages that serve content must not depend on the management API, and the conversion that carries the
+exposure ceiling must exist once. The development agent would revisit this if the package starts to hold anything that is not shared
+by at least two entry points.
+
+**Applied in the spec:** R-ARCH-002 (component table, layer list) and R-ARCH-003 (the tree).
 
 ## What this does not cover
 

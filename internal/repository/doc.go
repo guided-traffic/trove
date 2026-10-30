@@ -9,6 +9,6 @@
 // write side that the management API calls after it has authorized: every write
 // is one transaction holding the row, the audit event and the change-log row. The
 // package does not know formats: internal/formats is above this layer, so the
-// model validates against a FormatCatalog that the composition root adapts from
-// the format registry. docs/developer/repositories.md describes the flows.
+// model validates against the format catalog (internal/formats/catalog, a leaf)
+// that every format registers its facts in. docs/developer/repositories.md describes the flows.
 package repository

@@ -50,8 +50,8 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
-	"github.com/guided-traffic/trove/internal/formats"
 	_ "github.com/guided-traffic/trove/internal/formats/all"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -396,26 +396,6 @@ func (r *recorder) ofType(name string) []audit.Event {
 	return out
 }
 
-// catalog is the format catalog the composition root builds from the registry.
-type catalog struct{}
-
-func (catalog) Format(name string) (repository.FormatInfo, bool) {
-	f, ok := formats.Lookup(name)
-	if !ok {
-		return repository.FormatInfo{}, false
-	}
-	d := f.Descriptor()
-	info := repository.FormatInfo{
-		Name: string(d.ID), Layout: d.Layout, ProtocolBasePath: d.ProtocolBasePath,
-		PatternSubject: repository.PatternSubject(d.PatternSubject), PackageNames: d.PackageNames,
-		PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps,
-	}
-	for _, c := range d.Classes {
-		info.Classes = append(info.Classes, repository.Class(c.String()))
-	}
-	return info, true
-}
-
 // sqlPrincipals reads the principal table for the policy service.
 type sqlPrincipals struct{ e *env }
 
@@ -533,7 +513,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}
 
 	if r.reader, err = repository.NewReader(repository.ReaderOptions{
-		Runner: r.db, Catalog: catalog{}, Caches: caches, Poller: r.changes,
+		Runner: r.db, Catalog: catalog.Default(), Caches: caches, Poller: r.changes,
 		SafetyTTL: 5 * time.Minute, UnknownKeys: 10000, LookupWait: 5 * time.Second, Log: quiet,
 	}); err != nil {
 		t.Fatal(err)
@@ -583,7 +563,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		}
 	}
 	if r.repos, err = repository.NewService(repository.Options{
-		Runner: r.db, Catalog: catalog{}, Recorder: r.rec, Notifier: r.changes, Jobs: r.queue, Log: quiet,
+		Runner: r.db, Catalog: catalog.Default(), Recorder: r.rec, Notifier: r.changes, Jobs: r.queue, Log: quiet,
 		DeleteBatch: 2,
 	}); err != nil {
 		t.Fatal(err)

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
-	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
@@ -45,7 +45,7 @@ var (
 	ciSub     = Subject{Kind: principal.KindCI, Name: "ci", Mappings: []string{"ci:gitlab-internal/acme"}}
 	adminSub  = userSub(idAudit, "ops-admin", idOps)
 	breakSub  = Subject{Kind: principal.KindBreakGlass, ID: "user-root", Name: "root"}
-	tokenScop = func(s Subject, sc token.Scope) Subject { s.Scope = &sc; return s }
+	tokenScop = func(s Subject, sc scope.Scope) Subject { s.Scope = &sc; return s }
 )
 
 func runAuthzCases(t *testing.T, e *Engine, cases []authzCase, count *int) {
@@ -192,12 +192,12 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.policy(policyDef{name: "consumers", selectors: []string{"@any-virtual:npm", "@any-local:npm", "@any-remote:npm"}, entries: map[string][]string{idDevs: {"read"}}})
 		f.policy(policyDef{name: "web", selectors: []string{"npm-internal"}, pkgInc: []string{"@web/*"}, entries: map[string][]string{idWeb: {"read", "deploy"}}})
 		e := newTestEngine(t, f, nil)
-		readOnly := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npm-all", "@any-local:npm", "@any-remote:npm"}, Actions: []string{"read"}}}}
-		narrow := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npm-internal"}, Packages: token.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}}}
-		wide := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any"}, Actions: []string{"read", "deploy", "delete", "manage"}}}}
+		readOnly := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all", "@any-local:npm", "@any-remote:npm"}, Actions: []string{"read"}}}}
+		narrow := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Packages: scope.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}}}
+		wide := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Actions: []string{"read", "deploy", "delete", "manage"}}}}
 		runAuthzCases(t, e, []authzCase{
 			{"a session has no ceiling", aliceSub, write("npm-internal", "@web/x", "", Deploy), Allow, "", ""},
-			{"inherit admits every right of the owner", tokenScop(aliceSub, token.Scope{Inherit: true}), write("npm-internal", "@web/x", "", Deploy), Allow, "", ""},
+			{"inherit admits every right of the owner", tokenScop(aliceSub, scope.Scope{Inherit: true}), write("npm-internal", "@web/x", "", Deploy), Allow, "", ""},
 			{"a read-only scope still reads through the virtual repository", tokenScop(aliceSub, readOnly), read("npm-all", "left-pad", ""), Allow, "", ""},
 			{"a read-only scope reads the local repository", tokenScop(aliceSub, readOnly), read("npm-internal", "@web/x", ""), Allow, "", ""},
 			{"a read-only scope refuses deploy that the grant allows", tokenScop(aliceSub, readOnly), write("npm-internal", "@web/x", "", Deploy), DenyVisible, ReasonScope, Deploy},
@@ -208,13 +208,13 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"a scope that names more than the owner holds yields nothing for the rest", tokenScop(bobSub, wide), write("npm-internal", "@web/x", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 			{"a wide scope does not widen a read the owner has", tokenScop(bobSub, wide), read("npm-internal", "x", ""), Allow, "", ""},
 			{"a scope never grants manage", tokenScop(aliceSub, wide), write("npm-internal", "@web/x", "", Manage), DenyVisible, ReasonNoGrant, Manage},
-			{"a scope without a matching selector admits nothing", tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"other-repo"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
-			{"an empty restricted scope admits nothing", tokenScop(aliceSub, token.Scope{}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
-			{"a scope with an invalid selector admits nothing", tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"NOT A KEY"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
-			{"a scope with an invalid pattern admits nothing", tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any"}, Packages: token.Patterns{Include: []string{`x\`}}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
-			{"a scope with an unknown action admits nothing for it", tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any"}, Actions: []string{"publish"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
-			{"a scope class selector with a format admits the format", tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any-local:npm"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), Allow, "", ""},
-			{"a scope class selector with another format does not", tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any-local:nuget"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"a scope without a matching selector admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"other-repo"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"an empty restricted scope admits nothing", tokenScop(aliceSub, scope.Scope{}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"a scope with an invalid selector admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"NOT A KEY"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"a scope with an invalid pattern admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Packages: scope.Patterns{Include: []string{`x\`}}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"a scope with an unknown action admits nothing for it", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Actions: []string{"publish"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"a scope class selector with a format admits the format", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any-local:npm"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), Allow, "", ""},
+			{"a scope class selector with another format does not", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any-local:nuget"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
 			{"a service-account token carries only what the account holds", tokenScop(botSub, wide), read("npm-internal", "x", ""), DenyHidden, ReasonNoGrant, Read},
 			{"a scope does not help an anonymous caller", anonSub, read("npm-internal", "x", ""), DenyUnauthenticated, ReasonUnauthenticated, ""},
 		}, &n)
@@ -257,8 +257,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.policy(policyDef{name: "everyone-reads-generic", selectors: []string{"generic-local"}, entries: map[string][]string{AuthenticatedID: {"read"}}})
 		f.policy(policyDef{name: "bot", selectors: []string{"npm-internal"}, entries: map[string][]string{idBot: {"read"}}})
 		e := newTestEngine(t, f, nil)
-		scoped := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npmjs"}, Actions: []string{"read"}}}}
-		scopedAll := token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"npm-all", "generic-local"}, Actions: []string{"read"}}}}
+		scoped := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npmjs"}, Actions: []string{"read"}}}}
+		scopedAll := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all", "generic-local"}, Actions: []string{"read"}}}}
 		runAuthzCases(t, e, []authzCase{
 			{"a user in no group reads through authenticated", carolSub, metadata("npm-all"), Allow, "", ""},
 			{"a user in no group reads a remote repository", carolSub, read("npmjs", "left-pad", ""), Allow, "", ""},
@@ -307,7 +307,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.policy(policyDef{name: "virtual-deploy", selectors: []string{"@any-virtual"}, entries: map[string][]string{idBob: {"deploy", "manage"}}})
 		e := newTestEngine(t, f, func(o *Options) { o.AnonymousAccess = func(context.Context) (bool, error) { return true, nil } })
 		off := newTestEngine(t, f, nil)
-		readOnlyTok := tokenScop(aliceSub, token.Scope{Repositories: []token.ScopeGrant{{Repositories: []string{"@any"}, Actions: []string{"read"}}}})
+		readOnlyTok := tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Actions: []string{"read"}}}})
 		runAuthzCases(t, e, []authzCase{
 			{"trace 1 alice views through npm-all", aliceSub, read("npm-all", "@web/button", ""), Allow, "", ""},
 			{"trace 2 alice publishes through npm-all", aliceSub, write("npm-all", "@web/button", "", Deploy), Allow, "", ""},
@@ -343,7 +343,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		secadm := userSub("user-secadm", "secadm")
 		repoadm := userSub("user-repoadm", "repoadm")
 		hookadm := userSub("user-hookadm", "hookadm")
-		adminTok := func(sc token.Scope) Subject { return tokenScop(adminSub, sc) }
+		adminTok := func(sc scope.Scope) Subject { return tokenScop(adminSub, sc) }
 
 		type capCase struct {
 			name string
@@ -391,24 +391,24 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"a CI token never holds a capability", ciSub, "settings:read", false},
 			{"a service account without a binding holds nothing", botSub, "settings:read", false},
 			{"an unknown capability is refused", adminSub, "everything:write", false},
-			{"the default scope of an administrator's token exercises no role", adminTok(token.Scope{Inherit: true}), "policies:write", false},
-			{"admin: true exercises every capability of admin", adminTok(token.Scope{Inherit: true, Admin: true}), "policies:write", true},
-			{"admin: true includes content:bypass", adminTok(token.Scope{Inherit: true, Admin: true}), "content:bypass", true},
-			{"a system item grants a capability the owner's role holds", adminTok(token.Scope{System: []string{"policies:read"}}), "policies:read", true},
-			{"a system item grants only its own capability", adminTok(token.Scope{System: []string{"policies:read"}}), "policies:write", false},
-			{"a system item lists no other capability", adminTok(token.Scope{System: []string{"policies:read"}}), "identities:read", false},
-			{"content:bypass is never a system item", adminTok(token.Scope{System: []string{"content:bypass"}}), "content:bypass", false},
-			{"an auditor's token with policies:read reads policies", tokenScop(auditor, token.Scope{System: []string{"policies:read"}}), "policies:read", true},
-			{"an auditor's token cannot read users", tokenScop(auditor, token.Scope{System: []string{"policies:read"}}), "identities:read", false},
-			{"a system item the owner's roles do not grant yields nothing", tokenScop(auditor, token.Scope{System: []string{"policies:write"}}), "policies:write", false},
-			{"admin: true of a non-admin exercises no admin capability", tokenScop(auditor, token.Scope{Admin: true}), "policies:write", false},
-			{"admin: true of a non-admin still exercises its system items", tokenScop(auditor, token.Scope{Admin: true, System: []string{"audit:read"}}), "audit:read", true},
-			{"a service-account token with a system item and no role holds nothing", tokenScop(botSub, token.Scope{System: []string{"policies:read"}}), "policies:read", false},
+			{"the default scope of an administrator's token exercises no role", adminTok(scope.Scope{Inherit: true}), "policies:write", false},
+			{"admin: true exercises every capability of admin", adminTok(scope.Scope{Inherit: true, Admin: true}), "policies:write", true},
+			{"admin: true includes content:bypass", adminTok(scope.Scope{Inherit: true, Admin: true}), "content:bypass", true},
+			{"a system item grants a capability the owner's role holds", adminTok(scope.Scope{System: []string{"policies:read"}}), "policies:read", true},
+			{"a system item grants only its own capability", adminTok(scope.Scope{System: []string{"policies:read"}}), "policies:write", false},
+			{"a system item lists no other capability", adminTok(scope.Scope{System: []string{"policies:read"}}), "identities:read", false},
+			{"content:bypass is never a system item", adminTok(scope.Scope{System: []string{"content:bypass"}}), "content:bypass", false},
+			{"an auditor's token with policies:read reads policies", tokenScop(auditor, scope.Scope{System: []string{"policies:read"}}), "policies:read", true},
+			{"an auditor's token cannot read users", tokenScop(auditor, scope.Scope{System: []string{"policies:read"}}), "identities:read", false},
+			{"a system item the owner's roles do not grant yields nothing", tokenScop(auditor, scope.Scope{System: []string{"policies:write"}}), "policies:write", false},
+			{"admin: true of a non-admin exercises no admin capability", tokenScop(auditor, scope.Scope{Admin: true}), "policies:write", false},
+			{"admin: true of a non-admin still exercises its system items", tokenScop(auditor, scope.Scope{Admin: true, System: []string{"audit:read"}}), "audit:read", true},
+			{"a service-account token with a system item and no role holds nothing", tokenScop(botSub, scope.Scope{System: []string{"policies:read"}}), "policies:read", false},
 			{"the role form admin is held by an administrator", adminSub, "role:admin", true},
 			{"the role form admin is not held by an auditor", auditor, "role:admin", false},
 			{"the role form auditor is held by the auditor", auditor, "role:auditor", true},
-			{"the role form is not held through a default-scope token", adminTok(token.Scope{Inherit: true}), "role:admin", false},
-			{"the role form is held through an admin token", adminTok(token.Scope{Admin: true}), "role:admin", true},
+			{"the role form is not held through a default-scope token", adminTok(scope.Scope{Inherit: true}), "role:admin", false},
+			{"the role form is held through an admin token", adminTok(scope.Scope{Admin: true}), "role:admin", true},
 			{"the role form admin is held by break-glass", breakSub, "role:admin", true},
 			{"an unknown role is refused", adminSub, "role:root", false},
 		}
@@ -436,8 +436,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"content:bypass lets an administrator read anything", adminSub, read("npm-internal", "x", ""), Allow, ReasonAllowRole, ""},
 			{"content:bypass lets an administrator write anything", adminSub, write("npm-internal", "x", "", Deploy, Overwrite, Delete, Manage), Allow, ReasonAllowRole, ""},
 			{"the break-glass administrator reads anything", breakSub, read("npm-internal", "x", ""), Allow, ReasonAllowRole, ""},
-			{"an administrator's default-scope token has no content bypass", tokenScop(adminSub, token.Scope{Inherit: true}), read("npm-internal", "x", ""), DenyHidden, ReasonNoGrant, Read},
-			{"an administrator's admin token has content bypass", tokenScop(adminSub, token.Scope{Admin: true}), read("npm-internal", "x", ""), Allow, ReasonAllowRole, ""},
+			{"an administrator's default-scope token has no content bypass", tokenScop(adminSub, scope.Scope{Inherit: true}), read("npm-internal", "x", ""), DenyHidden, ReasonNoGrant, Read},
+			{"an administrator's admin token has content bypass", tokenScop(adminSub, scope.Scope{Admin: true}), read("npm-internal", "x", ""), Allow, ReasonAllowRole, ""},
 			{"an auditor has no content rights through its role", auditor, read("npm-internal", "x", ""), DenyHidden, ReasonNoGrant, Read},
 			{"a missing repository is bypassed by nobody", adminSub, read("ghost", "x", ""), DenyHidden, ReasonNoGrant, Read},
 		}, &n)
@@ -449,12 +449,12 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.bind(RoleAdmin, idOps)
 		e := newTestEngine(t, f, func(o *Options) { o.Ceiling = stubCeiling{} })
 		runAuthzCases(t, e, []authzCase{
-			{"an exposed repository is readable", aliceSub, func() Coordinate { c := read("npm-internal", "x", ""); c.Endpoint = "customers"; return c }(), Allow, "", ""},
-			{"a read the exposure does not admit is a hidden 404", aliceSub, func() Coordinate { c := read("npm-hidden", "x", ""); c.Endpoint = "customers"; return c }(), DenyHidden, ReasonExposure, Read},
+			{"an exposed repository is readable", onEP(aliceSub, "customers"), read("npm-internal", "x", ""), Allow, "", ""},
+			{"a read the exposure does not admit is a hidden 404", onEP(aliceSub, "customers"), read("npm-hidden", "x", ""), DenyHidden, ReasonExposure, Read},
 			{"the same read on the default endpoint is allowed", aliceSub, read("npm-hidden", "x", ""), Allow, "", ""},
-			{"a write on an endpoint with exposure rules is 403 read-only", aliceSub, func() Coordinate { c := write("npm-internal", "x", "", Deploy); c.Endpoint = "customers"; return c }(), DenyVisible, ReasonEndpointReadOnly, ""},
-			{"the ceiling binds an administrator", adminSub, func() Coordinate { c := read("npm-hidden", "x", ""); c.Endpoint = "customers"; return c }(), DenyHidden, ReasonExposure, Read},
-			{"the ceiling binds the break-glass administrator's writes", breakSub, func() Coordinate { c := write("npm-internal", "x", "", Deploy); c.Endpoint = "customers"; return c }(), DenyVisible, ReasonEndpointReadOnly, ""},
+			{"a write on an endpoint with exposure rules is 403 read-only", onEP(aliceSub, "customers"), write("npm-internal", "x", "", Deploy), DenyVisible, ReasonEndpointReadOnly, ""},
+			{"the ceiling binds an administrator", onEP(adminSub, "customers"), read("npm-hidden", "x", ""), DenyHidden, ReasonExposure, Read},
+			{"the ceiling binds the break-glass administrator's writes", onEP(breakSub, "customers"), write("npm-internal", "x", "", Deploy), DenyVisible, ReasonEndpointReadOnly, ""},
 		}, &n)
 	})
 
@@ -468,8 +468,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 // "customers".
 type stubCeiling struct{}
 
-func (stubCeiling) Admits(_ *Index, c Coordinate, a Action) CeilingVerdict {
-	if c.Endpoint != "customers" {
+func (stubCeiling) Admits(_ *Index, endpoint string, c Coordinate, a Action) CeilingVerdict {
+	if endpoint != "customers" {
 		return CeilingAdmits
 	}
 	if a != Read {

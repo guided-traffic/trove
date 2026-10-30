@@ -77,6 +77,33 @@ func TestLayers(t *testing.T) {
 			pkg("internal/formatdata/npm", "internal/meta", "internal/meta/postgres/q"),
 		}))
 	})
+	t.Run("R-ARCH-002 the domain layer importing the format contract names the edge, the catalog and the scope leaf pass", func(t *testing.T) {
+		vs := CheckLayers(mod, []Package{pkg("internal/repository", "internal/formats")})
+		wantEdge(t, vs, "R-ARCH-002", "internal/repository", "internal/formats")
+		vs = CheckLayers(mod, []Package{pkg("internal/authz", "internal/formats")})
+		wantEdge(t, vs, "R-ARCH-002", "internal/authz", "internal/formats")
+		wantClean(t, CheckLayers(mod, []Package{
+			pkg("internal/repository", "internal/formats/catalog", "internal/errs"),
+			pkg("internal/authz", "internal/formats/catalog", "internal/auth/scope", "internal/repository"),
+			pkg("internal/httpserver", "internal/auth/scope"),
+			pkg("internal/formats", "internal/formats/catalog", "internal/authz", "internal/repository"),
+			pkg("internal/formats/catalog", "internal/errs"),
+			pkg("internal/auth/scope", "internal/errs", "internal/config"),
+		}))
+	})
+	t.Run("R-ARCH-002 the catalog and the scope leaves import no higher layer", func(t *testing.T) {
+		vs := CheckLayers(mod, []Package{
+			pkg("internal/formats/catalog", "internal/repository"),
+			pkg("internal/auth/scope", "internal/authz"),
+		})
+		wantEdge(t, vs, "R-ARCH-002", "internal/formats/catalog", "internal/repository")
+		wantEdge(t, vs, "R-ARCH-002", "internal/auth/scope", "internal/authz")
+		for _, r := range []string{"internal/formats/catalog", "internal/auth/scope"} {
+			if l, _ := layerOf(r); l != layerLeaf {
+				t.Errorf("%s is %s", r, l)
+			}
+		}
+	})
 	t.Run("R-ARCH-002 allowed edges pass", func(t *testing.T) {
 		wantClean(t, CheckLayers(mod, []Package{
 			pkg("cmd/trove", "internal/app", "internal/config", "internal/buildinfo"),
@@ -159,9 +186,10 @@ func TestFormatImportAllowlist(t *testing.T) {
 			}
 		})
 	}
-	t.Run("R-ARCH-008 the contract, errs, config, observability, standard library and the format's own subpackages pass", func(t *testing.T) {
+	t.Run("R-ARCH-008 the contract, the catalog, errs, config, observability, standard library and the format's own subpackages pass", func(t *testing.T) {
 		wantClean(t, CheckModuleImportBans(mod, []Package{
-			pkg("internal/formats/npm", "internal/formats", "internal/errs", "internal/config", "internal/observability", "internal/formats/npm/parse", "net/http", "github.com/prometheus/client_golang/prometheus"),
+			pkg("internal/formats/npm", "internal/formats", "internal/formats/catalog", "internal/errs", "internal/config", "internal/observability", "internal/formats/npm/parse", "net/http", "github.com/prometheus/client_golang/prometheus"),
+			pkg("internal/formats/catalog", "internal/errs"),
 			pkg("internal/formats/npm/parse", "internal/errs", "internal/formats/npm"),
 			pkg("internal/formats", "internal/errs", "internal/config"),
 			pkg("internal/proxy", "internal/blob", "internal/jobs", "internal/meta"),
@@ -195,7 +223,7 @@ func TestFormatImportAllowlist(t *testing.T) {
 
 func TestStateExemption(t *testing.T) {
 	t.Run("R-ARCH-032 the exemption is the exact package, not its subtree", func(t *testing.T) {
-		for _, ok := range []string{"internal/formats", "internal/meta", "internal/backup/tables", "internal/jobs", "internal/errs", "internal/secrets", "internal/cache", "internal/cluster", "internal/observability", "test/integration/coordination", "internal/archtest"} {
+		for _, ok := range []string{"internal/formats", "internal/formats/catalog", "internal/meta", "internal/backup/tables", "internal/jobs", "internal/errs", "internal/secrets", "internal/cache", "internal/cluster", "internal/observability", "test/integration/coordination", "internal/archtest"} {
 			if !stateExempt(ok) {
 				t.Errorf("%s must be exempt", ok)
 			}
@@ -407,6 +435,44 @@ func TestEndpointConstruction(t *testing.T) {
 	})
 }
 
+func TestSubjectConstruction(t *testing.T) {
+	t.Run("R-EP-013 a subject built or edited outside internal/authz and internal/api/edge is found through literals, new, aliases, zero values and field assignments", func(t *testing.T) {
+		dir := fixtureDir(t, "subject")
+		pkgs, err := LoadTyped(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		vs := CheckSubjectConstruction("example.test/fix", pkgs)
+		got := map[string]bool{}
+		for _, v := range vs {
+			got[v.From] = true
+			if v.Rule != "R-EP-013" {
+				t.Errorf("rule %s, want R-EP-013", v.Rule)
+			}
+		}
+		for _, want := range []string{"literal.go", "newt.go", "alias.go", "typealias.go", "zerovar.go", "assign.go"} {
+			if !got["internal/webish/"+want] {
+				t.Errorf("%s not named:\n%s", want, strings.Join(Strings(vs), "\n"))
+			}
+		}
+		for from := range got {
+			if !strings.HasPrefix(from, "internal/webish/") || strings.HasSuffix(from, "clean.go") {
+				t.Errorf("%s must not be named (authz and edge build subjects; passing one on, reading one and an audit.Subject are fine)", from)
+			}
+		}
+		// Both lines of assign.go that edit a field are named, the edit of the subject edge returned too.
+		var assigns int
+		for _, v := range vs {
+			if v.From == "internal/webish/assign.go" {
+				assigns++
+			}
+		}
+		if assigns != 2 { // Endpoint and Name: one violation per distinct field
+			t.Errorf("assign.go names %d edits, want 2:\n%s", assigns, strings.Join(Strings(vs), "\n"))
+		}
+	})
+}
+
 func TestRealTree(t *testing.T) {
 	t.Run("R-ARCH-002 the layer and import rules hold on the current tree", func(t *testing.T) {
 		_, module, pkgs := realTree(t)
@@ -440,6 +506,14 @@ func TestRealTree(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantClean(t, CheckEndpointConstruction(module, pkgs))
+	})
+	t.Run("R-EP-013 only internal/authz and internal/api/edge build an authz.Subject", func(t *testing.T) {
+		root, module, _ := realTree(t)
+		pkgs, err := LoadTyped(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantClean(t, CheckSubjectConstruction(module, pkgs))
 	})
 	t.Run("R-ARCH-018 no LISTEN or NOTIFY, no change-log write outside internal/cluster, no session-level SQL, no assembled SQL", func(t *testing.T) {
 		root, _, _ := realTree(t)

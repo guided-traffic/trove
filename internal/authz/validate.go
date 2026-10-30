@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -30,11 +31,10 @@ type ServiceOptions struct {
 	Repositories repository.Reader
 	// Recorder records the policy and role events in the transaction of the write.
 	Recorder audit.Recorder
-	// KnownFormat reports whether the server knows a format (422 unknown_format).
-	// The composition root passes the format registry (internal/formats), so a
-	// selector names only a format that is registered; nil accepts every name,
-	// which is for a caller that has no registry (a unit test).
-	KnownFormat func(string) bool
+	// Formats is the format catalog (422 unknown_format for a selector that names
+	// a format it does not hold, warnings for a path pattern on a format whose
+	// patterns match names). Nil is catalog.Default.
+	Formats *catalog.Registry
 }
 
 // Service is the domain API of policies, role bindings and caller checks
@@ -49,10 +49,14 @@ func NewService(o ServiceOptions) *Service {
 	if o.Recorder == nil {
 		o.Recorder = audit.Nop{}
 	}
-	if o.KnownFormat == nil {
-		o.KnownFormat = func(string) bool { return true }
-	}
+	o.Formats = catalog.Or(o.Formats)
 	return &Service{o: o}
+}
+
+// known reports whether the catalog holds a format.
+func (s *Service) known(format string) bool {
+	_, ok := s.o.Formats.Lookup(format)
+	return ok
 }
 
 var policyNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
@@ -218,7 +222,7 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput) (*resolvedPolicy,
 	if err != nil {
 		return nil, nil, err
 	}
-	rp.warnings, rp.covers = warningsFor(rp, all)
+	rp.warnings, rp.covers = warningsFor(rp, all, s.o.Formats)
 	return rp, nil, nil
 }
 
@@ -249,7 +253,7 @@ func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy) []Pr
 			ps = append(ps, field(ptr, errs.CodeInvalidPattern, err.Error()))
 			continue
 		}
-		if sel.format != "" && !s.o.KnownFormat(sel.format) {
+		if sel.format != "" && !s.known(sel.format) {
 			ps = append(ps, field(ptr, errs.CodeUnknownFormat, fmt.Sprintf("The format %q is not known.", sel.format)))
 			continue
 		}
@@ -316,7 +320,7 @@ func (s *Service) entryRules(ptr string, ref Ref, acts ActionSet, rp *resolvedPo
 
 // warningsFor computes the warnings of R-AUTHZ-021 and the keys of the
 // repositories the selectors currently cover.
-func warningsFor(rp *resolvedPolicy, all []repository.Repository) (warnings, covers []string) {
+func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.Registry) (warnings, covers []string) {
 	coveredBy := make([]int, len(rp.selectors))
 	var covered []repository.Repository
 	for _, r := range all {
@@ -343,7 +347,7 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository) (warnings, cov
 	}
 	if len(rp.in.Resources.Paths.Include) > 0 {
 		for _, r := range covered {
-			if r.Format == "npm" || r.Format == "nuget" {
+			if e, _ := reg.Lookup(r.Format); e.PatternSubject == catalog.SubjectName {
 				warnings = append(warnings, WarnPathPatternsOnPackageFormat)
 				break
 			}

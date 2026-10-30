@@ -28,7 +28,7 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | [wire_tls.go](../../internal/app/wire_tls.go) | `startTLS`: one `ListenerTLS` per listener of the role (every endpoint listener included), the `tls` first-readiness check |
 | [wire_endpoints.go](../../internal/app/wire_endpoints.go) | The endpoints this process serves, their TLS, chain and listener; see [endpoints.md](endpoints.md) |
 | [access.go](../../internal/app/access.go) | `bridgeAccess`: the bridge of the M1 decision point. It opens `settings:read` for anonymous callers under `system.bootstrap_anonymous_read` and the two bootstrap operations (Q-AUTHZ-16, Q-AUTHZ-71); every other check asks `internal/authz` |
-| [facts.go](../../internal/app/facts.go) | System information from the configuration; the replica list from the replica registry |
+| [facts.go](../../internal/app/facts.go) | System information from the configuration (the format list is the catalog's); the replica list from the replica registry |
 | [fixture_on.go](../../internal/app/fixture_on.go) / [fixture_off.go](../../internal/app/fixture_off.go) | The `drainfixture` test build |
 
 ## What runs where

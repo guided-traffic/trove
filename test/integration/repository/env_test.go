@@ -33,8 +33,8 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
-	"github.com/guided-traffic/trove/internal/formats"
 	_ "github.com/guided-traffic/trove/internal/formats/all"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
@@ -212,25 +212,6 @@ func (c *countingRunner) InTx(ctx context.Context, fn func(meta.Tx) error) error
 	return c.Runner.InTx(ctx, fn)
 }
 
-// catalog is the format catalog the composition root builds from the registry.
-type catalog struct{}
-
-func (catalog) Format(name string) (repository.FormatInfo, bool) {
-	f, ok := formats.Lookup(name)
-	if !ok {
-		return repository.FormatInfo{}, false
-	}
-	d := f.Descriptor()
-	info := repository.FormatInfo{
-		Name: string(d.ID), Layout: d.Layout, ProtocolBasePath: d.ProtocolBasePath,
-		PatternSubject: repository.PatternSubject(d.PatternSubject), PackageNames: d.PackageNames,
-	}
-	for _, c := range d.Classes {
-		info.Classes = append(info.Classes, repository.Class(c.String()))
-	}
-	return info, true
-}
-
 type replicaOpts struct {
 	role        string
 	deleteBatch int
@@ -330,7 +311,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}
 
 	r.reader, err = repository.NewReader(repository.ReaderOptions{
-		Runner: r.runner, Catalog: catalog{}, Caches: r.caches, Poller: r.changes,
+		Runner: r.runner, Catalog: catalog.Default(), Caches: r.caches, Poller: r.changes,
 		SafetyTTL: 5 * time.Minute, UnknownKeys: 10000, LookupWait: 5 * time.Second, Log: quiet,
 	})
 	if err != nil {
@@ -341,7 +322,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		hooks = authz.NewExposureHook(authz.NewExposureService(authz.ExposureServiceOptions{DB: r.db, Changes: r.changes, Recorder: o.rec}))
 	}
 	r.svc, err = repository.NewService(repository.Options{
-		Runner: r.db, Catalog: catalog{}, Recorder: o.rec, Notifier: r.changes, Jobs: r.queue,
+		Runner: r.db, Catalog: catalog.Default(), Recorder: o.rec, Notifier: r.changes, Jobs: r.queue,
 		DeleteBatch: o.deleteBatch, Hooks: hooks, Log: quiet,
 	})
 	if err != nil {

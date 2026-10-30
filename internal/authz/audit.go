@@ -102,8 +102,8 @@ func (e *Engine) decisionEvent(name string, sub Subject, c Coordinate, d Decisio
 	if c.Path != "" {
 		details["path"] = c.Path
 	}
-	if c.Endpoint != "" {
-		details["endpoint"] = c.Endpoint
+	if sub.Endpoint != "" {
+		details["endpoint"] = sub.Endpoint
 	}
 	if len(d.Sources) > 0 {
 		details["sources"] = d.Sources
@@ -114,7 +114,7 @@ func (e *Engine) decisionEvent(name string, sub Subject, c Coordinate, d Decisio
 	out := audit.Event{
 		Type: name, Actor: actorOf(sub), Outcome: audit.Denied, Reason: d.Reason,
 		Subject:    audit.Subject{Kind: "repository", Name: c.Repository},
-		Repository: c.Repository, Path: firstNonEmpty(c.Path, c.Package), Endpoint: c.Endpoint,
+		Repository: c.Repository, Path: firstNonEmpty(c.Path, c.Package), Endpoint: sub.Endpoint,
 		Details: raw,
 	}
 	if d.Outcome == Allow {

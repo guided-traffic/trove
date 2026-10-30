@@ -61,8 +61,8 @@ func (h *ExposureHook) OnDelete(ctx context.Context, tx meta.Tx, c repository.Ca
 		var epoch int64
 		before := stateOfRule(rule.ExposureRuleInput)
 		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-			ev := exposureEvent(ctx, EventExposureDeleted, Subject{}, rule, before, nil, nil, epoch, CauseRepositoryDeleted)
-			ev.Actor, ev.Source = c.Actor, c.Source
+			ev := exposureEvent(EventExposureDeleted, Subject{}, rule, before, nil, nil, epoch, CauseRepositoryDeleted)
+			ev.Actor, ev.Source, ev.Endpoint = c.Actor, c.Source, c.Endpoint
 			return h.svc.o.Recorder.RecordTx(ctx, tx, ev)
 		})
 	}

@@ -23,7 +23,7 @@ func CallerFrom(r *http.Request) files.Caller {
 	ctx := r.Context()
 	p := httpserver.PrincipalFrom(ctx)
 	c := files.Caller{
-		Subject: SubjectFrom(p),
+		Subject: SubjectFrom(ctx),
 		Actor:   ActorFrom(p),
 		Source:  auditSource(r),
 	}

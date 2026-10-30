@@ -47,22 +47,11 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 			TokenID:       r.Credential.TokenID,
 			TokenType:     httpserver.TokenType(r.Credential.TokenType),
 			BasicUsername: r.Credential.BasicUsername,
+			Scope:         r.Credential.Scope,
 		},
 	}
 	for _, g := range r.Groups {
 		p.Groups = append(p.Groups, httpserver.GroupRef{ID: g.ID, Name: g.Name})
-	}
-	if sc := r.Credential.Scope; sc != nil {
-		out := httpserver.Scope{Inherit: sc.Inherit, Admin: sc.Admin, System: sc.System}
-		for _, g := range sc.Repositories {
-			out.Repositories = append(out.Repositories, httpserver.ScopeGrant{
-				Repositories: g.Repositories, Actions: g.Actions,
-				Packages: httpserver.Patterns{Include: g.Packages.Include, Exclude: g.Packages.Exclude},
-				Paths:    httpserver.Patterns{Include: g.Paths.Include, Exclude: g.Paths.Exclude},
-			})
-		}
-		p.Credential.Scope = &out
-		p.Credential.Endpoints = sc.Endpoints
 	}
 	return p
 }

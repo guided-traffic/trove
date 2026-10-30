@@ -14,8 +14,18 @@ security view is [permissions.md](../security/permissions.md).
 
 - **Deny by default, allow-only.** A grant adds rights, nothing removes them except the exclude patterns of the same
   resource set, the token scope and the endpoint ceiling. No action implies another (R-AUTHZ-001).
-- **Two entry points decide, nothing else does.** `Authorizer.Decide` for a repository action on a coordinate, and
-  `Authorizer.Require` for a capability of a management operation. Both are methods of `*authz.Engine`.
+- **Two entry points decide, nothing else does.** `Decide` (`DecideOn` in a request) for a repository action on a
+  coordinate, and `Require` (`RequireOn`) for a capability of a management operation. All are methods of `*authz.Engine`.
+- **A request takes its index once.** `authz.Decider` is the per-request contract: `Begin` returns the index, every other
+  question has an `…On` form that is answered on it (`DecideOn`, `ReadableOn`, `ExposedOn`, `PathsAllowedOn`, `RequireOn`,
+  `HoldsOn`, `CheckOn`), `Know` advances it when the request learns a repository key (Q-AUTHZ-159). The edge holds the index
+  with the subject in `edge.Access`. `Authorizer` (`Decide`, `Readable`, `Require`) is the same questions with a fresh index
+  per call, for a job or a command.
+- **The subject carries the endpoint.** `Subject.Endpoint` selects the exposure ceiling of every decision, whatever the
+  context; only `internal/authz` and `internal/api/edge` build a `Subject` (Q-EP-20).
+- **A format's name rule comes from the catalog.** Names and patterns of grants, token scopes and exposure rules are folded
+  with the `catalog.Names` of the repository's format; nothing in this package names a format (`Options.Formats`,
+  `ServiceOptions.Formats`, `NewExposureCeiling(modes, reg)`; nil is `catalog.Default()`).
 - **Decisions read memory only.** The engine evaluates a compiled, immutable `Index` held in an atomic pointer. It never
   queries PostgreSQL or Valkey while deciding (R-AUTHZ-015).
 - **PostgreSQL decides, Valkey accelerates.** The index follows the change areas `authz` and `repo_config` through
@@ -27,17 +37,17 @@ security view is [permissions.md](../security/permissions.md).
 
 | File | Responsibility |
 |---|---|
-| [authz.go](../../internal/authz/authz.go) | The contract: `Authorizer`, `Subject`, `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability` |
-| [decide.go](../../internal/authz/decide.go) | `Decide`, `Begin`/`DecideOn`, `Require`, `Readable`, `Check`, `Effective`; the evaluation of R-AUTHZ-015; token scope as a ceiling; the pattern cache for scopes |
+| [authz.go](../../internal/authz/authz.go) | The contract: `Decider`, `Authorizer`, `Prober`, `Subject` (with `Endpoint` and the `*scope.Scope` ceiling), `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`; `RequestKind` is the catalog's |
+| [decide.go](../../internal/authz/decide.go) | `Decide`, `Begin`/`Know`/`DecideOn`, `Require`/`RequireOn`, `Holds`/`HoldsOn`, `Readable`/`ReadableOn`, `Check`/`CheckOn`, `Effective`; the evaluation of R-AUTHZ-015; token scope as a ceiling; the pattern cache for scopes |
 | [engine.go](../../internal/authz/engine.go) | `Engine`, `Options`: the index lifecycle, the build loop, the watcher, the `cluster.Listener`, the coalesced epoch read |
 | [wait.go](../../internal/authz/wait.go) | `forRequest`: confirmation, the stale wait, `Trove-Authz-Min-Epoch` |
 | [index.go](../../internal/authz/index.go) | `Index`, `Label`, `Snapshot`, `BuildIndex` (a pure function), the principal set of a request |
 | [source.go](../../internal/authz/source.go) | `Source` and its PostgreSQL implementation: the `REPEATABLE READ READ ONLY` build and the epoch read |
 | [roles.go](../../internal/authz/roles.go) | The five system roles and the capability table of R-AUTHZ-010 |
 | [action.go](../../internal/authz/action.go), [ref.go](../../internal/authz/ref.go) | Action sets and presets; principal references and the IDs of the built-in principals |
-| [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the NuGet case folding and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); repository selectors (R-AUTHZ-004) |
+| [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the folding of names and patterns with the format's catalog rule (`fold`, `namesIn`) and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); repository selectors (R-AUTHZ-004) |
 | [errors.go](../../internal/authz/errors.go) | `Decision.Err` (the table of R-AUTHZ-016), `NotFound`, `ParseMinEpoch`, the reason codes |
-| [ceiling.go](../../internal/authz/ceiling.go), [exposure.go](../../internal/authz/exposure.go), [exposure_service.go](../../internal/authz/exposure_service.go) | `Ceiling` (evaluated on the request's index) and the request's endpoint (`WithEndpoint`); the endpoint exposure of R-EP-013 compiled into the index (`ExposureCeiling`) and its rule service; see [endpoints.md](endpoints.md#exposure-r-ep-012-to-r-ep-014) |
+| [ceiling.go](../../internal/authz/ceiling.go), [exposure.go](../../internal/authz/exposure.go), [exposure_service.go](../../internal/authz/exposure_service.go) | `Ceiling` (evaluated on the request's index, for the endpoint of the subject); the endpoint exposure of R-EP-013 compiled into the index (`ExposureCeiling`) and its rule service; see [endpoints.md](endpoints.md#exposure-r-ep-012-to-r-ep-014) |
 | [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
 | [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
@@ -141,7 +151,7 @@ The staleness waits do not themselves trigger a build, by design: a blocked poll
 
 ### `Trove-Authz-Min-Epoch`
 
-The composition root reads the header after authentication (`app.withMinEpoch`) into `Principal.MinEpoch`; `SubjectFrom`
+The composition root reads the header after authentication (`app.withMinEpoch`) into `Principal.MinEpoch`; `edge.SubjectFrom`
 copies it to `Subject.MinEpoch`. `forRequest` ignores it for an anonymous subject. If the installed index has that epoch,
 nothing happens (`current`). Otherwise `epochReader.read` returns the epochs from a read that *started after the request
 arrived*; concurrent callers share one read and reads start at most every 50 ms per replica. An epoch the database has not
@@ -155,14 +165,18 @@ carries the epoch.
 
 ### Pinning an index to a request
 
-Before it takes the index, `Decide` (and `Begin(ctx, sub, keys...)` for the keys it is given) calls `Engine.Know` for the
-repository of the request: a key the index lacks is looked up in the repository snapshot (which asks PostgreSQL and runs the
+Before it takes the index, `Decide` (and `Begin(ctx, sub, keys...)` for the keys it is given) looks the repository of the
+request up (`Engine.know`): a key the index lacks is looked up in the repository snapshot (which asks PostgreSQL and runs the
 change-log poll) and, when the repository exists, the index is caught up to the database's epochs (`CatchUp`), so a repository
 created through another replica is usable at once (R-API-052). The result of the lookup is not used, which keeps authorization
 before existence (R-AUTHZ-016). `Options.Repositories` is the reader; the files service and the repository API do not repeat it.
 
 `Decide` takes the installed index at the moment of the call. A request that decides several coordinates calls `Begin` once
-and `DecideOn(idx, …)` per coordinate, so that all of them see one index (R-AUTHZ-015 `index.ForRequest`).
+and `DecideOn(idx, …)` per coordinate, so that all of them see one index (R-AUTHZ-015 `index.ForRequest`); a repository key
+the request learns afterwards goes through `Engine.Know(ctx, idx, sub, key)`, which returns the index to decide on from then
+on (the same one when it holds the key). `edge.Access` ([access.go](../../internal/api/edge/access.go)) keeps the subject, the
+index and the decider of a request, travels in the request context (`WithAccess`, `AccessFrom`, `Resolve`) and moves its
+index only forward. Losing the holder costs a second index, never a ceiling, because the ceiling is in the subject.
 
 ## Policies, role bindings and the checks for the caller
 
@@ -209,7 +223,8 @@ Every operation in `api/openapi.yaml` carries `x-trove-permission`. `parseRequir
 | `action: deploy`, `repository: query.repository` [, `package: …`] [, `path: query.path`] | `ActionAccess.RequireAction` with a coordinate built from the request; sources are `query.<name>` and `path.<name>` |
 
 A source the request lacks is the empty string and names no repository, so the request is refused before the handler.
-Decisions that depend on the request body are the handler's, using `authz.Authorizer` directly.
+Decisions that depend on the request body are the handler's, using the request's `edge.Access` (or `authz.Authorizer` in
+a job).
 
 The existing operations of M0 declare `settings:read` (formerly `system.read`).
 
@@ -279,8 +294,8 @@ Q-AUTHZ-132). A new write that touches `authz_*` tables or their foreign keys be
 `a.m1.repositories`) and sets `a.m1.authzService`; `startClient` hands it and the engine to the handlers as `v1.AuthzServices`.
 `*authz.Service` is the `principal.AdminBinder` of `service-account create --admin` (R-AUTH-015, `BindAdmin`): the command that
 creates a service account with `--admin` builds its own manager and passes the service. The repository service is built with
-`authz.NewSettingsHook`, `NewExposureHook` and `NewPolicyHook` in `wireRepository`. Its `KnownFormat` is the format registry
-(`internal/formats`), so a policy selector names only a registered format.
+`authz.NewSettingsHook`, `NewExposureHook` and `NewPolicyHook` in `wireRepository`. Its `Formats` is the format catalog
+(`internal/formats/catalog`), so a policy selector names only a registered format.
 
 ## Management operations
 
@@ -319,8 +334,9 @@ R-AUTHZ-010, then use it in `x-trove-permission`. `parseRequirement` refuses a n
 handler. The shared step runs the check before the handler.
 
 **Protect a content operation of a format or `/files/`.** Build the `Coordinate` (the canonical path, the normalized package
-name, the actions, the endpoint), call `Begin` once and `DecideOn` for each coordinate, and answer `decision.Err()`. For a
-missing resource build the answer from `authz.NotFound()`. Pass `Subject.MinEpoch` through `v1.SubjectFrom`.
+name, the actions; the endpoint is the subject's), take the subject from `edge.SubjectFrom(r)` (it carries `MinEpoch` and the
+endpoint), call `edge.Begin` once and decide each coordinate with the holder (`DecideOn`), and answer `decision.Err()`. For a
+missing resource build the answer from `authz.NotFound()`.
 
 **Add an audit event.** Register it in [events_authz.go](../../internal/audit/events_authz.go) with its delivery, flag a
 type that removes access or updates an access-bearing object with `Journal: audit.JournalRevocation` and pass
@@ -328,8 +344,8 @@ type that removes access or updates an access-bearing object with `Journal: audi
 
 **The exposure ceiling.** `Options.Ceiling` is the endpoints area's `ExposureCeiling` (wired in
 [wire_exposure.go](../../internal/app/wire_exposure.go)); `evaluate` asks it for every action of a coordinate right after
-the anonymous gate and before the repository lookup, on the index the request decides on. The endpoint comes from the
-request context (`WithEndpoint`), which replaces a coordinate's `Endpoint`. The rules are rows of the snapshot
+the anonymous gate and before the repository lookup, on the index the request decides on. The endpoint is
+`Subject.Endpoint` (`ceilingRefuses` passes it to `Admits`). The rules are rows of the snapshot
 (`Snapshot.Exposure`, query `EndpointsExposureBuild`), so they follow the change area `authz` like a policy.
 
 ## Tests

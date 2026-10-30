@@ -1,12 +1,16 @@
 package authz
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/guided-traffic/trove/internal/formats/catalog"
+)
 
 func TestR_AUTHZ_005_Patterns(t *testing.T) {
 	type c struct {
 		name              string
 		dim               dimension
-		fold              bool
+		names             catalog.Names
 		include, exclude  []string
 		value             string
 		present           bool
@@ -18,9 +22,9 @@ func TestR_AUTHZ_005_Patterns(t *testing.T) {
 		{name: "name glob scope does not match another scope", dim: dimPackage, include: []string{"@acme/*"}, value: "@acme-tools/ui", present: true},
 		{name: "exclude beats include inside one set", dim: dimPackage, include: []string{"@acme/*"}, exclude: []string{"@acme/secret-*"}, value: "@acme/secret-keys", present: true},
 		{name: "exclude leaves the rest of the include", dim: dimPackage, include: []string{"@acme/*"}, exclude: []string{"@acme/secret-*"}, value: "@acme/ui", present: true, want: true},
-		{name: "NuGet prefix matches any spelling", dim: dimPackage, fold: true, include: []string{"Acme.*"}, value: "ACME.Core", present: true, want: true},
-		{name: "NuGet prefix needs the dot", dim: dimPackage, fold: true, include: []string{"Acme.*"}, value: "AcmeCore", present: true},
-		{name: "NuGet exact ID in any spelling", dim: dimPackage, fold: true, include: []string{"acme.core"}, value: "Acme.CORE", present: true, want: true},
+		{name: "NuGet prefix matches any spelling", dim: dimPackage, names: lowerNames{}, include: []string{"Acme.*"}, value: "ACME.Core", present: true, want: true},
+		{name: "NuGet prefix needs the dot", dim: dimPackage, names: lowerNames{}, include: []string{"Acme.*"}, value: "AcmeCore", present: true},
+		{name: "NuGet exact ID in any spelling", dim: dimPackage, names: lowerNames{}, include: []string{"acme.core"}, value: "Acme.CORE", present: true, want: true},
 		{name: "npm names compare case-sensitively", dim: dimPackage, include: []string{"acme-*"}, value: "ACME-ui", present: true},
 		{name: "star is one unscoped name and never crosses a slash", dim: dimPackage, include: []string{"*"}, value: "@acme/ui", present: true},
 		{name: "star matches an unscoped name", dim: dimPackage, include: []string{"*"}, value: "left-pad", present: true, want: true},
@@ -59,7 +63,7 @@ func TestR_AUTHZ_005_Patterns(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("R-AUTHZ-005 "+tc.name, func(t *testing.T) {
-			g, err := compileSet(tc.dim, tc.include, tc.exclude, tc.fold)
+			g, err := compileSet(tc.dim, tc.include, tc.exclude, tc.names)
 			if tc.wantCompileFailed {
 				if err == nil {
 					t.Fatal("the pattern compiled")
@@ -92,8 +96,8 @@ func TestR_AUTHZ_005_Patterns(t *testing.T) {
 	})
 
 	t.Run("R-AUTHZ-005 a repository-level coordinate matches whatever the patterns say", func(t *testing.T) {
-		pkg, _ := compileSet(dimPackage, []string{"@acme/*"}, nil, false)
-		path, _ := compileSet(dimPath, []string{"releases/**"}, nil, false)
+		pkg, _ := compileSet(dimPackage, []string{"@acme/*"}, nil, nil)
+		path, _ := compileSet(dimPath, []string{"releases/**"}, nil, nil)
 		rs := resourceSet{packages: pkg, paths: path}
 		if !rs.matches(true, "", "") || rs.matches(false, "", "") {
 			t.Fatal("repository-level coordinates match every grant that covers the repository")

@@ -67,7 +67,7 @@ func testService() *Service {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
-	return NewService(ServiceOptions{Principals: p, Repositories: repos, KnownFormat: func(f string) bool { return f == "generic" || f == "npm" || f == "nuget" }})
+	return NewService(ServiceOptions{Principals: p, Repositories: repos, Formats: testRegistry()})
 }
 
 func input(sel string, entries ...Entry) PolicyInput {

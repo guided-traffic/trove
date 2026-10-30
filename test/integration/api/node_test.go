@@ -15,6 +15,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -62,7 +63,7 @@ func testAuth(r *http.Request) (httpserver.Principal, error) {
 	}
 	return httpserver.Principal{
 		ID: id, Name: "user-" + id[:8], Kind: httpserver.KindUser,
-		Credential: httpserver.Credential{Method: httpserver.MethodBearer, TokenID: token, Scope: &httpserver.Scope{Inherit: true, System: caps}},
+		Credential: httpserver.Credential{Method: httpserver.MethodBearer, TokenID: token, Scope: &scope.Scope{Inherit: true, System: caps}},
 	}, nil
 }
 

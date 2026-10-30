@@ -6,26 +6,29 @@ import (
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
-// fakeCatalog holds the generic format as the composition root derives it from
-// the format registry, and an npm-like format with package names to exercise the
-// members that the generic format refuses.
-type fakeCatalog map[string]FormatInfo
+// lower is the name rule of a package format whose names compare
+// case-insensitively.
+type lower struct{}
 
-func (c fakeCatalog) Format(name string) (FormatInfo, bool) { f, ok := c[name]; return f, ok }
+func (lower) Normalize(name string) (string, bool) { return strings.ToLower(name), name != "" }
 
-func testCatalog() fakeCatalog {
-	return fakeCatalog{
-		"generic": {
-			Name: "generic", Classes: []Class{Local}, Layout: "generic", ProtocolBasePath: "/files/{key}/",
-			PatternSubject: SubjectPath,
-		},
-		"pkgfmt": {
-			Name: "pkgfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pkgfmt", ProtocolBasePath: "/api/pkgfmt/{key}/",
-			PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
-		},
-	}
+// testCatalog holds the generic format as it registers itself, and an npm-like
+// format with package names to exercise the members that the generic format
+// refuses.
+func testCatalog() *catalog.Registry {
+	r := catalog.NewRegistry()
+	r.Register(catalog.Entry{Facts: catalog.Facts{
+		ID: "generic", Classes: []Class{Local}, Layout: "generic", ProtocolBasePath: "/files/{key}/",
+		PatternSubject: SubjectPath,
+	}})
+	r.Register(catalog.Entry{Facts: catalog.Facts{
+		ID: "pkgfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pkgfmt", ProtocolBasePath: "/api/pkgfmt/{key}/",
+		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
+	}, Names: lower{}})
+	return r
 }
 
 func decodeValidate(t *testing.T, body string, create bool) (Document, *validation, error) {

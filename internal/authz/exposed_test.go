@@ -11,7 +11,7 @@ func TestR_EP_014_ExposedBindsConfigurationReaders(t *testing.T) {
 	keys := []string{"files-virtual", "generic-auth", "generic-local", "generic-other", "npm-customers"}
 	t.Run("R-EP-014 Q-EP-12 on an endpoint with rules only repositories with an enabled rule, for every subject", func(t *testing.T) {
 		for _, s := range []Subject{adminSub, carolSub} {
-			got, err := e.Exposed(WithEndpoint(t.Context(), "customers"), s, keys)
+			got, err := e.Exposed(t.Context(), onEP(s, "customers"), keys)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -21,8 +21,8 @@ func TestR_EP_014_ExposedBindsConfigurationReaders(t *testing.T) {
 		}
 	})
 	t.Run("R-EP-014 the ceiling never grants: a subject without a read grant still needs its capability", func(t *testing.T) {
-		readable, _ := e.Readable(WithEndpoint(t.Context(), "customers"), carolSub, keys)
-		exposed, _ := e.Exposed(WithEndpoint(t.Context(), "customers"), carolSub, keys)
+		readable, _ := e.Readable(t.Context(), onEP(carolSub, "customers"), keys)
+		exposed, _ := e.Exposed(t.Context(), onEP(carolSub, "customers"), keys)
 		if len(readable) >= len(exposed) {
 			t.Fatalf("readable %v, exposed %v: Exposed must apply the ceiling alone", readable, exposed)
 		}
@@ -32,7 +32,7 @@ func TestR_EP_014_ExposedBindsConfigurationReaders(t *testing.T) {
 			name string
 			got  func() ([]string, error)
 		}{
-			{"default", func() ([]string, error) { return e.Exposed(WithEndpoint(t.Context(), "default"), carolSub, keys) }},
+			{"default", func() ([]string, error) { return e.Exposed(t.Context(), onEP(carolSub, "default"), keys) }},
 			{"none", func() ([]string, error) { return e.Exposed(t.Context(), carolSub, keys) }},
 		} {
 			got, err := ctx.got()

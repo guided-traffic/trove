@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
@@ -36,8 +37,10 @@ type Poller interface {
 
 // ReaderOptions configure [NewReader].
 type ReaderOptions struct {
-	Runner  meta.Runner
-	Catalog FormatCatalog
+	Runner meta.Runner
+	// Catalog is the format catalog the model reads (R-REPO-003); nil is
+	// catalog.Default.
+	Catalog *catalog.Registry
 	Caches  *cache.Registry
 	// Poller is optional: without it a replica waits for the regular poll.
 	Poller Poller
@@ -65,7 +68,7 @@ type snapshot struct {
 // cluster.epoch_poll_interval, Valkey's message only makes it faster.
 type SnapshotReader struct {
 	run    meta.Runner
-	cat    FormatCatalog
+	cat    *catalog.Registry
 	snap   *cache.Cache[struct{}, *snapshot]
 	misses *cache.Cache[string, struct{}]
 	poll   Poller
@@ -94,7 +97,7 @@ func NewReader(o ReaderOptions) (*SnapshotReader, error) {
 		o.LookupWait = 5 * time.Second
 	}
 	r := &SnapshotReader{
-		run: o.Runner, cat: o.Catalog, poll: o.Poller, wait: o.LookupWait, log: o.Log,
+		run: o.Runner, cat: catalog.Or(o.Catalog), poll: o.Poller, wait: o.LookupWait, log: o.Log,
 		flight: flight{calls: map[string]*flightCall{}},
 	}
 	areas := []string{cluster.AreaRepoConfig}

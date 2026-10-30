@@ -5,16 +5,19 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
 // PatternSubject is what a repository's include and exclude patterns match
-// (R-REPO-005): the normalized package name, or the canonical path.
-type PatternSubject string
+// (R-REPO-005): the normalized package name, or the canonical path. The catalog
+// owns the type: it is the value of the format's PatternSubject fact.
+type PatternSubject = catalog.PatternSubject
 
-// The subjects. They are the values of the format descriptor's PatternSubject.
+// The subjects.
 const (
-	SubjectName PatternSubject = "name"
-	SubjectPath PatternSubject = "path"
+	SubjectName = catalog.SubjectName
+	SubjectPath = catalog.SubjectPath
 )
 
 // Limits of a pattern list (R-REPO-005).

@@ -132,8 +132,9 @@ func New(o Options) (*Service, error) {
 }
 
 // Caller is who acts and through which endpoint: the subject the decision point
-// evaluates, the endpoint of the request (the exposure of an endpoint is a
-// ceiling, R-EP-013), and the actor and source of the audit events.
+// evaluates, which carries the endpoint whose exposure is the ceiling of every
+// decision (R-EP-013, Q-EP-20), the endpoint the audit events record, and the
+// actor and source of the audit events.
 type Caller struct {
 	Subject  authz.Subject
 	Endpoint string
@@ -158,8 +159,8 @@ func (s *Service) decide(ctx context.Context, c Caller, repo, path string, kind 
 	return d, nil
 }
 
-func (s *Service) coordinate(c Caller, repo, path string, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Path: path, Kind: kind, Actions: actions, Endpoint: c.Endpoint}
+func (s *Service) coordinate(_ Caller, repo, path string, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
+	return authz.Coordinate{Repository: repo, Path: path, Kind: kind, Actions: actions}
 }
 
 // recordAllowed records an allowed write in the writer's transaction, when the

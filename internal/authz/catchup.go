@@ -16,9 +16,9 @@ import (
 // is not used: the decision answers, and it answers a missing repository like one
 // the caller may not read (R-AUTHZ-016, authorization before existence). Only a
 // lookup or a catch-up that cannot finish in time returns an error, 503 with
-// Retry-After. Decide and Begin call it for the keys of the request; no caller
-// repeats it.
-func (e *Engine) Know(ctx context.Context, repoKey string) error {
+// Retry-After. Decide and Begin call it for the keys of the request, and
+// [Engine.Know] for a key a request learns later; no caller repeats it.
+func (e *Engine) know(ctx context.Context, repoKey string) error {
 	rd := e.o.Repositories
 	if rd == nil || repoKey == "" {
 		return nil

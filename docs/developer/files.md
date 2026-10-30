@@ -28,7 +28,7 @@ quotas are P1.
 
 | File | Responsibility |
 |---|---|
-| [files.go](../../internal/files/files.go) | `Service`, `Options`, `Caller`; `decide` (`Decide`; the engine looks an unknown key up itself, `authz.Engine.Know`), the optional interfaces `PathDecider`, `WriteRecorder` |
+| [files.go](../../internal/files/files.go) | `Service`, `Options`, `Caller`; `decide` (`Decide`; the engine looks an unknown key up itself, R-ARCH-011 step 2; the endpoint's ceiling comes from `Caller.Subject.Endpoint`, not from the coordinate), the optional interfaces `PathDecider`, `WriteRecorder` |
 | [deploy.go](../../internal/files/deploy.go) | `Deploy`: the coarse check, admission, spool, the fine check (`overwrite`), the link step of the commit protocol, folder creation |
 | [download.go](../../internal/files/download.go) | `Stat` (PostgreSQL only), `Open` (the verifying reader or a range), `Served` (statistics, activity, `artifact.downloaded`) |
 | [children.go](../../internal/files/children.go) | `ItemInfo`, `Stats`, `Children` (cursor, recursion, depth, per-entry decision) |

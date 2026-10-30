@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -125,6 +126,7 @@ type patternKey struct{ dim, mode string }
 type builder struct {
 	x    *Index
 	log  *slog.Logger
+	reg  *catalog.Registry
 	byID map[int64]*repoInfo
 	list []*repoInfo
 	// selectors, patterns and entries are the snapshot's rows by policy ID.
@@ -140,7 +142,7 @@ type builder struct {
 // the same index. A policy that cannot be compiled (it passed validation when
 // written, so this signals a corrupt row) is skipped and logged: skipping only
 // removes rights, it never adds any.
-func BuildIndex(s *Snapshot, log *slog.Logger) *Index {
+func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -152,14 +154,14 @@ func BuildIndex(s *Snapshot, log *slog.Logger) *Index {
 			bindings: map[string]roleSet{},
 			ci:       map[string]string{},
 		},
-		log: log, byID: make(map[int64]*repoInfo, len(s.Repositories)),
+		log: log, reg: catalog.Or(reg), byID: make(map[int64]*repoInfo, len(s.Repositories)),
 		selectors:  map[string][]q.AuthzBuildSelectorsRow{},
 		patterns:   map[string]map[patternKey][]string{},
 		entries:    map[string][]q.AuthzBuildEntriesRow{},
 		matchCache: map[string][]*repoInfo{},
 	}
 	b.addRepositories(s.Repositories)
-	b.x.exposure = buildExposure(s.Exposure, b.byID, log)
+	b.x.exposure = buildExposure(s.Exposure, b.byID, b.reg, log)
 	for _, r := range s.Bindings {
 		b.x.bindings[r.PrincipalID] |= Role(r.Role).bit()
 	}
@@ -257,14 +259,14 @@ func (b *builder) policyRepos(p q.AuthzBuildPoliciesRow) []*repoInfo {
 }
 
 // resourcesFor compiles the pattern lists of a policy for the repositories of
-// one kind of package-name comparison: NuGet compares case-insensitively.
-func (b *builder) resourcesFor(p q.AuthzBuildPoliciesRow, fold bool) (resourceSet, error) {
+// one format's package-name comparison (nil names: no folding).
+func (b *builder) resourcesFor(p q.AuthzBuildPoliciesRow, names catalog.Names) (resourceSet, error) {
 	pk := b.patterns[p.ID]
-	pkg, err := compileSet(dimPackage, pk[patternKey{"package", "include"}], pk[patternKey{"package", "exclude"}], fold)
+	pkg, err := compileSet(dimPackage, pk[patternKey{"package", "include"}], pk[patternKey{"package", "exclude"}], names)
 	if err != nil {
 		return resourceSet{}, err
 	}
-	path, err := compileSet(dimPath, pk[patternKey{"path", "include"}], pk[patternKey{"path", "exclude"}], false)
+	path, err := compileSet(dimPath, pk[patternKey{"path", "include"}], pk[patternKey{"path", "exclude"}], nil)
 	if err != nil {
 		return resourceSet{}, err
 	}
@@ -277,19 +279,22 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 	if len(repos) == 0 {
 		return // an inert policy matches nothing
 	}
-	var byFold [2]*resourceSet
+	// The patterns are compiled once per name rule: the repositories of formats
+	// without package names share one set, every other format has its own.
+	byRule := map[string]*resourceSet{}
 	for _, r := range repos {
-		i := 0
-		if foldFor(r.Format) {
-			i = 1
+		names := namesIn(b.reg, r.Format)
+		key := ""
+		if names != nil {
+			key = r.Format
 		}
-		if byFold[i] == nil {
-			rs, err := b.resourcesFor(p, i == 1)
+		if byRule[key] == nil {
+			rs, err := b.resourcesFor(p, names)
 			if err != nil {
 				b.log.Error("authz: policy skipped, its patterns do not compile", "policy", p.Name, "err", err)
 				return
 			}
-			byFold[i] = &rs
+			byRule[key] = &rs
 		}
 		for _, e := range b.entries[p.ID] {
 			acts, err := actionsFromStored(e.Actions)
@@ -308,7 +313,7 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 				m = map[string][]grant{}
 				b.x.grants[r.ID] = m
 			}
-			m[e.PrincipalID] = append(m[e.PrincipalID], grant{policy: p.Name, actions: acts, res: *byFold[i]})
+			m[e.PrincipalID] = append(m[e.PrincipalID], grant{policy: p.Name, actions: acts, res: *byRule[key]})
 		}
 	}
 	b.x.policies++

@@ -25,10 +25,14 @@ journal entries from now on). The security view is [security/endpoints-and-expos
   endpoint named `default`, with the listener `server.listen`, `server.tls` and `server.max_in_flight`.
 - **The surface is applied when routes are registered.** A path of a family the endpoint does not serve falls
   through to the catch-all `404`, byte-identical to an unknown path.
-- **The endpoint reaches the decision point through the request context.** Stage 7 of every endpoint's chain calls
-  `authz.WithEndpoint(ctx, name)`; `Decide`, `DecideOn`, `Readable` and `Check` take the endpoint from there and
-  ignore what a coordinate names, so a content route cannot forget the ceiling or pick another endpoint's
-  (Q-EP-20). A decision without a request context (a job) has no ceiling.
+- **The endpoint reaches the decision point in the subject.** The chain stores the listener's endpoint in the request
+  context at step 1; `edge.SubjectFrom(r)` (`edge.SubjectOf(ctx)`) copies its name into `authz.Subject.Endpoint`, and every
+  decision (`Decide`, `DecideOn`, `Readable`, `Exposed`, `PathsAllowed`, `Check`, and the audit event) reads the ceiling from
+  the subject it is given. A decision on a detached context, a single-flight leader or a fan-out probe therefore keeps the
+  ceiling, and a content route cannot forget it or pick another endpoint's. A subject without an endpoint (a job, a command)
+  has no ceiling. Only `internal/authz` and `internal/api/edge` may build or edit a `Subject`; the architecture test
+  `CheckSubjectConstruction` ([subject.go](../../internal/archtest/subject.go), fixture
+  [testdata/subject](../../internal/archtest/testdata/subject)) names any other (Q-EP-20, H-166).
 - **Exposure is part of the grant index.** The rules are read in the index build's snapshot and compiled with it; a
   rule change notifies the change area `authz` and follows the bound, the stale wait and `Trove-Authz-Min-Epoch` of a
   policy change. No rule is read from Valkey, and a management `GET` reads the rules from PostgreSQL.
@@ -100,8 +104,9 @@ The effective TLS block of a further endpoint is `server.tls` with the endpoint'
 | [internal/app/m1_convert.go](../../internal/app/m1_convert.go) | `endpointRules`: the configured credential rules of an endpoint for the authentication stage (R-EP-010) |
 | [internal/app/wire_exposure.go](../../internal/app/wire_exposure.go) | `exposureCeiling` (the modes for the decision point), `wireEndpoints` (rule service, inert-rule warning, rate-limit classes), `endpointStage` (stage 7 per endpoint), `credentialRefused` (metric and `token.rejected`), `endpointServices`, `Authorizer` |
 | [internal/auth/auth.go](../../internal/auth/auth.go), [stage.go](../../internal/auth/stage.go) | `EndpointRules` with `Refused`, `Refusal`; the stage applies type, binding and anonymous rules and reports each refusal |
-| [internal/authz/ceiling.go](../../internal/authz/ceiling.go) | `Ceiling` (evaluated on the request's index), `WithEndpoint`, `EndpointOf` |
-| [internal/authz/exposure.go](../../internal/authz/exposure.go) | The rule model, `ExposureFormat` and `ExposureVersioning` (the format seam of R-EP-018), compilation into the index, matching, the explanation of the dry run, the fingerprint, `ExposureCeiling` |
+| [internal/authz/ceiling.go](../../internal/authz/ceiling.go) | `Ceiling` (evaluated on the request's index, for the endpoint of the subject), `ExposureFilter`, `Exposed`/`ExposedOn` |
+| [internal/authz/exposure.go](../../internal/authz/exposure.go) | The rule model, compilation into the index, matching, the explanation of the dry run, the fingerprint, `ExposureCeiling` (the modes, and the format facts `catalog.Exposure` and `catalog.Versioning` it reads from the catalog) |
+| [internal/api/edge/subject.go](../../internal/api/edge/subject.go) | `SubjectFrom`, `SubjectOf`: the one conversion that builds an `authz.Subject`, with the listener's endpoint; `ActorFrom` |
 | [internal/authz/exposure_service.go](../../internal/authz/exposure_service.go) | `ExposureService`: validation, create in the caller's transaction, replace, delete, get, list, counts, `Check`; the `endpoint.exposure.*` events with their journal entries |
 | [internal/audit/events_endpoints.go](../../internal/audit/events_endpoints.go) | The three event types; updated and deleted carry the revocation-journal flag |
 | [internal/api/v1/endpoints_api.go](../../internal/api/v1/endpoints_api.go) | The nine operations of R-EP-016; `EndpointServices` |
@@ -165,24 +170,27 @@ configured names at creation, kept on rotation, and narrowed by the derivation r
 ```text
 rule write ─► ExposureService (one transaction): validate ─► row ─► Changes.Notify("authz") ─► audit event (after the epoch)
 index build ─► Source.Snapshot reads EndpointsExposureBuild in the same REPEATABLE READ snapshot ─► buildExposure
-request ─► stage 7: authz.WithEndpoint ─► Decide / Readable ─► ceilingRefuses (first) ─► the rest of R-AUTHZ-015
+request ─► edge.SubjectFrom (Subject.Endpoint) ─► DecideOn / ReadableOn ─► ceilingRefuses (first) ─► the rest of R-AUTHZ-015
 ```
 
 - **Mode.** `ExposureCeiling` holds the modes of the configured endpoints: `all` admits everything; `rules` admits a
   read that an enabled rule of the *addressed* repository admits (`Coordinate.Addressed`, else `Repository`, Q-EP-11) and
   refuses every other action as read-only. An endpoint name the configuration does not hold is treated as `rules` with no
-  rule; a coordinate without an endpoint has no ceiling.
+  rule; a subject without an endpoint has no ceiling.
 - **Before everything that depends on the repository.** `evaluate` runs the ceiling right after the anonymous gate and
   before the repository lookup, the `requireAuthentication` check and the virtual gate, for every action; a write is
   refused as read-only before a read is refused as hidden (Q-EP-21). So a missing repository, a hidden one and one that
   requires authentication give the same `404`, for every subject, `content:bypass` included.
 - **Matching** (`compiledRule.evaluate`): package, path, version globs, range, pre-release and tag, in that order; a
   repository-level coordinate passes any enabled rule; an exclude wins inside a rule only; a version without the format's
-  `ExposureVersioning` is refused (fail closed). Package patterns fold case for NuGet like the grants.
-- **Formats.** `DefaultExposureFormats`: generic repositories are exposable through `paths` alone; every other format is
-  not exposable (`422 format_not_exposable`) until its page states its filter and it supplies an `ExposureFormat` with
-  package names, versions, tags and `ExposureVersioning` (R-EP-018, M2).
-- **Listings.** `Readable` drops a repository without an enabled rule on the request's endpoint and counts it in
+  `catalog.Versioning` is refused (fail closed). Package patterns are folded with the format's name rule
+  (`catalog.Names`), like the grants and the token scopes.
+- **Formats.** What a rule may narrow is the format's `catalog.Exposure` ([catalog.go](../../internal/formats/catalog/catalog.go)),
+  declared in its `formats.Descriptor` and read from the catalog by `ExposureCeiling`: generic repositories are exposable
+  through `paths` alone; a format that declares nothing, and a format the catalog does not know, is not exposable (`422
+  format_not_exposable`) until its page states its filter and it declares package names, versions, tags and a
+  `catalog.Versioning` (R-EP-018, M2).
+- **Listings.** `Readable` drops a repository without an enabled rule on the subject's endpoint and counts it in
   `trove_exposure_hidden_total{kind="item"}`; a refused `Decide` counts `kind="request"`. `trove_exposure_rules{endpoint}`
   is set from every installed index.
 - **The fingerprint** (`ExposureCeiling.ExposureFingerprint`) is computed from the index without a query, for the
@@ -301,14 +309,15 @@ See [helm-chart.md](helm-chart.md#endpoints).
 | app | [endpoints_test.go](../../internal/app/endpoints_test.go) | two endpoints on one replica, log and metrics endpoint, pools and roles, bind failure names the endpoint, SNI and rotation on a running app |
 | integration | [test/integration/server/endpoints_test.go](../../test/integration/server/endpoints_test.go) | the real binary on the TLS stack: both listeners, 421, forwarded hosts, log and metrics, surface bodies, host roots, SNI incl. wildcard, rotation within `reload_interval` + 1 s and a broken rotation |
 | chart | [test/chart/endpoints_test.go](../../test/chart/endpoints_test.go) | Services, Ingresses, NetworkPolicies, pool, mounts, config block, validation failures, notes |
-| architecture | [internal/archtest](../../internal/archtest) | only `internal/httpserver` sets the endpoint |
+| architecture | [internal/archtest](../../internal/archtest) | only `internal/httpserver` sets the endpoint; only `internal/authz` and `internal/api/edge` build or edit a `Subject` (R-EP-013) |
+| unit | [subject_test.go](../../internal/api/edge/subject_test.go), [decider_test.go](../../internal/authz/decider_test.go) | `edge.SubjectFrom` takes the listener's endpoint (`TestR_EP_013_TheSubjectCarriesTheListenersEndpoint`); a decision on a detached context, in a collapsed flight and in a fan-out keeps its ceiling (`TestR_EP_013_ADecisionOnADetachedContextKeepsTheCeiling`); the audit endpoint is the subject's |
 | unit | [exposure_test.go](../../internal/authz/exposure_test.go) | rule matching (paths, exclude inside a rule, rules add up, disabled, repository level, the R-EP-012 version fixture on a test versioning), the reasons of the dry run, the fingerprint, the ceiling in `Decide` for every subject (administrator, break-glass, anonymous, missing and `requireAuthentication` repositories, virtual and addressed members, writes, an unconfigured endpoint), the context endpoint, mode `all` equal to default, `Readable`, the metrics, a rule change through the index, validation codes and journal entries, the p99 of 1,000 rules |
-| unit | [endpoint_rules_test.go](../../internal/auth/endpoint_rules_test.go), [exposure_test.go](../../internal/app/exposure_test.go), [endpoints_auth_test.go](../../internal/config/endpoints_auth_test.go) | type refusal without a lookup, binding refusals after one, the refusal hook, the cookie without `ui`; the rules from the configuration; stage 7 puts the endpoint into the context; an empty `token_types` stops start-up |
+| unit | [endpoint_rules_test.go](../../internal/auth/endpoint_rules_test.go), [exposure_test.go](../../internal/app/exposure_test.go), [endpoints_auth_test.go](../../internal/config/endpoints_auth_test.go) | type refusal without a lookup, binding refusals after one, the refusal hook, the cookie without `ui`; the rules from the configuration; stage 7 keeps the request path and leaves the endpoint to the subject; an empty `token_types` stops start-up |
 | unit | [endpoint_ratelimit_test.go](../../internal/api/v1/endpoint_ratelimit_test.go) | the limiter name, 429 with the class fields, separate budgets per token and endpoint, key `address`, the fallback share |
 | integration | [test/integration/endpoints](../../test/integration/endpoints) | E1.14 with three in-process replicas behind a dispatcher, Valkey running and unreachable: a PAT refused while `api_token` is locked (no query), a bound SAT on `customers` and 401 on default, R-EP-005 with a credential, a rule created, narrowed and deleted through the API on every replica within the bound and at once with `Trove-Authz-Min-Epoch`, hidden equal to missing, the bound administrator, the audit events with their journal rows, 1,000 requests of one token; the convention suite (`RunContract`) on the rules, the endpoint list with an inert name, filters, validation, the dry run with a draft, an auditor, every answer validated against the document |
 
 The `/files/` routes belong to the files area; the integration tests register a stand-in route through `app.Options.Extra`
-that decides exactly as the contract says (`v1.SubjectFrom`, `Decide` on the request's context, `authz.NotFound` for a
+that decides exactly as the contract says (`edge.SubjectFrom`, `Decide`, `authz.NotFound` for a
 missing file). Once the files area is merged, the same assertions run against its route.
 
 ## Extension checklists
@@ -324,12 +333,14 @@ missing file). Once the files area is merged, the same assertions run against it
 **A format that needs a host root.** Register its literal bound-host patterns through the exempt list of
 `CheckRouteTable`, read `httpserver.RootRepository(ctx)`, and fix the repository from it before authorization.
 
-**A content route (files, a format).** Build the subject with `v1.SubjectFrom(httpserver.PrincipalFrom(ctx))` and decide
-with the request's context, so the endpoint's ceiling applies without the route naming it; put the addressed repository
-into `Coordinate.Addressed` when deciding a member of a virtual repository, the version into `Coordinate.Version`; answer
-a missing item with `authz.NotFound()`; list with `Readable` on the request's context.
+**A content route (files, a format).** Take the subject with `edge.SubjectFrom(r)` and decide with it, so the endpoint's
+ceiling applies without the route naming it; never build or edit a `Subject` (the architecture test refuses it). Take the
+request's index once (`edge.Begin`, [access.go](../../internal/api/edge/access.go)) and decide with the holder. Put the
+addressed repository into `Coordinate.Addressed` when deciding a member of a virtual repository, the version into
+`Coordinate.Version`; answer a missing item with `authz.NotFound()`; list with `Readable`.
 
-**A format that can be served under exposure rules.** Give it an `authz.ExposureFormat` (package names, versions, tags,
-`ExposureVersioning` for its ranges and pre-releases) through the formats function of `NewExposureCeiling` and
-`ExposureServiceOptions.Ceiling` (`exposureCeiling` in [wire_exposure.go](../../internal/app/wire_exposure.go)), filter its
-documents with the rules of the index (R-EP-018), and list a package's stored versions in the dry run.
+**A format that can be served under exposure rules.** Give its `formats.Descriptor` a `catalog.Exposure` (package names,
+versions, tags, a `catalog.Versioning` for its ranges and pre-releases); `formats.Register` puts it into the catalog, which
+`NewExposureCeiling` and `ExposureServiceOptions.Ceiling` read (`exposureCeiling` in
+[wire_exposure.go](../../internal/app/wire_exposure.go)). Filter its documents with the rules of the index (R-EP-018), and list
+a package's stored versions in the dry run.

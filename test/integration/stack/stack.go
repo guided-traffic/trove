@@ -46,8 +46,8 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/formats"
 	_ "github.com/guided-traffic/trove/internal/formats/all" // registers the formats the catalog answers for
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -478,7 +478,7 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Recorder: rec,
 	})
 	if r.Repos, err = repository.NewService(repository.Options{
-		Runner: r.DB, Catalog: catalog{}, Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(),
+		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -486,28 +486,9 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 	return r
 }
 
-// FormatCatalog is the format catalog the composition root builds from the
-// registry, for tests of other areas that build a repository reader.
-func FormatCatalog() repository.FormatCatalog { return catalog{} }
-
-// catalog is the format catalog the composition root builds from the registry.
-type catalog struct{}
-
-func (catalog) Format(name string) (repository.FormatInfo, bool) {
-	f, ok := formats.Lookup(name)
-	if !ok {
-		return repository.FormatInfo{}, false
-	}
-	d := f.Descriptor()
-	info := repository.FormatInfo{
-		Name: string(d.ID), Layout: d.Layout, ProtocolBasePath: d.ProtocolBasePath,
-		PatternSubject: repository.PatternSubject(d.PatternSubject), PackageNames: d.PackageNames,
-	}
-	for _, c := range d.Classes {
-		info.Classes = append(info.Classes, repository.Class(c.String()))
-	}
-	return info, true
-}
+// FormatCatalog is the format catalog of the process, which the formats register
+// in, for tests of other areas that build a repository reader.
+func FormatCatalog() *catalog.Registry { return catalog.Default() }
 
 // testAuth reads the caller from X-Test-Person (a name made by User, Group or
 // ServiceAccount) and applies Trove-Authz-Min-Epoch to an authenticated caller,

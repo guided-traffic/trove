@@ -381,7 +381,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		Source: authz.NewPostgresSource(r.db, o.staleness), Changes: r.changes, Config: cfg,
 		EpochPollInterval: o.poll, RetryBudget: 5 * time.Second,
 		AnonymousAccess: func(context.Context) (bool, error) { return e.anonymous.Load(), nil }, Recorder: r.rec, Replica: name, Log: quiet, Metrics: r.reg,
-		Repositories: sqlRepositories{e},
+		Repositories: sqlRepositories{e}, Formats: integrationFormats(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -391,6 +391,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}
 	r.svc = authz.NewService(authz.ServiceOptions{
 		DB: r.db, Changes: r.changes, Principals: sqlPrincipals{e}, Repositories: sqlRepositories{e}, Recorder: r.rec,
+		Formats: integrationFormats(),
 	})
 	return r
 }

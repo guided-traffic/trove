@@ -851,12 +851,13 @@ Priority: **MVP** · Covers: IAM-032
   exposed item still needs a grant. It binds every subject, administrators and `content:bypass`
   included (Q-EP-12), and the anonymous principal.
 - **Placement** ([authorization.md](authorization.md) R-AUTHZ-015). `Allowed` checks the ceiling
-  first, before `content:bypass`, against the addressed repository of the coordinate, which
-  `WithRepo` does not change (Q-EP-11):
+  first, before `content:bypass`, for the endpoint the subject carries (`Subject.Endpoint`, set by
+  the one conversion from the listener's endpoint, Q-EP-20) and against the addressed repository of
+  the coordinate, which `WithRepo` does not change (Q-EP-11):
 
 ```go
 func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
-    if !idx.Exposure(c.Endpoint).Admits(a, c.Addressed, c) {      // R-EP-013: every subject
+    if !idx.Exposure(sub.Endpoint).Admits(a, c.Addressed, c) {    // R-EP-013: every subject
         return false
     }
     if sub.Capabilities().Has(ContentBypass) {
@@ -871,8 +872,9 @@ func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
   coordinate right after the anonymous gate and before the repository lookup, a write's read-only
   refusal before a read's hidden one
   ([Q-EP-21](#q-ep-21--where-the-ceiling-sits-in-the-evaluation-order)), for the endpoint the
-  request arrived on, which the chain puts into the request context and which replaces a
-  coordinate's `Endpoint` ([Q-EP-20](#q-ep-20--how-the-endpoint-of-a-request-reaches-the-decision-point)).
+  request arrived on, which the subject carries from the listener ([Q-EP-20](#q-ep-20--how-the-endpoint-of-a-request-reaches-the-decision-point)):
+  the coordinate has no endpoint, so a decision cannot be made under another endpoint's ceiling, and
+  a subject without an endpoint (a job, a command) has none.
 - **Reads only** (Q-EP-9). On an endpoint with `exposure: rules`, `Admits` refuses every action
   other than `read`.
 - **Answers** ([authorization.md](authorization.md) R-AUTHZ-016):
@@ -1666,25 +1668,40 @@ the check slow enough to need its own limits.
 ### Q-EP-20 · How the endpoint of a request reaches the decision point
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Decided as (c) in M1 and rewritten here in place when the context was replaced by the subject (WP2.0).
 
-Context: the coordinate carries the endpoint (R-AUTHZ-015), but `Readable` of a listing takes no coordinate, and every content
-route would have to fill the field. A route that forgets it would decide without the ceiling: exposure would fail open.
+Context: the exposure ceiling of an endpoint binds every decision of a request (R-EP-013), `Readable` of a listing takes no
+coordinate, and every content route would have to fill a field. A route that forgets it would decide without the ceiling:
+exposure would fail open. M1 chose the request context (c). Work that decides inside goroutines and on contexts the request does
+not own is coming: a collapsed fetch (R-ARCH-033), where the single-flight leader runs on a detached context for followers that
+arrived on different endpoints, and a fan-out over the members of a virtual repository and the probes of the shadowing check
+(R-REPO-048). The subject is passed explicitly to every decision; the context is not.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Each caller sets `Coordinate.Endpoint` | As the pseudo-code reads | Explicit | Fails open where a caller forgets it; `Readable` needs a new parameter |
-| (b) The principal carries the endpoint and the subject copies it | One more field through the conversions | Every caller that builds its subject the contract's way gets it | A subject built by hand has none; the principal is about who, not where |
-| (c) The chain puts the endpoint into the request context at stage 7; the decision point reads it there and ignores the coordinate's | A context value of the decision point | Every decision of a request applies its endpoint's ceiling, listings included; a caller can neither forget it nor pick another endpoint's | A decision on another context than the request's has no ceiling |
+| (a) Each caller sets `Coordinate.Endpoint` | As the pseudo-code first read | Explicit | Fails open where a caller forgets it; `Readable` needs a new parameter |
+| (b) The subject carries the endpoint | `Subject.Endpoint`, set by the one conversion `edge.SubjectFrom` from the listener's endpoint; every decision reads `sub.Endpoint` | The ceiling travels with the decision, whatever the context; a decision on a detached context, a flight leader and a fan-out probe keep it; one conversion | A subject built by hand has none; this is closed by the architecture test, which names a `Subject` built or edited outside `internal/authz` and `internal/api/edge` |
+| (c) The chain puts the endpoint into the request context; the decision point reads it there | `authz.WithEndpoint`, set at stage 7 | A caller can neither forget it nor pick another endpoint's | A decision on another context than the request's has no ceiling (H-166 as it stood) |
 
-**Choice:** (c). `authz.WithEndpoint` is set by the composition root for every request of an endpoint's chain; a coordinate's
-`Endpoint` counts only without a request endpoint (a job, a command, a test).
+**Choice:** (b). `authz.Subject` has the field `Endpoint string`, the name of the endpoint whose listener accepted the request
+(R-EP-002). The field is a name, not a copy of the endpoint's policy: the exposure mode and the cache-fill policy of the
+endpoint stay in the configuration, the one source, and the decision point resolves them per name. `Coordinate.Endpoint`,
+`WithEndpoint`, `EndpointOf` and the context key are deleted, and stage 7 no longer touches the decision point. The audit column
+`endpoint` of a decision event is the subject's; the exposure-rule service records the endpoint of the acting subject, because the
+audit recorder fills the column from nothing but the event (`audit.Source` has no endpoint). The architecture test
+(`CheckSubjectConstruction`, R-EP-013) refuses a composite literal, `new`, a variable without a value and an assignment to a field
+of `authz.Subject` outside `internal/authz` and `internal/api/edge`, through import aliases and type aliases alike.
 
-**Rationale:** The endpoint is a property of the listener, so it travels with the request and not with the caller's code. The
-remaining risk, a decision on a detached context, is narrower and is named in H-166. The development agent would revisit this
-if content routes started deciding in background work for a request, which would need the endpoint passed on explicitly.
+**Rationale:** the endpoint is a property of the listener and has to travel with the decision, not with the call stack, once a
+decision can run on a context the request does not own. What (b) risked, a subject made up by a caller, is what the typed rule
+closes at build time, as R-EP-002 closes the making of an endpoint. The development agent would revisit this if a job that decides
+on behalf of a request must apply the request's ceiling after the request is gone: then the endpoint is recorded in the job's
+payload and put on the job's subject (H-166 names the case), and if a subject is ever built by reflection or generics, which the
+rule does not see.
 
-**Applied in the spec:** R-EP-013 (the placement); cross-page: none, R-AUTHZ-015's pseudo-code reads `c.Endpoint`, which the
-decision point fills from the request.
+**Applied in the spec:** R-EP-013 (the placement bullet and the pseudo-code read `sub.Endpoint`); cross-page: R-AUTHZ-015 (the
+pseudo-code decides on `DecideOn(ctx, idx, sub, c)` and `Allowed` uses `sub.Endpoint`; the bullet on the coordinate); H-166 in
+[../security/endpoints-and-exposure.md](../security/endpoints-and-exposure.md).
 
 ### Q-EP-21 · Where the ceiling sits in the evaluation order
 

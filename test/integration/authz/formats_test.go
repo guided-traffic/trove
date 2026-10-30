@@ -3,12 +3,44 @@
 package authz
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
+
+// lowerNames is the name rule of a format whose package names compare
+// case-insensitively, and exactNames of one whose names compare as written.
+type (
+	lowerNames struct{}
+	exactNames struct{}
+)
+
+func (lowerNames) Normalize(name string) (string, bool) { return strings.ToLower(name), name != "" }
+func (exactNames) Normalize(name string) (string, bool) { return name, name != "" }
+
+// integrationFormats is the catalog of these tests: the registered generic format
+// and, for the package-name rules the grants of the suite exercise, stand-ins for
+// a format with case-sensitive names (npm) and one with case-insensitive names
+// (nuget). The decision point learns a format's name rule from the catalog only.
+func integrationFormats() *catalog.Registry {
+	r := catalog.NewRegistry()
+	for _, e := range catalog.Default().List() {
+		r.Register(e)
+	}
+	all := []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}
+	r.Register(catalog.Entry{
+		Facts: catalog.Facts{ID: "npm", Classes: all, Layout: "npm", PatternSubject: catalog.SubjectName, PackageNames: true},
+		Names: exactNames{},
+	})
+	r.Register(catalog.Entry{
+		Facts: catalog.Facts{ID: "nuget", Classes: all, Layout: "nuget", PatternSubject: catalog.SubjectName, PackageNames: true},
+		Names: lowerNames{},
+	})
+	return r
+}
 
 // TestR_AUTHZ_004_FormatSelectorComesFromTheFormatRegistry: a policy that names a
 // format the registry does not hold is refused with 422 unknown_format in
@@ -21,7 +53,7 @@ func TestR_AUTHZ_004_FormatSelectorComesFromTheFormatRegistry(t *testing.T) {
 	e.repo("gen", "local", "generic", "")
 	svc := authz.NewService(authz.ServiceOptions{
 		DB: a.db, Changes: a.changes, Principals: sqlPrincipals{e}, Repositories: sqlRepositories{e}, Recorder: a.rec,
-		KnownFormat: func(name string) bool { _, ok := formats.Lookup(name); return ok },
+		Formats: catalog.Default(),
 	})
 	in := func(selector string) authz.PolicyInput {
 		return authz.PolicyInput{

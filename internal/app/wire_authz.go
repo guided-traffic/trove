@@ -7,7 +7,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -52,6 +52,7 @@ func (a *App) wireAuthz(ctx context.Context) error {
 		AnonymousAccess:   a.m1.anonymousAccess,
 		Repositories:      a.m1.repositories,   // the lookup and catch-up of a repository the index lacks (R-API-052)
 		Ceiling:           a.exposureCeiling(), // the endpoints area (R-EP-013, wire_exposure.go)
+		Formats:           catalog.Default(),   // the name rule that folds the names and patterns of a format (R-AUTHZ-005)
 		Recorder:          a.m1.recorder,
 		Replica:           a.id.Instance,
 		Log:               a.log.With("component", "authz"),
@@ -72,7 +73,7 @@ func (a *App) wireAuthz(ctx context.Context) error {
 		}
 		svc := authz.NewService(authz.ServiceOptions{
 			DB: db, Changes: a.changes, Principals: a.m1.principals, Repositories: a.m1.repositories, Recorder: rec,
-			KnownFormat: func(name string) bool { _, ok := formats.Lookup(name); return ok },
+			Formats: catalog.Default(),
 		})
 		a.mu.Lock()
 		a.m1.authzService = svc

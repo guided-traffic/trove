@@ -5,12 +5,18 @@
 //
 // Two entry points exist and nothing else decides:
 //
-//   - [Authorizer.Decide] for a repository action on a coordinate;
-//   - [Authorizer.Require] for a system capability of a management operation.
+//   - [Decider.DecideOn] ([Authorizer.Decide] for a job) for a repository action
+//     on a coordinate;
+//   - [Decider.RequireOn] ([Authorizer.Require] for a job) for a system
+//     capability of a management operation.
 //
-// Both take a [Subject], which authz builds nothing of itself: internal/api/v1
-// converts the request's httpserver.Principal (this package is below the edge
-// layer and cannot import it). Evaluation reads the compiled grant index in
+// A request takes its index once with [Decider.Begin] and asks every question of
+// it, so all of them are answered on one index. Every question takes a [Subject],
+// which authz builds nothing of itself: internal/api/edge converts the request's
+// httpserver.Principal and the listener's endpoint (this package is below the
+// edge layer and cannot import it), and the architecture test refuses a Subject
+// built anywhere else, because the endpoint it carries selects the exposure
+// ceiling of every decision. Evaluation reads the compiled grant index in
 // memory and never queries PostgreSQL or Valkey in the steady state
 // (R-AUTHZ-015, R-AUTHZ-028).
 //

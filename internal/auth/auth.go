@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
 )
 
@@ -28,7 +29,7 @@ type Credential struct {
 	SessionID     string
 	TokenID       string
 	TokenType     token.Type
-	Scope         *token.Scope // nil: no ceiling (sessions)
+	Scope         *scope.Scope // nil: no ceiling (sessions)
 	BasicUsername string
 }
 

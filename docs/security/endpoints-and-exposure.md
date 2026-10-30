@@ -14,9 +14,9 @@ request belongs to are in [roles-and-trust-boundaries.md](roles-and-trust-bounda
 
 ```text
  customers listener ──► host check (421) ──► credential rules of the endpoint ──► stage 7 ──► content route
-                                              (type, binding, anonymous: 401)       │ authz.WithEndpoint
-                                                                                    ▼
-                         authz.Engine.Decide ──► anonymous gate ──► EXPOSURE (addressed repository, every action)
+                                              (type, binding, anonymous: 401)       │ edge.SubjectFrom
+                                                                                    ▼  (Subject.Endpoint)
+                         authz.Engine.DecideOn ─► anonymous gate ──► EXPOSURE (addressed repository, every action)
                                                                      ──► repository facts ──► grants ∩ token scope
 ```
 
@@ -25,9 +25,11 @@ request belongs to are in [roles-and-trust-boundaries.md](roles-and-trust-bounda
 | Credential rules (R-EP-010) | Which credentials the endpoint accepts: token types, binding to the endpoint, anonymous | `endpointRules` ([m1_convert.go](../../internal/app/m1_convert.go)), the stage ([stage.go](../../internal/auth/stage.go)) | closed: a refused credential is the `401` of an unknown token and never falls through to anonymous |
 | Exposure (R-EP-013) | What any subject may read through the endpoint, administrators and `content:bypass` included; no write | `ExposureCeiling` ([exposure.go](../../internal/authz/exposure.go)), `ceilingRefuses` ([decide.go](../../internal/authz/decide.go)) | closed: an endpoint name the configuration does not hold, a format without exposure support, a version without the format's versioning, and a rule that does not compile admit nothing |
 
-The endpoint a request belongs to is the listener's (R-EP-002); stage 7 copies its name into the request context, and the
-decision point reads it from there, so neither a client nor a content route can choose another endpoint's ceiling
-(Q-EP-20). A token bound to `customers` is refused on every other endpoint and an unbound token or a PAT is refused on
+The endpoint a request belongs to is the listener's (R-EP-002); the one conversion `edge.SubjectFrom` copies its name into
+`Subject.Endpoint`, and the decision point reads the ceiling from the subject, so neither a client nor a content route can
+choose another endpoint's ceiling and a decision on a detached context keeps it (Q-EP-20). The architecture test
+(`CheckSubjectConstruction`, [subject.go](../../internal/archtest/subject.go)) names a `Subject` built or edited outside
+`internal/authz` and `internal/api/edge`. A token bound to `customers` is refused on every other endpoint and an unbound token or a PAT is refused on
 `customers` by default, so a leaked customer token works only on its endpoint and an employee token not on the customer's.
 
 ## What a refusal reveals
@@ -87,15 +89,16 @@ share, the budget divided by the live replicas of its pool, so the cluster stays
 
 ## What this does not cover
 
-### H-166 · A decision made outside the request's context has no endpoint ceiling
+### H-166 · A job that acts on behalf of a request decides without the request's endpoint
 
-Stage: every caller of `authz.Authorizer` (`Decide`, `DecideOn`, `Readable`, `Check`).
+Stage: a background job or a command that decides for a request after the request is over.
 
-Dormant: the only callers in this build are the management API's authorization step, which passes the request's context, and
-the integration tests' stand-in content route. The ceiling applies to the endpoint that stage 7 put into the context; a
-coordinate without one has no ceiling, which is right for a job and wrong for a content route that decides on
-`context.Background()` or a detached context, or that answers without asking the decision point. What makes it real: a files
-or format route that decides on another context than the request's.
+Dormant: no job decides today. The request-driven work that decides off the request's context, a collapsed fetch and a fan-out
+over the members of a virtual repository, decides with the subject it was given, and the subject carries the endpoint, so it keeps
+the ceiling; the item-delete job runs what the request decided. A subject without an endpoint, which a job or a command has,
+decides without an exposure ceiling, which is right for a maintenance job and wrong for one that serves a request's content
+later. What makes it real: a job that decides on behalf of a request, started by a request on an endpoint with exposure rules,
+and whose payload does not record the endpoint and does not put it on the job's subject.
 
 ### H-167 · The fallback share counts the replicas of one pool
 

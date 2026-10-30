@@ -122,19 +122,9 @@ func (semverish) InRange(v, expr string) bool {
 	return true
 }
 
-// testFormats is generic (paths only, as in this build) plus an npm-like format
-// with package names, versions and tags for the version dimensions.
-func testFormats(format string) ExposureFormat {
-	switch format {
-	case "generic":
-		return ExposureFormat{Exposable: true}
-	case "npm":
-		return ExposureFormat{Exposable: true, Packages: true, Versions: true, Tags: true, Versioning: semverish{}}
-	}
-	return ExposureFormat{}
-}
-
-func onEP(c Coordinate, ep string) Coordinate { c.Endpoint = ep; return c }
+// onEP is the subject of a request that arrived on the endpoint ep: the one place
+// a test sets the endpoint, as edge.SubjectFrom does for a request.
+func onEP(s Subject, ep string) Subject { s.Endpoint = ep; return s }
 
 func ptr[T any](v T) *T { return &v }
 
@@ -143,7 +133,7 @@ func TestR_EP_012_RuleMatching(t *testing.T) {
 		t.Helper()
 		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, DistTags: d.DistTags})
 		d.Packages, d.Paths, d.Versions, d.DistTags = n.Packages, n.Paths, n.Versions, n.DistTags
-		r, err := compileRule("id", "r", 1, enabled, d, false)
+		r, err := compileRule("id", "r", 1, enabled, d, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +225,7 @@ func TestR_EP_016_ExplainReasons(t *testing.T) {
 	mk := func(name string, enabled bool, d ruleDims) *compiledRule {
 		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, DistTags: d.DistTags})
 		d.Packages, d.Paths, d.Versions, d.DistTags = n.Packages, n.Paths, n.Versions, n.DistTags
-		r, err := compileRule("id-"+name, name, 1, enabled, d, false)
+		r, err := compileRule("id-"+name, name, 1, enabled, d, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,7 +289,7 @@ func exposureFixture() *fixture {
 }
 
 func exposureCeiling() *ExposureCeiling {
-	return NewExposureCeiling(map[string]string{"default": ExposureModeAll, "customers": ExposureModeRules, "partners": ExposureModeAll}, testFormats)
+	return NewExposureCeiling(map[string]string{"default": ExposureModeAll, "customers": ExposureModeRules, "partners": ExposureModeAll}, testRegistry())
 }
 
 func TestR_EP_013_ExposureCeiling(t *testing.T) {
@@ -312,38 +302,38 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	})
 	n := 0
 	runAuthzCases(t, e, []authzCase{
-		{"R-EP-014 a SAT reads an exposed file on customers", botSub, onEP(read("generic-local", "", "releases/1.0/app.zip"), "customers"), Allow, ReasonAllowGrant, ""},
-		{"R-EP-014 a file outside the rule is a hidden 404", botSub, onEP(read("generic-local", "", "internal/x.bin"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-014 the same file on default is readable", botSub, onEP(read("generic-local", "", "internal/x.bin"), "default"), Allow, ReasonAllowGrant, ""},
-		{"R-EP-013 a repository the index does not know is the same 404", botSub, onEP(read("ghost", "", "releases/1.0/app.zip"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 a disabled rule exposes nothing", botSub, onEP(read("generic-other", "", "a"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 Q-EP-12 an administrator sees no more than the rules expose", adminSub, onEP(read("generic-local", "", "internal/x.bin"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 Q-EP-12 an administrator reads an exposed file through content:bypass", adminSub, onEP(read("generic-local", "", "releases/a"), "customers"), Allow, ReasonAllowRole, ""},
-		{"R-EP-013 Q-EP-12 the break-glass administrator is bound too", breakSub, onEP(read("generic-local", "", "internal/x.bin"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 exposure never grants", carolSub, onEP(read("generic-local", "", "releases/a"), "customers"), DenyHidden, ReasonNoGrant, Read},
-		{"R-EP-013 Q-EP-9 a write on customers is 403 read-only", aliceSub, onEP(write("generic-local", "", "releases/a", Deploy), "customers"), DenyVisible, ReasonEndpointReadOnly, Deploy},
-		{"R-EP-013 a write is read-only whether or not its target exists", aliceSub, onEP(write("ghost", "", "x", Deploy, Overwrite), "customers"), DenyVisible, ReasonEndpointReadOnly, Deploy},
-		{"R-EP-013 a write is read-only before a read is hidden", aliceSub, onEP(Coordinate{Repository: "ghost", Path: "x", Kind: KindWrite, Actions: []Action{Read, Deploy}}, "customers"), DenyVisible, ReasonEndpointReadOnly, Deploy},
-		{"R-EP-013 R-AUTHZ-016 an anonymous request is 401 first", anonSub, onEP(read("generic-local", "", "releases/a"), "customers"), DenyUnauthenticated, ReasonUnauthenticated, ""},
-		{"R-EP-013 Q-EP-11 exposure is decided on the addressed virtual repository", botSub, onEP(Coordinate{Repository: "generic-local", Addressed: "files-virtual", Path: "releases/a", Kind: KindArtifact, Actions: []Action{Read}}, "customers"), Allow, ReasonAllowGrant, ""},
-		{"R-EP-013 Q-EP-11 a member coordinate outside the virtual repository's rule is hidden", botSub, onEP(Coordinate{Repository: "generic-local", Addressed: "files-virtual", Path: "internal/x", Kind: KindArtifact, Actions: []Action{Read}}, "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 the virtual repository itself passes its gate on customers", botSub, onEP(read("files-virtual", "", "releases/a"), "customers"), Allow, "", ""},
-		{"R-EP-013 a path of the virtual repository outside its rule is hidden", botSub, onEP(read("files-virtual", "", "internal/x"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 an endpoint name the configuration does not hold is closed", botSub, onEP(read("generic-local", "", "releases/a"), "nowhere"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-014 a SAT reads an exposed file on customers", onEP(botSub, "customers"), read("generic-local", "", "releases/1.0/app.zip"), Allow, ReasonAllowGrant, ""},
+		{"R-EP-014 a file outside the rule is a hidden 404", onEP(botSub, "customers"), read("generic-local", "", "internal/x.bin"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-014 the same file on default is readable", onEP(botSub, "default"), read("generic-local", "", "internal/x.bin"), Allow, ReasonAllowGrant, ""},
+		{"R-EP-013 a repository the index does not know is the same 404", onEP(botSub, "customers"), read("ghost", "", "releases/1.0/app.zip"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 a disabled rule exposes nothing", onEP(botSub, "customers"), read("generic-other", "", "a"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 Q-EP-12 an administrator sees no more than the rules expose", onEP(adminSub, "customers"), read("generic-local", "", "internal/x.bin"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 Q-EP-12 an administrator reads an exposed file through content:bypass", onEP(adminSub, "customers"), read("generic-local", "", "releases/a"), Allow, ReasonAllowRole, ""},
+		{"R-EP-013 Q-EP-12 the break-glass administrator is bound too", onEP(breakSub, "customers"), read("generic-local", "", "internal/x.bin"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 exposure never grants", onEP(carolSub, "customers"), read("generic-local", "", "releases/a"), DenyHidden, ReasonNoGrant, Read},
+		{"R-EP-013 Q-EP-9 a write on customers is 403 read-only", onEP(aliceSub, "customers"), write("generic-local", "", "releases/a", Deploy), DenyVisible, ReasonEndpointReadOnly, Deploy},
+		{"R-EP-013 a write is read-only whether or not its target exists", onEP(aliceSub, "customers"), write("ghost", "", "x", Deploy, Overwrite), DenyVisible, ReasonEndpointReadOnly, Deploy},
+		{"R-EP-013 a write is read-only before a read is hidden", onEP(aliceSub, "customers"), Coordinate{Repository: "ghost", Path: "x", Kind: KindWrite, Actions: []Action{Read, Deploy}}, DenyVisible, ReasonEndpointReadOnly, Deploy},
+		{"R-EP-013 R-AUTHZ-016 an anonymous request is 401 first", onEP(anonSub, "customers"), read("generic-local", "", "releases/a"), DenyUnauthenticated, ReasonUnauthenticated, ""},
+		{"R-EP-013 Q-EP-11 exposure is decided on the addressed virtual repository", onEP(botSub, "customers"), Coordinate{Repository: "generic-local", Addressed: "files-virtual", Path: "releases/a", Kind: KindArtifact, Actions: []Action{Read}}, Allow, ReasonAllowGrant, ""},
+		{"R-EP-013 Q-EP-11 a member coordinate outside the virtual repository's rule is hidden", onEP(botSub, "customers"), Coordinate{Repository: "generic-local", Addressed: "files-virtual", Path: "internal/x", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 the virtual repository itself passes its gate on customers", onEP(botSub, "customers"), read("files-virtual", "", "releases/a"), Allow, "", ""},
+		{"R-EP-013 a path of the virtual repository outside its rule is hidden", onEP(botSub, "customers"), read("files-virtual", "", "internal/x"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 an endpoint name the configuration does not hold is closed", onEP(botSub, "nowhere"), read("generic-local", "", "releases/a"), DenyHidden, ReasonExposure, Read},
 		{"R-EP-013 a coordinate without an endpoint has no ceiling (a job)", botSub, read("generic-local", "", "internal/x.bin"), Allow, ReasonAllowGrant, ""},
-		{"R-EP-018 a version of an npm-like format is decided by the rule's range", botSub, onEP(Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, "customers"), Allow, "", ""},
-		{"R-EP-018 a version below the range is hidden", botSub, onEP(Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, "customers"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-018 a version of an npm-like format is decided by the rule's range", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
+		{"R-EP-018 a version below the range is hidden", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
 	}, &n)
 	runAuthzCases(t, on, []authzCase{
-		{"R-EP-013 an anonymous read the rules admit passes on an anonymous endpoint", anonSub, onEP(read("generic-local", "", "releases/a"), "customers"), Allow, "", ""},
-		{"R-EP-013 an anonymous read the rules do not admit is 404, not 401", anonSub, onEP(read("generic-local", "", "internal/x"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 Q-EP-4 a repository that requires authentication and has no rule is the same 404", anonSub, onEP(read("generic-auth", "", "a"), "customers"), DenyHidden, ReasonExposure, Read},
-		{"R-EP-013 Q-EP-4 a missing repository is the same 404 for anonymous", anonSub, onEP(read("ghost", "", "a"), "customers"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 an anonymous read the rules admit passes on an anonymous endpoint", onEP(anonSub, "customers"), read("generic-local", "", "releases/a"), Allow, "", ""},
+		{"R-EP-013 an anonymous read the rules do not admit is 404, not 401", onEP(anonSub, "customers"), read("generic-local", "", "internal/x"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 Q-EP-4 a repository that requires authentication and has no rule is the same 404", onEP(anonSub, "customers"), read("generic-auth", "", "a"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 Q-EP-4 a missing repository is the same 404 for anonymous", onEP(anonSub, "customers"), read("ghost", "", "a"), DenyHidden, ReasonExposure, Read},
 	}, &n)
 
 	t.Run("R-EP-013 Q-EP-4 a hidden file and a missing file answer the same error", func(t *testing.T) {
-		hidden := e.Decide(t.Context(), botSub, onEP(read("generic-local", "", "internal/x.bin"), "customers")).Err()
-		missing := e.Decide(t.Context(), botSub, onEP(read("ghost", "", "internal/x.bin"), "customers")).Err()
+		hidden := e.Decide(t.Context(), onEP(botSub, "customers"), read("generic-local", "", "internal/x.bin")).Err()
+		missing := e.Decide(t.Context(), onEP(botSub, "customers"), read("ghost", "", "internal/x.bin")).Err()
 		hp, _ := errs.ProblemOf(hidden, "/x", "r")
 		mp, _ := errs.ProblemOf(missing, "/x", "r")
 		np, _ := errs.ProblemOf(NotFound(), "/x", "r")
@@ -351,26 +341,12 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 			t.Fatalf("hidden %+v, missing %+v, not found %+v", hp, mp, np)
 		}
 	})
-	t.Run("R-EP-013 R-EP-002 the endpoint of the request context replaces the coordinate's", func(t *testing.T) {
-		ctx := WithEndpoint(t.Context(), "customers")
-		d := e.Decide(ctx, botSub, onEP(read("generic-local", "", "internal/x.bin"), "default"))
-		if d.Outcome != DenyHidden || d.Reason != ReasonExposure {
-			t.Fatalf("%+v", d)
-		}
-		idx, err := e.Begin(ctx, botSub)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if d := e.DecideOn(ctx, idx, botSub, read("generic-local", "", "internal/x.bin")); d.Reason != ReasonExposure {
-			t.Fatalf("DecideOn: %+v", d)
-		}
-	})
 	t.Run("R-EP-013 on an endpoint in mode all every decision is the default endpoint's", func(t *testing.T) {
 		for _, c := range []Coordinate{
 			read("generic-local", "", "internal/x.bin"), write("generic-local", "", "x", Deploy), read("ghost", "", "x"), metadata("npm-customers"),
 		} {
 			for _, s := range []Subject{aliceSub, botSub, carolSub, adminSub} {
-				def, partners := e.Decide(t.Context(), s, onEP(c, "default")), e.Decide(t.Context(), s, onEP(c, "partners"))
+				def, partners := e.Decide(t.Context(), onEP(s, "default"), c), e.Decide(t.Context(), onEP(s, "partners"), c)
 				if def.Outcome != partners.Outcome || def.Reason != partners.Reason {
 					t.Errorf("%s %+v: default %+v, partners %+v", s.Name, c, def, partners)
 				}
@@ -379,14 +355,14 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	})
 	t.Run("R-EP-014 listings on customers hold only repositories with an enabled rule", func(t *testing.T) {
 		keys := []string{"files-virtual", "generic-auth", "generic-local", "generic-other", "npm-customers"}
-		got, err := e.Readable(WithEndpoint(t.Context(), "customers"), adminSub, keys)
+		got, err := e.Readable(t.Context(), onEP(adminSub, "customers"), keys)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if want := []string{"files-virtual", "generic-local", "npm-customers"}; !slices.Equal(got, want) {
 			t.Fatalf("customers lists %v, want %v", got, want)
 		}
-		all, _ := e.Readable(WithEndpoint(t.Context(), "default"), adminSub, keys)
+		all, _ := e.Readable(t.Context(), onEP(adminSub, "default"), keys)
 		if !slices.Equal(all, keys) {
 			t.Fatalf("default lists %v", all)
 		}
@@ -414,7 +390,7 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 		if err := e.Refresh(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		if d := e.Decide(t.Context(), botSub, onEP(read("generic-local", "", "internal/x.bin"), "customers")); d.Outcome != Allow {
+		if d := e.Decide(t.Context(), onEP(botSub, "customers"), read("generic-local", "", "internal/x.bin")); d.Outcome != Allow {
 			t.Fatalf("after the new rule: %+v", d)
 		}
 		src.set(exposureFixture().s)
@@ -424,7 +400,7 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 		if err := e.Refresh(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		if d := e.Decide(t.Context(), botSub, onEP(read("generic-local", "", "internal/x.bin"), "customers")); d.Outcome != DenyHidden {
+		if d := e.Decide(t.Context(), onEP(botSub, "customers"), read("generic-local", "", "internal/x.bin")); d.Outcome != DenyHidden {
 			t.Fatalf("after the rule was deleted: %+v", d)
 		}
 	})
@@ -454,12 +430,12 @@ func TestR_EP_013_CeilingPerformance(t *testing.T) {
 		o.Ceiling = exposureCeiling()
 		o.Config.Cache.MaxStaleness = time.Hour
 	})
-	c := onEP(read("generic-local", "", "nowhere/x/y.bin"), "customers")
+	c, sub := read("generic-local", "", "nowhere/x/y.bin"), onEP(botSub, "customers")
 	const n = 2000
 	took := make([]time.Duration, 0, n)
 	for range n {
 		start := time.Now()
-		d := e.Decide(context.Background(), botSub, c)
+		d := e.Decide(context.Background(), sub, c)
 		took = append(took, time.Since(start))
 		if d.Outcome != DenyHidden {
 			t.Fatalf("%+v", d)
@@ -548,16 +524,16 @@ func TestR_EP_012_Validation(t *testing.T) {
 	t.Run("R-EP-020 the journal entry of an update carries IDs and both states; a deletion its IDs", func(t *testing.T) {
 		r := ExposureRule{ID: "id-1", Endpoint: "customers", RepositoryID: 7, ExposureRuleInput: ExposureRuleInput{Name: "releases", Repository: "generic-local", Enabled: true}}
 		before, after := stateOfRule(r.ExposureRuleInput), stateOfRule(ExposureRuleInput{Enabled: false})
-		up := exposureEvent(t.Context(), EventExposureUpdated, aliceSub, r, before, after, []string{"enabled"}, 9, "")
+		up := exposureEvent(EventExposureUpdated, aliceSub, r, before, after, []string{"enabled"}, 9, "")
 		if !strings.Contains(string(up.Journal), `"ruleId":"id-1"`) || !strings.Contains(string(up.Journal), `"repositoryId":7`) ||
 			!strings.Contains(string(up.Journal), `"after":{"enabled":false`) {
 			t.Fatalf("%s", up.Journal)
 		}
-		del := exposureEvent(t.Context(), EventExposureDeleted, aliceSub, r, before, nil, nil, 9, "api")
+		del := exposureEvent(EventExposureDeleted, aliceSub, r, before, nil, nil, 9, "api")
 		if !strings.Contains(string(del.Journal), `"name":"releases"`) || strings.Contains(string(del.Journal), "before") {
 			t.Fatalf("%s", del.Journal)
 		}
-		if created := exposureEvent(t.Context(), EventExposureCreated, aliceSub, r, nil, after, nil, 9, ""); created.Journal != nil {
+		if created := exposureEvent(EventExposureCreated, aliceSub, r, nil, after, nil, 9, ""); created.Journal != nil {
 			t.Fatal("a create carries a journal entry")
 		}
 		if got := changedMembers(ExposureRuleInput{Enabled: true}, ExposureRuleInput{Enabled: false, Description: "x"}); !slices.Equal(got, []string{"description", "enabled"}) {
