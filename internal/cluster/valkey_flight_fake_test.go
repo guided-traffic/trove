@@ -95,9 +95,6 @@ func (s *memServer) serve(c *memConn) {
 		if err != nil {
 			return
 		}
-		s.mu.Lock()
-		s.cmds = append(s.cmds, args)
-		s.mu.Unlock()
 		if reply := s.handle(c, args); reply != "" {
 			c.write(reply)
 		}
@@ -118,6 +115,9 @@ func (s *memServer) live(key string) (memValue, bool) {
 func (s *memServer) handle(c *memConn, args []string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Recorded under the lock that evaluates the command, so a command that is
+	// counted has also taken effect.
+	s.cmds = append(s.cmds, args)
 	switch strings.ToUpper(args[0]) {
 	case "HELLO":
 		return helloReplyFor("valkey", "9.1.3")

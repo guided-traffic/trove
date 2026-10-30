@@ -66,7 +66,10 @@ const (
 	OutcomeFailed Outcome = "failed"
 	// OutcomeGone is returned by Wait only: the lock key is absent and no
 	// outcome was heard, because the holder died and the key expired, or a
-	// failover or a flush took the key, or the message was missed.
+	// failover or a flush took the key, or the message was missed. A waiter
+	// that first looks at the key between the release's DELIFEQ and its PUBLISH
+	// gets it too; the release order (R-ARCH-033) is what lets a woken waiter
+	// acquire the flight, so the window is not closed.
 	OutcomeGone Outcome = "gone"
 )
 

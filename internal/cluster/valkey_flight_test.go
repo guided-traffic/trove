@@ -344,6 +344,9 @@ func TestFlightLockWait(t *testing.T) {
 		h, _, _ := fx.lock.Acquire(t.Context(), testFlight)
 		res := startWait(t.Context(), fx.lock, testFlight)
 		eventually(t, "the subscription", 5*time.Second, func() bool { return fx.srv.subscribers(fillChannel(testFlight)) == 1 })
+		// The waiter has seen the key held. A Release before its first GET would
+		// show it a missing key and no outcome, which Wait answers with gone.
+		eventually(t, "the first look at the key", 5*time.Second, func() bool { return fx.srv.count("GET") == 1 })
 		_ = h.Release(t.Context(), OutcomeFailed, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
 		if r := expect(t, res, 2*time.Second, "after Release"); r.err != nil || r.o != OutcomeFailed {
 			t.Fatalf("Wait = %+v, want failed", r)
