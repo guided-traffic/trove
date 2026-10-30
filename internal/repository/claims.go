@@ -442,7 +442,40 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	if err != nil {
 		return ClaimSet{}, err
 	}
-	manual, auto := map[string]string{}, map[string]bool{}
+	manual, auto := splitClaims(existing)
+	validateClaimWrite(v, want, auto)
+	if err := v.err(); err != nil {
+		return ClaimSet{}, err
+	}
+
+	added, removed, touchesGlobal := diffClaims(want, manual)
+	if touchesGlobal && guard != nil {
+		if err := guard(ctx); err != nil {
+			return ClaimSet{}, err
+		}
+	}
+
+	warnings, err := s.claimOverlaps(ctx, qs, row, want)
+	if err != nil {
+		return ClaimSet{}, err
+	}
+	version := row.ClaimsVersion
+	if len(added) > 0 || len(removed) > 0 {
+		if version, err = s.applyClaimChange(ctx, tx, qs, c, row, added, removed); err != nil {
+			return ClaimSet{}, err
+		}
+	}
+	after, err := qs.ListRepositoryClaims(ctx, row.ID)
+	if err != nil {
+		return ClaimSet{}, err
+	}
+	return ClaimSet{Claims: toClaims(after), Version: version, Warnings: warnings}, nil
+}
+
+// splitClaims separates the claims of a repository into the manual ones
+// (pattern to scope) and the set of patterns of the automatic ones.
+func splitClaims(existing []q.ListRepositoryClaimsRow) (manual map[string]string, auto map[string]bool) {
+	manual, auto = map[string]string{}, map[string]bool{}
 	for _, e := range existing {
 		if e.Source == SourceManual {
 			manual[e.Pattern] = e.Scope
@@ -450,6 +483,12 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 			auto[e.Pattern] = true
 		}
 	}
+	return manual, auto
+}
+
+// validateClaimWrite adds the violations of the removal of automatic claims and
+// of the claim limit to v.
+func validateClaimWrite(v *validation, want wantClaims, auto map[string]bool) {
 	for i, p := range want.removeAuto {
 		switch {
 		case !auto[p]:
@@ -467,17 +506,13 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	if remaining > MaxClaims {
 		v.add("/claims", codeOutOfRange, "a repository holds at most "+strconv.Itoa(MaxClaims)+" claims, automatic ones included")
 	}
-	if err := v.err(); err != nil {
-		return ClaimSet{}, err
-	}
+}
 
-	// What changes. A global claim that is added, kept, narrowed or removed needs
-	// repositories:write-config: the claim set is one resource, and whoever may
-	// drop a global claim by omitting it from a replace could reopen a
-	// dependency-confusion path (Q-REPO-105).
-	var added []claimChange
-	var removed []string
-	touchesGlobal := false
+// diffClaims computes what a replace changes. A global claim that is added, kept,
+// narrowed or removed needs repositories:write-config: the claim set is one
+// resource, and whoever may drop a global claim by omitting it from a replace
+// could reopen a dependency-confusion path (Q-REPO-105).
+func diffClaims(want wantClaims, manual map[string]string) (added []claimChange, removed []string, touchesGlobal bool) {
 	for _, p := range want.order {
 		sc := want.scope[p]
 		touchesGlobal = touchesGlobal || sc == ScopeGlobal
@@ -495,42 +530,35 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	}
 	removed = append(removed, want.removeAuto...)
 	sort.Strings(removed)
-	if touchesGlobal && guard != nil {
-		if err := guard(ctx); err != nil {
-			return ClaimSet{}, err
-		}
-	}
+	return added, removed, touchesGlobal
+}
 
-	warnings, err := s.claimOverlaps(ctx, qs, row, want)
+// applyClaimChange writes a change of the manual claims, bumps claims_version and
+// records the audit event and the change notification, in the transaction. It
+// returns the new version.
+func (s *Service) applyClaimChange(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository,
+	added []claimChange, removed []string,
+) (int64, error) {
+	actor := c.principalID()
+	for _, p := range removed {
+		if err := qs.DeleteClaim(ctx, q.DeleteClaimParams{RepoID: row.ID, Pattern: p}); err != nil {
+			return 0, err
+		}
+	}
+	for _, a := range added {
+		if err := qs.UpsertManualClaim(ctx, q.UpsertManualClaimParams{RepoID: row.ID, Pattern: a.Pattern, Scope: a.Scope, Actor: actor}); err != nil {
+			return 0, err
+		}
+	}
+	version, err := qs.BumpClaimsVersion(ctx, row.ID)
 	if err != nil {
-		return ClaimSet{}, err
+		return 0, err
 	}
-	version := row.ClaimsVersion
-	if len(added) > 0 || len(removed) > 0 {
-		actor := c.principalID()
-		for _, p := range removed {
-			if err := qs.DeleteClaim(ctx, q.DeleteClaimParams{RepoID: row.ID, Pattern: p}); err != nil {
-				return ClaimSet{}, err
-			}
-		}
-		for _, a := range added {
-			if err := qs.UpsertManualClaim(ctx, q.UpsertManualClaimParams{RepoID: row.ID, Pattern: a.Pattern, Scope: a.Scope, Actor: actor}); err != nil {
-				return ClaimSet{}, err
-			}
-		}
-		if version, err = qs.BumpClaimsVersion(ctx, row.ID); err != nil {
-			return ClaimSet{}, err
-		}
-		r, _ := toRepository(row, s.cat)
-		if err := recordClaims(ctx, tx, s.rec, s.notif, c, r, SourceManual, added, removed, version); err != nil {
-			return ClaimSet{}, err
-		}
+	r, _ := toRepository(row, s.cat)
+	if err := recordClaims(ctx, tx, s.rec, s.notif, c, r, SourceManual, added, removed, version); err != nil {
+		return 0, err
 	}
-	after, err := qs.ListRepositoryClaims(ctx, row.ID)
-	if err != nil {
-		return ClaimSet{}, err
-	}
-	return ClaimSet{Claims: toClaims(after), Version: version, Warnings: warnings}, nil
+	return version, nil
 }
 
 // claimOverlaps returns the warning claim_overlaps for the manual claims that
